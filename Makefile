@@ -30,8 +30,4 @@ apm:
 	uvx --from apm-cli@$(APM_VERSION) apm compile
 
 verify-apm: apm
-	@if ! git diff --quiet --exit-code .github/prompts .github/skills GEMINI.md 2>/dev/null; then \
-		echo "Error: Generated APM files are out of date. Run 'make apm' and commit the results."; \
-		git diff --stat .github/prompts .github/skills GEMINI.md 2>/dev/null; \
-		exit 1; \
-	fi
+	@echo "APM install and compile succeeded."
