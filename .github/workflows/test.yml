@@ -146,33 +146,5 @@ jobs:
           # Clone ai-helpers repo
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
-          # Disable agentskills rules until ai-helpers updates its skills
-          python3 -c "
-          import yaml
-          from skillsaw.config import find_config
-          from pathlib import Path
-
-          config_path = find_config(Path('/tmp/ai-helpers'))
-          if config_path is None:
-              config_path = Path('/tmp/ai-helpers/.skillsaw.yaml')
-
-          cfg = {}
-          if config_path.exists():
-              with open(config_path) as f:
-                  cfg = yaml.safe_load(f) or {}
-          rules = cfg.setdefault('rules', {})
-          for r in ['agentskill-valid','agentskill-name','agentskill-description',
-                     'agentskill-structure','agentskill-evals','agentskill-evals-required']:
-              rules[r] = {'enabled': False}
-          with open(config_path, 'w') as f:
-              yaml.dump(cfg, f, default_flow_style=False)
-          "
-
-          # Lint it
+          # Lint it — ai-helpers' .skillsaw.yaml already disables agentskill rules
           skillsaw /tmp/ai-helpers
-
-          # Should pass with no errors
-          if [ $? -ne 0 ]; then
-            echo "ai-helpers repo failed skillsaw!"
-            exit 1
-          fi
