@@ -1,7 +1,13 @@
 name: Skillsaw PR Review
 
 on:
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
+
+concurrency:
+  group: skillsaw-agent
+  cancel-in-progress: false
 
 permissions:
   contents: write
