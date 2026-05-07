@@ -152,49 +152,14 @@ Plugins from `plugins/`, custom paths, and remote sources can coexist in one mar
 
 ## Configuration
 
-Create `.skillsaw.yaml` in your repository root:
-
-```yaml
-rules:
-  # agentskills rules (auto-enabled when skills are detected)
-  agentskill-valid:
-    enabled: auto
-    severity: error
-
-  agentskill-name:
-    enabled: auto
-    severity: error
-
-  # Plugin structure rules
-  plugin-json-required:
-    enabled: true
-    severity: error
-
-  # 'auto' enables only for relevant repo types
-  marketplace-registration:
-    enabled: auto
-    severity: error
-
-# Load custom rules
-custom-rules:
-  - ./my-custom-rules.py
-
-# Exclude patterns
-exclude:
-  - "**/node_modules/**"
-  - "**/.git/**"
-
-# Treat warnings as errors
-strict: false
-```
-
-### Generating Default Config
+Generate a default `.skillsaw.yaml` in your repository root:
 
 ```bash
 skillsaw --init
 ```
 
-This creates `.skillsaw.yaml` with all builtin rules and their defaults.
+This creates a config file with all builtin rules, their defaults, and
+descriptions. Edit it to enable, disable, or customize rules for your project.
 
 ## Builtin Rules
 
