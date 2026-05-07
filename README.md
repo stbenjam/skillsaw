@@ -176,8 +176,8 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) |
-| `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) |
-| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) |
+| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) |
+| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) |
 
 **`agentskill-structure` parameters:**
 
