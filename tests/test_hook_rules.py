@@ -232,24 +232,35 @@ def test_all_valid_event_types(temp_dir):
 
     # Test all valid event types
     valid_events = [
+        "SessionStart",
+        "Setup",
+        "InstructionsLoaded",
+        "UserPromptSubmit",
+        "UserPromptExpansion",
         "PreToolUse",
+        "PermissionRequest",
+        "PermissionDenied",
         "PostToolUse",
         "PostToolUseFailure",
-        "PermissionRequest",
-        "UserPromptSubmit",
+        "PostToolBatch",
         "Notification",
-        "Stop",
         "SubagentStart",
         "SubagentStop",
-        "SessionStart",
-        "SessionEnd",
-        "PreCompact",
-        "TeammateIdle",
+        "TaskCreated",
         "TaskCompleted",
+        "Stop",
+        "StopFailure",
+        "TeammateIdle",
         "ConfigChange",
+        "CwdChanged",
+        "FileChanged",
         "WorktreeCreate",
         "WorktreeRemove",
-        "InstructionsLoaded",
+        "PreCompact",
+        "PostCompact",
+        "Elicitation",
+        "ElicitationResult",
+        "SessionEnd",
     ]
 
     hooks_config = {"hooks": {}}
@@ -635,3 +646,254 @@ def test_timeout_as_boolean_rejected(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "timeout" in violations[0].message
+
+
+def test_valid_mcp_tool_hook_type(temp_dir):
+    """Test that valid mcp_tool hook type passes"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "mcp_tool",
+                                "server": "memory",
+                                "tool": "save_memory",
+                                "input": {"key": "value"},
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_mcp_tool_missing_server_field(temp_dir):
+    """Test that mcp_tool type without server field is detected"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [{"type": "mcp_tool", "tool": "save_memory"}],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "requires a 'server' field" in violations[0].message
+
+
+def test_mcp_tool_missing_tool_field(temp_dir):
+    """Test that mcp_tool type without tool field is detected"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [{"type": "mcp_tool", "server": "memory"}],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "requires a 'tool' field" in violations[0].message
+
+
+def test_new_event_types_accepted(temp_dir):
+    """Test that newly added event types are accepted"""
+    new_events = [
+        "Setup",
+        "UserPromptExpansion",
+        "PermissionDenied",
+        "PostToolBatch",
+        "TaskCreated",
+        "StopFailure",
+        "CwdChanged",
+        "FileChanged",
+        "PostCompact",
+        "Elicitation",
+        "ElicitationResult",
+    ]
+
+    for event in new_events:
+        plugin_dir = _make_hooks_plugin(
+            temp_dir,
+            {
+                "hooks": {
+                    event: [
+                        {
+                            "matcher": ".*",
+                            "hooks": [{"type": "command", "command": "echo test"}],
+                        }
+                    ]
+                }
+            },
+        )
+        context = RepositoryContext(plugin_dir)
+        rule = HooksJsonValidRule()
+        violations = rule.check(context)
+        assert len(violations) == 0, f"Event '{event}' should be valid but got: {violations}"
+        # Clean up for next iteration
+        import shutil
+
+        shutil.rmtree(plugin_dir)
+
+
+def test_async_rewake_field_accepted(temp_dir):
+    """Test that asyncRewake field is accepted on command type"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "echo test",
+                                "asyncRewake": True,
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_shell_field_accepted(temp_dir):
+    """Test that shell field is accepted on command type"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "echo test",
+                                "shell": "bash",
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_if_field_accepted(temp_dir):
+    """Test that if field is accepted on hook handlers"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "echo check",
+                                "if": "tool.command matches 'rm *'",
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_shell_on_http_type_warning(temp_dir):
+    """Test that shell on http hook produces a warning"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "http",
+                                "url": "https://example.com",
+                                "shell": "bash",
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].severity == Severity.WARNING
+    assert "shell" in violations[0].message
+
+
+def test_input_on_non_mcp_tool_warning(temp_dir):
+    """Test that input on non-mcp_tool type produces a warning"""
+    plugin_dir = _make_hooks_plugin(
+        temp_dir,
+        {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": ".*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "echo test",
+                                "input": {"key": "value"},
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = HooksJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].severity == Severity.WARNING
+    assert "input" in violations[0].message

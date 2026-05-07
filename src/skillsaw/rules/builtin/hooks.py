@@ -10,33 +10,45 @@ from skillsaw.context import RepositoryContext
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {
+    "SessionStart",
+    "Setup",
+    "InstructionsLoaded",
+    "UserPromptSubmit",
+    "UserPromptExpansion",
     "PreToolUse",
+    "PermissionRequest",
+    "PermissionDenied",
     "PostToolUse",
     "PostToolUseFailure",
-    "PermissionRequest",
-    "UserPromptSubmit",
+    "PostToolBatch",
     "Notification",
-    "Stop",
     "SubagentStart",
     "SubagentStop",
-    "SessionStart",
-    "SessionEnd",
-    "PreCompact",
-    "TeammateIdle",
+    "TaskCreated",
     "TaskCompleted",
+    "Stop",
+    "StopFailure",
+    "TeammateIdle",
     "ConfigChange",
+    "CwdChanged",
+    "FileChanged",
     "WorktreeCreate",
     "WorktreeRemove",
-    "InstructionsLoaded",
+    "PreCompact",
+    "PostCompact",
+    "Elicitation",
+    "ElicitationResult",
+    "SessionEnd",
 }
 
 # Valid hook handler types
-_VALID_HOOK_TYPES = {"command", "http", "prompt", "agent"}
+_VALID_HOOK_TYPES = {"command", "http", "mcp_tool", "prompt", "agent"}
 
 # Required fields per handler type
 _TYPE_REQUIRED_FIELDS = {
     "command": {"command": str},
     "http": {"url": str},
+    "mcp_tool": {"server": str, "tool": str},
     "prompt": {"prompt": str},
     "agent": {"prompt": str},
 }
@@ -45,9 +57,14 @@ _TYPE_REQUIRED_FIELDS = {
 _TYPE_SPECIFIC_FIELDS = {
     "command": {"command"},
     "async": {"command"},
+    "asyncRewake": {"command"},
+    "shell": {"command"},
     "url": {"http"},
     "headers": {"http"},
     "allowedEnvVars": {"http"},
+    "server": {"mcp_tool"},
+    "tool": {"mcp_tool"},
+    "input": {"mcp_tool"},
     "prompt": {"prompt", "agent"},
     "model": {"prompt", "agent"},
 }
@@ -56,10 +73,14 @@ _TYPE_SPECIFIC_FIELDS = {
 _OPTIONAL_FIELD_TYPES = {
     "timeout": (int, float),
     "async": bool,
+    "asyncRewake": bool,
     "once": bool,
+    "if": str,
     "statusMessage": str,
+    "shell": str,
     "headers": dict,
     "allowedEnvVars": list,
+    "input": dict,
 }
 
 
