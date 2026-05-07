@@ -16,22 +16,20 @@ You are releasing a new version of the **skillsaw** linter.
 Before releasing, verify:
 
 1. You are on the `main` branch and it is clean (`git status`)
-2. Activate the venv: `source .venv/bin/activate`
-3. Install in dev mode if needed: `pip install -e .`
-4. All tests pass: `pytest tests/ -v`
-5. Formatting is clean: `black --check src/ tests/`
-6. Determine what version to release — if no version was specified, the
+2. All tests pass: `make test`
+3. Formatting is clean: `make lint`
+4. Determine what version to release — if no version was specified, the
    bump script will auto-increment the patch version
 
-**Important:** All `pytest`, `black`, and `scripts/bump-version.sh` commands
-must run inside the activated `.venv`.
+The Makefile automatically creates the `.venv` and installs dependencies.
 
 ## Step 2: Bump the version
 
 Run the bump script:
 
 ```bash
-source .venv/bin/activate && bash scripts/bump-version.sh [version]
+.venv/bin/python -c "pass" || make venv
+bash scripts/bump-version.sh [version]
 ```
 
 This updates both `pyproject.toml` and `src/skillsaw/__init__.py`. If no
