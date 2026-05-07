@@ -15,6 +15,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
 DESCRIPTION_MAX_LENGTH = 1024
+COMPATIBILITY_MAX_LENGTH = 500
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
 KNOWN_DIRS = {"scripts", "references", "assets", "evals"}
@@ -110,6 +111,52 @@ class AgentSkillValidRule(Rule):
             elif not isinstance(desc, str):
                 violations.append(
                     self.violation("'description' must be a string", file_path=skill_md)
+                )
+
+            if "license" in frontmatter and not isinstance(frontmatter["license"], str):
+                violations.append(self.violation("'license' must be a string", file_path=skill_md))
+
+            if "compatibility" in frontmatter:
+                compat = frontmatter["compatibility"]
+                if not isinstance(compat, str):
+                    violations.append(
+                        self.violation("'compatibility' must be a string", file_path=skill_md)
+                    )
+                elif not compat.strip():
+                    violations.append(
+                        self.violation(
+                            "'compatibility' must not be empty if provided",
+                            file_path=skill_md,
+                        )
+                    )
+                elif len(compat) > COMPATIBILITY_MAX_LENGTH:
+                    violations.append(
+                        self.violation(
+                            f"'compatibility' exceeds {COMPATIBILITY_MAX_LENGTH} characters ({len(compat)})",
+                            file_path=skill_md,
+                        )
+                    )
+
+            if "metadata" in frontmatter:
+                meta = frontmatter["metadata"]
+                if not isinstance(meta, dict):
+                    violations.append(
+                        self.violation("'metadata' must be a mapping", file_path=skill_md)
+                    )
+                else:
+                    for k, v in meta.items():
+                        if not isinstance(v, str):
+                            violations.append(
+                                self.violation(
+                                    f"'metadata.{k}' value must be a string",
+                                    file_path=skill_md,
+                                    severity=Severity.WARNING,
+                                )
+                            )
+
+            if "allowed-tools" in frontmatter and not isinstance(frontmatter["allowed-tools"], str):
+                violations.append(
+                    self.violation("'allowed-tools' must be a string", file_path=skill_md)
                 )
 
         return violations
