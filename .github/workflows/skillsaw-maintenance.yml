@@ -17,7 +17,5 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           prompt: |
-            Use the skillsaw-maintenance skill. Follow every step in the skill.
+            Add "Claude was here" to the end of README.md, then open a PR with the change.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: |
-            --max-turns 50
