@@ -172,7 +172,7 @@ class PluginNamingRule(Rule):
 
 
 class CommandsDirRequiredRule(Rule):
-    """Check that commands or skills directory exists"""
+    """Deprecated: commands/ directory check is no longer relevant"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -182,27 +182,22 @@ class CommandsDirRequiredRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugin must have a commands or skills directory"
+        return "Deprecated — commands/ is no longer required by the plugin spec"
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
-
-        for plugin_path in context.plugins:
-            commands_dir = plugin_path / "commands"
-            skills_dir = plugin_path / "skills"
-            if not commands_dir.exists() and not skills_dir.exists():
-                violations.append(
-                    self.violation("Missing commands or skills directory", file_path=plugin_path)
-                )
-
-        return violations
+        return [
+            self.violation(
+                "Rule 'commands-dir-required' is deprecated and will be removed in a future release",
+                severity=Severity.WARNING,
+            )
+        ]
 
 
 class CommandsExistRule(Rule):
-    """Check that at least one command or skill exists"""
+    """Deprecated: command file check is no longer relevant"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -212,38 +207,18 @@ class CommandsExistRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugin should have at least one command or skill"
+        return "Deprecated — command file validation is no longer relevant"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
-
-        for plugin_path in context.plugins:
-            commands_dir = plugin_path / "commands"
-            skills_dir = plugin_path / "skills"
-
-            has_commands = commands_dir.exists() and list(commands_dir.glob("*.md"))
-            has_skills = (
-                skills_dir.exists()
-                and any((d / "SKILL.md").exists() for d in skills_dir.iterdir() if d.is_dir())
-                if skills_dir.exists()
-                else False
+        return [
+            self.violation(
+                "Rule 'commands-exist' is deprecated and will be removed in a future release",
+                severity=Severity.WARNING,
             )
-
-            if not commands_dir.exists() and not skills_dir.exists():
-                continue  # Handled by commands-dir-required
-
-            if not has_commands and not has_skills:
-                violations.append(
-                    self.violation(
-                        "No command or skill files found",
-                        file_path=plugin_path,
-                    )
-                )
-
-        return violations
+        ]
 
 
 class PluginReadmeRule(Rule):

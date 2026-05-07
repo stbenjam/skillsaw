@@ -229,107 +229,21 @@ def test_plugin_json_missing_name_is_error(temp_dir):
     assert len(warnings) == 2
 
 
-def test_commands_dir_required_passes_with_commands(valid_plugin):
-    """Test that plugin with commands/ directory passes"""
+def test_commands_dir_required_emits_deprecation_warning(valid_plugin):
+    """Test that commands-dir-required emits a deprecation warning"""
     context = RepositoryContext(valid_plugin)
     rule = CommandsDirRequiredRule()
     violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_commands_dir_required_passes_with_skills(temp_dir):
-    """Test that plugin with skills/ directory (no commands/) passes"""
-    import json
-
-    plugin_dir = temp_dir / "skills-only-plugin"
-    plugin_dir.mkdir()
-
-    claude_dir = plugin_dir / ".claude-plugin"
-    claude_dir.mkdir()
-
-    with open(claude_dir / "plugin.json", "w") as f:
-        json.dump({"name": "skills-only-plugin"}, f)
-
-    skills_dir = plugin_dir / "skills"
-    skills_dir.mkdir()
-    skill_dir = skills_dir / "my-skill"
-    skill_dir.mkdir()
-    with open(skill_dir / "SKILL.md", "w") as f:
-        f.write("---\ndescription: Test skill\n---\n# Test\n")
-
-    context = RepositoryContext(plugin_dir)
-    rule = CommandsDirRequiredRule()
-    violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_commands_dir_required_fails_without_commands_or_skills(temp_dir):
-    """Test that plugin without commands/ or skills/ fails"""
-    import json
-
-    plugin_dir = temp_dir / "empty-plugin"
-    plugin_dir.mkdir()
-
-    claude_dir = plugin_dir / ".claude-plugin"
-    claude_dir.mkdir()
-
-    with open(claude_dir / "plugin.json", "w") as f:
-        json.dump({"name": "empty-plugin"}, f)
-
-    # Need agents/ so plugin is discovered (context needs a component dir)
-    (plugin_dir / "agents").mkdir()
-
-    context = RepositoryContext(plugin_dir)
-    rule = CommandsDirRequiredRule()
-    violations = rule.check(context)
     assert len(violations) == 1
-    assert "commands or skills" in violations[0].message
+    assert "deprecated" in violations[0].message
+    assert violations[0].severity == Severity.WARNING
 
 
-def test_commands_exist_passes_with_skills_only(temp_dir):
-    """Test that plugin with skills but no commands passes commands-exist"""
-    import json
-
-    plugin_dir = temp_dir / "skills-only-plugin"
-    plugin_dir.mkdir()
-
-    claude_dir = plugin_dir / ".claude-plugin"
-    claude_dir.mkdir()
-
-    with open(claude_dir / "plugin.json", "w") as f:
-        json.dump({"name": "skills-only-plugin"}, f)
-
-    skills_dir = plugin_dir / "skills"
-    skills_dir.mkdir()
-    skill_dir = skills_dir / "my-skill"
-    skill_dir.mkdir()
-    with open(skill_dir / "SKILL.md", "w") as f:
-        f.write("---\ndescription: Test skill\n---\n# Test\n")
-
-    context = RepositoryContext(plugin_dir)
-    rule = CommandsExistRule()
-    violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_commands_exist_fails_with_empty_dirs(temp_dir):
-    """Test that plugin with empty commands/ and skills/ dirs fails"""
-    import json
-
-    plugin_dir = temp_dir / "empty-dirs-plugin"
-    plugin_dir.mkdir()
-
-    claude_dir = plugin_dir / ".claude-plugin"
-    claude_dir.mkdir()
-
-    with open(claude_dir / "plugin.json", "w") as f:
-        json.dump({"name": "empty-dirs-plugin"}, f)
-
-    (plugin_dir / "commands").mkdir()
-    (plugin_dir / "skills").mkdir()
-
-    context = RepositoryContext(plugin_dir)
+def test_commands_exist_emits_deprecation_warning(valid_plugin):
+    """Test that commands-exist emits a deprecation warning"""
+    context = RepositoryContext(valid_plugin)
     rule = CommandsExistRule()
     violations = rule.check(context)
     assert len(violations) == 1
-    assert "No command or skill files found" in violations[0].message
+    assert "deprecated" in violations[0].message
+    assert violations[0].severity == Severity.WARNING
