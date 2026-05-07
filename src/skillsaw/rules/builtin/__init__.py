@@ -38,6 +38,10 @@ from .mcp import (
     McpProhibitedRule,
 )
 
+from .rules_dir import (
+    RulesValidRule,
+)
+
 from .agentskills import (
     AgentSkillValidRule,
     AgentSkillNameRule,
@@ -71,6 +75,8 @@ BUILTIN_RULES = [
     # MCP
     McpValidJsonRule,
     McpProhibitedRule,
+    # Rules directory
+    RulesValidRule,
     # Agentskills
     AgentSkillValidRule,
     AgentSkillNameRule,
@@ -99,6 +105,7 @@ __all__ = [
     "HooksJsonValidRule",
     "McpValidJsonRule",
     "McpProhibitedRule",
+    "RulesValidRule",
     "AgentSkillValidRule",
     "AgentSkillNameRule",
     "AgentSkillDescriptionRule",

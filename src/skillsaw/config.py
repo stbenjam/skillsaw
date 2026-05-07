@@ -79,6 +79,8 @@ class LinterConfig:
                 # MCP rules
                 "mcp-valid-json": {"enabled": True, "severity": "error"},
                 "mcp-prohibited": {"enabled": False, "severity": "error"},
+                # Rules directory
+                "rules-valid": {"enabled": "auto", "severity": "error"},
                 # Agentskills rules (auto-enabled for agentskills repos)
                 "agentskill-valid": {"enabled": "auto", "severity": "error"},
                 "agentskill-name": {"enabled": "auto", "severity": "error"},
