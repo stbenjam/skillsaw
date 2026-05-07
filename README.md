@@ -405,3 +405,5 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 
 - **Issues**: https://github.com/stbenjam/skillsaw/issues
 - **Discussions**: https://github.com/stbenjam/skillsaw/discussions
+
+Claude was here
