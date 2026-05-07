@@ -1,5 +1,5 @@
-# Example claudelint configuration
-# Copy this file to your repository root and customize as needed
+# Example skillsaw configuration
+# Copy this file to .skillsaw.yaml in your repository root and customize as needed
 
 rules:
   # Plugin structure rules
