@@ -18,7 +18,6 @@ DESCRIPTION_MAX_LENGTH = 1024
 COMPATIBILITY_MAX_LENGTH = 500
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
-KNOWN_DIRS = {"scripts", "references", "assets", "evals"}
 
 
 @lru_cache(maxsize=None)
@@ -308,25 +307,9 @@ class AgentSkillStructureRule(Rule):
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
-
-        for skill_path in context.skills:
-            try:
-                for item in skill_path.iterdir():
-                    if not item.is_dir() or item.name.startswith("."):
-                        continue
-                    if item.name not in KNOWN_DIRS:
-                        violations.append(
-                            self.violation(
-                                f"Unrecognized directory '{item.name}' "
-                                f"(expected: {', '.join(sorted(KNOWN_DIRS))})",
-                                file_path=item,
-                            )
-                        )
-            except OSError:
-                pass
-
-        return violations
+        # The agentskills.io spec allows arbitrary directories inside a skill,
+        # so this rule no longer flags unrecognized directory names.
+        return []
 
 
 class AgentSkillEvalsRequiredRule(Rule):
