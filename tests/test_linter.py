@@ -90,3 +90,45 @@ def test_linter_passes_rule_config(valid_plugin):
     pjv_rules = [r for r in linter.rules if r.rule_id == "plugin-json-valid"]
     assert len(pjv_rules) == 1
     assert pjv_rules[0].config.get("recommended-fields") == ["description"]
+
+
+def test_linter_warns_on_unknown_rule_id(valid_plugin):
+    """Test that unknown rule IDs in config produce warnings"""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["nonexistent-rule"] = {"enabled": True, "severity": "error"}
+
+    linter = ClaudeLinter(context, config)
+    violations = linter.run()
+
+    unknown_warnings = [
+        v for v in violations if v.rule_id == "invalid-config" and "nonexistent-rule" in v.message
+    ]
+    assert len(unknown_warnings) == 1
+    assert unknown_warnings[0].severity.value == "warning"
+
+
+def test_linter_warns_on_multiple_unknown_rule_ids(valid_plugin):
+    """Test that each unknown rule ID produces its own warning"""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["fake-rule-one"] = {"enabled": True}
+    config.rules["fake-rule-two"] = {"enabled": False}
+
+    linter = ClaudeLinter(context, config)
+    violations = linter.run()
+
+    unknown_warnings = [v for v in violations if v.rule_id == "invalid-config"]
+    assert len(unknown_warnings) == 2
+
+
+def test_linter_no_warning_for_known_rule_ids(valid_plugin):
+    """Test that valid rule IDs do not trigger unknown-rule warnings"""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+
+    linter = ClaudeLinter(context, config)
+    violations = linter.run()
+
+    unknown_warnings = [v for v in violations if v.rule_id == "invalid-config"]
+    assert len(unknown_warnings) == 0

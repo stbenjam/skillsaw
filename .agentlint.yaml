@@ -14,15 +14,7 @@ rules:
   plugin-naming:
     enabled: true
     severity: warning
-  
-  commands-dir-required:
-    enabled: false  # Optional - plugins can have just skills or hooks
-    severity: warning
-  
-  commands-exist:
-    enabled: false  # Optional - plugins can have just skills or hooks
-    severity: info
-  
+
   plugin-readme:
     enabled: true
     severity: warning

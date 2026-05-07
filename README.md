@@ -374,7 +374,7 @@ The following rules from `claudelint` have been removed in `skillsaw`:
 | `commands-dir-required` | Claude Code now treats `skills/` and `commands/` as the same mechanism; requiring a `commands/` directory is no longer meaningful |
 | `commands-exist` | Same as above — plugins don't need to have commands |
 
-If your `.skillsaw.yaml` references these rule IDs, they will be silently ignored.
+If your `.skillsaw.yaml` references these rule IDs, `skillsaw` will emit a warning about the unknown rule.
 
 ## Development
 
