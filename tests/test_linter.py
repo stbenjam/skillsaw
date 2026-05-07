@@ -132,3 +132,16 @@ def test_linter_no_warning_for_known_rule_ids(valid_plugin):
 
     unknown_warnings = [v for v in violations if v.rule_id == "invalid-config"]
     assert len(unknown_warnings) == 0
+
+
+def test_self_lint():
+    """Skillsaw's own .claude/ directory should pass linting with no errors"""
+    repo_root = Path(__file__).parent.parent
+    context = RepositoryContext(repo_root)
+    config = LinterConfig.default()
+    linter = ClaudeLinter(context, config)
+
+    violations = linter.run()
+    errors = [v for v in violations if v.severity.value == "error"]
+
+    assert len(errors) == 0, f"Self-lint found errors: {errors}"
