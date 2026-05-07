@@ -417,6 +417,12 @@ def test_evals_required_disabled_by_default(temp_dir):
     assert config.get_rule_config("agentskill-evals-required").get("enabled") is False
 
 
+def test_evals_required_default_severity_is_error():
+    rule = AgentSkillEvalsRequiredRule()
+    assert rule.default_severity() == Severity.ERROR
+    assert rule.severity == Severity.ERROR
+
+
 def test_evals_required_fails_when_missing(temp_dir):
     skill = temp_dir / "no-evals"
     skill.mkdir()
@@ -442,6 +448,12 @@ def test_evals_required_passes_when_present(temp_dir):
 
 
 # --- agentskill-evals ---
+
+
+def test_evals_default_severity_is_error():
+    rule = AgentSkillEvalsRule()
+    assert rule.default_severity() == Severity.ERROR
+    assert rule.severity == Severity.ERROR
 
 
 def test_evals_valid_passes(temp_dir):

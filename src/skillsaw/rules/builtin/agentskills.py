@@ -358,7 +358,7 @@ class AgentSkillEvalsRequiredRule(Rule):
         return "Require evals/evals.json for each skill (opt-in)"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -395,7 +395,7 @@ class AgentSkillEvalsRule(Rule):
         return "Validate evals/evals.json format when present"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
