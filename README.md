@@ -152,51 +152,19 @@ Plugins from `plugins/`, custom paths, and remote sources can coexist in one mar
 
 ## Configuration
 
-Create `.skillsaw.yaml` in your repository root:
-
-```yaml
-rules:
-  # agentskills rules (auto-enabled when skills are detected)
-  agentskill-valid:
-    enabled: auto
-    severity: error
-
-  agentskill-name:
-    enabled: auto
-    severity: error
-
-  # Plugin structure rules
-  plugin-json-required:
-    enabled: true
-    severity: error
-
-  # 'auto' enables only for relevant repo types
-  marketplace-registration:
-    enabled: auto
-    severity: error
-
-# Load custom rules
-custom-rules:
-  - ./my-custom-rules.py
-
-# Exclude patterns
-exclude:
-  - "**/node_modules/**"
-  - "**/.git/**"
-
-# Treat warnings as errors
-strict: false
-```
-
-### Generating Default Config
+Generate a default `.skillsaw.yaml` in your repository root:
 
 ```bash
 skillsaw --init
 ```
 
-This creates `.skillsaw.yaml` with all builtin rules and their defaults.
+This creates a config file with all builtin rules, their defaults, and
+descriptions. Edit it to enable, disable, or customize rules for your project.
+See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
 
 ## Builtin Rules
+
+<!-- BEGIN GENERATED RULES -->
 
 ### agentskills.io
 
@@ -209,64 +177,73 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) |
-| `agentskill-evals-required` | Require evals/evals.json for each skill | warning (disabled) |
+| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) |
 
-> **Note:** The `agentskill-structure` rule is disabled by default because the
-> [agentskills.io spec](https://agentskills.io/specification) allows arbitrary
-> directories inside a skill. Enable it and configure `allowed_dirs` if you want
-> stricter validation:
->
-> ```yaml
-> rules:
->   agentskill-structure:
->     enabled: true
->     allowed_dirs:
->       - scripts
->       - references
->       - assets
->       - evals
->       - tests        # add your own
-> ```
+**`agentskill-structure` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
 
 ### Plugin Structure
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `plugin-json-required` | Plugin must have `.claude-plugin/plugin.json` | error |
-| `plugin-json-valid` | Plugin.json must be valid with required fields | error |
-| `plugin-naming` | Plugin names should use kebab-case | warning |
-| `plugin-readme` | Plugin should have a README.md file | warning |
+| `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) |
+| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) |
+| `plugin-naming` | Plugin names should use kebab-case | warning (auto) |
+| `plugin-readme` | Plugin should have a README.md file | warning (auto) |
+
+**`plugin-json-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `recommended-fields` | Fields that trigger a warning if missing from plugin.json | `["description", "version", "author"]` |
 
 ### Command Format
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `command-naming` | Command files should use kebab-case | warning |
-| `command-frontmatter` | Command files must have valid frontmatter | error |
-| `command-sections` | Commands should have Name, Synopsis, Description, Implementation sections | warning |
-| `command-name-format` | Command Name section should be `plugin:command` format | warning |
+| `command-naming` | Command files should use kebab-case naming | warning |
+| `command-frontmatter` | Command files must have valid frontmatter with description | error |
+| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning |
+| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning |
 
 ### Marketplace
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `marketplace-json-valid` | Marketplace.json must be valid JSON | error (auto) |
+| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) |
 | `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) |
 
 ### Skills, Agents, Hooks
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter | warning |
-| `agent-frontmatter` | Agent files must have valid frontmatter | error |
-| `hooks-json-valid` | hooks.json must be valid with proper structure | error |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error |
+| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error |
 
 ### MCP (Model Context Protocol)
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `mcp-valid-json` | MCP configuration must be valid JSON | error |
-| `mcp-prohibited` | Plugins should not enable MCP servers | error (disabled) |
+| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error |
+| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) |
+
+**`mcp-prohibited` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowlist` | MCP server names that are permitted | `[]` |
+
+### Rules Directory
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) |
+
+<!-- END GENERATED RULES -->
 
 ## Custom Rules
 

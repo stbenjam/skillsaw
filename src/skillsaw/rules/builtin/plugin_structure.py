@@ -54,6 +54,13 @@ class PluginJsonValidRule(Rule):
     repo_types = PLUGIN_REPO_TYPES
 
     DEFAULT_RECOMMENDED_FIELDS = ["description", "version", "author"]
+    config_schema = {
+        "recommended-fields": {
+            "type": "list",
+            "default": DEFAULT_RECOMMENDED_FIELDS,
+            "description": "Fields that trigger a warning if missing from plugin.json",
+        },
+    }
 
     @property
     def rule_id(self) -> str:

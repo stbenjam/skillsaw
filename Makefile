@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example
+.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs
 
 help:
 	@echo "Available targets:"
@@ -13,7 +13,8 @@ help:
 	@echo "  test          - Run pytest tests"
 	@echo "  clean         - Remove Python cache files and virtualenv"
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
-	@echo "  update        - Regenerate all generated files (APM + example config)"
+	@echo "  generate-docs - Regenerate Builtin Rules section of README.md"
+	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
@@ -37,7 +38,10 @@ generate-example: $(VENV)/bin/activate
 	$(VENV)/bin/skillsaw --init
 	mv .skillsaw.yaml .skillsaw.yaml.example
 
-update: apm generate-example
+generate-docs: $(VENV)/bin/activate
+	$(PYTHON) scripts/generate-docs.py
+
+update: apm generate-example generate-docs
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
