@@ -356,16 +356,30 @@ def test_structure_known_dirs_pass(temp_dir):
     assert len(violations) == 0
 
 
-def test_structure_allows_arbitrary_dirs(temp_dir):
-    """The agentskills.io spec allows arbitrary directories inside a skill."""
+def test_structure_unknown_dir_warns(temp_dir):
     skill = temp_dir / "messy"
     skill.mkdir()
     (skill / "SKILL.md").write_text("---\nname: messy\ndescription: Messy skill\n---\n")
     (skill / "random-stuff").mkdir()
-    (skill / "tests").mkdir()
 
     context = RepositoryContext(skill)
     violations = AgentSkillStructureRule().check(context)
+    assert len(violations) == 1
+    assert "random-stuff" in violations[0].message
+
+
+def test_structure_custom_allowed_dirs(temp_dir):
+    skill = temp_dir / "custom"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: custom\ndescription: Custom skill\n---\n")
+    (skill / "tests").mkdir()
+    (skill / "vendor").mkdir()
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillStructureRule(
+        config={"allowed_dirs": ["scripts", "references", "assets", "evals", "tests", "vendor"]}
+    )
+    violations = rule.check(context)
     assert len(violations) == 0
 
 
