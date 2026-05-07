@@ -22,7 +22,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
-            --allowedTools Edit,Write,Read,Bash
+            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch
             --max-turns 50
             --model claude-opus-4-6
 
