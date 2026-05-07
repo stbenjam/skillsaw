@@ -146,7 +146,7 @@ cython_debug/
 # Project specific
 examples/test-repos/
 .work/
-.claude/
 uv.lock
 apm_modules/
 apm.lock.yaml
+*.local.json
