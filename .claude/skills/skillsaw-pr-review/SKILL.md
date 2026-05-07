@@ -28,11 +28,27 @@ Check out the PR branch and critically review the changes:
    - Run formatting: `black src/ tests/`
    - Push the fix
 
-2. **Check for review comments** — run `gh pr view <number> --comments`
-   - If there is reviewer feedback, address it
-   - Make the requested changes on the PR branch
-   - Run tests and formatting
-   - Push the changes
+2. **Respond to review comments**
+
+   Fetch all review comments: `gh api repos/{owner}/{repo}/pulls/{number}/comments`
+   and PR-level comments: `gh pr view <number> --comments`
+
+   For each comment, respond appropriately:
+
+   - **Inline review comments** (comments left on specific lines):
+     - If you agree and can fix it: make the fix, push, then reply to the comment
+       with what you changed and resolve the thread:
+       `gh api repos/{owner}/{repo}/pulls/comments/{comment_id}/replies -f body="Fixed: ..."`
+     - If you disagree: reply explaining why and leave the thread open for discussion.
+       Do NOT resolve threads you disagree with.
+
+   - **PR-level comments** (comments on the main conversation thread):
+     - Reply directly on the PR thread: `gh pr comment <number> --body "..."`
+
+   After addressing all feedback:
+   - Run the full test suite: `pytest tests/ -v`
+   - Run formatting: `black src/ tests/`
+   - Push changes if any were made
 
 3. **Validate backward compatibility**
    - Test against ai-helpers: clone `openshift-eng/ai-helpers`, run `skillsaw` against it, ensure exit 0
