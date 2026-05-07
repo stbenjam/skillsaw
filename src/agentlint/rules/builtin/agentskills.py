@@ -4,7 +4,8 @@ Rules for validating agentskills.io skill format
 
 import json
 import re
-from typing import List
+from functools import lru_cache
+from typing import List, Optional, Tuple, Dict
 
 import yaml
 
@@ -19,12 +20,13 @@ CONSECUTIVE_HYPHENS = re.compile(r"--")
 KNOWN_DIRS = {"scripts", "references", "assets", "evals"}
 
 
-def _parse_skill_md(skill_path):
+@lru_cache(maxsize=None)
+def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     """
     Parse SKILL.md frontmatter from a skill directory.
 
     Returns (frontmatter_dict, error_string). If error_string is set,
-    frontmatter_dict is None.
+    frontmatter_dict is None. Results are cached per path.
     """
     skill_md = skill_path / "SKILL.md"
     if not skill_md.exists():
@@ -38,7 +40,7 @@ def _parse_skill_md(skill_path):
     if not content.startswith("---"):
         return None, "Missing YAML frontmatter (must start with ---)"
 
-    match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", content, re.DOTALL)
     if not match:
         return None, "Invalid frontmatter (missing closing ---)"
 
@@ -101,13 +103,6 @@ class AgentSkillValidRule(Rule):
             elif not isinstance(desc, str):
                 violations.append(
                     self.violation("'description' must be a string", file_path=skill_md)
-                )
-            elif len(desc) > DESCRIPTION_MAX_LENGTH:
-                violations.append(
-                    self.violation(
-                        f"'description' exceeds {DESCRIPTION_MAX_LENGTH} characters ({len(desc)})",
-                        file_path=skill_md,
-                    )
                 )
 
         return violations
@@ -324,8 +319,8 @@ class AgentSkillEvalsRule(Rule):
                 continue
 
             try:
-                data = json.loads(evals_json.read_text())
-            except json.JSONDecodeError as e:
+                data = json.loads(evals_json.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 violations.append(
                     self.violation(f"Invalid JSON in evals.json: {e}", file_path=evals_json)
                 )
@@ -347,6 +342,16 @@ class AgentSkillEvalsRule(Rule):
                 violations.append(
                     self.violation("'skill_name' must be a string", file_path=evals_json)
                 )
+            elif isinstance(skill_name, str):
+                frontmatter, _ = _parse_skill_md(skill_path)
+                if frontmatter and frontmatter.get("name") != skill_name:
+                    violations.append(
+                        self.violation(
+                            f"'skill_name' ({skill_name!r}) does not match "
+                            f"SKILL.md name ({frontmatter.get('name')!r})",
+                            file_path=evals_json,
+                        )
+                    )
 
             evals = data.get("evals")
             if evals is None:
@@ -359,6 +364,7 @@ class AgentSkillEvalsRule(Rule):
                 violations.append(self.violation("'evals' must be an array", file_path=evals_json))
                 continue
 
+            seen_ids = set()
             for i, entry in enumerate(evals):
                 if not isinstance(entry, dict):
                     violations.append(
@@ -374,6 +380,15 @@ class AgentSkillEvalsRule(Rule):
                     violations.append(
                         self.violation(f"evals[{i}] 'id' must be a number", file_path=evals_json)
                     )
+                else:
+                    eval_id = entry["id"]
+                    if eval_id in seen_ids:
+                        violations.append(
+                            self.violation(
+                                f"evals[{i}] duplicate id {eval_id}", file_path=evals_json
+                            )
+                        )
+                    seen_ids.add(eval_id)
 
                 if "prompt" not in entry:
                     violations.append(

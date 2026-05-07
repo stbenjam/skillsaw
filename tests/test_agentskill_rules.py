@@ -201,14 +201,19 @@ def test_name_too_long_fails(temp_dir):
     assert any("exceeds" in v.message and "64" in v.message for v in violations)
 
 
-def test_description_too_long_fails(temp_dir):
+def test_description_too_long_checked_by_description_rule(temp_dir):
+    """Length check is in AgentSkillDescriptionRule, not AgentSkillValidRule"""
     skill = temp_dir / "longdesc"
     skill.mkdir()
     long_desc = "a" * 1025
     (skill / "SKILL.md").write_text(f"---\nname: longdesc\ndescription: {long_desc}\n---\n")
 
     context = RepositoryContext(skill)
+    # AgentSkillValidRule should NOT flag length
     violations = AgentSkillValidRule().check(context)
+    assert not any("exceeds" in v.message for v in violations)
+    # AgentSkillDescriptionRule should flag it
+    violations = AgentSkillDescriptionRule().check(context)
     assert any("exceeds" in v.message and "1024" in v.message for v in violations)
 
 
@@ -555,6 +560,59 @@ def test_evals_assertions_not_strings_warns(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillEvalsRule().check(context)
     assert any("strings" in v.message for v in violations)
+
+
+def test_evals_duplicate_ids_warns(temp_dir):
+    skill = temp_dir / "dup-ids"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: dup-ids\ndescription: Duplicate ids\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text(
+        json.dumps(
+            {
+                "evals": [
+                    {"id": 1, "prompt": "A"},
+                    {"id": 1, "prompt": "B"},
+                    {"id": 2, "prompt": "C"},
+                ]
+            }
+        )
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert any("duplicate" in v.message.lower() for v in violations)
+
+
+def test_evals_skill_name_mismatch_warns(temp_dir):
+    skill = temp_dir / "name-check"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: name-check\ndescription: Name check\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text(
+        json.dumps({"skill_name": "wrong-name", "evals": [{"id": 1, "prompt": "Test"}]})
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert any("does not match" in v.message for v in violations)
+
+
+def test_evals_skill_name_match_passes(temp_dir):
+    skill = temp_dir / "matching"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: matching\ndescription: Matching name\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text(
+        json.dumps({"skill_name": "matching", "evals": [{"id": 1, "prompt": "Test"}]})
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert len(violations) == 0
 
 
 def test_evals_bad_files_type_warns(temp_dir):
