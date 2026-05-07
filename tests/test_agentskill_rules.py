@@ -628,3 +628,106 @@ def test_evals_bad_files_type_warns(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillEvalsRule().check(context)
     assert any("files" in v.message and "array" in v.message for v in violations)
+
+
+# --- optional frontmatter fields ---
+
+
+def test_valid_optional_fields_pass(temp_dir):
+    skill = temp_dir / "full-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: full-skill\ndescription: A skill\nlicense: MIT\n"
+        'compatibility: Requires Python 3.8+\nallowed-tools: "Bash(git:*) Read"\n'
+        "metadata:\n  version: '1.0'\n  author: test\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert len(violations) == 0
+
+
+def test_license_wrong_type_fails(temp_dir):
+    skill = temp_dir / "bad-license"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bad-license\ndescription: A skill\nlicense: 123\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("license" in v.message and "string" in v.message for v in violations)
+
+
+def test_compatibility_wrong_type_fails(temp_dir):
+    skill = temp_dir / "bad-compat"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bad-compat\ndescription: A skill\ncompatibility: 123\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("compatibility" in v.message and "string" in v.message for v in violations)
+
+
+def test_compatibility_empty_fails(temp_dir):
+    skill = temp_dir / "empty-compat"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: empty-compat\ndescription: A skill\ncompatibility: '  '\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("compatibility" in v.message and "empty" in v.message for v in violations)
+
+
+def test_compatibility_over_limit_fails(temp_dir):
+    skill = temp_dir / "long-compat"
+    skill.mkdir()
+    long_compat = "x" * 501
+    (skill / "SKILL.md").write_text(
+        f"---\nname: long-compat\ndescription: A skill\ncompatibility: {long_compat}\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("compatibility" in v.message and "exceeds" in v.message for v in violations)
+
+
+def test_metadata_wrong_type_fails(temp_dir):
+    skill = temp_dir / "bad-meta"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bad-meta\ndescription: A skill\nmetadata: not-a-map\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("metadata" in v.message and "mapping" in v.message for v in violations)
+
+
+def test_metadata_non_string_value_warns(temp_dir):
+    skill = temp_dir / "bad-meta-val"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bad-meta-val\ndescription: A skill\nmetadata:\n  count: 42\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("metadata.count" in v.message and "string" in v.message for v in violations)
+    assert violations[-1].severity == Severity.WARNING
+
+
+def test_allowed_tools_wrong_type_fails(temp_dir):
+    skill = temp_dir / "bad-tools"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bad-tools\ndescription: A skill\nallowed-tools:\n  - Bash\n  - Read\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("allowed-tools" in v.message and "string" in v.message for v in violations)
