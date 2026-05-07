@@ -39,7 +39,7 @@ jobs:
 
           # Open PRs from collaborators and claude bot
           PRS=$(gh pr list --state open --json number,title,author \
-            --jq --argjson collabs "$COLLABS" \
+            | jq --argjson collabs "$COLLABS" \
             '[.[] | select(.author.login as $u | ($collabs | index($u)) or ($u == "app/claude"))]')
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
@@ -52,13 +52,13 @@ jobs:
 
           # New PR review comments from collaborators since last run
           gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
-            --jq --argjson collabs "$COLLABS" \
+            | jq --argjson collabs "$COLLABS" \
             '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, pull_request_url, user: .user.login, body, path, line, created_at}]' \
             > /tmp/new-review-comments.json
 
           # New PR-level comments from collaborators since last run
           gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            --jq --argjson collabs "$COLLABS" \
+            | jq --argjson collabs "$COLLABS" \
             '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-pr-comments.json
 

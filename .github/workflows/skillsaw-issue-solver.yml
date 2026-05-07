@@ -52,7 +52,7 @@ jobs:
               echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
             else
               COMMENTS=$(gh api "repos/${{ github.repository }}/issues/$NUM/comments" \
-                --jq --arg lt "$LABEL_TIME" --argjson collabs "$COLLABS" \
+                | jq --arg lt "$LABEL_TIME" --argjson collabs "$COLLABS" \
                 '[.[] | select(
                   (.user.login as $u | $collabs | index($u))
                   or (.created_at <= $lt)
