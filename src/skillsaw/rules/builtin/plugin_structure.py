@@ -172,7 +172,7 @@ class PluginNamingRule(Rule):
 
 
 class CommandsDirRequiredRule(Rule):
-    """Deprecated: commands/ directory check is no longer relevant"""
+    """Deprecated: Claude Code now treats skills/ and commands/ as equivalent"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -182,7 +182,7 @@ class CommandsDirRequiredRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Deprecated — commands/ is no longer required by the plugin spec"
+        return "Deprecated — Claude Code merged skills and commands into a single mechanism"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -190,14 +190,16 @@ class CommandsDirRequiredRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         return [
             self.violation(
-                "Rule 'commands-dir-required' is deprecated and will be removed in a future release",
+                "Rule 'commands-dir-required' is deprecated: Claude Code now treats "
+                "skills/ and commands/ as the same mechanism. Use skills/ for new "
+                "workflows. This rule will be removed in a future release.",
                 severity=Severity.WARNING,
             )
         ]
 
 
 class CommandsExistRule(Rule):
-    """Deprecated: command file check is no longer relevant"""
+    """Deprecated: Claude Code now treats skills/ and commands/ as equivalent"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -207,7 +209,7 @@ class CommandsExistRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Deprecated — command file validation is no longer relevant"
+        return "Deprecated — Claude Code merged skills and commands into a single mechanism"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -215,7 +217,9 @@ class CommandsExistRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         return [
             self.violation(
-                "Rule 'commands-exist' is deprecated and will be removed in a future release",
+                "Rule 'commands-exist' is deprecated: Claude Code now treats skills/ "
+                "and commands/ as the same mechanism. Use skills/ for new workflows. "
+                "This rule will be removed in a future release.",
                 severity=Severity.WARNING,
             )
         ]
