@@ -160,6 +160,7 @@ skillsaw --init
 
 This creates a config file with all builtin rules, their defaults, and
 descriptions. Edit it to enable, disable, or customize rules for your project.
+See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
 
 ## Builtin Rules
 
