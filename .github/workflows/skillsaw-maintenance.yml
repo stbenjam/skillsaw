@@ -15,83 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Restore last run timestamp
-        uses: actions/cache/restore@v4
-        with:
-          path: .last-maintenance-run
-          key: maintenance-last-run
-
-      - name: Get new activity
-        id: activity
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ -f .last-maintenance-run ]; then
-            SINCE=$(cat .last-maintenance-run)
-          else
-            SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
-          fi
-          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
-
-          # Get list of collaborators (trusted users only)
-          COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
-          echo "Collaborators: $COLLABS"
-
-          # Open issues — only from collaborators
-          gh issue list --state open --json number,title,body,author --jq \
-            --argjson collabs "$COLLABS" \
-            '[.[] | select(.author.login as $u | $collabs | index($u))]' \
-            > /tmp/open-issues.json
-
-          # New issue comments since last run — only from collaborators
-          gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            --jq --argjson collabs "$COLLABS" \
-            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
-            > /tmp/new-comments.json
-
-          echo "Open issues from collaborators:"
-          cat /tmp/open-issues.json | jq length
-          echo "New comments from collaborators since $SINCE:"
-          cat /tmp/new-comments.json | jq length
-
       - uses: anthropics/claude-code-action@v1
         with:
           prompt: |
             Use the skillsaw-maintenance skill. Follow every step in the skill.
-
-            ## Open issues to address
-
-            Create a separate [Auto] PR for each open issue. If an issue is already
-            addressed by an open PR, skip it.
-
-            <open-issues>
-            $(cat /tmp/open-issues.json)
-            </open-issues>
-
-            ## New issue comments since ${{ steps.activity.outputs.since }}
-
-            Review these for additional context on open issues.
-
-            <new-comments>
-            $(cat /tmp/new-comments.json)
-            </new-comments>
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 200
             --model claude-opus-4-6
-
-      - name: Save last run timestamp
-        if: always()
-        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-maintenance-run
-
-      - name: Cache last run timestamp
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .last-maintenance-run
-          key: maintenance-last-run-${{ github.run_id }}
 
       - name: Upload execution log
         if: always()

@@ -1,0 +1,109 @@
+name: Skillsaw Issue Solver
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  issue-solver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore last run timestamp
+        uses: actions/cache/restore@v4
+        with:
+          path: .last-issue-solver-run
+          key: issue-solver-last-run
+
+      - name: Get open issues from collaborators
+        id: activity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f .last-issue-solver-run ]; then
+            SINCE=$(cat .last-issue-solver-run)
+          else
+            SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+          fi
+          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+
+          # Get list of collaborators (trusted users only)
+          COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
+          echo "Collaborators: $COLLABS"
+
+          # Open issues labeled "issue-for-agent" (label = collaborator sign-off)
+          gh issue list --state open --label issue-for-agent \
+            --json number,title,body,author --jq '.' \
+            > /tmp/open-issues.json
+
+          # New issue comments since last run — only from collaborators
+          gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
+            --jq --argjson collabs "$COLLABS" \
+            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
+            > /tmp/new-comments.json
+
+          ISSUE_COUNT=$(cat /tmp/open-issues.json | jq length)
+          echo "Open issues from collaborators: $ISSUE_COUNT"
+          echo "New comments from collaborators since $SINCE:"
+          cat /tmp/new-comments.json | jq length
+
+          if [ "$ISSUE_COUNT" = "0" ]; then
+            echo "has_issues=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_issues=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.activity.outputs.has_issues == 'true'
+        with:
+          prompt: |
+            Use the skillsaw-issue-solver skill. Follow every step in the skill.
+
+            ## Open issues to solve
+
+            Create a separate [Auto] PR for each open issue. If an issue is already
+            addressed by an open PR, skip it.
+
+            <open-issues>
+            $(cat /tmp/open-issues.json)
+            </open-issues>
+
+            ## New issue comments since ${{ steps.activity.outputs.since }}
+
+            Review these for additional context on open issues.
+
+            <new-comments>
+            $(cat /tmp/new-comments.json)
+            </new-comments>
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
+            --max-turns 200
+            --model claude-opus-4-6
+
+      - name: Save last run timestamp
+        if: always()
+        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-issue-solver-run
+
+      - name: Cache last run timestamp
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .last-issue-solver-run
+          key: issue-solver-last-run-${{ github.run_id }}
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 30
