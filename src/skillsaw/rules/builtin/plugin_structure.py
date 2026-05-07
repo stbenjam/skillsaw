@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
+
+PLUGIN_REPO_TYPES = {RepositoryType.SINGLE_PLUGIN, RepositoryType.MARKETPLACE}
 
 
 class PluginJsonRequiredRule(Rule):
     """Check that plugin.json exists"""
+
+    repo_types = PLUGIN_REPO_TYPES
 
     @property
     def rule_id(self) -> str:
@@ -46,6 +50,8 @@ class PluginJsonRequiredRule(Rule):
 
 class PluginJsonValidRule(Rule):
     """Check that plugin.json is valid and has required fields"""
+
+    repo_types = PLUGIN_REPO_TYPES
 
     DEFAULT_RECOMMENDED_FIELDS = ["description", "version", "author"]
 
@@ -130,6 +136,8 @@ class PluginJsonValidRule(Rule):
 class PluginNamingRule(Rule):
     """Check that plugin follows naming conventions"""
 
+    repo_types = PLUGIN_REPO_TYPES
+
     @property
     def rule_id(self) -> str:
         return "plugin-naming"
@@ -166,6 +174,8 @@ class PluginNamingRule(Rule):
 class CommandsDirRequiredRule(Rule):
     """Check that commands directory exists"""
 
+    repo_types = PLUGIN_REPO_TYPES
+
     @property
     def rule_id(self) -> str:
         return "commands-dir-required"
@@ -192,6 +202,8 @@ class CommandsDirRequiredRule(Rule):
 
 class CommandsExistRule(Rule):
     """Check that at least one command file exists"""
+
+    repo_types = PLUGIN_REPO_TYPES
 
     @property
     def rule_id(self) -> str:
@@ -227,6 +239,8 @@ class CommandsExistRule(Rule):
 
 class PluginReadmeRule(Rule):
     """Check that plugin has a README.md"""
+
+    repo_types = PLUGIN_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

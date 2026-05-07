@@ -19,6 +19,7 @@ class RepositoryType(Enum):
     SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
+    DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -59,6 +60,10 @@ class RepositoryContext:
         if (self.root_path / "plugins").exists():
             return RepositoryType.MARKETPLACE
 
+        # Check for .claude/ directory (before agentskills, since .claude/ with skills is DOT_CLAUDE)
+        if self._is_dot_claude():
+            return RepositoryType.DOT_CLAUDE
+
         # Check for agentskills.io skill repo
         if self._is_agentskills_repo():
             return RepositoryType.AGENTSKILLS
@@ -78,6 +83,16 @@ class RepositoryContext:
 
         # Recurse into non-dot subdirectories looking for SKILL.md
         return self._has_skill_md_recursive(self.root_path)
+
+    def _is_dot_claude(self) -> bool:
+        """Check if this is a .claude/ directory or a repo containing one"""
+        claude_dir = self.root_path
+        if self.root_path.name != ".claude":
+            claude_dir = self.root_path / ".claude"
+        if not claude_dir.is_dir():
+            return False
+        markers = ("commands", "skills", "hooks", "agents", "rules")
+        return any((claude_dir / m).is_dir() for m in markers)
 
     def _has_skill_md_recursive(self, path: Path) -> bool:
         """Check if any subdirectory contains SKILL.md, recursively"""
@@ -219,6 +234,13 @@ class RepositoryContext:
         if self.repo_type == RepositoryType.SINGLE_PLUGIN:
             plugins.append(self.root_path)
             discovered_paths.add(self.root_path.resolve())
+
+        elif self.repo_type == RepositoryType.DOT_CLAUDE:
+            claude_dir = (
+                self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
+            )
+            plugins.append(claude_dir)
+            discovered_paths.add(claude_dir.resolve())
 
         elif self.repo_type == RepositoryType.MARKETPLACE:
             # Discover from plugins/ directory (backward compatibility)

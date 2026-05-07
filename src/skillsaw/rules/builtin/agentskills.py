@@ -62,6 +62,7 @@ class AgentSkillValidRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property
@@ -121,6 +122,7 @@ class AgentSkillNameRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property
@@ -192,6 +194,7 @@ class AgentSkillDescriptionRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property
@@ -244,6 +247,7 @@ class AgentSkillStructureRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property
@@ -286,6 +290,7 @@ class AgentSkillEvalsRequiredRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property
@@ -322,6 +327,7 @@ class AgentSkillEvalsRule(Rule):
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     @property

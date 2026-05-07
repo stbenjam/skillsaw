@@ -47,7 +47,7 @@ def test_detect_skill_collection(temp_dir):
 
 
 def test_detect_standard_discovery_path(temp_dir):
-    """Skills in .claude/skills/ -> AGENTSKILLS"""
+    """Skills in .claude/skills/ -> DOT_CLAUDE (not AGENTSKILLS)"""
     repo = temp_dir / "project"
     repo.mkdir()
     skills_path = repo / ".claude" / "skills" / "my-skill"
@@ -55,7 +55,7 @@ def test_detect_standard_discovery_path(temp_dir):
     (skills_path / "SKILL.md").write_text("---\nname: my-skill\ndescription: A skill\n---\n")
 
     context = RepositoryContext(repo)
-    assert context.repo_type == RepositoryType.AGENTSKILLS
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
     assert len(context.skills) == 1
 
 

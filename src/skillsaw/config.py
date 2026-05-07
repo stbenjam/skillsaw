@@ -52,14 +52,14 @@ class LinterConfig:
         """Create default configuration with all builtin rules enabled"""
         return cls(
             rules={
-                # Plugin structure rules
-                "plugin-json-required": {"enabled": True, "severity": "error"},
+                # Plugin structure rules (auto-enabled for plugin/marketplace repos)
+                "plugin-json-required": {"enabled": "auto", "severity": "error"},
                 "plugin-json-valid": {
-                    "enabled": True,
+                    "enabled": "auto",
                     "severity": "error",
                     "recommended-fields": ["description", "version", "author"],
                 },
-                "plugin-naming": {"enabled": True, "severity": "warning"},
+                "plugin-naming": {"enabled": "auto", "severity": "warning"},
                 "commands-dir-required": {
                     "enabled": False,
                     "severity": "warning",
@@ -77,7 +77,7 @@ class LinterConfig:
                 "marketplace-json-valid": {"enabled": "auto", "severity": "error"},
                 "marketplace-registration": {"enabled": "auto", "severity": "error"},
                 # Documentation rules
-                "plugin-readme": {"enabled": True, "severity": "warning"},
+                "plugin-readme": {"enabled": "auto", "severity": "warning"},
                 # Skills rules
                 "skill-frontmatter": {"enabled": True, "severity": "warning"},
                 # Agents rules

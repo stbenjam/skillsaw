@@ -196,3 +196,50 @@ def test_disallow_parent_traversal(temp_dir, caplog):
 
     # Check that warning was logged
     assert any("escapes repository root" in record.message for record in caplog.records)
+
+
+def test_dot_claude_detection(temp_dir):
+    """Test detection of .claude/ directory with commands"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "commands").mkdir()
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+    assert len(context.plugins) == 1
+    assert context.plugins[0].resolve() == claude_dir.resolve()
+
+
+def test_dot_claude_direct(temp_dir):
+    """Test linting .claude/ directory directly"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "skills").mkdir()
+
+    context = RepositoryContext(claude_dir)
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+    assert len(context.plugins) == 1
+    assert context.plugins[0].resolve() == claude_dir.resolve()
+
+
+def test_dot_claude_skills_discovery(temp_dir):
+    """Test that skills inside .claude/skills/ are discovered"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    skill_dir = claude_dir / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: Test\n---\n")
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+    assert len(context.skills) == 1
+    assert context.skills[0].resolve() == skill_dir.resolve()
+
+
+def test_dot_claude_not_detected_empty(temp_dir):
+    """Empty .claude/ without marker dirs should not be DOT_CLAUDE"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.UNKNOWN

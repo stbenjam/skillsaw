@@ -15,7 +15,7 @@ def test_default_config():
     """Test default configuration"""
     config = LinterConfig.default()
     assert "plugin-json-required" in config.rules
-    assert config.rules["plugin-json-required"]["enabled"] is True
+    assert config.rules["plugin-json-required"]["enabled"] == "auto"
     assert config.rules["plugin-json-required"]["severity"] == "error"
 
 
@@ -94,12 +94,13 @@ def test_rule_enabled_auto(marketplace_repo):
 
 
 def test_auto_agentskills_fires_on_all_skill_repo_types(temp_dir):
-    """Test that auto with agentskills repo_types fires on AGENTSKILLS, PLUGIN, MARKETPLACE"""
+    """Test that auto with agentskills repo_types fires on relevant repo types"""
     config = LinterConfig.default()
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
     }
 
     # AGENTSKILLS repo
@@ -120,6 +121,16 @@ def test_auto_agentskills_fires_on_all_skill_repo_types(temp_dir):
     (claude_dir / "plugin.json").write_text(json.dumps({"name": "plugin-repo"}))
     ctx = RepositoryContext(plugin)
     assert ctx.repo_type == RepositoryType.SINGLE_PLUGIN
+    assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is True
+
+    # DOT_CLAUDE repo
+    dot_claude = temp_dir / "dot-claude-repo"
+    dot_claude.mkdir()
+    dc = dot_claude / ".claude"
+    dc.mkdir()
+    (dc / "commands").mkdir()
+    ctx = RepositoryContext(dot_claude)
+    assert ctx.repo_type == RepositoryType.DOT_CLAUDE
     assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is True
 
     # UNKNOWN repo
