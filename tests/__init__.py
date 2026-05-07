@@ -1,3 +1,3 @@
 """
-Test suite for agentlint
+Test suite for skillsaw
 """

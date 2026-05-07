@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 
-from agentlint.linter import ClaudeLinter
-from agentlint.context import RepositoryContext
-from agentlint.config import LinterConfig
+from skillsaw.linter import ClaudeLinter
+from skillsaw.context import RepositoryContext
+from skillsaw.config import LinterConfig
 
 
 def test_linter_passes_valid_plugin(valid_plugin):
@@ -77,7 +77,7 @@ def test_linter_respects_disabled_rules(valid_plugin):
 
 
 def test_linter_passes_rule_config(valid_plugin):
-    """Test that per-rule config from .agentlint.yaml reaches rule instances"""
+    """Test that per-rule config from .skillsaw.yaml reaches rule instances"""
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
 

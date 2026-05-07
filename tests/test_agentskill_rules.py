@@ -5,9 +5,9 @@ Tests for agentskills.io rules and detection
 import json
 from pathlib import Path
 
-from agentlint.context import RepositoryContext, RepositoryType
-from agentlint.rule import Severity
-from agentlint.rules.builtin.agentskills import (
+from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.rule import Severity
+from skillsaw.rules.builtin.agentskills import (
     AgentSkillValidRule,
     AgentSkillNameRule,
     AgentSkillDescriptionRule,
@@ -396,7 +396,7 @@ def test_structure_ignores_files(temp_dir):
 
 def test_evals_required_disabled_by_default(temp_dir):
     """Rule should be disabled by default (tested via config, not rule directly)"""
-    from agentlint.config import LinterConfig
+    from skillsaw.config import LinterConfig
 
     config = LinterConfig.default()
     assert config.get_rule_config("agentskill-evals-required").get("enabled") is False

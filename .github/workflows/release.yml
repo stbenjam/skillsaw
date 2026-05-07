@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agentlint
+      url: https://pypi.org/p/skillsaw
     permissions:
       id-token: write
 

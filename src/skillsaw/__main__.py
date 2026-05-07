@@ -1,10 +1,9 @@
 """
-Entry point for agentlint (and claudelint backward-compat shim)
+Entry point for skillsaw (and agentlint/claudelint backward-compat shims)
 """
 
 import argparse
 import sys
-import warnings
 from pathlib import Path
 from importlib.metadata import version, PackageNotFoundError
 
@@ -16,29 +15,29 @@ from . import __version__
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Lint agent skills, Claude Code plugins, and marketplaces",
+        description="Lint agent skills, plugins, and AI coding assistant context",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Lint current directory
-  agentlint
+  skillsaw
 
   # Lint specific directory
-  agentlint /path/to/skills
+  skillsaw /path/to/skills
 
   # Use custom config
-  agentlint --config .agentlint.yaml
+  skillsaw --config .skillsaw.yaml
 
   # Verbose output
-  agentlint -v
+  skillsaw -v
 
   # Strict mode (warnings as errors)
-  agentlint --strict
+  skillsaw --strict
 
   # Generate default config
-  agentlint --init
+  skillsaw --init
 
-For more information, visit: https://github.com/stbenjam/agentlint
+For more information, visit: https://github.com/stbenjam/skillsaw
         """,
     )
 
@@ -54,7 +53,7 @@ For more information, visit: https://github.com/stbenjam/agentlint
         "-c",
         "--config",
         type=Path,
-        help="Path to .agentlint.yaml config file (default: auto-discover)",
+        help="Path to .skillsaw.yaml config file (default: auto-discover)",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Show info-level messages")
@@ -66,7 +65,7 @@ For more information, visit: https://github.com/stbenjam/agentlint
     )
 
     parser.add_argument(
-        "--init", action="store_true", help="Generate a default .agentlint.yaml config file"
+        "--init", action="store_true", help="Generate a default .skillsaw.yaml config file"
     )
 
     parser.add_argument(
@@ -75,7 +74,7 @@ For more information, visit: https://github.com/stbenjam/agentlint
 
     # Get version from package metadata, fall back to __version__
     try:
-        cli_version = version("agentlint")
+        cli_version = version("skillsaw")
     except PackageNotFoundError:
         cli_version = __version__
 
@@ -85,7 +84,7 @@ For more information, visit: https://github.com/stbenjam/agentlint
 
     # Handle --init
     if args.init:
-        config_path = args.path / ".agentlint.yaml"
+        config_path = args.path / ".skillsaw.yaml"
         if config_path.exists():
             print(f"Config file already exists: {config_path}")
             sys.exit(1)
@@ -97,7 +96,7 @@ For more information, visit: https://github.com/stbenjam/agentlint
 
     # Handle --list-rules
     if args.list_rules:
-        from agentlint.rules.builtin import BUILTIN_RULES
+        from skillsaw.rules.builtin import BUILTIN_RULES
 
         print("Available builtin rules:\n")
         for rule_class in BUILTIN_RULES:
@@ -169,10 +168,20 @@ For more information, visit: https://github.com/stbenjam/agentlint
         sys.exit(0)
 
 
+def agentlint_shim():
+    """Backward-compat entry point for the 'agentlint' command"""
+    print(
+        "WARNING: 'agentlint' has been renamed to 'skillsaw'. "
+        "Please update your scripts. The 'agentlint' command will be removed in a future release.",
+        file=sys.stderr,
+    )
+    main()
+
+
 def claudelint_shim():
     """Backward-compat entry point for the 'claudelint' command"""
     print(
-        "WARNING: 'claudelint' has been renamed to 'agentlint'. "
+        "WARNING: 'claudelint' has been renamed to 'skillsaw'. "
         "Please update your scripts. The 'claudelint' command will be removed in a future release.",
         file=sys.stderr,
     )

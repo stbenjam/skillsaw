@@ -9,8 +9,8 @@ from typing import List, Optional, Tuple, Dict
 
 import yaml
 
-from agentlint.rule import Rule, RuleViolation, Severity
-from agentlint.context import RepositoryContext, RepositoryType
+from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext, RepositoryType
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64

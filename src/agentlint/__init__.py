@@ -1,11 +1,11 @@
 """
-agentlint - A configurable linter for agent skills, Claude Code plugins, and marketplaces
+agentlint - backward compatibility shim for skillsaw
+
+This package has been renamed to 'skillsaw'. All imports are re-exported
+from the new package name. Please update your imports to use 'skillsaw'.
 """
 
-__version__ = "0.3.6"
-
-from .rule import Rule, RuleViolation, Severity
-from .context import RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext, __version__
 
 __all__ = [
     "__version__",

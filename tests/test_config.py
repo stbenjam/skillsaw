@@ -7,8 +7,8 @@ from pathlib import Path
 import yaml
 
 
-from agentlint.config import LinterConfig, find_config
-from agentlint.context import RepositoryContext, RepositoryType
+from skillsaw.config import LinterConfig, find_config
+from skillsaw.context import RepositoryContext, RepositoryType
 
 
 def test_default_config():
@@ -60,7 +60,17 @@ def test_find_config_legacy_claudelint(temp_dir):
     assert found.resolve() == config_file.resolve()
 
 
-def test_find_config_prefers_agentlint(temp_dir):
+def test_find_config_prefers_skillsaw(temp_dir):
+    """.skillsaw.yaml takes priority over .agentlint.yaml and .claudelint.yaml"""
+    (temp_dir / ".skillsaw.yaml").touch()
+    (temp_dir / ".agentlint.yaml").touch()
+    (temp_dir / ".claudelint.yaml").touch()
+
+    found = find_config(temp_dir)
+    assert found.name == ".skillsaw.yaml"
+
+
+def test_find_config_prefers_agentlint_over_claudelint(temp_dir):
     """.agentlint.yaml takes priority over .claudelint.yaml"""
     (temp_dir / ".agentlint.yaml").touch()
     (temp_dir / ".claudelint.yaml").touch()

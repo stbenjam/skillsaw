@@ -29,7 +29,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=src/agentlint --cov-report=xml --cov-report=term
+          pytest tests/ -v --cov=src/skillsaw --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -81,16 +81,20 @@ jobs:
           pip install .
 
       - name: Test --version
-        run: agentlint --version
+        run: skillsaw --version
 
       - name: Test --list-rules
-        run: agentlint --list-rules
+        run: skillsaw --list-rules
 
       - name: Test --init
         run: |
           cd /tmp
-          agentlint --init
-          test -f .agentlint.yaml
+          skillsaw --init
+          test -f .skillsaw.yaml
+
+      - name: Test agentlint shim
+        run: |
+          agentlint --version 2>&1 | grep -q "renamed"
 
       - name: Test claudelint shim
         run: |
@@ -133,7 +137,7 @@ jobs:
           EOF
 
           # Lint it
-          agentlint /tmp/test-plugin
+          skillsaw /tmp/test-plugin
 
           # Should pass with no errors
           if [ $? -ne 0 ]; then
@@ -160,10 +164,10 @@ jobs:
           "
 
           # Lint it
-          agentlint /tmp/ai-helpers
+          skillsaw /tmp/ai-helpers
 
           # Should pass with no errors
           if [ $? -ne 0 ]; then
-            echo "ai-helpers repo failed agentlint!"
+            echo "ai-helpers repo failed skillsaw!"
             exit 1
           fi

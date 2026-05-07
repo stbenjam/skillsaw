@@ -1,11 +1,11 @@
 """
-claudelint - backward compatibility shim for agentlint
+claudelint - backward compatibility shim for skillsaw
 
-This package has been renamed to 'agentlint'. All imports are re-exported
-from the new package name. Please update your imports to use 'agentlint'.
+This package has been renamed to 'skillsaw'. All imports are re-exported
+from the new package name. Please update your imports to use 'skillsaw'.
 """
 
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext, __version__
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext, __version__
 
 __all__ = [
     "__version__",

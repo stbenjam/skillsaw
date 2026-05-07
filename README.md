@@ -1,15 +1,15 @@
-[![PyPI version](https://badge.fury.io/py/agentlint.svg)](https://badge.fury.io/py/agentlint)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/agentlint)](https://pypi.org/project/agentlint/)
-[![Tests](https://github.com/stbenjam/agentlint/workflows/Tests/badge.svg)](https://github.com/stbenjam/agentlint/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/stbenjam/agentlint/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/agentlint)
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/)
+[![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/agentlint.svg)](https://pypi.org/project/agentlint/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/skillsaw.svg)](https://pypi.org/project/skillsaw/)
 
-# agentlint
+# skillsaw
 
 A configurable, rule-based linter for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
 
-> **Note:** This project was formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+> **Note:** This project was formerly named `claudelint` and then `agentlint`. If you're migrating, see [Migrating from claudelint/agentlint](#migrating-from-claudelintagentlint).
 
 ## Features
 
@@ -25,56 +25,56 @@ A configurable, rule-based linter for [agentskills.io](https://agentskills.io) s
 ### Via uvx (easiest - no install required)
 
 ```bash
-uvx agentlint
-uvx agentlint /path/to/skills
+uvx skillsaw
+uvx skillsaw /path/to/skills
 ```
 
 ### Via pip
 
 ```bash
-pip install agentlint
+pip install skillsaw
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/stbenjam/agentlint.git
-cd agentlint
+git clone https://github.com/stbenjam/skillsaw.git
+cd skillsaw
 pip install -e .
 ```
 
 ### Using Docker
 
 ```bash
-docker pull ghcr.io/stbenjam/agentlint:latest
-docker run -v $(pwd):/workspace ghcr.io/stbenjam/agentlint
+docker pull ghcr.io/stbenjam/skillsaw:latest
+docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 ```
 
 ## Quick Start
 
 ```bash
 # Lint current directory
-agentlint
+skillsaw
 
 # Lint specific directory
-agentlint /path/to/skills
+skillsaw /path/to/skills
 
 # Verbose output
-agentlint -v
+skillsaw -v
 
 # Strict mode (warnings as errors)
-agentlint --strict
+skillsaw --strict
 
 # Generate default config
-agentlint --init
+skillsaw --init
 
 # List all available rules
-agentlint --list-rules
+skillsaw --list-rules
 ```
 
 ## Repository Types
 
-agentlint automatically detects your repository structure:
+skillsaw automatically detects your repository structure:
 
 ### agentskills.io Skills
 
@@ -118,7 +118,7 @@ my-plugin/
 
 ### Marketplace (Multiple Plugins)
 
-agentlint supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
+skillsaw supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
 
 #### Traditional Structure (plugins/ directory)
 ```
@@ -151,7 +151,7 @@ Plugins from `plugins/`, custom paths, and remote sources can coexist in one mar
 
 ## Configuration
 
-Create `.agentlint.yaml` in your repository root:
+Create `.skillsaw.yaml` in your repository root:
 
 ```yaml
 rules:
@@ -190,10 +190,10 @@ strict: false
 ### Generating Default Config
 
 ```bash
-agentlint --init
+skillsaw --init
 ```
 
-This creates `.agentlint.yaml` with all builtin rules and their defaults.
+This creates `.skillsaw.yaml` with all builtin rules and their defaults.
 
 ## Builtin Rules
 
@@ -259,7 +259,7 @@ Create custom validation rules by extending the `Rule` base class:
 ```python
 from pathlib import Path
 from typing import List
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 
 class NoTodoCommentsRule(Rule):
     @property
@@ -288,7 +288,7 @@ class NoTodoCommentsRule(Rule):
         return violations
 ```
 
-Then reference it in `.agentlint.yaml`:
+Then reference it in `.skillsaw.yaml`:
 
 ```yaml
 custom-rules:
@@ -320,17 +320,17 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install agentlint
-        run: pip install agentlint
+      - name: Install skillsaw
+        run: pip install skillsaw
 
       - name: Run linter
-        run: agentlint --strict
+        run: skillsaw --strict
 ```
 
 ### Docker
 
 ```bash
-docker run -v $(pwd):/workspace ghcr.io/stbenjam/agentlint --strict
+docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw --strict
 ```
 
 ## Exit Codes
@@ -356,16 +356,16 @@ Summary:
   Warnings: 2
 ```
 
-## Migrating from claudelint
+## Migrating from claudelint/agentlint
 
-This project was renamed from `claudelint` to `agentlint` to reflect its broader scope beyond Claude Code plugins. To migrate:
+This project was renamed from `claudelint` to `agentlint` and then to `skillsaw`. To migrate:
 
-1. Update your package: `pip install agentlint` (instead of `pip install claudelint`)
-2. Rename `.claudelint.yaml` to `.agentlint.yaml` (the old name is still discovered as a fallback)
-3. Update CLI usage: `agentlint` (instead of `claudelint`)
-4. Update imports in custom rules: `from agentlint import ...` (the old `from claudelint import ...` still works)
+1. Update your package: `pip install skillsaw` (instead of `pip install agentlint` or `pip install claudelint`)
+2. Rename config files: `.agentlint.yaml` or `.claudelint.yaml` to `.skillsaw.yaml` (the old names are still discovered as fallbacks)
+3. Update CLI usage: `skillsaw` (instead of `agentlint` or `claudelint`)
+4. Update imports in custom rules: `from skillsaw import ...` (the old `from agentlint import ...` and `from claudelint import ...` still work)
 
-The `claudelint` command still works as a shim but prints a deprecation warning.
+The `agentlint` and `claudelint` commands still work as shims but print deprecation warnings.
 
 ## Development
 
@@ -377,7 +377,7 @@ pytest tests/ -v
 black src/ tests/
 
 # Build Docker image
-docker build -t agentlint .
+docker build -t skillsaw .
 ```
 
 ## Contributing
@@ -399,9 +399,9 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 - [agentskills.io Specification](https://agentskills.io/specification)
 - [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code)
 - [Claude Code Plugins Reference](https://docs.claude.com/en/docs/claude-code/plugins-reference)
-- [AI Helpers Marketplace](https://github.com/openshift-eng/ai-helpers) - Example marketplace using agentlint
+- [AI Helpers Marketplace](https://github.com/openshift-eng/ai-helpers) - Example marketplace using skillsaw
 
 ## Support
 
-- **Issues**: https://github.com/stbenjam/agentlint/issues
-- **Discussions**: https://github.com/stbenjam/agentlint/discussions
+- **Issues**: https://github.com/stbenjam/skillsaw/issues
+- **Discussions**: https://github.com/stbenjam/skillsaw/discussions

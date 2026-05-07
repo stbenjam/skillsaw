@@ -5,8 +5,8 @@ Tests for agent validation rules
 import pytest
 from pathlib import Path
 
-from agentlint.rules.builtin.agents import AgentFrontmatterRule
-from agentlint.context import RepositoryContext
+from skillsaw.rules.builtin.agents import AgentFrontmatterRule
+from skillsaw.context import RepositoryContext
 
 
 @pytest.fixture

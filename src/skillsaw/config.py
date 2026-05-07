@@ -1,5 +1,5 @@
 """
-Configuration management for agentlint
+Configuration management for skillsaw
 """
 
 import yaml
@@ -63,11 +63,11 @@ class LinterConfig:
                 "commands-dir-required": {
                     "enabled": False,
                     "severity": "warning",
-                },  # Optional - plugins can have just skills/hooks
+                },
                 "commands-exist": {
                     "enabled": False,
                     "severity": "info",
-                },  # Optional - plugins can have just skills/hooks
+                },
                 # Command format rules
                 "command-naming": {"enabled": True, "severity": "warning"},
                 "command-frontmatter": {"enabled": True, "severity": "error"},
@@ -154,13 +154,20 @@ def find_config(start_path: Path) -> Optional[Path]:
     """
     Find config file by walking up the directory tree.
 
-    Checks for .agentlint.yaml first, then falls back to .claudelint.yaml
-    for backward compatibility.
+    Checks for .skillsaw.yaml first, then falls back to .agentlint.yaml
+    and .claudelint.yaml for backward compatibility.
     """
     current = start_path.resolve()
 
     while current != current.parent:
-        for name in (".agentlint.yaml", ".agentlint.yml", ".claudelint.yaml", ".claudelint.yml"):
+        for name in (
+            ".skillsaw.yaml",
+            ".skillsaw.yml",
+            ".agentlint.yaml",
+            ".agentlint.yml",
+            ".claudelint.yaml",
+            ".claudelint.yml",
+        ):
             config_file = current / name
             if config_file.exists():
                 return config_file

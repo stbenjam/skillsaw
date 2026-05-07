@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
-INIT_PY="$REPO_ROOT/src/agentlint/__init__.py"
+INIT_PY="$REPO_ROOT/src/skillsaw/__init__.py"
 
 current_version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$PYPROJECT")
 

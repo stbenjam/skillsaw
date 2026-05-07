@@ -5,9 +5,9 @@ Tests for custom rule loading functionality
 import pytest
 from pathlib import Path
 
-from agentlint.linter import ClaudeLinter
-from agentlint.context import RepositoryContext
-from agentlint.config import LinterConfig
+from skillsaw.linter import ClaudeLinter
+from skillsaw.context import RepositoryContext
+from skillsaw.config import LinterConfig
 
 
 def test_load_valid_custom_rule(valid_plugin, temp_dir):
@@ -15,7 +15,7 @@ def test_load_valid_custom_rule(valid_plugin, temp_dir):
     # Create a valid custom rule file
     custom_rule_file = temp_dir / "custom_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class TestCustomRule(Rule):
@@ -61,7 +61,7 @@ def test_load_custom_rule_import_error(valid_plugin, temp_dir):
     # Create a custom rule file with import error
     custom_rule_file = temp_dir / "bad_import_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from nonexistent_module import something  # This will cause ImportError
 from typing import List
 
@@ -94,7 +94,7 @@ def test_load_custom_rule_syntax_error(valid_plugin, temp_dir):
     # Create a custom rule file with syntax error
     custom_rule_file = temp_dir / "syntax_error_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class SyntaxErrorRule(Rule):
@@ -122,11 +122,11 @@ class SyntaxErrorRule(Rule):
 
 
 def test_load_custom_rule_missing_imports(valid_plugin, temp_dir):
-    """Test that linter fails when custom rule can't import from agentlint"""
+    """Test that linter fails when custom rule can't import from skillsaw"""
     # Create a custom rule file that tries to import a nonexistent class
     custom_rule_file = temp_dir / "missing_export_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, NonExistentClass  # NonExistentClass doesn't exist
+from skillsaw import Rule, NonExistentClass  # NonExistentClass doesn't exist
 from typing import List
 
 class MissingExportRule(Rule):
@@ -139,7 +139,7 @@ class MissingExportRule(Rule):
         return "A rule trying to import nonexistent class"
 
     def default_severity(self):
-        from agentlint import Severity
+        from skillsaw import Severity
         return Severity.WARNING
 
     def check(self, context):
@@ -159,7 +159,7 @@ def test_load_custom_rule_relative_path(valid_plugin, temp_dir):
     # Create a custom rule file in the plugin directory
     custom_rule_file = valid_plugin / "my_custom_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class RelativePathRule(Rule):
@@ -195,7 +195,7 @@ def test_load_multiple_custom_rules(valid_plugin, temp_dir):
     # Create two custom rule files
     custom_rule_1 = temp_dir / "custom_rule_1.py"
     custom_rule_1.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class CustomRule1(Rule):
@@ -216,7 +216,7 @@ class CustomRule1(Rule):
 
     custom_rule_2 = temp_dir / "custom_rule_2.py"
     custom_rule_2.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class CustomRule2(Rule):
@@ -253,7 +253,7 @@ def test_custom_rule_can_find_violations(valid_plugin, temp_dir):
     # Create a custom rule that always finds a violation
     custom_rule_file = temp_dir / "violation_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class ViolationRule(Rule):
@@ -289,7 +289,7 @@ def test_custom_rule_respects_disabled_config(valid_plugin, temp_dir):
     # Create a custom rule
     custom_rule_file = temp_dir / "disabled_rule.py"
     custom_rule_file.write_text("""
-from agentlint import Rule, RuleViolation, Severity, RepositoryContext
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
 
 class DisabledRule(Rule):

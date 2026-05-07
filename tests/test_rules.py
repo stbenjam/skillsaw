@@ -6,18 +6,18 @@ import sys
 from pathlib import Path
 
 
-from agentlint.context import RepositoryContext
-from agentlint.rule import Severity
-from agentlint.rules.builtin.plugin_structure import (
+from skillsaw.context import RepositoryContext
+from skillsaw.rule import Severity
+from skillsaw.rules.builtin.plugin_structure import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
 )
-from agentlint.rules.builtin.command_format import (
+from skillsaw.rules.builtin.command_format import (
     CommandNamingRule,
     CommandFrontmatterRule,
 )
-from agentlint.rules.builtin.marketplace import (
+from skillsaw.rules.builtin.marketplace import (
     MarketplaceRegistrationRule,
 )
 

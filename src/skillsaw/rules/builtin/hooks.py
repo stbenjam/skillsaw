@@ -5,8 +5,8 @@ Rules for validating hook configuration
 import json
 from typing import List, Dict, Any
 
-from agentlint.rule import Rule, RuleViolation, Severity
-from agentlint.context import RepositoryContext
+from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {

@@ -6,8 +6,8 @@ import json
 from typing import List, Dict, Any
 from pathlib import Path
 
-from agentlint.rule import Rule, RuleViolation, Severity
-from agentlint.context import RepositoryContext
+from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext
 
 
 class McpValidJsonRule(Rule):

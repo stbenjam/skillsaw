@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 from typing import List
 
-from agentlint.rule import Rule, RuleViolation, Severity
-from agentlint.context import RepositoryContext
+from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext
 
 
 class CommandNamingRule(Rule):

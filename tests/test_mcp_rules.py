@@ -6,8 +6,8 @@ import pytest
 import json
 from pathlib import Path
 
-from agentlint.rules.builtin.mcp import McpValidJsonRule, McpProhibitedRule
-from agentlint.context import RepositoryContext
+from skillsaw.rules.builtin.mcp import McpValidJsonRule, McpProhibitedRule
+from skillsaw.context import RepositoryContext
 
 
 def _create_plugin_with_mcp(temp_dir, mcp_config):

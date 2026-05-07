@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.source="https://github.com/stbenjam/agentlint"
-LABEL org.opencontainers.image.url="https://github.com/stbenjam/agentlint"
-LABEL org.opencontainers.image.description="A configurable linter for agent skills, Claude Code plugins, and marketplaces"
+LABEL org.opencontainers.image.source="https://github.com/stbenjam/skillsaw"
+LABEL org.opencontainers.image.url="https://github.com/stbenjam/skillsaw"
+LABEL org.opencontainers.image.description="A configurable linter for agent skills, plugins, and AI coding assistant context"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Set working directory
@@ -20,5 +20,5 @@ RUN pip install --no-cache-dir /app
 WORKDIR /workspace
 
 # Run linter by default
-ENTRYPOINT ["agentlint"]
+ENTRYPOINT ["skillsaw"]
 CMD []

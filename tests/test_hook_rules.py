@@ -6,9 +6,9 @@ import pytest
 import json
 from pathlib import Path
 
-from agentlint.rules.builtin.hooks import HooksJsonValidRule
-from agentlint.rule import Severity
-from agentlint.context import RepositoryContext
+from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+from skillsaw.rule import Severity
+from skillsaw.context import RepositoryContext
 
 
 @pytest.fixture

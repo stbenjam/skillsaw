@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentlint"
+name = "skillsaw"
 version = "0.4.0"
-description = "A configurable linter for agent skills, Claude Code plugins, and marketplaces"
+description = "A configurable linter for agent skills, plugins, and AI coding assistant context"
 readme = "README.md"
 authors = [
     {name = "Stephen Benjamin", email = "stephen@bitbin.de"}
@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
-keywords = ["agentskills", "claude", "claude-code", "linter", "plugin", "skills", "validation"]
+keywords = ["agentskills", "claude", "claude-code", "linter", "plugin", "skills", "validation", "skillsaw"]
 requires-python = ">=3.8.1"
 dependencies = [
     "PyYAML>=6.0",
@@ -40,21 +40,22 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/stbenjam/agentlint"
-Documentation = "https://github.com/stbenjam/agentlint#readme"
-Repository = "https://github.com/stbenjam/agentlint"
-Issues = "https://github.com/stbenjam/agentlint/issues"
+Homepage = "https://github.com/stbenjam/skillsaw"
+Documentation = "https://github.com/stbenjam/skillsaw#readme"
+Repository = "https://github.com/stbenjam/skillsaw"
+Issues = "https://github.com/stbenjam/skillsaw/issues"
 
 [project.scripts]
-agentlint = "agentlint.__main__:main"
-claudelint = "agentlint.__main__:claudelint_shim"
+skillsaw = "skillsaw.__main__:main"
+agentlint = "skillsaw.__main__:agentlint_shim"
+claudelint = "skillsaw.__main__:claudelint_shim"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agentlint*", "claudelint"]
+include = ["skillsaw*", "agentlint", "claudelint"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
