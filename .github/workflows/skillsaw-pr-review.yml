@@ -33,34 +33,40 @@ jobs:
           fi
           echo "since=$SINCE" >> "$GITHUB_OUTPUT"
 
-          # Open PRs from stbenjam and claude
-          PRS=$(gh pr list --state open --author stbenjam --json number,title,author 2>/dev/null; \
-                gh pr list --state open --author app/claude --json number,title,author 2>/dev/null)
+          # Get list of collaborators (trusted users only)
+          COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
+          echo "Collaborators: $COLLABS"
 
-          if [ -z "$PRS" ] || [ "$PRS" = "[][]" ]; then
-            echo "No open PRs from stbenjam or claude"
+          # Open PRs from collaborators and claude bot
+          PRS=$(gh pr list --state open --json number,title,author \
+            --jq --argjson collabs "$COLLABS" \
+            '[.[] | select(.author.login as $u | ($collabs | index($u)) or ($u == "app/claude"))]')
+
+          if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
+            echo "No open PRs from collaborators or claude"
             echo "has_prs=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "has_prs=true" >> "$GITHUB_OUTPUT"
           echo "$PRS" > /tmp/open-prs.json
 
-          # New PR review comments from stbenjam since last run
+          # New PR review comments from collaborators since last run
           gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
-            --jq '[.[] | select(.user.login == "stbenjam") | {id, pull_request_url, body, path, line, created_at}]' \
+            --jq --argjson collabs "$COLLABS" \
+            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, pull_request_url, user: .user.login, body, path, line, created_at}]' \
             > /tmp/new-review-comments.json
 
-          # New PR-level comments from stbenjam since last run
-          # (these are issue comments on PRs)
+          # New PR-level comments from collaborators since last run
           gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            --jq '[.[] | select(.user.login == "stbenjam") | {id, issue_url, body, created_at}]' \
+            --jq --argjson collabs "$COLLABS" \
+            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-pr-comments.json
 
-          echo "Open PRs:"
+          echo "Open PRs from collaborators/claude:"
           cat /tmp/open-prs.json | jq length
-          echo "New review comments from stbenjam since $SINCE:"
+          echo "New review comments from collaborators since $SINCE:"
           cat /tmp/new-review-comments.json | jq length
-          echo "New PR comments from stbenjam since $SINCE:"
+          echo "New PR comments from collaborators since $SINCE:"
           cat /tmp/new-pr-comments.json | jq length
 
       - uses: anthropics/claude-code-action@v1
@@ -75,7 +81,7 @@ jobs:
             $(cat /tmp/open-prs.json)
             </open-prs>
 
-            ## New review comments from stbenjam since ${{ steps.activity.outputs.since }}
+            ## New review comments from collaborators since ${{ steps.activity.outputs.since }}
 
             <inline-review-comments>
             $(cat /tmp/new-review-comments.json)

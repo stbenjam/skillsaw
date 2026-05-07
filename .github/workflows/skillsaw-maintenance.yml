@@ -33,17 +33,25 @@ jobs:
           fi
           echo "since=$SINCE" >> "$GITHUB_OUTPUT"
 
-          # Open issues
-          gh issue list --state open --json number,title,body,author --jq '.' > /tmp/open-issues.json
+          # Get list of collaborators (trusted users only)
+          COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
+          echo "Collaborators: $COLLABS"
 
-          # New issue comments since last run
+          # Open issues — only from collaborators
+          gh issue list --state open --json number,title,body,author --jq \
+            --argjson collabs "$COLLABS" \
+            '[.[] | select(.author.login as $u | $collabs | index($u))]' \
+            > /tmp/open-issues.json
+
+          # New issue comments since last run — only from collaborators
           gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            --jq '[.[] | select(.user.login != "github-actions[bot]") | {id, issue_url, user: .user.login, body, created_at}]' \
+            --jq --argjson collabs "$COLLABS" \
+            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-comments.json
 
-          echo "Open issues:"
+          echo "Open issues from collaborators:"
           cat /tmp/open-issues.json | jq length
-          echo "New comments since $SINCE:"
+          echo "New comments from collaborators since $SINCE:"
           cat /tmp/new-comments.json | jq length
 
       - uses: anthropics/claude-code-action@v1
