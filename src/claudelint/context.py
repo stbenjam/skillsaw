@@ -14,11 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class RepositoryType(Enum):
-    """Type of Claude plugin repository"""
+    """Type of repository"""
 
     SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
-    UNKNOWN = "unknown"  # Not a Claude plugin repo
+    AGENTSKILLS = "agentskills"  # agentskills.io skill repo
+    UNKNOWN = "unknown"  # Not a recognized repo type
 
 
 class RepositoryContext:
@@ -42,6 +43,7 @@ class RepositoryContext:
             {}
         )  # marketplace metadata for strict:false plugins without plugin.json
         self.plugins = self._discover_plugins()
+        self.skills: List[Path] = self._discover_skills()
 
     def _detect_type(self) -> RepositoryType:
         """Detect the type of repository"""
@@ -57,7 +59,38 @@ class RepositoryContext:
         if (self.root_path / "plugins").exists():
             return RepositoryType.MARKETPLACE
 
+        # Check for agentskills.io skill repo
+        if self._is_agentskills_repo():
+            return RepositoryType.AGENTSKILLS
+
         return RepositoryType.UNKNOWN
+
+    def _is_agentskills_repo(self) -> bool:
+        """Check if this looks like an agentskills.io skill repository"""
+        # Single skill at root
+        if (self.root_path / "SKILL.md").exists():
+            return True
+
+        # Skill collection: subdirectories containing SKILL.md
+        try:
+            for item in self.root_path.iterdir():
+                if item.is_dir() and not item.name.startswith(".") and (item / "SKILL.md").exists():
+                    return True
+        except OSError:
+            pass
+
+        # Standard discovery paths
+        for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
+            skills_path = self.root_path / discovery_path
+            if skills_path.is_dir():
+                try:
+                    for item in skills_path.iterdir():
+                        if item.is_dir() and (item / "SKILL.md").exists():
+                            return True
+                except OSError:
+                    pass
+
+        return False
 
     def has_marketplace(self) -> bool:
         """Check if repository has a marketplace"""
@@ -318,6 +351,56 @@ class RepositoryContext:
 
         return metadata or None
 
+    def _discover_skills(self) -> List[Path]:
+        """
+        Discover agentskills.io skill directories.
+
+        For AGENTSKILLS repos: root (single skill) or subdirs with SKILL.md.
+        For plugin repos: skills from plugin_path/skills/*/.
+        """
+        skills: List[Path] = []
+        discovered: Set[Path] = set()
+
+        if self.repo_type == RepositoryType.AGENTSKILLS:
+            # Single skill at root
+            if (self.root_path / "SKILL.md").exists():
+                skills.append(self.root_path)
+                discovered.add(self.root_path)
+            else:
+                # Skill collection: immediate subdirs with SKILL.md
+                self._discover_skills_in_dir(self.root_path, skills, discovered)
+
+            # Standard discovery paths
+            for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
+                skills_path = self.root_path / discovery_path
+                if skills_path.is_dir():
+                    self._discover_skills_in_dir(skills_path, skills, discovered)
+
+        # For plugin repos, also discover embedded skills
+        for plugin_path in self.plugins:
+            skills_dir = plugin_path / "skills"
+            if skills_dir.is_dir():
+                self._discover_skills_in_dir(skills_dir, skills, discovered)
+
+        return skills
+
+    def _discover_skills_in_dir(
+        self, parent: Path, skills: List[Path], discovered: Set[Path]
+    ) -> None:
+        """Discover skill directories within a parent directory"""
+        try:
+            for item in parent.iterdir():
+                if not item.is_dir() or item.name.startswith("."):
+                    continue
+                resolved = item.resolve()
+                if resolved in discovered:
+                    continue
+                if (item / "SKILL.md").exists():
+                    skills.append(item)
+                    discovered.add(resolved)
+        except OSError:
+            pass
+
     def __str__(self):
         """String representation of context"""
-        return f"RepositoryContext(type={self.repo_type.value}, plugins={len(self.plugins)})"
+        return f"RepositoryContext(type={self.repo_type.value}, plugins={len(self.plugins)}, skills={len(self.skills)})"

@@ -87,6 +87,13 @@ class LinterConfig:
                 # MCP rules
                 "mcp-valid-json": {"enabled": True, "severity": "error"},
                 "mcp-prohibited": {"enabled": False, "severity": "error"},
+                # Agentskills rules (auto-enabled for agentskills repos)
+                "agentskill-valid": {"enabled": "auto:agentskills", "severity": "error"},
+                "agentskill-name": {"enabled": "auto:agentskills", "severity": "error"},
+                "agentskill-description": {"enabled": "auto:agentskills", "severity": "warning"},
+                "agentskill-structure": {"enabled": "auto:agentskills", "severity": "warning"},
+                "agentskill-evals-required": {"enabled": False, "severity": "warning"},
+                "agentskill-evals": {"enabled": "auto:agentskills", "severity": "warning"},
             }
         )
 
@@ -116,11 +123,14 @@ class LinterConfig:
         rule_config = self.get_rule_config(rule_id)
         enabled = rule_config.get("enabled", True)
 
-        # Handle 'auto' - enabled only for marketplace repos
-        if enabled == "auto":
+        # Handle 'auto' and 'auto:<type>' — context-aware enabling
+        if isinstance(enabled, str) and enabled.startswith("auto"):
             from .context import RepositoryType
 
-            return context.repo_type == RepositoryType.MARKETPLACE
+            parts = enabled.split(":")
+            if len(parts) == 1:
+                return context.repo_type == RepositoryType.MARKETPLACE
+            return context.repo_type.value == parts[1]
 
         return bool(enabled)
 

@@ -40,6 +40,15 @@ from .mcp import (
     McpProhibitedRule,
 )
 
+from .agentskills import (
+    AgentSkillValidRule,
+    AgentSkillNameRule,
+    AgentSkillDescriptionRule,
+    AgentSkillStructureRule,
+    AgentSkillEvalsRequiredRule,
+    AgentSkillEvalsRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -66,6 +75,13 @@ BUILTIN_RULES = [
     # MCP
     McpValidJsonRule,
     McpProhibitedRule,
+    # Agentskills
+    AgentSkillValidRule,
+    AgentSkillNameRule,
+    AgentSkillDescriptionRule,
+    AgentSkillStructureRule,
+    AgentSkillEvalsRequiredRule,
+    AgentSkillEvalsRule,
 ]
 
 
@@ -89,4 +105,10 @@ __all__ = [
     "HooksJsonValidRule",
     "McpValidJsonRule",
     "McpProhibitedRule",
+    "AgentSkillValidRule",
+    "AgentSkillNameRule",
+    "AgentSkillDescriptionRule",
+    "AgentSkillStructureRule",
+    "AgentSkillEvalsRequiredRule",
+    "AgentSkillEvalsRule",
 ]

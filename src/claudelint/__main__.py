@@ -118,8 +118,11 @@ For more information, visit: https://github.com/stbenjam/claudelint
 
     # Show repository type
     if context.repo_type == RepositoryType.UNKNOWN:
-        print("Warning: Directory doesn't appear to be a Claude plugin repository", file=sys.stderr)
-        print("Expected: .claude-plugin/plugin.json or plugins/ directory\n", file=sys.stderr)
+        print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
+        print(
+            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
+            file=sys.stderr,
+        )
 
     # Load config
     if args.config:
