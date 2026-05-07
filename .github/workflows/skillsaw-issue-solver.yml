@@ -15,49 +15,56 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Restore last run timestamp
-        uses: actions/cache/restore@v4
-        with:
-          path: .last-issue-solver-run
-          key: issue-solver-last-run
-
-      - name: Get open issues from collaborators
+      - name: Get labeled issues with trusted content only
         id: activity
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f .last-issue-solver-run ]; then
-            SINCE=$(cat .last-issue-solver-run)
-          else
-            SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
-          fi
-          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
-
-          # Get list of collaborators (trusted users only)
+          # Get collaborators (trusted users)
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Open issues labeled "issue-for-agent" (label = collaborator sign-off)
-          gh issue list --state open --label issue-for-agent \
-            --json number,title,body,author --jq '.' \
-            > /tmp/open-issues.json
+          # Get open issues labeled "issue-for-agent" (label = collaborator sign-off)
+          ISSUES=$(gh issue list --state open --label issue-for-agent \
+            --json number,title,body,author --jq '.')
 
-          # New issue comments since last run — only from collaborators
-          gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            --jq --argjson collabs "$COLLABS" \
-            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
-            > /tmp/new-comments.json
-
-          ISSUE_COUNT=$(cat /tmp/open-issues.json | jq length)
-          echo "Open issues from collaborators: $ISSUE_COUNT"
-          echo "New comments from collaborators since $SINCE:"
-          cat /tmp/new-comments.json | jq length
+          ISSUE_COUNT=$(echo "$ISSUES" | jq length)
+          echo "Issues labeled issue-for-agent: $ISSUE_COUNT"
 
           if [ "$ISSUE_COUNT" = "0" ]; then
             echo "has_issues=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_issues=true" >> "$GITHUB_OUTPUT"
+            echo "[]" > /tmp/issues-with-comments.json
+            exit 0
           fi
+          echo "has_issues=true" >> "$GITHUB_OUTPUT"
+
+          # For each issue, include trusted comments only:
+          # - Collaborator comments: always trusted (any time)
+          # - Non-collaborator comments: only before the label was added
+          echo "$ISSUES" | jq -c '.[]' | while read -r issue; do
+            NUM=$(echo "$issue" | jq -r '.number')
+
+            # Find when issue-for-agent label was added
+            LABEL_TIME=$(gh api "repos/${{ github.repository }}/issues/$NUM/events" \
+              --jq '[.[] | select(.event == "labeled" and .label.name == "issue-for-agent")] | last | .created_at')
+
+            if [ -z "$LABEL_TIME" ] || [ "$LABEL_TIME" = "null" ]; then
+              echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
+            else
+              COMMENTS=$(gh api "repos/${{ github.repository }}/issues/$NUM/comments" \
+                --jq --arg lt "$LABEL_TIME" --argjson collabs "$COLLABS" \
+                '[.[] | select(
+                  (.user.login as $u | $collabs | index($u))
+                  or (.created_at <= $lt)
+                ) | {user: .user.login, body, created_at}]')
+
+              echo "$issue" | jq --arg lt "$LABEL_TIME" --argjson c "$COMMENTS" \
+                '. + {label_added_at: $lt, trusted_comments: $c}'
+            fi
+          done | jq -s '.' > /tmp/issues-with-comments.json
+
+          echo "Prepared issues with trusted comments:"
+          cat /tmp/issues-with-comments.json | jq '[.[] | {number, title, comment_count: (.trusted_comments | length)}]'
 
       - uses: anthropics/claude-code-action@v1
         if: steps.activity.outputs.has_issues == 'true'
@@ -65,39 +72,22 @@ jobs:
           prompt: |
             Use the skillsaw-issue-solver skill. Follow every step in the skill.
 
-            ## Open issues to solve
+            ## Issues to solve
 
-            Create a separate [Auto] PR for each open issue. If an issue is already
-            addressed by an open PR, skip it.
+            Each issue includes only trusted content: collaborator comments (any
+            time) and non-collaborator comments from before the label was added.
+            Create a separate [Auto] PR for each. Skip any already addressed by
+            an open PR.
 
-            <open-issues>
-            $(cat /tmp/open-issues.json)
-            </open-issues>
-
-            ## New issue comments since ${{ steps.activity.outputs.since }}
-
-            Review these for additional context on open issues.
-
-            <new-comments>
-            $(cat /tmp/new-comments.json)
-            </new-comments>
+            <issues>
+            $(cat /tmp/issues-with-comments.json)
+            </issues>
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 200
             --model claude-opus-4-6
-
-      - name: Save last run timestamp
-        if: always()
-        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-issue-solver-run
-
-      - name: Cache last run timestamp
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .last-issue-solver-run
-          key: issue-solver-last-run-${{ github.run_id }}
 
       - name: Upload execution log
         if: always()
