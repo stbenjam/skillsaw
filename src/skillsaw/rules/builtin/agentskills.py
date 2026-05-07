@@ -145,12 +145,11 @@ class AgentSkillValidRule(Rule):
                     )
                 else:
                     for k, v in meta.items():
-                        if not isinstance(v, str):
+                        if not isinstance(k, str):
                             violations.append(
                                 self.violation(
-                                    f"'metadata.{k}' value must be a string",
+                                    f"'metadata' key {k!r} must be a string",
                                     file_path=skill_md,
-                                    severity=Severity.WARNING,
                                 )
                             )
 

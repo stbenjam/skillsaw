@@ -708,17 +708,29 @@ def test_metadata_wrong_type_fails(temp_dir):
     assert any("metadata" in v.message and "mapping" in v.message for v in violations)
 
 
-def test_metadata_non_string_value_warns(temp_dir):
-    skill = temp_dir / "bad-meta-val"
+def test_metadata_non_string_value_accepted(temp_dir):
+    skill = temp_dir / "meta-int"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
-        "---\nname: bad-meta-val\ndescription: A skill\nmetadata:\n  count: 42\n---\n"
+        "---\nname: meta-int\ndescription: A skill\nmetadata:\n  count: 42\n---\n"
     )
 
     context = RepositoryContext(skill)
     violations = AgentSkillValidRule().check(context)
-    assert any("metadata.count" in v.message and "string" in v.message for v in violations)
-    assert violations[-1].severity == Severity.WARNING
+    assert not any("metadata" in v.message for v in violations)
+
+
+def test_metadata_nested_object_accepted(temp_dir):
+    skill = temp_dir / "meta-nested"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: meta-nested\ndescription: A skill\nmetadata:\n"
+        "  openclaw:\n    category: productivity\n    requires:\n      bins:\n        - gws\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert not any("metadata" in v.message for v in violations)
 
 
 def test_allowed_tools_wrong_type_fails(temp_dir):
