@@ -146,16 +146,32 @@ jobs:
           # Clone ai-helpers repo
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
-          # Disable agentskills rules until ai-helpers updates its skills
+          # Find whichever config file exists, or create .skillsaw.yaml
           python3 -c "
           import yaml
-          with open('/tmp/ai-helpers/.claudelint.yaml') as f:
-              cfg = yaml.safe_load(f) or {}
+          from pathlib import Path
+
+          repo = Path('/tmp/ai-helpers')
+          config_path = None
+          for name in ['.skillsaw.yaml', '.claudelint.yaml']:
+              candidate = repo / name
+              if candidate.exists():
+                  config_path = candidate
+                  break
+          if config_path is None:
+              config_path = repo / '.skillsaw.yaml'
+
+          cfg = {}
+          if config_path.exists():
+              with open(config_path) as f:
+                  cfg = yaml.safe_load(f) or {}
+
+          # Disable agentskills rules until ai-helpers updates its skills
           rules = cfg.setdefault('rules', {})
           for r in ['agentskill-valid','agentskill-name','agentskill-description',
                      'agentskill-structure','agentskill-evals','agentskill-evals-required']:
               rules[r] = {'enabled': False}
-          with open('/tmp/ai-helpers/.claudelint.yaml', 'w') as f:
+          with open(config_path, 'w') as f:
               yaml.dump(cfg, f, default_flow_style=False)
           "
 
