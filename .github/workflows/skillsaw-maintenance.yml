@@ -20,21 +20,16 @@ jobs:
           prompt: |
             Use the skillsaw-maintenance skill. Follow every step in the skill.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
-            --max-turns 50
+            --max-turns 200
             --model claude-opus-4-6
 
-      - name: Upload execution log as private gist
+      - name: Upload execution log
         if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LOG="/home/runner/work/_temp/claude-execution-output.json"
-          if [ -f "$LOG" ]; then
-            GIST_URL=$(gh gist create --private --desc "skillsaw-maintenance run ${{ github.run_id }}" "$LOG")
-            echo "Execution log: $GIST_URL"
-          else
-            echo "No execution log found"
-          fi
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 30

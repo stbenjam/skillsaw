@@ -32,7 +32,12 @@ Fetch and review the current versions of:
    - Check for changes to plugin registration or discovery
    - Compare against `src/skillsaw/rules/builtin/marketplace.py`
 
-4. **Claude Code hooks, MCP, agents, skills** formats
+4. **Claude Code .claude/ directory** at https://code.claude.com/docs/en/claude-directory
+   - Check for structure requirements, supported files, and conventions
+   - Compare against `src/skillsaw/context.py` DOT_CLAUDE detection and discovery
+   - Note: .claude/ is NOT a plugin — it has its own format distinct from plugins
+
+5. **Claude Code hooks, MCP, agents, skills** formats
    - Hooks: https://docs.claude.com/en/docs/claude-code/hooks
    - MCP servers: https://docs.claude.com/en/docs/claude-code/mcp-servers
    - Skills and agents: https://docs.claude.com/en/docs/claude-code/skills
