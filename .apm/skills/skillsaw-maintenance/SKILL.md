@@ -33,6 +33,9 @@ Fetch and review the current versions of:
    - Compare against `src/skillsaw/rules/builtin/marketplace.py`
 
 4. **Claude Code hooks, MCP, agents, skills** formats
+   - Hooks: https://docs.claude.com/en/docs/claude-code/hooks
+   - MCP servers: https://docs.claude.com/en/docs/claude-code/mcp-servers
+   - Skills and agents: https://docs.claude.com/en/docs/claude-code/skills
    - Review current docs for any format changes
    - Compare against the corresponding rule files in `src/skillsaw/rules/builtin/`
 
@@ -43,27 +46,25 @@ For each spec change found, determine:
 - Is a new rule needed? If so, what should it check and what severity?
 - Would the change break backward compatibility? If so, how to handle it.
 
-Document findings as a list of actionable items.
-
 ## Step 3: Check existing PRs
 
-Use `gh pr list --author stbenjam --state open` to find open PRs.
+Use `gh pr list --state open` to find all open PRs in this repo.
 For each open PR:
 - Check if CI is passing (`gh pr checks`)
 - Review any pending review comments (`gh pr view --comments`)
 - If there are failing checks, investigate and fix them
 - If there is reviewer feedback, address it
-- Push fixes and update the PR
 
 ## Step 4: Implement fixes
 
-For each gap identified in Step 2:
-- Check if an open PR already addresses it — if so, update that PR
-- Otherwise, create a new branch and implement the fix
+For each gap identified in Step 2, create a separate PR:
+- Create a new branch from main for the fix
+- Implement the rule change or addition
 - Write tests for any new or changed rules
 - Run the full test suite: `pytest tests/ -v`
 - Run formatting: `black src/ tests/`
 - Test against ai-helpers: clone `openshift-eng/ai-helpers`, run `skillsaw` against it, ensure exit 0
+- Open a PR with a clear title and description of what changed and why
 
 ## Step 5: Validate backward compatibility
 
