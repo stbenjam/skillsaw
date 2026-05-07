@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-from skillsaw.linter import ClaudeLinter
+from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 
@@ -15,7 +15,7 @@ def test_linter_passes_valid_plugin(valid_plugin):
     """Test that linter passes valid plugin"""
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     violations = linter.run()
     errors, warnings, info = linter.get_counts(violations)
@@ -28,7 +28,7 @@ def test_linter_passes_marketplace(marketplace_repo):
     """Test that linter passes valid marketplace"""
     context = RepositoryContext(marketplace_repo)
     config = LinterConfig.default()
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     violations = linter.run()
     errors, warnings, info = linter.get_counts(violations)
@@ -53,7 +53,7 @@ def test_linter_detects_errors(temp_dir):
     # Enable plugin-json-required
     config.rules["plugin-json-required"] = {"enabled": True, "severity": "error"}
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
     errors, warnings, info = linter.get_counts(violations)
 
@@ -70,7 +70,7 @@ def test_linter_respects_disabled_rules(valid_plugin):
     for rule_id in config.rules:
         config.rules[rule_id]["enabled"] = False
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Should have no rules loaded
     assert len(linter.rules) == 0
@@ -84,7 +84,7 @@ def test_linter_passes_rule_config(valid_plugin):
     # Override recommended-fields for plugin-json-valid
     config.rules["plugin-json-valid"]["recommended-fields"] = ["description"]
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Find the plugin-json-valid rule and verify it got the config
     pjv_rules = [r for r in linter.rules if r.rule_id == "plugin-json-valid"]
@@ -98,7 +98,7 @@ def test_linter_warns_on_unknown_rule_id(valid_plugin):
     config = LinterConfig.default()
     config.rules["nonexistent-rule"] = {"enabled": True, "severity": "error"}
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
 
     unknown_warnings = [
@@ -115,7 +115,7 @@ def test_linter_warns_on_multiple_unknown_rule_ids(valid_plugin):
     config.rules["fake-rule-one"] = {"enabled": True}
     config.rules["fake-rule-two"] = {"enabled": False}
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
 
     unknown_warnings = [v for v in violations if v.rule_id == "invalid-config"]
@@ -127,7 +127,7 @@ def test_linter_no_warning_for_known_rule_ids(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
 
     unknown_warnings = [v for v in violations if v.rule_id == "invalid-config"]
@@ -139,7 +139,7 @@ def test_self_lint():
     repo_root = Path(__file__).parent.parent
     context = RepositoryContext(repo_root)
     config = LinterConfig.default()
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     violations = linter.run()
     errors = [v for v in violations if v.severity.value == "error"]

@@ -12,7 +12,7 @@ from .context import RepositoryContext
 from .config import LinterConfig
 
 
-class ClaudeLinter:
+class Linter:
     """
     Main linter that orchestrates rule checking
     """
