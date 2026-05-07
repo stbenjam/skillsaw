@@ -11,13 +11,14 @@ metadata:
 
 You are reviewing and fixing up open pull requests in the **skillsaw** linter.
 
-## Step 1: List open PRs
+## Step 1: Identify PRs to review
 
-Use `gh pr list --state open` to find all open PRs in this repo.
+The list of PRs to review is provided in the prompt. Only review those PRs.
+Do NOT discover or review any other PRs beyond what was provided.
 
-## Step 2: For each open PR
+## Step 2: For each PR
 
-Check out the PR branch and:
+Check out the PR branch and critically review the changes:
 
 1. **Check CI status** — run `gh pr checks <number>`
    - If checks are failing, investigate the failure

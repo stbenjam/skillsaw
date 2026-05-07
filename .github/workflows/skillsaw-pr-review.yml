@@ -15,10 +15,31 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Get reviewable PRs
+        id: prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRS=$(gh pr list --state open --author stbenjam --json number,title --jq '.[]' 2>/dev/null; \
+                gh pr list --state open --author app/claude --json number,title --jq '.[]' 2>/dev/null)
+          if [ -z "$PRS" ]; then
+            echo "No open PRs from stbenjam or claude"
+            echo "has_prs=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_prs=true" >> "$GITHUB_OUTPUT"
+            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "pr_list<<$EOF" >> "$GITHUB_OUTPUT"
+            echo "$PRS" >> "$GITHUB_OUTPUT"
+            echo "$EOF" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: anthropics/claude-code-action@v1
+        if: steps.prs.outputs.has_prs == 'true'
         with:
           prompt: |
             Use the skillsaw-pr-review skill. Follow every step in the skill.
+            IMPORTANT: Only review the following PRs. Do NOT review any other PRs.
+            ${{ steps.prs.outputs.pr_list }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
