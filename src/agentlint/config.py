@@ -99,7 +99,8 @@ class LinterConfig:
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
-        Get configuration for a specific rule
+        Get configuration for a specific rule, merging user overrides
+        on top of defaults so unmentioned fields keep their default values.
 
         Args:
             rule_id: Rule identifier
@@ -107,7 +108,10 @@ class LinterConfig:
         Returns:
             Rule configuration dict
         """
-        return self.rules.get(rule_id, {})
+        defaults = self.default().rules.get(rule_id, {})
+        overrides = self.rules.get(rule_id, {})
+        merged = {**defaults, **overrides}
+        return merged
 
     def is_rule_enabled(self, rule_id: str, context: "RepositoryContext") -> bool:
         """

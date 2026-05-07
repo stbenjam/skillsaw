@@ -54,7 +54,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agentlint*"]
+include = ["agentlint*", "claudelint"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

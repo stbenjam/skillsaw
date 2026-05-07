@@ -16,7 +16,6 @@ from agentlint.rules.builtin.agentskills import (
     AgentSkillEvalsRule,
 )
 
-
 # --- Detection tests ---
 
 
@@ -508,9 +507,7 @@ def test_evals_entry_missing_id_warns(temp_dir):
     (skill / "SKILL.md").write_text("---\nname: no-id\ndescription: No id\n---\n")
     evals_dir = skill / "evals"
     evals_dir.mkdir()
-    (evals_dir / "evals.json").write_text(
-        json.dumps({"evals": [{"prompt": "Test"}]})
-    )
+    (evals_dir / "evals.json").write_text(json.dumps({"evals": [{"prompt": "Test"}]}))
 
     context = RepositoryContext(skill)
     violations = AgentSkillEvalsRule().check(context)
@@ -523,9 +520,7 @@ def test_evals_entry_missing_prompt_warns(temp_dir):
     (skill / "SKILL.md").write_text("---\nname: no-prompt\ndescription: No prompt\n---\n")
     evals_dir = skill / "evals"
     evals_dir.mkdir()
-    (evals_dir / "evals.json").write_text(
-        json.dumps({"evals": [{"id": 1}]})
-    )
+    (evals_dir / "evals.json").write_text(json.dumps({"evals": [{"id": 1}]}))
 
     context = RepositoryContext(skill)
     violations = AgentSkillEvalsRule().check(context)
@@ -535,9 +530,7 @@ def test_evals_entry_missing_prompt_warns(temp_dir):
 def test_evals_bad_assertions_type_warns(temp_dir):
     skill = temp_dir / "bad-assertions"
     skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: bad-assertions\ndescription: Bad assertions\n---\n"
-    )
+    (skill / "SKILL.md").write_text("---\nname: bad-assertions\ndescription: Bad assertions\n---\n")
     evals_dir = skill / "evals"
     evals_dir.mkdir()
     (evals_dir / "evals.json").write_text(
@@ -552,9 +545,7 @@ def test_evals_bad_assertions_type_warns(temp_dir):
 def test_evals_assertions_not_strings_warns(temp_dir):
     skill = temp_dir / "int-assertions"
     skill.mkdir()
-    (skill / "SKILL.md").write_text(
-        "---\nname: int-assertions\ndescription: Int assertions\n---\n"
-    )
+    (skill / "SKILL.md").write_text("---\nname: int-assertions\ndescription: Int assertions\n---\n")
     evals_dir = skill / "evals"
     evals_dir.mkdir()
     (evals_dir / "evals.json").write_text(

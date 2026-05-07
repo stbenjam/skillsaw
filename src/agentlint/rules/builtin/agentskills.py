@@ -84,9 +84,7 @@ class AgentSkillValidRule(Rule):
                     self.violation("Missing required 'name' field", file_path=skill_md)
                 )
             elif not isinstance(name, str):
-                violations.append(
-                    self.violation("'name' must be a string", file_path=skill_md)
-                )
+                violations.append(self.violation("'name' must be a string", file_path=skill_md))
             elif len(name) > NAME_MAX_LENGTH:
                 violations.append(
                     self.violation(
@@ -358,17 +356,13 @@ class AgentSkillEvalsRule(Rule):
                 continue
 
             if not isinstance(evals, list):
-                violations.append(
-                    self.violation("'evals' must be an array", file_path=evals_json)
-                )
+                violations.append(self.violation("'evals' must be an array", file_path=evals_json))
                 continue
 
             for i, entry in enumerate(evals):
                 if not isinstance(entry, dict):
                     violations.append(
-                        self.violation(
-                            f"evals[{i}] must be an object", file_path=evals_json
-                        )
+                        self.violation(f"evals[{i}] must be an object", file_path=evals_json)
                     )
                     continue
 
