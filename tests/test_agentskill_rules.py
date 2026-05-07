@@ -73,6 +73,21 @@ def test_detect_github_skills_path(temp_dir):
     assert len(context.skills) == 1
 
 
+def test_detect_nested_skill_collection(temp_dir):
+    """Skills nested in category subdirectories -> AGENTSKILLS"""
+    repo = temp_dir / "skills-repo"
+    repo.mkdir()
+
+    nested = repo / "category" / "my-skill"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text("---\nname: my-skill\ndescription: Nested skill\n---\n")
+
+    context = RepositoryContext(repo)
+    assert context.repo_type == RepositoryType.AGENTSKILLS
+    assert len(context.skills) == 1
+    assert context.skills[0].name == "my-skill"
+
+
 def test_detect_not_agentskills(temp_dir):
     """Empty directory -> UNKNOWN"""
     repo = temp_dir / "empty"

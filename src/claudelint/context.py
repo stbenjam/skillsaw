@@ -67,29 +67,30 @@ class RepositoryContext:
 
     def _is_agentskills_repo(self) -> bool:
         """Check if this looks like an agentskills.io skill repository"""
-        # Single skill at root
         if (self.root_path / "SKILL.md").exists():
             return True
 
-        # Skill collection: subdirectories containing SKILL.md
+        # Standard discovery paths (checked explicitly since they start with dot)
+        for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
+            skills_path = self.root_path / discovery_path
+            if skills_path.is_dir() and self._has_skill_md_recursive(skills_path):
+                return True
+
+        # Recurse into non-dot subdirectories looking for SKILL.md
+        return self._has_skill_md_recursive(self.root_path)
+
+    def _has_skill_md_recursive(self, path: Path) -> bool:
+        """Check if any subdirectory contains SKILL.md, recursively"""
         try:
-            for item in self.root_path.iterdir():
-                if item.is_dir() and not item.name.startswith(".") and (item / "SKILL.md").exists():
+            for item in path.iterdir():
+                if not item.is_dir() or item.name.startswith("."):
+                    continue
+                if (item / "SKILL.md").exists():
+                    return True
+                if self._has_skill_md_recursive(item):
                     return True
         except OSError:
             pass
-
-        # Standard discovery paths
-        for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
-            skills_path = self.root_path / discovery_path
-            if skills_path.is_dir():
-                try:
-                    for item in skills_path.iterdir():
-                        if item.is_dir() and (item / "SKILL.md").exists():
-                            return True
-                except OSError:
-                    pass
-
         return False
 
     def has_marketplace(self) -> bool:
@@ -387,7 +388,7 @@ class RepositoryContext:
     def _discover_skills_in_dir(
         self, parent: Path, skills: List[Path], discovered: Set[Path]
     ) -> None:
-        """Discover skill directories within a parent directory"""
+        """Discover skill directories within a parent directory, recursively"""
         try:
             for item in parent.iterdir():
                 if not item.is_dir() or item.name.startswith("."):
@@ -398,6 +399,8 @@ class RepositoryContext:
                 if (item / "SKILL.md").exists():
                     skills.append(item)
                     discovered.add(resolved)
+                else:
+                    self._discover_skills_in_dir(item, skills, discovered)
         except OSError:
             pass
 
