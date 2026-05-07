@@ -1,4 +1,4 @@
-APM_VERSION := 0.11.0
+APM_VERSION := 0.12.4
 
 .PHONY: help format test clean apm verify-apm
 
@@ -7,7 +7,7 @@ help:
 	@echo "  format        - Fix code formatting with black"
 	@echo "  test          - Run pytest tests"
 	@echo "  clean         - Remove Python cache files"
-	@echo "  apm           - Install and compile APM dependencies"
+	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
 format:
@@ -27,7 +27,6 @@ clean:
 
 apm:
 	uvx --from apm-cli@$(APM_VERSION) apm install
-	uvx --from apm-cli@$(APM_VERSION) apm compile
 
 verify-apm: apm
 	@echo "APM install and compile succeeded."
