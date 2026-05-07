@@ -16,17 +16,22 @@ You are releasing a new version of the **skillsaw** linter.
 Before releasing, verify:
 
 1. You are on the `main` branch and it is clean (`git status`)
-2. All tests pass: `pytest tests/ -v`
-3. Formatting is clean: `black --check src/ tests/`
-4. Determine what version to release — if no version was specified, the
+2. Activate the venv: `source .venv/bin/activate`
+3. Install in dev mode if needed: `pip install -e .`
+4. All tests pass: `pytest tests/ -v`
+5. Formatting is clean: `black --check src/ tests/`
+6. Determine what version to release — if no version was specified, the
    bump script will auto-increment the patch version
+
+**Important:** All `pytest`, `black`, and `scripts/bump-version.sh` commands
+must run inside the activated `.venv`.
 
 ## Step 2: Bump the version
 
 Run the bump script:
 
 ```bash
-scripts/bump-version.sh [version]
+source .venv/bin/activate && bash scripts/bump-version.sh [version]
 ```
 
 This updates both `pyproject.toml` and `src/skillsaw/__init__.py`. If no
@@ -35,6 +40,9 @@ version argument is given, it increments the patch version automatically.
 Verify the bump by checking the output and confirming both files were updated.
 
 ## Step 3: Commit and push the version bump
+
+First verify remotes with `git remote -v` to confirm `origin` points to
+the user's fork (stbenjam/skillsaw). Then:
 
 ```bash
 git add pyproject.toml src/skillsaw/__init__.py
