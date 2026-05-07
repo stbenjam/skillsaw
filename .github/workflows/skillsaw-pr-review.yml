@@ -15,37 +15,92 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Get reviewable PRs
-        id: prs
+      - name: Restore last run timestamp
+        uses: actions/cache/restore@v4
+        with:
+          path: .last-pr-review-run
+          key: pr-review-last-run
+
+      - name: Get reviewable PRs and new activity
+        id: activity
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PRS=$(gh pr list --state open --author stbenjam --json number,title --jq '.[]' 2>/dev/null; \
-                gh pr list --state open --author app/claude --json number,title --jq '.[]' 2>/dev/null)
-          if [ -z "$PRS" ]; then
+          if [ -f .last-pr-review-run ]; then
+            SINCE=$(cat .last-pr-review-run)
+          else
+            SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+          fi
+          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+
+          # Open PRs from stbenjam and claude
+          PRS=$(gh pr list --state open --author stbenjam --json number,title,author 2>/dev/null; \
+                gh pr list --state open --author app/claude --json number,title,author 2>/dev/null)
+
+          if [ -z "$PRS" ] || [ "$PRS" = "[][]" ]; then
             echo "No open PRs from stbenjam or claude"
             echo "has_prs=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_prs=true" >> "$GITHUB_OUTPUT"
-            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-            echo "pr_list<<$EOF" >> "$GITHUB_OUTPUT"
-            echo "$PRS" >> "$GITHUB_OUTPUT"
-            echo "$EOF" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "has_prs=true" >> "$GITHUB_OUTPUT"
+          echo "$PRS" > /tmp/open-prs.json
+
+          # New PR review comments from stbenjam since last run
+          gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
+            --jq '[.[] | select(.user.login == "stbenjam") | {id, pull_request_url, body, path, line, created_at}]' \
+            > /tmp/new-review-comments.json
+
+          # New PR-level comments from stbenjam since last run
+          # (these are issue comments on PRs)
+          gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
+            --jq '[.[] | select(.user.login == "stbenjam") | {id, issue_url, body, created_at}]' \
+            > /tmp/new-pr-comments.json
+
+          echo "Open PRs:"
+          cat /tmp/open-prs.json | jq length
+          echo "New review comments from stbenjam since $SINCE:"
+          cat /tmp/new-review-comments.json | jq length
+          echo "New PR comments from stbenjam since $SINCE:"
+          cat /tmp/new-pr-comments.json | jq length
 
       - uses: anthropics/claude-code-action@v1
-        if: steps.prs.outputs.has_prs == 'true'
+        if: steps.activity.outputs.has_prs == 'true'
         with:
           prompt: |
             Use the skillsaw-pr-review skill. Follow every step in the skill.
+
             IMPORTANT: Only review the following PRs. Do NOT review any other PRs.
-            ${{ steps.prs.outputs.pr_list }}
+
+            <open-prs>
+            $(cat /tmp/open-prs.json)
+            </open-prs>
+
+            ## New review comments from stbenjam since ${{ steps.activity.outputs.since }}
+
+            <inline-review-comments>
+            $(cat /tmp/new-review-comments.json)
+            </inline-review-comments>
+
+            <pr-level-comments>
+            $(cat /tmp/new-pr-comments.json)
+            </pr-level-comments>
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 100
             --model claude-opus-4-6
+
+      - name: Save last run timestamp
+        if: always()
+        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-pr-review-run
+
+      - name: Cache last run timestamp
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .last-pr-review-run
+          key: pr-review-last-run-${{ github.run_id }}
 
       - name: Upload execution log
         if: always()
