@@ -23,3 +23,16 @@ jobs:
           claude_args: |
             --allowedTools Edit,Write,Read,Bash
             --max-turns 50
+
+      - name: Upload execution log as private gist
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LOG="/home/runner/work/_temp/claude-execution-output.json"
+          if [ -f "$LOG" ]; then
+            GIST_URL=$(gh gist create --private --desc "skillsaw-maintenance run ${{ github.run_id }}" "$LOG")
+            echo "Execution log: $GIST_URL"
+          else
+            echo "No execution log found"
+          fi
