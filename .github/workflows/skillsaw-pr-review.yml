@@ -1,4 +1,4 @@
-name: Skillsaw Maintenance
+name: Skillsaw PR Review
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   id-token: write
 
 jobs:
-  maintenance:
+  pr-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,12 +18,12 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           prompt: |
-            Use the skillsaw-maintenance skill. Follow every step in the skill.
+            Use the skillsaw-pr-review skill. Follow every step in the skill.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
-            --max-turns 200
+            --max-turns 100
             --model claude-opus-4-6
 
       - name: Upload execution log
