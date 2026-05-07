@@ -6,9 +6,9 @@ import pytest
 import json
 from pathlib import Path
 
-from claudelint.rules.builtin.hooks import HooksJsonValidRule
-from claudelint.rule import Severity
-from claudelint.context import RepositoryContext
+from agentlint.rules.builtin.hooks import HooksJsonValidRule
+from agentlint.rule import Severity
+from agentlint.context import RepositoryContext
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 """
-Configuration management for claudelint
+Configuration management for agentlint
 """
 
 import yaml
@@ -23,7 +23,7 @@ class LinterConfig:
     @classmethod
     def from_file(cls, config_path: Path) -> "LinterConfig":
         """
-        Load configuration from a .claudelint.yaml file
+        Load configuration from a config file
 
         Args:
             config_path: Path to configuration file
@@ -151,25 +151,18 @@ class LinterConfig:
 
 def find_config(start_path: Path) -> Optional[Path]:
     """
-    Find .claudelint.yaml by walking up the directory tree
+    Find config file by walking up the directory tree.
 
-    Args:
-        start_path: Starting directory
-
-    Returns:
-        Path to config file, or None if not found
+    Checks for .agentlint.yaml first, then falls back to .claudelint.yaml
+    for backward compatibility.
     """
     current = start_path.resolve()
 
     while current != current.parent:
-        config_file = current / ".claudelint.yaml"
-        if config_file.exists():
-            return config_file
-
-        # Also check .yml extension
-        config_file = current / ".claudelint.yml"
-        if config_file.exists():
-            return config_file
+        for name in (".agentlint.yaml", ".agentlint.yml", ".claudelint.yaml", ".claudelint.yml"):
+            config_file = current / name
+            if config_file.exists():
+                return config_file
 
         current = current.parent
 

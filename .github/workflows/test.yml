@@ -29,7 +29,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=src/claudelint --cov-report=xml --cov-report=term
+          pytest tests/ -v --cov=src/agentlint --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -81,16 +81,20 @@ jobs:
           pip install .
 
       - name: Test --version
-        run: claudelint --version
+        run: agentlint --version
 
       - name: Test --list-rules
-        run: claudelint --list-rules
+        run: agentlint --list-rules
 
       - name: Test --init
         run: |
           cd /tmp
-          claudelint --init
-          test -f .claudelint.yaml
+          agentlint --init
+          test -f .agentlint.yaml
+
+      - name: Test claudelint shim
+        run: |
+          claudelint --version 2>&1 | grep -q "renamed"
 
       - name: Create test plugin and lint it
         run: |
@@ -129,7 +133,7 @@ jobs:
           EOF
 
           # Lint it
-          claudelint /tmp/test-plugin
+          agentlint /tmp/test-plugin
 
           # Should pass with no errors
           if [ $? -ne 0 ]; then
@@ -143,11 +147,10 @@ jobs:
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
           # Lint it
-          claudelint /tmp/ai-helpers
+          agentlint /tmp/ai-helpers
 
           # Should pass with no errors
           if [ $? -ne 0 ]; then
-            echo "ai-helpers repo failed claudelint!"
+            echo "ai-helpers repo failed agentlint!"
             exit 1
           fi
-

@@ -5,8 +5,8 @@ Rules for validating hook configuration
 import json
 from typing import List, Dict, Any
 
-from claudelint.rule import Rule, RuleViolation, Severity
-from claudelint.context import RepositoryContext
+from agentlint.rule import Rule, RuleViolation, Severity
+from agentlint.context import RepositoryContext
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {

@@ -6,18 +6,18 @@ import sys
 from pathlib import Path
 
 
-from claudelint.context import RepositoryContext
-from claudelint.rule import Severity
-from claudelint.rules.builtin.plugin_structure import (
+from agentlint.context import RepositoryContext
+from agentlint.rule import Severity
+from agentlint.rules.builtin.plugin_structure import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
 )
-from claudelint.rules.builtin.command_format import (
+from agentlint.rules.builtin.command_format import (
     CommandNamingRule,
     CommandFrontmatterRule,
 )
-from claudelint.rules.builtin.marketplace import (
+from agentlint.rules.builtin.marketplace import (
     MarketplaceRegistrationRule,
 )
 

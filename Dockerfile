@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.source="https://github.com/stbenjam/claudelint"
-LABEL org.opencontainers.image.description="A configurable, rule-based linter for Claude Code plugins"
+LABEL org.opencontainers.image.source="https://github.com/stbenjam/agentlint"
+LABEL org.opencontainers.image.description="A configurable linter for agent skills, Claude Code plugins, and marketplaces"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Set working directory
@@ -19,5 +19,5 @@ RUN pip install --no-cache-dir /app
 WORKDIR /workspace
 
 # Run linter by default
-ENTRYPOINT ["claudelint"]
+ENTRYPOINT ["agentlint"]
 CMD []

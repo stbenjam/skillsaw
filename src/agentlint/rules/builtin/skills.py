@@ -5,8 +5,8 @@ Rules for validating skill files
 import re
 from typing import List
 
-from claudelint.rule import Rule, RuleViolation, Severity
-from claudelint.context import RepositoryContext
+from agentlint.rule import Rule, RuleViolation, Severity
+from agentlint.context import RepositoryContext
 
 
 class SkillFrontmatterRule(Rule):

@@ -7,8 +7,8 @@ from pathlib import Path
 import yaml
 
 
-from claudelint.config import LinterConfig, find_config
-from claudelint.context import RepositoryContext, RepositoryType
+from agentlint.config import LinterConfig, find_config
+from agentlint.context import RepositoryContext, RepositoryType
 
 
 def test_default_config():
@@ -21,7 +21,7 @@ def test_default_config():
 
 def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
-    config_file = temp_dir / ".claudelint.yaml"
+    config_file = temp_dir / ".agentlint.yaml"
     config_data = {
         "rules": {"plugin-json-required": {"enabled": False, "severity": "warning"}},
         "strict": True,
@@ -37,17 +37,36 @@ def test_config_from_file(temp_dir):
 
 
 def test_find_config(temp_dir):
-    """Test config file discovery"""
-    config_file = temp_dir / ".claudelint.yaml"
+    """Test config file discovery with .agentlint.yaml"""
+    config_file = temp_dir / ".agentlint.yaml"
     config_file.touch()
 
-    # Create a subdirectory
     subdir = temp_dir / "subdir"
     subdir.mkdir()
 
-    # Should find config in parent directory
     found = find_config(subdir)
     assert found.resolve() == config_file.resolve()
+
+
+def test_find_config_legacy_claudelint(temp_dir):
+    """Test backward-compat discovery of .claudelint.yaml"""
+    config_file = temp_dir / ".claudelint.yaml"
+    config_file.touch()
+
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+
+    found = find_config(subdir)
+    assert found.resolve() == config_file.resolve()
+
+
+def test_find_config_prefers_agentlint(temp_dir):
+    """.agentlint.yaml takes priority over .claudelint.yaml"""
+    (temp_dir / ".agentlint.yaml").touch()
+    (temp_dir / ".claudelint.yaml").touch()
+
+    found = find_config(temp_dir)
+    assert found.name == ".agentlint.yaml"
 
 
 def test_rule_enabled_for_context(valid_plugin):

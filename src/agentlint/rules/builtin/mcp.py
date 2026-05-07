@@ -6,8 +6,8 @@ import json
 from typing import List, Dict, Any
 from pathlib import Path
 
-from claudelint.rule import Rule, RuleViolation, Severity
-from claudelint.context import RepositoryContext
+from agentlint.rule import Rule, RuleViolation, Severity
+from agentlint.context import RepositoryContext
 
 
 class McpValidJsonRule(Rule):

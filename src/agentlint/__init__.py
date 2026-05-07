@@ -1,5 +1,5 @@
 """
-claudelint - A configurable linter for Claude Code plugins
+agentlint - A configurable linter for agent skills, Claude Code plugins, and marketplaces
 """
 
 __version__ = "0.3.6"

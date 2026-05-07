@@ -5,8 +5,8 @@ Rules for validating marketplace structure
 import json
 from typing import List
 
-from claudelint.rule import Rule, RuleViolation, Severity
-from claudelint.context import RepositoryContext, RepositoryType
+from agentlint.rule import Rule, RuleViolation, Severity
+from agentlint.context import RepositoryContext, RepositoryType
 
 
 class MarketplaceJsonValidRule(Rule):

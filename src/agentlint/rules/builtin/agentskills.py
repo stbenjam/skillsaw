@@ -8,8 +8,8 @@ from typing import List
 
 import yaml
 
-from claudelint.rule import Rule, RuleViolation, Severity
-from claudelint.context import RepositoryContext
+from agentlint.rule import Rule, RuleViolation, Severity
+from agentlint.context import RepositoryContext
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64

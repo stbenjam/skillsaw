@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claudelint"
-version = "0.3.6"
-description = "A configurable, rule-based linter for Claude Code plugins"
+name = "agentlint"
+version = "0.4.0"
+description = "A configurable linter for agent skills, Claude Code plugins, and marketplaces"
 readme = "README.md"
 authors = [
     {name = "Stephen Benjamin", email = "stephen@bitbin.de"}
@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
 ]
-keywords = ["claude", "claude-code", "linter", "plugin", "validation"]
+keywords = ["agentskills", "claude", "claude-code", "linter", "plugin", "skills", "validation"]
 requires-python = ">=3.8.1"
 dependencies = [
     "PyYAML>=6.0",
@@ -40,20 +40,21 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/stbenjam/claudelint"
-Documentation = "https://github.com/stbenjam/claudelint#readme"
-Repository = "https://github.com/stbenjam/claudelint"
-Issues = "https://github.com/stbenjam/claudelint/issues"
+Homepage = "https://github.com/stbenjam/agentlint"
+Documentation = "https://github.com/stbenjam/agentlint#readme"
+Repository = "https://github.com/stbenjam/agentlint"
+Issues = "https://github.com/stbenjam/agentlint/issues"
 
 [project.scripts]
-claudelint = "claudelint.__main__:main"
+agentlint = "agentlint.__main__:main"
+claudelint = "agentlint.__main__:claudelint_shim"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["claudelint*"]
+include = ["agentlint*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -96,4 +97,3 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "yaml"
 ignore_missing_imports = true
-

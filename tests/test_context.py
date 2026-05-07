@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-from claudelint.context import RepositoryContext, RepositoryType
+from agentlint.context import RepositoryContext, RepositoryType
 
 
 def test_single_plugin_detection(valid_plugin):

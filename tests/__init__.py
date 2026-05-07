@@ -1,3 +1,3 @@
 """
-Test suite for claudelint
+Test suite for agentlint
 """

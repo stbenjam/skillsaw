@@ -5,8 +5,8 @@ Tests for agent validation rules
 import pytest
 from pathlib import Path
 
-from claudelint.rules.builtin.agents import AgentFrontmatterRule
-from claudelint.context import RepositoryContext
+from agentlint.rules.builtin.agents import AgentFrontmatterRule
+from agentlint.context import RepositoryContext
 
 
 @pytest.fixture

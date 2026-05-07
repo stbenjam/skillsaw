@@ -40,7 +40,7 @@ class ClaudeLinter:
             self._load_custom_rule(custom_rule_path)
 
     def _load_builtin_rules(self):
-        """Load builtin rules from claudelint.rules.builtin"""
+        """Load builtin rules from agentlint.rules.builtin"""
         from .rules.builtin import BUILTIN_RULES
 
         for rule_class in BUILTIN_RULES:

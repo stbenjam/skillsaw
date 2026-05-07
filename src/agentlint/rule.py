@@ -51,7 +51,7 @@ class Rule(ABC):
         Initialize rule with optional configuration
 
         Args:
-            config: Rule-specific configuration from .claudelint.yaml
+            config: Rule-specific configuration from .agentlint.yaml
         """
         self.config = config or {}
         self._enabled = self.config.get("enabled", True)
