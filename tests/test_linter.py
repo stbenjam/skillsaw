@@ -139,7 +139,7 @@ def test_self_lint():
     repo_root = Path(__file__).parent.parent
     context = RepositoryContext(repo_root)
     config = LinterConfig.default()
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     violations = linter.run()
     errors = [v for v in violations if v.severity.value == "error"]
