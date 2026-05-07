@@ -1,100 +1,124 @@
-[![PyPI version](https://badge.fury.io/py/claudelint.svg)](https://badge.fury.io/py/claudelint)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/claudelint)](https://pypi.org/project/claudelint/)
-[![Tests](https://github.com/stbenjam/claudelint/workflows/Tests/badge.svg)](https://github.com/stbenjam/claudelint/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/stbenjam/claudelint/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/claudelint)
+[![PyPI version](https://badge.fury.io/py/agentlint.svg)](https://badge.fury.io/py/agentlint)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/agentlint)](https://pypi.org/project/agentlint/)
+[![Tests](https://github.com/stbenjam/agentlint/workflows/Tests/badge.svg)](https://github.com/stbenjam/agentlint/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/stbenjam/agentlint/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/agentlint)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/claudelint.svg)](https://pypi.org/project/claudelint/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/agentlint.svg)](https://pypi.org/project/agentlint/)
 
-# claudelint
+# agentlint
 
-A configurable, rule-based linter for [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins) and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
+A configurable, rule-based linter for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
+
+> **Note:** This project was formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
 ## Features
 
-✨ **Context-Aware** - Automatically detects single plugin vs marketplace repositories  
-🎯 **Rule-Based** - Enable/disable individual rules with configurable severity levels  
-🔌 **Extensible** - Load custom rules from Python files  
-📋 **Comprehensive** - Validates plugin structure, metadata, command format, and more  
-🐳 **Containerized** - Run via Docker for consistent, isolated linting  
-⚡ **Fast** - Efficient validation with clear, actionable output
+- **Context-Aware** - Automatically detects agentskills repos, single plugins, and marketplaces
+- **Rule-Based** - Enable/disable individual rules with configurable severity levels
+- **Extensible** - Load custom rules from Python files
+- **Comprehensive** - Validates skill format, plugin structure, metadata, command format, and more
+- **Containerized** - Run via Docker for consistent, isolated linting
+- **Fast** - Efficient validation with clear, actionable output
 
 ## Installation
 
 ### Via uvx (easiest - no install required)
 
 ```bash
-# From git (works before PyPI release)
-uvx --from 'git+https://github.com/stbenjam/claudelint' claudelint
-
-# Once published to PyPI, simply:
-uvx claudelint
-
-# With specific path
-uvx --from 'git+https://github.com/stbenjam/claudelint' claudelint /path/to/plugin
+uvx agentlint
+uvx agentlint /path/to/skills
 ```
 
-### Via pip (recommended for regular use)
+### Via pip
 
 ```bash
-pip install claudelint
+pip install agentlint
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/stbenjam/claudelint.git
-cd claudelint
+git clone https://github.com/stbenjam/agentlint.git
+cd agentlint
 pip install -e .
 ```
 
 ### Using Docker
 
 ```bash
-docker pull ghcr.io/stbenjam/claudelint:latest
-
-# Run on current directory
-docker run -v $(pwd):/workspace ghcr.io/stbenjam/claudelint
+docker pull ghcr.io/stbenjam/agentlint:latest
+docker run -v $(pwd):/workspace ghcr.io/stbenjam/agentlint
 ```
 
 ## Quick Start
 
 ```bash
 # Lint current directory
-claudelint
+agentlint
 
 # Lint specific directory
-claudelint /path/to/plugin
+agentlint /path/to/skills
 
 # Verbose output
-claudelint -v
+agentlint -v
 
 # Strict mode (warnings as errors)
-claudelint --strict
+agentlint --strict
 
 # Generate default config
-claudelint --init
+agentlint --init
 
 # List all available rules
-claudelint --list-rules
+agentlint --list-rules
 ```
 
 ## Repository Types
 
-claudelint automatically detects your repository structure:
+agentlint automatically detects your repository structure:
+
+### agentskills.io Skills
+
+Standalone skill repositories following the [agentskills.io](https://agentskills.io) specification:
+
+```
+my-skill/
+├── SKILL.md              # Required: metadata + instructions
+├── scripts/              # Optional: executable code
+├── references/           # Optional: documentation
+├── assets/               # Optional: templates, resources
+└── evals/                # Optional: evaluation tests
+    └── evals.json
+```
+
+Skill collections (multiple skills in subdirectories) are also supported:
+
+```
+skills-repo/
+├── skill-one/
+│   └── SKILL.md
+└── skill-two/
+    └── SKILL.md
+```
+
+Standard discovery paths (`.claude/skills/`, `.github/skills/`, `.agents/skills/`) are checked automatically.
 
 ### Single Plugin
+
 ```
 my-plugin/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── commands/
 │   └── my-command.md
+├── skills/
+│   └── my-skill/
+│       └── SKILL.md
 └── README.md
 ```
 
 ### Marketplace (Multiple Plugins)
 
-claudelint supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
+agentlint supports multiple marketplace structures per the [Claude Code specification](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces):
 
 #### Traditional Structure (plugins/ directory)
 ```
@@ -115,81 +139,37 @@ marketplace/
 marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json    # source: "./"
-├── commands/                # Plugin components at root
+├── commands/
 │   └── my-command.md
 └── skills/
     └── my-skill/
 ```
 
-#### Custom Paths
-```
-marketplace/
-├── .claude-plugin/
-│   └── marketplace.json    # source: "./custom/my-plugin"
-└── custom/
-    └── my-plugin/
-        ├── commands/
-        └── skills/
-```
+#### Custom Paths and Mixed Structures
 
-#### Mixed Structures
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
-
-## Marketplace Features
-
-### Flexible Plugin Sources
-
-claudelint understands all [plugin source types](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces#plugin-sources) and validates any sources that resolve to local paths:
-
-- **Relative paths**: `"source": "./"` (flat structure), `"source": "./custom/path"`
-- **GitHub repositories**: `"source": {"source": "github", "repo": "owner/repo"}`
-- **Git URLs**: `"source": {"source": "url", "url": "https://..."}`
-
-Remote sources (GitHub, git URLs) are logged and skipped during local validation. They are valid per spec but cannot be checked until the plugin is fetched locally.
-
-### Strict Mode
-
-The `strict` field in marketplace entries controls validation behavior:
-
-```json5
-{
-  "name": "my-plugin",
-  "source": "./",
-  "strict": false,    // plugin.json becomes optional
-  "description": "Plugin description can be in marketplace.json"
-}
-```
-
-When `strict: false`:
-- `plugin.json` is optional
-- Marketplace entry serves as the complete plugin manifest
-- Plugin metadata is validated from marketplace.json
-- Skills, commands, and other components work normally
-
-When `strict: true` (default):
-- `plugin.json` is required
-- Marketplace entry supplements plugin.json metadata
 
 ## Configuration
 
-Create `.claudelint.yaml` in your repository root:
+Create `.agentlint.yaml` in your repository root:
 
 ```yaml
-# Enable/disable rules
 rules:
+  # agentskills rules (auto-enabled when skills are detected)
+  agentskill-valid:
+    enabled: auto
+    severity: error
+
+  agentskill-name:
+    enabled: auto
+    severity: error
+
+  # Plugin structure rules
   plugin-json-required:
     enabled: true
     severity: error
-  
-  plugin-naming:
-    enabled: true
-    severity: warning
-  
-  command-sections:
-    enabled: true
-    severity: warning
-  
-  # 'auto' enables only for marketplace repos
+
+  # 'auto' enables only for relevant repo types
   marketplace-registration:
     enabled: auto
     severity: error
@@ -210,23 +190,36 @@ strict: false
 ### Generating Default Config
 
 ```bash
-claudelint --init
+agentlint --init
 ```
 
-This creates `.claudelint.yaml` with all builtin rules enabled.
+This creates `.agentlint.yaml` with all builtin rules and their defaults.
 
 ## Builtin Rules
 
+### agentskills.io
+
+These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable for agentskills repos, single plugins, and marketplaces whenever skills are detected.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) |
+| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) |
+| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
+| `agentskill-structure` | Skill directories should only contain recognized subdirectories | warning (auto) |
+| `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) |
+| `agentskill-evals-required` | Require evals/evals.json for each skill | warning (disabled) |
+
 ### Plugin Structure
 
-| Rule ID | Description | Default Severity | Notes |
-|---------|-------------|------------------|-------|
-| `plugin-json-required` | Plugin must have `.claude-plugin/plugin.json` | error | Skipped when `strict: false` in marketplace |
-| `plugin-json-valid` | Plugin.json must be valid with required fields | error | |
-| `plugin-naming` | Plugin names should use kebab-case | warning | |
-| `commands-dir-required` | Plugin should have a commands directory | warning (disabled by default) | |
-| `commands-exist` | Plugin should have at least one command file | info (disabled by default) | |
-| `plugin-readme` | Plugin should have a README.md file | warning | |
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `plugin-json-required` | Plugin must have `.claude-plugin/plugin.json` | error |
+| `plugin-json-valid` | Plugin.json must be valid with required fields | error |
+| `plugin-naming` | Plugin names should use kebab-case | warning |
+| `commands-dir-required` | Plugin should have a commands directory | warning (disabled) |
+| `commands-exist` | Plugin should have at least one command file | info (disabled) |
+| `plugin-readme` | Plugin should have a README.md file | warning |
 
 ### Command Format
 
@@ -239,81 +232,63 @@ This creates `.claudelint.yaml` with all builtin rules enabled.
 
 ### Marketplace
 
-| Rule ID | Description | Default Severity | Notes |
-|---------|-------------|------------------|-------|
-| `marketplace-json-valid` | Marketplace.json must be valid JSON | error (auto) | |
-| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | Supports flat structures, custom paths, and remote sources |
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `marketplace-json-valid` | Marketplace.json must be valid JSON | error (auto) |
+| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) |
 
-### Skills
+### Skills, Agents, Hooks
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
 | `skill-frontmatter` | SKILL.md files should have frontmatter | warning |
-
-### Agents
-
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `agent-frontmatter` | Agent files must have valid frontmatter with description and capabilities | error |
-
-### Hooks
-
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error |
+| `agent-frontmatter` | Agent files must have valid frontmatter | error |
+| `hooks-json-valid` | hooks.json must be valid with proper structure | error |
 
 ### MCP (Model Context Protocol)
 
-| Rule ID | Description | Default Severity | Notes |
-|---------|-------------|------------------|-------|
-| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | Validates both `.mcp.json` and `mcpServers` in `plugin.json` |
-| `mcp-prohibited` | Plugins should not enable MCP servers | error (disabled by default) | Security/policy rule - enable to prohibit MCP usage |
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `mcp-valid-json` | MCP configuration must be valid JSON | error |
+| `mcp-prohibited` | Plugins should not enable MCP servers | error (disabled) |
 
 ## Custom Rules
 
 Create custom validation rules by extending the `Rule` base class:
 
 ```python
-# my_custom_rules.py
 from pathlib import Path
 from typing import List
-from claudelint import Rule, RuleViolation, Severity, RepositoryContext
+from agentlint import Rule, RuleViolation, Severity, RepositoryContext
 
 class NoTodoCommentsRule(Rule):
     @property
     def rule_id(self) -> str:
         return "no-todo-comments"
-    
+
     @property
     def description(self) -> str:
         return "Command files should not contain TODO comments"
-    
+
     def default_severity(self) -> Severity:
         return Severity.WARNING
-    
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        
         for plugin_path in context.plugins:
             commands_dir = plugin_path / "commands"
             if not commands_dir.exists():
                 continue
-            
             for cmd_file in commands_dir.glob("*.md"):
-                with open(cmd_file, 'r') as f:
-                    content = f.read()
-                    if 'TODO' in content:
-                        violations.append(
-                            self.violation(
-                                "Found TODO comment in command file",
-                                file_path=cmd_file
-                            )
-                        )
-        
+                content = cmd_file.read_text()
+                if "TODO" in content:
+                    violations.append(
+                        self.violation("Found TODO comment", file_path=cmd_file)
+                    )
         return violations
 ```
 
-Then reference it in `.claudelint.yaml`:
+Then reference it in `.agentlint.yaml`:
 
 ```yaml
 custom-rules:
@@ -330,7 +305,7 @@ rules:
 ### GitHub Actions
 
 ```yaml
-name: Lint Claude Plugins
+name: Lint Agent Skills
 
 on: [pull_request, push]
 
@@ -338,34 +313,24 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
-      
-      - name: Install claudelint
-        run: pip install claudelint
-      
+
+      - name: Install agentlint
+        run: pip install agentlint
+
       - name: Run linter
-        run: claudelint --strict
-```
-
-### GitLab CI
-
-```yaml
-lint-plugins:
-  image: python:3.11
-  script:
-    - pip install claudelint
-    - claudelint --strict
+        run: agentlint --strict
 ```
 
 ### Docker
 
 ```bash
-docker run -v $(pwd):/workspace -w /workspace ghcr.io/stbenjam/claudelint --strict
+docker run -v $(pwd):/workspace ghcr.io/stbenjam/agentlint --strict
 ```
 
 ## Exit Codes
@@ -373,78 +338,46 @@ docker run -v $(pwd):/workspace -w /workspace ghcr.io/stbenjam/claudelint --stri
 - `0` - Success (no errors, or warnings only in non-strict mode)
 - `1` - Failure (errors found, or warnings in strict mode)
 
-## Examples
-
-### Example Output
+## Example Output
 
 ```
-Linting Claude plugins in: /path/to/marketplace
+Linting: /path/to/skills-repo
 
 Errors:
+  ✗ ERROR [skills/my-skill/SKILL.md]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
   ✗ ERROR [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
-  ✗ ERROR [.claude-plugin/marketplace.json]: Plugin 'new-plugin' not registered
 
 Warnings:
+  ⚠ WARNING [skills/helper/SKILL.md]: Description exceeds 1024 characters (1087)
   ⚠ WARNING [plugins/utils]: Missing README.md (recommended)
-  ⚠ WARNING [plugins/jira/commands/solve.md]: Missing recommended section '## Implementation'
 
 Summary:
   Errors:   2
   Warnings: 2
 ```
 
-### Disabling Specific Rules
+## Migrating from claudelint
 
-```yaml
-rules:
-  plugin-readme:
-    enabled: false  # Don't require README files
-  
-  command-sections:
-    enabled: false  # Don't check for specific sections
-```
+This project was renamed from `claudelint` to `agentlint` to reflect its broader scope beyond Claude Code plugins. To migrate:
 
-### Changing Severity
+1. Update your package: `pip install agentlint` (instead of `pip install claudelint`)
+2. Rename `.claudelint.yaml` to `.agentlint.yaml` (the old name is still discovered as a fallback)
+3. Update CLI usage: `agentlint` (instead of `claudelint`)
+4. Update imports in custom rules: `from agentlint import ...` (the old `from claudelint import ...` still works)
 
-```yaml
-rules:
-  plugin-naming:
-    severity: error  # Make naming violations errors instead of warnings
-  
-  command-name-format:
-    severity: info   # Downgrade to info level
-```
+The `claudelint` command still works as a shim but prints a deprecation warning.
 
 ## Development
 
-### Running Tests
-
 ```bash
-pytest tests/
-```
+# Run tests
+pytest tests/ -v
 
-### Building Docker Image
+# Format code
+black src/ tests/
 
-```bash
-docker build -t claudelint .
-```
-
-### Project Structure
-
-```
-claudelint/
-├── src/
-│   ├── rule.py          # Base Rule class
-│   ├── context.py       # Repository detection
-│   ├── config.py        # Configuration management
-│   └── linter.py        # Main linter orchestration
-├── rules/
-│   └── builtin/         # Builtin validation rules
-├── tests/               # Test suite
-├── examples/            # Example configs and custom rules
-├── claudelint           # CLI entry point
-├── Dockerfile           # Container image
-└── pyproject.toml       # Package metadata
+# Build Docker image
+docker build -t agentlint .
 ```
 
 ## Contributing
@@ -463,12 +396,12 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 
 ## See Also
 
+- [agentskills.io Specification](https://agentskills.io/specification)
 - [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code)
 - [Claude Code Plugins Reference](https://docs.claude.com/en/docs/claude-code/plugins-reference)
-- [AI Helpers Marketplace](https://github.com/openshift-eng/ai-helpers) - Example repository using claudelint
+- [AI Helpers Marketplace](https://github.com/openshift-eng/ai-helpers) - Example marketplace using agentlint
 
 ## Support
 
-- **Issues**: https://github.com/stbenjam/claudelint/issues
-- **Discussions**: https://github.com/stbenjam/claudelint/discussions
-
+- **Issues**: https://github.com/stbenjam/agentlint/issues
+- **Discussions**: https://github.com/stbenjam/agentlint/discussions

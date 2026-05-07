@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.source="https://github.com/stbenjam/agentlint"
+LABEL org.opencontainers.image.url="https://github.com/stbenjam/agentlint"
 LABEL org.opencontainers.image.description="A configurable linter for agent skills, Claude Code plugins, and marketplaces"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 

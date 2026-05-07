@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
-INIT_PY="$REPO_ROOT/src/claudelint/__init__.py"
+INIT_PY="$REPO_ROOT/src/agentlint/__init__.py"
 
 current_version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$PYPROJECT")
 
@@ -21,8 +21,17 @@ fi
 
 echo "Bumping version: $current_version -> $new_version"
 
-sed -i '' "s/^version = \"$current_version\"/version = \"$new_version\"/" "$PYPROJECT"
-sed -i '' "s/^__version__ = \"$current_version\"/__version__ = \"$new_version\"/" "$INIT_PY"
+# Use python for portable in-place editing (works on both macOS and Linux)
+python3 -c "
+import re, sys
+for path, pattern, repl in [
+    ('$PYPROJECT', r'^version = \"$current_version\"', 'version = \"$new_version\"'),
+    ('$INIT_PY', r'^__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
+]:
+    text = open(path).read()
+    text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
+    open(path, 'w').write(text)
+"
 
 echo "Updated:"
 echo "  $PYPROJECT"
