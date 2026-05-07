@@ -1,84 +1,74 @@
-# Example skillsaw configuration
-# Copy this file to .skillsaw.yaml in your repository root and customize as needed
-
 rules:
-  # Plugin structure rules
   plugin-json-required:
-    enabled: true
+    enabled: auto
     severity: error
-  
   plugin-json-valid:
-    enabled: true
+    enabled: auto
     severity: error
-  
+    recommended-fields:
+    - description
+    - version
+    - author
   plugin-naming:
-    enabled: true
+    enabled: auto
     severity: warning
-
-  plugin-readme:
-    enabled: true
-    severity: warning
-  
-  # Command format rules
   command-naming:
     enabled: true
     severity: warning
-  
   command-frontmatter:
     enabled: true
     severity: error
-  
   command-sections:
     enabled: true
     severity: warning
-  
   command-name-format:
     enabled: true
     severity: warning
-  
-  # Marketplace rules (auto-enabled for marketplace repos)
   marketplace-json-valid:
     enabled: auto
     severity: error
-  
   marketplace-registration:
     enabled: auto
     severity: error
-  
-  # Skills rules
+  plugin-readme:
+    enabled: auto
+    severity: warning
   skill-frontmatter:
     enabled: true
     severity: warning
-
-  # Agents rules
   agent-frontmatter:
     enabled: true
     severity: error
-
-  # Hooks rules
   hooks-json-valid:
     enabled: true
     severity: error
-
-  # MCP rules
   mcp-valid-json:
     enabled: true
     severity: error
-
   mcp-prohibited:
-    enabled: false  # Disabled by default - enable to prohibit MCP usage
+    enabled: false
     severity: error
-
-# Load custom rules from these files
+  rules-valid:
+    enabled: auto
+    severity: error
+  agentskill-valid:
+    enabled: auto
+    severity: error
+  agentskill-name:
+    enabled: auto
+    severity: error
+  agentskill-description:
+    enabled: auto
+    severity: warning
+  agentskill-structure:
+    enabled: false
+    severity: warning
+  agentskill-evals-required:
+    enabled: false
+    severity: warning
+  agentskill-evals:
+    enabled: auto
+    severity: warning
 custom-rules: []
-  # - ./my-custom-rules.py
-
-# Exclude patterns (glob format)
 exclude: []
-  # - "**/node_modules/**"
-  # - "**/.git/**"
-  # - "**/vendor/**"
-
-# Treat warnings as errors
 strict: false
-

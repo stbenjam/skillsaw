@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean apm verify-apm
+.PHONY: help venv format lint test clean apm verify-apm generate-example
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  lint          - Check code formatting with black"
 	@echo "  test          - Run pytest tests"
 	@echo "  clean         - Remove Python cache files and virtualenv"
+	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
@@ -29,6 +30,11 @@ lint: $(VENV)/bin/activate
 
 test: $(VENV)/bin/activate
 	$(VENV)/bin/pytest tests/ -v --cov=src --cov=rules --cov-report=xml --cov-report=term
+
+generate-example: $(VENV)/bin/activate
+	rm -f .skillsaw.yaml.example
+	$(VENV)/bin/skillsaw --init
+	mv .skillsaw.yaml .skillsaw.yaml.example
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
