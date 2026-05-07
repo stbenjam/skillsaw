@@ -171,60 +171,6 @@ class PluginNamingRule(Rule):
         return bool(re.match(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$", name))
 
 
-class CommandsDirRequiredRule(Rule):
-    """Deprecated: Claude Code now treats skills/ and commands/ as equivalent"""
-
-    repo_types = PLUGIN_REPO_TYPES
-
-    @property
-    def rule_id(self) -> str:
-        return "commands-dir-required"
-
-    @property
-    def description(self) -> str:
-        return "Deprecated — Claude Code merged skills and commands into a single mechanism"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        return [
-            self.violation(
-                "Rule 'commands-dir-required' is deprecated: Claude Code now treats "
-                "skills/ and commands/ as the same mechanism. Use skills/ for new "
-                "workflows. This rule will be removed in a future release.",
-                severity=Severity.WARNING,
-            )
-        ]
-
-
-class CommandsExistRule(Rule):
-    """Deprecated: Claude Code now treats skills/ and commands/ as equivalent"""
-
-    repo_types = PLUGIN_REPO_TYPES
-
-    @property
-    def rule_id(self) -> str:
-        return "commands-exist"
-
-    @property
-    def description(self) -> str:
-        return "Deprecated — Claude Code merged skills and commands into a single mechanism"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        return [
-            self.violation(
-                "Rule 'commands-exist' is deprecated: Claude Code now treats skills/ "
-                "and commands/ as the same mechanism. Use skills/ for new workflows. "
-                "This rule will be removed in a future release.",
-                severity=Severity.WARNING,
-            )
-        ]
-
-
 class PluginReadmeRule(Rule):
     """Check that plugin has a README.md"""
 

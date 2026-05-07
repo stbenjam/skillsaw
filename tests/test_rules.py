@@ -12,8 +12,6 @@ from skillsaw.rules.builtin.plugin_structure import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
-    CommandsDirRequiredRule,
-    CommandsExistRule,
 )
 from skillsaw.rules.builtin.command_format import (
     CommandNamingRule,
@@ -227,23 +225,3 @@ def test_plugin_json_missing_name_is_error(temp_dir):
     assert "name" in errors[0].message
     # version and author are missing -> 2 warnings
     assert len(warnings) == 2
-
-
-def test_commands_dir_required_emits_deprecation_warning(valid_plugin):
-    """Test that commands-dir-required emits a deprecation warning"""
-    context = RepositoryContext(valid_plugin)
-    rule = CommandsDirRequiredRule()
-    violations = rule.check(context)
-    assert len(violations) == 1
-    assert "deprecated" in violations[0].message
-    assert violations[0].severity == Severity.WARNING
-
-
-def test_commands_exist_emits_deprecation_warning(valid_plugin):
-    """Test that commands-exist emits a deprecation warning"""
-    context = RepositoryContext(valid_plugin)
-    rule = CommandsExistRule()
-    violations = rule.check(context)
-    assert len(violations) == 1
-    assert "deprecated" in violations[0].message
-    assert violations[0].severity == Severity.WARNING

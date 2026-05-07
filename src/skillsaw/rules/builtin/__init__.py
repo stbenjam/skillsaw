@@ -6,8 +6,6 @@ from .plugin_structure import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
-    CommandsDirRequiredRule,
-    CommandsExistRule,
     PluginReadmeRule,
 )
 
@@ -55,8 +53,6 @@ BUILTIN_RULES = [
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
-    CommandsDirRequiredRule,
-    CommandsExistRule,
     PluginReadmeRule,
     # Command format
     CommandNamingRule,
@@ -91,8 +87,6 @@ __all__ = [
     "PluginJsonRequiredRule",
     "PluginJsonValidRule",
     "PluginNamingRule",
-    "CommandsDirRequiredRule",
-    "CommandsExistRule",
     "PluginReadmeRule",
     "CommandNamingRule",
     "CommandFrontmatterRule",
