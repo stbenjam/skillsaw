@@ -610,3 +610,116 @@ def test_invalid_startup_timeout_type(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "'startupTimeout' must be a number" in violations[0].message
+
+
+def test_reserved_workspace_name_warns(temp_dir):
+    """Test that reserved server name 'workspace' produces a warning"""
+    mcp_config = {"mcpServers": {"workspace": {"command": "node", "args": ["server.js"]}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "reserved" in violations[0].message
+    from skillsaw.rule import Severity
+
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_valid_headers_helper(temp_dir):
+    """Test that valid headersHelper field passes"""
+    mcp_config = {
+        "mcpServers": {
+            "http-server": {
+                "type": "http",
+                "url": "https://api.example.com/mcp",
+                "headersHelper": "get-auth-headers.sh",
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_invalid_headers_helper_type(temp_dir):
+    """Test that invalid headersHelper type is detected"""
+    mcp_config = {
+        "mcpServers": {
+            "http-server": {
+                "type": "http",
+                "url": "https://api.example.com/mcp",
+                "headersHelper": ["invalid-should-be-string"],
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "'headersHelper' must be a string" in violations[0].message
+
+
+def test_valid_always_load(temp_dir):
+    """Test that valid alwaysLoad field passes"""
+    mcp_config = {"mcpServers": {"test-server": {"command": "node", "alwaysLoad": True}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_invalid_always_load_type(temp_dir):
+    """Test that invalid alwaysLoad type is detected"""
+    mcp_config = {"mcpServers": {"test-server": {"command": "node", "alwaysLoad": "yes"}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "'alwaysLoad' must be a boolean" in violations[0].message
+
+
+def test_valid_oauth_config(temp_dir):
+    """Test that valid OAuth configuration passes"""
+    mcp_config = {
+        "mcpServers": {
+            "http-server": {
+                "type": "http",
+                "url": "https://api.example.com/mcp",
+                "oauth": {
+                    "clientId": "my-client-id",
+                    "callbackPort": 8080,
+                    "scopes": "read write",
+                },
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_invalid_oauth_type(temp_dir):
+    """Test that invalid oauth type is detected"""
+    mcp_config = {
+        "mcpServers": {
+            "http-server": {
+                "type": "http",
+                "url": "https://api.example.com/mcp",
+                "oauth": "invalid-should-be-object",
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "'oauth' must be an object" in violations[0].message

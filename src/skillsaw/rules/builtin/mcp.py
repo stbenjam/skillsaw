@@ -120,6 +120,15 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
+            if server_name == "workspace":
+                violations.append(
+                    self.violation(
+                        f"MCP server name 'workspace' is reserved",
+                        file_path=file_path,
+                        severity=Severity.WARNING,
+                    )
+                )
+
             # Get server type (defaults to stdio)
             server_type = server_config.get("type", "stdio")
 
@@ -191,6 +200,36 @@ class McpValidJsonRule(Rule):
                     violations.append(
                         self.violation(
                             f"MCP server '{server_name}' 'startupTimeout' must be a number",
+                            file_path=file_path,
+                        )
+                    )
+
+            if "headersHelper" in server_config and not isinstance(
+                server_config["headersHelper"], str
+            ):
+                violations.append(
+                    self.violation(
+                        f"MCP server '{server_name}' 'headersHelper' must be a string",
+                        file_path=file_path,
+                    )
+                )
+
+            if "alwaysLoad" in server_config:
+                val = server_config["alwaysLoad"]
+                if not isinstance(val, bool):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{server_name}' 'alwaysLoad' must be a boolean",
+                            file_path=file_path,
+                        )
+                    )
+
+            if "oauth" in server_config:
+                oauth = server_config["oauth"]
+                if not isinstance(oauth, dict):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{server_name}' 'oauth' must be an object",
                             file_path=file_path,
                         )
                     )
