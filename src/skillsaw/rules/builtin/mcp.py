@@ -240,6 +240,14 @@ class McpValidJsonRule(Rule):
 class McpProhibitedRule(Rule):
     """Check that plugins do not enable MCP servers (security/policy rule)"""
 
+    config_schema = {
+        "allowlist": {
+            "type": "list",
+            "default": "[]",
+            "description": "MCP server names that are permitted",
+        },
+    }
+
     @property
     def rule_id(self) -> str:
         return "mcp-prohibited"

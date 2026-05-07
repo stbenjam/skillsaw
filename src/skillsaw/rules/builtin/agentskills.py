@@ -295,6 +295,13 @@ class AgentSkillStructureRule(Rule):
         RepositoryType.MARKETPLACE,
         RepositoryType.DOT_CLAUDE,
     }
+    config_schema = {
+        "allowed_dirs": {
+            "type": "list",
+            "default": '["scripts", "references", "assets", "evals"]',
+            "description": "Directory names allowed in the skill root",
+        },
+    }
 
     @property
     def rule_id(self) -> str:
