@@ -139,9 +139,44 @@ class LinterConfig:
         }
 
     def save(self, config_path: Path):
-        """Save configuration to file"""
+        """Save configuration to file with rule descriptions as comments"""
+        from .rules.builtin import BUILTIN_RULES
+
+        descriptions = {}
+        for rule_class in BUILTIN_RULES:
+            rule = rule_class()
+            descriptions[rule.rule_id] = rule.description
+
         with open(config_path, "w") as f:
-            yaml.dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
+            f.write("# skillsaw configuration\n")
+            f.write("# https://github.com/stbenjam/skillsaw\n\n")
+            f.write("rules:\n")
+            for rule_id, rule_config in self.rules.items():
+                desc = descriptions.get(rule_id, "")
+                if desc:
+                    f.write(f"\n  # {desc}\n")
+                f.write(f"  {rule_id}:\n")
+                for key, value in rule_config.items():
+                    f.write(f"    {key}: {self._yaml_value(value)}\n")
+
+            f.write("\n# Load custom rules from these files\n")
+            f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
+            f.write("\n# Exclude patterns (glob format)\n")
+            f.write(f"exclude: {self._yaml_value(self.exclude_patterns)}\n")
+            f.write("\n# Treat warnings as errors\n")
+            f.write(f"strict: {self._yaml_value(self.strict)}\n")
+
+    @staticmethod
+    def _yaml_value(value):
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, list):
+            if not value:
+                return "[]"
+            return "\n" + "\n".join(f"    - {item}" for item in value)
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 def find_config(start_path: Path) -> Optional[Path]:

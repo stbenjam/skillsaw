@@ -1,74 +1,127 @@
+# skillsaw configuration
+# https://github.com/stbenjam/skillsaw
+
 rules:
+
+  # Plugin must have .claude-plugin/plugin.json
   plugin-json-required:
     enabled: auto
     severity: error
+
+  # Plugin.json must be valid JSON with required fields
   plugin-json-valid:
     enabled: auto
     severity: error
-    recommended-fields:
+    recommended-fields: 
     - description
     - version
     - author
+
+  # Plugin names should use kebab-case
   plugin-naming:
     enabled: auto
     severity: warning
+
+  # Command files should use kebab-case naming
   command-naming:
     enabled: true
     severity: warning
+
+  # Command files must have valid frontmatter with description
   command-frontmatter:
     enabled: true
     severity: error
+
+  # Command files should have Name, Synopsis, Description, and Implementation sections
   command-sections:
     enabled: true
     severity: warning
+
+  # Command Name section should be 'plugin-name:command-name'
   command-name-format:
     enabled: true
     severity: warning
+
+  # Marketplace.json must be valid JSON with required fields
   marketplace-json-valid:
     enabled: auto
     severity: error
+
+  # Plugins must be registered in marketplace.json
   marketplace-registration:
     enabled: auto
     severity: error
+
+  # Plugin should have a README.md file
   plugin-readme:
     enabled: auto
     severity: warning
+
+  # SKILL.md files should have frontmatter with name and description
   skill-frontmatter:
     enabled: true
     severity: warning
+
+  # Agent files must have valid frontmatter with name and description
   agent-frontmatter:
     enabled: true
     severity: error
+
+  # hooks.json must be valid JSON with proper hook configuration structure
   hooks-json-valid:
     enabled: true
     severity: error
+
+  # MCP configuration must be valid JSON with proper mcpServers structure
   mcp-valid-json:
     enabled: true
     severity: error
+
+  # Plugins should not enable non-allowlisted MCP servers
   mcp-prohibited:
     enabled: false
     severity: error
+
+  # .claude/rules/ files must be markdown with valid optional paths frontmatter
   rules-valid:
     enabled: auto
     severity: error
+
+  # SKILL.md must have valid frontmatter with name and description
   agentskill-valid:
     enabled: auto
     severity: error
+
+  # Skill name must be lowercase with hyphens and match directory name
   agentskill-name:
     enabled: auto
     severity: error
+
+  # Skill description should be meaningful and within length limits
   agentskill-description:
     enabled: auto
     severity: warning
+
+  # Skill directories should only contain recognized subdirectories (stricter than spec)
   agentskill-structure:
     enabled: false
     severity: warning
+
+  # Require evals/evals.json for each skill (opt-in)
   agentskill-evals-required:
     enabled: false
     severity: warning
+
+  # Validate evals/evals.json format when present
   agentskill-evals:
     enabled: auto
     severity: warning
+
+# Load custom rules from these files
 custom-rules: []
+
+# Exclude patterns (glob format)
 exclude: []
+
+# Treat warnings as errors
 strict: false
