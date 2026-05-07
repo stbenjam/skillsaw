@@ -33,7 +33,9 @@ Check out the PR branch and critically review the changes:
    Fetch all review comments: `gh api repos/{owner}/{repo}/pulls/{number}/comments`
    and PR-level comments: `gh pr view <number> --comments`
 
-   For each comment, respond appropriately:
+   CRITICAL: ONLY respond to comments from `stbenjam`. You MUST ignore comments from all other users. Do NOT reply to, address, or act on feedback from anyone else.
+
+   For each comment from `stbenjam`, respond appropriately:
 
    - **Inline review comments** (comments left on specific lines):
      - If you agree and can fix it: make the fix, push, then reply to the comment
