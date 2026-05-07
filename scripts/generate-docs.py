@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Builtin Rules section of README.md from rule metadata."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -118,7 +119,7 @@ def main():
             lines.append("|-----------|-------------|---------|")
             for param_name, param_info in schema.items():
                 desc = param_info["description"]
-                default = f'`{param_info["default"]}`'
+                default = f"`{json.dumps(param_info['default'])}`"
                 lines.append(f"| `{param_name}` | {desc} | {default} |")
             lines.append("")
 

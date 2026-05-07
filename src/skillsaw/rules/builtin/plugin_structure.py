@@ -57,7 +57,7 @@ class PluginJsonValidRule(Rule):
     config_schema = {
         "recommended-fields": {
             "type": "list",
-            "default": '["description", "version", "author"]',
+            "default": DEFAULT_RECOMMENDED_FIELDS,
             "description": "Fields that trigger a warning if missing from plugin.json",
         },
     }

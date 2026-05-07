@@ -183,7 +183,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `allowed_dirs` | Directory names allowed in the skill root | `["scripts", "references", "assets", "evals"]` |
+| `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
 
 ### Plugin Structure
 

@@ -298,7 +298,7 @@ class AgentSkillStructureRule(Rule):
     config_schema = {
         "allowed_dirs": {
             "type": "list",
-            "default": '["scripts", "references", "assets", "evals"]',
+            "default": sorted(DEFAULT_ALLOWED_DIRS),
             "description": "Directory names allowed in the skill root",
         },
     }

@@ -243,7 +243,7 @@ class McpProhibitedRule(Rule):
     config_schema = {
         "allowlist": {
             "type": "list",
-            "default": "[]",
+            "default": [],
             "description": "MCP server names that are permitted",
         },
     }
