@@ -9,7 +9,7 @@ from importlib.metadata import version, PackageNotFoundError
 
 from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
-from .linter import ClaudeLinter
+from .linter import Linter
 from . import __version__
 
 
@@ -150,7 +150,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         config.strict = True
 
     # Create and run linter
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
 
     # Format and print results

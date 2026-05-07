@@ -5,7 +5,7 @@ Tests for custom rule loading functionality
 import pytest
 from pathlib import Path
 
-from skillsaw.linter import ClaudeLinter
+from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 
@@ -39,7 +39,7 @@ class TestCustomRule(Rule):
     context = RepositoryContext(valid_plugin)
 
     # Should load without error
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Verify the custom rule was loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
@@ -53,7 +53,7 @@ def test_load_custom_rule_missing_file(valid_plugin):
 
     # Should raise FileNotFoundError
     with pytest.raises(FileNotFoundError, match="Custom rule file not found"):
-        ClaudeLinter(context, config)
+        Linter(context, config)
 
 
 def test_load_custom_rule_import_error(valid_plugin, temp_dir):
@@ -86,7 +86,7 @@ class BadImportRule(Rule):
 
     # Should raise ModuleNotFoundError or ImportError
     with pytest.raises((ModuleNotFoundError, ImportError)):
-        ClaudeLinter(context, config)
+        Linter(context, config)
 
 
 def test_load_custom_rule_syntax_error(valid_plugin, temp_dir):
@@ -118,7 +118,7 @@ class SyntaxErrorRule(Rule):
 
     # Should raise SyntaxError
     with pytest.raises(SyntaxError):
-        ClaudeLinter(context, config)
+        Linter(context, config)
 
 
 def test_load_custom_rule_missing_imports(valid_plugin, temp_dir):
@@ -151,7 +151,7 @@ class MissingExportRule(Rule):
 
     # Should raise ImportError
     with pytest.raises(ImportError, match="cannot import name 'NonExistentClass'"):
-        ClaudeLinter(context, config)
+        Linter(context, config)
 
 
 def test_load_custom_rule_relative_path(valid_plugin, temp_dir):
@@ -183,7 +183,7 @@ class RelativePathRule(Rule):
     context = RepositoryContext(valid_plugin)
 
     # Should load successfully
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Verify the custom rule was loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
@@ -240,7 +240,7 @@ class CustomRule2(Rule):
     context = RepositoryContext(valid_plugin)
 
     # Should load both without error
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Verify both custom rules were loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
@@ -275,7 +275,7 @@ class ViolationRule(Rule):
     config = LinterConfig(custom_rules=[str(custom_rule_file)])
     context = RepositoryContext(valid_plugin)
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
     violations = linter.run()
 
     # Should find the violation
@@ -314,7 +314,7 @@ class DisabledRule(Rule):
     )
     context = RepositoryContext(valid_plugin)
 
-    linter = ClaudeLinter(context, config)
+    linter = Linter(context, config)
 
     # Custom rule should not be loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
