@@ -32,6 +32,8 @@ class ClaudeLinter:
 
     def _load_rules(self):
         """Load all enabled rules"""
+        self._known_rule_ids: set = set()
+
         # Load builtin rules
         self._load_builtin_rules()
 
@@ -46,6 +48,7 @@ class ClaudeLinter:
         for rule_class in BUILTIN_RULES:
             # Instantiate to discover rule_id (a property, not accessible on the class)
             rule_instance = rule_class()
+            self._known_rule_ids.add(rule_instance.rule_id)
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
                 rule_instance = rule_class(config)
@@ -83,6 +86,7 @@ class ClaudeLinter:
             if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
                 # Instantiate to discover rule_id (a property, not accessible on the class)
                 rule_instance = obj()
+                self._known_rule_ids.add(rule_instance.rule_id)
                 config = self.config.get_rule_config(rule_instance.rule_id)
                 if config:
                     rule_instance = obj(config)
@@ -93,6 +97,20 @@ class ClaudeLinter:
                 ):
                     self.rules.append(rule_instance)
 
+    def _validate_config(self) -> List[RuleViolation]:
+        """Check for unknown rule IDs in config"""
+        warnings = []
+        for rule_id in self.config.rules:
+            if rule_id not in self._known_rule_ids:
+                warnings.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Unknown rule '{rule_id}' in config — rule does not exist and will be ignored",
+                    )
+                )
+        return warnings
+
     def run(self) -> List[RuleViolation]:
         """
         Run all enabled rules
@@ -100,7 +118,7 @@ class ClaudeLinter:
         Returns:
             List of all violations found
         """
-        violations = []
+        violations = self._validate_config()
 
         for rule in self.rules:
             try:

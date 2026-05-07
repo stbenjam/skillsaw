@@ -60,14 +60,6 @@ class LinterConfig:
                     "recommended-fields": ["description", "version", "author"],
                 },
                 "plugin-naming": {"enabled": "auto", "severity": "warning"},
-                "commands-dir-required": {
-                    "enabled": False,
-                    "severity": "warning",
-                },
-                "commands-exist": {
-                    "enabled": False,
-                    "severity": "info",
-                },
                 # Command format rules
                 "command-naming": {"enabled": True, "severity": "warning"},
                 "command-frontmatter": {"enabled": True, "severity": "error"},

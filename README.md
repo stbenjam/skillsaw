@@ -217,8 +217,6 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `plugin-json-required` | Plugin must have `.claude-plugin/plugin.json` | error |
 | `plugin-json-valid` | Plugin.json must be valid with required fields | error |
 | `plugin-naming` | Plugin names should use kebab-case | warning |
-| `commands-dir-required` | Plugin should have a commands directory | warning (disabled) |
-| `commands-exist` | Plugin should have at least one command file | info (disabled) |
 | `plugin-readme` | Plugin should have a README.md file | warning |
 
 ### Command Format
@@ -366,6 +364,17 @@ This project was renamed from `claudelint` to `skillsaw`. To migrate:
 4. Update imports in custom rules: `from skillsaw import ...` (the old `from claudelint import ...` still works)
 
 The `claudelint` command still works as a shim but prints a deprecation warning.
+
+### Removed rules
+
+The following rules from `claudelint` have been removed in `skillsaw`:
+
+| Rule ID | Reason |
+|---------|--------|
+| `commands-dir-required` | Claude Code now treats `skills/` and `commands/` as the same mechanism; requiring a `commands/` directory is no longer meaningful |
+| `commands-exist` | Same as above — plugins don't need to have commands |
+
+If your `.skillsaw.yaml` references these rule IDs, `skillsaw` will emit a warning about the unknown rule.
 
 ## Development
 
