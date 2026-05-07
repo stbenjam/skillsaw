@@ -146,6 +146,19 @@ jobs:
           # Clone ai-helpers repo
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
+          # Disable agentskills rules until ai-helpers updates its skills
+          python3 -c "
+          import yaml
+          with open('/tmp/ai-helpers/.claudelint.yaml') as f:
+              cfg = yaml.safe_load(f) or {}
+          rules = cfg.setdefault('rules', {})
+          for r in ['agentskill-valid','agentskill-name','agentskill-description',
+                     'agentskill-structure','agentskill-evals','agentskill-evals-required']:
+              rules[r] = {'enabled': False}
+          with open('/tmp/ai-helpers/.claudelint.yaml', 'w') as f:
+              yaml.dump(cfg, f, default_flow_style=False)
+          "
+
           # Lint it
           agentlint /tmp/ai-helpers
 

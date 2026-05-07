@@ -75,7 +75,9 @@ def test_rule_enabled_for_context(valid_plugin):
     config = LinterConfig.default()
 
     # marketplace-registration should be disabled for single plugin
-    enabled = config.is_rule_enabled("marketplace-registration", context)
+    enabled = config.is_rule_enabled(
+        "marketplace-registration", context, {RepositoryType.MARKETPLACE}
+    )
     assert enabled is False
 
 
@@ -85,5 +87,51 @@ def test_rule_enabled_auto(marketplace_repo):
     config = LinterConfig.default()
 
     # marketplace-registration should be enabled for marketplace
-    enabled = config.is_rule_enabled("marketplace-registration", context)
+    enabled = config.is_rule_enabled(
+        "marketplace-registration", context, {RepositoryType.MARKETPLACE}
+    )
     assert enabled is True
+
+
+def test_auto_agentskills_fires_on_all_skill_repo_types(temp_dir):
+    """Test that auto with agentskills repo_types fires on AGENTSKILLS, PLUGIN, MARKETPLACE"""
+    config = LinterConfig.default()
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
+
+    # AGENTSKILLS repo
+    skill = temp_dir / "skill-repo"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: skill-repo\ndescription: A skill\n---\n")
+    ctx = RepositoryContext(skill)
+    assert ctx.repo_type == RepositoryType.AGENTSKILLS
+    assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is True
+
+    # SINGLE_PLUGIN repo
+    import json
+
+    plugin = temp_dir / "plugin-repo"
+    plugin.mkdir()
+    claude_dir = plugin / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text(json.dumps({"name": "plugin-repo"}))
+    ctx = RepositoryContext(plugin)
+    assert ctx.repo_type == RepositoryType.SINGLE_PLUGIN
+    assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is True
+
+    # UNKNOWN repo
+    empty = temp_dir / "empty-repo"
+    empty.mkdir()
+    ctx = RepositoryContext(empty)
+    assert ctx.repo_type == RepositoryType.UNKNOWN
+    assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is False
+
+
+def test_auto_without_repo_types_always_enabled(valid_plugin):
+    """Test that auto with repo_types=None enables for any repo type"""
+    config = LinterConfig.default()
+    context = RepositoryContext(valid_plugin)
+    assert config.is_rule_enabled("some-rule", context, None) is True

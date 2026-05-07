@@ -12,6 +12,8 @@ from agentlint.context import RepositoryContext, RepositoryType
 class MarketplaceJsonValidRule(Rule):
     """Check that marketplace.json is valid"""
 
+    repo_types = {RepositoryType.MARKETPLACE}
+
     @property
     def rule_id(self) -> str:
         return "marketplace-json-valid"
@@ -79,6 +81,8 @@ class MarketplaceJsonValidRule(Rule):
 
 class MarketplaceRegistrationRule(Rule):
     """Check that plugins are registered in marketplace.json"""
+
+    repo_types = {RepositoryType.MARKETPLACE}
 
     @property
     def rule_id(self) -> str:

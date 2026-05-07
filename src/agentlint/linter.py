@@ -51,7 +51,9 @@ class ClaudeLinter:
                 rule_instance = rule_class(config)
 
             # Check if enabled for this context
-            if self.config.is_rule_enabled(rule_instance.rule_id, self.context):
+            if self.config.is_rule_enabled(
+                rule_instance.rule_id, self.context, rule_instance.repo_types
+            ):
                 self.rules.append(rule_instance)
 
     def _load_custom_rule(self, rule_path: str):
@@ -86,7 +88,9 @@ class ClaudeLinter:
                     rule_instance = obj(config)
 
                 # Check if enabled
-                if self.config.is_rule_enabled(rule_instance.rule_id, self.context):
+                if self.config.is_rule_enabled(
+                    rule_instance.rule_id, self.context, rule_instance.repo_types
+                ):
                     self.rules.append(rule_instance)
 
     def run(self) -> List[RuleViolation]:

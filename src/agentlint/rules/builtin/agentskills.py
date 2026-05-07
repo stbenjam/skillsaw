@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple, Dict
 import yaml
 
 from agentlint.rule import Rule, RuleViolation, Severity
-from agentlint.context import RepositoryContext
+from agentlint.context import RepositoryContext, RepositoryType
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
@@ -57,6 +57,12 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
 
 class AgentSkillValidRule(Rule):
     """Validate SKILL.md exists with required frontmatter fields"""
+
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
 
     @property
     def rule_id(self) -> str:
@@ -110,6 +116,12 @@ class AgentSkillValidRule(Rule):
 
 class AgentSkillNameRule(Rule):
     """Validate skill name format per agentskills.io spec"""
+
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
 
     @property
     def rule_id(self) -> str:
@@ -176,6 +188,12 @@ class AgentSkillNameRule(Rule):
 class AgentSkillDescriptionRule(Rule):
     """Validate skill description quality"""
 
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
+
     @property
     def rule_id(self) -> str:
         return "agentskill-description"
@@ -222,6 +240,12 @@ class AgentSkillDescriptionRule(Rule):
 class AgentSkillStructureRule(Rule):
     """Validate skill directory structure"""
 
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
+
     @property
     def rule_id(self) -> str:
         return "agentskill-structure"
@@ -258,6 +282,12 @@ class AgentSkillStructureRule(Rule):
 class AgentSkillEvalsRequiredRule(Rule):
     """Require evals/evals.json in each skill"""
 
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
+
     @property
     def rule_id(self) -> str:
         return "agentskill-evals-required"
@@ -287,6 +317,12 @@ class AgentSkillEvalsRequiredRule(Rule):
 
 class AgentSkillEvalsRule(Rule):
     """Validate evals/evals.json structure"""
+
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
 
     @property
     def rule_id(self) -> str:

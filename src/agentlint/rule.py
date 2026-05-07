@@ -46,6 +46,8 @@ class RuleViolation:
 class Rule(ABC):
     """Base class for linting rules"""
 
+    repo_types = None
+
     def __init__(self, config: Dict[str, Any] = None):
         """
         Initialize rule with optional configuration
