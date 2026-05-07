@@ -1,10 +1,14 @@
-.PHONY: help format test clean
+APM_VERSION := 0.11.0
+
+.PHONY: help format test clean apm verify-apm
 
 help:
 	@echo "Available targets:"
 	@echo "  format        - Fix code formatting with black"
 	@echo "  test          - Run pytest tests"
 	@echo "  clean         - Remove Python cache files"
+	@echo "  apm           - Install and compile APM dependencies"
+	@echo "  verify-apm    - Verify generated APM files are up to date"
 
 format:
 	black src/ tests/
@@ -20,3 +24,14 @@ clean:
 	rm -rf .coverage
 	rm -rf coverage.xml
 	rm -rf htmlcov
+
+apm:
+	uvx --from apm-cli@$(APM_VERSION) apm install
+	uvx --from apm-cli@$(APM_VERSION) apm compile
+
+verify-apm: apm
+	@if ! git diff --quiet --exit-code .github/prompts .github/skills GEMINI.md 2>/dev/null; then \
+		echo "Error: Generated APM files are out of date. Run 'make apm' and commit the results."; \
+		git diff --stat .github/prompts .github/skills GEMINI.md 2>/dev/null; \
+		exit 1; \
+	fi

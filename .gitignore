@@ -148,3 +148,5 @@ examples/test-repos/
 .work/
 .claude/
 uv.lock
+apm_modules/
+apm.lock.yaml
