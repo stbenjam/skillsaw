@@ -172,7 +172,7 @@ class PluginNamingRule(Rule):
 
 
 class CommandsDirRequiredRule(Rule):
-    """Check that commands directory exists"""
+    """Check that commands or skills directory exists"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -182,7 +182,7 @@ class CommandsDirRequiredRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugin must have a commands directory"
+        return "Plugin must have a commands or skills directory"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -192,16 +192,17 @@ class CommandsDirRequiredRule(Rule):
 
         for plugin_path in context.plugins:
             commands_dir = plugin_path / "commands"
-            if not commands_dir.exists():
+            skills_dir = plugin_path / "skills"
+            if not commands_dir.exists() and not skills_dir.exists():
                 violations.append(
-                    self.violation("Missing commands directory", file_path=plugin_path)
+                    self.violation("Missing commands or skills directory", file_path=plugin_path)
                 )
 
         return violations
 
 
 class CommandsExistRule(Rule):
-    """Check that at least one command file exists"""
+    """Check that at least one command or skill exists"""
 
     repo_types = PLUGIN_REPO_TYPES
 
@@ -211,7 +212,7 @@ class CommandsExistRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugin should have at least one command file"
+        return "Plugin should have at least one command or skill"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -221,16 +222,24 @@ class CommandsExistRule(Rule):
 
         for plugin_path in context.plugins:
             commands_dir = plugin_path / "commands"
+            skills_dir = plugin_path / "skills"
 
-            if not commands_dir.exists():
+            has_commands = commands_dir.exists() and list(commands_dir.glob("*.md"))
+            has_skills = (
+                skills_dir.exists()
+                and any((d / "SKILL.md").exists() for d in skills_dir.iterdir() if d.is_dir())
+                if skills_dir.exists()
+                else False
+            )
+
+            if not commands_dir.exists() and not skills_dir.exists():
                 continue  # Handled by commands-dir-required
 
-            command_files = list(commands_dir.glob("*.md"))
-            if not command_files:
+            if not has_commands and not has_skills:
                 violations.append(
                     self.violation(
-                        "No command files found in commands directory",
-                        file_path=commands_dir,
+                        "No command or skill files found",
+                        file_path=plugin_path,
                     )
                 )
 
