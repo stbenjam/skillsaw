@@ -21,7 +21,7 @@ def test_default_config():
 
 def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
-    config_file = temp_dir / ".agentlint.yaml"
+    config_file = temp_dir / ".skillsaw.yaml"
     config_data = {
         "rules": {"plugin-json-required": {"enabled": False, "severity": "warning"}},
         "strict": True,
@@ -37,8 +37,8 @@ def test_config_from_file(temp_dir):
 
 
 def test_find_config(temp_dir):
-    """Test config file discovery with .agentlint.yaml"""
-    config_file = temp_dir / ".agentlint.yaml"
+    """Test config file discovery with .skillsaw.yaml"""
+    config_file = temp_dir / ".skillsaw.yaml"
     config_file.touch()
 
     subdir = temp_dir / "subdir"
@@ -61,22 +61,12 @@ def test_find_config_legacy_claudelint(temp_dir):
 
 
 def test_find_config_prefers_skillsaw(temp_dir):
-    """.skillsaw.yaml takes priority over .agentlint.yaml and .claudelint.yaml"""
+    """.skillsaw.yaml takes priority over .claudelint.yaml"""
     (temp_dir / ".skillsaw.yaml").touch()
-    (temp_dir / ".agentlint.yaml").touch()
     (temp_dir / ".claudelint.yaml").touch()
 
     found = find_config(temp_dir)
     assert found.name == ".skillsaw.yaml"
-
-
-def test_find_config_prefers_agentlint_over_claudelint(temp_dir):
-    """.agentlint.yaml takes priority over .claudelint.yaml"""
-    (temp_dir / ".agentlint.yaml").touch()
-    (temp_dir / ".claudelint.yaml").touch()
-
-    found = find_config(temp_dir)
-    assert found.name == ".agentlint.yaml"
 
 
 def test_rule_enabled_for_context(valid_plugin):

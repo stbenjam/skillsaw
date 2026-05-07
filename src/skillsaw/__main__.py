@@ -1,5 +1,5 @@
 """
-Entry point for skillsaw (and agentlint/claudelint backward-compat shims)
+Entry point for skillsaw (and claudelint backward-compat shim)
 """
 
 import argparse
@@ -166,16 +166,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         sys.exit(1)
     else:
         sys.exit(0)
-
-
-def agentlint_shim():
-    """Backward-compat entry point for the 'agentlint' command"""
-    print(
-        "WARNING: 'agentlint' has been renamed to 'skillsaw'. "
-        "Please update your scripts. The 'agentlint' command will be removed in a future release.",
-        file=sys.stderr,
-    )
-    main()
 
 
 def claudelint_shim():

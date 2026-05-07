@@ -47,7 +47,6 @@ Issues = "https://github.com/stbenjam/skillsaw/issues"
 
 [project.scripts]
 skillsaw = "skillsaw.__main__:main"
-agentlint = "skillsaw.__main__:agentlint_shim"
 claudelint = "skillsaw.__main__:claudelint_shim"
 
 [tool.setuptools]
@@ -55,7 +54,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["skillsaw*", "agentlint", "claudelint"]
+include = ["skillsaw*", "claudelint"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

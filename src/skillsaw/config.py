@@ -154,8 +154,8 @@ def find_config(start_path: Path) -> Optional[Path]:
     """
     Find config file by walking up the directory tree.
 
-    Checks for .skillsaw.yaml first, then falls back to .agentlint.yaml
-    and .claudelint.yaml for backward compatibility.
+    Checks for .skillsaw.yaml first, then falls back to .claudelint.yaml
+    for backward compatibility.
     """
     current = start_path.resolve()
 
@@ -163,8 +163,6 @@ def find_config(start_path: Path) -> Optional[Path]:
         for name in (
             ".skillsaw.yaml",
             ".skillsaw.yml",
-            ".agentlint.yaml",
-            ".agentlint.yml",
             ".claudelint.yaml",
             ".claudelint.yml",
         ):

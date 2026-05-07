@@ -9,7 +9,7 @@
 
 A configurable, rule-based linter for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
 
-> **Note:** This project was formerly named `claudelint` and then `agentlint`. If you're migrating, see [Migrating from claudelint/agentlint](#migrating-from-claudelintagentlint).
+> **Note:** This project was formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
 ## Features
 
@@ -356,16 +356,16 @@ Summary:
   Warnings: 2
 ```
 
-## Migrating from claudelint/agentlint
+## Migrating from claudelint
 
-This project was renamed from `claudelint` to `agentlint` and then to `skillsaw`. To migrate:
+This project was renamed from `claudelint` to `skillsaw`. To migrate:
 
-1. Update your package: `pip install skillsaw` (instead of `pip install agentlint` or `pip install claudelint`)
-2. Rename config files: `.agentlint.yaml` or `.claudelint.yaml` to `.skillsaw.yaml` (the old names are still discovered as fallbacks)
-3. Update CLI usage: `skillsaw` (instead of `agentlint` or `claudelint`)
-4. Update imports in custom rules: `from skillsaw import ...` (the old `from agentlint import ...` and `from claudelint import ...` still work)
+1. Update your package: `pip install skillsaw` (instead of `pip install claudelint`)
+2. Rename `.claudelint.yaml` to `.skillsaw.yaml` (the old name is still discovered as a fallback)
+3. Update CLI usage: `skillsaw` (instead of `claudelint`)
+4. Update imports in custom rules: `from skillsaw import ...` (the old `from claudelint import ...` still works)
 
-The `agentlint` and `claudelint` commands still work as shims but print deprecation warnings.
+The `claudelint` command still works as a shim but prints a deprecation warning.
 
 ## Development
 

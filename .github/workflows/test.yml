@@ -92,10 +92,6 @@ jobs:
           skillsaw --init
           test -f .skillsaw.yaml
 
-      - name: Test agentlint shim
-        run: |
-          agentlint --version 2>&1 | grep -q "renamed"
-
       - name: Test claudelint shim
         run: |
           claudelint --version 2>&1 | grep -q "renamed"
