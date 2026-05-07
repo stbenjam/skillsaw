@@ -85,7 +85,7 @@ class LinterConfig:
                 "agentskill-valid": {"enabled": "auto", "severity": "error"},
                 "agentskill-name": {"enabled": "auto", "severity": "error"},
                 "agentskill-description": {"enabled": "auto", "severity": "warning"},
-                "agentskill-structure": {"enabled": "auto", "severity": "warning"},
+                "agentskill-structure": {"enabled": False, "severity": "warning"},
                 "agentskill-evals-required": {"enabled": False, "severity": "warning"},
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
             }

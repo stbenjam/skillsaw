@@ -18,7 +18,7 @@ DESCRIPTION_MAX_LENGTH = 1024
 COMPATIBILITY_MAX_LENGTH = 500
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
-KNOWN_DIRS = {"scripts", "references", "assets", "evals"}
+DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 
 @lru_cache(maxsize=None)
@@ -287,7 +287,7 @@ class AgentSkillDescriptionRule(Rule):
 
 
 class AgentSkillStructureRule(Rule):
-    """Validate skill directory structure"""
+    """Validate skill directory structure (stricter than spec)"""
 
     repo_types = {
         RepositoryType.AGENTSKILLS,
@@ -302,24 +302,27 @@ class AgentSkillStructureRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Skill directories should only contain recognized subdirectories"
+        return (
+            "Skill directories should only contain recognized subdirectories (stricter than spec)"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
+        allowed = set(self.config.get("allowed_dirs", DEFAULT_ALLOWED_DIRS))
 
         for skill_path in context.skills:
             try:
                 for item in skill_path.iterdir():
                     if not item.is_dir() or item.name.startswith("."):
                         continue
-                    if item.name not in KNOWN_DIRS:
+                    if item.name not in allowed:
                         violations.append(
                             self.violation(
                                 f"Unrecognized directory '{item.name}' "
-                                f"(expected: {', '.join(sorted(KNOWN_DIRS))})",
+                                f"(expected: {', '.join(sorted(allowed))})",
                                 file_path=item,
                             )
                         )

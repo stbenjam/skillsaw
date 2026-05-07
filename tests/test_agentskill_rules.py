@@ -368,6 +368,21 @@ def test_structure_unknown_dir_warns(temp_dir):
     assert "random-stuff" in violations[0].message
 
 
+def test_structure_custom_allowed_dirs(temp_dir):
+    skill = temp_dir / "custom"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: custom\ndescription: Custom skill\n---\n")
+    (skill / "tests").mkdir()
+    (skill / "vendor").mkdir()
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillStructureRule(
+        config={"allowed_dirs": ["scripts", "references", "assets", "evals", "tests", "vendor"]}
+    )
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
 def test_structure_ignores_dotdirs(temp_dir):
     skill = temp_dir / "hidden"
     skill.mkdir()

@@ -86,8 +86,9 @@ my-skill/
 ├── scripts/              # Optional: executable code
 ├── references/           # Optional: documentation
 ├── assets/               # Optional: templates, resources
-└── evals/                # Optional: evaluation tests
-    └── evals.json
+├── evals/                # Optional: evaluation tests
+│   └── evals.json
+└── <any-dir>/            # Arbitrary directories allowed per spec
 ```
 
 Skill collections (multiple skills in subdirectories) are also supported:
@@ -206,9 +207,26 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) |
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
-| `agentskill-structure` | Skill directories should only contain recognized subdirectories | warning (auto) |
+| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) |
 | `agentskill-evals-required` | Require evals/evals.json for each skill | warning (disabled) |
+
+> **Note:** The `agentskill-structure` rule is disabled by default because the
+> [agentskills.io spec](https://agentskills.io/specification) allows arbitrary
+> directories inside a skill. Enable it and configure `allowed_dirs` if you want
+> stricter validation:
+>
+> ```yaml
+> rules:
+>   agentskill-structure:
+>     enabled: true
+>     allowed_dirs:
+>       - scripts
+>       - references
+>       - assets
+>       - evals
+>       - tests        # add your own
+> ```
 
 ### Plugin Structure
 
