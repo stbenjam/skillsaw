@@ -1,8 +1,0 @@
-{
-  "hooks": {
-    "pre_commit": {
-      "command": "echo hello",
-      "bogus_field": true
-    }
-  }
-}
