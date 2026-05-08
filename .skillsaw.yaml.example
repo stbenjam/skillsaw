@@ -12,7 +12,7 @@ rules:
   plugin-json-valid:
     enabled: auto
     severity: error
-    recommended-fields: 
+    recommended-fields:
     - description
     - version
     - author
