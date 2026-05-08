@@ -51,7 +51,13 @@ runs:
     - name: Install skillsaw
       shell: bash
       run: |
-        pip install -q "skillsaw${{ inputs.version && format('=={0}', inputs.version) || '' }}"
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install -q "skillsaw==${{ inputs.version }}"
+        elif [ -f "${{ github.action_path }}/pyproject.toml" ]; then
+          pip install -q "${{ github.action_path }}"
+        else
+          pip install -q skillsaw
+        fi
 
     - name: Run skillsaw
       id: lint

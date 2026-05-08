@@ -122,7 +122,15 @@ def main():
         return
 
     with open(report_file) as f:
-        report = json.load(f)
+        content = f.read().strip()
+    if not content:
+        print("Report file is empty, skipping review.", file=sys.stderr)
+        return
+    try:
+        report = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse report JSON: {e}", file=sys.stderr)
+        return
 
     repo = os.environ["GITHUB_REPOSITORY"]
     pr_number = os.environ["PR_NUMBER"]
