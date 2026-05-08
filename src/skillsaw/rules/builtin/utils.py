@@ -75,7 +75,7 @@ def extract_section(content: str, heading: str, level: int = 2) -> str:
     """Extract content under a markdown heading, up to the next heading of same or higher level."""
     prefix = "#" * level
     pattern = re.compile(
-        rf"^{prefix}\s+{re.escape(heading)}\s*$\n(.*?)(?=^#{{{1},{level}}}\s|\Z)",
+        rf"^{prefix}[ \t]+{re.escape(heading)}[ \t]*$\r?\n?(.*?)(?=^#{{{1},{level}}}[ \t]|\Z)",
         re.MULTILINE | re.DOTALL,
     )
     m = pattern.search(content)

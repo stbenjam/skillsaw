@@ -117,11 +117,8 @@ def _parse_command(cmd_file: Path) -> Optional[CommandDoc]:
         return None
     fm, body = parse_frontmatter(content)
     description = fm.get("description", "") if fm else ""
-    full_name = (
-        extract_section(content, "Name").strip().splitlines()[0]
-        if extract_section(content, "Name")
-        else ""
-    )
+    name_lines = extract_section(content, "Name").strip().splitlines()
+    full_name = name_lines[0] if name_lines else ""
     synopsis = _strip_fences(extract_section(content, "Synopsis"))
     body_text = extract_section(content, "Description")
     return CommandDoc(
@@ -173,6 +170,8 @@ def _extract_skill(skill_dir: Path) -> Optional[SkillDoc]:
     allowed_tools = fm.get("allowed-tools", [])
     if isinstance(allowed_tools, str):
         allowed_tools = [allowed_tools]
+    if not isinstance(allowed_tools, list):
+        allowed_tools = []
 
     return SkillDoc(
         name=fm.get("name", skill_dir.name),
@@ -260,7 +259,7 @@ def _extract_mcp_servers(plugin_path: Path, plugin_meta: Dict[str, Any]) -> List
     mcp_json_path = plugin_path / ".mcp.json"
     if mcp_json_path.exists():
         data = _read_json(mcp_json_path)
-        if data and isinstance(data, dict) and "mcpServers" in data:
+        if data and isinstance(data, dict) and isinstance(data.get("mcpServers"), dict):
             for name, cfg in data["mcpServers"].items():
                 if isinstance(cfg, dict):
                     servers.append(
