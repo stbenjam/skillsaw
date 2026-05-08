@@ -230,6 +230,8 @@ def main():
         if v.get("line"):
             comment["line"] = v["line"]
             comment["side"] = "RIGHT"
+        else:
+            comment["subject_type"] = "file"
         comments.append(comment)
 
     review = {
