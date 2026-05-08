@@ -51,6 +51,10 @@ from .agentskills import (
     AgentSkillEvalsRule,
 )
 
+from .openclaw import (
+    OpenclawMetadataRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -84,6 +88,8 @@ BUILTIN_RULES = [
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
     AgentSkillEvalsRule,
+    # Openclaw
+    OpenclawMetadataRule,
 ]
 
 
@@ -112,4 +118,5 @@ __all__ = [
     "AgentSkillStructureRule",
     "AgentSkillEvalsRequiredRule",
     "AgentSkillEvalsRule",
+    "OpenclawMetadataRule",
 ]

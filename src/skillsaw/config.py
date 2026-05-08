@@ -88,6 +88,8 @@ class LinterConfig:
                 "agentskill-structure": {"enabled": False, "severity": "warning"},
                 "agentskill-evals-required": {"enabled": False, "severity": "warning"},
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
+                # Openclaw metadata
+                "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
             }
         )
 
