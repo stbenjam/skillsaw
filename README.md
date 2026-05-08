@@ -36,7 +36,7 @@ Lint your skills before they cut someone. A configurable linter, doc generator, 
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
-  - [Via uvx (easiest — no install required)](#via-uvx-easiest-no-install-required)
+  - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
   - [From source](#from-source)
   - [Using Docker](#using-docker)
@@ -88,7 +88,7 @@ skillsaw docs
 
 ## Installation
 
-### Via uvx (easiest — no install required)
+### Via uvx (easiest, no install required)
 
 ```bash
 uvx skillsaw
