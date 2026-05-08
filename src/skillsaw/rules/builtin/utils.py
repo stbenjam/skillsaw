@@ -4,7 +4,9 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
+import yaml
 
 
 @lru_cache(maxsize=512)
@@ -45,6 +47,39 @@ def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
         if in_frontmatter and pattern.match(line):
             return i
     return None
+
+
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", re.DOTALL)
+
+
+def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Parse YAML frontmatter from markdown content.
+
+    Returns (frontmatter_dict, body_after_frontmatter).
+    If no valid frontmatter is found, returns (None, original_content).
+    """
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return None, content
+    try:
+        data = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        return None, content
+    if not isinstance(data, dict):
+        return None, content
+    body = content[m.end() :]
+    return data, body
+
+
+def extract_section(content: str, heading: str, level: int = 2) -> str:
+    """Extract content under a markdown heading, up to the next heading of same or higher level."""
+    prefix = "#" * level
+    pattern = re.compile(
+        rf"^{prefix}\s+{re.escape(heading)}\s*$\n(.*?)(?=^#{{{1},{level}}}\s|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    m = pattern.search(content)
+    return m.group(1).strip() if m else ""
 
 
 @lru_cache(maxsize=512)

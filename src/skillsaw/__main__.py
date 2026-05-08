@@ -15,6 +15,16 @@ from . import __version__
 
 
 def main():
+    # Check if the first positional arg is a known subcommand.
+    # If so, dispatch to subcommand-specific parsing.
+    # Otherwise, fall through to the original flat-flag lint CLI.
+    if len(sys.argv) > 1 and sys.argv[1] == "docs":
+        return _run_docs_cli()
+
+    _run_lint_cli()
+
+
+def _run_lint_cli():
     parser = argparse.ArgumentParser(
         description="Lint agent skills, plugins, and AI coding assistant context",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -43,6 +53,9 @@ Examples:
 
   # Generate default config
   skillsaw --init
+
+  # Generate documentation
+  skillsaw docs
 
 For more information, visit: https://github.com/stbenjam/skillsaw
         """,
@@ -214,6 +227,91 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         sys.exit(1)
     else:
         sys.exit(0)
+
+
+def _run_docs_cli():
+    parser = argparse.ArgumentParser(
+        prog="skillsaw docs",
+        description="Generate documentation for a plugin, marketplace, or .claude repository",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate HTML docs for current directory
+  skillsaw docs
+
+  # Generate markdown docs
+  skillsaw docs --format markdown
+
+  # Write to a specific directory
+  skillsaw docs --output-dir my-docs/
+
+  # Generate docs for a specific path with custom title
+  skillsaw docs /path/to/repo --title "My Plugins"
+        """,
+    )
+
+    parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="fmt",
+        default="html",
+        choices=["html", "markdown"],
+        help="Output format (default: html)",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory (default: skillsaw-docs/)",
+    )
+
+    parser.add_argument(
+        "--title",
+        default=None,
+        help="Custom title for the documentation",
+    )
+
+    # Skip argv[0] (program name) and argv[1] ("docs")
+    args = parser.parse_args(sys.argv[2:])
+
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if context.repo_type == RepositoryType.UNKNOWN:
+        print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
+        print(
+            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
+            file=sys.stderr,
+        )
+
+    from .docs import extract_docs, render_html, render_markdown
+
+    docs_output = extract_docs(context, title=args.title)
+
+    if args.fmt == "html":
+        pages = render_html(docs_output)
+    else:
+        pages = render_markdown(docs_output)
+
+    output_dir = args.output_dir or Path("skillsaw-docs")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for filename, content in pages.items():
+        (output_dir / filename).write_text(content, encoding="utf-8")
+
+    file_list = ", ".join(sorted(pages.keys()))
+    print(f"Documentation written to {output_dir}/ ({len(pages)} file(s): {file_list})")
 
 
 def claudelint_shim():
