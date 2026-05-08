@@ -35,7 +35,7 @@ test: $(VENV)/bin/activate
 
 generate-example: $(VENV)/bin/activate
 	rm -f .skillsaw.yaml.example
-	$(VENV)/bin/skillsaw --init
+	$(VENV)/bin/skillsaw init
 	mv .skillsaw.yaml .skillsaw.yaml.example
 
 generate-docs: $(VENV)/bin/activate

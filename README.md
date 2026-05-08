@@ -82,10 +82,10 @@ skillsaw -v
 skillsaw --strict
 
 # Generate default config
-skillsaw --init
+skillsaw init
 
 # List all available rules
-skillsaw --list-rules
+skillsaw list-rules
 
 # Generate documentation
 skillsaw docs
@@ -266,7 +266,7 @@ Plugins from `plugins/`, custom paths, and remote sources can coexist in one mar
 Generate a default `.skillsaw.yaml` in your repository root:
 
 ```bash
-skillsaw --init
+skillsaw init
 ```
 
 This creates a config file with all builtin rules, their defaults, and

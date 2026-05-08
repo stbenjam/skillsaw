@@ -56,5 +56,5 @@ jobs:
         run: |
           docker build -t test-image .
           docker run test-image --version
-          docker run test-image --list-rules
+          docker run test-image list-rules
 

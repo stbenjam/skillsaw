@@ -115,13 +115,13 @@ jobs:
       - name: Test --version
         run: skillsaw --version
 
-      - name: Test --list-rules
-        run: skillsaw --list-rules
+      - name: Test list-rules
+        run: skillsaw list-rules
 
-      - name: Test --init
+      - name: Test init
         run: |
           cd /tmp
-          skillsaw --init
+          skillsaw init
           test -f .skillsaw.yaml
 
       - name: Test claudelint shim
