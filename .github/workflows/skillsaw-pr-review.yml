@@ -43,13 +43,12 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Open PRs from collaborators and claude bot
+          # Open PRs from claude bot only
           PRS=$(gh pr list --state open --json number,title,author \
-            | jq --argjson collabs "$COLLABS" \
-            '[.[] | select(.author.login as $u | ($collabs | index($u)) or ($u == "app/claude"))]')
+            | jq '[.[] | select(.author.login == "app/claude")]')
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
-            echo "No open PRs from collaborators or claude"
+            echo "No open PRs from claude"
             echo "has_prs=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -68,7 +67,7 @@ jobs:
             '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-pr-comments.json
 
-          echo "Open PRs from collaborators/claude:"
+          echo "Open PRs from claude:"
           cat /tmp/open-prs.json | jq length
           echo "New review comments from collaborators since $SINCE:"
           cat /tmp/new-review-comments.json | jq length

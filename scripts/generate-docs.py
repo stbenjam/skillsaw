@@ -85,12 +85,20 @@ def _generate_toc(readme_text):
     toc = []
     in_generated = False
     in_code_block = False
+    in_html_block = False
 
     for line in lines:
         if line.startswith("```"):
             in_code_block = not in_code_block
             continue
         if in_code_block:
+            continue
+        stripped = line.strip()
+        if re.match(r"<table[\s>]", stripped, re.IGNORECASE):
+            in_html_block = True
+        if in_html_block:
+            if re.search(r"</table>", stripped, re.IGNORECASE):
+                in_html_block = False
             continue
         if BEGIN_MARKER in line or TOC_BEGIN in line:
             in_generated = True
@@ -106,8 +114,9 @@ def _generate_toc(readme_text):
             continue
         level = len(m.group(1))
         text = m.group(2).strip()
-        # Strip markdown links for display
         display = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        if display == "Table of Contents":
+            continue
         anchor = _heading_to_anchor(display)
         indent = "  " * (level - 2)
         toc.append(f"{indent}- [{display}](#{anchor})")
@@ -183,7 +192,6 @@ def main():
     after = readme[readme.index(END_MARKER) :]
     readme = f"{before}\n\n{generated}\n\n{after}"
 
-    # Generate TOC (must happen after rules are inserted, so headings are final)
     if TOC_BEGIN in readme and TOC_END in readme:
         toc = _generate_toc(readme)
         before_toc = readme[: readme.index(TOC_BEGIN) + len(TOC_BEGIN)]
