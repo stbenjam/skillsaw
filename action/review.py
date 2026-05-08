@@ -286,6 +286,11 @@ def main():
     violations = report.get("violations", [])
     if not violations:
         print("No violations found.")
+        try:
+            upsert_summary_comment(repo, pr_number, [])
+            sync_comments(repo, pr_number, [])
+        except Exception as e:
+            print(f"Failed to clean up old comments: {e}", file=sys.stderr)
         return
 
     try:
