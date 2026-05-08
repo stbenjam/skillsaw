@@ -1,7 +1,8 @@
 ---
-name: Bad_Skill
+name: TERRIBLE_SKILL_123
+description: x
 ---
 
-# Bad Skill
+# Terrible Skill
 
-This skill is intentionally broken for testing.
+This skill has a terrible name.
