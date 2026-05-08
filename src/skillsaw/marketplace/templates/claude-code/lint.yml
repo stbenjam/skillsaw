@@ -15,8 +15,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install skillsaw
-        run: pip install skillsaw
-
-      - name: Run skillsaw
-        run: skillsaw -v --strict
+      - name: Lint with skillsaw
+        uses: stbenjam/skillsaw@v0
+        with:
+          strict: 'true'
+          verbose: 'true'

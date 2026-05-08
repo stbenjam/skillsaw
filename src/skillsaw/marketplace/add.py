@@ -265,11 +265,21 @@ def add_skill(
     plugin_name: Optional[str] = None,
     path: Optional[Path] = None,
 ) -> Path:
-    """Add a skill to an existing plugin."""
+    """Add a skill to a plugin, .claude/ repo, or standalone directory."""
     _validate_kebab(name, "Skill name")
-    _root, plugin_dir, mp_type = _find_plugin_context(path or Path.cwd(), plugin_name)
 
-    skill_dir = plugin_dir / "skills" / name
+    try:
+        _root, plugin_dir, mp_type = _find_plugin_context(path or Path.cwd(), plugin_name)
+        base = plugin_dir / "skills"
+    except FileNotFoundError:
+        if plugin_name:
+            raise
+        base = (path or Path.cwd()).resolve()
+        if (base / "skills").is_dir():
+            base = base / "skills"
+        mp_type = DEFAULT_MARKETPLACE_TYPE
+
+    skill_dir = base / name
     if skill_dir.exists():
         raise FileExistsError(f"Skill directory already exists: {skill_dir}")
 

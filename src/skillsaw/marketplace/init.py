@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
+from ..config import LinterConfig
 from .branding import (
     COLOR_PRESETS,
     DEFAULT_COLOR_SCHEME,
@@ -169,7 +170,7 @@ def _create_structure(
 
     _write(root / ".github" / "workflows" / "lint.yml", read_template("lint.yml", t))
 
-    _write(root / ".skillsaw.yaml", read_template("skillsaw.yaml", t))
+    LinterConfig.default().save(root / ".skillsaw.yaml")
 
     _write(root / ".gitignore", read_template("gitignore", t))
 
