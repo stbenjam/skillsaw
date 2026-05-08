@@ -162,7 +162,7 @@ def build_summary(report, inline_violations, body_violations):
     )
 
     if body_violations:
-        lines.append("<details><summary>Other violations</summary>\n")
+        lines.append("### Other violations\n")
         for v in body_violations:
             icon = SEVERITY_ICONS.get(v["severity"], "")
             loc = ""
@@ -172,7 +172,6 @@ def build_summary(report, inline_violations, body_violations):
                     loc += f":{v['line']}"
                 loc += "`"
             lines.append(f"- {icon} **{v['severity']}**{loc}: {v['message']}")
-        lines.append("\n</details>")
 
     return "\n".join(lines)
 
