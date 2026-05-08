@@ -10,6 +10,7 @@ from importlib.metadata import version, PackageNotFoundError
 from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
+from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
 
@@ -33,6 +34,12 @@ Examples:
 
   # Strict mode (warnings as errors)
   skillsaw --strict
+
+  # JSON output to stdout
+  skillsaw --format json
+
+  # Text to stdout, SARIF + HTML to files
+  skillsaw --output results.sarif --output report.html
 
   # Generate default config
   skillsaw --init
@@ -62,6 +69,24 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "--strict",
         action="store_true",
         help="Treat warnings as errors (exit with error code if warnings exist)",
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="fmt",
+        default="text",
+        choices=FORMATS,
+        help="Output format for stdout (default: text)",
+    )
+
+    parser.add_argument(
+        "--output",
+        dest="outputs",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
+        "Can be specified multiple times.",
     )
 
     parser.add_argument(
@@ -107,13 +132,23 @@ For more information, visit: https://github.com/stbenjam/skillsaw
             print()
         sys.exit(0)
 
+    # Validate --output extensions early
+    output_formats = {}
+    for output_path in args.outputs:
+        try:
+            output_formats[output_path] = infer_format(output_path)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
     # Validate path
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
     # Create repository context
-    print(f"Linting: {args.path}\n")
+    if args.fmt == "text":
+        print(f"Linting: {args.path}\n")
     context = RepositoryContext(args.path)
 
     # Show repository type
@@ -137,7 +172,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     if config_path:
         try:
             config = LinterConfig.from_file(config_path)
-            if args.verbose:
+            if args.verbose and args.fmt == "text":
                 print(f"Using config: {config_path}\n")
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
@@ -153,12 +188,25 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     linter = Linter(context, config)
     violations = linter.run()
 
-    # Format and print results
-    output = linter.format_results(violations, verbose=args.verbose)
-    print(output)
+    # Format and print to stdout
+    stdout_output = format_report(
+        args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+    )
+    print(stdout_output)
+
+    # Write to output files
+    report_cache = {}
+    for output_path, fmt in output_formats.items():
+        if fmt not in report_cache:
+            report_cache[fmt] = format_report(
+                fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+            )
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(report_cache[fmt], encoding="utf-8")
 
     # Exit with appropriate code
-    errors, warnings_count, info = linter.get_counts(violations)
+    errors, warnings_count, info = get_counts(violations)
 
     if errors > 0:
         sys.exit(1)

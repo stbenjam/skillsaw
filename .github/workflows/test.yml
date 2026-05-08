@@ -143,8 +143,49 @@ jobs:
 
       - name: Test ai-helpers repo
         run: |
-          # Clone ai-helpers repo
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
-          # Lint it — ai-helpers' .skillsaw.yaml already disables agentskill rules
-          skillsaw /tmp/ai-helpers
+          skillsaw --format json /tmp/ai-helpers | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['plugins'] > 0, 'no plugins scanned'
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
+          "
+
+      - name: Test auth0/agent-skills repo
+        run: |
+          git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills
+
+          skillsaw --format json /tmp/agent-skills | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
+          "
+
+      - name: Test --output flag with multiple formats
+        run: |
+          git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
+
+          skillsaw --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
+
+          python3 -c "
+          import json, os
+
+          for f in ['/tmp/report.json', '/tmp/report.sarif', '/tmp/report.html']:
+              assert os.path.exists(f), f'{f} not created'
+              assert os.path.getsize(f) > 0, f'{f} is empty'
+
+          with open('/tmp/report.json') as f:
+              data = json.load(f)
+              assert 'stats' in data
+              assert 'violations' in data
+
+          with open('/tmp/report.sarif') as f:
+              sarif = json.load(f)
+              assert sarif['version'] == '2.1.0'
+              assert len(sarif['runs']) == 1
+
+          print('All output files validated successfully')
+          "
