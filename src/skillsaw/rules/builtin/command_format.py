@@ -8,6 +8,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import read_text, heading_line
 
 
 class CommandNamingRule(Rule):
@@ -71,12 +72,10 @@ class CommandFrontmatterRule(Rule):
                 continue
 
             for cmd_file in commands_dir.glob("*.md"):
-                try:
-                    with open(cmd_file, "r") as f:
-                        content = f.read()
-                except IOError as e:
+                content = read_text(cmd_file)
+                if content is None:
                     violations.append(
-                        self.violation(f"Failed to read file: {e}", file_path=cmd_file)
+                        self.violation(f"Failed to read file: {cmd_file}", file_path=cmd_file)
                     )
                     continue
 
@@ -129,10 +128,8 @@ class CommandSectionsRule(Rule):
                 continue
 
             for cmd_file in commands_dir.glob("*.md"):
-                try:
-                    with open(cmd_file, "r") as f:
-                        content = f.read()
-                except IOError:
+                content = read_text(cmd_file)
+                if content is None:
                     continue
 
                 for section in required_sections:
@@ -175,10 +172,8 @@ class CommandNameFormatRule(Rule):
                 cmd_name = cmd_file.stem
                 expected_name = f"{plugin_name}:{cmd_name}"
 
-                try:
-                    with open(cmd_file, "r") as f:
-                        content = f.read()
-                except IOError:
+                content = read_text(cmd_file)
+                if content is None:
                     continue
 
                 # Find Name section
@@ -186,10 +181,12 @@ class CommandNameFormatRule(Rule):
                 if name_match:
                     name_content = name_match.group(1).strip()
                     if expected_name not in name_content:
+                        name_line = heading_line(cmd_file, "Name")
                         violations.append(
                             self.violation(
                                 f"Name section should contain '{expected_name}', found: '{name_content}'",
                                 file_path=cmd_file,
+                                line=name_line,
                             )
                         )
 

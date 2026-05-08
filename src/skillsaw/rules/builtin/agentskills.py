@@ -11,6 +11,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
@@ -21,7 +22,7 @@ CONSECUTIVE_HYPHENS = re.compile(r"--")
 DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=512)
 def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     """
     Parse SKILL.md frontmatter from a skill directory.
@@ -33,10 +34,9 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     if not skill_md.exists():
         return None, "SKILL.md not found"
 
-    try:
-        content = skill_md.read_text()
-    except IOError as e:
-        return None, f"Failed to read SKILL.md: {e}"
+    content = read_text(skill_md)
+    if content is None:
+        return None, f"Failed to read SKILL.md: {skill_md}"
 
     if not content.startswith("---"):
         return None, "Missing YAML frontmatter (must start with ---)"
@@ -54,6 +54,11 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
         return None, "Frontmatter must be a YAML mapping"
 
     return frontmatter, None
+
+
+def _frontmatter_key_line(skill_path, key: str) -> Optional[int]:
+    """Find the line number of a top-level key in SKILL.md frontmatter."""
+    return frontmatter_key_line(skill_path / "SKILL.md", key)
 
 
 class AgentSkillValidRule(Rule):
@@ -94,12 +99,19 @@ class AgentSkillValidRule(Rule):
                     self.violation("Missing required 'name' field", file_path=skill_md)
                 )
             elif not isinstance(name, str):
-                violations.append(self.violation("'name' must be a string", file_path=skill_md))
+                violations.append(
+                    self.violation(
+                        "'name' must be a string",
+                        file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "name"),
+                    )
+                )
             elif len(name) > NAME_MAX_LENGTH:
                 violations.append(
                     self.violation(
                         f"'name' exceeds {NAME_MAX_LENGTH} characters ({len(name)})",
                         file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "name"),
                     )
                 )
 
@@ -110,7 +122,11 @@ class AgentSkillValidRule(Rule):
                 )
             elif not isinstance(desc, str):
                 violations.append(
-                    self.violation("'description' must be a string", file_path=skill_md)
+                    self.violation(
+                        "'description' must be a string",
+                        file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "description"),
+                    )
                 )
 
             if "license" in frontmatter and not isinstance(frontmatter["license"], str):
@@ -209,11 +225,14 @@ class AgentSkillNameRule(Rule):
             if not name or not isinstance(name, str):
                 continue
 
+            name_line = _frontmatter_key_line(skill_path, "name")
+
             if not NAME_PATTERN.match(name):
                 violations.append(
                     self.violation(
                         f"Name '{name}' must contain only lowercase letters, numbers, and hyphens",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
                 continue
@@ -223,6 +242,7 @@ class AgentSkillNameRule(Rule):
                     self.violation(
                         f"Name '{name}' must not end with a hyphen",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
@@ -231,15 +251,16 @@ class AgentSkillNameRule(Rule):
                     self.violation(
                         f"Name '{name}' must not contain consecutive hyphens",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
-            # Name must match parent directory (skip if skill is at repo root)
             if skill_path != context.root_path and name != skill_path.name:
                 violations.append(
                     self.violation(
                         f"Name '{name}' does not match directory name '{skill_path.name}'",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
@@ -281,10 +302,15 @@ class AgentSkillDescriptionRule(Rule):
             if not desc or not isinstance(desc, str):
                 continue
 
+            desc_line = _frontmatter_key_line(skill_path, "description")
             stripped = desc.strip()
             if not stripped:
                 violations.append(
-                    self.violation("Description is empty or whitespace-only", file_path=skill_md)
+                    self.violation(
+                        "Description is empty or whitespace-only",
+                        file_path=skill_md,
+                        line=desc_line,
+                    )
                 )
                 continue
 
@@ -293,6 +319,7 @@ class AgentSkillDescriptionRule(Rule):
                     self.violation(
                         f"Description exceeds {DESCRIPTION_MAX_LENGTH} characters ({len(stripped)})",
                         file_path=skill_md,
+                        line=desc_line,
                     )
                 )
 
@@ -429,16 +456,10 @@ class AgentSkillEvalsRule(Rule):
                 )
                 continue
 
-            try:
-                data = json.loads(evals_json.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            data, error = read_json(evals_json)
+            if error:
                 violations.append(
-                    self.violation(f"Invalid JSON in evals.json: {e}", file_path=evals_json)
-                )
-                continue
-            except IOError as e:
-                violations.append(
-                    self.violation(f"Failed to read evals.json: {e}", file_path=evals_json)
+                    self.violation(f"Invalid JSON in evals.json: {error}", file_path=evals_json)
                 )
                 continue
 

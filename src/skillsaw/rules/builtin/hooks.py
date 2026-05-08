@@ -2,11 +2,11 @@
 Rules for validating hook configuration
 """
 
-import json
 from typing import List, Dict, Any
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import read_json
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {
@@ -125,14 +125,9 @@ class HooksJsonValidRule(Rule):
                 continue
 
             # Try to parse JSON
-            try:
-                with open(hooks_json, "r") as f:
-                    data = json.load(f)
-            except json.JSONDecodeError as e:
-                violations.append(self.violation(f"Invalid JSON: {e}", file_path=hooks_json))
-                continue
-            except IOError as e:
-                violations.append(self.violation(f"Failed to read file: {e}", file_path=hooks_json))
+            data, error = read_json(hooks_json)
+            if error:
+                violations.append(self.violation(f"Invalid JSON: {error}", file_path=hooks_json))
                 continue
 
             # Validate structure

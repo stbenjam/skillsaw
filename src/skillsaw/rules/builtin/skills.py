@@ -7,6 +7,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import read_text
 
 
 class SkillFrontmatterRule(Rule):
@@ -40,12 +41,10 @@ class SkillFrontmatterRule(Rule):
                     violations.append(self.violation("Missing SKILL.md", file_path=skill_dir))
                     continue
 
-                try:
-                    with open(skill_md, "r") as f:
-                        content = f.read()
-                except IOError as e:
+                content = read_text(skill_md)
+                if content is None:
                     violations.append(
-                        self.violation(f"Failed to read file: {e}", file_path=skill_md)
+                        self.violation(f"Failed to read file: {skill_md}", file_path=skill_md)
                     )
                     continue
 

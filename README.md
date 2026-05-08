@@ -295,29 +295,75 @@ rules:
 
 ## CI/CD Integration
 
-### GitHub Actions
+### GitHub Action (recommended)
+
+The built-in GitHub Action installs skillsaw, runs it, and posts violations as
+inline PR comments with automatic deduplication. Fixed violations have their
+comment threads resolved.
 
 ```yaml
-name: Lint Agent Skills
+name: Lint
 
-on: [pull_request, push]
+on: [pull_request]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  lint:
+  skillsaw:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: stbenjam/skillsaw@v0
         with:
-          python-version: '3.x'
+          strict: true
+```
 
-      - name: Install skillsaw
-        run: pip install skillsaw
+#### Inputs
 
-      - name: Run linter
-        run: skillsaw --strict
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to lint | `.` |
+| `version` | Specific skillsaw version to install | latest |
+| `strict` | Treat warnings as errors | `false` |
+| `verbose` | Include info-level violations | `false` |
+| `token` | GitHub token for posting PR comments | `${{ github.token }}` |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
+| `errors` | Number of errors found |
+| `warnings` | Number of warnings found |
+| `report` | Full JSON report |
+
+#### PR comment behavior
+
+- Each violation gets its own inline comment on the relevant line or file
+- Comments are deduplicated across re-runs using content fingerprinting
+- When a violation is fixed, its comment thread is automatically resolved
+- Comments with human replies are preserved
+
+> **Permissions:** `contents: write` is required for resolving comment threads
+> via GraphQL. `pull-requests: write` is required for posting comments.
+
+### GitHub Actions (manual)
+
+```yaml
+- uses: actions/checkout@v5
+
+- name: Set up Python
+  uses: actions/setup-python@v6
+  with:
+    python-version: '3.x'
+
+- name: Install skillsaw
+  run: pip install skillsaw
+
+- name: Run linter
+  run: skillsaw --strict
 ```
 
 ### Docker
