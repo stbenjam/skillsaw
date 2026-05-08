@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 permissions:
-  security-events: write
   contents: read
+  pull-requests: write
 
 jobs:
   self-lint:
@@ -17,34 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: ./
         with:
-          python-version: "3.11"
-
-      - name: Install skillsaw
-        run: |
-          python -m pip install --upgrade pip
-          pip install .
-
-      - name: Lint .claude directory
-        run: |
-          skillsaw \
-            --format text \
-            --output results.sarif \
-            --output results.html \
-            .
-
-      - name: Upload SARIF to GitHub Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: results.sarif
-          category: skillsaw
-
-      - name: Upload HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: skillsaw-report
-          path: results.html
+          strict: false

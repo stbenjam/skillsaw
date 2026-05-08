@@ -1,0 +1,104 @@
+name: 'skillsaw'
+description: 'Lint agent skills, plugins, and AI coding assistant context'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  path:
+    description: 'Path to lint'
+    required: false
+    default: '.'
+  version:
+    description: 'skillsaw version to install (e.g. "0.4.3"). Empty for latest.'
+    required: false
+    default: ''
+  strict:
+    description: 'Treat warnings as errors'
+    required: false
+    default: 'false'
+  verbose:
+    description: 'Include info-level violations'
+    required: false
+    default: 'false'
+  token:
+    description: 'GitHub token for posting PR review comments'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: 'skillsaw exit code (0=pass, 1=errors, 2=strict+warnings)'
+    value: ${{ steps.lint.outputs.exit-code }}
+  errors:
+    description: 'Number of errors found'
+    value: ${{ steps.lint.outputs.errors }}
+  warnings:
+    description: 'Number of warnings found'
+    value: ${{ steps.lint.outputs.warnings }}
+  report:
+    description: 'Full JSON report'
+    value: ${{ steps.lint.outputs.report }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install skillsaw
+      shell: bash
+      run: |
+        pip install -q "skillsaw${{ inputs.version && format('=={0}', inputs.version) || '' }}"
+
+    - name: Run skillsaw
+      id: lint
+      shell: bash
+      run: |
+        set +e
+        ARGS="--format json"
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          ARGS="$ARGS --strict"
+        fi
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          ARGS="$ARGS -v"
+        fi
+
+        OUTPUT=$(skillsaw $ARGS "${{ inputs.path }}" 2>/dev/null)
+        EXIT_CODE=$?
+
+        echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+        ERRORS=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['summary']['errors'])" 2>/dev/null || echo "0")
+        WARNINGS=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['summary']['warnings'])" 2>/dev/null || echo "0")
+        echo "errors=${ERRORS}" >> "$GITHUB_OUTPUT"
+        echo "warnings=${WARNINGS}" >> "$GITHUB_OUTPUT"
+
+        # Write report to a temp file — too large for env vars
+        REPORT_FILE=$(mktemp)
+        echo "$OUTPUT" > "$REPORT_FILE"
+        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
+
+        # Also set multiline output
+        {
+          echo "report<<SKILLSAW_EOF"
+          echo "$OUTPUT"
+          echo "SKILLSAW_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Post PR review
+      if: github.event_name == 'pull_request'
+      shell: bash
+      run: python3 "${{ github.action_path }}/action/review.py"
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        SKILLSAW_REPORT_FILE: ${{ steps.lint.outputs.report-file }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    - name: Exit with skillsaw result
+      shell: bash
+      run: exit ${{ steps.lint.outputs.exit-code }}

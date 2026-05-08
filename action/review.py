@@ -1,0 +1,174 @@
+"""Post skillsaw results as a GitHub PR review with inline comments."""
+
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+MARKER = "<!-- skillsaw-review -->"
+SEVERITY_ICONS = {"error": "✗", "warning": "⚠️", "info": "ℹ️"}
+API = "https://api.github.com"
+
+
+def github_api(method, path, body=None):
+    token = os.environ["GITHUB_TOKEN"]
+    url = f"{API}{path}" if path.startswith("/") else path
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    if data:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode() if e.fp else ""
+        print(f"GitHub API error: {e.code} {e.reason}: {error_body}", file=sys.stderr)
+        raise
+
+
+def get_diff_lines(repo, pr_number):
+    """Get the set of (path, line) tuples for added/modified lines in the PR."""
+    diff_lines = set()
+    page = 1
+    while True:
+        files = github_api("GET", f"/repos/{repo}/pulls/{pr_number}/files?per_page=100&page={page}")
+        if not files:
+            break
+        for f in files:
+            path = f["filename"]
+            patch = f.get("patch", "")
+            if not patch:
+                continue
+            current_line = 0
+            for line in patch.split("\n"):
+                hunk = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+                if hunk:
+                    current_line = int(hunk.group(1))
+                    continue
+                if line.startswith("+"):
+                    diff_lines.add((path, current_line))
+                    current_line += 1
+                elif line.startswith("-"):
+                    pass
+                else:
+                    current_line += 1
+        page += 1
+    return diff_lines
+
+
+def dismiss_previous_reviews(repo, pr_number):
+    """Dismiss any previous skillsaw reviews."""
+    reviews = github_api("GET", f"/repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
+    for review in reviews:
+        body = review.get("body", "") or ""
+        if MARKER in body and review.get("state") != "DISMISSED":
+            try:
+                github_api(
+                    "PUT",
+                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['id']}/dismissals",
+                    {"message": "Superseded by new skillsaw run."},
+                )
+            except urllib.error.HTTPError:
+                pass
+
+
+def build_summary(report, inline_violations, body_violations):
+    """Build the review body with summary and non-inline violations."""
+    summary = report["summary"]
+    lines = [MARKER, "## skillsaw\n"]
+
+    total = summary["errors"] + summary["warnings"] + summary.get("info", 0)
+    if total == 0:
+        lines.append("**All checks passed** — no violations found.\n")
+        return "\n".join(lines)
+
+    lines.append(
+        f"| Errors | Warnings | Info |\n"
+        f"|--------|----------|------|\n"
+        f"| {summary['errors']} | {summary['warnings']} | {summary.get('info', 0)} |\n"
+    )
+
+    if body_violations:
+        lines.append("<details><summary>Violations outside changed lines</summary>\n")
+        for v in body_violations:
+            icon = SEVERITY_ICONS.get(v["severity"], "")
+            loc = ""
+            if v.get("file_path"):
+                loc = f" `{v['file_path']}"
+                if v.get("line"):
+                    loc += f":{v['line']}"
+                loc += "`"
+            lines.append(f"- {icon} **{v['severity']}**{loc}: {v['message']}")
+        lines.append("\n</details>")
+
+    return "\n".join(lines)
+
+
+def main():
+    report_file = os.environ.get("SKILLSAW_REPORT_FILE", "")
+    if not report_file or not os.path.exists(report_file):
+        print("No skillsaw report found, skipping review.", file=sys.stderr)
+        return
+
+    with open(report_file) as f:
+        report = json.load(f)
+
+    repo = os.environ["GITHUB_REPOSITORY"]
+    pr_number = os.environ["PR_NUMBER"]
+    head_sha = os.environ["HEAD_SHA"]
+
+    violations = report.get("violations", [])
+
+    diff_lines = get_diff_lines(repo, pr_number)
+
+    inline_violations = []
+    body_violations = []
+    for v in violations:
+        path = v.get("file_path")
+        line = v.get("line")
+        if path and line and (path, line) in diff_lines:
+            inline_violations.append(v)
+        else:
+            body_violations.append(v)
+
+    dismiss_previous_reviews(repo, pr_number)
+
+    review_body = build_summary(report, inline_violations, body_violations)
+
+    comments = []
+    for v in inline_violations:
+        icon = SEVERITY_ICONS.get(v["severity"], "")
+        comments.append(
+            {
+                "path": v["file_path"],
+                "line": v["line"],
+                "side": "RIGHT",
+                "body": f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}",
+            }
+        )
+
+    review = {
+        "commit_id": head_sha,
+        "body": review_body,
+        "event": "COMMENT",
+    }
+    if comments:
+        review["comments"] = comments
+
+    github_api("POST", f"/repos/{repo}/pulls/{pr_number}/reviews", review)
+    print(f"Posted review with {len(comments)} inline comment(s).")
+
+
+if __name__ == "__main__":
+    main()
