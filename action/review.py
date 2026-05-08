@@ -67,17 +67,17 @@ def get_diff_lines(repo, pr_number):
     return diff_lines
 
 
-def dismiss_previous_reviews(repo, pr_number):
-    """Dismiss any previous skillsaw reviews."""
+def minimize_previous_reviews(repo, pr_number):
+    """Mark previous skillsaw reviews as outdated by editing their body."""
     reviews = github_api("GET", f"/repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
     for review in reviews:
         body = review.get("body", "") or ""
-        if MARKER in body and review.get("state") != "DISMISSED":
+        if MARKER in body and "~~" not in body:
             try:
                 github_api(
                     "PUT",
-                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['id']}/dismissals",
-                    {"message": "Superseded by new skillsaw run."},
+                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['id']}",
+                    {"body": f"{MARKER}\n~~Outdated — see latest review below.~~"},
                 )
             except urllib.error.HTTPError:
                 pass
@@ -154,7 +154,7 @@ def main():
         else:
             body_violations.append(v)
 
-    dismiss_previous_reviews(repo, pr_number)
+    minimize_previous_reviews(repo, pr_number)
 
     review_body = build_summary(report, inline_violations, body_violations)
 
