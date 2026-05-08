@@ -3,6 +3,7 @@ Main linter orchestration
 """
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Type, Tuple
@@ -155,6 +156,15 @@ class Linter:
         Returns:
             Formatted string
         """
+        # Support NO_COLOR (https://no-color.org/)
+        no_color = "NO_COLOR" in os.environ
+        red = "" if no_color else "\033[91m"
+        yellow = "" if no_color else "\033[93m"
+        blue = "" if no_color else "\033[94m"
+        green = "" if no_color else "\033[92m"
+        bold = "" if no_color else "\033[1m"
+        reset = "" if no_color else "\033[0m"
+
         errors, warnings, info = self.get_counts(violations)
 
         # Group by severity
@@ -166,30 +176,30 @@ class Linter:
 
         # Print errors
         if errors_list:
-            output.append("\n\033[91m\033[1mErrors:\033[0m")
+            output.append(f"\n{red}{bold}Errors:{reset}")
             for v in errors_list:
                 output.append(f"  {v}")
 
         # Print warnings
         if warnings_list:
-            output.append("\n\033[93m\033[1mWarnings:\033[0m")
+            output.append(f"\n{yellow}{bold}Warnings:{reset}")
             for v in warnings_list:
                 output.append(f"  {v}")
 
         # Print info (only in verbose)
         if verbose and info_list:
-            output.append("\n\033[94m\033[1mInfo:\033[0m")
+            output.append(f"\n{blue}{bold}Info:{reset}")
             for v in info_list:
                 output.append(f"  {v}")
 
         # Summary
-        output.append("\n\033[1mSummary:\033[0m")
-        output.append(f"  \033[91mErrors:   {errors}\033[0m")
-        output.append(f"  \033[93mWarnings: {warnings}\033[0m")
+        output.append(f"\n{bold}Summary:{reset}")
+        output.append(f"  {red}Errors:   {errors}{reset}")
+        output.append(f"  {yellow}Warnings: {warnings}{reset}")
         if verbose:
-            output.append(f"  \033[94mInfo:     {info}\033[0m")
+            output.append(f"  {blue}Info:     {info}{reset}")
 
         if errors == 0 and warnings == 0:
-            output.append("\n\033[92m\033[1m✓ All checks passed!\033[0m")
+            output.append(f"\n{green}{bold}✓ All checks passed!{reset}")
 
         return "\n".join(output)
