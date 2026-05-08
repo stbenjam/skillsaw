@@ -364,10 +364,10 @@ class TestMarkdownRenderer:
         ctx = RepositoryContext(valid_plugin)
         docs = extract_docs(ctx)
         pages = render_markdown(docs)
-        assert "index.md" in pages
+        assert "README.md" in pages
         assert len(pages) == 1
 
-        md = pages["index.md"]
+        md = pages["README.md"]
         assert md.startswith("# test-plugin")
         assert "## Commands" in md
         assert "test-command" in md
@@ -378,7 +378,7 @@ class TestMarkdownRenderer:
         docs = extract_docs(ctx)
         pages = render_markdown(docs)
 
-        assert "index.md" in pages
+        assert "README.md" in pages
         assert "plugin-one.md" in pages
         assert "plugin-two.md" in pages
         assert len(pages) == 3
@@ -389,16 +389,16 @@ class TestMarkdownRenderer:
         pages = render_markdown(docs)
 
         # Index links to plugin pages
-        assert "[plugin-one](plugin-one.md)" in pages["index.md"]
-        assert "[plugin-two](plugin-two.md)" in pages["index.md"]
+        assert "[plugin-one](plugin-one.md)" in pages["README.md"]
+        assert "[plugin-two](plugin-two.md)" in pages["README.md"]
 
         # Plugin pages link back
-        assert "index.md" in pages["plugin-one.md"]
+        assert "README.md" in pages["plugin-one.md"]
 
     def test_dot_claude_all_sections(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)
         docs = extract_docs(ctx)
-        md = render_markdown(docs)["index.md"]
+        md = render_markdown(docs)["README.md"]
 
         assert "## Commands" in md
         assert "## Skills" in md
@@ -409,7 +409,7 @@ class TestMarkdownRenderer:
     def test_marketplace_sorted_alphabetically(self, marketplace_repo):
         ctx = RepositoryContext(marketplace_repo)
         docs = extract_docs(ctx)
-        md = render_markdown(docs)["index.md"]
+        md = render_markdown(docs)["README.md"]
         pos_one = md.index("plugin-one")
         pos_two = md.index("plugin-two")
         assert pos_one < pos_two
@@ -417,7 +417,7 @@ class TestMarkdownRenderer:
     def test_skill_metadata_in_markdown(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)
         docs = extract_docs(ctx)
-        md = render_markdown(docs)["index.md"]
+        md = render_markdown(docs)["README.md"]
 
         assert "MIT" in md
         assert "code-review:pr" in md
@@ -443,7 +443,7 @@ class TestDocsCLI:
 
     def test_docs_generates_html(self, valid_plugin, temp_dir):
         out_dir = temp_dir / "out"
-        result = self._run(str(valid_plugin), "--output-dir", str(out_dir))
+        result = self._run(str(valid_plugin), "--output", str(out_dir))
         assert result.returncode == 0
         assert (out_dir / "index.html").exists()
         content = (out_dir / "index.html").read_text()
@@ -451,14 +451,14 @@ class TestDocsCLI:
 
     def test_docs_generates_markdown(self, valid_plugin, temp_dir):
         out_dir = temp_dir / "out"
-        result = self._run(str(valid_plugin), "--format", "markdown", "--output-dir", str(out_dir))
+        result = self._run(str(valid_plugin), "--format", "markdown", "--output", str(out_dir))
         assert result.returncode == 0
-        assert (out_dir / "index.md").exists()
+        assert (out_dir / "README.md").exists()
 
     def test_docs_marketplace_single_page(self, marketplace_repo, temp_dir):
         """Marketplace generates a single index.html."""
         out_dir = temp_dir / "out"
-        result = self._run(str(marketplace_repo), "--output-dir", str(out_dir))
+        result = self._run(str(marketplace_repo), "--output", str(out_dir))
         assert result.returncode == 0
         assert (out_dir / "index.html").exists()
         content = (out_dir / "index.html").read_text()
@@ -468,7 +468,7 @@ class TestDocsCLI:
     def test_docs_custom_title(self, valid_plugin, temp_dir):
         out_dir = temp_dir / "out"
         result = self._run(
-            str(valid_plugin), "--output-dir", str(out_dir), "--title", "Custom Title"
+            str(valid_plugin), "--output", str(out_dir), "--title", "Custom Title"
         )
         assert result.returncode == 0
         content = (out_dir / "index.html").read_text()

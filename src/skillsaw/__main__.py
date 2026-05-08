@@ -243,7 +243,10 @@ Examples:
   skillsaw docs --format markdown
 
   # Write to a specific directory
-  skillsaw docs --output-dir my-docs/
+  skillsaw docs -o my-docs/
+
+  # Write a single file directly
+  skillsaw docs --format markdown -o README.md
 
   # Generate docs for a specific path with custom title
   skillsaw docs /path/to/repo --title "My Plugins"
@@ -267,10 +270,12 @@ Examples:
     )
 
     parser.add_argument(
-        "--output-dir",
+        "-o",
+        "--output",
         type=Path,
         default=None,
-        help="Output directory (default: skillsaw-docs/)",
+        help="Output file or directory (default: skillsaw-docs/). "
+        "If it ends with .html/.md, writes a single file directly.",
     )
 
     parser.add_argument(
@@ -304,14 +309,19 @@ Examples:
     else:
         pages = render_markdown(docs_output)
 
-    output_dir = args.output_dir or Path("skillsaw-docs")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    for filename, content in pages.items():
-        (output_dir / filename).write_text(content, encoding="utf-8")
-
-    file_list = ", ".join(sorted(pages.keys()))
-    print(f"Documentation written to {output_dir}/ ({len(pages)} file(s): {file_list})")
+    output = args.output
+    if output and output.suffix in (".html", ".md"):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        combined = "\n".join(pages.values()) if len(pages) > 1 else next(iter(pages.values()))
+        output.write_text(combined, encoding="utf-8")
+        print(f"Documentation written to {output}")
+    else:
+        output_dir = output or Path("skillsaw-docs")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for filename, content in pages.items():
+            (output_dir / filename).write_text(content, encoding="utf-8")
+        file_list = ", ".join(sorted(pages.keys()))
+        print(f"Documentation written to {output_dir}/ ({len(pages)} file(s): {file_list})")
 
 
 def claudelint_shim():
