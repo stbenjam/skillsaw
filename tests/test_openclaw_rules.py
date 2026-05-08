@@ -527,3 +527,98 @@ def test_gws_style_metadata_passes(temp_dir):
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
     assert len(violations) == 0
+
+
+# --- line number reporting ---
+
+
+def test_line_numbers_on_openclaw_not_a_dict(temp_dir):
+    skill = temp_dir / "ln-oc"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: ln-oc\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw: not-a-map\n"  # 5
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 5
+
+
+def test_line_numbers_on_top_level_field(temp_dir):
+    skill = temp_dir / "ln-top"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: ln-top\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    always: yes-please\n"  # 6
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 6
+
+
+def test_line_numbers_on_requires_field(temp_dir):
+    skill = temp_dir / "ln-req"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: ln-req\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    requires:\n"  # 6
+        "      bins: gws\n"  # 7
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 7
+
+
+def test_line_numbers_on_install_field(temp_dir):
+    skill = temp_dir / "ln-inst"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: ln-inst\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    install:\n"  # 6
+        "      - id: test\n"  # 7
+        "        kind: pip\n"  # 8
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 8
+
+
+def test_line_numbers_on_os_field(temp_dir):
+    skill = temp_dir / "ln-os"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: ln-os\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    os: darwin\n"  # 6
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 6
