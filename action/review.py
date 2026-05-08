@@ -39,6 +39,63 @@ def github_api(method, path, body=None):
         raise
 
 
+def graphql(query, variables=None):
+    token = os.environ["GITHUB_TOKEN"]
+    body = {"query": query}
+    if variables:
+        body["variables"] = variables
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"{API}/graphql",
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        result = json.loads(resp.read().decode())
+    if result.get("errors"):
+        print(f"GraphQL error: {result['errors']}", file=sys.stderr)
+    return result
+
+
+def resolve_thread(comment_node_id):
+    """Resolve the review thread containing a comment."""
+    result = graphql(
+        """
+        query($id: ID!) {
+            node(id: $id) {
+                ... on PullRequestReviewComment {
+                    pullRequestReviewThread {
+                        id
+                        isResolved
+                    }
+                }
+            }
+        }
+        """,
+        {"id": comment_node_id},
+    )
+    thread = (result.get("data") or {}).get("node", {}).get("pullRequestReviewThread", {})
+    if not thread or thread.get("isResolved"):
+        return False
+
+    result = graphql(
+        """
+        mutation($threadId: ID!) {
+            resolveReviewThread(input: {threadId: $threadId}) {
+                thread { isResolved }
+            }
+        }
+        """,
+        {"threadId": thread["id"]},
+    )
+    resolved = (result.get("data") or {}).get("resolveReviewThread", {}).get("thread", {}).get("isResolved")
+    return bool(resolved)
+
+
 def fingerprint(rule_id, file_path, message):
     key = f"{rule_id}:{file_path}:{message}"
     return hashlib.sha256(key.encode()).hexdigest()[:12]
@@ -77,7 +134,7 @@ def get_diff_lines(repo, pr_number):
 def sync_comments(repo, pr_number, new_comments):
     """Diff existing skillsaw comments against new findings.
 
-    Returns to_post: the list of genuinely new comments to create.
+    Resolves threads for fixed violations, returns genuinely new comments.
     """
     all_comments = []
     page = 1
@@ -101,28 +158,17 @@ def sync_comments(repo, pr_number, new_comments):
 
     current_fps = {c["fingerprint"] for c in new_comments}
 
-    replied_to = set()
-    for c in all_comments:
-        if c.get("in_reply_to_id"):
-            replied_to.add(c["in_reply_to_id"])
-
-    deleted = 0
-    preserved = 0
+    resolved = 0
     for fp, comment in existing.items():
         if fp not in current_fps:
-            if comment["id"] in replied_to:
-                preserved += 1
-                continue
             try:
-                github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
-                deleted += 1
-            except urllib.error.HTTPError:
+                if resolve_thread(comment["node_id"]):
+                    resolved += 1
+            except Exception:
                 pass
 
-    if deleted:
-        print(f"Deleted {deleted} comment(s) for fixed issues.")
-    if preserved:
-        print(f"Preserved {preserved} comment(s) with replies.")
+    if resolved:
+        print(f"Resolved {resolved} thread(s) for fixed issues.")
 
     return [c for c in new_comments if c["fingerprint"] not in existing]
 
