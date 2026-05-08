@@ -1,0 +1,1 @@
+This is not a markdown file and should trigger the rules-valid rule.
