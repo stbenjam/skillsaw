@@ -67,10 +67,14 @@ def get_review_threads(repo, pr_number):
     threads = []
     cursor = None
     while True:
-        after = f', after: "{cursor}"' if cursor else ""
+        variables = {"owner": owner, "repo": name, "pr": int(pr_number)}
+        after_decl = ", $after: String" if cursor else ""
+        after_arg = ", after: $after" if cursor else ""
+        if cursor:
+            variables["after"] = cursor
         result = graphql(
             """
-            query($owner: String!, $repo: String!, $pr: Int!) {
+            query($owner: String!, $repo: String!, $pr: Int!%s) {
                 repository(owner: $owner, name: $repo) {
                     pullRequest(number: $pr) {
                         reviewThreads(first: 100%s) {
@@ -86,8 +90,8 @@ def get_review_threads(repo, pr_number):
                     }
                 }
             }
-            """ % after,
-            {"owner": owner, "repo": name, "pr": int(pr_number)},
+            """ % (after_decl, after_arg),
+            variables,
         )
         pr_data = (result.get("data") or {}).get("repository", {}).get("pullRequest", {})
         thread_data = pr_data.get("reviewThreads", {})
@@ -124,7 +128,12 @@ def resolve_threads_by_fingerprints(repo, pr_number, fingerprints):
                 """,
                 {"threadId": thread["id"]},
             )
-            if (result.get("data") or {}).get("resolveReviewThread", {}).get("thread", {}).get("isResolved"):
+            if (
+                (result.get("data") or {})
+                .get("resolveReviewThread", {})
+                .get("thread", {})
+                .get("isResolved")
+            ):
                 resolved += 1
     return resolved
 

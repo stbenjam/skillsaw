@@ -112,4 +112,6 @@ runs:
 
     - name: Exit with skillsaw result
       shell: bash
-      run: exit ${{ steps.lint.outputs.exit-code }}
+      env:
+        SKILLSAW_EXIT_CODE: ${{ steps.lint.outputs.exit-code }}
+      run: exit "${SKILLSAW_EXIT_CODE}"
