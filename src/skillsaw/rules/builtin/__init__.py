@@ -55,6 +55,15 @@ from .openclaw import (
     OpenclawMetadataRule,
 )
 
+from .instruction_files import (
+    InstructionFileValidRule,
+    InstructionImportsValidRule,
+)
+
+from .context_budget import (
+    ContextBudgetRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -90,6 +99,11 @@ BUILTIN_RULES = [
     AgentSkillEvalsRule,
     # Openclaw
     OpenclawMetadataRule,
+    # Instruction files
+    InstructionFileValidRule,
+    InstructionImportsValidRule,
+    # Context budget
+    ContextBudgetRule,
 ]
 
 
@@ -119,4 +133,7 @@ __all__ = [
     "AgentSkillEvalsRequiredRule",
     "AgentSkillEvalsRule",
     "OpenclawMetadataRule",
+    "InstructionFileValidRule",
+    "InstructionImportsValidRule",
+    "ContextBudgetRule",
 ]

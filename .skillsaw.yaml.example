@@ -122,6 +122,21 @@ rules:
     enabled: auto
     severity: warning
 
+  # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
+  instruction-file-valid:
+    enabled: true
+    severity: warning
+
+  # Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files
+  instruction-imports-valid:
+    enabled: true
+    severity: warning
+
+  # Warn when instruction or config files exceed recommended token limits
+  context-budget:
+    enabled: true
+    severity: warning
+
 # Load custom rules from these files
 custom-rules: []
 

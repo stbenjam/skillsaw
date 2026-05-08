@@ -4,7 +4,7 @@ Configuration management for skillsaw
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import ClassVar, Dict, Any, Optional, List, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
@@ -90,8 +90,28 @@ class LinterConfig:
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
                 # Openclaw metadata
                 "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
+                # Instruction file validation (disabled for back-compat; --init enables)
+                "instruction-file-valid": {"enabled": False, "severity": "warning"},
+                "instruction-imports-valid": {"enabled": False, "severity": "warning"},
+                # Context budget (disabled for back-compat; --init enables)
+                "context-budget": {"enabled": False, "severity": "warning"},
             }
         )
+
+    _INIT_OVERRIDES: ClassVar[Dict[str, Dict[str, Any]]] = {
+        "instruction-file-valid": {"enabled": True},
+        "instruction-imports-valid": {"enabled": True},
+        "context-budget": {"enabled": True},
+    }
+
+    @classmethod
+    def for_init(cls) -> "LinterConfig":
+        """Config for --init: like default() but enables opt-in rules."""
+        config = cls.default()
+        for rule_id, overrides in cls._INIT_OVERRIDES.items():
+            if rule_id in config.rules:
+                config.rules[rule_id].update(overrides)
+        return config
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
@@ -173,13 +193,26 @@ class LinterConfig:
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
 
     @staticmethod
-    def _yaml_value(value):
+    def _yaml_value(value, indent=4):
         if isinstance(value, bool):
             return "true" if value else "false"
         if isinstance(value, list):
             if not value:
                 return "[]"
-            return "\n" + "\n".join(f"    - {item}" for item in value)
+            pad = " " * indent
+            return "\n" + "\n".join(f"{pad}- {item}" for item in value)
+        if isinstance(value, dict):
+            if not value:
+                return "{}"
+            pad = " " * indent
+            lines = []
+            for k, v in value.items():
+                rendered = LinterConfig._yaml_value(v, indent + 2)
+                if rendered.startswith("\n"):
+                    lines.append(f"{pad}{k}:{rendered}")
+                else:
+                    lines.append(f"{pad}{k}: {rendered}")
+            return "\n" + "\n".join(lines)
         if isinstance(value, str):
             return value
         return str(value)
