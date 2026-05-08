@@ -288,7 +288,17 @@ def main():
         print("No violations found.")
         return
 
-    diff_files, diff_lines = get_diff_info(repo, pr_number)
+    try:
+        diff_files, diff_lines = get_diff_info(repo, pr_number)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print(
+                "Cannot read PR files (insufficient token permissions). "
+                "Skipping inline review comments.",
+                file=sys.stderr,
+            )
+            return
+        raise
 
     new_comments = []
     non_diff_violations = []
