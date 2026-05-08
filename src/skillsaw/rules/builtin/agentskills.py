@@ -153,10 +153,23 @@ class AgentSkillValidRule(Rule):
                                 )
                             )
 
-            if "allowed-tools" in frontmatter and not isinstance(frontmatter["allowed-tools"], str):
-                violations.append(
-                    self.violation("'allowed-tools' must be a string", file_path=skill_md)
-                )
+            if "allowed-tools" in frontmatter:
+                at = frontmatter["allowed-tools"]
+                if isinstance(at, list):
+                    if not all(isinstance(item, str) for item in at):
+                        violations.append(
+                            self.violation(
+                                "'allowed-tools' list items must all be strings",
+                                file_path=skill_md,
+                            )
+                        )
+                elif not isinstance(at, str):
+                    violations.append(
+                        self.violation(
+                            "'allowed-tools' must be a string or list of strings",
+                            file_path=skill_md,
+                        )
+                    )
 
         return violations
 

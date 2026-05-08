@@ -760,13 +760,61 @@ def test_metadata_nested_object_accepted(temp_dir):
     assert not any("metadata" in v.message for v in violations)
 
 
-def test_allowed_tools_wrong_type_fails(temp_dir):
-    skill = temp_dir / "bad-tools"
+def test_allowed_tools_block_list_accepted(temp_dir):
+    skill = temp_dir / "tools-block-list"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
-        "---\nname: bad-tools\ndescription: A skill\nallowed-tools:\n  - Bash\n  - Read\n---\n"
+        "---\nname: tools-block-list\ndescription: A skill\nallowed-tools:\n  - Bash\n  - Read\n---\n"
     )
 
     context = RepositoryContext(skill)
     violations = AgentSkillValidRule().check(context)
-    assert any("allowed-tools" in v.message and "string" in v.message for v in violations)
+    assert not any("allowed-tools" in v.message for v in violations)
+
+
+def test_allowed_tools_flow_list_accepted(temp_dir):
+    skill = temp_dir / "tools-flow-list"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: tools-flow-list\ndescription: A skill\nallowed-tools: [Read, Write, Edit]\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert not any("allowed-tools" in v.message for v in violations)
+
+
+def test_allowed_tools_string_accepted(temp_dir):
+    skill = temp_dir / "tools-string"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: tools-string\ndescription: A skill\nallowed-tools: Read Write Edit Bash Agent\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert not any("allowed-tools" in v.message for v in violations)
+
+
+def test_allowed_tools_list_with_non_string_items_fails(temp_dir):
+    skill = temp_dir / "tools-bad-items"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: tools-bad-items\ndescription: A skill\nallowed-tools:\n  - Bash\n  - 123\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("allowed-tools" in v.message and "list items" in v.message for v in violations)
+
+
+def test_allowed_tools_invalid_type_fails(temp_dir):
+    skill = temp_dir / "tools-invalid"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: tools-invalid\ndescription: A skill\nallowed-tools: 42\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillValidRule().check(context)
+    assert any("allowed-tools" in v.message for v in violations)
