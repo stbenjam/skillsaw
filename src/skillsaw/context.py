@@ -276,6 +276,8 @@ class RepositoryContext:
             return
 
         for plugin_entry in self.marketplace_data["plugins"]:
+            if not isinstance(plugin_entry, dict):
+                continue
             source = plugin_entry.get("source")
             if not source:
                 continue

@@ -61,6 +61,14 @@ class MarketplaceJsonValidRule(Rule):
 
         if "owner" not in marketplace:
             violations.append(self.violation("Missing 'owner' field", file_path=marketplace_file))
+        elif not isinstance(marketplace["owner"], dict):
+            violations.append(
+                self.violation("'owner' must be an object", file_path=marketplace_file)
+            )
+        elif "name" not in marketplace["owner"]:
+            violations.append(
+                self.violation("'owner' must have a 'name' field", file_path=marketplace_file)
+            )
 
         if "plugins" not in marketplace:
             violations.append(self.violation("Missing 'plugins' array", file_path=marketplace_file))
@@ -68,6 +76,32 @@ class MarketplaceJsonValidRule(Rule):
             violations.append(
                 self.violation("'plugins' must be an array", file_path=marketplace_file)
             )
+        else:
+            for idx, entry in enumerate(marketplace["plugins"]):
+                if not isinstance(entry, dict):
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}] must be an object",
+                            file_path=marketplace_file,
+                        )
+                    )
+                    continue
+
+                if "name" not in entry:
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}] missing required 'name' field",
+                            file_path=marketplace_file,
+                        )
+                    )
+
+                if "source" not in entry:
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}] missing required 'source' field",
+                            file_path=marketplace_file,
+                        )
+                    )
 
         return violations
 
