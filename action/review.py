@@ -140,12 +140,20 @@ def main():
 
     diff_lines = get_diff_lines(repo, pr_number)
 
+    diff_file_first_line = {}
+    for path, line in diff_lines:
+        if path not in diff_file_first_line or line < diff_file_first_line[path]:
+            diff_file_first_line[path] = line
+
     inline_violations = []
     body_violations = []
     for v in violations:
         path = v.get("file_path")
         line = v.get("line")
         if path and line and (path, line) in diff_lines:
+            inline_violations.append(v)
+        elif path and not line and path in diff_file_first_line:
+            v = dict(v, line=diff_file_first_line[path])
             inline_violations.append(v)
         else:
             body_violations.append(v)
