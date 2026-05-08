@@ -157,7 +157,11 @@ class LinterConfig:
                     f.write(f"\n  # {desc}\n")
                 f.write(f"  {rule_id}:\n")
                 for key, value in rule_config.items():
-                    f.write(f"    {key}: {self._yaml_value(value)}\n")
+                    yaml_val = self._yaml_value(value)
+                    if yaml_val.startswith("\n"):
+                        f.write(f"    {key}:{yaml_val}\n")
+                    else:
+                        f.write(f"    {key}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
             f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
