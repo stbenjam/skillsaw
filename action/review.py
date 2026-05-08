@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 
 FINGERPRINT_RE = re.compile(r"<!-- skillsaw:([a-f0-9]+) -->")
+SUMMARY_MARKER = "<!-- skillsaw:summary -->"
 SEVERITY_ICONS = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
 API = "https://api.github.com"
 
@@ -143,8 +144,13 @@ def fingerprint(rule_id, file_path, message):
     return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
-def get_diff_lines(repo, pr_number):
-    """Get the set of (path, line) tuples for added/modified lines in the PR."""
+def get_diff_info(repo, pr_number):
+    """Get diff files and added/modified line numbers.
+
+    Returns (diff_files, diff_lines) where diff_files is a set of file paths
+    and diff_lines is a set of (path, line) tuples.
+    """
+    diff_files = set()
     diff_lines = set()
     page = 1
     while True:
@@ -153,6 +159,7 @@ def get_diff_lines(repo, pr_number):
             break
         for f in files:
             path = f["filename"]
+            diff_files.add(path)
             patch = f.get("patch", "")
             if not patch:
                 continue
@@ -170,7 +177,7 @@ def get_diff_lines(repo, pr_number):
                 else:
                     current_line += 1
         page += 1
-    return diff_lines
+    return diff_files, diff_lines
 
 
 def sync_comments(repo, pr_number, new_comments):
@@ -212,6 +219,49 @@ def sync_comments(repo, pr_number, new_comments):
     return [c for c in new_comments if c["fingerprint"] not in existing]
 
 
+def upsert_summary_comment(repo, pr_number, non_diff_violations):
+    """Create or update a single issue comment for violations outside the diff."""
+    page = 1
+    existing_id = None
+    while True:
+        comments = github_api(
+            "GET", f"/repos/{repo}/issues/{pr_number}/comments?per_page=100&page={page}"
+        )
+        if not comments:
+            break
+        for c in comments:
+            if SUMMARY_MARKER in c.get("body", ""):
+                existing_id = c["id"]
+                break
+        if existing_id:
+            break
+        page += 1
+
+    if not non_diff_violations and existing_id:
+        github_api("DELETE", f"/repos/{repo}/issues/comments/{existing_id}")
+        return
+
+    if not non_diff_violations:
+        return
+
+    lines = ["### skillsaw: violations outside this diff\n"]
+    lines.append("| Severity | Rule | File | Message |")
+    lines.append("|----------|------|------|---------|")
+    for v in non_diff_violations:
+        icon = SEVERITY_ICONS.get(v["severity"], "")
+        path = v.get("file_path", "")
+        line = v.get("line")
+        loc = f"`{path}:{line}`" if line else f"`{path}`"
+        lines.append(f"| {icon} {v['severity']} | `{v['rule_id']}` | {loc} | {v['message']} |")
+    lines.append(f"\n{SUMMARY_MARKER}")
+    body = "\n".join(lines)
+
+    if existing_id:
+        github_api("PATCH", f"/repos/{repo}/issues/comments/{existing_id}", {"body": body})
+    else:
+        github_api("POST", f"/repos/{repo}/issues/{pr_number}/comments", {"body": body})
+
+
 def main():
     report_file = os.environ.get("SKILLSAW_REPORT_FILE", "")
     if not report_file or not os.path.exists(report_file):
@@ -238,13 +288,28 @@ def main():
         print("No violations found.")
         return
 
-    diff_lines = get_diff_lines(repo, pr_number)
+    try:
+        diff_files, diff_lines = get_diff_info(repo, pr_number)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print(
+                "Cannot read PR files (insufficient token permissions). "
+                "Skipping inline review comments.",
+                file=sys.stderr,
+            )
+            return
+        raise
 
     new_comments = []
+    non_diff_violations = []
     for v in violations:
         path = v.get("file_path")
         line = v.get("line")
         if not path:
+            continue
+
+        if path not in diff_files:
+            non_diff_violations.append(v)
             continue
 
         fp = fingerprint(v["rule_id"], path, v["message"])
@@ -263,20 +328,49 @@ def main():
 
         new_comments.append(comment)
 
-    to_post = sync_comments(repo, pr_number, new_comments)
+    try:
+        upsert_summary_comment(repo, pr_number, non_diff_violations)
+        if non_diff_violations:
+            print(f"Posted summary comment with {len(non_diff_violations)} violation(s) outside the diff.")
+    except Exception as e:
+        print(f"Failed to post summary comment: {e}", file=sys.stderr)
+
+    try:
+        to_post = sync_comments(repo, pr_number, new_comments)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print(
+                "Cannot read PR comments (fork PR with read-only token). "
+                "Skipping inline review comments.",
+                file=sys.stderr,
+            )
+            return
+        raise
 
     posted = 0
+    failed = 0
     for comment in to_post:
         payload = {k: v for k, v in comment.items() if k != "fingerprint"}
         try:
             github_api("POST", f"/repos/{repo}/pulls/{pr_number}/comments", payload)
             posted += 1
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403, 429):
+            if e.code == 403:
+                print(
+                    "Cannot post PR comments (fork PR with read-only token). "
+                    "Skipping inline review comments.",
+                    file=sys.stderr,
+                )
+                return
+            if e.code in (401, 429):
                 raise
+            failed += 1
 
     kept = len(new_comments) - len(to_post)
-    print(f"Posted {posted} new comment(s), {kept} unchanged.")
+    parts = [f"Posted {posted} new comment(s)", f"{kept} unchanged"]
+    if failed:
+        parts.append(f"{failed} failed")
+    print(", ".join(parts) + ".")
 
 
 if __name__ == "__main__":
