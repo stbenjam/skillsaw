@@ -141,6 +141,32 @@ def test_auto_agentskills_fires_on_all_skill_repo_types(temp_dir):
     assert config.is_rule_enabled("agentskill-valid", ctx, repo_types) is False
 
 
+def test_save_no_trailing_whitespace(tmp_path):
+    """Test that saved config has no trailing whitespace and is valid YAML"""
+    config = LinterConfig.default()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # Every line must be free of trailing whitespace
+    for i, line in enumerate(content.splitlines(), start=1):
+        assert line == line.rstrip(), f"Line {i} has trailing whitespace: {line!r}"
+
+    # The output must be valid YAML
+    parsed = yaml.safe_load(content)
+    assert parsed is not None
+    assert "rules" in parsed
+
+    # Verify the block-style list round-trips correctly
+    plugin_json_valid = parsed["rules"]["plugin-json-valid"]
+    assert plugin_json_valid["recommended-fields"] == [
+        "description",
+        "version",
+        "author",
+    ]
+
+
 def test_auto_without_repo_types_always_enabled(valid_plugin):
     """Test that auto with repo_types=None enables for any repo type"""
     config = LinterConfig.default()
