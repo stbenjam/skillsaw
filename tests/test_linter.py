@@ -140,7 +140,14 @@ def test_self_lint():
     config = LinterConfig.default()
     linter = Linter(context, config)
 
+    # Exclude intentional test fixtures (PR #29: code scanning test)
+    test_fixtures = {"Bad_Skill"}
     violations = linter.run()
-    errors = [v for v in violations if v.severity.value == "error"]
+    errors = [
+        v
+        for v in violations
+        if v.severity.value == "error"
+        and not any(part in str(v.file_path) for part in test_fixtures)
+    ]
 
     assert len(errors) == 0, f"Self-lint found errors: {errors}"
