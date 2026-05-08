@@ -214,7 +214,10 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
     for entry in data.get("plugins", []):
         if entry["name"] == plugin_name:
             source = entry.get("source", f"./plugins/{plugin_name}")
-            return (root / source).resolve()
+            resolved = (root / source).resolve()
+            if not resolved.is_relative_to(root.resolve()):
+                raise ValueError(f"Plugin source {source!r} resolves outside marketplace root")
+            return resolved
     raise FileNotFoundError(f"Plugin {plugin_name!r} not found in marketplace.json")
 
 

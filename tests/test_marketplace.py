@@ -11,6 +11,7 @@ import pytest
 from skillsaw.marketplace.branding import (
     COLOR_PRESETS,
     DEFAULT_MARKETPLACE_TYPE,
+    apply_branding,
     apply_replacements,
     build_replacements,
     get_color_scheme,
@@ -74,6 +75,52 @@ class TestBranding:
         assert config["marketplace_name"] == "test"
         assert config["marketplace_type"] == "claude-code"
         assert config["color_scheme"]["primary"] == "#228B22"
+
+    def test_apply_branding_with_replacements(self, temp_dir):
+        """apply_branding should substitute placeholders in branded files."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "index.html").write_text("<h1>{{MARKETPLACE_NAME}}</h1>")
+        (temp_dir / "README.md").write_text("# {{OWNER_NAME}}")
+        (temp_dir / ".claude-plugin").mkdir()
+        (temp_dir / ".claude-plugin" / "marketplace.json").write_text(
+            '{"name": "{{MARKETPLACE_NAME}}"}'
+        )
+
+        replacements = {"MARKETPLACE_NAME": "my-plugins", "OWNER_NAME": "alice"}
+        apply_branding(temp_dir, replacements)
+
+        assert "my-plugins" in (temp_dir / "docs" / "index.html").read_text()
+        assert "alice" in (temp_dir / "README.md").read_text()
+        assert "my-plugins" in (temp_dir / ".claude-plugin" / "marketplace.json").read_text()
+
+    def test_apply_branding_from_config(self, temp_dir):
+        """apply_branding without explicit replacements should load from .template-config.json."""
+        write_template_config(
+            temp_dir,
+            name="auto-mp",
+            owner="bob",
+            github_repo="bob/auto-mp",
+            color_scheme=COLOR_PRESETS["ocean-blue"],
+            marketplace_type="claude-code",
+        )
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "index.html").write_text("{{MARKETPLACE_NAME}}")
+        (temp_dir / "README.md").write_text("{{OWNER_NAME}}")
+        (temp_dir / ".claude-plugin").mkdir()
+        (temp_dir / ".claude-plugin" / "marketplace.json").write_text(
+            '{"name": "{{MARKETPLACE_NAME}}"}'
+        )
+
+        apply_branding(temp_dir)
+
+        assert "auto-mp" in (temp_dir / "docs" / "index.html").read_text()
+        assert "bob" in (temp_dir / "README.md").read_text()
+
+    def test_apply_branding_no_config_is_noop(self, temp_dir):
+        """apply_branding with no config and no replacements should be a no-op."""
+        (temp_dir / "README.md").write_text("{{PLACEHOLDER}}")
+        apply_branding(temp_dir)
+        assert "{{PLACEHOLDER}}" in (temp_dir / "README.md").read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +208,7 @@ class TestInit:
         (root / ".claude-plugin").mkdir()
         (root / ".claude-plugin" / "marketplace.json").write_text("{}")
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(FileExistsError, match="already exists"):
             init_marketplace(path=root, name="test", owner="user")
 
     def test_init_default_github_repo(self, temp_dir):
@@ -705,3 +752,21 @@ class TestInteractive:
             _handle_multi_plugin(exc, add_skill, name="test-skill", path=root)
 
         assert (root / "plugins" / "alpha" / "skills" / "test-skill" / "SKILL.md").exists()
+
+    def test_handle_multi_plugin_reraises_unrelated_error(self):
+        """_handle_multi_plugin should re-raise errors that aren't about multiple plugins."""
+        from skillsaw.marketplace.cli import _handle_multi_plugin
+
+        exc = ValueError("Something completely different")
+        with pytest.raises(ValueError, match="Something completely different"):
+            _handle_multi_plugin(exc, add_skill, name="x", path=Path("/tmp"))
+
+    def test_handle_multi_plugin_reraises_non_tty(self, temp_dir):
+        """_handle_multi_plugin should re-raise even 'Multiple plugins' errors on non-TTY."""
+        from skillsaw.marketplace.cli import _handle_multi_plugin
+
+        exc = ValueError("Multiple plugins in this marketplace. Use --plugin to specify.")
+        with patch("skillsaw.marketplace.cli.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = False
+            with pytest.raises(ValueError, match="Multiple plugins"):
+                _handle_multi_plugin(exc, add_skill, name="x", path=temp_dir)

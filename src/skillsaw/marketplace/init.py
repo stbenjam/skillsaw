@@ -62,16 +62,13 @@ def init_marketplace(
     root = (path or Path.cwd()).resolve()
 
     if marketplace_type not in MARKETPLACE_TYPES:
-        print(
-            f"Error: unsupported marketplace type: {marketplace_type!r}. "
-            f"Available: {', '.join(MARKETPLACE_TYPES)}",
-            file=sys.stderr,
+        raise ValueError(
+            f"Unsupported marketplace type: {marketplace_type!r}. "
+            f"Available: {', '.join(MARKETPLACE_TYPES)}"
         )
-        sys.exit(1)
 
     if (root / ".claude-plugin" / "marketplace.json").exists():
-        print("Error: marketplace already exists at this location", file=sys.stderr)
-        sys.exit(1)
+        raise FileExistsError("Marketplace already exists at this location")
 
     if not interactive and (not name or not owner) and sys.stdin.isatty():
         interactive = True
@@ -93,11 +90,9 @@ def init_marketplace(
             no_example_plugin = True
     else:
         if not name:
-            print("Error: --name is required (or use --interactive)", file=sys.stderr)
-            sys.exit(1)
+            raise ValueError("--name is required (or use --interactive)")
         if not owner:
-            print("Error: --owner is required (or use --interactive)", file=sys.stderr)
-            sys.exit(1)
+            raise ValueError("--owner is required (or use --interactive)")
         if not github_repo:
             github_repo = f"{owner}/{name}"
         colors = get_color_scheme(color_scheme or DEFAULT_COLOR_SCHEME)

@@ -175,7 +175,7 @@ Examples:
     # --- hook ---
     hook_parser = subparsers.add_parser("hook", help="Add a hook to a plugin")
     hook_parser.add_argument(
-        "event", nargs="?", default=None, help="Hook event name (e.g., user-prompt-submit)"
+        "event", nargs="?", default=None, help="Hook event name (e.g., UserPromptSubmit)"
     )
     hook_parser.add_argument(
         "--plugin",
