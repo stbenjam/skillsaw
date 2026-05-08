@@ -37,6 +37,14 @@ def github_api(method, path, body=None):
         raise
 
 
+def graphql(query, variables=None):
+    token = os.environ["GITHUB_TOKEN"]
+    body = {"query": query}
+    if variables:
+        body["variables"] = variables
+    return github_api("POST", "https://api.github.com/graphql", body)
+
+
 def get_diff_lines(repo, pr_number):
     """Get the set of (path, line) tuples for added/modified lines in the PR."""
     diff_lines = set()
@@ -67,20 +75,74 @@ def get_diff_lines(repo, pr_number):
     return diff_lines
 
 
-def minimize_previous_reviews(repo, pr_number):
-    """Mark previous skillsaw reviews as outdated by editing their body."""
-    reviews = github_api("GET", f"/repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
-    for review in reviews:
-        body = review.get("body", "") or ""
-        if MARKER in body and "~~" not in body:
+def resolve_previous_reviews(repo, pr_number):
+    """Resolve review threads from previous skillsaw reviews."""
+    owner, name = repo.split("/")
+    result = graphql(
+        """
+        query($owner: String!, $name: String!, $pr: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $pr) {
+              reviews(first: 100) {
+                nodes {
+                  body
+                  databaseId
+                }
+              }
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  comments(first: 1) {
+                    nodes { body }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """,
+        {"owner": owner, "name": name, "pr": int(pr_number)},
+    )
+
+    pr_data = result.get("data", {}).get("repository", {}).get("pullRequest", {})
+
+    for review in pr_data.get("reviews", {}).get("nodes", []):
+        body = review.get("body") or ""
+        if MARKER in body:
             try:
                 github_api(
                     "PUT",
-                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['id']}",
-                    {"body": f"{MARKER}\n~~Outdated — see latest review below.~~"},
+                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['databaseId']}",
+                    {"body": f"{MARKER}\n*Superseded by latest review below.*"},
                 )
             except urllib.error.HTTPError:
                 pass
+
+    resolved_count = 0
+    for thread in pr_data.get("reviewThreads", {}).get("nodes", []):
+        if thread.get("isResolved"):
+            continue
+        first_comment = (thread.get("comments", {}).get("nodes") or [{}])[0]
+        comment_body = first_comment.get("body", "")
+        if any(sev in comment_body for sev in SEVERITY_ICONS.values()):
+            try:
+                graphql(
+                    """
+                    mutation($id: ID!) {
+                      resolveReviewThread(input: {threadId: $id}) {
+                        thread { isResolved }
+                      }
+                    }
+                    """,
+                    {"id": thread["id"]},
+                )
+                resolved_count += 1
+            except Exception:
+                pass
+
+    if resolved_count:
+        print(f"Resolved {resolved_count} previous review thread(s).")
 
 
 def build_summary(report, inline_violations, body_violations):
@@ -154,7 +216,7 @@ def main():
         else:
             body_violations.append(v)
 
-    minimize_previous_reviews(repo, pr_number)
+    resolve_previous_reviews(repo, pr_number)
 
     review_body = build_summary(report, inline_violations, body_violations)
 
