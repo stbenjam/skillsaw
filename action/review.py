@@ -140,10 +140,7 @@ def main():
 
     diff_lines = get_diff_lines(repo, pr_number)
 
-    diff_file_first_line = {}
-    for path, line in diff_lines:
-        if path not in diff_file_first_line or line < diff_file_first_line[path]:
-            diff_file_first_line[path] = line
+    diff_files = {path for path, _ in diff_lines}
 
     inline_violations = []
     body_violations = []
@@ -152,8 +149,7 @@ def main():
         line = v.get("line")
         if path and line and (path, line) in diff_lines:
             inline_violations.append(v)
-        elif path and not line and path in diff_file_first_line:
-            v = dict(v, line=diff_file_first_line[path])
+        elif path and path in diff_files:
             inline_violations.append(v)
         else:
             body_violations.append(v)
@@ -165,14 +161,14 @@ def main():
     comments = []
     for v in inline_violations:
         icon = SEVERITY_ICONS.get(v["severity"], "")
-        comments.append(
-            {
-                "path": v["file_path"],
-                "line": v["line"],
-                "side": "RIGHT",
-                "body": f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}",
-            }
-        )
+        comment = {
+            "path": v["file_path"],
+            "body": f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}",
+        }
+        if v.get("line"):
+            comment["line"] = v["line"]
+            comment["side"] = "RIGHT"
+        comments.append(comment)
 
     review = {
         "commit_id": head_sha,
