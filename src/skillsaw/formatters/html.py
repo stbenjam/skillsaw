@@ -41,7 +41,7 @@ def format_html(
         return "-"
 
     severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
-    visible.sort(key=lambda v: severity_order[v.severity])
+    visible.sort(key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.line or 0))
 
     rows = ""
     for v in visible:
@@ -156,6 +156,7 @@ def format_html(
       border-top: 1px solid #e9ecef;
       vertical-align: top;
       font-size: 0.92em;
+      white-space: pre-wrap;
     }}
     tbody tr:hover {{
       background: #f1f3f5;

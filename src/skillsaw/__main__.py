@@ -195,11 +195,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     print(stdout_output)
 
     # Write to output files
+    report_cache = {}
     for output_path, fmt in output_formats.items():
-        file_output = format_report(
-            fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
-        )
-        Path(output_path).write_text(file_output, encoding="utf-8")
+        if fmt not in report_cache:
+            report_cache[fmt] = format_report(
+                fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+            )
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(report_cache[fmt], encoding="utf-8")
 
     # Exit with appropriate code
     errors, warnings_count, info = get_counts(violations)
