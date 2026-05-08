@@ -162,7 +162,7 @@ def build_summary(report, inline_violations, body_violations):
     )
 
     if body_violations:
-        lines.append("<details><summary>Violations outside changed lines</summary>\n")
+        lines.append("<details><summary>Other violations</summary>\n")
         for v in body_violations:
             icon = SEVERITY_ICONS.get(v["severity"], "")
             loc = ""
@@ -202,7 +202,6 @@ def main():
 
     diff_lines = get_diff_lines(repo, pr_number)
 
-    diff_files = {path for path, _ in diff_lines}
 
     inline_violations = []
     body_violations = []
@@ -210,8 +209,6 @@ def main():
         path = v.get("file_path")
         line = v.get("line")
         if path and line and (path, line) in diff_lines:
-            inline_violations.append(v)
-        elif path and path in diff_files:
             inline_violations.append(v)
         else:
             body_violations.append(v)
@@ -227,11 +224,8 @@ def main():
             "path": v["file_path"],
             "body": f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}",
         }
-        if v.get("line"):
-            comment["line"] = v["line"]
-            comment["side"] = "RIGHT"
-        else:
-            comment["subject_type"] = "file"
+        comment["line"] = v["line"]
+        comment["side"] = "RIGHT"
         comments.append(comment)
 
     review = {
