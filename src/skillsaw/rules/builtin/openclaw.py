@@ -4,7 +4,7 @@ Rules for validating openclaw metadata in SKILL.md frontmatter
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
