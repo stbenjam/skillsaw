@@ -467,9 +467,7 @@ class TestDocsCLI:
 
     def test_docs_custom_title(self, valid_plugin, temp_dir):
         out_dir = temp_dir / "out"
-        result = self._run(
-            str(valid_plugin), "--output", str(out_dir), "--title", "Custom Title"
-        )
+        result = self._run(str(valid_plugin), "--output", str(out_dir), "--title", "Custom Title")
         assert result.returncode == 0
         content = (out_dir / "index.html").read_text()
         assert "Custom Title" in content
