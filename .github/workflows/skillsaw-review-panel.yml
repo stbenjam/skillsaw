@@ -1,7 +1,7 @@
 name: Skillsaw Review Panel
 
 on:
-  pull_request:
+  pull_request_target:
     types: [labeled]
 
 concurrency:
@@ -29,6 +29,8 @@ jobs:
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
+        env:
+          OVERRIDE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           prompt: |
             Use the skillsaw-review-panel skill. Follow every step in the skill.
