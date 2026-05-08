@@ -11,7 +11,7 @@
 
 ### skillsaw
 
-Lint your skills before they cut someone. A configurable linter, scaffolding tool, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
+Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
 
 > Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
