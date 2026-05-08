@@ -61,39 +61,72 @@ def graphql(query, variables=None):
     return result
 
 
-def resolve_thread(comment_node_id):
-    """Resolve the review thread containing a comment."""
-    result = graphql(
-        """
-        query($id: ID!) {
-            node(id: $id) {
-                ... on PullRequestReviewComment {
-                    pullRequestReviewThread {
-                        id
-                        isResolved
+def get_review_threads(repo, pr_number):
+    """Fetch all review threads and their first comment bodies."""
+    owner, name = repo.split("/")
+    threads = []
+    cursor = None
+    while True:
+        after = f', after: "{cursor}"' if cursor else ""
+        result = graphql(
+            """
+            query($owner: String!, $repo: String!, $pr: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $pr) {
+                        reviewThreads(first: 100%s) {
+                            nodes {
+                                id
+                                isResolved
+                                comments(first: 1) {
+                                    nodes { body }
+                                }
+                            }
+                            pageInfo { hasNextPage endCursor }
+                        }
                     }
                 }
             }
-        }
-        """,
-        {"id": comment_node_id},
-    )
-    thread = (result.get("data") or {}).get("node", {}).get("pullRequestReviewThread", {})
-    if not thread or thread.get("isResolved"):
-        return False
+            """ % after,
+            {"owner": owner, "repo": name, "pr": int(pr_number)},
+        )
+        pr_data = (result.get("data") or {}).get("repository", {}).get("pullRequest", {})
+        thread_data = pr_data.get("reviewThreads", {})
+        threads.extend(thread_data.get("nodes") or [])
+        page_info = thread_data.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info["endCursor"]
+    return threads
 
-    result = graphql(
-        """
-        mutation($threadId: ID!) {
-            resolveReviewThread(input: {threadId: $threadId}) {
-                thread { isResolved }
-            }
-        }
-        """,
-        {"threadId": thread["id"]},
-    )
-    resolved = (result.get("data") or {}).get("resolveReviewThread", {}).get("thread", {}).get("isResolved")
-    return bool(resolved)
+
+def resolve_threads_by_fingerprints(repo, pr_number, fingerprints):
+    """Resolve review threads whose comments match the given fingerprints."""
+    if not fingerprints:
+        return 0
+    threads = get_review_threads(repo, pr_number)
+    resolved = 0
+    for thread in threads:
+        if thread.get("isResolved"):
+            continue
+        comments = (thread.get("comments") or {}).get("nodes") or []
+        if not comments:
+            continue
+        body = comments[0].get("body", "")
+        m = FINGERPRINT_RE.search(body)
+        if m and m.group(1) in fingerprints:
+            result = graphql(
+                """
+                mutation($threadId: ID!) {
+                    resolveReviewThread(input: {threadId: $threadId}) {
+                        thread { isResolved }
+                    }
+                }
+                """,
+                {"threadId": thread["id"]},
+            )
+            if (result.get("data") or {}).get("resolveReviewThread", {}).get("thread", {}).get("isResolved"):
+                resolved += 1
+    return resolved
 
 
 def fingerprint(rule_id, file_path, message):
@@ -157,18 +190,15 @@ def sync_comments(repo, pr_number, new_comments):
         return new_comments
 
     current_fps = {c["fingerprint"] for c in new_comments}
+    stale_fps = {fp for fp in existing if fp not in current_fps}
 
-    resolved = 0
-    for fp, comment in existing.items():
-        if fp not in current_fps:
-            try:
-                if resolve_thread(comment["node_id"]):
-                    resolved += 1
-            except Exception:
-                pass
-
-    if resolved:
-        print(f"Resolved {resolved} thread(s) for fixed issues.")
+    if stale_fps:
+        try:
+            resolved = resolve_threads_by_fingerprints(repo, pr_number, stale_fps)
+            if resolved:
+                print(f"Resolved {resolved} thread(s) for fixed issues.")
+        except Exception as e:
+            print(f"Failed to resolve threads: {e}", file=sys.stderr)
 
     return [c for c in new_comments if c["fingerprint"] not in existing]
 
