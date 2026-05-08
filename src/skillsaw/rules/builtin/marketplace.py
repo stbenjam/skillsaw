@@ -43,9 +43,7 @@ class MarketplaceJsonValidRule(Rule):
         # Try to parse
         marketplace, error = read_json(marketplace_file)
         if error:
-            violations.append(
-                self.violation(f"Invalid JSON: {error}", file_path=marketplace_file)
-            )
+            violations.append(self.violation(f"Invalid JSON: {error}", file_path=marketplace_file))
             return violations
 
         # Validate that marketplace is a dictionary

@@ -86,9 +86,7 @@ class PluginJsonValidRule(Rule):
             # Try to parse JSON
             data, error = read_json(plugin_json)
             if error:
-                violations.append(
-                    self.violation(f"Invalid JSON: {error}", file_path=plugin_json)
-                )
+                violations.append(self.violation(f"Invalid JSON: {error}", file_path=plugin_json))
                 continue
 
             # Check required fields

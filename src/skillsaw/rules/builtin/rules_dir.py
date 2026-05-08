@@ -106,8 +106,7 @@ class RulesValidRule(Rule):
                 for key in sorted(unknown_keys):
                     violations.append(
                         self.violation(
-                            f"Unknown frontmatter key '{key}'. "
-                            f"Only 'paths' is supported",
+                            f"Unknown frontmatter key '{key}'. " f"Only 'paths' is supported",
                             file_path=file_path,
                             line=frontmatter_key_line(file_path, key),
                             severity=Severity.WARNING,
