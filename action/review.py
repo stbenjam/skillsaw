@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 
 MARKER = "<!-- skillsaw-review -->"
-SEVERITY_ICONS = {"error": "✗", "warning": "⚠️", "info": "ℹ️"}
+SEVERITY_ICONS = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
 API = "https://api.github.com"
 
 
