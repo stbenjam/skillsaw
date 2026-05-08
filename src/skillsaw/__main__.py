@@ -253,7 +253,7 @@ def _run_init(args):
 
 
 def _run_list_rules():
-    from skillsaw.rules.builtin import BUILTIN_RULES
+    from .rules.builtin import BUILTIN_RULES
 
     print("Available builtin rules:\n")
     for rule_class in BUILTIN_RULES:
