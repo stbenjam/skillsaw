@@ -10,6 +10,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.rules.builtin.utils import read_text, frontmatter_key_line
 
 
 def _parse_frontmatter(content: str):
@@ -85,10 +86,11 @@ class RulesValidRule(Rule):
                 )
                 continue
 
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except (IOError, UnicodeDecodeError) as e:
-                violations.append(self.violation(f"Failed to read file: {e}", file_path=file_path))
+            content = read_text(file_path)
+            if content is None:
+                violations.append(
+                    self.violation(f"Failed to read file: {file_path}", file_path=file_path)
+                )
                 continue
 
             frontmatter, error = _parse_frontmatter(content)
@@ -101,24 +103,28 @@ class RulesValidRule(Rule):
 
             unknown_keys = set(frontmatter.keys()) - _VALID_FRONTMATTER_KEYS
             if unknown_keys:
-                violations.append(
-                    self.violation(
-                        f"Unknown frontmatter key(s): {', '.join(sorted(unknown_keys))}. "
-                        f"Only 'paths' is supported",
-                        file_path=file_path,
-                        severity=Severity.WARNING,
+                for key in sorted(unknown_keys):
+                    violations.append(
+                        self.violation(
+                            f"Unknown frontmatter key '{key}'. "
+                            f"Only 'paths' is supported",
+                            file_path=file_path,
+                            line=frontmatter_key_line(file_path, key),
+                            severity=Severity.WARNING,
+                        )
                     )
-                )
 
             if "paths" not in frontmatter:
                 continue
 
+            paths_line = frontmatter_key_line(file_path, "paths")
             paths = frontmatter["paths"]
             if not isinstance(paths, list):
                 violations.append(
                     self.violation(
                         "'paths' must be a list of glob patterns",
                         file_path=file_path,
+                        line=paths_line,
                     )
                 )
                 continue
@@ -129,6 +135,7 @@ class RulesValidRule(Rule):
                         self.violation(
                             f"paths[{i}]: must be a string, got {type(pattern).__name__}",
                             file_path=file_path,
+                            line=paths_line,
                         )
                     )
                     continue
@@ -138,6 +145,7 @@ class RulesValidRule(Rule):
                         self.violation(
                             f"paths[{i}]: empty glob pattern",
                             file_path=file_path,
+                            line=paths_line,
                         )
                     )
                     continue
@@ -145,8 +153,9 @@ class RulesValidRule(Rule):
                 if pattern.startswith("/") or pattern.startswith("\\"):
                     violations.append(
                         self.violation(
-                            f"paths[{i}]: '{pattern}' must be a relative path, " f"not absolute",
+                            f"paths[{i}]: '{pattern}' must be a relative path, not absolute",
                             file_path=file_path,
+                            line=paths_line,
                         )
                     )
 
@@ -157,6 +166,7 @@ class RulesValidRule(Rule):
                         self.violation(
                             f"paths[{i}]: '{pattern}' must not contain '..' segments",
                             file_path=file_path,
+                            line=paths_line,
                         )
                     )
 

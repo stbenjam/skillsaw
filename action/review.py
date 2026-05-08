@@ -271,8 +271,9 @@ def main():
         try:
             github_api("POST", f"/repos/{repo}/pulls/{pr_number}/comments", payload)
             posted += 1
-        except urllib.error.HTTPError:
-            pass
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 429):
+                raise
 
     kept = len(new_comments) - len(to_post)
     print(f"Posted {posted} new comment(s), {kept} unchanged.")

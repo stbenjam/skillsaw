@@ -2,11 +2,11 @@
 Rules for validating marketplace structure
 """
 
-import json
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.rules.builtin.utils import read_json
 
 
 class MarketplaceJsonValidRule(Rule):
@@ -41,15 +41,10 @@ class MarketplaceJsonValidRule(Rule):
             return violations
 
         # Try to parse
-        try:
-            with open(marketplace_file, "r") as f:
-                marketplace = json.load(f)
-        except json.JSONDecodeError as e:
-            violations.append(self.violation(f"Invalid JSON: {e}", file_path=marketplace_file))
-            return violations
-        except IOError as e:
+        marketplace, error = read_json(marketplace_file)
+        if error:
             violations.append(
-                self.violation(f"Failed to read file: {e}", file_path=marketplace_file)
+                self.violation(f"Invalid JSON: {error}", file_path=marketplace_file)
             )
             return violations
 

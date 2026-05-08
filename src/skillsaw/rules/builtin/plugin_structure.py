@@ -2,12 +2,12 @@
 Rules for validating plugin structure
 """
 
-import json
 import re
 from pathlib import Path
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rules.builtin.utils import read_json
 from skillsaw.context import RepositoryContext, RepositoryType
 
 PLUGIN_REPO_TYPES = {RepositoryType.SINGLE_PLUGIN, RepositoryType.MARKETPLACE}
@@ -84,15 +84,10 @@ class PluginJsonValidRule(Rule):
                 continue  # Handled by plugin-json-required rule
 
             # Try to parse JSON
-            try:
-                with open(plugin_json, "r") as f:
-                    data = json.load(f)
-            except json.JSONDecodeError as e:
-                violations.append(self.violation(f"Invalid JSON: {e}", file_path=plugin_json))
-                continue
-            except IOError as e:
+            data, error = read_json(plugin_json)
+            if error:
                 violations.append(
-                    self.violation(f"Failed to read file: {e}", file_path=plugin_json)
+                    self.violation(f"Invalid JSON: {error}", file_path=plugin_json)
                 )
                 continue
 

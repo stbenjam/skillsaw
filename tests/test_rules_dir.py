@@ -127,7 +127,7 @@ def test_frontmatter_not_a_mapping(dot_claude_with_rules):
 
 
 def test_unknown_frontmatter_key_warns(dot_claude_with_rules):
-    """Unknown frontmatter keys produce a warning"""
+    """Unknown frontmatter keys produce a warning with correct line number"""
     content = "---\npaths:\n  - '**/*.ts'\ntitle: My Rule\n---\n\n# Rules\n"
     _write_rule(dot_claude_with_rules, "extra.md", content)
 
@@ -137,10 +137,11 @@ def test_unknown_frontmatter_key_warns(dot_claude_with_rules):
     assert len(violations) == 1
     assert violations[0].severity == Severity.WARNING
     assert "title" in violations[0].message
+    assert violations[0].line == 4
 
 
 def test_paths_not_a_list(dot_claude_with_rules):
-    """paths field that isn't a list produces an error"""
+    """paths field that isn't a list produces an error with line number"""
     content = '---\npaths: "**/*.ts"\n---\n\n# Rules\n'
     _write_rule(dot_claude_with_rules, "scalar.md", content)
 
@@ -149,6 +150,7 @@ def test_paths_not_a_list(dot_claude_with_rules):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "must be a list" in violations[0].message
+    assert violations[0].line == 2
 
 
 def test_paths_entry_not_string(dot_claude_with_rules):
@@ -177,7 +179,7 @@ def test_empty_glob_pattern(dot_claude_with_rules):
 
 
 def test_absolute_path_pattern(dot_claude_with_rules):
-    """Absolute path in pattern produces an error"""
+    """Absolute path in pattern produces an error with paths line number"""
     content = '---\npaths:\n  - "/etc/config/**"\n---\n\n# Rules\n'
     _write_rule(dot_claude_with_rules, "absolute.md", content)
 
@@ -186,6 +188,7 @@ def test_absolute_path_pattern(dot_claude_with_rules):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "relative path" in violations[0].message
+    assert violations[0].line == 2
 
 
 def test_parent_traversal_pattern(dot_claude_with_rules):

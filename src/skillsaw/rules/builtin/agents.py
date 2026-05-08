@@ -7,6 +7,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import read_text
 
 
 class AgentFrontmatterRule(Rule):
@@ -33,12 +34,10 @@ class AgentFrontmatterRule(Rule):
 
             # Check all .md files in agents directory
             for agent_file in agents_dir.glob("*.md"):
-                try:
-                    with open(agent_file, "r") as f:
-                        content = f.read()
-                except IOError as e:
+                content = read_text(agent_file)
+                if content is None:
                     violations.append(
-                        self.violation(f"Failed to read file: {e}", file_path=agent_file)
+                        self.violation(f"Failed to read file: {agent_file}", file_path=agent_file)
                     )
                     continue
 

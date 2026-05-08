@@ -11,6 +11,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
@@ -21,7 +22,7 @@ CONSECUTIVE_HYPHENS = re.compile(r"--")
 DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=512)
 def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     """
     Parse SKILL.md frontmatter from a skill directory.
@@ -33,10 +34,9 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     if not skill_md.exists():
         return None, "SKILL.md not found"
 
-    try:
-        content = skill_md.read_text()
-    except IOError as e:
-        return None, f"Failed to read SKILL.md: {e}"
+    content = read_text(skill_md)
+    if content is None:
+        return None, f"Failed to read SKILL.md: {skill_md}"
 
     if not content.startswith("---"):
         return None, "Missing YAML frontmatter (must start with ---)"
@@ -56,25 +56,9 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     return frontmatter, None
 
 
-@lru_cache(maxsize=None)
 def _frontmatter_key_line(skill_path, key: str) -> Optional[int]:
     """Find the line number of a top-level key in SKILL.md frontmatter."""
-    skill_md = skill_path / "SKILL.md"
-    try:
-        lines = skill_md.read_text().splitlines()
-    except IOError:
-        return None
-    pattern = re.compile(rf"^{re.escape(key)}\s*:")
-    in_frontmatter = False
-    for i, line in enumerate(lines, 1):
-        if line.strip() == "---":
-            if not in_frontmatter:
-                in_frontmatter = True
-                continue
-            break
-        if in_frontmatter and pattern.match(line):
-            return i
-    return None
+    return frontmatter_key_line(skill_path / "SKILL.md", key)
 
 
 class AgentSkillValidRule(Rule):
@@ -472,16 +456,10 @@ class AgentSkillEvalsRule(Rule):
                 )
                 continue
 
-            try:
-                data = json.loads(evals_json.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            data, error = read_json(evals_json)
+            if error:
                 violations.append(
-                    self.violation(f"Invalid JSON in evals.json: {e}", file_path=evals_json)
-                )
-                continue
-            except IOError as e:
-                violations.append(
-                    self.violation(f"Failed to read evals.json: {e}", file_path=evals_json)
+                    self.violation(f"Invalid JSON in evals.json: {error}", file_path=evals_json)
                 )
                 continue
 

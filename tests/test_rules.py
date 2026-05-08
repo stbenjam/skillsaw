@@ -16,6 +16,7 @@ from skillsaw.rules.builtin.plugin_structure import (
 from skillsaw.rules.builtin.command_format import (
     CommandNamingRule,
     CommandFrontmatterRule,
+    CommandNameFormatRule,
 )
 from skillsaw.rules.builtin.marketplace import (
     MarketplaceRegistrationRule,
@@ -225,3 +226,29 @@ def test_plugin_json_missing_name_is_error(temp_dir):
     assert "name" in errors[0].message
     # version and author are missing -> 2 warnings
     assert len(warnings) == 2
+
+
+def test_command_name_format_reports_line_number(temp_dir):
+    """CommandNameFormatRule should report the line of the ## Name heading"""
+    import json
+
+    plugin_dir = temp_dir / "my-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    with open(claude_dir / "plugin.json", "w") as f:
+        json.dump({"name": "my-plugin"}, f)
+
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir()
+
+    (commands_dir / "do-thing.md").write_text(
+        "---\ndescription: Does a thing\n---\n\n## Name\nwrong-name:do-thing\n\n## Synopsis\nUsage\n"
+    )
+
+    context = RepositoryContext(plugin_dir)
+    violations = CommandNameFormatRule().check(context)
+    assert len(violations) == 1
+    assert "my-plugin:do-thing" in violations[0].message
+    assert violations[0].line == 5

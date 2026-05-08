@@ -178,6 +178,8 @@ def test_missing_name_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillValidRule().check(context)
     assert any("name" in v.message for v in violations)
+    v = [v for v in violations if "name" in v.message][0]
+    assert v.line is None
 
 
 def test_missing_description_fails(temp_dir):
@@ -199,6 +201,8 @@ def test_name_too_long_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillValidRule().check(context)
     assert any("exceeds" in v.message and "64" in v.message for v in violations)
+    v = [v for v in violations if "exceeds" in v.message][0]
+    assert v.line == 2
 
 
 def test_description_too_long_checked_by_description_rule(temp_dir):
@@ -259,6 +263,7 @@ def test_name_uppercase_fails(temp_dir):
     violations = AgentSkillNameRule().check(context)
     assert len(violations) >= 1
     assert any("lowercase" in v.message for v in violations)
+    assert violations[0].line == 2
 
 
 def test_name_consecutive_hyphens_fails(temp_dir):
@@ -269,6 +274,7 @@ def test_name_consecutive_hyphens_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillNameRule().check(context)
     assert any("consecutive" in v.message for v in violations)
+    assert violations[0].line == 2
 
 
 def test_name_trailing_hyphen_fails(temp_dir):
@@ -291,6 +297,8 @@ def test_name_dir_mismatch_fails(temp_dir):
     context = RepositoryContext(repo)
     violations = AgentSkillNameRule().check(context)
     assert any("does not match directory" in v.message for v in violations)
+    v = [v for v in violations if "does not match directory" in v.message][0]
+    assert v.line == 2
 
 
 def test_name_at_root_skips_dir_check(temp_dir):
@@ -328,6 +336,7 @@ def test_description_whitespace_only_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillDescriptionRule().check(context)
     assert any("empty" in v.message for v in violations)
+    assert violations[0].line == 3
 
 
 def test_description_over_limit_warns(temp_dir):
@@ -339,6 +348,7 @@ def test_description_over_limit_warns(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillDescriptionRule().check(context)
     assert any("exceeds" in v.message for v in violations)
+    assert violations[0].line == 3
 
 
 # --- agentskill-structure ---

@@ -1,4 +1,4 @@
-name: Self-lint .claude
+name: Test Action
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -19,4 +19,4 @@ jobs:
 
       - uses: ./
         with:
-          strict: false
+          strict: true
