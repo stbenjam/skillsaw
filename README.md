@@ -6,8 +6,8 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/skillsaw.svg)](https://pypi.org/project/skillsaw/)
 
 <table><tr>
-<td width="200"><img src="images/logo.png" alt="skillsaw logo" width="200"></td>
-<td>
+<td width="200" valign="top"><img src="images/logo.png" alt="skillsaw logo" width="200"></td>
+<td valign="top">
 
 ### skillsaw
 
