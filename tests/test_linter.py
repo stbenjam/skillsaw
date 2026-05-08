@@ -2,6 +2,7 @@
 Tests for main linter functionality
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -145,3 +146,45 @@ def test_self_lint():
     errors = [v for v in violations if v.severity.value == "error"]
 
     assert len(errors) == 0, f"Self-lint found errors: {errors}"
+
+
+def test_format_results_includes_ansi_codes_by_default(valid_plugin, monkeypatch):
+    """Test that output contains ANSI codes when NO_COLOR is not set"""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+
+    violations = linter.run()
+    output = linter.format_results(violations)
+
+    # Should contain ANSI escape codes
+    assert "\033[" in output
+
+
+def test_format_results_no_ansi_when_no_color_set(valid_plugin, monkeypatch):
+    """Test that output contains no ANSI codes when NO_COLOR is set"""
+    monkeypatch.setenv("NO_COLOR", "")
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+
+    violations = linter.run()
+    output = linter.format_results(violations)
+
+    # Should NOT contain any ANSI escape codes
+    assert "\033[" not in output
+
+
+def test_format_results_no_ansi_when_no_color_set_to_value(valid_plugin, monkeypatch):
+    """Test that NO_COLOR works with any value, not just empty string"""
+    monkeypatch.setenv("NO_COLOR", "1")
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+
+    violations = linter.run()
+    output = linter.format_results(violations)
+
+    # Should NOT contain any ANSI escape codes
+    assert "\033[" not in output
