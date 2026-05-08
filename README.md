@@ -11,7 +11,7 @@
 
 ### skillsaw
 
-Lint your skills before they cut someone. A configurable linter, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
+Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
 
 > Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
@@ -22,6 +22,7 @@ Lint your skills before they cut someone. A configurable linter, doc generator, 
 
 - 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, and marketplaces and enables the right rules
 - 📐 **Rule-Based** — Enable/disable individual rules with configurable severity levels
+- 🏗️ **Scaffolding** — Initialize marketplaces and add plugins, skills, commands, agents, and hooks with `skillsaw add`
 - 📝 **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
 - 🔌 **Extensible** — Load custom rules from Python files
 - ✅ **Comprehensive** — Validates skill format, plugin structure, metadata, command format, and cross-file consistency
@@ -48,6 +49,10 @@ Lint your skills before they cut someone. A configurable linter, doc generator, 
 - [Configuration](#configuration)
 - [Builtin Rules](#builtin-rules)
 - [Custom Rules](#custom-rules)
+- [Scaffolding](#scaffolding)
+  - [Initialize a Marketplace](#initialize-a-marketplace)
+  - [Add Components](#add-components)
+  - [Context Detection](#context-detection)
 - [Documentation Generation](#documentation-generation)
 - [Exit Codes](#exit-codes)
 - [Example Output](#example-output)
@@ -84,6 +89,14 @@ skillsaw --list-rules
 
 # Generate documentation
 skillsaw docs
+
+# Initialize a new marketplace
+skillsaw add marketplace
+
+# Add a plugin, skill, or hook
+skillsaw add plugin my-plugin
+skillsaw add skill my-skill
+skillsaw add hook PreToolUse
 ```
 
 ## Installation
@@ -398,6 +411,45 @@ rules:
     enabled: true
     severity: warning
 ```
+
+## Scaffolding
+
+`skillsaw add` scaffolds marketplaces, plugins, and components with best-practice structure, CI, and branding out of the box.
+
+### Initialize a Marketplace
+
+```bash
+# Interactive (prompts for name, owner, colors)
+skillsaw add marketplace
+
+# Non-interactive
+skillsaw add marketplace --name my-plugins --owner myuser --color-scheme ocean-blue
+```
+
+This creates the full marketplace structure: `marketplace.json`, `settings.json`, GitHub Pages site, GitHub Actions CI, Makefile, and an example plugin.
+
+### Add Components
+
+```bash
+# Add a plugin to a marketplace
+skillsaw add plugin my-plugin
+
+# Add a skill, command, agent, or hook
+skillsaw add skill my-skill
+skillsaw add command greet
+skillsaw add agent helper
+skillsaw add hook PreToolUse
+```
+
+### Context Detection
+
+skillsaw automatically detects your repo type and places files in the right location:
+
+- **Marketplace** — components go under `plugins/<name>/`
+- **Single-plugin repo** — components go in the repo root
+- **`.claude/` repo** — components go under `.claude/`
+
+In a marketplace with multiple plugins, specify `--plugin <name>` or skillsaw will prompt interactively.
 
 ## Documentation Generation
 

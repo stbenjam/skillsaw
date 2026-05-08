@@ -21,6 +21,11 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "docs":
         return _run_docs_cli()
 
+    if len(sys.argv) > 1 and sys.argv[1] == "add":
+        from .marketplace.cli import _run_add_cli
+
+        return _run_add_cli()
+
     _run_lint_cli()
 
 
@@ -56,6 +61,12 @@ Examples:
 
   # Generate documentation
   skillsaw docs
+
+  # Create a new marketplace
+  skillsaw add marketplace --name my-plugins --owner myuser
+
+  # Add a plugin to a marketplace
+  skillsaw add plugin my-plugin
 
 For more information, visit: https://github.com/stbenjam/skillsaw
         """,

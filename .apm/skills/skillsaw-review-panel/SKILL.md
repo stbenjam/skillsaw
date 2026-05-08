@@ -131,6 +131,9 @@ When documentation exists:
   If so, are the docs updated?
 - **New features**: Does the change add user-facing functionality (new rules, new
   CLI subcommands, new config options) that should be documented but isn't?
+  Check `README.md` specifically — new CLI commands, subcommands, flags, and
+  workflows MUST have corresponding README sections (Quick Start examples,
+  dedicated section, or both). A feature without README docs is incomplete.
 - **CLAUDE.md consistency**: Do `.claude/rules/*.md` files still accurately describe
   the architecture and development workflow after this change?
 - **Rule documentation**: If a new rule is added, will `make update` pick it up
