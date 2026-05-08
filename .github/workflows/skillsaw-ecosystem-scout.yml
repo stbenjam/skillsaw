@@ -1,0 +1,35 @@
+name: Skillsaw Ecosystem Scout
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            Use the skillsaw-ecosystem-scout skill. Follow every step in the skill.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet
+            --max-turns 200
+            --model claude-opus-4-6
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 30
