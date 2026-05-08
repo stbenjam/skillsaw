@@ -246,7 +246,7 @@ def _run_init(args):
         print(f"Config file already exists: {config_path}")
         sys.exit(1)
 
-    config = LinterConfig.default()
+    config = LinterConfig.for_init()
     config.save(config_path)
     print(f"Created default config: {config_path}")
     sys.exit(0)

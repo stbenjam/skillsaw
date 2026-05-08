@@ -4,7 +4,7 @@ Configuration management for skillsaw
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import ClassVar, Dict, Any, Optional, List, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
@@ -90,13 +90,28 @@ class LinterConfig:
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
                 # Openclaw metadata
                 "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
-                # Instruction file validation
+                # Instruction file validation (disabled for back-compat; --init enables)
                 "instruction-file-valid": {"enabled": False, "severity": "warning"},
                 "instruction-imports-valid": {"enabled": False, "severity": "warning"},
-                # Context budget
+                # Context budget (disabled for back-compat; --init enables)
                 "context-budget": {"enabled": False, "severity": "warning"},
             }
         )
+
+    _INIT_OVERRIDES: ClassVar[Dict[str, Dict[str, Any]]] = {
+        "instruction-file-valid": {"enabled": True},
+        "instruction-imports-valid": {"enabled": True},
+        "context-budget": {"enabled": True},
+    }
+
+    @classmethod
+    def for_init(cls) -> "LinterConfig":
+        """Config for --init: like default() but enables opt-in rules."""
+        config = cls.default()
+        for rule_id, overrides in cls._INIT_OVERRIDES.items():
+            if rule_id in config.rules:
+                config.rules[rule_id].update(overrides)
+        return config
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
