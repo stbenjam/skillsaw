@@ -6,7 +6,7 @@ import os
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts
+from . import get_counts, relative_path
 
 
 def format_text(
@@ -30,22 +30,30 @@ def format_text(
     warnings_list = [v for v in violations if v.severity == Severity.WARNING]
     info_list = [v for v in violations if v.severity == Severity.INFO]
 
+    def fmt_violation(v: RuleViolation) -> str:
+        icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[v.severity.value]
+        rel = relative_path(v.file_path, context.root_path)
+        location = ""
+        if rel:
+            location = f" [{rel}:{v.line}]" if v.line else f" [{rel}]"
+        return f"{icon} {v.severity.value.upper()}{location}: {v.message}"
+
     output = []
 
     if errors_list:
         output.append(f"\n{red}{bold}Errors:{reset}")
         for v in errors_list:
-            output.append(f"  {v}")
+            output.append(f"  {fmt_violation(v)}")
 
     if warnings_list:
         output.append(f"\n{yellow}{bold}Warnings:{reset}")
         for v in warnings_list:
-            output.append(f"  {v}")
+            output.append(f"  {fmt_violation(v)}")
 
     if verbose and info_list:
         output.append(f"\n{blue}{bold}Info:{reset}")
         for v in info_list:
-            output.append(f"  {v}")
+            output.append(f"  {fmt_violation(v)}")
 
     output.append(f"\n{bold}Scanned:{reset}")
     output.append(f"  Repo type: {context.repo_type.value}")

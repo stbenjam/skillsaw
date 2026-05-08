@@ -4,7 +4,7 @@ import html
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts
+from . import get_counts, relative_path
 
 
 def format_html(
@@ -33,11 +33,15 @@ def format_html(
         )
 
     def location(v: RuleViolation) -> str:
-        if v.file_path and v.line:
-            return html.escape(f"{v.file_path}:{v.line}")
-        if v.file_path:
-            return html.escape(str(v.file_path))
+        rel = relative_path(v.file_path, context.root_path)
+        if rel and v.line:
+            return html.escape(f"{rel}:{v.line}")
+        if rel:
+            return html.escape(rel)
         return "-"
+
+    severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+    visible.sort(key=lambda v: severity_order[v.severity])
 
     rows = ""
     for v in visible:

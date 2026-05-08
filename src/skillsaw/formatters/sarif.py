@@ -4,6 +4,7 @@ import json
 from typing import List
 
 from ..rule import Rule, RuleViolation
+from . import relative_path
 
 _SEVERITY_MAP = {
     "error": "error",
@@ -34,15 +35,12 @@ def format_sarif(
             "level": _SEVERITY_MAP.get(v.severity.value, "warning"),
             "message": {"text": v.message},
         }
-        if v.file_path is not None:
-            try:
-                rel = v.file_path.relative_to(context.root_path)
-            except (ValueError, TypeError):
-                rel = str(v.file_path)
+        rel = relative_path(v.file_path, context.root_path)
+        if rel is not None:
             location = {
                 "physicalLocation": {
                     "artifactLocation": {
-                        "uri": str(rel),
+                        "uri": rel,
                         "uriBaseId": "%SRCROOT%",
                     },
                 },

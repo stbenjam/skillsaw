@@ -4,7 +4,7 @@ import json
 from typing import List
 
 from ..rule import Rule, RuleViolation
-from . import get_counts
+from . import get_counts, relative_path
 
 
 def format_json(
@@ -39,7 +39,7 @@ def format_json(
                 "rule_id": v.rule_id,
                 "severity": v.severity.value,
                 "message": v.message,
-                "file_path": str(v.file_path) if v.file_path else None,
+                "file_path": relative_path(v.file_path, context.root_path),
                 "line": v.line,
             }
             for v in violations

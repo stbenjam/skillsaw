@@ -4,11 +4,23 @@ Output formatters for skillsaw lint results.
 Supported formats: text, json, sarif, html.
 """
 
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from ..rule import Rule, RuleViolation
 
 FORMATS = ("text", "json", "sarif", "html")
+
+
+def relative_path(file_path: Optional[Path], root: Path) -> Optional[str]:
+    """Relativize a file path to the repo root. Falls back to str() if not under root."""
+    if file_path is None:
+        return None
+    try:
+        return str(file_path.relative_to(root))
+    except (ValueError, TypeError):
+        return str(file_path)
+
 
 EXTENSION_MAP = {
     ".json": "json",
