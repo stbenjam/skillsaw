@@ -2,6 +2,12 @@
 
 ## Skills
 
+### skillsaw-ecosystem-scout
+
+Survey the AI coding assistant and agentic tool ecosystem, assess skillsaw's competitive position, identify emerging patterns and missing capabilities, and produce a prioritized strategic report as a GitHub issue.
+
+**Compatibility:** Requires git, gh CLI, and internet access (WebFetch, WebSearch)
+
 ### skillsaw-issue-solver
 
 Pick up open GitHub issues from collaborators and create PRs to solve them. Use when triaging and resolving reported bugs or feature requests.

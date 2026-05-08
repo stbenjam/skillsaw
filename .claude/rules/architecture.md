@@ -5,6 +5,11 @@
 - `src/skillsaw/rule.py` — base Rule class with `repo_types` class attribute
 - `src/skillsaw/linter.py` — orchestration, loads builtin + custom rules
 - `src/skillsaw/rules/builtin/` — all builtin rule implementations
+- `src/skillsaw/marketplace/` — scaffolding CLI (`skillsaw add`) for marketplaces, plugins, skills, commands, agents, and hooks
+  - `add.py` — component creation functions and context detection
+  - `branding.py` — color presets, template loading, placeholder substitution
+  - `cli.py` — argparse-based CLI entry point for `skillsaw add`
+  - `init.py` — marketplace initialization logic
 
 ## Rule Design
 
