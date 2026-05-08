@@ -11,7 +11,7 @@
 
 ### skillsaw
 
-A configurable, rule-based linter for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
+Lint your skills before they cut someone. A configurable linter, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
 
 > Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
@@ -20,16 +20,75 @@ A configurable, rule-based linter for [agentskills.io](https://agentskills.io) s
 
 ## Features
 
-- **Context-Aware** - Automatically detects agentskills repos, single plugins, and marketplaces
-- **Rule-Based** - Enable/disable individual rules with configurable severity levels
-- **Extensible** - Load custom rules from Python files
-- **Comprehensive** - Validates skill format, plugin structure, metadata, command format, and more
-- **Containerized** - Run via Docker for consistent, isolated linting
-- **Fast** - Efficient validation with clear, actionable output
+- 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, and marketplaces and enables the right rules
+- 📐 **Rule-Based** — Enable/disable individual rules with configurable severity levels
+- 📝 **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
+- 🔌 **Extensible** — Load custom rules from Python files
+- ✅ **Comprehensive** — Validates skill format, plugin structure, metadata, command format, and cross-file consistency
+- 🤖 **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
+- 🐳 **Containerized** — Run via Docker for consistent, isolated linting
+- ⚡ **Fast** — Efficient validation with clear, actionable output
+
+## Table of Contents
+
+<!-- BEGIN GENERATED TOC -->
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+  - [Via uvx (easiest — no install required)](#via-uvx-easiest-no-install-required)
+  - [Via pip](#via-pip)
+  - [From source](#from-source)
+  - [Using Docker](#using-docker)
+  - [GitHub Action](#github-action)
+- [Repository Types](#repository-types)
+  - [agentskills.io Skills](#agentskillsio-skills)
+  - [Single Plugin](#single-plugin)
+  - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
+- [Configuration](#configuration)
+- [Builtin Rules](#builtin-rules)
+- [Custom Rules](#custom-rules)
+- [Documentation Generation](#documentation-generation)
+- [Exit Codes](#exit-codes)
+- [Example Output](#example-output)
+- [Migrating from claudelint](#migrating-from-claudelint)
+  - [Removed rules](#removed-rules)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+- [See Also](#see-also)
+- [Support](#support)
+
+<!-- END GENERATED TOC -->
+
+## Quick Start
+
+```bash
+# Lint current directory (no install required)
+uvx skillsaw
+
+# Lint specific directory
+skillsaw /path/to/skills
+
+# Verbose output
+skillsaw -v
+
+# Strict mode (warnings as errors)
+skillsaw --strict
+
+# Generate default config
+skillsaw --init
+
+# List all available rules
+skillsaw --list-rules
+
+# Generate documentation
+skillsaw docs
+```
 
 ## Installation
 
-### Via uvx (easiest - no install required)
+### Via uvx (easiest — no install required)
 
 ```bash
 uvx skillsaw
@@ -57,27 +116,59 @@ docker pull ghcr.io/stbenjam/skillsaw:latest
 docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 ```
 
-## Quick Start
+### GitHub Action
 
-```bash
-# Lint current directory
-skillsaw
+The built-in GitHub Action installs skillsaw, runs it, and posts violations as
+inline PR comments with automatic deduplication. Fixed violations have their
+comment threads resolved.
 
-# Lint specific directory
-skillsaw /path/to/skills
+```yaml
+name: Lint
 
-# Verbose output
-skillsaw -v
+on: [pull_request]
 
-# Strict mode (warnings as errors)
-skillsaw --strict
+permissions:
+  contents: read
+  pull-requests: write
 
-# Generate default config
-skillsaw --init
-
-# List all available rules
-skillsaw --list-rules
+jobs:
+  skillsaw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: stbenjam/skillsaw@v0
+        with:
+          strict: true
 ```
+
+#### Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to lint | `.` |
+| `version` | Specific skillsaw version to install | latest |
+| `strict` | Treat warnings as errors | `false` |
+| `verbose` | Include info-level violations | `false` |
+| `token` | GitHub token for posting PR comments | `${{ github.token }}` |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
+| `errors` | Number of errors found |
+| `warnings` | Number of warnings found |
+| `report` | Full JSON report |
+
+#### PR comment behavior
+
+- Each violation gets its own inline comment on the relevant line or file
+- Comments are deduplicated across re-runs using content fingerprinting
+- When a violation is fixed, its comment thread is automatically resolved
+- Comments with human replies are preserved
+
+> **Permissions:** `contents: read` is required for checkout.
+> `pull-requests: write` is required for posting comments.
 
 ## Repository Types
 
@@ -308,84 +399,29 @@ rules:
     severity: warning
 ```
 
-## CI/CD Integration
+## Documentation Generation
 
-### GitHub Action (recommended)
-
-The built-in GitHub Action installs skillsaw, runs it, and posts violations as
-inline PR comments with automatic deduplication. Fixed violations have their
-comment threads resolved.
-
-```yaml
-name: Lint
-
-on: [pull_request]
-
-permissions:
-  contents: write
-  pull-requests: write
-
-jobs:
-  skillsaw:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
-```
-
-#### Inputs
-
-| Input | Description | Default |
-|-------|-------------|---------|
-| `path` | Path to lint | `.` |
-| `version` | Specific skillsaw version to install | latest |
-| `strict` | Treat warnings as errors | `false` |
-| `verbose` | Include info-level violations | `false` |
-| `token` | GitHub token for posting PR comments | `${{ github.token }}` |
-
-#### Outputs
-
-| Output | Description |
-|--------|-------------|
-| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
-| `errors` | Number of errors found |
-| `warnings` | Number of warnings found |
-| `report` | Full JSON report |
-
-#### PR comment behavior
-
-- Each violation gets its own inline comment on the relevant line or file
-- Comments are deduplicated across re-runs using content fingerprinting
-- When a violation is fixed, its comment thread is automatically resolved
-- Comments with human replies are preserved
-
-> **Permissions:** `contents: write` is required for resolving comment threads
-> via GraphQL. `pull-requests: write` is required for posting comments.
-
-### GitHub Actions (manual)
-
-```yaml
-- uses: actions/checkout@v5
-
-- name: Set up Python
-  uses: actions/setup-python@v6
-  with:
-    python-version: '3.x'
-
-- name: Install skillsaw
-  run: pip install skillsaw
-
-- name: Run linter
-  run: skillsaw --strict
-```
-
-### Docker
+skillsaw can generate documentation for your plugins, skills, and marketplaces:
 
 ```bash
-docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw --strict
+# Generate HTML docs (default)
+skillsaw docs
+
+# Generate Markdown
+skillsaw docs --format markdown
+
+# Write to a specific file
+skillsaw docs --format markdown -o docs/README.md
+
+# Write to a directory
+skillsaw docs -o my-docs/
+
+# Custom title
+skillsaw docs --title "My Plugin Docs"
 ```
+
+The generated documentation includes plugin metadata, command descriptions,
+skill summaries, and configuration details extracted from your repository.
 
 ## Exit Codes
 

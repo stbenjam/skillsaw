@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the Builtin Rules section of README.md from rule metadata."""
+"""Generate the Builtin Rules section and Table of Contents of README.md."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from skillsaw.config import LinterConfig
 
 BEGIN_MARKER = "<!-- BEGIN GENERATED RULES -->"
 END_MARKER = "<!-- END GENERATED RULES -->"
+TOC_BEGIN = "<!-- BEGIN GENERATED TOC -->"
+TOC_END = "<!-- END GENERATED TOC -->"
 
 RULE_GROUPS = [
     (
@@ -66,6 +69,59 @@ RULE_GROUPS = [
         "when `metadata.openclaw` is present.",
     ),
 ]
+
+
+def _heading_to_anchor(heading_text):
+    """Convert a markdown heading to a GitHub-style anchor link."""
+    anchor = heading_text.lower()
+    anchor = re.sub(r"[^\w\s-]", "", anchor)
+    anchor = re.sub(r"\s+", "-", anchor.strip())
+    return anchor
+
+
+def _generate_toc(readme_text):
+    """Parse all ## and ### headings outside generated blocks and build a TOC."""
+    lines = readme_text.split("\n")
+    toc = []
+    in_generated = False
+    in_code_block = False
+    in_html_block = False
+
+    for line in lines:
+        if line.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+        stripped = line.strip()
+        if re.match(r"<table[\s>]", stripped, re.IGNORECASE):
+            in_html_block = True
+        if in_html_block:
+            if re.search(r"</table>", stripped, re.IGNORECASE):
+                in_html_block = False
+            continue
+        if BEGIN_MARKER in line or TOC_BEGIN in line:
+            in_generated = True
+            continue
+        if END_MARKER in line or TOC_END in line:
+            in_generated = False
+            continue
+        if in_generated:
+            continue
+
+        m = re.match(r"^(#{2,3})\s+(.+)$", line)
+        if not m:
+            continue
+        level = len(m.group(1))
+        text = m.group(2).strip()
+        display = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        if display == "Table of Contents":
+            continue
+        anchor = _heading_to_anchor(display)
+        indent = "  " * (level - 2)
+        toc.append(f"{indent}- [{display}](#{anchor})")
+
+    return "\n".join(toc)
 
 
 def main():
@@ -134,10 +190,16 @@ def main():
 
     before = readme[: readme.index(BEGIN_MARKER) + len(BEGIN_MARKER)]
     after = readme[readme.index(END_MARKER) :]
-    new_readme = f"{before}\n\n{generated}\n\n{after}"
+    readme = f"{before}\n\n{generated}\n\n{after}"
 
-    readme_path.write_text(new_readme)
-    print("Updated README.md with generated rules documentation.")
+    if TOC_BEGIN in readme and TOC_END in readme:
+        toc = _generate_toc(readme)
+        before_toc = readme[: readme.index(TOC_BEGIN) + len(TOC_BEGIN)]
+        after_toc = readme[readme.index(TOC_END) :]
+        readme = f"{before_toc}\n\n{toc}\n\n{after_toc}"
+
+    readme_path.write_text(readme)
+    print("Updated README.md with generated rules documentation and TOC.")
 
 
 if __name__ == "__main__":
