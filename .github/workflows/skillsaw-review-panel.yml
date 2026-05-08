@@ -12,12 +12,18 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write
 
 jobs:
   panel-review:
     if: github.event.label.name == 'panel-review'
     runs-on: ubuntu-latest
     steps:
+      - name: Remove panel-review label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label panel-review --repo ${{ github.repository }} || true
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -34,12 +40,6 @@ jobs:
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Glob,Grep,TaskCreate,TaskUpdate,TaskList,TaskGet
             --max-turns 50
             --model claude-opus-4-6
-
-      - name: Remove panel-review label
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label panel-review || true
 
       - name: Upload execution log
         if: always()
