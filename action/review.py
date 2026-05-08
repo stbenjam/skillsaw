@@ -143,8 +143,13 @@ def fingerprint(rule_id, file_path, message):
     return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
-def get_diff_lines(repo, pr_number):
-    """Get the set of (path, line) tuples for added/modified lines in the PR."""
+def get_diff_info(repo, pr_number):
+    """Get diff files and added/modified line numbers.
+
+    Returns (diff_files, diff_lines) where diff_files is a set of file paths
+    and diff_lines is a set of (path, line) tuples.
+    """
+    diff_files = set()
     diff_lines = set()
     page = 1
     while True:
@@ -153,6 +158,7 @@ def get_diff_lines(repo, pr_number):
             break
         for f in files:
             path = f["filename"]
+            diff_files.add(path)
             patch = f.get("patch", "")
             if not patch:
                 continue
@@ -170,7 +176,7 @@ def get_diff_lines(repo, pr_number):
                 else:
                     current_line += 1
         page += 1
-    return diff_lines
+    return diff_files, diff_lines
 
 
 def sync_comments(repo, pr_number, new_comments):
@@ -238,13 +244,18 @@ def main():
         print("No violations found.")
         return
 
-    diff_lines = get_diff_lines(repo, pr_number)
+    diff_files, diff_lines = get_diff_info(repo, pr_number)
 
     new_comments = []
+    skipped = 0
     for v in violations:
         path = v.get("file_path")
         line = v.get("line")
         if not path:
+            continue
+
+        if path not in diff_files:
+            skipped += 1
             continue
 
         fp = fingerprint(v["rule_id"], path, v["message"])
@@ -263,20 +274,45 @@ def main():
 
         new_comments.append(comment)
 
-    to_post = sync_comments(repo, pr_number, new_comments)
+    if skipped:
+        print(f"Skipped {skipped} violation(s) on files not in the diff.")
+
+    try:
+        to_post = sync_comments(repo, pr_number, new_comments)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print(
+                "Cannot read PR comments (fork PR with read-only token). "
+                "Skipping inline review comments.",
+                file=sys.stderr,
+            )
+            return
+        raise
 
     posted = 0
+    failed = 0
     for comment in to_post:
         payload = {k: v for k, v in comment.items() if k != "fingerprint"}
         try:
             github_api("POST", f"/repos/{repo}/pulls/{pr_number}/comments", payload)
             posted += 1
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403, 429):
+            if e.code == 403:
+                print(
+                    "Cannot post PR comments (fork PR with read-only token). "
+                    "Skipping inline review comments.",
+                    file=sys.stderr,
+                )
+                return
+            if e.code in (401, 429):
                 raise
+            failed += 1
 
     kept = len(new_comments) - len(to_post)
-    print(f"Posted {posted} new comment(s), {kept} unchanged.")
+    parts = [f"Posted {posted} new comment(s)", f"{kept} unchanged"]
+    if failed:
+        parts.append(f"{failed} failed")
+    print(", ".join(parts) + ".")
 
 
 if __name__ == "__main__":
