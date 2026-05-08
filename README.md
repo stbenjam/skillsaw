@@ -362,6 +362,29 @@ Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec
 |---------|-------------|------------------|
 | `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) |
 
+### Instruction Files
+
+Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repository root. Checks encoding, non-emptiness, and that `@import` references resolve to existing files. Disabled by default.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (disabled) |
+| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (disabled) |
+
+### Context Budget
+
+Warns when instruction and configuration files exceed recommended token limits. Uses a `len(text) / 4` approximation for token counting. Supports per-category `warn` and `error` thresholds. Disabled by default.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (disabled) |
+
+**`context-budget` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+
 <!-- END GENERATED RULES -->
 
 ## Custom Rules

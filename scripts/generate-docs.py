@@ -68,6 +68,20 @@ RULE_GROUPS = [
         "[openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
         "when `metadata.openclaw` is present.",
     ),
+    (
+        "Instruction Files",
+        ["instruction-file-valid", "instruction-imports-valid"],
+        "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
+        "GEMINI.md) at the repository root. Checks encoding, non-emptiness, and "
+        "that `@import` references resolve to existing files. Disabled by default.",
+    ),
+    (
+        "Context Budget",
+        ["context-budget"],
+        "Warns when instruction and configuration files exceed recommended "
+        "token limits. Uses a `len(text) / 4` approximation for token counting. "
+        "Supports per-category `warn` and `error` thresholds. Disabled by default.",
+    ),
 ]
 
 

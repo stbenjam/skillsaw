@@ -90,6 +90,11 @@ class LinterConfig:
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
                 # Openclaw metadata
                 "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
+                # Instruction file validation
+                "instruction-file-valid": {"enabled": False, "severity": "warning"},
+                "instruction-imports-valid": {"enabled": False, "severity": "warning"},
+                # Context budget
+                "context-budget": {"enabled": False, "severity": "warning"},
             }
         )
 
@@ -173,13 +178,26 @@ class LinterConfig:
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
 
     @staticmethod
-    def _yaml_value(value):
+    def _yaml_value(value, indent=4):
         if isinstance(value, bool):
             return "true" if value else "false"
         if isinstance(value, list):
             if not value:
                 return "[]"
-            return "\n" + "\n".join(f"    - {item}" for item in value)
+            pad = " " * indent
+            return "\n" + "\n".join(f"{pad}- {item}" for item in value)
+        if isinstance(value, dict):
+            if not value:
+                return "{}"
+            pad = " " * indent
+            lines = []
+            for k, v in value.items():
+                rendered = LinterConfig._yaml_value(v, indent + 2)
+                if rendered.startswith("\n"):
+                    lines.append(f"{pad}{k}:{rendered}")
+                else:
+                    lines.append(f"{pad}{k}: {rendered}")
+            return "\n" + "\n".join(lines)
         if isinstance(value, str):
             return value
         return str(value)
