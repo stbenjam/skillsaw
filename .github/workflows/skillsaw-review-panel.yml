@@ -1,0 +1,51 @@
+name: Skillsaw Review Panel
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: panel-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  panel-review:
+    if: github.event.label.name == 'panel-review'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            Use the skillsaw-review-panel skill. Follow every step in the skill.
+
+            Review PR #${{ github.event.pull_request.number }}.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Glob,Grep,TaskCreate,TaskUpdate,TaskList,TaskGet
+            --max-turns 50
+            --model claude-opus-4-6
+
+      - name: Remove panel-review label
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label panel-review || true
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-review-log-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 30

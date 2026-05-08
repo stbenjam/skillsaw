@@ -26,6 +26,12 @@ Bump the version, generate release notes, and publish a new skillsaw release to 
 
 **Compatibility:** Requires git, gh CLI, and internet access
 
+### skillsaw-review-panel
+
+Serial multi-specialist code review panel for skillsaw PRs. Runs 5 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer) inline then synthesizes a single verdict.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
 ## Rules
 
 ### architecture
