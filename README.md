@@ -13,16 +13,76 @@ A configurable, rule-based linter for [agentskills.io](https://agentskills.io) s
 
 ## Features
 
-- **Context-Aware** - Automatically detects agentskills repos, single plugins, and marketplaces
-- **Rule-Based** - Enable/disable individual rules with configurable severity levels
-- **Extensible** - Load custom rules from Python files
-- **Comprehensive** - Validates skill format, plugin structure, metadata, command format, and more
-- **Containerized** - Run via Docker for consistent, isolated linting
-- **Fast** - Efficient validation with clear, actionable output
+- **Context-Aware** — Automatically detects agentskills repos, single plugins, and marketplaces and enables the right rules
+- **Rule-Based** — Enable/disable individual rules with configurable severity levels
+- **Extensible** — Load custom rules from Python files
+- **Comprehensive** — Validates skill format, plugin structure, metadata, command format, and cross-file consistency
+- **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
+- **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
+- **Containerized** — Run via Docker for consistent, isolated linting
+- **Fast** — Efficient validation with clear, actionable output
+
+<!-- BEGIN GENERATED TOC -->
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+  - [Via uvx (easiest — no install required)](#via-uvx-easiest-no-install-required)
+  - [Via pip](#via-pip)
+  - [From source](#from-source)
+  - [Using Docker](#using-docker)
+- [Repository Types](#repository-types)
+  - [agentskills.io Skills](#agentskillsio-skills)
+  - [Single Plugin](#single-plugin)
+  - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
+- [Configuration](#configuration)
+- [Builtin Rules](#builtin-rules)
+- [Custom Rules](#custom-rules)
+- [Documentation Generation](#documentation-generation)
+- [CI/CD Integration](#cicd-integration)
+  - [GitHub Action (recommended)](#github-action-recommended)
+  - [GitHub Actions (manual)](#github-actions-manual)
+  - [Docker](#docker)
+- [Exit Codes](#exit-codes)
+- [Example Output](#example-output)
+- [Migrating from claudelint](#migrating-from-claudelint)
+  - [Removed rules](#removed-rules)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+- [See Also](#see-also)
+- [Support](#support)
+
+<!-- END GENERATED TOC -->
+
+## Quick Start
+
+```bash
+# Lint current directory (no install required)
+uvx skillsaw
+
+# Lint specific directory
+skillsaw /path/to/skills
+
+# Verbose output
+skillsaw -v
+
+# Strict mode (warnings as errors)
+skillsaw --strict
+
+# Generate default config
+skillsaw --init
+
+# List all available rules
+skillsaw --list-rules
+
+# Generate documentation
+skillsaw docs
+```
 
 ## Installation
 
-### Via uvx (easiest - no install required)
+### Via uvx (easiest — no install required)
 
 ```bash
 uvx skillsaw
@@ -48,28 +108,6 @@ pip install -e .
 ```bash
 docker pull ghcr.io/stbenjam/skillsaw:latest
 docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
-```
-
-## Quick Start
-
-```bash
-# Lint current directory
-skillsaw
-
-# Lint specific directory
-skillsaw /path/to/skills
-
-# Verbose output
-skillsaw -v
-
-# Strict mode (warnings as errors)
-skillsaw --strict
-
-# Generate default config
-skillsaw --init
-
-# List all available rules
-skillsaw --list-rules
 ```
 
 ## Repository Types
@@ -300,6 +338,30 @@ rules:
     enabled: true
     severity: warning
 ```
+
+## Documentation Generation
+
+skillsaw can generate documentation for your plugins, skills, and marketplaces:
+
+```bash
+# Generate HTML docs (default)
+skillsaw docs
+
+# Generate Markdown
+skillsaw docs --format markdown
+
+# Write to a specific file
+skillsaw docs --format markdown -o docs/README.md
+
+# Write to a directory
+skillsaw docs -o my-docs/
+
+# Custom title
+skillsaw docs --title "My Plugin Docs"
+```
+
+The generated documentation includes plugin metadata, command descriptions,
+skill summaries, and configuration details extracted from your repository.
 
 ## CI/CD Integration
 
