@@ -1,0 +1,54 @@
+"""JSON output formatter for skillsaw lint results."""
+
+import json
+from typing import List
+
+from ..rule import Rule, RuleViolation
+from . import get_counts
+
+
+def format_json(
+    violations: List[RuleViolation],
+    context,
+    rules: List[Rule],
+    version: str,
+    verbose: bool = False,
+) -> str:
+    errors, warnings, info = get_counts(violations)
+
+    if verbose:
+        stats = {
+            "repo_type": context.repo_type.value,
+            "plugins": [str(p) for p in context.plugins],
+            "skills": [str(s) for s in context.skills],
+            "rules_run": [r.rule_id for r in rules],
+        }
+    else:
+        stats = {
+            "repo_type": context.repo_type.value,
+            "plugins": len(context.plugins),
+            "skills": len(context.skills),
+            "rules_run": len(rules),
+        }
+
+    report = {
+        "version": version,
+        "stats": stats,
+        "violations": [
+            {
+                "rule_id": v.rule_id,
+                "severity": v.severity.value,
+                "message": v.message,
+                "file_path": str(v.file_path) if v.file_path else None,
+                "line": v.line,
+            }
+            for v in violations
+        ],
+        "summary": {
+            "errors": errors,
+            "warnings": warnings,
+            "info": info,
+        },
+    }
+
+    return json.dumps(report, indent=2)

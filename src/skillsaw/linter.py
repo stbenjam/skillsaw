@@ -3,10 +3,9 @@ Main linter orchestration
 """
 
 import importlib.util
-import os
 import sys
 from pathlib import Path
-from typing import List, Dict, Type, Tuple
+from typing import List
 
 from .rule import Rule, RuleViolation, Severity
 from .context import RepositoryContext
@@ -129,77 +128,3 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
         return violations
-
-    def get_counts(self, violations: List[RuleViolation]) -> Tuple[int, int, int]:
-        """
-        Count violations by severity
-
-        Args:
-            violations: List of violations
-
-        Returns:
-            Tuple of (errors, warnings, info)
-        """
-        errors = sum(1 for v in violations if v.severity == Severity.ERROR)
-        warnings = sum(1 for v in violations if v.severity == Severity.WARNING)
-        info = sum(1 for v in violations if v.severity == Severity.INFO)
-        return errors, warnings, info
-
-    def format_results(self, violations: List[RuleViolation], verbose: bool = False) -> str:
-        """
-        Format violations for display
-
-        Args:
-            violations: List of violations
-            verbose: Show info-level messages
-
-        Returns:
-            Formatted string
-        """
-        # Support NO_COLOR (https://no-color.org/)
-        no_color = "NO_COLOR" in os.environ
-        red = "" if no_color else "\033[91m"
-        yellow = "" if no_color else "\033[93m"
-        blue = "" if no_color else "\033[94m"
-        green = "" if no_color else "\033[92m"
-        bold = "" if no_color else "\033[1m"
-        reset = "" if no_color else "\033[0m"
-
-        errors, warnings, info = self.get_counts(violations)
-
-        # Group by severity
-        errors_list = [v for v in violations if v.severity == Severity.ERROR]
-        warnings_list = [v for v in violations if v.severity == Severity.WARNING]
-        info_list = [v for v in violations if v.severity == Severity.INFO]
-
-        output = []
-
-        # Print errors
-        if errors_list:
-            output.append(f"\n{red}{bold}Errors:{reset}")
-            for v in errors_list:
-                output.append(f"  {v}")
-
-        # Print warnings
-        if warnings_list:
-            output.append(f"\n{yellow}{bold}Warnings:{reset}")
-            for v in warnings_list:
-                output.append(f"  {v}")
-
-        # Print info (only in verbose)
-        if verbose and info_list:
-            output.append(f"\n{blue}{bold}Info:{reset}")
-            for v in info_list:
-                output.append(f"  {v}")
-
-        # Summary
-        output.append(f"\n{bold}Summary:{reset}")
-        output.append(f"  {red}Errors:   {errors}{reset}")
-        output.append(f"  {yellow}Warnings: {warnings}{reset}")
-        if verbose:
-            output.append(f"  {blue}Info:     {info}{reset}")
-
-        if errors == 0 and warnings == 0:
-            output.append(f"\n{green}{bold}✓ All checks passed!{reset}")
-
-        return "\n".join(output)

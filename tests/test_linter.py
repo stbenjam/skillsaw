@@ -2,14 +2,12 @@
 Tests for main linter functionality
 """
 
-import os
-import sys
 from pathlib import Path
-
 
 from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
+from skillsaw.formatters import get_counts
 
 
 def test_linter_passes_valid_plugin(valid_plugin):
@@ -19,7 +17,7 @@ def test_linter_passes_valid_plugin(valid_plugin):
     linter = Linter(context, config)
 
     violations = linter.run()
-    errors, warnings, info = linter.get_counts(violations)
+    errors, warnings, info = get_counts(violations)
 
     assert errors == 0
     assert warnings == 0
@@ -32,7 +30,7 @@ def test_linter_passes_marketplace(marketplace_repo):
     linter = Linter(context, config)
 
     violations = linter.run()
-    errors, warnings, info = linter.get_counts(violations)
+    errors, warnings, info = get_counts(violations)
 
     # Should have no errors (warnings are ok - e.g. missing README)
     assert errors == 0
@@ -56,7 +54,7 @@ def test_linter_detects_errors(temp_dir):
 
     linter = Linter(context, config)
     violations = linter.run()
-    errors, warnings, info = linter.get_counts(violations)
+    errors, warnings, info = get_counts(violations)
 
     # Should detect missing plugin.json as error
     assert errors > 0
@@ -146,45 +144,3 @@ def test_self_lint():
     errors = [v for v in violations if v.severity.value == "error"]
 
     assert len(errors) == 0, f"Self-lint found errors: {errors}"
-
-
-def test_format_results_includes_ansi_codes_by_default(valid_plugin, monkeypatch):
-    """Test that output contains ANSI codes when NO_COLOR is not set"""
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    context = RepositoryContext(valid_plugin)
-    config = LinterConfig.default()
-    linter = Linter(context, config)
-
-    violations = linter.run()
-    output = linter.format_results(violations)
-
-    # Should contain ANSI escape codes
-    assert "\033[" in output
-
-
-def test_format_results_no_ansi_when_no_color_set(valid_plugin, monkeypatch):
-    """Test that output contains no ANSI codes when NO_COLOR is set"""
-    monkeypatch.setenv("NO_COLOR", "")
-    context = RepositoryContext(valid_plugin)
-    config = LinterConfig.default()
-    linter = Linter(context, config)
-
-    violations = linter.run()
-    output = linter.format_results(violations)
-
-    # Should NOT contain any ANSI escape codes
-    assert "\033[" not in output
-
-
-def test_format_results_no_ansi_when_no_color_set_to_value(valid_plugin, monkeypatch):
-    """Test that NO_COLOR works with any value, not just empty string"""
-    monkeypatch.setenv("NO_COLOR", "1")
-    context = RepositoryContext(valid_plugin)
-    config = LinterConfig.default()
-    linter = Linter(context, config)
-
-    violations = linter.run()
-    output = linter.format_results(violations)
-
-    # Should NOT contain any ANSI escape codes
-    assert "\033[" not in output
