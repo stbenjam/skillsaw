@@ -1,4 +1,4 @@
-"""Post skillsaw results as a GitHub PR review with inline comments."""
+"""Post skillsaw results as individual GitHub PR comments."""
 
 import hashlib
 import json
@@ -8,7 +8,6 @@ import sys
 import urllib.error
 import urllib.request
 
-MARKER = "<!-- skillsaw-review -->"
 FINGERPRINT_RE = re.compile(r"<!-- skillsaw:([a-f0-9]+) -->")
 SEVERITY_ICONS = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
 API = "https://api.github.com"
@@ -75,18 +74,21 @@ def get_diff_lines(repo, pr_number):
     return diff_lines
 
 
-def sync_inline_comments(repo, pr_number, new_comments):
+def sync_comments(repo, pr_number, new_comments):
     """Diff existing skillsaw comments against new findings.
 
-    Returns (to_post, live_review_ids) where to_post is the list of genuinely
-    new comments and live_review_ids is the set of review IDs that still have
-    active skillsaw comments (kept or with replies).
+    Returns to_post: the list of genuinely new comments to create.
     """
-    all_comments = github_api(
-        "GET", f"/repos/{repo}/pulls/{pr_number}/comments?per_page=100"
-    )
-    if not all_comments:
-        return new_comments, set()
+    all_comments = []
+    page = 1
+    while True:
+        page_comments = github_api(
+            "GET", f"/repos/{repo}/pulls/{pr_number}/comments?per_page=100&page={page}"
+        )
+        if not page_comments:
+            break
+        all_comments.extend(page_comments)
+        page += 1
 
     existing = {}
     for c in all_comments:
@@ -95,7 +97,7 @@ def sync_inline_comments(repo, pr_number, new_comments):
             existing[m.group(1)] = c
 
     if not existing:
-        return new_comments, set()
+        return new_comments
 
     current_fps = {c["fingerprint"] for c in new_comments}
 
@@ -104,20 +106,12 @@ def sync_inline_comments(repo, pr_number, new_comments):
         if c.get("in_reply_to_id"):
             replied_to.add(c["in_reply_to_id"])
 
-    live_review_ids = set()
     deleted = 0
     preserved = 0
     for fp, comment in existing.items():
-        if fp in current_fps:
-            review_id = comment.get("pull_request_review_id")
-            if review_id:
-                live_review_ids.add(review_id)
-        else:
+        if fp not in current_fps:
             if comment["id"] in replied_to:
                 preserved += 1
-                review_id = comment.get("pull_request_review_id")
-                if review_id:
-                    live_review_ids.add(review_id)
                 continue
             try:
                 github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
@@ -130,61 +124,7 @@ def sync_inline_comments(repo, pr_number, new_comments):
     if preserved:
         print(f"Preserved {preserved} comment(s) with replies.")
 
-    to_post = [c for c in new_comments if c["fingerprint"] not in existing]
-    return to_post, live_review_ids
-
-
-def supersede_old_reviews(repo, pr_number, live_review_ids):
-    """Mark previous skillsaw review bodies as superseded.
-
-    Skips reviews that still have live inline comments.
-    """
-    reviews = github_api("GET", f"/repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
-    for review in reviews:
-        body = review.get("body", "") or ""
-        if MARKER in body and "superseded" not in body:
-            if review["id"] in live_review_ids:
-                continue
-            try:
-                github_api(
-                    "PUT",
-                    f"/repos/{repo}/pulls/{pr_number}/reviews/{review['id']}",
-                    {"body": f"{MARKER}\n*Skillsaw review superseded by latest review below.*"},
-                )
-            except urllib.error.HTTPError:
-                pass
-
-
-def build_summary(report, inline_violations, body_violations):
-    """Build the review body with summary and non-inline violations."""
-    summary = report["summary"]
-    lines = [MARKER, "## [skillsaw](https://github.com/stbenjam/skillsaw)\n"]
-
-    total = summary["errors"] + summary["warnings"] + summary.get("info", 0)
-    if total == 0:
-        lines.append("**All checks passed** — no violations found.\n")
-        return "\n".join(lines)
-
-    if not body_violations:
-        return "\n".join(lines)
-
-    lines.append(
-        f"| Errors | Warnings | Info |\n"
-        f"|--------|----------|------|\n"
-        f"| {summary['errors']} | {summary['warnings']} | {summary.get('info', 0)} |\n"
-    )
-
-    for v in body_violations:
-        icon = SEVERITY_ICONS.get(v["severity"], "")
-        loc = ""
-        if v.get("file_path"):
-            loc = f" `{v['file_path']}"
-            if v.get("line"):
-                loc += f":{v['line']}"
-            loc += "`"
-        lines.append(f"- {icon} **{v['severity']}**{loc}: {v['message']}")
-
-    return "\n".join(lines)
+    return [c for c in new_comments if c["fingerprint"] not in existing]
 
 
 def main():
@@ -209,60 +149,48 @@ def main():
     head_sha = os.environ["HEAD_SHA"]
 
     violations = report.get("violations", [])
+    if not violations:
+        print("No violations found.")
+        return
 
     diff_lines = get_diff_lines(repo, pr_number)
 
-    inline_violations = []
-    body_violations = []
+    new_comments = []
     for v in violations:
         path = v.get("file_path")
         line = v.get("line")
-        if path and line and (path, line) in diff_lines:
-            inline_violations.append(v)
-        else:
-            body_violations.append(v)
+        if not path:
+            continue
 
-    new_comments = []
-    for v in inline_violations:
+        fp = fingerprint(v["rule_id"], path, v["message"])
         icon = SEVERITY_ICONS.get(v["severity"], "")
-        fp = fingerprint(v["rule_id"], v["file_path"], v["message"])
-        new_comments.append({
-            "path": v["file_path"],
-            "line": v["line"],
-            "side": "RIGHT",
-            "body": (
-                f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}\n"
-                f"<!-- skillsaw:{fp} -->"
-            ),
-            "fingerprint": fp,
-        })
+        body = (
+            f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}\n"
+            f"<!-- skillsaw:{fp} -->"
+        )
 
-    to_post, live_review_ids = sync_inline_comments(repo, pr_number, new_comments)
+        comment = {"path": path, "commit_id": head_sha, "body": body, "fingerprint": fp}
+        if line and (path, line) in diff_lines:
+            comment["line"] = line
+            comment["side"] = "RIGHT"
+        else:
+            comment["subject_type"] = "file"
 
-    supersede_old_reviews(repo, pr_number, live_review_ids)
+        new_comments.append(comment)
 
-    review_body = build_summary(report, inline_violations, body_violations)
+    to_post = sync_comments(repo, pr_number, new_comments)
 
-    review_comments = [
-        {k: v for k, v in c.items() if k != "fingerprint"}
-        for c in to_post
-    ]
-
-    review = {
-        "commit_id": head_sha,
-        "body": review_body,
-        "event": "COMMENT",
-    }
-    if review_comments:
-        review["comments"] = review_comments
-
-    github_api("POST", f"/repos/{repo}/pulls/{pr_number}/reviews", review)
+    posted = 0
+    for comment in to_post:
+        payload = {k: v for k, v in comment.items() if k != "fingerprint"}
+        try:
+            github_api("POST", f"/repos/{repo}/pulls/{pr_number}/comments", payload)
+            posted += 1
+        except urllib.error.HTTPError:
+            pass
 
     kept = len(new_comments) - len(to_post)
-    print(
-        f"Posted review: {len(review_comments)} new, {kept} unchanged, "
-        f"{len(body_violations)} in body."
-    )
+    print(f"Posted {posted} new comment(s), {kept} unchanged.")
 
 
 if __name__ == "__main__":
