@@ -294,6 +294,19 @@ class TestAddComponents:
         with pytest.raises(FileNotFoundError, match="not found in marketplace"):
             add_skill("my-skill", "nonexistent", path=root)
 
+    def test_add_multiple_hooks_same_event_type(self, temp_dir):
+        """Adding a second hook for a different event should not break hooks.json."""
+        root = self._init_with_plugin(temp_dir)
+        add_hook("PreToolUse", "my-plugin", path=root)
+        add_hook("PostToolUse", "my-plugin", path=root)
+
+        hooks_json = root / "plugins" / "my-plugin" / "hooks" / "hooks.json"
+        data = json.loads(hooks_json.read_text())
+        assert "PreToolUse" in data["hooks"]
+        assert "PostToolUse" in data["hooks"]
+        assert len(data["hooks"]["PreToolUse"]) == 1
+        assert len(data["hooks"]["PostToolUse"]) == 1
+
     def test_add_command_rejects_duplicate(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
         add_command("greet", "my-plugin", path=root)
@@ -345,6 +358,15 @@ class TestContextDetection:
 
         _root, plugin_dir, _mp_type = _find_plugin_context(root, None)
         assert plugin_dir == (root / "plugins" / "only-plugin").resolve()
+
+    def test_marketplace_no_plugins_raises(self, temp_dir):
+        """A marketplace with zero plugins should raise FileNotFoundError, not ValueError."""
+        root = temp_dir / "mp"
+        root.mkdir()
+        init_marketplace(path=root, name="test-mp", owner="testuser", no_example_plugin=True)
+
+        with pytest.raises(FileNotFoundError, match="No plugins found"):
+            _find_plugin_context(root, None)
 
     def test_marketplace_multi_plugin_requires_flag(self, temp_dir):
         """A marketplace with multiple plugins must specify --plugin."""
@@ -463,6 +485,20 @@ class TestContextDetection:
         result = add_agent("helper", path=root)
         assert result.exists()
         assert (root / ".claude" / "agents" / "helper.md").exists()
+
+    def test_dot_claude_add_hook(self, temp_dir):
+        """Adding a hook to a .claude/ repo should place it in .claude/hooks/."""
+        root = temp_dir / "dot-claude"
+        root.mkdir()
+        (root / ".claude" / "hooks").mkdir(parents=True)
+
+        result = add_hook("PreToolUse", path=root)
+        assert result.exists()
+        assert (root / ".claude" / "hooks" / "PreToolUse.sh").exists()
+        assert (root / ".claude" / "hooks" / "hooks.json").exists()
+
+        data = json.loads((root / ".claude" / "hooks" / "hooks.json").read_text())
+        assert "PreToolUse" in data["hooks"]
 
     def test_dot_claude_empty_not_detected(self, temp_dir):
         """A .claude/ dir with no markers should not be detected."""

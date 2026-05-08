@@ -816,6 +816,12 @@
     </div>
 
     <script>
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         let allPlugins = [];
 
         async function loadData() {
@@ -868,14 +874,14 @@
                 const agentCount = agents.length;
 
                 return `
-                <div class="plugin-card" data-plugin="${plugin.name}" onclick="showPluginModal('${plugin.name}')">
+                <div class="plugin-card" data-plugin="${escapeHtml(plugin.name)}" onclick="showPluginModal('${escapeHtml(plugin.name)}')">
                     <div class="plugin-header">
                         <div>
-                            <div class="plugin-name">${plugin.name}</div>
-                            <div class="plugin-version">v${plugin.version}</div>
+                            <div class="plugin-name">${escapeHtml(plugin.name)}</div>
+                            <div class="plugin-version">v${escapeHtml(plugin.version)}</div>
                         </div>
                     </div>
-                    <div class="plugin-description">${plugin.description}</div>
+                    <div class="plugin-description">${escapeHtml(plugin.description)}</div>
                     <div class="item-counts">
                         ${commandCount > 0 ? `
                         <div class="item-count">
@@ -922,7 +928,7 @@
             // Build header with title, metadata, and version
             const headerContent = `
                 <div class="modal-title-section">
-                    <div class="modal-title">${plugin.name}</div>
+                    <div class="modal-title">${escapeHtml(plugin.name)}</div>
                     <div class="modal-meta">
                         ${commandCount > 0 ? `
                         <div class="item-count">
@@ -952,12 +958,13 @@
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end;">
                     <div style="display: flex; gap: 1rem; align-items: flex-start;">
-                        <span class="plugin-version">v${plugin.version}</span>
+                        <span class="plugin-version">v${escapeHtml(plugin.version)}</span>
                         <button class="close-button" onclick="closeModal()">&times;</button>
                     </div>
                     ${plugin.has_readme ? `
                     <a href="https://github.com/{{GITHUB_REPO}}/tree/main/plugins/${plugin.name}/README.md"
                        target="_blank"
+                       rel="noopener noreferrer"
                        class="readme-button">
                         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M3 3h10v10H3V3z" stroke="currentColor" stroke-width="1.5" fill="none"/>
@@ -970,12 +977,12 @@
             `;
 
             let content = `
-                <div class="plugin-description" style="margin-bottom: 1rem;">${plugin.description}</div>
+                <div class="plugin-description" style="margin-bottom: 1rem;">${escapeHtml(plugin.description)}</div>
                 <div style="margin-bottom: 1.5rem;">
                     <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;">Install this plugin:</div>
                     <div style="position: relative;">
-                        <div class="code-block" style="padding-right: 5rem;">/plugin install ${plugin.name}@{{MARKETPLACE_NAME}}</div>
-                        <button class="copy-button" onclick="copyInstallCommand('${plugin.name}', event)" title="Copy to clipboard">
+                        <div class="code-block" style="padding-right: 5rem;">/plugin install ${escapeHtml(plugin.name)}@{{MARKETPLACE_NAME}}</div>
+                        <button class="copy-button" onclick="copyInstallCommand('${escapeHtml(plugin.name)}', event)" title="Copy to clipboard">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M5.75 4.75H10.25V1.75H5.75V4.75ZM5.75 4.75H2.75V14.25H10.25V11.25M5.75 4.75V7.75H13.25V14.25H10.25V11.25M10.25 11.25H13.25V7.75H5.75V4.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
@@ -990,9 +997,9 @@
                     <div class="section-title">Commands</div>
                     ${plugin.commands.map(cmd => `
                         <div class="command-item">
-                            <div class="command-name">/${plugin.name}:${cmd.name}</div>
-                            ${cmd.synopsis ? `<div class="command-synopsis">${cmd.synopsis}</div>` : ''}
-                            ${cmd.description ? `<div class="command-description">${cmd.description}</div>` : ''}
+                            <div class="command-name">/${escapeHtml(plugin.name)}:${escapeHtml(cmd.name)}</div>
+                            ${cmd.synopsis ? `<div class="command-synopsis">${escapeHtml(cmd.synopsis)}</div>` : ''}
+                            ${cmd.description ? `<div class="command-description">${escapeHtml(cmd.description)}</div>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1003,9 +1010,9 @@
                     <div class="section-title">Skills</div>
                     ${skills.map(skill => `
                         <div class="skill-item">
-                            <div class="skill-name">${skill.name}</div>
-                            <div class="skill-id">${plugin.name}:${skill.id}</div>
-                            ${skill.description ? `<div class="skill-description">${skill.description}</div>` : ''}
+                            <div class="skill-name">${escapeHtml(skill.name)}</div>
+                            <div class="skill-id">${escapeHtml(plugin.name)}:${escapeHtml(skill.id)}</div>
+                            ${skill.description ? `<div class="skill-description">${escapeHtml(skill.description)}</div>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1016,9 +1023,9 @@
                     <div class="section-title">Hooks</div>
                     ${hooks.map(hook => `
                         <div class="hook-item">
-                            <div class="hook-name">${hook.name}</div>
-                            <div class="hook-id">${hook.event}</div>
-                            ${hook.description ? `<div class="hook-description">${hook.description}</div>` : ''}
+                            <div class="hook-name">${escapeHtml(hook.name)}</div>
+                            <div class="hook-id">${escapeHtml(hook.event)}</div>
+                            ${hook.description ? `<div class="hook-description">${escapeHtml(hook.description)}</div>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1029,9 +1036,9 @@
                     <div class="section-title">Agents</div>
                     ${agents.map(agent => `
                         <div class="agent-item">
-                            <div class="agent-name">${agent.name}</div>
-                            <div class="agent-id">${plugin.name}:${agent.id}</div>
-                            ${agent.description ? `<div class="agent-description">${agent.description}</div>` : ''}
+                            <div class="agent-name">${escapeHtml(agent.name)}</div>
+                            <div class="agent-id">${escapeHtml(plugin.name)}:${escapeHtml(agent.id)}</div>
+                            ${agent.description ? `<div class="agent-description">${escapeHtml(agent.description)}</div>` : ''}
                         </div>
                     `).join('')}
                 `;
@@ -1131,11 +1138,11 @@
                     <div class="autocomplete-section">
                         <div class="autocomplete-section-title">Plugins</div>
                         ${results.plugins.map(plugin => `
-                            <div class="autocomplete-item" onclick="showPluginModal('${plugin.name}')">
-                                <div class="autocomplete-item-icon plugin">${plugin.name.charAt(0).toUpperCase()}</div>
+                            <div class="autocomplete-item" onclick="showPluginModal('${escapeHtml(plugin.name)}')">
+                                <div class="autocomplete-item-icon plugin">${escapeHtml(plugin.name.charAt(0).toUpperCase())}</div>
                                 <div class="autocomplete-item-content">
-                                    <div class="autocomplete-item-title">${plugin.name}</div>
-                                    <div class="autocomplete-item-subtitle">${plugin.description}</div>
+                                    <div class="autocomplete-item-title">${escapeHtml(plugin.name)}</div>
+                                    <div class="autocomplete-item-subtitle">${escapeHtml(plugin.description)}</div>
                                 </div>
                             </div>
                         `).join('')}
@@ -1149,11 +1156,11 @@
                     <div class="autocomplete-section">
                         <div class="autocomplete-section-title">Commands</div>
                         ${results.commands.slice(0, 10).map(item => `
-                            <div class="autocomplete-item" onclick="showPluginModal('${item.plugin}')">
+                            <div class="autocomplete-item" onclick="showPluginModal('${escapeHtml(item.plugin)}')">
                                 <div class="autocomplete-item-icon command">$</div>
                                 <div class="autocomplete-item-content">
-                                    <div class="autocomplete-item-title">/${item.plugin}:${item.command.name}</div>
-                                    <div class="autocomplete-item-subtitle">${item.command.description || item.command.synopsis || ''}</div>
+                                    <div class="autocomplete-item-title">/${escapeHtml(item.plugin)}:${escapeHtml(item.command.name)}</div>
+                                    <div class="autocomplete-item-subtitle">${escapeHtml(item.command.description || item.command.synopsis || '')}</div>
                                 </div>
                             </div>
                         `).join('')}
@@ -1167,11 +1174,11 @@
                     <div class="autocomplete-section">
                         <div class="autocomplete-section-title">Skills</div>
                         ${results.skills.slice(0, 10).map(item => `
-                            <div class="autocomplete-item" onclick="showPluginModal('${item.plugin}')">
+                            <div class="autocomplete-item" onclick="showPluginModal('${escapeHtml(item.plugin)}')">
                                 <div class="autocomplete-item-icon skill">⚡</div>
                                 <div class="autocomplete-item-content">
-                                    <div class="autocomplete-item-title">${item.skill.name}</div>
-                                    <div class="autocomplete-item-subtitle">${item.plugin}:${item.skill.id}</div>
+                                    <div class="autocomplete-item-title">${escapeHtml(item.skill.name)}</div>
+                                    <div class="autocomplete-item-subtitle">${escapeHtml(item.plugin)}:${escapeHtml(item.skill.id)}</div>
                                 </div>
                             </div>
                         `).join('')}
@@ -1243,7 +1250,7 @@
             } else {
                 // Simple title string (for backwards compatibility)
                 modalHeader.innerHTML = `
-                    <h2 class="modal-title">${headerContent}</h2>
+                    <h2 class="modal-title">${escapeHtml(headerContent)}</h2>
                     <button class="close-button" onclick="closeModal()">&times;</button>
                 `;
             }

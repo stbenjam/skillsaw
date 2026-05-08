@@ -111,6 +111,10 @@ def _find_plugin_context(path: Path, plugin_name: Optional[str]) -> Tuple[Path, 
             mp_path = mp_root / ".claude-plugin" / "marketplace.json"
             data = json.loads(mp_path.read_text(encoding="utf-8"))
             plugins = data.get("plugins", [])
+            if not plugins:
+                raise FileNotFoundError(
+                    "No plugins found in this marketplace. Run 'skillsaw add plugin' first."
+                )
             if len(plugins) == 1:
                 plugin_name = plugins[0]["name"]
             else:
@@ -176,14 +180,15 @@ def _register_plugin(root: Path, name: str, source: str, description: str) -> No
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
     data.setdefault("plugins", [])
-    data["plugins"].append(
-        {
-            "name": name,
-            "source": source,
-            "description": description,
-        }
-    )
-    mp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    if not any(p.get("name") == name for p in data["plugins"]):
+        data["plugins"].append(
+            {
+                "name": name,
+                "source": source,
+                "description": description,
+            }
+        )
+        mp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     settings_path = root / ".claude-plugin" / "settings.json"
     if settings_path.exists():
@@ -191,14 +196,15 @@ def _register_plugin(root: Path, name: str, source: str, description: str) -> No
     else:
         settings = {"installedPlugins": []}
     settings.setdefault("installedPlugins", [])
-    settings["installedPlugins"].append(
-        {
-            "name": name,
-            "source": "local",
-            "enabled": True,
-        }
-    )
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    if not any(p.get("name") == name for p in settings["installedPlugins"]):
+        settings["installedPlugins"].append(
+            {
+                "name": name,
+                "source": "local",
+                "enabled": True,
+            }
+        )
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
 def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
@@ -444,16 +450,18 @@ def add_hook(
 
     data.setdefault("hooks", {})
     data["hooks"].setdefault(event, [])
-    data["hooks"][event].append(
-        {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"./hooks/{event}.sh",
-                }
-            ]
-        }
-    )
+    hook_cmd = f"./hooks/{event}.sh"
+    if not any(h.get("hooks", [{}])[0].get("command") == hook_cmd for h in data["hooks"][event]):
+        data["hooks"][event].append(
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_cmd,
+                    }
+                ]
+            }
+        )
     hooks_json_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     print(f"Created hook: {event}")

@@ -41,6 +41,18 @@ DEFAULT_MARKETPLACE_TYPE = "claude-code"
 MARKETPLACE_TYPES = [DEFAULT_MARKETPLACE_TYPE]
 
 
+def prompt_input(text: str, default: str = "") -> str:
+    """Prompt the user for input, requiring a non-empty value unless a default is provided."""
+    if default:
+        result = input(f"{text} [{default}]: ").strip()
+        return result or default
+    while True:
+        result = input(f"{text}: ").strip()
+        if result:
+            return result
+        print("Error: value is required")
+
+
 def read_template(name: str, marketplace_type: str = DEFAULT_MARKETPLACE_TYPE) -> str:
     """Read a template file from the package templates directory for the given type."""
     return (

@@ -6,23 +6,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
-from .branding import COLOR_PRESETS, DEFAULT_MARKETPLACE_TYPE, MARKETPLACE_TYPES
+from .branding import COLOR_PRESETS, DEFAULT_MARKETPLACE_TYPE, MARKETPLACE_TYPES, prompt_input
 
 # ---------------------------------------------------------------------------
 # Interactive helpers
 # ---------------------------------------------------------------------------
-
-
-def _prompt(text: str, default: str = "") -> str:
-    if default:
-        result = input(f"{text} [{default}]: ").strip()
-        return result or default
-    while True:
-        result = input(f"{text}: ").strip()
-        if result:
-            return result
-        print("Error: value is required")
 
 
 def _prompt_plugin_selection(path: Path) -> str:
@@ -56,12 +46,12 @@ def _prompt_plugin_selection(path: Path) -> str:
         print("Invalid selection. Enter a number or plugin name.")
 
 
-def _require_name(args_name: str | None, label: str) -> str:
+def _require_name(args_name: Optional[str], label: str, hint: str = "kebab-case") -> str:
     """Return the name, prompting interactively if missing and TTY is available."""
     if args_name:
         return args_name
     if sys.stdin.isatty():
-        return _prompt(f"{label} (kebab-case)")
+        return prompt_input(f"{label} ({hint})")
     print(f"Error: {label.lower()} is required", file=sys.stderr)
     sys.exit(1)
 
@@ -251,7 +241,7 @@ Examples:
         elif args.subcommand == "hook":
             from .add import add_hook
 
-            event = _require_name(args.event, "Hook event")
+            event = _require_name(args.event, "Hook event", hint="e.g., SessionStart")
             try:
                 add_hook(event=event, plugin_name=args.plugin, path=args.path)
             except ValueError as exc:

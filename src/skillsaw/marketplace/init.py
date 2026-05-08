@@ -12,24 +12,13 @@ from .branding import (
     DEFAULT_COLOR_SCHEME,
     DEFAULT_MARKETPLACE_TYPE,
     MARKETPLACE_TYPES,
-    apply_branding,
     apply_replacements,
     build_replacements,
     get_color_scheme,
+    prompt_input,
     read_template,
     write_template_config,
 )
-
-
-def _prompt(prompt: str, default: str = "") -> str:
-    if default:
-        result = input(f"{prompt} [{default}]: ").strip()
-        return result or default
-    while True:
-        result = input(f"{prompt}: ").strip()
-        if result:
-            return result
-        print("Error: value is required")
 
 
 def _prompt_color_scheme() -> Dict[str, str]:
@@ -41,7 +30,7 @@ def _prompt_color_scheme() -> Dict[str, str]:
     print(f"  {len(presets) + 1}) custom")
     print()
 
-    choice = _prompt("Choose a color scheme", "1")
+    choice = prompt_input("Choose a color scheme", "1")
     try:
         idx = int(choice) - 1
     except ValueError:
@@ -51,9 +40,9 @@ def _prompt_color_scheme() -> Dict[str, str]:
         return COLOR_PRESETS[presets[idx]]
     elif idx == len(presets):
         return {
-            "primary": _prompt("Primary color (hex)", "#6366f1"),
-            "primary_dark": _prompt("Primary dark color (hex)", "#4f46e5"),
-            "secondary": _prompt("Secondary color (hex)", "#818cf8"),
+            "primary": prompt_input("Primary color (hex)", "#6366f1"),
+            "primary_dark": prompt_input("Primary dark color (hex)", "#4f46e5"),
+            "secondary": prompt_input("Secondary color (hex)", "#818cf8"),
         }
     else:
         return COLOR_PRESETS[DEFAULT_COLOR_SCHEME]
@@ -89,11 +78,11 @@ def init_marketplace(
 
     if interactive:
         if not name:
-            name = _prompt("Marketplace name (e.g., 'my-plugins')")
+            name = prompt_input("Marketplace name (e.g., 'my-plugins')")
         if not owner:
-            owner = _prompt("Owner name (e.g., GitHub username)")
+            owner = prompt_input("Owner name (e.g., GitHub username)")
         if not github_repo:
-            github_repo = _prompt("GitHub repository", f"{owner}/{name}")
+            github_repo = prompt_input("GitHub repository", f"{owner}/{name}")
         if not color_scheme:
             colors = _prompt_color_scheme()
         else:
@@ -118,8 +107,6 @@ def init_marketplace(
     _create_structure(root, replacements, marketplace_type)
 
     write_template_config(root, name, owner, github_repo, colors, marketplace_type)
-
-    apply_branding(root, replacements)
 
     if not no_example_plugin:
         from .add import add_plugin
