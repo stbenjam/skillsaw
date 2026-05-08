@@ -56,6 +56,26 @@ def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     return frontmatter, None
 
 
+def _frontmatter_key_line(skill_path, key: str) -> Optional[int]:
+    """Find the line number of a top-level key in SKILL.md frontmatter."""
+    skill_md = skill_path / "SKILL.md"
+    try:
+        lines = skill_md.read_text().splitlines()
+    except IOError:
+        return None
+    pattern = re.compile(rf"^{re.escape(key)}\s*:")
+    in_frontmatter = False
+    for i, line in enumerate(lines, 1):
+        if line.strip() == "---":
+            if not in_frontmatter:
+                in_frontmatter = True
+                continue
+            break
+        if in_frontmatter and pattern.match(line):
+            return i
+    return None
+
+
 class AgentSkillValidRule(Rule):
     """Validate SKILL.md exists with required frontmatter fields"""
 
@@ -94,12 +114,19 @@ class AgentSkillValidRule(Rule):
                     self.violation("Missing required 'name' field", file_path=skill_md)
                 )
             elif not isinstance(name, str):
-                violations.append(self.violation("'name' must be a string", file_path=skill_md))
+                violations.append(
+                    self.violation(
+                        "'name' must be a string",
+                        file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "name"),
+                    )
+                )
             elif len(name) > NAME_MAX_LENGTH:
                 violations.append(
                     self.violation(
                         f"'name' exceeds {NAME_MAX_LENGTH} characters ({len(name)})",
                         file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "name"),
                     )
                 )
 
@@ -110,7 +137,11 @@ class AgentSkillValidRule(Rule):
                 )
             elif not isinstance(desc, str):
                 violations.append(
-                    self.violation("'description' must be a string", file_path=skill_md)
+                    self.violation(
+                        "'description' must be a string",
+                        file_path=skill_md,
+                        line=_frontmatter_key_line(skill_path, "description"),
+                    )
                 )
 
             if "license" in frontmatter and not isinstance(frontmatter["license"], str):
@@ -209,11 +240,14 @@ class AgentSkillNameRule(Rule):
             if not name or not isinstance(name, str):
                 continue
 
+            name_line = _frontmatter_key_line(skill_path, "name")
+
             if not NAME_PATTERN.match(name):
                 violations.append(
                     self.violation(
                         f"Name '{name}' must contain only lowercase letters, numbers, and hyphens",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
                 continue
@@ -223,6 +257,7 @@ class AgentSkillNameRule(Rule):
                     self.violation(
                         f"Name '{name}' must not end with a hyphen",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
@@ -231,15 +266,16 @@ class AgentSkillNameRule(Rule):
                     self.violation(
                         f"Name '{name}' must not contain consecutive hyphens",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
-            # Name must match parent directory (skip if skill is at repo root)
             if skill_path != context.root_path and name != skill_path.name:
                 violations.append(
                     self.violation(
                         f"Name '{name}' does not match directory name '{skill_path.name}'",
                         file_path=skill_md,
+                        line=name_line,
                     )
                 )
 
@@ -281,10 +317,15 @@ class AgentSkillDescriptionRule(Rule):
             if not desc or not isinstance(desc, str):
                 continue
 
+            desc_line = _frontmatter_key_line(skill_path, "description")
             stripped = desc.strip()
             if not stripped:
                 violations.append(
-                    self.violation("Description is empty or whitespace-only", file_path=skill_md)
+                    self.violation(
+                        "Description is empty or whitespace-only",
+                        file_path=skill_md,
+                        line=desc_line,
+                    )
                 )
                 continue
 
@@ -293,6 +334,7 @@ class AgentSkillDescriptionRule(Rule):
                     self.violation(
                         f"Description exceeds {DESCRIPTION_MAX_LENGTH} characters ({len(stripped)})",
                         file_path=skill_md,
+                        line=desc_line,
                     )
                 )
 
