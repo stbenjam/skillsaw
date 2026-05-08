@@ -1,0 +1,8 @@
+{
+  "name": "{{PLUGIN_NAME}}",
+  "description": "TODO: Add description",
+  "version": "0.0.1",
+  "author": {
+    "name": "{{OWNER_NAME}}"
+  }
+}

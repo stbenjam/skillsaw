@@ -1,0 +1,7 @@
+{
+  "name": "{{MARKETPLACE_NAME}}",
+  "owner": {
+    "name": "{{OWNER_NAME}}"
+  },
+  "plugins": []
+}

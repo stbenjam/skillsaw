@@ -1,0 +1,37 @@
+rules:
+  plugin-json-required:
+    enabled: true
+    severity: error
+  plugin-json-valid:
+    enabled: true
+    severity: error
+  plugin-naming:
+    enabled: true
+    severity: warning
+  plugin-readme:
+    enabled: true
+    severity: warning
+  command-frontmatter:
+    enabled: true
+    severity: warning
+  command-sections:
+    enabled: true
+    severity: warning
+  command-name-format:
+    enabled: true
+    severity: warning
+  marketplace-json-valid:
+    enabled: true
+    severity: error
+  marketplace-registration:
+    enabled: true
+    severity: error
+  skill-frontmatter:
+    enabled: true
+    severity: warning
+  agent-frontmatter:
+    enabled: true
+    severity: warning
+  mcp-valid-json:
+    enabled: true
+    severity: error
