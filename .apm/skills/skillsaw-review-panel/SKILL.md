@@ -242,14 +242,6 @@ VERDICT
 )"
 ```
 
-### Step 6 — Remove Label
-
-Remove the `panel-review` label to reset the trigger:
-
-```bash
-gh pr edit <number> --remove-label panel-review
-```
-
 ## Quality Gates
 
 A change passes when:
