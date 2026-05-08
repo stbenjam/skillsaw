@@ -40,105 +40,6 @@ def github_api(method, path, body=None):
         raise
 
 
-def graphql(query, variables=None):
-    token = os.environ["GITHUB_TOKEN"]
-    body = {"query": query}
-    if variables:
-        body["variables"] = variables
-    data = json.dumps(body).encode()
-    req = urllib.request.Request(
-        f"{API}/graphql",
-        data=data,
-        method="POST",
-        headers={
-            "Authorization": f"bearer {token}",
-            "Content-Type": "application/json",
-        },
-    )
-    with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read().decode())
-    if result.get("errors"):
-        print(f"GraphQL error: {result['errors']}", file=sys.stderr)
-    return result
-
-
-def get_review_threads(repo, pr_number):
-    """Fetch all review threads and their first comment bodies."""
-    owner, name = repo.split("/")
-    threads = []
-    cursor = None
-    while True:
-        variables = {"owner": owner, "repo": name, "pr": int(pr_number)}
-        after_decl = ", $after: String" if cursor else ""
-        after_arg = ", after: $after" if cursor else ""
-        if cursor:
-            variables["after"] = cursor
-        result = graphql(
-            """
-            query($owner: String!, $repo: String!, $pr: Int!%s) {
-                repository(owner: $owner, name: $repo) {
-                    pullRequest(number: $pr) {
-                        reviewThreads(first: 100%s) {
-                            nodes {
-                                id
-                                isResolved
-                                comments(first: 1) {
-                                    nodes { body }
-                                }
-                            }
-                            pageInfo { hasNextPage endCursor }
-                        }
-                    }
-                }
-            }
-            """ % (after_decl, after_arg),
-            variables,
-        )
-        pr_data = (result.get("data") or {}).get("repository", {}).get("pullRequest", {})
-        thread_data = pr_data.get("reviewThreads", {})
-        threads.extend(thread_data.get("nodes") or [])
-        page_info = thread_data.get("pageInfo", {})
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info["endCursor"]
-    return threads
-
-
-def resolve_threads_by_fingerprints(repo, pr_number, fingerprints):
-    """Resolve review threads whose comments match the given fingerprints."""
-    if not fingerprints:
-        return 0
-    threads = get_review_threads(repo, pr_number)
-    resolved = 0
-    for thread in threads:
-        if thread.get("isResolved"):
-            continue
-        comments = (thread.get("comments") or {}).get("nodes") or []
-        if not comments:
-            continue
-        body = comments[0].get("body", "")
-        m = FINGERPRINT_RE.search(body)
-        if m and m.group(1) in fingerprints:
-            result = graphql(
-                """
-                mutation($threadId: ID!) {
-                    resolveReviewThread(input: {threadId: $threadId}) {
-                        thread { isResolved }
-                    }
-                }
-                """,
-                {"threadId": thread["id"]},
-            )
-            if (
-                (result.get("data") or {})
-                .get("resolveReviewThread", {})
-                .get("thread", {})
-                .get("isResolved")
-            ):
-                resolved += 1
-    return resolved
-
-
 def fingerprint(rule_id, file_path, message):
     key = f"{rule_id}:{file_path}:{message}"
     return hashlib.sha256(key.encode()).hexdigest()[:12]
@@ -183,7 +84,8 @@ def get_diff_info(repo, pr_number):
 def sync_comments(repo, pr_number, new_comments):
     """Diff existing skillsaw comments against new findings.
 
-    Resolves threads for fixed violations, returns genuinely new comments.
+    Deletes comments for fixed violations (unless replied to),
+    returns genuinely new comments.
     """
     all_comments = []
     page = 1
@@ -205,16 +107,22 @@ def sync_comments(repo, pr_number, new_comments):
     if not existing:
         return new_comments
 
-    current_fps = {c["fingerprint"] for c in new_comments}
-    stale_fps = {fp for fp in existing if fp not in current_fps}
+    replied_to = {c["in_reply_to_id"] for c in all_comments if c.get("in_reply_to_id")}
 
-    if stale_fps:
+    current_fps = {c["fingerprint"] for c in new_comments}
+    deleted = 0
+    for fp, comment in existing.items():
+        if fp in current_fps:
+            continue
+        if comment["id"] in replied_to:
+            continue
         try:
-            resolved = resolve_threads_by_fingerprints(repo, pr_number, stale_fps)
-            if resolved:
-                print(f"Resolved {resolved} thread(s) for fixed issues.")
-        except Exception as e:
-            print(f"Failed to resolve threads: {e}", file=sys.stderr)
+            github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
+            deleted += 1
+        except urllib.error.HTTPError:
+            pass
+    if deleted:
+        print(f"Deleted {deleted} comment(s) for fixed issues.")
 
     return [c for c in new_comments if c["fingerprint"] not in existing]
 
