@@ -164,9 +164,17 @@ class LinterConfig:
                         f.write(f"    {key}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
-            f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
+            custom_val = self._yaml_value(self.custom_rules)
+            if custom_val.startswith("\n"):
+                f.write(f"custom-rules:{custom_val}\n")
+            else:
+                f.write(f"custom-rules: {custom_val}\n")
             f.write("\n# Exclude patterns (glob format)\n")
-            f.write(f"exclude: {self._yaml_value(self.exclude_patterns)}\n")
+            exclude_val = self._yaml_value(self.exclude_patterns)
+            if exclude_val.startswith("\n"):
+                f.write(f"exclude:{exclude_val}\n")
+            else:
+                f.write(f"exclude: {exclude_val}\n")
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
 

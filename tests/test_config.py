@@ -167,6 +167,24 @@ def test_save_no_trailing_whitespace(tmp_path):
     ]
 
 
+def test_save_no_trailing_whitespace_with_lists(tmp_path):
+    """Test no trailing whitespace when custom-rules and exclude have entries"""
+    config = LinterConfig.default()
+    config.custom_rules = ["rules/custom.py", "rules/extra.py"]
+    config.exclude_patterns = ["vendor/*", "node_modules/*"]
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    for i, line in enumerate(content.splitlines(), start=1):
+        assert line == line.rstrip(), f"Line {i} has trailing whitespace: {line!r}"
+
+    parsed = yaml.safe_load(content)
+    assert parsed["custom-rules"] == ["rules/custom.py", "rules/extra.py"]
+    assert parsed["exclude"] == ["vendor/*", "node_modules/*"]
+
+
 def test_auto_without_repo_types_always_enabled(valid_plugin):
     """Test that auto with repo_types=None enables for any repo type"""
     config = LinterConfig.default()
