@@ -19,6 +19,7 @@ from skillsaw.rules.builtin.command_format import (
     CommandNameFormatRule,
 )
 from skillsaw.rules.builtin.marketplace import (
+    MarketplaceJsonValidRule,
     MarketplaceRegistrationRule,
 )
 
@@ -252,3 +253,178 @@ def test_command_name_format_reports_line_number(temp_dir):
     assert len(violations) == 1
     assert "my-plugin:do-thing" in violations[0].message
     assert violations[0].line == 5
+
+
+# --- marketplace-json-valid ---
+
+
+def test_marketplace_json_valid_passes(marketplace_repo):
+    """Test that valid marketplace.json passes"""
+    context = RepositoryContext(marketplace_repo)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_marketplace_owner_must_be_object(temp_dir):
+    """Test that owner as a non-object fails"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": "just-a-string",
+        "plugins": [],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert any("'owner' must be an object" in v.message for v in violations)
+
+
+def test_marketplace_owner_must_have_name(temp_dir):
+    """Test that owner without name fails"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"email": "test@example.com"},
+        "plugins": [],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert any("'owner' must have a 'name' field" in v.message for v in violations)
+
+
+def test_marketplace_owner_with_name_passes(temp_dir):
+    """Test that owner with name passes"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_marketplace_plugin_entry_missing_name(temp_dir):
+    """Test that plugin entry without name fails"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [
+            {"source": "./plugins/my-plugin", "description": "No name"},
+        ],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert any("plugins[0] missing required 'name'" in v.message for v in violations)
+
+
+def test_marketplace_plugin_entry_missing_source(temp_dir):
+    """Test that plugin entry without source fails"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [
+            {"name": "my-plugin", "description": "No source"},
+        ],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert any("plugins[0] missing required 'source'" in v.message for v in violations)
+
+
+def test_marketplace_plugin_entry_not_object(temp_dir):
+    """Test that non-object plugin entry fails"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": ["not-an-object"],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert any("plugins[0] must be an object" in v.message for v in violations)
+
+
+def test_marketplace_plugin_entry_valid(temp_dir):
+    """Test that valid plugin entries pass"""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [
+            {"name": "plugin-one", "source": "./plugins/plugin-one"},
+            {
+                "name": "plugin-two",
+                "source": {"source": "github", "repo": "owner/repo"},
+            },
+        ],
+    }
+
+    with open(claude_dir / "marketplace.json", "w") as f:
+        json.dump(marketplace_json, f)
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
