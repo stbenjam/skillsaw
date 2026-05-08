@@ -244,7 +244,7 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
     if not non_diff_violations:
         return
 
-    lines = ["### skillsaw: violations outside this diff\n"]
+    lines = ["### skillsaw: additional violations\n"]
     lines.append("| Severity | Rule | File | Message |")
     lines.append("|----------|------|------|---------|")
     for v in non_diff_violations:
