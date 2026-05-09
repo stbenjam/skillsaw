@@ -20,7 +20,7 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
 
 ## Features
 
-- 🧠 **Content Intelligence** — 14 rules that analyze instruction file quality using attention research and prompt engineering best practices. Detects [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, deprecated references, contradictions, and more
+- 🧠 **Content Intelligence** — More than a dozen rules that analyze instruction file quality using attention research and prompt engineering best practices. Detects [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, deprecated references, contradictions, and more
 - 🔧 **LLM-Powered Autofix** — Fix content violations automatically with any LLM via LiteLLM. Parallel processing, scoped re-linting, per-file rollback on regression, and dry-run preview — all in one command: `skillsaw lint --fix --llm`
 - 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, marketplaces, and instruction file formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro) — enables the right rules without configuration
 - 📐 **40+ Rules** — Validates skill format, plugin structure, metadata, command format, cross-file consistency, context budget, and instruction quality
@@ -443,7 +443,7 @@ Examples: adding missing frontmatter, renaming files to kebab-case, registering 
 
 ### LLM-Powered Fixes (`--fix --llm`)
 
-All 14 content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
+All content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
 
 ```bash
 # Fix content violations with an LLM (any LiteLLM-compatible model)
@@ -640,13 +640,7 @@ docker build -t skillsaw .
 
 ## Contributing
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions.
 
 ## License
 
