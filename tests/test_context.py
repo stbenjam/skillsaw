@@ -16,6 +16,7 @@ from skillsaw.context import (
     HAS_AGENTS_MD,
     HAS_KIRO,
     HAS_CLAUDE_MD,
+    HAS_CODERABBIT,
 )
 
 
@@ -442,3 +443,61 @@ def test_multi_type_dot_claude_and_agentskills(temp_dir):
     assert RepositoryType.AGENTSKILLS in context.repo_types
     # DOT_CLAUDE has higher priority than AGENTSKILLS for backward compat
     assert context.repo_type == RepositoryType.DOT_CLAUDE
+
+
+def test_detected_formats_coderabbit(temp_dir):
+    """Detect .coderabbit.yaml sets HAS_CODERABBIT format flag"""
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CODERABBIT in context.detected_formats
+
+
+def test_coderabbit_only_repo_gets_content_rules(temp_dir):
+    """A coderabbit-only repo with instruction text should trigger content rules"""
+    from skillsaw.config import LinterConfig
+    from skillsaw.linter import Linter
+
+    (temp_dir / ".coderabbit.yaml").write_text(
+        "reviews:\n  instructions: |\n    Try to use consistent formatting.\n"
+    )
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+    weak = [v for v in violations if v.rule_id == "content-weak-language"]
+    assert len(weak) >= 1, "content-weak-language should fire on coderabbit instruction text"
+
+
+def test_coderabbit_repo_no_command_violations(temp_dir):
+    """A coderabbit-only repo should produce no command/skill violations"""
+    from skillsaw.config import LinterConfig
+    from skillsaw.linter import Linter
+
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+    irrelevant = [
+        v
+        for v in violations
+        if v.rule_id
+        in {
+            "command-naming",
+            "command-frontmatter",
+            "skill-frontmatter",
+            "agent-frontmatter",
+            "hooks-json-valid",
+            "mcp-valid-json",
+        }
+    ]
+    assert len(irrelevant) == 0, f"Should have no command/skill violations: {irrelevant}"
+
+
+def test_coderabbit_with_claude_md_gets_both_formats(temp_dir):
+    """Repo with both .coderabbit.yaml and CLAUDE.md has both format flags"""
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    (temp_dir / "CLAUDE.md").write_text("# Instructions\n")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CODERABBIT in context.detected_formats
+    assert HAS_CLAUDE_MD in context.detected_formats
