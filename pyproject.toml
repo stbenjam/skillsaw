@@ -35,6 +35,14 @@ dependencies = [
 llm = [
     "litellm>=1.40",
 ]
+vertexai = [
+    "litellm>=1.40",
+    "google-cloud-aiplatform>=1.38",
+]
+bedrock = [
+    "litellm>=1.40",
+    "boto3>=1.28",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
