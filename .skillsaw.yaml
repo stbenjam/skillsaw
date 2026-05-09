@@ -8,3 +8,4 @@ exclude:
   - ".opencode/*"
   - ".agents/*"
   - ".github/instructions/*"
+  - "src/skillsaw/marketplace/templates/*"

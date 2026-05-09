@@ -52,6 +52,7 @@ class Linter:
         self.config = config or LinterConfig.default()
         self.context.content_paths = self.config.content_paths
         self.context.exclude_patterns = self.config.exclude_patterns
+        self.context.apply_excludes()
         self.rules: List[Rule] = []
         self._load_rules()
 
@@ -143,6 +144,12 @@ class Linter:
                 )
         return warnings
 
+    def _is_excluded(self, violation: RuleViolation) -> bool:
+        """Check if a violation's file path matches any exclude pattern."""
+        if violation.file_path is None:
+            return False
+        return self.context.is_path_excluded(violation.file_path)
+
     def run(self) -> List[RuleViolation]:
         """
         Run all enabled rules
@@ -159,7 +166,7 @@ class Linter:
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
-        return violations
+        return [v for v in violations if not self._is_excluded(v)]
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -178,18 +185,20 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 continue
 
-            if rule_violations and rule.supports_autofix:
+            visible = [v for v in rule_violations if not self._is_excluded(v)]
+
+            if visible and rule.supports_autofix:
                 try:
-                    fixes = rule.fix(self.context, rule_violations)
+                    fixes = rule.fix(self.context, visible)
                     all_fixes.extend(fixes)
                     fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
-                    remaining = [v for v in rule_violations if id(v) not in fixed_violations]
+                    remaining = [v for v in visible if id(v) not in fixed_violations]
                     all_violations.extend(remaining)
                 except Exception as e:
                     print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
-                    all_violations.extend(rule_violations)
+                    all_violations.extend(visible)
             else:
-                all_violations.extend(rule_violations)
+                all_violations.extend(visible)
 
         return all_violations, all_fixes
 

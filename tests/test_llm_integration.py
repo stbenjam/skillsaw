@@ -330,6 +330,8 @@ class TestLLMFixByRule:
 
         config = LinterConfig.default()
         config.llm.model = os.environ.get("SKILLSAW_MODEL", "openrouter/minimax/minimax-m2.7")
+        if case.rule_config:
+            config.rules.setdefault(case.rule_id, {}).update(case.rule_config)
         context = RepositoryContext(tmp_path)
         linter = Linter(context, config)
 
