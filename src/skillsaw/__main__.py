@@ -475,23 +475,23 @@ def _run_fix(args):
                     val = val[:37] + "..."
                 arg_summary = val
             tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{dim}├{reset} {kw['name']}({arg_summary})")
+            print(f"  {tag}{kw['name']}({arg_summary})")
         elif event_type == "retry":
             tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{yellow}├ {kw['remaining']} violation(s)"
+            print(f"  {tag}{yellow}{kw['remaining']} violation(s)"
                   f" remain, retrying...{reset}")
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
             tag = f"{dim}[{kw['rel_path']}]{reset} "
             if not changed:
-                print(f"  {tag}{yellow}└ no changes{reset}")
+                print(f"  {tag}{yellow}no changes{reset}")
             elif remaining == 0:
-                print(f"  {tag}{green}└ ✓ all {kw['num_violations']}"
+                print(f"  {tag}{green}✓ all {kw['num_violations']}"
                       f" violation(s) fixed{reset}")
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {tag}{red}└ {fixed} fixed,"
+                print(f"  {tag}{red}{fixed} fixed,"
                       f" {remaining} failed{reset}")
             print()
 
