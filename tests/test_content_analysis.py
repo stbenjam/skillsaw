@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.content_analysis import (
     RedundancyDetector,
     InstructionBudgetAnalyzer,
     gather_all_instruction_files,
+    _strip_fenced_code_blocks,
 )
 from skillsaw.context import RepositoryContext
 
@@ -22,6 +23,42 @@ def temp_dir():
     tmp = tempfile.mkdtemp()
     yield Path(tmp)
     shutil.rmtree(tmp)
+
+
+class TestStripFencedCodeBlocks:
+    def test_strips_backtick_blocks(self):
+        content = "Line 1\n```\ncode line\n```\nLine 5\n"
+        result = _strip_fenced_code_blocks(content)
+        lines = result.splitlines()
+        assert lines[0] == "Line 1"
+        assert lines[1] == ""
+        assert lines[2] == ""
+        assert lines[3] == ""
+        assert lines[4] == "Line 5"
+
+    def test_strips_tilde_blocks(self):
+        content = "Line 1\n~~~\ncode\n~~~\nLine 5\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_preserves_line_count(self):
+        content = "Before\n```python\nline1\nline2\nline3\n```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert result.count("\n") == content.count("\n")
+
+    def test_no_code_blocks(self):
+        content = "Just text.\nMore text.\n"
+        result = _strip_fenced_code_blocks(content)
+        assert result == content
+
+    def test_multiple_code_blocks(self):
+        content = "A\n```\nx\n```\nB\n```\ny\n```\nC\n"
+        result = _strip_fenced_code_blocks(content)
+        lines = result.splitlines()
+        assert lines[0] == "A"
+        assert lines[4] == "B"
+        assert lines[8] == "C"
 
 
 class TestWeakLanguageDetector:
@@ -73,6 +110,47 @@ class TestWeakLanguageDetector:
         detector = WeakLanguageDetector()
         results = detector.analyze(temp_dir / "CLAUDE.md")
         assert len(results) >= 2
+
+    def test_skips_fenced_code_blocks(self, temp_dir):
+        content = "Real instruction.\n```\nTry to handle errors gracefully.\n```\nMore text.\n"
+        (temp_dir / "code_block.md").write_text(content)
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "code_block.md")
+        assert len(results) == 0
+
+    def test_consider_requires_action_verb(self, temp_dir):
+        (temp_dir / "consider_fp.md").write_text("Consider this example:\n")
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "consider_fp.md")
+        assert len(results) == 0
+
+    def test_consider_using_flagged(self, temp_dir):
+        (temp_dir / "consider_tp.md").write_text("Consider using TypeScript.\n")
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "consider_tp.md")
+        assert len(results) >= 1
+        assert results[0].category == "hedging"
+
+    def test_detects_you_might_want_to(self, temp_dir):
+        (temp_dir / "might.md").write_text("You might want to add error handling.\n")
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "might.md")
+        assert len(results) >= 1
+        assert results[0].category == "hedging"
+
+    def test_detects_perhaps(self, temp_dir):
+        (temp_dir / "perhaps.md").write_text("Perhaps use a different approach.\n")
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "perhaps.md")
+        assert len(results) >= 1
+        assert results[0].category == "hedging"
+
+    def test_detects_you_should_probably(self, temp_dir):
+        (temp_dir / "probably.md").write_text("You should probably refactor this.\n")
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "probably.md")
+        assert len(results) >= 1
+        assert results[0].category == "hedging"
 
 
 class TestDeadReferenceScanner:
@@ -232,6 +310,31 @@ class TestCriticalPositionAnalyzer:
         analyzer = CriticalPositionAnalyzer()
         results = analyzer.analyze(temp_dir / "CLAUDE.md")
         assert results[0].keyword == "IMPORTANT"
+
+    def test_lowercase_must_not_flagged(self, temp_dir):
+        lines = [f"Line {i}" for i in range(1, 51)]
+        lines[24] = "This function must return a value."
+        (temp_dir / "crit_lower.md").write_text("\n".join(lines) + "\n")
+        analyzer = CriticalPositionAnalyzer()
+        results = analyzer.analyze(temp_dir / "crit_lower.md")
+        assert len(results) == 0
+
+    def test_lowercase_required_not_flagged(self, temp_dir):
+        lines = [f"Line {i}" for i in range(1, 51)]
+        lines[24] = "The required fields are: name, email."
+        (temp_dir / "crit_req.md").write_text("\n".join(lines) + "\n")
+        analyzer = CriticalPositionAnalyzer()
+        results = analyzer.analyze(temp_dir / "crit_req.md")
+        assert len(results) == 0
+
+    def test_allcaps_must_flagged(self, temp_dir):
+        lines = [f"Line {i}" for i in range(1, 51)]
+        lines[24] = "You MUST always run tests."
+        (temp_dir / "crit_caps.md").write_text("\n".join(lines) + "\n")
+        analyzer = CriticalPositionAnalyzer()
+        results = analyzer.analyze(temp_dir / "crit_caps.md")
+        assert len(results) >= 1
+        assert results[0].keyword == "MUST"
 
 
 class TestRedundancyDetector:

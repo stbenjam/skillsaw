@@ -58,6 +58,31 @@ class TestContentWeakLanguageRule:
         violations = ContentWeakLanguageRule().check(context)
         assert len(violations) == 0
 
+    def test_code_blocks_not_scanned(self, temp_dir):
+        content = "# Rules\n```\nTry to handle errors gracefully if possible.\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        assert len(violations) == 0
+
+    def test_consider_example_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Consider this example:\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        assert len(violations) == 0
+
+    def test_consider_using_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Consider using TypeScript for type safety.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        assert len(violations) >= 1
+
+    def test_new_hedging_patterns(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("You might want to add error handling.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        assert len(violations) >= 1
+
 
 class TestContentDeadReferencesRule:
     def test_rule_metadata(self):
@@ -145,6 +170,15 @@ class TestContentCriticalPositionRule:
 
     def test_short_file_no_violations(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("MUST do this.\nNEVER do that.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentCriticalPositionRule().check(context)
+        assert len(violations) == 0
+
+    def test_lowercase_keywords_not_flagged(self, temp_dir):
+        lines = [f"Line {i}" for i in range(1, 51)]
+        lines[24] = "This function must return a value."
+        lines[26] = "The required fields are: name, email."
+        (temp_dir / "CLAUDE.md").write_text("\n".join(lines) + "\n")
         context = RepositoryContext(temp_dir)
         violations = ContentCriticalPositionRule().check(context)
         assert len(violations) == 0

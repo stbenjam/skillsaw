@@ -14,6 +14,17 @@ from typing import List, Optional, Set
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
 
+_FENCED_CODE_RE = re.compile(r"^(`{3,}|~{3,}).*\n(?:.*\n)*?\1\s*$", re.MULTILINE)
+
+
+def _strip_fenced_code_blocks(text: str) -> str:
+    """Replace content inside fenced code blocks with blank lines to preserve line numbers."""
+
+    def _blank_lines(m: re.Match) -> str:
+        return "\n" * m.group().count("\n")
+
+    return _FENCED_CODE_RE.sub(_blank_lines, text)
+
 
 @dataclass
 class WeakLanguageMatch:
@@ -66,12 +77,20 @@ class InstructionBudget:
 
 _HEDGING = [
     (r"\btry to\b", "Remove 'try to' — state the action directly"),
-    (r"\bconsider\b", "Replace 'consider X' with 'do X' or remove"),
+    (
+        r"\bconsider\s+(?:using|adding|implementing|creating|moving|switching|enabling)\b",
+        "Replace 'consider X' with 'do X' or remove",
+    ),
     (r"\bif possible\b", "Remove 'if possible' — state conditions explicitly"),
     (r"\bideally\b", "Remove 'ideally' — state the requirement or drop it"),
     (r"\bwhere possible\b", "Remove 'where possible' — be specific about when"),
     (r"\bwhen appropriate\b", "Replace 'when appropriate' with specific conditions"),
     (r"\bas needed\b", "Replace 'as needed' with specific triggers"),
+    (r"\byou might want to\b", "Remove 'you might want to' — state the action directly"),
+    (r"\byou should probably\b", "Remove 'you should probably' — state the requirement"),
+    (r"\bit would be good to\b", "Remove 'it would be good to' — state the action directly"),
+    (r"\byou may want to\b", "Remove 'you may want to' — state the action directly"),
+    (r"\bperhaps\b", "Remove 'perhaps' — state the recommendation or drop it"),
 ]
 
 _VAGUENESS = [
@@ -112,7 +131,6 @@ _NON_ACTIONABLE = [
 
 _CRITICAL_KEYWORDS = re.compile(
     r"\b(IMPORTANT|MUST|NEVER|ALWAYS|CRITICAL|WARNING|REQUIRED)\b",
-    re.IGNORECASE,
 )
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)", re.MULTILINE)
@@ -146,15 +164,18 @@ def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
     return files
 
 
-def _get_body(path: Path) -> Optional[str]:
+def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
     """Read file and strip YAML frontmatter if present."""
     content = read_text(path)
     if content is None:
         return None
     if path.suffix == ".mdc":
         _, body = parse_frontmatter(content)
-        return body
-    return content
+    else:
+        body = content
+    if strip_code_blocks:
+        body = _strip_fenced_code_blocks(body)
+    return body
 
 
 class WeakLanguageDetector:
