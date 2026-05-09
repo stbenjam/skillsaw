@@ -5,20 +5,14 @@ Please work on the list below.  As you complete items, check them off.  You can 
 
  - [x] Update apm.yml to target claude, cursor, gemini, and opencode
  - [x] Move README contributing section to a new CONTRIBUTING.md doc
- - [x] Please provide a DEVELOPMENT.md with instructions about how to develop on skillsaw
+ - [x] Provide DEVELOPMENT.md with dev instructions (review panel, make venv, LLM testing)
  - [x] Ensure requirement-dev.txt is up to date
- - [x] Provide makefile targets to help with development more (existing ones are sufficient)
- - [x] Don't hardcode numbers in the README, just say "More than a dozen rules that analyze...." 
- - [ ] Please provide a DEVELOPMENT.md with instructions about how to develop on skillsaw, including using the review panel skill, using make venv, testing with LLM (vertex, local llama, etc.  Note we've tested successfully with Gemma 4 26B A3B, MiniMax 2.7, and Sonnet 4.6)
- - [ ] Provide makefile targets to help with development more (that work on mac, linux, etc) if the existing ones are sufficient
- - [ ] Don't hardcode numbers in the README, just say "More than a dozen rules that analyze...." 
- - [ ] README features section is wordy, make it concise but compelling
- - [ ] JSON in context-budget of README should be YAML, and nicely formatted with verbatim blocks
- - [ ] Update the README promo block to talk about content intelligence.  Move the "formerly cnamed claude lint" out of the table box, and put it below the table
- - [ ] Support .env for testing the llm tests? (make sure its in .gitignore)
- 
- 
-## How to run LLM tests
-
-VERTEXAI_LOCATION=global SKILLSAW_MODEL="vertex_ai/claude-sonnet-4-6" SKILLSAW_LLM_INTEGRATION=1 .venv/bin/pytest tests/test_llm_integration.py -v -k "Live"
-gg
+ - [x] Provide makefile targets to help with development (existing ones are sufficient)
+ - [x] Don't hardcode numbers in the README
+ - [x] README features section — make concise but compelling
+ - [x] Context-budget in README — full YAML, not inline JSON
+ - [x] Update README promo block — content intelligence, move "formerly claudelint" below table
+ - [x] Support .env for LLM integration tests (added _load_dotenv to conftest.py)
+ - [x] Implement exclude config field with glob support
+ - [x] Self-lint: exclude generated directories (.claude, .cursor, .gemini, .opencode, .agents)
+ - [x] Add linguist-generated=true to .gitattributes for .opencode, .agents, .cursor, .gemini, .github/instructions

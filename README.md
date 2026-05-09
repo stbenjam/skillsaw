@@ -11,24 +11,24 @@
 
 ### skillsaw
 
-Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
-
-> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+Keep your skills sharp. A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces). Analyzes instruction file quality using attention research, detects weak language and contradictions, and auto-fixes violations with any LLM.
 
 </td>
 </tr></table>
 
+> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+
 ## Features
 
-- 🧠 **Content Intelligence** — More than a dozen rules that analyze instruction file quality using attention research and prompt engineering best practices. Detects [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, deprecated references, contradictions, and more
-- 🔧 **LLM-Powered Autofix** — Fix content violations automatically with any LLM via LiteLLM. Parallel processing, scoped re-linting, per-file rollback on regression, and dry-run preview — all in one command: `skillsaw lint --fix --llm`
-- 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, marketplaces, and instruction file formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro) — enables the right rules without configuration
-- 📐 **40+ Rules** — Validates skill format, plugin structure, metadata, command format, cross-file consistency, context budget, and instruction quality
-- 🏗️ **Scaffolding** — Initialize marketplaces and add plugins, skills, commands, agents, and hooks with `skillsaw add`
-- 📝 **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
-- 🔌 **Extensible** — Load custom rules from Python files, define custom banned patterns, configure per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
-- ⚡ **Version-Gated** — New rules are gated behind config versions so existing users are never surprised on upgrade
+- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
+- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw lint --fix --llm` — parallel processing, scoped re-lint, per-file rollback
+- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
+- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
+- 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
+- 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
+- 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
+- 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
+- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
 
 ## Table of Contents
 

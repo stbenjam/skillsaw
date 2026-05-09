@@ -47,28 +47,29 @@ The `verify-update` CI check will fail if generated files are stale.
 
 ## LLM integration tests
 
-LLM-powered autofix tests are skipped by default. To run them:
+LLM-powered autofix tests are skipped by default. Any model supported by [LiteLLM](https://docs.litellm.ai/docs/providers) works — Vertex AI is recommended.
 
 ```bash
-# Using Vertex AI (recommended — no API key needed if authenticated)
+# Vertex AI (recommended — no API key needed if authenticated via gcloud)
 VERTEXAI_LOCATION=global \
 SKILLSAW_MODEL="vertex_ai/claude-sonnet-4-6" \
 SKILLSAW_LLM_INTEGRATION=1 \
   .venv/bin/pytest tests/test_llm_integration.py -v -k "live"
 
-# Using OpenRouter
+# OpenRouter
 OPENROUTER_API_KEY=your-key \
 SKILLSAW_MODEL="openrouter/minimax/minimax-m2.7" \
 SKILLSAW_LLM_INTEGRATION=1 \
   .venv/bin/pytest tests/test_llm_integration.py -v -k "live"
 
-# Using a local model (e.g., Ollama)
-SKILLSAW_MODEL="ollama/gemma-4-26b-a3b" \
+# Local model via llama.cpp
+SKILLSAW_MODEL="openai/gemma-4-26b-a3b" \
+OPENAI_API_BASE=http://localhost:8080/v1 \
 SKILLSAW_LLM_INTEGRATION=1 \
   .venv/bin/pytest tests/test_llm_integration.py -v -k "live"
 ```
 
-Models we've tested successfully: Gemma 4 26B A3B, MiniMax M2.7, Claude Sonnet 4.6.
+Models we've tested successfully: Gemma 4 26B A3B (llama.cpp), MiniMax M2.7 (OpenRouter), Claude Sonnet 4.6 (Vertex AI).
 
 The mock tests (`test_mock_fix`) always run and use a `FakeProvider` — no API key needed.
 
@@ -103,10 +104,11 @@ src/skillsaw/
 
 ## Review panel
 
-The project includes a review panel skill for thorough PR review. To use it:
+The project includes a review panel skill for thorough PR review:
 
 ```
-/skillsaw-review-panel pr <number>
+/skillsaw-review-panel pr <number>    # review a PR
+/skillsaw-review-panel                # review the current local branch
 ```
 
 This runs 5 specialist reviewers (architecture, Python, security, QA, docs) plus an arbiter, and posts a structured verdict as a PR comment.
