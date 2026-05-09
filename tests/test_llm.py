@@ -8,7 +8,6 @@ from typing import Any, Dict, List
 import pytest
 
 from skillsaw.llm._litellm import CompletionResult, ToolCall, TokenUsage
-from skillsaw.llm.config import EngineConfig
 from skillsaw.llm.engine import LLMEngine, LLMResult, ToolCallRecord
 from skillsaw.llm.tools import (
     ReadFileTool,
@@ -36,25 +35,6 @@ class TestAutoFixConfidence:
     def test_all_values(self):
         values = {e.value for e in AutofixConfidence}
         assert values == {"safe", "suggest", "llm"}
-
-
-class TestEngineConfig:
-    def test_defaults(self):
-        config = EngineConfig()
-        assert config.model == ""
-        assert config.max_tokens == 4096
-        assert config.max_iterations == 5
-        assert config.max_total_tokens == 500_000
-
-    def test_env_override(self, monkeypatch):
-        monkeypatch.setenv("SKILLSAW_MODEL", "gpt-4o")
-        config = EngineConfig()
-        assert config.model == "gpt-4o"
-
-    def test_env_not_set(self, monkeypatch):
-        monkeypatch.delenv("SKILLSAW_MODEL", raising=False)
-        config = EngineConfig()
-        assert config.model == ""
 
 
 class TestReadFileTool:
@@ -215,7 +195,6 @@ class TestLLMEngine:
         assert result.usage.completion_tokens == 50
 
     def test_budget_exhaustion(self):
-        config = EngineConfig(max_total_tokens=100)
         provider = FakeProvider(
             [
                 CompletionResult(
@@ -225,14 +204,12 @@ class TestLLMEngine:
                 ),
             ]
         )
-        engine = LLMEngine(provider, [], config)
+        engine = LLMEngine(provider, [], max_tokens=100)
         result = engine.run("system", "user")
-        # Budget check happens at start of next iteration, so we get 2 iterations
         assert result.iterations == 2
         assert result.budget_exhausted
 
     def test_max_iterations(self):
-        config = EngineConfig(max_iterations=2)
         responses = [
             CompletionResult(
                 content=None,
@@ -242,7 +219,7 @@ class TestLLMEngine:
             for i in range(5)
         ]
         provider = FakeProvider(responses)
-        engine = LLMEngine(provider, [], config)
+        engine = LLMEngine(provider, [], max_iterations=2)
         result = engine.run("system", "user")
         assert result.iterations == 2
 

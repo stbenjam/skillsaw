@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 from ._litellm import CompletionProvider, CompletionResult, ToolCall, TokenUsage
-from .config import EngineConfig
 
 
 @dataclass
@@ -35,12 +34,17 @@ class LLMEngine:
         self,
         provider: CompletionProvider,
         tools: list,
-        config: Optional[EngineConfig] = None,
+        *,
+        model: str = "",
+        max_iterations: int = 5,
+        max_tokens: int = 500_000,
         on_event: Optional[Any] = None,
     ):
         self._provider = provider
         self._tools = {t.name: t for t in tools}
-        self._config = config or EngineConfig()
+        self._model = model
+        self._max_iterations = max_iterations
+        self._max_tokens = max_tokens
         self._on_event = on_event
         self._messages: List[Dict[str, Any]] = []
         self._total_usage = TokenUsage(0, 0)
@@ -79,17 +83,17 @@ class LLMEngine:
         tool_schemas = self._tool_schemas()
         iterations = 0
 
-        for _ in range(self._config.max_iterations):
+        for _ in range(self._max_iterations):
             iterations += 1
-            logger.debug("Iteration %d/%d", iterations, self._config.max_iterations)
+            logger.debug("Iteration %d/%d", iterations, self._max_iterations)
             if self._on_event:
                 self._on_event(
                     "iteration",
                     iteration=iterations,
-                    max_iterations=self._config.max_iterations,
+                    max_iterations=self._max_iterations,
                 )
             total_tokens = self._total_usage.prompt_tokens + self._total_usage.completion_tokens
-            if total_tokens >= self._config.max_total_tokens:
+            if total_tokens >= self._max_tokens:
                 return LLMResult(
                     text=None,
                     usage=self._total_usage,
@@ -102,8 +106,8 @@ class LLMEngine:
                 result = self._provider.complete(
                     messages=self._messages,
                     tools=tool_schemas,
-                    model=self._config.model,
-                    max_tokens=self._config.max_tokens,
+                    model=self._model,
+                    max_tokens=4096,
                 )
             except Exception as e:
                 print(f"LLM API error: {e}", file=sys.stderr)
