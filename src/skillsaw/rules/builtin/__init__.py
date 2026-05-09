@@ -64,6 +64,17 @@ from .context_budget import (
     ContextBudgetRule,
 )
 
+from .claude_deep import (
+    ClaudeMdQualityRule,
+    ClaudeMdHookMigrationRule,
+    ClaudeSkillQualityRule,
+    ClaudeMcpSecurityRule,
+    ClaudePluginSizeRule,
+    ClaudeRulesOverlapRule,
+    ClaudeAgentDelegationRule,
+    ClaudeContextBudgetRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -104,6 +115,15 @@ BUILTIN_RULES = [
     InstructionImportsValidRule,
     # Context budget
     ContextBudgetRule,
+    # Deep Claude Code rules
+    ClaudeMdQualityRule,
+    ClaudeMdHookMigrationRule,
+    ClaudeSkillQualityRule,
+    ClaudeMcpSecurityRule,
+    ClaudePluginSizeRule,
+    ClaudeRulesOverlapRule,
+    ClaudeAgentDelegationRule,
+    ClaudeContextBudgetRule,
 ]
 
 
@@ -136,4 +156,12 @@ __all__ = [
     "InstructionFileValidRule",
     "InstructionImportsValidRule",
     "ContextBudgetRule",
+    "ClaudeMdQualityRule",
+    "ClaudeMdHookMigrationRule",
+    "ClaudeSkillQualityRule",
+    "ClaudeMcpSecurityRule",
+    "ClaudePluginSizeRule",
+    "ClaudeRulesOverlapRule",
+    "ClaudeAgentDelegationRule",
+    "ClaudeContextBudgetRule",
 ]
