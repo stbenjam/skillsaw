@@ -19,6 +19,11 @@ from skillsaw.context import RepositoryContext
 from skillsaw.linter import Linter
 from skillsaw.llm._litellm import CompletionResult, ToolCall, TokenUsage
 
+live = pytest.mark.skipif(
+    not os.environ.get("SKILLSAW_LLM_INTEGRATION"),
+    reason="Set SKILLSAW_LLM_INTEGRATION=1 to run live LLM tests",
+)
+
 
 class FakeProvider:
     """A CompletionProvider that returns scripted responses."""
@@ -343,3 +348,27 @@ class TestLLMFixRedundantWithTooling:
             v for v in violations if v.rule_id == "content-redundant-with-tooling"
         ]
         assert len(redundant_violations) >= 1
+
+
+class TestLLMFixLive:
+    """Live tests that call a real LLM. Requires SKILLSAW_LLM_INTEGRATION=1."""
+
+    @live
+    def test_live_fix_weak_language(self, tmp_path):
+        content = "# Instructions\n\nTry to use consistent formatting.\nMaybe consider using TypeScript.\n"
+        _make_dot_claude_repo(tmp_path, content)
+
+        config = LinterConfig.default()
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        violations = linter.run()
+        weak = [v for v in violations if v.rule_id == "content-weak-language"]
+        assert len(weak) >= 1
+
+        from skillsaw.llm._litellm import LiteLLMProvider
+        from skillsaw.rule import Severity
+
+        provider = LiteLLMProvider()
+        result = linter.llm_fix(provider, min_severity=Severity.WARNING)
+        assert result.violations_after < result.violations_before

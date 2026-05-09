@@ -29,4 +29,4 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SKILLSAW_MODEL: openrouter/minimax/minimax-m2.5:free
           SKILLSAW_LLM_INTEGRATION: '1'
-        run: pytest tests/test_llm_integration.py -v -k "live"
+        run: pytest tests/test_llm_integration.py -v -k "Live"
