@@ -150,7 +150,7 @@ instructions wastes context tokens and adds no reliability.
 
 ## content-instruction-budget
 
-**Warns when the total count of imperative instructions across all files exceeds
+**Warns when the count of imperative instructions in a single file exceeds
 ~150.**
 
 This rule counts **discrete directives** (lines starting with imperative verbs
@@ -451,9 +451,9 @@ skillsaw has two separate budget rules that measure different things:
 
 ### `content-instruction-budget` — How many directives?
 
-Counts **discrete imperative instructions** across all files using regex
-matching on imperative verb patterns (lines starting with "use", "always",
-"never", "ensure", etc.). Code blocks are stripped first.
+Counts **discrete imperative instructions** per file using regex matching on
+imperative verb patterns (lines starting with "use", "always", "never",
+"ensure", etc.). Code blocks are stripped first.
 
 | Threshold | Severity |
 |-----------|----------|
@@ -502,7 +502,7 @@ context budget. Both degrade model performance, but through different mechanisms
 | | Instruction Budget | Context Budget |
 |---|---|---|
 | **Measures** | Discrete imperative count | Estimated token count |
-| **Scope** | Aggregate across all files | Per-file |
+| **Scope** | Per-file | Per-file |
 | **Degradation mechanism** | Instruction-following capacity | Attention dilution |
 | **Research basis** | Curse of Instructions (ICLR 2025) | Same Task, More Tokens (ACL 2024) |
 
