@@ -5,10 +5,13 @@ Main linter orchestration
 from __future__ import annotations
 
 import importlib.util
+import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
@@ -266,8 +269,16 @@ class Linter:
             max_total_tokens=self.config.llm.max_tokens,
         )
 
-        for fpath, file_violations in files_to_violations.items():
+        file_count = len(files_to_violations)
+        for file_idx, (fpath, file_violations) in enumerate(files_to_violations.items(), 1):
             rel_path = fpath.relative_to(self.context.root_path.resolve())
+            logger.info(
+                "[%d/%d] Fixing %s (%d violations)",
+                file_idx,
+                file_count,
+                rel_path,
+                len(file_violations),
+            )
 
             rule_prompts = set()
             for v in file_violations:

@@ -3,6 +3,7 @@ Entry point for skillsaw (and claudelint backward-compat shim)
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from importlib.metadata import version, PackageNotFoundError
@@ -361,10 +362,32 @@ def _run_fix(args):
         )
         sys.exit(1)
 
-    provider = LiteLLMProvider()
-    print(f"Linting: {args.path}\n")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
 
-    result = linter.llm_fix(provider)
+    provider = LiteLLMProvider()
+
+    violations = linter.run()
+    llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
+    llm_violations = [v for v in violations if v.rule_id in llm_rules]
+
+    print(f"Linting: {args.path}")
+    print(f"Model: {config.llm.model}")
+    print(f"Found {len(llm_violations)} LLM-fixable violation(s) across {len(llm_rules)} rule(s)\n")
+
+    if not llm_violations:
+        print("No LLM-fixable violations found.")
+        sys.exit(0)
+
+    def _progress(files_done, file_violations):
+        path = file_violations[0].file_path if file_violations else None
+        rel = path.relative_to(args.path) if path else "?"
+        print(f"  ✎ Fixed {rel} ({len(file_violations)} violation(s))")
+
+    result = linter.llm_fix(provider, callback=_progress)
 
     if not result.success:
         print("LLM fix did not improve violations — changes reverted.")
