@@ -211,8 +211,81 @@ class TestContentNegativeOnlyRule:
         violations = ContentNegativeOnlyRule().check(context)
         assert len(violations) == 0
 
+    def test_negative_with_always_alternative_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            '**Never use "good" or "bad" alone - always explain what they mean in context.**\n'
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
     def test_no_negatives_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use const for all declarations.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_backtick_use_alternative_passes(self, temp_dir):
+        """'use `/payload-aggregate`' should count as a positive alternative."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Do NOT use the aggregated job name with `/payload-job` — "
+            "you must use `/payload-aggregate` with the underlying job name\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_bold_use_alternative_passes(self, temp_dir):
+        """'Use **PatternFly 6 variables**' should count as positive."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use **PatternFly 6 token variables only**. " "NEVER use hex colors or old format.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_heading_with_dont_skipped(self, temp_dir):
+        """Markdown headings like '### Don't Do This' should be skipped."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "### Insecure Approach (Don't Do This)\n" "```bash\ncurl -u user:pass ...\n```\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_follow_alternative_passes(self, temp_dir):
+        """'Do not use X - follow Y' should count as having an alternative."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Do not use generic testing advice - follow the project-specific guidelines.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_positive_before_on_same_line_passes(self, temp_dir):
+        """Positive verb before the negative on the same line should count."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Summarize which jobs are failing. " "Do NOT use 'Revert ...' as the summary.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_generate_alternative_passes(self, temp_dir):
+        """'Generate a short sentence; do not use more than one' has positive."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Generate a single short sentence summarizing the failure. "
+            "Do not use more than one sentence.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_negative_with_add_alternative_passes(self, temp_dir):
+        """'Add X. Do not use Y' should count as having an alternative."""
+        (temp_dir / "CLAUDE.md").write_text(
+            'Add `console.navigation/section` with id "plugins". ' 'Do not use section "home".\n'
+        )
         context = RepositoryContext(temp_dir)
         violations = ContentNegativeOnlyRule().check(context)
         assert len(violations) == 0
