@@ -20,17 +20,15 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
 
 ## Features
 
-- 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, and marketplaces and enables the right rules
-- 📐 **Rule-Based** — Enable/disable individual rules with configurable severity levels
+- 🧠 **Content Intelligence** — 14 rules that analyze instruction file quality using attention research and prompt engineering best practices. Detects [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, deprecated references, contradictions, and more
+- 🔧 **LLM-Powered Autofix** — Fix content violations automatically with any LLM via LiteLLM. Parallel processing, scoped re-linting, per-file rollback on regression, and dry-run preview — all in one command: `skillsaw lint --fix --llm`
+- 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, marketplaces, and instruction file formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro) — enables the right rules without configuration
+- 📐 **40+ Rules** — Validates skill format, plugin structure, metadata, command format, cross-file consistency, context budget, and instruction quality
 - 🏗️ **Scaffolding** — Initialize marketplaces and add plugins, skills, commands, agents, and hooks with `skillsaw add`
 - 📝 **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
-- 🔌 **Extensible** — Load custom rules from Python files
-- ✅ **Comprehensive** — Validates skill format, plugin structure, metadata, command format, and cross-file consistency
+- 🔌 **Extensible** — Load custom rules from Python files, define custom banned patterns, configure per-rule thresholds
 - 🤖 **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
-- 🐳 **Containerized** — Run via Docker for consistent, isolated linting
-- ⚡ **Fast** — Efficient validation with clear, actionable output
-- 🧠 **Content Intelligence** — 15 rules that analyze instruction file quality: detect weak language, tautological instructions, attention dead zones, secrets, stale references, and more
-- 🔧 **Autofixing** — Deterministic fixes for structural issues (`--fix`) and LLM-powered fixes for content quality (`--fix --llm`) with parallel processing, per-file rollback, and dry-run preview
+- ⚡ **Version-Gated** — New rules are gated behind config versions so existing users are never surprised on upgrade
 
 ## Table of Contents
 
@@ -77,31 +75,34 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
 # Lint current directory (no install required)
 uvx skillsaw
 
-# Lint specific directory
-skillsaw /path/to/skills
+# Fix structural issues automatically
+skillsaw lint --fix
 
-# Verbose output
+# Fix content quality issues with an LLM
+skillsaw lint --fix --llm
+
+# Preview LLM fixes without writing
+skillsaw lint --fix --llm --dry-run
+
+# Verbose output (includes info-level findings)
 skillsaw -v
 
-# Strict mode (warnings as errors)
+# Strict mode (warnings become errors)
 skillsaw --strict
 
 # Generate default config
 skillsaw init
 
-# List all available rules
+# List all rules with fix support info
 skillsaw list-rules
 
-# Generate documentation
+# Generate plugin/skill documentation
 skillsaw docs
 
-# Initialize a new marketplace
+# Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
-
-# Add a plugin, skill, or hook
 skillsaw add plugin my-plugin
 skillsaw add skill my-skill
-skillsaw add hook PreToolUse
 ```
 
 ## Installation
@@ -428,34 +429,43 @@ Pattern-based content quality rules for AI coding assistant instruction files. D
 
 ## Autofixing
 
-skillsaw supports two levels of autofixing:
+skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Rules declare which fix type they support (see the **Autofix** column in the rules tables above).
 
 ### Deterministic Fixes (`--fix`)
 
-Safe, pattern-based fixes that run without any external dependencies:
+Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
 skillsaw lint --fix              # Apply safe structural fixes
 ```
 
-Structural rules like `command-frontmatter`, `skill-frontmatter`, and `agent-frontmatter` can automatically add missing frontmatter and required fields. These fixes are marked as **SAFE** confidence and applied automatically.
+Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
 ### LLM-Powered Fixes (`--fix --llm`)
 
-Content intelligence rules support LLM-powered fixes that iteratively improve instruction file quality:
+All 14 content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
 
 ```bash
-skillsaw lint --fix --llm        # Fix content violations with LLM
-skillsaw lint --fix --llm --dry-run  # Preview changes without writing
-skillsaw fix --llm --model openrouter/minimax/minimax-m1  # Use a specific model
+# Fix content violations with an LLM (any LiteLLM-compatible model)
+skillsaw lint --fix --llm
+
+# Preview what would change without writing to disk
+skillsaw lint --fix --llm --dry-run
+
+# Use a specific model (OpenAI, Anthropic, Vertex AI, local, etc.)
+skillsaw lint --fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw lint --fix --llm --model openrouter/minimax/minimax-m1
 ```
 
-The LLM fix pipeline:
-- Processes files in parallel with configurable worker count
-- Uses scoped re-linting (only re-checks failed rules per file) for fast iteration
-- Per-file rollback: keeps fixes that improved a file, reverts files that didn't improve
-- Shows elapsed time and ETA in the progress bar
-- Supports `--dry-run` to preview all changes without writing to disk
+**How it works:**
+
+1. skillsaw lints your repo and groups violations by file
+2. Each file is sent to an LLM agent with 5 scoped tools: `read_file`, `write_file`, `replace_section`, `lint` (re-runs skillsaw), and `diff`
+3. The LLM iteratively edits the file and re-lints until violations are resolved
+4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
+5. Files are processed in parallel with a live progress bar showing ETA
+
+The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
