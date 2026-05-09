@@ -272,8 +272,16 @@ class Linter:
         file_count = len(files_to_violations)
         root_resolved = self.context.root_path.resolve()
 
+        import threading
+
+        _cb_lock = threading.Lock()
+
+        def _emit(event_type, **kw):
+            if callback:
+                with _cb_lock:
+                    callback(event_type, **kw)
+
         def _process_one_file(file_idx, fpath, file_violations):
-            events = []
             file_usage = TokenUsage(0, 0)
 
             file_max_iter = max(base_max_iter, len(file_violations) * 5)
@@ -286,21 +294,23 @@ class Linter:
             rel_path = fpath.relative_to(root_resolved)
 
             rules_for_file = sorted({v.rule_id for v in file_violations})
-            events.append(("file_start", {
-                "file_idx": file_idx,
-                "file_count": file_count,
-                "rel_path": rel_path,
-                "num_violations": len(file_violations),
-                "rule_ids": rules_for_file,
-            }))
+            _emit(
+                "file_start",
+                file_idx=file_idx,
+                file_count=file_count,
+                rel_path=rel_path,
+                num_violations=len(file_violations),
+                rule_ids=rules_for_file,
+            )
 
             def _on_engine_event(event_type, **kwargs):
-                events.append((event_type, {
-                    "file_idx": file_idx,
-                    "file_count": file_count,
-                    "rel_path": rel_path,
+                _emit(
+                    event_type,
+                    file_idx=file_idx,
+                    file_count=file_count,
+                    rel_path=rel_path,
                     **kwargs,
-                }))
+                )
 
             def _build_system_prompt(violations_list):
                 prompts = set()
@@ -385,12 +395,13 @@ class Linter:
                     break
 
                 if attempt == 0 and remaining:
-                    events.append(("retry", {
-                        "file_idx": file_idx,
-                        "file_count": file_count,
-                        "rel_path": rel_path,
-                        "remaining": len(remaining),
-                    }))
+                    _emit(
+                        "retry",
+                        file_idx=file_idx,
+                        file_count=file_count,
+                        rel_path=rel_path,
+                        remaining=len(remaining),
+                    )
                     current_violations = remaining
 
             changed = False
@@ -408,19 +419,19 @@ class Linter:
                     if diff_text:
                         changed = True
 
-            events.append(("file_done", {
-                "file_idx": file_idx,
-                "file_count": file_count,
-                "rel_path": rel_path,
-                "num_violations": len(file_violations),
-                "iterations": total_iterations,
-                "remaining": len(remaining),
-                "changed": changed,
-            }))
+            _emit(
+                "file_done",
+                file_idx=file_idx,
+                file_count=file_count,
+                rel_path=rel_path,
+                num_violations=len(file_violations),
+                iterations=total_iterations,
+                remaining=len(remaining),
+                changed=changed,
+            )
 
             return {
                 "fpath": fpath,
-                "events": events,
                 "usage": file_usage,
                 "diff_text": diff_text,
                 "changed": changed,
@@ -431,8 +442,7 @@ class Linter:
         files_modified: List[Path] = []
         completed = 0
 
-        if callback:
-            callback("progress", completed=0, file_count=file_count)
+        _emit("progress", completed=0, file_count=file_count)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {}
@@ -446,17 +456,11 @@ class Linter:
                 except Exception as e:
                     completed += 1
                     logger.error("Error processing file: %s", e)
-                    if callback:
-                        callback("progress", completed=completed, file_count=file_count)
+                    _emit("progress", completed=completed, file_count=file_count)
                     continue
 
                 completed += 1
-                if callback:
-                    callback("progress", completed=completed, file_count=file_count)
-
-                for event_type, kw in file_result["events"]:
-                    if callback:
-                        callback(event_type, **kw)
+                _emit("progress", completed=completed, file_count=file_count)
 
                 total_usage.prompt_tokens += file_result["usage"].prompt_tokens
                 total_usage.completion_tokens += file_result["usage"].completion_tokens

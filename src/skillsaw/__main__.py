@@ -460,7 +460,9 @@ def _run_fix(args):
                 f" {', '.join(kw['rule_ids'])}{reset}"
             )
         elif event_type == "iteration":
-            print(f"  {dim}iteration" f" {kw['iteration']}/{kw['max_iterations']}{reset}")
+            tag = f"{dim}[{kw['rel_path']}]{reset} "
+            print(f"  {tag}{dim}iteration"
+                  f" {kw['iteration']}/{kw['max_iterations']}{reset}")
         elif event_type == "tool_call":
             tool_args = kw.get("arguments", {})
             arg_summary = ""
@@ -472,19 +474,25 @@ def _run_fix(args):
                 if len(val) > 40:
                     val = val[:37] + "..."
                 arg_summary = val
-            print(f"  {dim}├{reset} {kw['name']}({arg_summary})")
+            tag = f"{dim}[{kw['rel_path']}]{reset} "
+            print(f"  {tag}{dim}├{reset} {kw['name']}({arg_summary})")
         elif event_type == "retry":
-            print(f"  {yellow}├ {kw['remaining']} violation(s)" f" remain, retrying...{reset}")
+            tag = f"{dim}[{kw['rel_path']}]{reset} "
+            print(f"  {tag}{yellow}├ {kw['remaining']} violation(s)"
+                  f" remain, retrying...{reset}")
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
+            tag = f"{dim}[{kw['rel_path']}]{reset} "
             if not changed:
-                print(f"  {yellow}└ no changes{reset}")
+                print(f"  {tag}{yellow}└ no changes{reset}")
             elif remaining == 0:
-                print(f"  {green}└ ✓ all {kw['num_violations']}" f" violation(s) fixed{reset}")
+                print(f"  {tag}{green}└ ✓ all {kw['num_violations']}"
+                      f" violation(s) fixed{reset}")
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {red}└ {fixed} fixed," f" {remaining} failed{reset}")
+                print(f"  {tag}{red}└ {fixed} fixed,"
+                      f" {remaining} failed{reset}")
             print()
 
     max_workers = args.workers or config.llm.max_workers
