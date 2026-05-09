@@ -34,12 +34,13 @@ lint: $(VENV)/bin/activate
 test: $(VENV)/bin/activate
 	$(VENV)/bin/pytest tests/ -v --cov=src --cov=rules --cov-report=xml --cov-report=term
 
+# Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV)/bin/activate
 	rm -f .skillsaw.yaml.example
-	@if [ -f .skillsaw.yaml ]; then mv .skillsaw.yaml .skillsaw.yaml.bak; fi
-	$(VENV)/bin/skillsaw init
-	mv .skillsaw.yaml .skillsaw.yaml.example
-	@if [ -f .skillsaw.yaml.bak ]; then mv .skillsaw.yaml.bak .skillsaw.yaml; fi
+	$(eval TMPDIR := $(shell mktemp -d))
+	$(VENV)/bin/skillsaw init $(TMPDIR)
+	mv $(TMPDIR)/.skillsaw.yaml .skillsaw.yaml.example
+	rm -rf $(TMPDIR)
 
 generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py

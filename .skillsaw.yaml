@@ -1,5 +1,5 @@
 # skillsaw self-lint config
-version: "0.7.0"
+version: "99.0.0"
 
 exclude:
   - ".claude/*"
