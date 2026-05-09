@@ -20,7 +20,7 @@ help:
 
 $(VENV)/bin/activate:
 	python3 -m venv $(VENV)
-	$(PIP) install -e '.[dev]'
+	$(PIP) install -e '.[dev,vertexai,bedrock]'
 
 venv: $(VENV)/bin/activate
 
