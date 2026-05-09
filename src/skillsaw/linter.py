@@ -232,7 +232,7 @@ class Linter:
     ) -> "LLMFixResult":
         from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
         from .llm.engine import LLMEngine
-        from .llm.config import LLMConfig as EngineLLMConfig
+        from .llm.config import EngineConfig
         from .llm._litellm import TokenUsage
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -286,7 +286,7 @@ class Linter:
             file_usage = TokenUsage(0, 0)
 
             file_max_iter = max(base_max_iter, len(file_violations) * 5)
-            engine_config = EngineLLMConfig(
+            engine_config = EngineConfig(
                 model=self.config.llm.model,
                 max_tokens=4096,
                 max_iterations=file_max_iter,

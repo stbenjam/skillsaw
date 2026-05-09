@@ -21,6 +21,8 @@ from skillsaw.rules.builtin.content_rules import (
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
+    ContentStaleReferencesRule,
+    ContentInconsistentTerminologyRule,
 )
 
 
@@ -432,3 +434,63 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert violations[0].line == 3
+
+
+class TestContentStaleReferencesRule:
+    def test_rule_metadata(self):
+        rule = ContentStaleReferencesRule()
+        assert rule.rule_id == "content-stale-references"
+        assert rule.default_severity() == Severity.WARNING
+
+    def test_detects_deprecated_model(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Use claude-2 for summarization.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentStaleReferencesRule().check(context)
+        assert len(violations) >= 1
+
+    def test_detects_old_gpt(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Use gpt-3.5 for classification.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentStaleReferencesRule().check(context)
+        assert len(violations) >= 1
+
+    def test_current_model_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Use claude-sonnet-4 for summarization.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentStaleReferencesRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_files_no_violations(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        violations = ContentStaleReferencesRule().check(context)
+        assert len(violations) == 0
+
+
+class TestContentInconsistentTerminologyRule:
+    def test_rule_metadata(self):
+        rule = ContentInconsistentTerminologyRule()
+        assert rule.rule_id == "content-inconsistent-terminology"
+        assert rule.default_severity() == Severity.INFO
+
+    def test_detects_mixed_terms(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Create a directory for configs.\n")
+        (temp_dir / "AGENTS.md").write_text("Create a folder for configs.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert len(violations) >= 1
+        assert "directory/folder" in violations[0].message
+
+    def test_consistent_terms_pass(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Create a directory for configs.\n")
+        (temp_dir / "AGENTS.md").write_text("Use the directory for output.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert len(violations) == 0
+
+    def test_single_file_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Create a directory for configs.\nCreate a folder for output.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert len(violations) == 0

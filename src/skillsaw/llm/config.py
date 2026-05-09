@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class LLMConfig:
+class EngineConfig:
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 4096
     max_iterations: int = 5

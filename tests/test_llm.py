@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 import pytest
 
 from skillsaw.llm._litellm import CompletionResult, ToolCall, TokenUsage
-from skillsaw.llm.config import LLMConfig
+from skillsaw.llm.config import EngineConfig
 from skillsaw.llm.engine import LLMEngine, LLMResult, ToolCallRecord
 from skillsaw.llm.tools import (
     ReadFileTool,
@@ -38,9 +38,9 @@ class TestAutoFixConfidence:
         assert values == {"safe", "suggest", "llm"}
 
 
-class TestLLMConfig:
+class TestEngineConfig:
     def test_defaults(self):
-        config = LLMConfig()
+        config = EngineConfig()
         assert config.model == "claude-sonnet-4-20250514"
         assert config.max_tokens == 4096
         assert config.max_iterations == 5
@@ -48,12 +48,12 @@ class TestLLMConfig:
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("SKILLSAW_MODEL", "gpt-4o")
-        config = LLMConfig()
+        config = EngineConfig()
         assert config.model == "gpt-4o"
 
     def test_env_not_set(self, monkeypatch):
         monkeypatch.delenv("SKILLSAW_MODEL", raising=False)
-        config = LLMConfig()
+        config = EngineConfig()
         assert config.model == "claude-sonnet-4-20250514"
 
 
@@ -215,7 +215,7 @@ class TestLLMEngine:
         assert result.usage.completion_tokens == 50
 
     def test_budget_exhaustion(self):
-        config = LLMConfig(max_total_tokens=100)
+        config = EngineConfig(max_total_tokens=100)
         provider = FakeProvider(
             [
                 CompletionResult(
@@ -232,7 +232,7 @@ class TestLLMEngine:
         assert result.budget_exhausted
 
     def test_max_iterations(self):
-        config = LLMConfig(max_iterations=2)
+        config = EngineConfig(max_iterations=2)
         responses = [
             CompletionResult(
                 content=None,

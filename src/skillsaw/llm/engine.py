@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 from ._litellm import CompletionProvider, CompletionResult, ToolCall, TokenUsage
-from .config import LLMConfig
+from .config import EngineConfig
 
 
 @dataclass
@@ -35,12 +35,12 @@ class LLMEngine:
         self,
         provider: CompletionProvider,
         tools: list,
-        config: Optional[LLMConfig] = None,
+        config: Optional[EngineConfig] = None,
         on_event: Optional[Any] = None,
     ):
         self._provider = provider
         self._tools = {t.name: t for t in tools}
-        self._config = config or LLMConfig()
+        self._config = config or EngineConfig()
         self._on_event = on_event
         self._messages: List[Dict[str, Any]] = []
         self._total_usage = TokenUsage(0, 0)
