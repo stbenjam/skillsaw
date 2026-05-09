@@ -175,7 +175,7 @@ def _append_command(lines: List[str], cmd: CommandDoc) -> None:
 def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
-    for skill in skills:
+    for skill in sorted(skills, key=lambda s: s.name.lower()):
         lines.append(f"### {skill.name}")
         lines.append("")
         if skill.description:
