@@ -368,8 +368,8 @@ Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (disabled) |
-| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (disabled) |
+| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) |
+| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) |
 
 ### Context Budget
 

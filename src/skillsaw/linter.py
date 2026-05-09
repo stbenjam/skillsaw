@@ -2,15 +2,20 @@
 Main linter orchestration
 """
 
+from __future__ import annotations
+
 import importlib.util
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
 
 from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
+
+if TYPE_CHECKING:
+    from .llm._litellm import CompletionProvider, TokenUsage
 
 
 @dataclass
