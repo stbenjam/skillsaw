@@ -440,6 +440,15 @@ Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fiel
 |---------|-------------|------------------|---------|
 | `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
 
+### APM (Agent Package Manager)
+
+Validates repositories using the [APM](https://github.com/microsoft/apm) directory layout (`.apm/`). Auto-enables when `.apm/` is detected.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `apm-yaml-valid` | apm.yml must exist with valid YAML and required fields (name, version, description) | error (auto) | - |
+| `apm-structure-valid` | .apm/ directory must contain skills/ or instructions/ with valid structure | warning (auto) | - |
+
 <!-- END GENERATED RULES -->
 
 ## Autofixing
