@@ -405,21 +405,23 @@ class InstructionBudgetAnalyzer:
     )
     BUDGET = 150
 
-    def analyze(self, paths: List[Path]) -> InstructionBudget:
+    def analyze_file(self, path: Path) -> InstructionBudget:
+        content = _get_body(path)
+        if not content:
+            return InstructionBudget(
+                total_count=0,
+                files_counted=[],
+                budget_remaining=self.BUDGET,
+                over_budget=False,
+            )
         total = 0
-        counted: List[Path] = []
-        for path in paths:
-            content = _get_body(path)
-            if not content:
-                continue
-            counted.append(path)
-            for line in content.splitlines():
-                if self._IMPERATIVE_RE.match(line):
-                    total += 1
+        for line in content.splitlines():
+            if self._IMPERATIVE_RE.match(line):
+                total += 1
         remaining = self.BUDGET - total
         return InstructionBudget(
             total_count=total,
-            files_counted=counted,
+            files_counted=[path],
             budget_remaining=max(0, remaining),
             over_budget=total > self.BUDGET,
         )
