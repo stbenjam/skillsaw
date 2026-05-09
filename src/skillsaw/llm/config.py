@@ -1,0 +1,20 @@
+"""LLM configuration — model selection, budget, iteration caps."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+
+@dataclass
+class LLMConfig:
+    model: str = "claude-sonnet-4-20250514"
+    max_tokens: int = 4096
+    max_iterations: int = 5
+    max_total_tokens: int = 500_000
+    confirm: bool = True
+
+    def __post_init__(self):
+        env_model = os.environ.get("SKILLSAW_MODEL")
+        if env_model:
+            self.model = env_model

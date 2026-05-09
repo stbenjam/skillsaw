@@ -124,92 +124,92 @@ rules:
 
   # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
   instruction-file-valid:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files
   instruction-imports-valid:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Detect hedging, vague, and non-actionable language in instruction files
   content-weak-language:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect broken file paths, npm scripts, and Makefile targets in instruction files
   content-dead-references:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect tautological instructions that the model already follows by default
   content-tautological:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect critical instructions in the middle of files where LLM attention is lowest
   content-critical-position:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Check if total instruction count across all files exceeds LLM instruction budget (~150)
   content-instruction-budget:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect instruction file sections that significantly overlap with README.md content
   content-readme-overlap:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)
   content-section-length:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect likely contradictions within instruction files using keyword-pair heuristics
   content-contradiction:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect instructions that should be automated as hooks instead of prose instructions
   content-hook-candidate:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Score instruction files on actionability (verb density, commands, file references)
   content-actionability-score:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Check that instruction files are organized into cognitive chunks with headings
   content-cognitive-chunks:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect potential API keys, tokens, and passwords in instruction files
   content-embedded-secrets:
-    enabled: true
+    enabled: auto
     severity: error
 
   # Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
   content-cross-file-consistency:
-    enabled: true
+    enabled: auto
     severity: warning
 
 # Load custom rules from these files

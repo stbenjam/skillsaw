@@ -20,7 +20,7 @@ class RepositoryType(Enum):
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
-    APM_PACKAGE = "apm-package"  # .apm/ directory is authoritative source
+    APM_PACKAGE = "apm-package"  # APM package with apm.yml or .apm/ directory
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -136,6 +136,10 @@ class RepositoryContext:
         # Check for agentskills.io skill repo
         if self._is_agentskills_repo():
             return RepositoryType.AGENTSKILLS
+
+        # Check for APM package (apm.yml at root)
+        if (self.root_path / "apm.yml").exists() or (self.root_path / "apm.yaml").exists():
+            return RepositoryType.APM_PACKAGE
 
         return RepositoryType.UNKNOWN
 

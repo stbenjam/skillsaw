@@ -3,8 +3,13 @@
 - `src/skillsaw/context.py` — repo type detection (SINGLE_PLUGIN, MARKETPLACE, AGENTSKILLS, DOT_CLAUDE, UNKNOWN)
 - `src/skillsaw/config.py` — config loading, rule enabling logic, `auto` with `repo_types`
 - `src/skillsaw/rule.py` — base Rule class with `repo_types` class attribute
-- `src/skillsaw/linter.py` — orchestration, loads builtin + custom rules
+- `src/skillsaw/linter.py` — orchestration, loads builtin + custom rules, LLM fix loop
 - `src/skillsaw/rules/builtin/` — all builtin rule implementations
+- `src/skillsaw/llm/` — LLM-as-judge autofix engine (optional, requires litellm)
+  - `engine.py` — LLMEngine conversation loop with tool dispatch
+  - `tools.py` — 5 scoped tools (read_file, write_file, replace_section, lint, diff)
+  - `_litellm.py` — CompletionProvider protocol and LiteLLM wrapper
+  - `config.py` — LLMConfig (engine-level settings)
 - `src/skillsaw/marketplace/` — scaffolding CLI (`skillsaw add`) for marketplaces, plugins, skills, commands, agents, and hooks
   - `add.py` — component creation functions and context detection
   - `branding.py` — color presets, template loading, placeholder substitution
