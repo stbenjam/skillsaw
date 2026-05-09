@@ -3,7 +3,7 @@
 import json
 from typing import List
 
-from ..rule import Rule, RuleViolation
+from ..rule import Rule, RuleViolation, Severity
 from . import relative_path
 
 _SEVERITY_MAP = {
@@ -29,7 +29,8 @@ def format_sarif(
             }
 
     results = []
-    for v in violations:
+    filtered = violations if verbose else [v for v in violations if v.severity != Severity.INFO]
+    for v in filtered:
         result = {
             "ruleId": v.rule_id,
             "level": _SEVERITY_MAP.get(v.severity.value, "warning"),

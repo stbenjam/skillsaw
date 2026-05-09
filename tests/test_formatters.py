@@ -252,7 +252,7 @@ def test_json_violations_serialized(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_json(violations, context, [], "1.0.0")
+    output = format_json(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     assert len(data["violations"]) == 3
@@ -261,6 +261,18 @@ def test_json_violations_serialized(valid_plugin):
     assert data["violations"][1]["line"] == 3
     assert data["summary"]["errors"] == 1
     assert data["summary"]["warnings"] == 1
+    assert data["summary"]["info"] == 1
+
+
+def test_json_excludes_info_without_verbose(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_json(violations, context, [], "1.0.0", verbose=False)
+    data = json.loads(output)
+
+    assert len(data["violations"]) == 2
+    assert all(v["severity"] != "info" for v in data["violations"])
     assert data["summary"]["info"] == 1
 
 
@@ -303,7 +315,7 @@ def test_sarif_severity_mapping(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_sarif(violations, context, [], "1.0.0")
+    output = format_sarif(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     results = data["runs"][0]["results"]
@@ -312,6 +324,18 @@ def test_sarif_severity_mapping(valid_plugin):
     assert levels["plugin-json-required"] == "error"
     assert levels["command-naming"] == "warning"
     assert levels["plugin-json-valid"] == "note"
+
+
+def test_sarif_excludes_info_without_verbose(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_sarif(violations, context, [], "1.0.0", verbose=False)
+    data = json.loads(output)
+
+    results = data["runs"][0]["results"]
+    assert len(results) == 2
+    assert all(r["level"] != "note" for r in results)
 
 
 def test_sarif_locations(valid_plugin):
