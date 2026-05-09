@@ -485,3 +485,24 @@ class TestDocsCLI:
         result = self._run(str(temp_dir / "nonexistent"))
         assert result.returncode != 0
         assert "not found" in result.stderr.lower() or "not found" in result.stdout.lower()
+
+    def test_docs_apm_repo_finds_skills(self, temp_dir):
+        """Repos with .apm/ should still generate docs for .claude/ skills."""
+        apm_dir = temp_dir / ".apm"
+        apm_dir.mkdir()
+        (apm_dir / "skills").mkdir()
+        claude_dir = temp_dir / ".claude"
+        claude_dir.mkdir()
+        skills_dir = claude_dir / "skills"
+        skills_dir.mkdir()
+        skill_dir = skills_dir / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: A test skill\n---\n\nDo the thing.\n"
+        )
+        out_dir = temp_dir / "out"
+        result = self._run(str(temp_dir), "--format", "markdown", "--output", str(out_dir))
+        assert result.returncode == 0
+        readme = (out_dir / "README.md").read_text()
+        assert "my-skill" in readme
+        assert "A test skill" in readme

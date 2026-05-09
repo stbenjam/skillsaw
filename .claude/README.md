@@ -1,4 +1,65 @@
-# Apm Package Documentation
+# skillsaw
+
+## Skills
+
+### skillsaw-ecosystem-scout
+
+Survey the AI coding assistant and agentic tool ecosystem, assess skillsaw's competitive position, identify emerging patterns and missing capabilities, and produce a prioritized strategic report as a GitHub issue.
+
+**Compatibility:** Requires git, gh CLI, and internet access (WebFetch, WebSearch)
+
+### skillsaw-issue-solver
+
+Pick up open GitHub issues from collaborators and create PRs to solve them. Use when triaging and resolving reported bugs or feature requests.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
+### skillsaw-maintenance
+
+Analyze upstream specs (agentskills.io, Claude Code plugin/marketplace format) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
+### skillsaw-pr-review
+
+Review open PRs in skillsaw, fix failing CI, address reviewer feedback, and push updates. Use for triaging and fixing up existing pull requests.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
+### skillsaw-release
+
+Bump the version, generate release notes, and publish a new skillsaw release to PyPI. Use when cutting a new release.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
+### skillsaw-review-panel
+
+Serial multi-specialist code review panel for skillsaw PRs. Runs 5 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer) inline then synthesizes a single verdict.
+
+**Compatibility:** Requires git, gh CLI, and internet access
+
+## Rules
+
+### development
+
+# Development Rules
+
+skillsaw is a configurable, rule-based linter for agentskills.io skills,
+Claude Code plugins, and plugin marketplaces.
+
+## CRITICAL: Always run `make update` before making a PR
+
+`
+
+### new-linter-rules
+
+# Writing New Linter Rules
+
+## Line Numbers
+
+Rules MUST report line numbers in violations whenever the violation can be
+traced to a specific line in a file. This enables the GitHub Action to post
+inli
 
 
 ---
