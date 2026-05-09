@@ -51,6 +51,7 @@ class Linter:
         self.context = context
         self.config = config or LinterConfig.default()
         self.context.content_paths = self.config.content_paths
+        self.context.exclude_patterns = self.config.exclude_patterns
         self.rules: List[Rule] = []
         self._load_rules()
 

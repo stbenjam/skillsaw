@@ -36,8 +36,10 @@ test: $(VENV)/bin/activate
 
 generate-example: $(VENV)/bin/activate
 	rm -f .skillsaw.yaml.example
+	@if [ -f .skillsaw.yaml ]; then mv .skillsaw.yaml .skillsaw.yaml.bak; fi
 	$(VENV)/bin/skillsaw init
 	mv .skillsaw.yaml .skillsaw.yaml.example
+	@if [ -f .skillsaw.yaml.bak ]; then mv .skillsaw.yaml.bak .skillsaw.yaml; fi
 
 generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py

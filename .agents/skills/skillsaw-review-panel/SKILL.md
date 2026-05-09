@@ -9,6 +9,8 @@ metadata:
 
 # Review Panel — Serial Multi-Specialist Review
 
+> **MUST**: New CLI commands, subcommands, flags, and workflows MUST have corresponding README sections (Quick Start examples, dedicated section, or both). A feature without README docs is incomplete.
+
 Run **5 specialist reviewers + 1 arbiter** inline in the main agent, one
 after another. This is serial-only by design — the codebase context is
 derived once and shared across all specialists, saving tokens. Each
@@ -36,14 +38,14 @@ the maintainer and PR author decide ship.
 Reviews structural quality of the change:
 
 - **Single Responsibility**: Does each new function/type/module have one clear job?
-- **Cross-file impact**: Do changes ripple correctly through callers and dependents?
+- **Cross-file impact**: Do changes propagate through all callers and dependents without breakage?
   Trace imports from changed modules to verify no downstream breakage.
 - **Abstraction level**: Are new abstractions justified or premature? Three similar
   lines is better than a premature abstraction.
 - **Module boundaries**: Are package/module imports clean? Any circular dependencies?
   Does the change respect the existing architecture (context.py -> config.py ->
   rule.py -> linter.py pipeline)?
-- **Error handling**: Are errors propagated correctly? No swallowed errors? Exceptions
+- **Error handling**: Are errors propagated to callers without being swallowed? Exceptions
   should carry actionable messages.
 - **Pattern consistency**: Do new patterns match existing architectural conventions
   in the codebase?
@@ -55,17 +57,17 @@ inappropriate intimacy, premature abstraction.
 
 Reviews Python-specific quality:
 
-- **Idiomatic Python**: Does the code use Python idioms correctly? List comprehensions
+- **Idiomatic Python**: Does the code use Python idioms — list comprehensions
   vs loops, context managers, f-strings, pathlib over os.path, dataclasses where
-  appropriate.
-- **Type hints**: Are new public functions properly typed? Do type hints match actual
-  behavior? Are `Optional`, `Union`, generic types used correctly?
+  appropriate?
+- **Type hints**: Are new public functions typed with accurate, matching signatures? Do type hints match actual
+  behavior? Are `Optional`, `Union`, generic types used with the right semantics?
 - **Performance**: Any obvious O(n^2) patterns, unnecessary copies, repeated I/O in
   loops, or wasteful allocations? For a linter codebase, file I/O patterns matter.
 - **stdlib usage**: Is the code reinventing something available in the standard library?
   Check `pathlib`, `dataclasses`, `functools`, `itertools`, `contextlib`, `typing`,
   `importlib.resources`, `json`, `re`, `argparse`.
-- **Packaging**: Are `pyproject.toml` changes correct? Are package-data patterns right?
+- **Packaging**: Are `pyproject.toml` changes valid and complete? Are package-data patterns right?
   Are imports structured so that `skillsaw` and the `claudelint` shim both work?
 - **Compatibility**: Does the code work on Python 3.9+? Avoid walrus operator patterns
   that assume 3.10+ match statement syntax.
@@ -132,15 +134,15 @@ When documentation exists:
 - **New features**: Does the change add user-facing functionality (new rules, new
   CLI subcommands, new config options) that should be documented but isn't?
   Check `README.md` specifically — new CLI commands, subcommands, flags, and
-  workflows MUST have corresponding README sections (Quick Start examples,
+  workflows require corresponding README sections (Quick Start examples,
   dedicated section, or both). A feature without README docs is incomplete.
 - **CLAUDE.md consistency**: Do `.claude/rules/*.md` files still accurately describe
   the architecture and development workflow after this change?
 - **Rule documentation**: If a new rule is added, will `make update` pick it up
   for README generation? Are `config_schema` and `repo_types` set so docs generate
-  correctly?
-- **Example config**: Will `make update` regenerate the example config correctly
-  with any new rules or options?
+  with accurate content and no missing fields?
+- **Example config**: Will `make update` regenerate the example config with all
+  new rules or options included and no stale entries?
 - **Inline doc quality**: Are new public functions and classes documented with
   clear, concise docstrings where the purpose is non-obvious?
 

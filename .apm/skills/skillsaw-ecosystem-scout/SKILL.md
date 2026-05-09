@@ -119,7 +119,7 @@ Also search GitHub Issues, Discussions, and Reddit for complaints, workarounds,
 and feature requests related to AI assistant configuration. Look for patterns:
 
 - What do people struggle with when writing rules or plugins?
-- What breaks when teams try to share or standardize AI assistant config?
+- What breaks when teams share or standardize AI assistant config?
 - What manual steps do people wish were automated?
 - What quality or security concerns do people raise about skills/plugins?
 - Are there common "how do I validate my X?" questions with no good answer?

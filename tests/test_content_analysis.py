@@ -492,6 +492,30 @@ class TestGatherAllContentFiles:
         cfs = gather_all_content_files(context)
         assert any(cf.path.name == "setup.md" and cf.category == "extra" for cf in cfs)
 
+    def test_exclude_patterns(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Claude\n")
+        cursor_dir = temp_dir / ".cursor" / "rules"
+        cursor_dir.mkdir(parents=True)
+        (cursor_dir / "dev.mdc").write_text("# Dev\n")
+        context = RepositoryContext(temp_dir)
+        context.exclude_patterns = [".cursor/*"]
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "CLAUDE.md" for cf in cfs)
+        assert not any(cf.path.name == "dev.mdc" for cf in cfs)
+
+    def test_exclude_glob_nested(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Claude\n")
+        claude_dir = temp_dir / ".claude"
+        claude_dir.mkdir()
+        skills_dir = claude_dir / "skills" / "my-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# Skill\n")
+        context = RepositoryContext(temp_dir)
+        context.exclude_patterns = [".claude/*"]
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "CLAUDE.md" for cf in cfs)
+        assert not any(".claude" in str(cf.path) and cf.path.name == "SKILL.md" for cf in cfs)
+
     def test_no_duplicates(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Claude\n")
         (temp_dir / "AGENTS.md").write_text("# Agents\n")

@@ -6,6 +6,7 @@ in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
 .cursorrules, copilot-instructions.md, .cursor/rules/*.mdc).
 """
 
+import fnmatch
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,10 +150,21 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
     """
     files: List[ContentFile] = []
     seen: Set[Path] = set()
+    exclude = getattr(context, "exclude_patterns", [])
+    root = context.root_path.resolve()
+
+    def _is_excluded(p: Path) -> bool:
+        if not exclude:
+            return False
+        try:
+            rel = str(p.resolve().relative_to(root))
+        except ValueError:
+            return False
+        return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
 
     def _add(p: Path, category: str) -> None:
         resolved = p.resolve()
-        if resolved not in seen and p.exists():
+        if resolved not in seen and p.exists() and not _is_excluded(p):
             seen.add(resolved)
             files.append(ContentFile(path=p, category=category))
 
