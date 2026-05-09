@@ -30,7 +30,9 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
 
 
 def _render_single_page(docs: DocsOutput) -> str:
-    lines: List[str] = [f"# {docs.title}", ""]
+    lines: List[str] = []
+    if docs.title:
+        lines += [f"# {docs.title}", ""]
     plugin = docs.plugins[0] if docs.plugins else None
 
     if plugin:

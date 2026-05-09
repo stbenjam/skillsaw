@@ -1,5 +1,3 @@
-# agent-a2c9f10f768c5389e
-
 ## Skills
 
 ### skillsaw-ecosystem-scout

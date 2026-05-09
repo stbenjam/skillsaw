@@ -66,7 +66,7 @@ def _default_title(
     if marketplace and marketplace.name:
         return marketplace.name
     if RepositoryType.DOT_CLAUDE in context.repo_types:
-        return context.root_path.name
+        return ""
     if len(plugins) == 1 and plugins[0].name:
         return plugins[0].name
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
