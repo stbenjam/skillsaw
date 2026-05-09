@@ -379,8 +379,10 @@ def _run_fix(args):
     provider = LiteLLMProvider()
 
     no_color = "NO_COLOR" in os.environ
-    is_tty = sys.stderr.isatty()
-    term_width = shutil.get_terminal_size((80, 24)).columns
+    is_tty = sys.stdout.isatty()
+    term_size = shutil.get_terminal_size((80, 24))
+    term_width = term_size.columns
+    term_rows = term_size.lines
 
     bold = "" if no_color else "\033[1m"
     dim = "" if no_color else "\033[2m"
@@ -417,53 +419,80 @@ def _run_fix(args):
         bar = "█" * filled + "░" * (width - filled)
         return f"{dim}[{reset}{cyan}{bar}{reset}{dim}]{reset}"
 
+    def _setup_scroll_region():
+        if not is_tty or no_color:
+            return
+        sys.stdout.write(f"\033[1;{term_rows - 1}r")
+        sys.stdout.write(f"\033[1;1H")
+        sys.stdout.flush()
+
+    def _update_status_bar(text):
+        if not is_tty or no_color:
+            return
+        padded = text[:term_width].ljust(term_width)
+        sys.stdout.write(f"\033[s\033[{term_rows};1H\033[2K{padded}\033[u")
+        sys.stdout.flush()
+
+    def _teardown_scroll_region():
+        if not is_tty or no_color:
+            return
+        sys.stdout.write(f"\033[1;{term_rows}r")
+        sys.stdout.write(f"\033[{term_rows};1H\033[2K")
+        sys.stdout.flush()
+
     def _on_event(event_type, **kw):
         if event_type == "file_start":
             bar = _progress_bar(kw["file_idx"] - 1, kw["file_count"])
-            print(f"{bar} {bold}{kw['file_idx']}/{kw['file_count']}{reset}" f"  {kw['rel_path']}")
+            status = f" {kw['file_idx']}/{kw['file_count']}" f"  {kw['rel_path']}"
+            _update_status_bar(f" {bar}{status}")
             print(
+                f"{bold}{kw['rel_path']}{reset}"
                 f"  {dim}{kw['num_violations']} violation(s):"
                 f" {', '.join(kw['rule_ids'])}{reset}"
             )
         elif event_type == "iteration":
-            print(f"  {dim}iteration {kw['iteration']}/{kw['max_iterations']}{reset}")
+            print(f"  {dim}iteration" f" {kw['iteration']}/{kw['max_iterations']}{reset}")
         elif event_type == "tool_call":
-            args = kw.get("arguments", {})
+            tool_args = kw.get("arguments", {})
             arg_summary = ""
-            if "path" in args:
-                arg_summary = str(args["path"])
-            elif args:
-                first_key = next(iter(args))
-                val = str(args[first_key])
+            if "path" in tool_args:
+                arg_summary = str(tool_args["path"])
+            elif tool_args:
+                first_key = next(iter(tool_args))
+                val = str(tool_args[first_key])
                 if len(val) > 40:
                     val = val[:37] + "..."
                 arg_summary = val
             print(f"  {dim}├{reset} {kw['name']}({arg_summary})")
         elif event_type == "retry":
-            print(f"  {yellow}├ {kw['remaining']} violation(s) remain," f" retrying...{reset}")
+            print(f"  {yellow}├ {kw['remaining']} violation(s)" f" remain, retrying...{reset}")
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
             if not changed:
                 print(f"  {yellow}└ no changes{reset}")
             elif remaining == 0:
-                print(f"  {green}└ ✓ all {kw['num_violations']} " f"violation(s) fixed{reset}")
+                print(f"  {green}└ ✓ all {kw['num_violations']}" f" violation(s) fixed{reset}")
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {red}└ {fixed} fixed, " f"{remaining} failed{reset}")
+                print(f"  {red}└ {fixed} fixed," f" {remaining} failed{reset}")
             print()
 
-    result = linter.llm_fix(provider, callback=_on_event, min_severity=min_severity)
+    _setup_scroll_region()
+    try:
+        result = linter.llm_fix(provider, callback=_on_event, min_severity=min_severity)
+    finally:
+        _teardown_scroll_region()
 
     if not result.success:
-        print(f"\n{red}LLM fix did not improve violations — changes reverted.{reset}")
+        print(f"\n{red}LLM fix did not improve violations" f" — changes reverted.{reset}")
         sys.exit(1)
 
     if not result.files_modified:
         print(f"{green}No fixable violations found.{reset}")
         sys.exit(0)
 
-    print(f"{bold}Results{reset}")
+    print(f"\n{bold}Results{reset}")
     print(
         f"  {green}{result.violations_fixed} fixed{reset}"
         f" {dim}of {result.violations_before}{reset}"
