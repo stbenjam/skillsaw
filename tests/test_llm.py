@@ -293,7 +293,7 @@ class TestLLMConfigFromYaml:
         config_file.write_text("rules: {}\n", encoding="utf-8")
         config = LinterConfig.from_file(config_file)
         assert config.llm.model == "claude-sonnet-4-20250514"
-        assert config.llm.max_iterations == 3
+        assert config.llm.max_iterations == 10
         assert config.llm.confirm is True
 
     def test_env_override_in_settings(self, tmp_path, monkeypatch):

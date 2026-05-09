@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 @dataclass
 class LLMSettings:
     model: str = "claude-sonnet-4-20250514"
-    max_iterations: int = 3
+    max_iterations: int = 10
     max_tokens: int = 500_000
     confirm: bool = True
 
