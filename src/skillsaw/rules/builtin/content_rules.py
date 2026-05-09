@@ -159,6 +159,8 @@ class ContentCriticalPositionRule(Rule):
         violations = []
         analyzer = CriticalPositionAnalyzer()
         for cf in gather_all_content_files(context):
+            if cf.category == "coderabbit":
+                continue
             for issue in analyzer.analyze(cf.path):
                 violations.append(
                     self.violation(
