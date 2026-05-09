@@ -136,7 +136,7 @@ rules:
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
-    enabled: false
+    enabled: auto
     severity: warning
 
   # Detect hedging, vague, and non-actionable language in instruction files
@@ -152,7 +152,7 @@ rules:
   # Detect critical instructions in the middle of files where LLM attention is lowest
   content-critical-position:
     enabled: auto
-    severity: info
+    severity: warning
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
@@ -164,17 +164,12 @@ rules:
     enabled: auto
     severity: warning
 
-  # Detect instruction file sections that significantly overlap with README.md content
-  content-readme-overlap:
-    enabled: auto
-    severity: info
-
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
     severity: warning
 
-  # Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)
+  # Warn about markdown sections longer than ~500 tokens
   content-section-length:
     enabled: auto
     severity: info
@@ -204,8 +199,8 @@ rules:
     enabled: auto
     severity: error
 
-  # Detect references to deprecated models, retired APIs, and outdated tooling
-  content-stale-references:
+  # Detect banned or deprecated model names, APIs, and custom patterns
+  content-banned-references:
     enabled: auto
     severity: warning
 

@@ -264,13 +264,10 @@ class ContentInstructionBudgetRule(Rule):
             for fpath in budget.files_counted:
                 violations.append(self.violation(msg, file_path=fpath, severity=sev))
         elif budget.total_count >= 80:
-            msg = (
-                f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit"
-            )
+            msg = f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit"
             for fpath in budget.files_counted:
                 violations.append(self.violation(msg, file_path=fpath, severity=Severity.INFO))
         return violations
-
 
 
 class ContentNegativeOnlyRule(Rule):
@@ -834,7 +831,10 @@ class ContentBannedReferencesRule(Rule):
         (r"\bclaude-3-opus\b", "claude-3-opus is deprecated — use claude-opus-4 or newer"),
         (r"\bclaude-3-sonnet\b", "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer"),
         (r"\bclaude-3-haiku\b", "claude-3-haiku is deprecated — use claude-haiku-4 or newer"),
-        (r"\bclaude-3\.5-sonnet\b", "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer"),
+        (
+            r"\bclaude-3\.5-sonnet\b",
+            "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer",
+        ),
         (r"\bclaude-3\.5-haiku\b", "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer"),
         (r"\b/v1/complete\b", "/v1/complete is deprecated — use /v1/messages"),
     ]

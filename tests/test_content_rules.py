@@ -189,7 +189,6 @@ class TestContentInstructionBudgetRule:
         assert len(violations) == 0
 
 
-
 class TestContentNegativeOnlyRule:
     def test_rule_metadata(self):
         rule = ContentNegativeOnlyRule()

@@ -90,7 +90,6 @@ RULE_GROUPS = [
             "content-critical-position",
             "content-redundant-with-tooling",
             "content-instruction-budget",
-            "content-readme-overlap",
             "content-negative-only",
             "content-section-length",
             "content-contradiction",
@@ -98,7 +97,7 @@ RULE_GROUPS = [
             "content-actionability-score",
             "content-cognitive-chunks",
             "content-embedded-secrets",
-            "content-stale-references",
+            "content-banned-references",
             "content-inconsistent-terminology",
         ],
         "Pattern-based content quality rules for AI coding assistant instruction "

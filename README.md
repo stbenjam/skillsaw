@@ -288,8 +288,8 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | - |
-| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | - |
+| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
+| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
@@ -308,7 +308,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
 | `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) | - |
 | `plugin-naming` | Plugin names should use kebab-case | warning (auto) | - |
-| `plugin-readme` | Plugin should have a README.md file | warning (auto) | - |
+| `plugin-readme` | Plugin should have a README.md file | warning (auto) | llm |
 
 **`plugin-json-valid` parameters:**
 
@@ -320,7 +320,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `command-naming` | Command files should use kebab-case naming | warning | - |
+| `command-naming` | Command files should use kebab-case naming | warning | auto |
 | `command-frontmatter` | Command files must have valid frontmatter with description | error | auto |
 | `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |
 | `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - |
@@ -330,7 +330,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - |
-| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | - |
+| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto |
 
 ### Skills, Agents, Hooks
 
@@ -382,13 +382,13 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (disabled) | - |
+| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (auto) | - |
 
 **`context-budget` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
 
 ### Content Intelligence
 
@@ -398,19 +398,31 @@ Pattern-based content quality rules for AI coding assistant instruction files. D
 |---------|-------------|------------------|---------|
 | `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
 | `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
-| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | info (auto) | llm |
+| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm |
 | `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
 | `content-instruction-budget` | Check if total instruction count across all files exceeds LLM instruction budget (~150) | warning (auto) | llm |
-| `content-readme-overlap` | Detect instruction file sections that significantly overlap with README.md content | info (auto) | llm |
 | `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
-| `content-section-length` | Warn about markdown sections longer than 50 lines (optimal: 10-30 lines) | info (auto) | llm |
+| `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
 | `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
 | `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
 | `content-actionability-score` | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
 | `content-cognitive-chunks` | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
 | `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
-| `content-stale-references` | Detect references to deprecated models, retired APIs, and outdated tooling | warning (auto) | llm |
+| `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+
+**`content-section-length` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max-tokens` | Maximum estimated tokens per section before triggering a warning | `500` |
+
+**`content-banned-references` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
+| `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 
 <!-- END GENERATED RULES -->
 

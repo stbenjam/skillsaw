@@ -149,7 +149,10 @@ class LintTool:
             if config:
                 rule = rule_class(config)
             if not self._config.is_rule_enabled(
-                rule.rule_id, context, rule.repo_types, rule.formats,
+                rule.rule_id,
+                context,
+                rule.repo_types,
+                rule.formats,
                 since_version=rule.since,
             ):
                 continue

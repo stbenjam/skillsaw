@@ -94,7 +94,6 @@ def _setup_editorconfig(tmp_path):
     (tmp_path / ".editorconfig").write_text("[*]\nindent_size = 2\n", encoding="utf-8")
 
 
-
 def _setup_inconsistent_terminology(tmp_path):
     commands_dir = tmp_path / ".claude" / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)
