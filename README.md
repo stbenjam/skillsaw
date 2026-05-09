@@ -393,7 +393,7 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 ### Content Intelligence
 
-Pattern-based content quality rules for AI coding assistant instruction files. Detect weak language, tautological instructions, contradictions, secrets, stale references, and other quality issues. All support LLM-powered fixes via `--fix --llm`.
+14 rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
