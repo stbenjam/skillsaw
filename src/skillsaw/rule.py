@@ -23,6 +23,7 @@ class Severity(Enum):
 class AutofixConfidence(Enum):
     SAFE = "safe"
     SUGGEST = "suggest"
+    LLM = "llm"
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Rule(ABC):
     """Base class for linting rules"""
 
     repo_types = None
+    formats = None
     config_schema = {}
 
     def __init__(self, config: Dict[str, Any] = None):
@@ -136,6 +138,10 @@ class Rule(ABC):
     @property
     def supports_autofix(self) -> bool:
         return type(self).fix is not Rule.fix
+
+    @property
+    def llm_fix_prompt(self) -> Optional[str]:
+        return None
 
     def violation(
         self,

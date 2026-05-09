@@ -5,7 +5,7 @@ Rule for warning when instruction/config files exceed recommended token limits.
 from typing import Any, Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 
 DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {

@@ -150,3 +150,9 @@ uv.lock
 apm_modules/
 apm.lock.yaml
 *.local.json
+
+# Gas Town runtime
+.beads/
+.runtime/
+.claude/commands/
+/CLAUDE.md

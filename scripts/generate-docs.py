@@ -76,11 +76,63 @@ RULE_GROUPS = [
         "that `@import` references resolve to existing files. Disabled by default.",
     ),
     (
+        "AGENTS.md Deep Validation",
+        [
+            "agents-md-structure",
+            "agents-md-size-limit",
+            "agents-md-override-semantics",
+            "agents-md-hierarchy-consistency",
+            "agents-md-dead-file-refs",
+            "agents-md-dead-command-refs",
+            "agents-md-weak-language",
+            "agents-md-negative-only",
+            "agents-md-section-length",
+            "agents-md-structure-deep",
+            "agents-md-tautological",
+            "agents-md-critical-position",
+            "agents-md-hook-candidate",
+        ],
+        "Deep validation for AGENTS.md files (used by OpenAI Codex and GitHub "
+        "Copilot coding agent). Checks size limits, override semantics, hierarchy "
+        "consistency, dead references, weak language, structure quality, and more. "
+        "Auto-enabled when AGENTS.md is detected.",
+    ),
+    (
         "Context Budget",
         ["context-budget"],
         "Warns when instruction and configuration files exceed recommended "
         "token limits. Uses a `len(text) / 4` approximation for token counting. "
         "Supports per-category `warn` and `error` thresholds. Disabled by default.",
+    ),
+    (
+        "Cursor Rules",
+        [
+            "cursor-mdc-valid",
+            "cursor-rules-deprecated",
+            "cursor-mdc-frontmatter",
+            "cursor-activation-type",
+            "cursor-crlf-detection",
+            "cursor-glob-valid",
+            "cursor-empty-body",
+            "cursor-description-quality",
+            "cursor-glob-overlap",
+            "cursor-rule-size",
+            "cursor-frontmatter-types",
+            "cursor-duplicate-rules",
+            "cursor-always-apply-overuse",
+        ],
+        "Validates Cursor IDE `.cursor/rules/*.mdc` files (YAML frontmatter + "
+        "Markdown content) and warns about the deprecated `.cursorrules` file. "
+        "The monolithic rules (`cursor-mdc-valid`, `cursor-rules-deprecated`) are "
+        "disabled by default. The 11 focused rules auto-enable when `.cursor/` "
+        "is present and include autofixes for common issues.",
+    ),
+    (
+        "Kiro Steering",
+        ["kiro-steering-valid"],
+        "Validates Kiro IDE `.kiro/steering/*.md` files (YAML frontmatter with "
+        "inclusion modes, fileMatchPattern globs, and auto-mode metadata). "
+        "Disabled by default.",
     ),
 ]
 

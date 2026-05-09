@@ -372,6 +372,54 @@ def add_agent(
     return agent_file
 
 
+def add_apm(
+    path: Optional[Path] = None,
+    name: Optional[str] = None,
+    version: str = "0.1.0",
+    description: Optional[str] = None,
+    author: Optional[str] = None,
+    license_id: Optional[str] = None,
+    target: Optional[str] = None,
+) -> Path:
+    """Scaffold a new APM package manifest (apm.yml)."""
+    target_dir = (path or Path.cwd()).resolve()
+    apm_file = target_dir / "apm.yml"
+    if apm_file.exists():
+        raise FileExistsError(f"apm.yml already exists: {apm_file}")
+
+    if not name:
+        name = target_dir.name
+
+    lines = []
+    lines.append(f"name: {name}")
+    lines.append(f"version: {version}")
+    if description:
+        lines.append(f"description: {description}")
+    else:
+        lines.append("description: TODO - Add package description")
+    if author:
+        lines.append(f"author: {author}")
+    if license_id:
+        lines.append(f"license: {license_id}")
+    if target:
+        lines.append(f"target: {target}")
+
+    lines.append("")
+    lines.append("# dependencies:")
+    lines.append("#   apm:")
+    lines.append("#     - owner/repo")
+    lines.append("#   mcp:")
+    lines.append("#     - name: server-name")
+    lines.append("#       transport: stdio")
+    lines.append("#       command: npx server-name")
+    lines.append("")
+
+    apm_file.write_text("\n".join(lines), encoding="utf-8")
+
+    print(f"Created APM manifest: {apm_file}")
+    return apm_file
+
+
 _VALID_HOOK_EVENTS = {
     "SessionStart",
     "Setup",

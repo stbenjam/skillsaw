@@ -4,12 +4,27 @@ Main linter orchestration
 
 import importlib.util
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Callable, Dict, List, Optional
 
 from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
+
+
+@dataclass
+class LLMFixResult:
+    files_modified: List[Path]
+    violations_before: int
+    violations_after: int
+    total_usage: "TokenUsage"
+    diffs: Dict[Path, str]
+    success: bool
+
+    @property
+    def violations_fixed(self) -> int:
+        return max(0, self.violations_before - self.violations_after)
 
 
 class Linter:
@@ -55,7 +70,10 @@ class Linter:
 
             # Check if enabled for this context
             if self.config.is_rule_enabled(
-                rule_instance.rule_id, self.context, rule_instance.repo_types
+                rule_instance.rule_id,
+                self.context,
+                rule_instance.repo_types,
+                rule_instance.formats,
             ):
                 self.rules.append(rule_instance)
 
@@ -93,7 +111,10 @@ class Linter:
 
                 # Check if enabled
                 if self.config.is_rule_enabled(
-                    rule_instance.rule_id, self.context, rule_instance.repo_types
+                    rule_instance.rule_id,
+                    self.context,
+                    rule_instance.repo_types,
+                    rule_instance.formats,
                 ):
                     self.rules.append(rule_instance)
 
@@ -189,3 +210,144 @@ class Linter:
             applied.append(fix)
 
         return applied
+
+    def llm_fix(
+        self,
+        provider: "CompletionProvider",
+        callback: Optional[Callable[[int, List[RuleViolation]], None]] = None,
+    ) -> "LLMFixResult":
+        from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
+        from .llm.engine import LLMEngine
+        from .llm.config import LLMConfig as EngineLLMConfig
+        from .llm._litellm import TokenUsage
+
+        import difflib
+
+        violations = self.run()
+        llm_rules = {r.rule_id: r for r in self.rules if r.llm_fix_prompt is not None}
+        llm_violations = [v for v in violations if v.rule_id in llm_rules]
+
+        if not llm_violations:
+            return LLMFixResult(
+                files_modified=[],
+                violations_before=0,
+                violations_after=0,
+                total_usage=TokenUsage(0, 0),
+                diffs={},
+                success=True,
+            )
+
+        files_to_violations: Dict[Path, List[RuleViolation]] = {}
+        for v in llm_violations:
+            if v.file_path:
+                key = v.file_path.resolve()
+                files_to_violations.setdefault(key, []).append(v)
+
+        originals: Dict[Path, str] = {}
+        for fpath in files_to_violations:
+            if fpath.exists():
+                originals[fpath] = fpath.read_text(encoding="utf-8")
+
+        total_usage = TokenUsage(0, 0)
+        all_diffs: Dict[Path, str] = {}
+        files_modified: List[Path] = []
+        violations_before = len(llm_violations)
+
+        engine_config = EngineLLMConfig(
+            model=self.config.llm.model,
+            max_tokens=4096,
+            max_iterations=self.config.llm.max_iterations,
+            max_total_tokens=self.config.llm.max_tokens,
+        )
+
+        for fpath, file_violations in files_to_violations.items():
+            rel_path = fpath.relative_to(self.context.root_path.resolve())
+
+            rule_prompts = set()
+            for v in file_violations:
+                prompt = llm_rules[v.rule_id].llm_fix_prompt
+                if prompt:
+                    rule_prompts.add(prompt)
+
+            formatted_violations = "\n".join(str(v) for v in file_violations)
+            combined_prompts = "\n\n".join(rule_prompts)
+
+            system_prompt = (
+                f"You are fixing lint violations in the file {rel_path}.\n\n"
+                f"{combined_prompts}\n\n"
+                f"Current violations:\n{formatted_violations}\n\n"
+                "Available tools:\n"
+                "- read_file(path) — read a file\n"
+                "- write_file(path, content) — overwrite a file\n"
+                "- replace_section(path, old_text, new_text) — surgical edit\n"
+                "- lint(path) — run skillsaw lint and see remaining violations\n"
+                "- diff(path) — see what you've changed vs the original\n\n"
+                "Workflow:\n"
+                "1. Read the file to understand context\n"
+                "2. Use replace_section to fix violations\n"
+                "3. Run lint() to verify your fixes resolved the violations\n"
+                "4. If violations remain, fix them and lint again\n"
+                "5. When lint returns no violations (or only unrelated ones), "
+                "run diff() to confirm your changes are minimal and correct\n"
+                "6. Respond with a summary of changes made\n\n"
+                "Do not change anything unrelated to the violations listed above."
+            )
+
+            tools = [
+                ReadFileTool(self.context.root_path),
+                WriteFileTool(self.context.root_path),
+                ReplaceSectionTool(self.context.root_path),
+                LintTool(self.context.root_path, self.config),
+                DiffTool(self.context.root_path, originals),
+            ]
+
+            engine = LLMEngine(provider, tools, engine_config)
+            result = engine.run(
+                system_prompt=system_prompt,
+                user_message=f"Please fix the violations in {rel_path}.",
+            )
+
+            total_usage.prompt_tokens += result.usage.prompt_tokens
+            total_usage.completion_tokens += result.usage.completion_tokens
+
+            if fpath.exists():
+                current = fpath.read_text(encoding="utf-8")
+                if fpath in originals and current != originals[fpath]:
+                    diff_lines = difflib.unified_diff(
+                        originals[fpath].splitlines(keepends=True),
+                        current.splitlines(keepends=True),
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}",
+                    )
+                    diff_text = "".join(diff_lines)
+                    if diff_text:
+                        all_diffs[fpath] = diff_text
+                        files_modified.append(fpath)
+
+            if callback:
+                callback(1, file_violations)
+
+        after_violations = self.run()
+        after_llm = [v for v in after_violations if v.rule_id in llm_rules]
+        violations_after = len(after_llm)
+
+        if violations_after >= violations_before:
+            for fpath, original_content in originals.items():
+                fpath.write_text(original_content, encoding="utf-8")
+            return LLMFixResult(
+                files_modified=[],
+                violations_before=violations_before,
+                violations_after=violations_before,
+                total_usage=total_usage,
+                diffs={},
+                success=False,
+            )
+
+        return LLMFixResult(
+            files_modified=files_modified,
+            violations_before=violations_before,
+            violations_after=violations_after,
+            total_usage=total_usage,
+            diffs=all_diffs,
+            success=True,
+        )

@@ -13,7 +13,7 @@ from .linter import Linter
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix"}
 
 
 def _get_version() -> str:
@@ -104,6 +104,48 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "Can be specified multiple times.",
     )
 
+    # --- fix ---
+    fix_parser = subparsers.add_parser(
+        "fix",
+        help="Automatically fix lint violations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    fix_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    fix_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file",
+    )
+    fix_parser.add_argument(
+        "--llm",
+        "--ai",
+        action="store_true",
+        dest="use_llm",
+        help="Use LLM-powered fixes for content violations",
+    )
+    fix_parser.add_argument(
+        "--model",
+        help="Override LLM model (default: from config or claude-sonnet-4-20250514)",
+    )
+    fix_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Max fix iterations per file (default: 3)",
+    )
+    fix_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Auto-apply changes without confirmation",
+    )
+
     # --- init ---
     init_parser = subparsers.add_parser(
         "init", help="Generate a default .skillsaw.yaml config file"
@@ -161,6 +203,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
 
     if args.command == "lint":
         _run_lint(args)
+    elif args.command == "fix":
+        _run_fix(args)
     elif args.command == "init":
         _run_init(args)
     elif args.command == "list-rules":
@@ -191,7 +235,7 @@ def _run_lint(args):
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
         print(
-            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
+            "Expected: .claude-plugin/plugin.json, plugins/ directory, SKILL.md (agentskills.io), or apm.yml (APM)\n",
             file=sys.stderr,
         )
 
@@ -261,6 +305,100 @@ def _run_lint(args):
         sys.exit(0)
 
 
+def _run_fix(args):
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    linter = Linter(context, config)
+
+    if not args.use_llm:
+        violations, fixes = linter.fix()
+        applied = linter.apply_fixes(fixes)
+        if applied:
+            print(f"Fixed {len(applied)} issue(s):")
+            for fix in applied:
+                print(f"  ✓ [{fix.file_path}] {fix.description}")
+        else:
+            print("No auto-fixable violations found.")
+        suggested = [f for f in fixes if f not in applied]
+        if suggested:
+            print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
+            for fix in suggested:
+                print(f"  ? [{fix.file_path}] {fix.description}")
+        sys.exit(0)
+
+    if args.model:
+        config.llm.model = args.model
+    if args.max_iterations:
+        config.llm.max_iterations = args.max_iterations
+
+    try:
+        from .llm._litellm import LiteLLMProvider
+    except ImportError:
+        print(
+            "Error: LLM features require litellm. Install with: pip install skillsaw[llm]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    provider = LiteLLMProvider()
+    print(f"Linting: {args.path}\n")
+
+    result = linter.llm_fix(provider)
+
+    if not result.success:
+        print("LLM fix did not improve violations — changes reverted.")
+        sys.exit(1)
+
+    if not result.files_modified:
+        print("No LLM-fixable violations found.")
+        sys.exit(0)
+
+    print(
+        f"Fixed {result.violations_fixed} of {result.violations_before} "
+        f"LLM-fixable violations across {len(result.files_modified)} file(s)\n"
+    )
+
+    if result.diffs:
+        print("── Changes " + "─" * 50 + "\n")
+        for diff_text in result.diffs.values():
+            print(diff_text)
+        print()
+
+    usage = result.total_usage
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    print(
+        f"Token usage: ~{total_tokens:,} tokens "
+        f"(prompt: {usage.prompt_tokens:,} / completion: {usage.completion_tokens:,})"
+    )
+
+    if result.violations_after > 0:
+        print(f"\n{result.violations_after} violation(s) remain.")
+
+    print("Changes applied.")
+    sys.exit(0)
+
+
 def _run_init(args):
     config_path = args.path / ".skillsaw.yaml"
     if config_path.exists():
@@ -296,7 +434,7 @@ def _run_docs(args):
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
         print(
-            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
+            "Expected: .claude-plugin/plugin.json, plugins/ directory, SKILL.md (agentskills.io), or apm.yml (APM)\n",
             file=sys.stderr,
         )
 

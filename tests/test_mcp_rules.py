@@ -248,6 +248,36 @@ def test_valid_mcp_json(plugin_with_valid_mcp_json):
     assert len(violations) == 0
 
 
+def test_valid_mcp_json_flat_format(temp_dir):
+    """Test that flat .mcp.json format (no mcpServers wrapper) passes validation"""
+    mcp_config = {
+        "my-server": {
+            "type": "http",
+            "url": "https://mcp.example.com/api",
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_valid_mcp_json_flat_format_stdio(temp_dir):
+    """Test that flat .mcp.json with stdio server passes validation"""
+    mcp_config = {
+        "my-server": {
+            "command": "node",
+            "args": ["server.js"],
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
 def test_valid_mcp_in_plugin_json(plugin_with_mcp_in_plugin_json):
     """Test that valid mcpServers in plugin.json passes validation"""
     context = RepositoryContext(plugin_with_mcp_in_plugin_json)
@@ -266,12 +296,12 @@ def test_invalid_mcp_json(plugin_with_invalid_mcp_json):
 
 
 def test_missing_mcp_servers_key(plugin_with_missing_mcp_servers_key):
-    """Test that missing mcpServers key is detected"""
+    """Test that non-dict server config in flat format is detected"""
     context = RepositoryContext(plugin_with_missing_mcp_servers_key)
     rule = McpValidJsonRule()
     violations = rule.check(context)
     assert len(violations) == 1
-    assert "mcpServers" in violations[0].message
+    assert "must be an object" in violations[0].message
 
 
 def test_missing_command_field(plugin_with_missing_command_field):

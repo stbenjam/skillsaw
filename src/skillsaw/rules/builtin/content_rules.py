@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Set
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_instruction_files,
@@ -29,6 +29,8 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     @property
     def rule_id(self) -> str:
         return "content-weak-language"
@@ -39,6 +41,23 @@ class ContentWeakLanguageRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are a technical writing assistant fixing AI coding assistant "
+            "instruction files. Your job is to replace weak, hedging language "
+            "with direct, actionable instructions.\n\n"
+            "Rules:\n"
+            "- Replace 'try to X' with 'X'\n"
+            "- Replace 'consider doing X' with 'do X' or remove the line\n"
+            "- Replace 'if possible' with explicit conditions\n"
+            "- Replace vague adverbs (properly, correctly, appropriately) "
+            "with specific behavior\n"
+            "- Do NOT change the meaning or intent of the instruction\n"
+            "- Do NOT add new instructions\n"
+            "- Preserve markdown formatting"
+        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -57,6 +76,8 @@ class ContentWeakLanguageRule(Rule):
 
 class ContentDeadReferencesRule(Rule):
     """Detect broken file paths and references in instruction files"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     @property
     def rule_id(self) -> str:
@@ -87,6 +108,8 @@ class ContentDeadReferencesRule(Rule):
 class ContentTautologicalRule(Rule):
     """Detect tautological instructions that waste instruction budget"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     @property
     def rule_id(self) -> str:
         return "content-tautological"
@@ -97,6 +120,21 @@ class ContentTautologicalRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files. Remove "
+            "tautological instructions that the AI model already follows "
+            "by default (e.g., 'write clean code', 'follow best practices', "
+            "'use meaningful variable names').\n\n"
+            "Rules:\n"
+            "- Remove lines that state something the model does by default\n"
+            "- If the line is in a list, remove the list item\n"
+            "- If removing leaves an empty section, remove the section heading too\n"
+            "- Do NOT remove instructions that add project-specific constraints\n"
+            "- Preserve markdown formatting"
+        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -150,6 +188,8 @@ class ContentTautologicalRule(Rule):
 class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     @property
     def rule_id(self) -> str:
         return "content-critical-position"
@@ -178,6 +218,8 @@ class ContentCriticalPositionRule(Rule):
 
 class ContentRedundantWithToolingRule(Rule):
     """Detect instructions that duplicate existing tooling configuration"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     @property
     def rule_id(self) -> str:
@@ -242,6 +284,8 @@ class ContentRedundantWithToolingRule(Rule):
 class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     @property
     def rule_id(self) -> str:
         return "content-instruction-budget"
@@ -281,6 +325,8 @@ class ContentInstructionBudgetRule(Rule):
 
 class ContentReadmeOverlapRule(Rule):
     """Detect significant overlap between instruction files and README"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     _JACCARD_THRESHOLD = 0.6
 
@@ -344,6 +390,8 @@ class ContentReadmeOverlapRule(Rule):
 class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     _NEGATIVE_RE = re.compile(
         r"(?:never\s+use|don'?t\s+use|avoid\s+using|do\s+not\s+use|never\s+do|don'?t\s+do)\s+",
         re.IGNORECASE,
@@ -363,6 +411,22 @@ class ContentNegativeOnlyRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files. Rewrite "
+            'negative-only instructions ("don\'t do X", "never use X", '
+            '"avoid X") to include a positive alternative.\n\n'
+            "Rules:\n"
+            "- Keep the prohibition but add what to do instead\n"
+            "- Example: 'Don't use var' → 'Use const or let instead of var'\n"
+            "- Example: 'Never commit secrets' → 'Store secrets in environment "
+            "variables, never commit them to the repository'\n"
+            "- Infer the positive alternative from context\n"
+            "- Do NOT change the meaning of the prohibition\n"
+            "- Preserve markdown formatting"
+        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -388,6 +452,8 @@ class ContentNegativeOnlyRule(Rule):
 
 class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     MAX_LINES = 50
 
@@ -445,6 +511,8 @@ class ContentSectionLengthRule(Rule):
 
 class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     _CONTRADICTION_PAIRS = [
         (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
@@ -505,6 +573,8 @@ class ContentContradictionRule(Rule):
 class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     _HOOK_PATTERNS = [
         (
             re.compile(r"\balways run\s+.+\s+(?:after|before)\b", re.IGNORECASE),
@@ -564,6 +634,8 @@ class ContentHookCandidateRule(Rule):
 class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     _VERB_RE = re.compile(
         r"\b(?:use|run|create|add|remove|check|set|write|read|call|return|throw|"
         r"avoid|prefer|include|exclude|follow|implement|test|validate|verify|"
@@ -620,6 +692,8 @@ class ContentActionabilityScoreRule(Rule):
 class ContentCognitiveChunksRule(Rule):
     """Check section organization for cognitive chunking"""
 
+    formats = ALL_INSTRUCTION_FORMATS
+
     @property
     def rule_id(self) -> str:
         return "content-cognitive-chunks"
@@ -661,6 +735,8 @@ class ContentCognitiveChunksRule(Rule):
 
 class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     _PATTERNS = [
         (re.compile(p), desc)
@@ -712,6 +788,8 @@ class ContentEmbeddedSecretsRule(Rule):
 
 class ContentCrossFileConsistencyRule(Rule):
     """Check consistency across multiple instruction file formats"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     @property
     def rule_id(self) -> str:

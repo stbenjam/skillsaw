@@ -184,6 +184,25 @@ Examples:
     )
     hook_parser.add_argument("--path", type=Path, default=None, help="Marketplace root path")
 
+    # --- apm ---
+    apm_parser = subparsers.add_parser("apm", help="Scaffold a new APM package manifest (apm.yml)")
+    apm_parser.add_argument("--name", help="Package name")
+    apm_parser.add_argument("--version", default="0.1.0", help="Package version (default: 0.1.0)")
+    apm_parser.add_argument("--description", help="Package description")
+    apm_parser.add_argument("--author", help="Package author")
+    apm_parser.add_argument("--license", dest="license_id", help="SPDX license identifier")
+    apm_parser.add_argument(
+        "--target",
+        help="Target platform (e.g., claude, vscode, all)",
+    )
+    apm_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Directory to create apm.yml in (default: current directory)",
+    )
+
     args = parser.parse_args(sys.argv[2:])
 
     if not args.subcommand:
@@ -246,6 +265,19 @@ Examples:
                 add_hook(event=event, plugin_name=args.plugin, path=args.path)
             except ValueError as exc:
                 _handle_multi_plugin(exc, add_hook, event=event, path=args.path)
+
+        elif args.subcommand == "apm":
+            from .add import add_apm
+
+            add_apm(
+                path=args.path,
+                name=args.name,
+                version=args.version,
+                description=args.description,
+                author=args.author,
+                license_id=args.license_id,
+                target=args.target,
+            )
 
     except (ValueError, FileExistsError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

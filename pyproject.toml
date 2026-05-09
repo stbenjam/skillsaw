@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillsaw"
-version = "0.6.0"
+version = "0.6.1"
 description = "A configurable linter for agent skills, plugins, and AI coding assistant context"
 readme = "README.md"
 authors = [
@@ -32,12 +32,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+llm = [
+    "litellm>=1.40",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
+    "litellm>=1.40",
 ]
 
 [project.urls]
