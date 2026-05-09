@@ -1,9 +1,9 @@
 # Content Intelligence Rules — Research & Justification
 
-skillsaw's 14 content intelligence rules analyze the *quality* of AI coding
-assistant instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, etc.). Each rule
-is grounded in published research on LLM behavior, prompt engineering best
-practices, or established software engineering principles.
+skillsaw's 14 content intelligence rules analyze the *quality* of AI context
+building blocks (skills, instructions, etc.). Each rule is grounded in published
+research on LLM behavior, prompt engineering best practices, or established
+software engineering principles.
 
 This document explains **why each rule exists**, what research supports it, and
 how `content-instruction-budget` differs from `context-budget`.
