@@ -227,11 +227,13 @@ class Linter:
         provider: "CompletionProvider",
         callback: Optional[Callable[..., None]] = None,
         min_severity: Severity = Severity.WARNING,
+        max_workers: int = 4,
     ) -> "LLMFixResult":
         from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
         from .llm.engine import LLMEngine
         from .llm.config import LLMConfig as EngineLLMConfig
         from .llm._litellm import TokenUsage
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         import difflib
 
@@ -265,15 +267,15 @@ class Linter:
             if fpath.exists():
                 originals[fpath] = fpath.read_text(encoding="utf-8")
 
-        total_usage = TokenUsage(0, 0)
-        all_diffs: Dict[Path, str] = {}
-        files_modified: List[Path] = []
         violations_before = len(llm_violations)
-
         base_max_iter = self.config.llm.max_iterations
-
         file_count = len(files_to_violations)
-        for file_idx, (fpath, file_violations) in enumerate(files_to_violations.items(), 1):
+        root_resolved = self.context.root_path.resolve()
+
+        def _process_one_file(file_idx, fpath, file_violations):
+            events = []
+            file_usage = TokenUsage(0, 0)
+
             file_max_iter = max(base_max_iter, len(file_violations) * 5)
             engine_config = EngineLLMConfig(
                 model=self.config.llm.model,
@@ -281,35 +283,24 @@ class Linter:
                 max_iterations=file_max_iter,
                 max_total_tokens=self.config.llm.max_tokens,
             )
-            rel_path = fpath.relative_to(self.context.root_path.resolve())
-            logger.debug(
-                "[%d/%d] Fixing %s (%d violations)",
-                file_idx,
-                file_count,
-                rel_path,
-                len(file_violations),
-            )
+            rel_path = fpath.relative_to(root_resolved)
 
-            if callback:
-                rules_for_file = sorted({v.rule_id for v in file_violations})
-                callback(
-                    "file_start",
-                    file_idx=file_idx,
-                    file_count=file_count,
-                    rel_path=rel_path,
-                    num_violations=len(file_violations),
-                    rule_ids=rules_for_file,
-                )
+            rules_for_file = sorted({v.rule_id for v in file_violations})
+            events.append(("file_start", {
+                "file_idx": file_idx,
+                "file_count": file_count,
+                "rel_path": rel_path,
+                "num_violations": len(file_violations),
+                "rule_ids": rules_for_file,
+            }))
 
             def _on_engine_event(event_type, **kwargs):
-                if callback:
-                    callback(
-                        event_type,
-                        file_idx=file_idx,
-                        file_count=file_count,
-                        rel_path=rel_path,
-                        **kwargs,
-                    )
+                events.append((event_type, {
+                    "file_idx": file_idx,
+                    "file_count": file_count,
+                    "rel_path": rel_path,
+                    **kwargs,
+                }))
 
             def _build_system_prompt(violations_list):
                 prompts = set()
@@ -378,14 +369,15 @@ class Linter:
 
             current_violations = file_violations
             total_iterations = 0
+            remaining = []
             for attempt in range(2):
                 engine = LLMEngine(provider, tools, engine_config, on_event=_on_engine_event)
                 result = engine.run(
                     system_prompt=_build_system_prompt(current_violations),
                     user_message=f"Please fix the violations in {rel_path}.",
                 )
-                total_usage.prompt_tokens += result.usage.prompt_tokens
-                total_usage.completion_tokens += result.usage.completion_tokens
+                file_usage.prompt_tokens += result.usage.prompt_tokens
+                file_usage.completion_tokens += result.usage.completion_tokens
                 total_iterations += result.iterations
 
                 remaining = _relint_file(current_violations)
@@ -393,17 +385,16 @@ class Linter:
                     break
 
                 if attempt == 0 and remaining:
-                    if callback:
-                        callback(
-                            "retry",
-                            file_idx=file_idx,
-                            file_count=file_count,
-                            rel_path=rel_path,
-                            remaining=len(remaining),
-                        )
+                    events.append(("retry", {
+                        "file_idx": file_idx,
+                        "file_count": file_count,
+                        "rel_path": rel_path,
+                        "remaining": len(remaining),
+                    }))
                     current_violations = remaining
 
             changed = False
+            diff_text = None
             if fpath.exists():
                 current = fpath.read_text(encoding="utf-8")
                 if fpath in originals and current != originals[fpath]:
@@ -415,22 +406,67 @@ class Linter:
                     )
                     diff_text = "".join(diff_lines)
                     if diff_text:
-                        all_diffs[fpath] = diff_text
-                        files_modified.append(fpath)
                         changed = True
 
-            if callback:
-                callback(
-                    "file_done",
-                    file_idx=file_idx,
-                    file_count=file_count,
-                    rel_path=rel_path,
-                    num_violations=len(file_violations),
-                    iterations=total_iterations,
-                    remaining=len(remaining),
-                    changed=changed,
-                )
+            events.append(("file_done", {
+                "file_idx": file_idx,
+                "file_count": file_count,
+                "rel_path": rel_path,
+                "num_violations": len(file_violations),
+                "iterations": total_iterations,
+                "remaining": len(remaining),
+                "changed": changed,
+            }))
 
+            return {
+                "fpath": fpath,
+                "events": events,
+                "usage": file_usage,
+                "diff_text": diff_text,
+                "changed": changed,
+            }
+
+        total_usage = TokenUsage(0, 0)
+        all_diffs: Dict[Path, str] = {}
+        files_modified: List[Path] = []
+        completed = 0
+
+        if callback:
+            callback("progress", completed=0, file_count=file_count)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {}
+            for file_idx, (fpath, fv) in enumerate(files_to_violations.items(), 1):
+                future = executor.submit(_process_one_file, file_idx, fpath, fv)
+                future_to_idx[future] = file_idx
+
+            for future in as_completed(future_to_idx):
+                try:
+                    file_result = future.result()
+                except Exception as e:
+                    completed += 1
+                    logger.error("Error processing file: %s", e)
+                    if callback:
+                        callback("progress", completed=completed, file_count=file_count)
+                    continue
+
+                completed += 1
+                if callback:
+                    callback("progress", completed=completed, file_count=file_count)
+
+                for event_type, kw in file_result["events"]:
+                    if callback:
+                        callback(event_type, **kw)
+
+                total_usage.prompt_tokens += file_result["usage"].prompt_tokens
+                total_usage.completion_tokens += file_result["usage"].completion_tokens
+                if file_result["diff_text"]:
+                    all_diffs[file_result["fpath"]] = file_result["diff_text"]
+                    files_modified.append(file_result["fpath"])
+
+        from .rules.builtin.utils import invalidate_read_caches
+
+        invalidate_read_caches()
         after_violations = self.run()
         after_llm = [
             v

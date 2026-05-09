@@ -154,6 +154,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Auto-apply changes without confirmation",
     )
+    fix_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel LLM workers (default: 4)",
+    )
 
     # --- init ---
     init_parser = subparsers.add_parser(
@@ -442,10 +448,12 @@ def _run_fix(args):
         sys.stdout.flush()
 
     def _on_event(event_type, **kw):
-        if event_type == "file_start":
-            bar = _progress_bar(kw["file_idx"] - 1, kw["file_count"])
-            status = f" {kw['file_idx']}/{kw['file_count']}" f"  {kw['rel_path']}"
+        if event_type == "progress":
+            bar = _progress_bar(kw["completed"], kw["file_count"])
+            status = f" {kw['completed']}/{kw['file_count']} files complete"
             _update_status_bar(f" {bar}{status}")
+            return
+        elif event_type == "file_start":
             print(
                 f"{bold}{kw['rel_path']}{reset}"
                 f"  {dim}{kw['num_violations']} violation(s):"
@@ -479,9 +487,13 @@ def _run_fix(args):
                 print(f"  {red}└ {fixed} fixed," f" {remaining} failed{reset}")
             print()
 
+    max_workers = args.workers or config.llm.max_workers
+
     _setup_scroll_region()
     try:
-        result = linter.llm_fix(provider, callback=_on_event, min_severity=min_severity)
+        result = linter.llm_fix(
+            provider, callback=_on_event, min_severity=min_severity, max_workers=max_workers
+        )
     finally:
         _teardown_scroll_region()
 

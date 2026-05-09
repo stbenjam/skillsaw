@@ -19,6 +19,7 @@ class LLMSettings:
     max_iterations: int = 10
     max_tokens: int = 500_000
     confirm: bool = True
+    max_workers: int = 4
 
     def __post_init__(self):
         env_model = os.environ.get("SKILLSAW_MODEL")
@@ -63,6 +64,7 @@ class LinterConfig:
             max_iterations=llm_data.get("max_iterations", LLMSettings.max_iterations),
             max_tokens=llm_data.get("max_tokens", LLMSettings.max_tokens),
             confirm=llm_data.get("confirm", LLMSettings.confirm),
+            max_workers=llm_data.get("max_workers", LLMSettings.max_workers),
         )
 
         return cls(
