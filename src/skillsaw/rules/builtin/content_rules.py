@@ -798,14 +798,10 @@ class ContentEmbeddedSecretsRule(Rule):
             (r"\bSK[0-9a-fA-F]{32}", "Twilio API key"),
             # SendGrid
             (r"\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}", "SendGrid API key"),
-            # Discord
-            (r"\b[MN][a-zA-Z0-9_\-]{23,}\.[a-zA-Z0-9_\-]{6}\.[a-zA-Z0-9_\-]{27,}", "Discord bot token"),
             # npm
             (r"\bnpm_[a-zA-Z0-9]{36}", "npm access token"),
             # PyPI
             (r"\bpypi-[a-zA-Z0-9]{16,}", "PyPI API token"),
-            # Datadog
-            (r"\b[a-f0-9]{32}(?=.*datadog)", "Datadog API key"),
             # JWT (base64.base64.base64)
             (r"\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*\.[a-zA-Z0-9_\-]+", "JSON Web Token"),
             # Private keys
