@@ -34,12 +34,12 @@ rules:
 
   # Command files should have Name, Synopsis, Description, and Implementation sections
   command-sections:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Command Name section should be 'plugin-name:command-name'
   command-name-format:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Marketplace.json must be valid JSON with required fields
@@ -124,92 +124,397 @@ rules:
 
   # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
   instruction-file-valid:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files
   instruction-imports-valid:
-    enabled: true
+    enabled: auto
     severity: warning
+
+  # .github/copilot-instructions.md must be valid UTF-8 and non-empty
+  copilot-instructions-valid:
+    enabled: auto
+    severity: warning
+
+  # .instructions.md files must have valid YAML frontmatter with applyTo glob patterns
+  copilot-dot-instructions-valid:
+    enabled: auto
+    severity: warning
+
+  # Copilot instruction files that are too long waste context budget
+  copilot-instructions-length:
+    enabled: auto
+    severity: warning
+
+  # Weak/hedging language wastes instruction budget (try to, if possible, etc.)
+  copilot-instructions-language-quality:
+    enabled: auto
+    severity: info
+
+  # Tautological instructions that models already follow waste context budget
+  copilot-instructions-actionability:
+    enabled: auto
+    severity: warning
+
+  # References to non-existent files, npm scripts, or make targets
+  copilot-instructions-stale-refs:
+    enabled: auto
+    severity: warning
+
+  # Duplicate content across instruction files wastes Copilot context budget
+  copilot-instructions-duplication:
+    enabled: auto
+    severity: warning
+
+  # applyTo patterns should not be overly broad — narrow scope improves relevance
+  copilot-instructions-scope:
+    enabled: auto
+    severity: warning
+
+  # Instruction files should use markdown headings for structure
+  copilot-instructions-format:
+    enabled: auto
+    severity: warning
+
+  # Contradictions between instruction files cause non-deterministic behavior
+  copilot-instructions-conflict:
+    enabled: auto
+    severity: warning
+
+  # Only applyTo and excludeAgent are valid frontmatter keys in .instructions.md
+  copilot-instructions-frontmatter-keys:
+    enabled: auto
+    severity: warning
+
+  # excludeAgent must be 'code-review' or 'cloud-agent'
+  copilot-instructions-exclude-agent:
+    enabled: auto
+    severity: error
+
+  # AGENTS.md should have at least one heading and meaningful content
+  agents-md-structure:
+    enabled: auto
+    severity: warning
+
+  # AGENTS.md must not exceed the Codex 32 KB size limit
+  agents-md-size-limit:
+    enabled: auto
+    severity: warning
+
+  # AGENTS.override.md replaces AGENTS.md entirely — verify it is self-contained
+  agents-md-override-semantics:
+    enabled: auto
+    severity: warning
+
+  # Subdirectory AGENTS.md files should not contradict root AGENTS.md
+  agents-md-hierarchy-consistency:
+    enabled: auto
+    severity: warning
+
+  # File paths referenced in AGENTS.md should exist in the repo
+  agents-md-dead-file-refs:
+    enabled: auto
+    severity: warning
+
+  # Shell commands in AGENTS.md (npm scripts, make targets) should exist in the project
+  agents-md-dead-command-refs:
+    enabled: auto
+    severity: warning
+
+  # AGENTS.md should use direct, actionable language instead of vague phrases
+  agents-md-weak-language:
+    enabled: auto
+    severity: info
+
+  # Negative instructions (never/don't) should include a positive alternative
+  agents-md-negative-only:
+    enabled: auto
+    severity: warning
+
+  # AGENTS.md sections should not exceed 50 lines (lost-in-the-middle effect)
+  agents-md-section-length:
+    enabled: auto
+    severity: warning
+
+  # AGENTS.md should have task-organized structure with boundary sections
+  agents-md-structure-deep:
+    enabled: auto
+    severity: info
+
+  # Remove self-evident instructions like 'write clean code' that waste instruction budget
+  agents-md-tautological:
+    enabled: auto
+    severity: warning
+
+  # Critical instructions (MUST/NEVER/ALWAYS) should be in the first or last 20% of the file
+  agents-md-critical-position:
+    enabled: auto
+    severity: info
+
+  # Deterministic rules in AGENTS.md should be implemented as hooks instead
+  agents-md-hook-candidate:
+    enabled: auto
+    severity: info
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
-    enabled: true
+    enabled: false
+    severity: warning
+
+  # Cursor .mdc rule files must have valid frontmatter with known keys and correct types
+  cursor-mdc-valid:
+    enabled: auto
+    severity: error
+
+  # Legacy .cursorrules file is deprecated; migrate to .cursor/rules/*.mdc
+  cursor-rules-deprecated:
+    enabled: auto
+    severity: warning
+
+  # Kiro steering files must have valid frontmatter with known inclusion mode and correct types
+  kiro-steering-valid:
+    enabled: auto
+    severity: error
+
+  # Only 3 valid frontmatter fields: description, globs, alwaysApply
+  cursor-mdc-frontmatter:
+    enabled: auto
+    severity: warning
+
+  # Warn when .mdc rule activation type is Manual (no frontmatter)
+  cursor-activation-type:
+    enabled: auto
+    severity: warning
+
+  # CRLF line endings break --- frontmatter detection in .mdc files
+  cursor-crlf-detection:
+    enabled: auto
+    severity: error
+
+  # Validate glob patterns: catch invalid syntax and overly broad patterns
+  cursor-glob-valid:
+    enabled: auto
+    severity: warning
+
+  # Rule file has frontmatter but empty body — the rule has no content
+  cursor-empty-body:
+    enabled: auto
+    severity: warning
+
+  # Agent-requested rules need clear descriptions (the agent's only signal)
+  cursor-description-quality:
+    enabled: auto
+    severity: warning
+
+  # Warn when multiple .mdc files have overlapping glob patterns
+  cursor-glob-overlap:
+    enabled: auto
+    severity: warning
+
+  # Warn when a rule file exceeds 500 lines (wastes context budget)
+  cursor-rule-size:
+    enabled: auto
+    severity: warning
+
+  # alwaysApply must be boolean, globs must be string or list
+  cursor-frontmatter-types:
+    enabled: auto
+    severity: error
+
+  # Detect .mdc files with >80% similar bodies — suggest consolidation
+  cursor-duplicate-rules:
+    enabled: auto
+    severity: warning
+
+  # Warn when >3 rules have alwaysApply: true (context budget)
+  cursor-always-apply-overuse:
+    enabled: auto
+    severity: warning
+
+  # Validate that @import targets in GEMINI.md resolve to existing files
+  gemini-import-valid:
+    enabled: auto
+    severity: warning
+
+  # Detect circular @import references in GEMINI.md files
+  gemini-import-circular:
+    enabled: auto
+    severity: error
+
+  # Warn when GEMINI.md import chains exceed depth 5
+  gemini-import-depth:
+    enabled: auto
+    severity: warning
+
+  # Detect @scope/package-name patterns that look like npm scoped packages, not imports
+  gemini-scope-false-positive:
+    enabled: auto
+    severity: warning
+
+  # Check subdirectory GEMINI.md files for contradictions with parent
+  gemini-hierarchy-consistency:
+    enabled: auto
+    severity: warning
+
+  # Warn when GEMINI.md is too large
+  gemini-size-limit:
+    enabled: auto
+    severity: warning
+
+  # Scan GEMINI.md for file path references to non-existent files
+  gemini-dead-file-refs:
+    enabled: auto
+    severity: warning
+
+  # Detect weak or hedging language in GEMINI.md instructions
+  gemini-weak-language:
+    enabled: auto
+    severity: info
+
+  # Detect tautological instructions that restate default AI behavior
+  gemini-tautological:
+    enabled: auto
+    severity: info
+
+  # Check that critical instructions are positioned at the top of GEMINI.md
+  gemini-critical-position:
+    enabled: auto
+    severity: info
+
+  # apm.yml must exist with required name and version fields
+  apm-manifest-valid:
+    enabled: auto
+    severity: error
+
+  # apm.yml target must use valid target values
+  apm-target-valid:
+    enabled: auto
+    severity: error
+
+  # apm.yml type must be a valid package type
+  apm-type-valid:
+    enabled: auto
+    severity: error
+
+  # apm.yml dependencies must have valid apm and mcp entries
+  apm-dependencies-valid:
+    enabled: auto
+    severity: error
+
+  # apm.yml compilation config must use valid values
+  apm-compilation-valid:
+    enabled: auto
     severity: warning
 
   # Detect hedging, vague, and non-actionable language in instruction files
   content-weak-language:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect broken file paths, npm scripts, and Makefile targets in instruction files
   content-dead-references:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect tautological instructions that the model already follows by default
   content-tautological:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect critical instructions in the middle of files where LLM attention is lowest
   content-critical-position:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Check if total instruction count across all files exceeds LLM instruction budget (~150)
   content-instruction-budget:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect instruction file sections that significantly overlap with README.md content
   content-readme-overlap:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)
   content-section-length:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect likely contradictions within instruction files using keyword-pair heuristics
   content-contradiction:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Detect instructions that should be automated as hooks instead of prose instructions
   content-hook-candidate:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Score instruction files on actionability (verb density, commands, file references)
   content-actionability-score:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Check that instruction files are organized into cognitive chunks with headings
   content-cognitive-chunks:
-    enabled: true
+    enabled: auto
     severity: info
 
   # Detect potential API keys, tokens, and passwords in instruction files
   content-embedded-secrets:
-    enabled: true
+    enabled: auto
     severity: error
 
   # Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
   content-cross-file-consistency:
-    enabled: true
+    enabled: auto
+    severity: warning
+
+  # MCP server declarations must have valid transport configuration
+  apm-mcp-transport:
+    enabled: auto
+    severity: error
+
+  # apm.lock.yaml must be consistent with apm.yml dependencies
+  apm-lockfile-consistency:
+    enabled: auto
+    severity: warning
+
+  # APM packages should have a README.md
+  apm-readme-present:
+    enabled: auto
+    severity: warning
+
+  # Entry point file specified in main/entry must exist
+  apm-entry-point:
+    enabled: auto
+    severity: error
+
+  # Package name should not conflict with well-known npm/pypi packages
+  apm-name-conflict:
+    enabled: auto
+    severity: warning
+
+  # YAML field value types must match the APM specification
+  apm-field-types:
+    enabled: auto
+    severity: error
+
+  # Flag deprecated or renamed fields in apm.yml
+  apm-deprecated-fields:
+    enabled: auto
     severity: warning
 
 # Load custom rules from these files

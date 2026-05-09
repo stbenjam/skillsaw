@@ -317,8 +317,8 @@ These rules validate skills against the [agentskills.io specification](https://a
 |---------|-------------|------------------|
 | `command-naming` | Command files should use kebab-case naming | warning |
 | `command-frontmatter` | Command files must have valid frontmatter with description | error |
-| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning |
-| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning |
+| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) |
+| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) |
 
 ### Marketplace
 
@@ -368,8 +368,47 @@ Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md
 
 | Rule ID | Description | Default Severity |
 |---------|-------------|------------------|
-| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (disabled) |
-| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (disabled) |
+| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) |
+| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) |
+
+### AGENTS.md Deep Validation
+
+Deep validation for AGENTS.md files (used by OpenAI Codex and GitHub Copilot coding agent). Checks size limits, override semantics, hierarchy consistency, dead references, weak language, structure quality, and more. Auto-enabled when AGENTS.md is detected.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `agents-md-structure` | AGENTS.md should have at least one heading and meaningful content | warning (auto) |
+| `agents-md-size-limit` | AGENTS.md must not exceed the Codex 32 KB size limit | warning (auto) |
+| `agents-md-override-semantics` | AGENTS.override.md replaces AGENTS.md entirely — verify it is self-contained | warning (auto) |
+| `agents-md-hierarchy-consistency` | Subdirectory AGENTS.md files should not contradict root AGENTS.md | warning (auto) |
+| `agents-md-dead-file-refs` | File paths referenced in AGENTS.md should exist in the repo | warning (auto) |
+| `agents-md-dead-command-refs` | Shell commands in AGENTS.md (npm scripts, make targets) should exist in the project | warning (auto) |
+| `agents-md-weak-language` | AGENTS.md should use direct, actionable language instead of vague phrases | info (auto) |
+| `agents-md-negative-only` | Negative instructions (never/don't) should include a positive alternative | warning (auto) |
+| `agents-md-section-length` | AGENTS.md sections should not exceed 50 lines (lost-in-the-middle effect) | warning (auto) |
+| `agents-md-structure-deep` | AGENTS.md should have task-organized structure with boundary sections | info (auto) |
+| `agents-md-tautological` | Remove self-evident instructions like 'write clean code' that waste instruction budget | warning (auto) |
+| `agents-md-critical-position` | Critical instructions (MUST/NEVER/ALWAYS) should be in the first or last 20% of the file | info (auto) |
+| `agents-md-hook-candidate` | Deterministic rules in AGENTS.md should be implemented as hooks instead | info (auto) |
+
+**`agents-md-size-limit` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `warn_bytes` | Byte count to warn at | `24576` |
+| `error_bytes` | Byte count to error at | `32768` |
+
+**`agents-md-section-length` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max_lines` | Max lines per section | `50` |
+
+**`agents-md-critical-position` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `zone_pct` | Percentage of file considered primacy/recency zone | `20` |
 
 ### Context Budget
 
@@ -384,6 +423,52 @@ Warns when instruction and configuration files exceed recommended token limits. 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+
+### Cursor Rules
+
+Validates Cursor IDE `.cursor/rules/*.mdc` files (YAML frontmatter + Markdown content) and warns about the deprecated `.cursorrules` file. The monolithic rules (`cursor-mdc-valid`, `cursor-rules-deprecated`) are disabled by default. The 11 focused rules auto-enable when `.cursor/` is present and include autofixes for common issues.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `cursor-mdc-valid` | Cursor .mdc rule files must have valid frontmatter with known keys and correct types | error (auto) |
+| `cursor-rules-deprecated` | Legacy .cursorrules file is deprecated; migrate to .cursor/rules/*.mdc | warning (auto) |
+| `cursor-mdc-frontmatter` | Only 3 valid frontmatter fields: description, globs, alwaysApply | warning (auto) |
+| `cursor-activation-type` | Warn when .mdc rule activation type is Manual (no frontmatter) | warning (auto) |
+| `cursor-crlf-detection` | CRLF line endings break --- frontmatter detection in .mdc files | error (auto) |
+| `cursor-glob-valid` | Validate glob patterns: catch invalid syntax and overly broad patterns | warning (auto) |
+| `cursor-empty-body` | Rule file has frontmatter but empty body — the rule has no content | warning (auto) |
+| `cursor-description-quality` | Agent-requested rules need clear descriptions (the agent's only signal) | warning (auto) |
+| `cursor-glob-overlap` | Warn when multiple .mdc files have overlapping glob patterns | warning (auto) |
+| `cursor-rule-size` | Warn when a rule file exceeds 500 lines (wastes context budget) | warning (auto) |
+| `cursor-frontmatter-types` | alwaysApply must be boolean, globs must be string or list | error (auto) |
+| `cursor-duplicate-rules` | Detect .mdc files with >80% similar bodies — suggest consolidation | warning (auto) |
+| `cursor-always-apply-overuse` | Warn when >3 rules have alwaysApply: true (context budget) | warning (auto) |
+
+**`cursor-rule-size` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max-lines` | Maximum lines before warning | `500` |
+
+**`cursor-duplicate-rules` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `similarity-threshold` | Minimum similarity ratio (0-1) to flag as duplicate | `0.8` |
+
+**`cursor-always-apply-overuse` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max-always-apply` | Maximum number of rules with alwaysApply: true before warning | `3` |
+
+### Kiro Steering
+
+Validates Kiro IDE `.kiro/steering/*.md` files (YAML frontmatter with inclusion modes, fileMatchPattern globs, and auto-mode metadata). Disabled by default.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `kiro-steering-valid` | Kiro steering files must have valid frontmatter with known inclusion mode and correct types | error (auto) |
 
 <!-- END GENERATED RULES -->
 
