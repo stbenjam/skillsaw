@@ -83,7 +83,6 @@ from .content_rules import (
 
 from .coderabbit import (
     CoderabbitYamlValidRule,
-    CoderabbitInstructionsRule,
 )
 
 # All builtin rules
@@ -143,7 +142,6 @@ BUILTIN_RULES = [
     ContentInconsistentTerminologyRule,
     # CodeRabbit
     CoderabbitYamlValidRule,
-    CoderabbitInstructionsRule,
 ]
 
 
@@ -191,5 +189,4 @@ __all__ = [
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
     "CoderabbitYamlValidRule",
-    "CoderabbitInstructionsRule",
 ]

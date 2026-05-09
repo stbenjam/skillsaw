@@ -3,14 +3,16 @@ Shared content analyzers for instruction file intelligence rules.
 
 These analyzers are called by content-* rules to detect quality issues
 in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
-.cursorrules, copilot-instructions.md, .cursor/rules/*.mdc).
+.cursorrules, copilot-instructions.md, .cursor/rules/*.mdc, .coderabbit.yaml).
 """
 
 import fnmatch
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set, Tuple
+
+import yaml
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
@@ -217,6 +219,8 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add(rule_file, "rule")
 
+    _add(context.root_path / ".coderabbit.yaml", "coderabbit")
+
     for glob_pattern in getattr(context, "content_paths", []):
         for extra in sorted(context.root_path.glob(glob_pattern)):
             if extra.is_file():
@@ -234,17 +238,201 @@ def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
 
 
 def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
-    """Read file and strip YAML frontmatter if present."""
+    """Read file and return the instruction body text.
+
+    Handles special file types:
+    - ``.mdc``: strips YAML frontmatter.
+    - ``.coderabbit.yaml``: extracts and concatenates all ``instructions``
+      field values so content analyzers see only instruction text.
+    """
     content = read_text(path)
     if content is None:
         return None
-    if path.suffix == ".mdc":
+    if path.name == ".coderabbit.yaml":
+        body = _extract_coderabbit_instructions_body(content)
+    elif path.suffix == ".mdc":
         _, body = parse_frontmatter(content)
     else:
         body = content
     if strip_code_blocks:
         body = _strip_fenced_code_blocks(body)
     return body
+
+
+# ---------------------------------------------------------------------------
+# CodeRabbit instruction extraction helpers
+# ---------------------------------------------------------------------------
+
+_CODERABBIT_FILENAME = ".coderabbit.yaml"
+
+
+def _find_yaml_key_line(raw: str, key: str) -> Optional[int]:
+    """Find the line number of a YAML key in raw text.
+
+    Scans line-by-line for ``key:`` at any indentation level.  Returns
+    the 1-based line number of the *last* occurrence so that nested keys
+    such as ``instructions`` resolve to the most specific location when
+    the caller is walking a particular branch of the tree.  For
+    top-level unique keys the result is the same either way.
+    """
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
+    last: Optional[int] = None
+    for i, line in enumerate(raw.splitlines(), 1):
+        if pattern.match(line):
+            last = i
+    return last
+
+
+def _find_yaml_key_line_after(raw: str, key: str, after_line: int) -> Optional[int]:
+    """Find the line number of a YAML key occurring after a given line."""
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
+    for i, line in enumerate(raw.splitlines(), 1):
+        if i > after_line and pattern.match(line):
+            return i
+    return None
+
+
+def _find_nth_key_line(raw: str, key: str, n: int) -> Optional[int]:
+    """Find the line number of the *n*-th (0-based) occurrence of *key*."""
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
+    count = 0
+    for i, line in enumerate(raw.splitlines(), 1):
+        if pattern.match(line):
+            if count == n:
+                return i
+            count += 1
+    return None
+
+
+def _find_nth_list_item_key_line(raw: str, key: str, n: int, after_line: int = 0) -> Optional[int]:
+    """Find the *n*-th (0-based) YAML list-item key (``- key:``) after *after_line*.
+
+    In YAML sequences the first key of each item is prefixed with ``- ``,
+    e.g. ``  - name: value``.  The standard ``_find_nth_key_line`` helper
+    doesn't match these because ``-`` is not whitespace.  This variant
+    matches both ``- key:`` and bare ``key:`` lines.
+    """
+    pattern = re.compile(rf"^\s*-\s+{re.escape(key)}\s*:")
+    count = 0
+    for i, line in enumerate(raw.splitlines(), 1):
+        if i <= after_line:
+            continue
+        if pattern.match(line):
+            if count == n:
+                return i
+            count += 1
+    return None
+
+
+def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[int]]]:
+    """Extract all instruction text fields from a parsed CodeRabbit config.
+
+    Returns a list of ``(location_label, text, line_number)`` tuples.
+    """
+    results: List[Tuple[str, str, Optional[int]]] = []
+    if not isinstance(data, dict):
+        return results
+
+    # reviews.instructions
+    reviews = data.get("reviews")
+    if isinstance(reviews, dict):
+        instr = reviews.get("instructions")
+        if isinstance(instr, str) and instr.strip():
+            # Find the "instructions" key that appears after "reviews"
+            reviews_line = _find_yaml_key_line(raw, "reviews")
+            line = None
+            if reviews_line is not None:
+                line = _find_yaml_key_line_after(raw, "instructions", reviews_line)
+            if line is None:
+                line = _find_yaml_key_line(raw, "instructions")
+            results.append(("reviews.instructions", instr, line))
+
+        # reviews.path_instructions[].instructions
+        path_instructions = reviews.get("path_instructions")
+        if isinstance(path_instructions, list):
+            for idx, entry in enumerate(path_instructions):
+                if not isinstance(entry, dict):
+                    continue
+                pi = entry.get("instructions")
+                if isinstance(pi, str) and pi.strip():
+                    path_val = entry.get("path", f"[{idx}]")
+                    line = _find_nth_key_line(raw, "instructions", len(results))
+                    results.append(
+                        (f"reviews.path_instructions[{path_val}].instructions", pi, line)
+                    )
+
+        # reviews.tools.<tool>.instructions
+        tools = reviews.get("tools")
+        if isinstance(tools, dict):
+            for tool_name, tool_cfg in tools.items():
+                if not isinstance(tool_cfg, dict):
+                    continue
+                ti = tool_cfg.get("instructions")
+                if isinstance(ti, str) and ti.strip():
+                    tool_line = _find_yaml_key_line(raw, tool_name)
+                    line = None
+                    if tool_line is not None:
+                        line = _find_yaml_key_line_after(raw, "instructions", tool_line)
+                    results.append((f"reviews.tools.{tool_name}.instructions", ti, line))
+
+        # reviews.pre_merge_checks.custom_checks[].instructions
+        pre_merge = reviews.get("pre_merge_checks")
+        if isinstance(pre_merge, dict):
+            custom_checks = pre_merge.get("custom_checks")
+            if isinstance(custom_checks, list):
+                # Find the "custom_checks" key so we only look within it.
+                custom_checks_line = _find_yaml_key_line(raw, "custom_checks") or 0
+                for idx, check in enumerate(custom_checks):
+                    if not isinstance(check, dict):
+                        continue
+                    ci = check.get("instructions")
+                    if isinstance(ci, str) and ci.strip():
+                        check_name = check.get("name", f"[{idx}]")
+                        # Find the nth list-item "- name:" after custom_checks,
+                        # then the "instructions" key following it.
+                        name_line = _find_nth_list_item_key_line(
+                            raw, "name", idx, after_line=custom_checks_line
+                        )
+                        line = None
+                        if name_line is not None:
+                            line = _find_yaml_key_line_after(raw, "instructions", name_line)
+                        results.append(
+                            (
+                                f"reviews.pre_merge_checks.custom_checks[{check_name}].instructions",
+                                ci,
+                                line,
+                            )
+                        )
+
+    # chat.instructions
+    chat = data.get("chat")
+    if isinstance(chat, dict):
+        ci = chat.get("instructions")
+        if isinstance(ci, str) and ci.strip():
+            chat_line = _find_yaml_key_line(raw, "chat")
+            line = None
+            if chat_line is not None:
+                line = _find_yaml_key_line_after(raw, "instructions", chat_line)
+            if line is None:
+                line = _find_yaml_key_line(raw, "instructions")
+            results.append(("chat.instructions", ci, line))
+
+    return results
+
+
+def _extract_coderabbit_instructions_body(raw: str) -> str:
+    """Extract instruction text from raw .coderabbit.yaml content.
+
+    Parses the YAML and concatenates all ``instructions`` field values
+    separated by double newlines so content analyzers see only plain text.
+    Returns an empty string on parse failure or when no instructions exist.
+    """
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return ""
+    instructions = _extract_instructions(data, raw)
+    return "\n\n".join(text for _, text, _ in instructions)
 
 
 class WeakLanguageDetector:

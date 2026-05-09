@@ -149,7 +149,6 @@ class LinterConfig:
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
-                "coderabbit-instructions": {"enabled": "auto", "severity": "warning"},
             }
         )
 

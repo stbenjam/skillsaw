@@ -111,11 +111,11 @@ RULE_GROUPS = [
     ),
     (
         "CodeRabbit",
-        ["coderabbit-yaml-valid", "coderabbit-instructions"],
-        "Validates `.coderabbit.yaml` config files. Checks YAML syntax and "
-        "scans instruction text fields (`reviews.instructions`, per-path "
-        "instructions, per-tool instructions, `chat.instructions`) for "
-        "content quality issues such as weak/hedge language. Auto-enabled "
+        ["coderabbit-yaml-valid"],
+        "Validates `.coderabbit.yaml` config files for YAML syntax. "
+        "Instruction text fields (`reviews.instructions`, per-path "
+        "instructions, per-tool instructions, `chat.instructions`) are "
+        "automatically checked by the content-* rules above. Auto-enabled "
         "when `.coderabbit.yaml` is detected.",
     ),
 ]

@@ -428,12 +428,11 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 
 ### CodeRabbit
 
-Validates `.coderabbit.yaml` config files. Checks YAML syntax and scans instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) for content quality issues such as weak/hedge language. Auto-enabled when `.coderabbit.yaml` is detected.
+Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) are automatically checked by the content-* rules above. Auto-enabled when `.coderabbit.yaml` is detected.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
-| `coderabbit-instructions` | Check .coderabbit.yaml instruction fields for content quality issues | warning (auto) | - |
 
 <!-- END GENERATED RULES -->
 

@@ -1,12 +1,22 @@
 """Tests for .coderabbit.yaml linting rules."""
 
+import yaml
+
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.coderabbit import (
     CoderabbitYamlValidRule,
-    CoderabbitInstructionsRule,
+)
+from skillsaw.rules.builtin.content_analysis import (
     _extract_instructions,
+    _extract_coderabbit_instructions_body,
+    gather_all_content_files,
+    _get_body,
+)
+from skillsaw.rules.builtin.content_rules import (
+    ContentWeakLanguageRule,
+    ContentTautologicalRule,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,58 +84,76 @@ class TestCoderabbitYamlValidRule:
 
 
 # ---------------------------------------------------------------------------
-# CoderabbitInstructionsRule
+# Content rules on .coderabbit.yaml instructions
 # ---------------------------------------------------------------------------
 
 
-class TestCoderabbitInstructionsRule:
-    def test_rule_metadata(self):
-        rule = CoderabbitInstructionsRule()
-        assert rule.rule_id == "coderabbit-instructions"
-        assert rule.default_severity() == Severity.WARNING
-        assert rule.repo_types == {RepositoryType.CODERABBIT}
+class TestContentRulesOnCoderabbit:
+    """Verify that content-* rules fire on .coderabbit.yaml instruction text."""
 
-    def test_no_file_passes(self, temp_dir):
+    def test_weak_language_detected_in_reviews_instructions(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  instructions: 'Try to check for null pointers if possible.'\n"
+        )
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
+        phrases = [v.message for v in coderabbit_violations]
+        assert any("try to" in msg.lower() or "if possible" in msg.lower() for msg in phrases)
 
-    def test_no_instructions_passes(self, temp_dir):
-        (temp_dir / ".coderabbit.yaml").write_text("language: en-US\nreviews:\n  profile: chill\n")
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
-
-    def test_clean_instructions_passes(self, temp_dir):
+    def test_clean_instructions_no_violations(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text(
             "reviews:\n  instructions: 'Always check for null pointers.'\n"
         )
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) == 0
 
-    def test_weak_language_in_reviews_instructions(self, temp_dir):
+    def test_tautological_detected_in_instructions(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text(
-            "reviews:\n  instructions: 'Maybe check for null pointers if possible.'\n"
+            "reviews:\n  instructions: 'Write clean code and follow best practices.'\n"
         )
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "weak" in violations[0].message.lower() or "hedge" in violations[0].message.lower()
-        assert "reviews.instructions" in violations[0].message
+        violations = ContentTautologicalRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
 
-    def test_weak_language_in_path_instructions(self, temp_dir):
-        content = (
-            "reviews:\n"
-            "  path_instructions:\n"
-            "    - path: 'src/**'\n"
-            "      instructions: 'Perhaps validate inputs here.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
+    def test_no_instructions_no_content_violations(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("language: en-US\nreviews:\n  profile: chill\n")
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "path_instructions" in violations[0].message
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) == 0
+
+    def test_invalid_yaml_no_content_violations(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(":\n  bad: [unterminated\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) == 0
+
+    def test_weak_language_in_chat_instructions(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "chat:\n  instructions: 'You might want to be helpful.'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
 
     def test_weak_language_in_tool_instructions(self, temp_dir):
         content = (
@@ -136,164 +164,74 @@ class TestCoderabbitInstructionsRule:
         )
         (temp_dir / ".coderabbit.yaml").write_text(content)
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "biome" in violations[0].message
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
 
-    def test_weak_language_in_chat_instructions(self, temp_dir):
-        content = "chat:\n  instructions: 'You might want to be helpful.'\n"
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "chat.instructions" in violations[0].message
 
-    def test_weak_language_in_custom_check_instructions(self, temp_dir):
-        content = (
+# ---------------------------------------------------------------------------
+# _get_body for .coderabbit.yaml
+# ---------------------------------------------------------------------------
+
+
+class TestGetBodyCoderabbit:
+    """Verify _get_body extracts instruction text from .coderabbit.yaml."""
+
+    def test_extracts_review_instructions(self, temp_dir):
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text("reviews:\n  instructions: 'Do stuff.'\n")
+        body = _get_body(cr)
+        assert body is not None
+        assert "Do stuff." in body
+
+    def test_extracts_multiple_instruction_fields(self, temp_dir):
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text(
             "reviews:\n"
-            "  pre_merge_checks:\n"
-            "    custom_checks:\n"
-            "      - name: 'Go Error Handling'\n"
-            "        mode: warning\n"
-            "        instructions: 'Maybe check for error handling.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "custom_checks" in violations[0].message
-        assert "Go Error Handling" in violations[0].message
-
-    def test_clean_custom_check_instructions_passes(self, temp_dir):
-        content = (
-            "reviews:\n"
-            "  pre_merge_checks:\n"
-            "    custom_checks:\n"
-            "      - name: 'Go Error Handling'\n"
-            "        mode: warning\n"
-            "        instructions: 'Ensure all errors are wrapped with fmt.Errorf.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
-
-    def test_custom_check_instructions_line_number(self, temp_dir):
-        content = (
-            "language: en-US\n"
-            "reviews:\n"
-            "  pre_merge_checks:\n"
-            "    custom_checks:\n"
-            "      - name: 'Go Error Handling'\n"
-            "        mode: warning\n"
-            "        instructions: 'Maybe check things.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert violations[0].line == 7
-
-    def test_multiple_custom_checks_with_issues(self, temp_dir):
-        content = (
-            "reviews:\n"
-            "  pre_merge_checks:\n"
-            "    custom_checks:\n"
-            "      - name: 'Check A'\n"
-            "        instructions: 'Maybe do A.'\n"
-            "      - name: 'Check B'\n"
-            "        instructions: 'Perhaps do B.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 2
-        assert "Check A" in violations[0].message
-        assert "Check B" in violations[1].message
-
-    def test_multiple_instruction_fields_with_issues(self, temp_dir):
-        content = (
-            "reviews:\n"
-            "  instructions: 'Maybe be strict.'\n"
+            "  instructions: 'Review stuff.'\n"
             "chat:\n"
-            "  instructions: 'Perhaps answer questions.'\n"
+            "  instructions: 'Chat stuff.'\n"
         )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 2
+        body = _get_body(cr)
+        assert body is not None
+        assert "Review stuff." in body
+        assert "Chat stuff." in body
 
-    def test_truncation_with_many_weak_phrases(self, temp_dir):
-        """When 4+ weak-language matches are found, the message should truncate with '(and N more)'."""
-        (temp_dir / ".coderabbit.yaml").write_text(
-            "reviews:\n"
-            "  instructions: |\n"
-            "    Maybe check for nulls.\n"
-            "    Perhaps validate inputs.\n"
-            "    Try to follow the style guide.\n"
-            "    You might want to add tests.\n"
-            "    Could potentially break things.\n"
-        )
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "(and 2 more)" in violations[0].message
+    def test_returns_empty_for_no_instructions(self, temp_dir):
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text("language: en-US\n")
+        body = _get_body(cr)
+        assert body == ""
 
-    def test_consider_with_action_verb_flagged(self, temp_dir):
-        """'consider using' should be flagged as weak language."""
-        (temp_dir / ".coderabbit.yaml").write_text(
-            "reviews:\n  instructions: 'Consider using type hints everywhere.'\n"
-        )
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "consider" in violations[0].message.lower()
+    def test_returns_empty_for_invalid_yaml(self, temp_dir):
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text(":\n  bad: [unterminated\n")
+        body = _get_body(cr)
+        assert body == ""
 
-    def test_consider_without_action_verb_passes(self, temp_dir):
-        """'consider the following' should NOT be flagged -- it is legitimate."""
-        (temp_dir / ".coderabbit.yaml").write_text(
-            "reviews:\n  instructions: 'Consider the following constraints when reviewing.'\n"
-        )
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
 
-    def test_severity_override_respected(self, temp_dir):
-        """User severity overrides from config should apply to weak-language violations."""
-        (temp_dir / ".coderabbit.yaml").write_text(
-            "reviews:\n  instructions: 'Maybe check for null pointers.'\n"
-        )
-        context = RepositoryContext(temp_dir)
-        rule = CoderabbitInstructionsRule(config={"severity": "error"})
-        violations = rule.check(context)
-        assert len(violations) == 1
-        assert violations[0].severity == Severity.ERROR
+# ---------------------------------------------------------------------------
+# gather_all_content_files includes .coderabbit.yaml
+# ---------------------------------------------------------------------------
 
-    def test_invalid_yaml_skipped(self, temp_dir):
-        (temp_dir / ".coderabbit.yaml").write_text(":\n  bad: [unterminated\n")
-        context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 0
 
-    def test_line_number_reported(self, temp_dir):
-        content = (
-            "language: en-US\n"
-            "reviews:\n"
-            "  profile: chill\n"
-            "  instructions: 'Maybe check things.'\n"
-        )
-        (temp_dir / ".coderabbit.yaml").write_text(content)
+class TestGatherContentFilesCoderabbit:
+    def test_includes_coderabbit_yaml(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  instructions: 'Do stuff.'\n")
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert violations[0].line == 4
+        files = gather_all_content_files(context)
+        paths = [cf.path for cf in files]
+        assert temp_dir / ".coderabbit.yaml" in paths
+        categories = {cf.category for cf in files if cf.path == temp_dir / ".coderabbit.yaml"}
+        assert "coderabbit" in categories
 
-    def test_file_path_reported(self, temp_dir):
-        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  instructions: 'Maybe do things.'\n")
+    def test_not_included_when_absent(self, temp_dir):
         context = RepositoryContext(temp_dir)
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert violations[0].file_path == temp_dir / ".coderabbit.yaml"
+        files = gather_all_content_files(context)
+        paths = [cf.path for cf in files]
+        assert temp_dir / ".coderabbit.yaml" not in paths
 
 
 # ---------------------------------------------------------------------------
@@ -304,8 +242,6 @@ class TestCoderabbitInstructionsRule:
 class TestExtractInstructions:
     def test_reviews_instructions(self):
         raw = "reviews:\n  instructions: 'Do stuff.'\n"
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 1
@@ -321,8 +257,6 @@ class TestExtractInstructions:
             "    - path: 'tests/**'\n"
             "      instructions: 'Check tests.'\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
@@ -338,8 +272,6 @@ class TestExtractInstructions:
             "    eslint:\n"
             "      instructions: 'Use eslint rules.'\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
@@ -349,8 +281,6 @@ class TestExtractInstructions:
 
     def test_chat_instructions(self):
         raw = "chat:\n  instructions: 'Be helpful.'\n"
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 1
@@ -359,16 +289,12 @@ class TestExtractInstructions:
 
     def test_empty_instructions_skipped(self):
         raw = "reviews:\n  instructions: ''\n"
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
 
     def test_non_string_instructions_skipped(self):
         raw = "reviews:\n  instructions:\n    - item1\n    - item2\n"
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
@@ -385,8 +311,6 @@ class TestExtractInstructions:
             "        mode: error\n"
             "        instructions: 'Prevent SQL injection.'\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
@@ -405,8 +329,6 @@ class TestExtractInstructions:
             "      - name: 'SQL Injection'\n"
             "        instructions: 'Prevent SQL injection.'\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
@@ -421,8 +343,6 @@ class TestExtractInstructions:
             "      - name: 'Check A'\n"
             "        instructions: ''\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
@@ -435,16 +355,12 @@ class TestExtractInstructions:
             "      - name: 'Check A'\n"
             "        mode: warning\n"
         )
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
 
     def test_no_reviews_no_chat(self):
         raw = "language: en-US\n"
-        import yaml
-
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
@@ -461,16 +377,20 @@ class TestCoderabbitMultiType:
         claude_dir = temp_dir / ".claude"
         claude_dir.mkdir()
         (claude_dir / "commands").mkdir()
-        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  instructions: 'Maybe be strict.'\n")
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  instructions: 'Try to be strict.'\n"
+        )
 
         context = RepositoryContext(temp_dir)
         assert RepositoryType.CODERABBIT in context.repo_types
         assert RepositoryType.DOT_CLAUDE in context.repo_types
 
-        # The coderabbit rules should still fire
-        violations = CoderabbitInstructionsRule().check(context)
-        assert len(violations) == 1
-        assert "weak" in violations[0].message.lower() or "hedge" in violations[0].message.lower()
+        # Content weak-language rule should fire on the coderabbit instruction text
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
 
     def test_coderabbit_rules_auto_enabled_with_coderabbit_type(self, temp_dir):
         """When repo has CODERABBIT type, auto-enabled coderabbit rules should fire"""
@@ -506,14 +426,6 @@ class TestCoderabbitConfig:
         config = LinterConfig.default()
         assert config.get_rule_config("coderabbit-yaml-valid").get("enabled") == "auto"
 
-    def test_instructions_default_auto(self):
-        config = LinterConfig.default()
-        assert config.get_rule_config("coderabbit-instructions").get("enabled") == "auto"
-
     def test_yaml_valid_default_severity_error(self):
         config = LinterConfig.default()
         assert config.get_rule_config("coderabbit-yaml-valid").get("severity") == "error"
-
-    def test_instructions_default_severity_warning(self):
-        config = LinterConfig.default()
-        assert config.get_rule_config("coderabbit-instructions").get("severity") == "warning"
