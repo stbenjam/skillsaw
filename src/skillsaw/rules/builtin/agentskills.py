@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple, Dict
 
 import yaml
 
-from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line
 
@@ -20,6 +20,13 @@ COMPATIBILITY_MAX_LENGTH = 500
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
 DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
+
+
+def _to_kebab(name: str) -> str:
+    s = re.sub(r"([a-z])([A-Z])", r"\1-\2", name)
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower())
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s
 
 
 @lru_cache(maxsize=512)
@@ -81,6 +88,49 @@ class AgentSkillValidRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing SKILL.md files for agentskills.io skills.\n\n"
+            "Rules:\n"
+            "- The frontmatter must have 'name' and 'description' fields\n"
+            "- 'name' should be the directory name in lowercase kebab-case\n"
+            "- 'description' should be a concise one-line summary of what the skill does, "
+            "derived from reading the SKILL.md body content\n"
+            "- Preserve existing frontmatter fields\n"
+            "- Preserve the SKILL.md body content"
+        )
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+            if "Missing required 'name'" not in v.message:
+                continue
+            original = v.file_path.read_text(encoding="utf-8")
+            dir_name = v.file_path.parent.name
+            kebab_name = _to_kebab(dir_name)
+            match = re.match(r"^---\s*\n(.*?)\n---", original, re.DOTALL)
+            if match:
+                fm_text = match.group(1)
+                new_fm = f"name: {kebab_name}\n{fm_text}"
+                fixed = original.replace(match.group(0), f"---\n{new_fm}\n---", 1)
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=v.file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=original,
+                        fixed_content=fixed,
+                        description=f"Added name '{kebab_name}' from directory name",
+                        violations_fixed=[v],
+                    )
+                )
+        return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -265,6 +315,38 @@ class AgentSkillNameRule(Rule):
                 )
 
         return violations
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+            original = v.file_path.read_text(encoding="utf-8")
+            match = re.search(r"^name:\s*(.+)$", original, re.MULTILINE)
+            if not match:
+                continue
+            old_name = match.group(1).strip()
+            if "does not match directory" in v.message:
+                new_name = v.file_path.parent.name
+            else:
+                new_name = _to_kebab(old_name)
+            if new_name == old_name or not NAME_PATTERN.match(new_name):
+                continue
+            fixed = original.replace(f"name: {old_name}", f"name: {new_name}", 1)
+            results.append(
+                AutofixResult(
+                    rule_id=self.rule_id,
+                    file_path=v.file_path,
+                    confidence=AutofixConfidence.SAFE,
+                    original_content=original,
+                    fixed_content=fixed,
+                    description=f"Renamed '{old_name}' to '{new_name}'",
+                    violations_fixed=[v],
+                )
+            )
+        return results
 
 
 class AgentSkillDescriptionRule(Rule):
