@@ -131,7 +131,7 @@ class LinterConfig:
                 "instruction-file-valid": {"enabled": "auto", "severity": "warning"},
                 "instruction-imports-valid": {"enabled": "auto", "severity": "warning"},
                 # Context budget (opt-in; checks token limits across skills/commands/files)
-                "context-budget": {"enabled": False, "severity": "warning"},
+                "context-budget": {"enabled": "auto", "severity": "warning"},
                 # Content intelligence rules (auto-enabled when instruction files detected)
                 "content-weak-language": {"enabled": "auto", "severity": "warning"},
                 "content-tautological": {"enabled": "auto", "severity": "warning"},

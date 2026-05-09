@@ -67,10 +67,10 @@ class TestContextBudgetRule:
         assert rule.repo_types is None
         assert "limits" in rule.config_schema
 
-    def test_disabled_by_default(self):
+    def test_auto_by_default(self):
         config = LinterConfig.default()
         rule_config = config.get_rule_config("context-budget")
-        assert rule_config["enabled"] is False
+        assert rule_config["enabled"] == "auto"
 
     def test_under_limit_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("# Short\nHello.\n")

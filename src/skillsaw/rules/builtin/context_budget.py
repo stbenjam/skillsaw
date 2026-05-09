@@ -5,14 +5,20 @@ Rule for warning when instruction/config files exceed recommended token limits.
 from typing import Any, Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import gather_all_content_files
 
+# Anthropic recommends keeping instruction files under ~5k tokens to avoid
+# attention degradation.  These defaults use 6k warn / 12k error for primary
+# instruction files and tighter limits for on-demand components (skills,
+# commands) that share the context window.
+# Ref: https://code.claude.com/docs/en/best-practices
 DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "agents-md": {"warn": 6000, "error": 12000},
     "claude-md": {"warn": 6000, "error": 12000},
     "gemini-md": {"warn": 6000, "error": 12000},
+    "instruction": {"warn": 4000, "error": 8000},
     "skill": {"warn": 3000, "error": 6000},
     "command": {"warn": 2000, "error": 4000},
     "agent": {"warn": 2000, "error": 4000},
@@ -44,6 +50,9 @@ def _estimate_tokens(text: str) -> int:
 
 class ContextBudgetRule(Rule):
     """Warn or error when files exceed recommended token limits"""
+
+    formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     config_schema = {
         "limits": {
