@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skillsaw"
-version = "0.7.0"
+version = "0.7.1"
 description = "A configurable linter for agent skills, plugins, and AI coding assistant context"
 readme = "README.md"
 authors = [
