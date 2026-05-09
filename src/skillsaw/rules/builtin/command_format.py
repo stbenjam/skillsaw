@@ -102,7 +102,9 @@ class CommandFrontmatterRule(Rule):
 
         return violations
 
-    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[AutofixResult]:
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():

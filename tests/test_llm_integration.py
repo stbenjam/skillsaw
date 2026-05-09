@@ -29,9 +29,7 @@ class FakeProvider:
 
     def complete(self, messages, tools, model, max_tokens=4096):
         if self._idx >= len(self._responses):
-            return CompletionResult(
-                content="Done.", tool_calls=[], usage=TokenUsage(10, 10)
-            )
+            return CompletionResult(content="Done.", tool_calls=[], usage=TokenUsage(10, 10))
         resp = self._responses[self._idx]
         self._idx += 1
         return resp
@@ -50,7 +48,9 @@ class TestLLMFixWeakLanguage:
     """Test that the pipeline detects and fixes weak language."""
 
     def test_fix_hedging_language(self, tmp_path):
-        content = "# Instructions\n\nTry to use consistent formatting.\nConsider using TypeScript.\n"
+        content = (
+            "# Instructions\n\nTry to use consistent formatting.\nConsider using TypeScript.\n"
+        )
         _make_dot_claude_repo(tmp_path, content)
 
         config = LinterConfig.default()
@@ -63,30 +63,36 @@ class TestLLMFixWeakLanguage:
 
         rel_path = "CLAUDE.md"
         fixed_content = "# Instructions\n\nUse consistent formatting.\nUse TypeScript.\n"
-        provider = FakeProvider([
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
-                usage=TokenUsage(100, 20),
-            ),
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="2", name="write_file", arguments={
-                    "path": rel_path, "content": fixed_content
-                })],
-                usage=TokenUsage(100, 50),
-            ),
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="3", name="lint", arguments={"path": rel_path})],
-                usage=TokenUsage(100, 20),
-            ),
-            CompletionResult(
-                content="Fixed weak language.",
-                tool_calls=[],
-                usage=TokenUsage(100, 20),
-            ),
-        ])
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="2",
+                            name="write_file",
+                            arguments={"path": rel_path, "content": fixed_content},
+                        )
+                    ],
+                    usage=TokenUsage(100, 50),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="3", name="lint", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content="Fixed weak language.",
+                    tool_calls=[],
+                    usage=TokenUsage(100, 20),
+                ),
+            ]
+        )
 
         from skillsaw.rule import Severity
 
@@ -150,7 +156,9 @@ class TestLLMFixStaleReferences:
     """Test that stale model references are detected."""
 
     def test_detect_deprecated_model(self, tmp_path):
-        content = "# Config\n\nUse claude-2 for summarization tasks.\nUse gpt-3.5 for classification.\n"
+        content = (
+            "# Config\n\nUse claude-2 for summarization tasks.\nUse gpt-3.5 for classification.\n"
+        )
         _make_dot_claude_repo(tmp_path, content)
 
         config = LinterConfig.default()
@@ -191,25 +199,31 @@ class TestLLMFixPipelineRollback:
 
         worse_content = "# Instructions\n\nTry to be careful when deploying.\nConsider using caution.\nIf possible, be careful.\n"
         rel_path = "CLAUDE.md"
-        provider = FakeProvider([
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
-                usage=TokenUsage(100, 20),
-            ),
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="2", name="write_file", arguments={
-                    "path": rel_path, "content": worse_content
-                })],
-                usage=TokenUsage(100, 50),
-            ),
-            CompletionResult(
-                content="Done.",
-                tool_calls=[],
-                usage=TokenUsage(100, 20),
-            ),
-        ])
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="2",
+                            name="write_file",
+                            arguments={"path": rel_path, "content": worse_content},
+                        )
+                    ],
+                    usage=TokenUsage(100, 50),
+                ),
+                CompletionResult(
+                    content="Done.",
+                    tool_calls=[],
+                    usage=TokenUsage(100, 20),
+                ),
+            ]
+        )
 
         result = linter.llm_fix(provider)
         assert len(result.files_modified) == 0
@@ -230,30 +244,36 @@ class TestLLMFixDryRun:
 
         fixed_content = "# Instructions\n\nUse consistent formatting.\n"
         rel_path = "CLAUDE.md"
-        provider = FakeProvider([
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
-                usage=TokenUsage(100, 20),
-            ),
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="2", name="write_file", arguments={
-                    "path": rel_path, "content": fixed_content
-                })],
-                usage=TokenUsage(100, 50),
-            ),
-            CompletionResult(
-                content=None,
-                tool_calls=[ToolCall(id="3", name="lint", arguments={"path": rel_path})],
-                usage=TokenUsage(100, 20),
-            ),
-            CompletionResult(
-                content="Fixed.",
-                tool_calls=[],
-                usage=TokenUsage(100, 20),
-            ),
-        ])
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="2",
+                            name="write_file",
+                            arguments={"path": rel_path, "content": fixed_content},
+                        )
+                    ],
+                    usage=TokenUsage(100, 50),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="3", name="lint", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content="Fixed.",
+                    tool_calls=[],
+                    usage=TokenUsage(100, 20),
+                ),
+            ]
+        )
 
         result = linter.llm_fix(provider, dry_run=True)
         actual = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
@@ -292,7 +312,9 @@ class TestLLMFixHookCandidate:
     """Test hook candidate detection."""
 
     def test_detect_hook_candidate(self, tmp_path):
-        content = "# Rules\n\nAlways run tests before every commit.\nFormat code before committing.\n"
+        content = (
+            "# Rules\n\nAlways run tests before every commit.\nFormat code before committing.\n"
+        )
         _make_dot_claude_repo(tmp_path, content)
 
         config = LinterConfig.default()

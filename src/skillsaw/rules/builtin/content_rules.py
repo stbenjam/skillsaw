@@ -875,22 +875,52 @@ class ContentStaleReferencesRule(Rule):
     formats = ALL_INSTRUCTION_FORMATS
 
     _STALE_MODEL_NAMES = [
-        (re.compile(r"\bgpt-3\.5\b", re.IGNORECASE), "gpt-3.5 is deprecated — use gpt-4o-mini or newer"),
+        (
+            re.compile(r"\bgpt-3\.5\b", re.IGNORECASE),
+            "gpt-3.5 is deprecated — use gpt-4o-mini or newer",
+        ),
         (re.compile(r"\btext-davinci\b", re.IGNORECASE), "text-davinci models are retired"),
         (re.compile(r"\bcode-davinci\b", re.IGNORECASE), "code-davinci models are retired"),
-        (re.compile(r"\bclaude-instant\b", re.IGNORECASE), "claude-instant is deprecated — use claude-haiku or newer"),
-        (re.compile(r"\bclaude-2\b", re.IGNORECASE), "claude-2 is deprecated — use claude-sonnet-4 or newer"),
-        (re.compile(r"\bclaude-v1\b", re.IGNORECASE), "claude-v1 is deprecated — use claude-sonnet-4 or newer"),
-        (re.compile(r"\bclaude-3-opus\b", re.IGNORECASE), "claude-3-opus is deprecated — use claude-opus-4 or newer"),
-        (re.compile(r"\bclaude-3-sonnet\b", re.IGNORECASE), "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer"),
-        (re.compile(r"\bclaude-3-haiku\b", re.IGNORECASE), "claude-3-haiku is deprecated — use claude-haiku-4 or newer"),
-        (re.compile(r"\bclaude-3\.5-sonnet\b", re.IGNORECASE), "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer"),
-        (re.compile(r"\bclaude-3\.5-haiku\b", re.IGNORECASE), "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer"),
+        (
+            re.compile(r"\bclaude-instant\b", re.IGNORECASE),
+            "claude-instant is deprecated — use claude-haiku or newer",
+        ),
+        (
+            re.compile(r"\bclaude-2\b", re.IGNORECASE),
+            "claude-2 is deprecated — use claude-sonnet-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-v1\b", re.IGNORECASE),
+            "claude-v1 is deprecated — use claude-sonnet-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-3-opus\b", re.IGNORECASE),
+            "claude-3-opus is deprecated — use claude-opus-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-3-sonnet\b", re.IGNORECASE),
+            "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-3-haiku\b", re.IGNORECASE),
+            "claude-3-haiku is deprecated — use claude-haiku-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-3\.5-sonnet\b", re.IGNORECASE),
+            "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer",
+        ),
+        (
+            re.compile(r"\bclaude-3\.5-haiku\b", re.IGNORECASE),
+            "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer",
+        ),
     ]
 
     _STALE_APIS = [
         (re.compile(r"\b/v1/complete\b"), "/v1/complete is deprecated — use /v1/messages"),
-        (re.compile(r"\brequests\.get\b.*\bopenai\.com\b"), "Direct HTTP calls to OpenAI are fragile — use the official SDK"),
+        (
+            re.compile(r"\brequests\.get\b.*\bopenai\.com\b"),
+            "Direct HTTP calls to OpenAI are fragile — use the official SDK",
+        ),
     ]
 
     @property
@@ -951,24 +981,36 @@ class ContentInconsistentTerminologyRule(Rule):
     formats = ALL_INSTRUCTION_FORMATS
 
     _TERM_GROUPS: List[Tuple[str, List[re.Pattern]]] = [
-        ("directory/folder", [
-            re.compile(r"\bdirector(?:y|ies)\b", re.IGNORECASE),
-            re.compile(r"\bfolders?\b", re.IGNORECASE),
-        ]),
-        ("repo/repository/codebase", [
-            re.compile(r"\brepos?\b", re.IGNORECASE),
-            re.compile(r"\brepositories\b|\brepository\b", re.IGNORECASE),
-            re.compile(r"\bcodebase\b", re.IGNORECASE),
-        ]),
-        ("PR/pull request/merge request", [
-            re.compile(r"\bPRs?\b"),
-            re.compile(r"\bpull\s+requests?\b", re.IGNORECASE),
-            re.compile(r"\bmerge\s+requests?\b", re.IGNORECASE),
-        ]),
-        ("function/method", [
-            re.compile(r"\bfunctions?\b", re.IGNORECASE),
-            re.compile(r"\bmethods?\b", re.IGNORECASE),
-        ]),
+        (
+            "directory/folder",
+            [
+                re.compile(r"\bdirector(?:y|ies)\b", re.IGNORECASE),
+                re.compile(r"\bfolders?\b", re.IGNORECASE),
+            ],
+        ),
+        (
+            "repo/repository/codebase",
+            [
+                re.compile(r"\brepos?\b", re.IGNORECASE),
+                re.compile(r"\brepositories\b|\brepository\b", re.IGNORECASE),
+                re.compile(r"\bcodebase\b", re.IGNORECASE),
+            ],
+        ),
+        (
+            "PR/pull request/merge request",
+            [
+                re.compile(r"\bPRs?\b"),
+                re.compile(r"\bpull\s+requests?\b", re.IGNORECASE),
+                re.compile(r"\bmerge\s+requests?\b", re.IGNORECASE),
+            ],
+        ),
+        (
+            "function/method",
+            [
+                re.compile(r"\bfunctions?\b", re.IGNORECASE),
+                re.compile(r"\bmethods?\b", re.IGNORECASE),
+            ],
+        ),
     ]
 
     MIN_FILES = 2

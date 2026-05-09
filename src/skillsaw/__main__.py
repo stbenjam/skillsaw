@@ -565,8 +565,7 @@ def _run_fix(args):
             )
         elif event_type == "iteration":
             tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{dim}iteration"
-                  f" {kw['iteration']}/{kw['max_iterations']}{reset}")
+            print(f"  {tag}{dim}iteration" f" {kw['iteration']}/{kw['max_iterations']}{reset}")
         elif event_type == "tool_call":
             tool_args = kw.get("arguments", {})
             arg_summary = ""
@@ -582,8 +581,10 @@ def _run_fix(args):
             print(f"  {tag}{kw['name']}({arg_summary})")
         elif event_type == "retry":
             tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{yellow}{kw['remaining']} violation(s)"
-                  f" remain, retrying...{reset}")
+            print(
+                f"  {tag}{yellow}{kw['remaining']} violation(s)"
+                f" remain, retrying...{reset}"
+            )
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
@@ -591,12 +592,16 @@ def _run_fix(args):
             if not changed:
                 print(f"  {tag}{yellow}no changes{reset}")
             elif remaining == 0:
-                print(f"  {tag}{green}✓ all {kw['num_violations']}"
-                      f" violation(s) fixed{reset}")
+                print(
+                    f"  {tag}{green}✓ all {kw['num_violations']}"
+                    f" violation(s) fixed{reset}"
+                )
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {tag}{red}{fixed} fixed,"
-                      f" {remaining} failed{reset}")
+                print(
+                    f"  {tag}{red}{fixed} fixed,"
+                    f" {remaining} failed{reset}"
+                )
             print()
 
     max_workers = args.workers or config.llm.max_workers

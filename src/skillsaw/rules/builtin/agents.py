@@ -69,7 +69,9 @@ class AgentFrontmatterRule(Rule):
 
         return violations
 
-    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[AutofixResult]:
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
@@ -89,7 +91,9 @@ class AgentFrontmatterRule(Rule):
                         violations_fixed=[v],
                     )
                 )
-            elif ("Missing 'name'" in v.message or "Missing 'description'" in v.message) and original.startswith("---"):
+            elif (
+                "Missing 'name'" in v.message or "Missing 'description'" in v.message
+            ) and original.startswith("---"):
                 fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
                 if fm_match:
                     fm_text = fm_match.group(1)
@@ -100,8 +104,8 @@ class AgentFrontmatterRule(Rule):
                         additions.append("description: ")
                     if additions:
                         insert = "\n".join(additions) + "\n"
-                        fixed = original[:fm_match.end()].replace("\n---", f"\n{insert}---", 1)
-                        fixed += original[fm_match.end():]
+                        fixed = original[: fm_match.end()].replace("\n---", f"\n{insert}---", 1)
+                        fixed += original[fm_match.end() :]
                         results.append(
                             AutofixResult(
                                 rule_id=self.rule_id,

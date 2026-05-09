@@ -121,9 +121,7 @@ class LintTool:
         "required": ["path"],
     }
 
-    def __init__(
-        self, root: Path, config: "LinterConfig", rule_ids: Optional[Set[str]] = None
-    ):
+    def __init__(self, root: Path, config: "LinterConfig", rule_ids: Optional[Set[str]] = None):
         self._root = root
         self._config = config
         self._rule_ids = rule_ids
@@ -157,9 +155,7 @@ class LintTool:
             try:
                 rule_violations = rule.check(context)
                 violations.extend(
-                    v
-                    for v in rule_violations
-                    if v.file_path and v.file_path.resolve() == resolved
+                    v for v in rule_violations if v.file_path and v.file_path.resolve() == resolved
                 )
             except Exception:
                 pass

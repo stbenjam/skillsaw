@@ -374,7 +374,11 @@ class Linter:
                 ReadFileTool(self.context.root_path),
                 WriteFileTool(self.context.root_path),
                 ReplaceSectionTool(self.context.root_path),
-                LintTool(self.context.root_path, self.config, rule_ids={v.rule_id for v in file_violations}),
+                LintTool(
+                    self.context.root_path,
+                    self.config,
+                    rule_ids={v.rule_id for v in file_violations},
+                ),
                 DiffTool(self.context.root_path, originals),
             ]
 

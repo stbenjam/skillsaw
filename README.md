@@ -50,6 +50,9 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
 - [Configuration](#configuration)
 - [Builtin Rules](#builtin-rules)
+- [Autofixing](#autofixing)
+  - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
+  - [LLM-Powered Fixes (`--fix --llm`)](#llm-powered-fixes---fix---llm)
 - [Custom Rules](#custom-rules)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
@@ -283,14 +286,14 @@ See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
 
 These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable for agentskills repos, single plugins, and marketplaces whenever skills are detected.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) |
-| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) |
-| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
-| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) |
-| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) |
-| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | - |
+| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | - |
+| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
+| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
+| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
+| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
 
 **`agentskill-structure` parameters:**
 
@@ -300,12 +303,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Plugin Structure
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) |
-| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) |
-| `plugin-naming` | Plugin names should use kebab-case | warning (auto) |
-| `plugin-readme` | Plugin should have a README.md file | warning (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
+| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) | - |
+| `plugin-naming` | Plugin names should use kebab-case | warning (auto) | - |
+| `plugin-readme` | Plugin should have a README.md file | warning (auto) | - |
 
 **`plugin-json-valid` parameters:**
 
@@ -315,34 +318,34 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Command Format
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `command-naming` | Command files should use kebab-case naming | warning |
-| `command-frontmatter` | Command files must have valid frontmatter with description | error |
-| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) |
-| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `command-naming` | Command files should use kebab-case naming | warning | - |
+| `command-frontmatter` | Command files must have valid frontmatter with description | error | auto |
+| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |
+| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - |
 
 ### Marketplace
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) |
-| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - |
+| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | - |
 
 ### Skills, Agents, Hooks
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error |
-| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto |
+| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 
 ### MCP (Model Context Protocol)
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error |
-| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
+| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - |
 
 **`mcp-prohibited` parameters:**
 
@@ -352,40 +355,62 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Rules Directory
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
 
 ### Openclaw
 
 Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires when `metadata.openclaw` is present.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - |
 
 ### Instruction Files
 
 Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repository root. Checks encoding, non-emptiness, and that `@import` references resolve to existing files. Disabled by default.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) |
-| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - |
+| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) | - |
 
 ### Context Budget
 
 Warns when instruction and configuration files exceed recommended token limits. Uses a `len(text) / 4` approximation for token counting. Supports per-category `warn` and `error` thresholds. Disabled by default.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (disabled) | - |
 
 **`context-budget` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+
+### Content Intelligence
+
+Pattern-based content quality rules for AI coding assistant instruction files. Detect weak language, tautological instructions, contradictions, secrets, stale references, and other quality issues. All support LLM-powered fixes via `--fix --llm`.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
+| `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
+| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | info (auto) | llm |
+| `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
+| `content-instruction-budget` | Check if total instruction count across all files exceeds LLM instruction budget (~150) | warning (auto) | llm |
+| `content-readme-overlap` | Detect instruction file sections that significantly overlap with README.md content | info (auto) | llm |
+| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
+| `content-section-length` | Warn about markdown sections longer than 50 lines (optimal: 10-30 lines) | info (auto) | llm |
+| `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
+| `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
+| `content-actionability-score` | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
+| `content-cognitive-chunks` | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
+| `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
+| `content-stale-references` | Detect references to deprecated models, retired APIs, and outdated tooling | warning (auto) | llm |
+| `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
 
 <!-- END GENERATED RULES -->
 

@@ -202,6 +202,16 @@ rules:
     enabled: auto
     severity: error
 
+  # Detect references to deprecated models, retired APIs, and outdated tooling
+  content-stale-references:
+    enabled: auto
+    severity: warning
+
+  # Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')
+  content-inconsistent-terminology:
+    enabled: auto
+    severity: info
+
 # Load custom rules from these files
 custom-rules: []
 

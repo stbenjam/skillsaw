@@ -23,9 +23,7 @@ class FakeProvider:
     def complete(self, messages, tools, model, max_tokens=4096):
         with self._lock:
             if self._idx >= len(self._responses):
-                return CompletionResult(
-                    content="Done.", tool_calls=[], usage=TokenUsage(10, 10)
-                )
+                return CompletionResult(content="Done.", tool_calls=[], usage=TokenUsage(10, 10))
             resp = self._responses[self._idx]
             self._idx += 1
             return resp
@@ -71,10 +69,7 @@ class TestParallelToolExecution:
             except Exception as e:
                 errors.append(e)
 
-        threads = [
-            threading.Thread(target=read_file, args=(f"file{i}.md",))
-            for i in range(1, 4)
-        ]
+        threads = [threading.Thread(target=read_file, args=(f"file{i}.md",)) for i in range(1, 4)]
         for t in threads:
             t.start()
         for t in threads:
@@ -148,8 +143,11 @@ class TestParallelLLMFix:
         linter = Linter(context, config)
 
         violations = linter.run()
-        fixable = [v for v in violations if v.rule_id in
-                   {r.rule_id for r in linter.rules if r.llm_fix_prompt}]
+        fixable = [
+            v
+            for v in violations
+            if v.rule_id in {r.rule_id for r in linter.rules if r.llm_fix_prompt}
+        ]
         assert len(fixable) > 0
 
     def test_callback_thread_safety(self, tmp_path):
@@ -166,10 +164,12 @@ class TestParallelLLMFix:
             with lock:
                 events.append((event_type, dict(kw)))
 
-        provider = FakeProvider([
-            CompletionResult(content="Done.", tool_calls=[], usage=TokenUsage(10, 10))
-            for _ in range(20)
-        ])
+        provider = FakeProvider(
+            [
+                CompletionResult(content="Done.", tool_calls=[], usage=TokenUsage(10, 10))
+                for _ in range(20)
+            ]
+        )
 
         result = linter.llm_fix(provider, callback=callback, max_workers=2)
         progress_events = [e for e in events if e[0] == "progress"]
