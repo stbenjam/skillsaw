@@ -110,14 +110,23 @@ _budget_content = f"# Instructions\n\n{_budget_lines}\n"
 _budget_fixed_lines = "\n".join(f"Run check_{i} on every commit." for i in range(80))
 _budget_fixed = f"# Instructions\n\n{_budget_fixed_lines}\n"
 
-# Generate content for content-section-length (needs 50+ line section)
-_long_section_lines = "\n".join(f"Step {i}: do thing {i}." for i in range(60))
+# Generate content for content-section-length (needs >500 tokens in one section)
+_long_section_lines = "\n".join(
+    f"Configure application setting number {i} to the recommended production value for optimal performance."
+    for i in range(60)
+)
 _long_section_content = f"# Instructions\n\n{_long_section_lines}\n"
 _long_section_fixed = (
     "# Instructions\n\n## Phase 1\n\n"
-    + "\n".join(f"Step {i}: do thing {i}." for i in range(30))
+    + "\n".join(
+        f"Configure application setting number {i} to the recommended production value for optimal performance."
+        for i in range(30)
+    )
     + "\n\n## Phase 2\n\n"
-    + "\n".join(f"Step {i}: do thing {i}." for i in range(30, 60))
+    + "\n".join(
+        f"Configure application setting number {i} to the recommended production value for optimal performance."
+        for i in range(30, 60)
+    )
     + "\n"
 )
 

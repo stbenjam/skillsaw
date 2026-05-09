@@ -377,7 +377,16 @@ class ContentSectionLengthRule(Rule):
     formats = ALL_INSTRUCTION_FORMATS
     since = "0.7.0"
 
-    MAX_LINES = 50
+    _DEFAULT_MAX_TOKENS = 500
+    _CHARS_PER_TOKEN = 4
+
+    config_schema = {
+        "max-tokens": {
+            "type": "int",
+            "default": 500,
+            "description": "Maximum estimated tokens per section before triggering a warning",
+        },
+    }
 
     @property
     def rule_id(self) -> str:
@@ -385,7 +394,8 @@ class ContentSectionLengthRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)"
+        max_tokens = self.config.get("max-tokens", self._DEFAULT_MAX_TOKENS)
+        return f"Warn about markdown sections longer than ~{max_tokens} tokens"
 
     def default_severity(self) -> Severity:
         return Severity.INFO
@@ -394,17 +404,22 @@ class ContentSectionLengthRule(Rule):
     def llm_fix_prompt(self):
         return (
             "You are reorganizing AI coding assistant instruction files. "
-            "Long sections (over 50 lines) should be broken into smaller, "
+            "Long sections should be broken into smaller, "
             "focused subsections.\n\n"
             "Rules:\n"
-            "- Split long sections into 10-30 line subsections with descriptive headings\n"
+            "- Split long sections into smaller subsections with descriptive headings\n"
             "- Group related instructions under the same subsection\n"
             "- Use one heading level deeper than the parent section\n"
             "- Do NOT change the content of the instructions\n"
             "- Preserve markdown formatting"
         )
 
+    @classmethod
+    def _estimate_tokens(cls, text: str) -> int:
+        return max(1, len(text) // cls._CHARS_PER_TOKEN)
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        max_tokens = self.config.get("max-tokens", self._DEFAULT_MAX_TOKENS)
         violations = []
         for cf in gather_all_content_files(context):
             body = _get_body(cf.path)
@@ -433,11 +448,12 @@ class ContentSectionLengthRule(Rule):
                 )
 
             for heading, heading_line, start, end in sections:
-                length = end - start
-                if length > self.MAX_LINES:
+                section_text = "\n".join(lines[start:end])
+                token_count = self._estimate_tokens(section_text)
+                if token_count > max_tokens:
                     violations.append(
                         self.violation(
-                            f"Section '{heading}' is {length} lines (max recommended: {self.MAX_LINES})",
+                            f"Section '{heading}' is ~{token_count} tokens (max recommended: {max_tokens})",
                             file_path=cf.path,
                             line=heading_line if heading_line > 0 else None,
                         )

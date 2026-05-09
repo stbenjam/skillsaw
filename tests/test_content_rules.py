@@ -222,12 +222,15 @@ class TestContentSectionLengthRule:
         assert rule.default_severity() == Severity.INFO
 
     def test_long_section_warned(self, temp_dir):
-        lines = ["# Long Section"] + [f"Line {i}" for i in range(60)]
+        lines = ["# Long Section"] + [
+            f"Configure the application setting number {i} to the recommended production value for optimal performance."
+            for i in range(60)
+        ]
         (temp_dir / "CLAUDE.md").write_text("\n".join(lines) + "\n")
         context = RepositoryContext(temp_dir)
         violations = ContentSectionLengthRule().check(context)
         assert len(violations) >= 1
-        assert "60 lines" in violations[0].message
+        assert "tokens" in violations[0].message
 
     def test_short_sections_pass(self, temp_dir):
         content = "# Section 1\nLine 1\nLine 2\n\n# Section 2\nLine 3\n"
