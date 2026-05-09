@@ -770,17 +770,51 @@ class ContentEmbeddedSecretsRule(Rule):
     _PATTERNS = [
         (re.compile(p), desc)
         for p, desc in [
+            # OpenAI / Anthropic
             (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
+            (r"\bsk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key"),
+            # GitHub
             (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
             (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
             (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
             (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
+            (r"\bghr_[a-zA-Z0-9]{36,}", "GitHub refresh token"),
+            # GitLab
             (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
+            # AWS
             (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
-            (r"\bxoxb-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack bot token"),
-            (r"\bxoxp-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack user token"),
+            (r"\bASIA[0-9A-Z]{16}", "AWS temporary access key ID"),
+            # Slack
+            (r"\bxoxb-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack bot token"),
+            (r"\bxoxp-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack user token"),
+            (r"\bxoxa-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack app token"),
+            (r"\bxoxr-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack refresh token"),
+            # Stripe
+            (r"\bsk_live_[a-zA-Z0-9]{24,}", "Stripe secret key"),
+            (r"\brk_live_[a-zA-Z0-9]{24,}", "Stripe restricted key"),
+            # Google
+            (r"\bAIza[0-9A-Za-z_\-]{35}", "Google API key"),
+            # Twilio
+            (r"\bSK[0-9a-fA-F]{32}", "Twilio API key"),
+            # SendGrid
+            (r"\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}", "SendGrid API key"),
+            # Discord
+            (r"\b[MN][a-zA-Z0-9_\-]{23,}\.[a-zA-Z0-9_\-]{6}\.[a-zA-Z0-9_\-]{27,}", "Discord bot token"),
+            # npm
+            (r"\bnpm_[a-zA-Z0-9]{36}", "npm access token"),
+            # PyPI
+            (r"\bpypi-[a-zA-Z0-9]{16,}", "PyPI API token"),
+            # Datadog
+            (r"\b[a-f0-9]{32}(?=.*datadog)", "Datadog API key"),
+            # JWT (base64.base64.base64)
+            (r"\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*\.[a-zA-Z0-9_\-]+", "JSON Web Token"),
+            # Private keys
+            (r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private key"),
+            # Generic patterns
             (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", "Hardcoded password"),
             (r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded API key"),
+            (r"(?i)\bsecret[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded secret key"),
+            (r"(?i)\baccess[_-]?token\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded access token"),
         ]
     ]
 
