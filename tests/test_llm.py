@@ -329,9 +329,9 @@ class TestContentRuleLLMPrompts:
         assert "negative" in rule.llm_fix_prompt.lower()
 
     def test_base_rule_returns_none(self):
-        from skillsaw.rules.builtin.content_rules import ContentDeadReferencesRule
+        from skillsaw.rules.builtin.content_rules import ContentCriticalPositionRule
 
-        rule = ContentDeadReferencesRule()
+        rule = ContentCriticalPositionRule()
         assert rule.llm_fix_prompt is None
 
 

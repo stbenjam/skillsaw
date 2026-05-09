@@ -66,7 +66,6 @@ from .context_budget import (
 
 from .content_rules import (
     ContentWeakLanguageRule,
-    ContentDeadReferencesRule,
     ContentTautologicalRule,
     ContentCriticalPositionRule,
     ContentRedundantWithToolingRule,
@@ -79,7 +78,6 @@ from .content_rules import (
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentCrossFileConsistencyRule,
 )
 
 # All builtin rules
@@ -124,7 +122,6 @@ BUILTIN_RULES = [
     ContextBudgetRule,
     # Content intelligence
     ContentWeakLanguageRule,
-    ContentDeadReferencesRule,
     ContentTautologicalRule,
     ContentCriticalPositionRule,
     ContentRedundantWithToolingRule,
@@ -137,7 +134,6 @@ BUILTIN_RULES = [
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentCrossFileConsistencyRule,
 ]
 
 
@@ -171,7 +167,6 @@ __all__ = [
     "InstructionImportsValidRule",
     "ContextBudgetRule",
     "ContentWeakLanguageRule",
-    "ContentDeadReferencesRule",
     "ContentTautologicalRule",
     "ContentCriticalPositionRule",
     "ContentRedundantWithToolingRule",
@@ -184,5 +179,4 @@ __all__ = [
     "ContentActionabilityScoreRule",
     "ContentCognitiveChunksRule",
     "ContentEmbeddedSecretsRule",
-    "ContentCrossFileConsistencyRule",
 ]

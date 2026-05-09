@@ -142,11 +142,6 @@ rules:
     enabled: auto
     severity: warning
 
-  # Detect broken file paths, npm scripts, and Makefile targets in instruction files
-  content-dead-references:
-    enabled: auto
-    severity: warning
-
   # Detect tautological instructions that the model already follows by default
   content-tautological:
     enabled: auto
@@ -206,11 +201,6 @@ rules:
   content-embedded-secrets:
     enabled: auto
     severity: error
-
-  # Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
-  content-cross-file-consistency:
-    enabled: auto
-    severity: warning
 
 # Load custom rules from these files
 custom-rules: []

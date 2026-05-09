@@ -7,7 +7,6 @@ import shutil
 
 from skillsaw.rules.builtin.content_analysis import (
     WeakLanguageDetector,
-    DeadReferenceScanner,
     TautologicalDetector,
     CriticalPositionAnalyzer,
     RedundancyDetector,
@@ -153,76 +152,6 @@ class TestWeakLanguageDetector:
         results = detector.analyze(temp_dir / "probably.md")
         assert len(results) >= 1
         assert results[0].category == "hedging"
-
-
-class TestDeadReferenceScanner:
-    def test_detects_missing_backtick_path(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Edit the file `src/config/settings.py`.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 1
-        assert "src/config/settings.py" in results[0].reference
-
-    def test_existing_path_no_violation(self, temp_dir):
-        src = temp_dir / "src" / "main.py"
-        src.parent.mkdir(parents=True)
-        src.write_text("# main")
-        (temp_dir / "CLAUDE.md").write_text("See `src/main.py` for details.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 0
-
-    def test_detects_missing_md_link(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("See [setup guide](./docs/setup.md) for details.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 1
-        assert "./docs/setup.md" in results[0].reference
-
-    def test_existing_md_link_no_violation(self, temp_dir):
-        docs = temp_dir / "docs"
-        docs.mkdir()
-        (docs / "setup.md").write_text("# Setup")
-        (temp_dir / "CLAUDE.md").write_text("See [setup](./docs/setup.md).\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 0
-
-    def test_detects_missing_npm_script(self, temp_dir):
-        (temp_dir / "package.json").write_text('{"scripts": {"test": "jest"}}')
-        (temp_dir / "CLAUDE.md").write_text("Run `npm run lint` before committing.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 1
-        assert "npm run lint" in results[0].reference
-
-    def test_existing_npm_script_no_violation(self, temp_dir):
-        (temp_dir / "package.json").write_text('{"scripts": {"test": "jest", "lint": "eslint ."}}')
-        (temp_dir / "CLAUDE.md").write_text("Run `npm run lint` before committing.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 0
-
-    def test_detects_missing_make_target(self, temp_dir):
-        (temp_dir / "Makefile").write_text("build:\n\tgo build\n")
-        (temp_dir / "CLAUDE.md").write_text("Run `make deploy` to deploy.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 1
-        assert "make deploy" in results[0].reference
-
-    def test_existing_make_target_no_violation(self, temp_dir):
-        (temp_dir / "Makefile").write_text("build:\n\tgo build\n\ndeploy:\n\tkubectl apply\n")
-        (temp_dir / "CLAUDE.md").write_text("Run `make deploy` to deploy.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 0
-
-    def test_see_reference(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("See docs/architecture.md for details.\n")
-        scanner = DeadReferenceScanner()
-        results = scanner.analyze(temp_dir / "CLAUDE.md", temp_dir)
-        assert len(results) == 1
 
 
 class TestTautologicalDetector:

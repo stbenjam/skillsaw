@@ -252,7 +252,6 @@ def test_content_rules_default_to_auto():
     config = LinterConfig.default()
     content_rules = [
         "content-weak-language",
-        "content-dead-references",
         "content-tautological",
         "content-critical-position",
         "content-redundant-with-tooling",
@@ -265,7 +264,6 @@ def test_content_rules_default_to_auto():
         "content-actionability-score",
         "content-cognitive-chunks",
         "content-embedded-secrets",
-        "content-cross-file-consistency",
     ]
     for rule_id in content_rules:
         assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"

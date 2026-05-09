@@ -9,7 +9,6 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.content_rules import (
     ContentWeakLanguageRule,
-    ContentDeadReferencesRule,
     ContentTautologicalRule,
     ContentCriticalPositionRule,
     ContentRedundantWithToolingRule,
@@ -22,7 +21,6 @@ from skillsaw.rules.builtin.content_rules import (
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentCrossFileConsistencyRule,
 )
 
 
@@ -82,34 +80,6 @@ class TestContentWeakLanguageRule:
         context = RepositoryContext(temp_dir)
         violations = ContentWeakLanguageRule().check(context)
         assert len(violations) >= 1
-
-
-class TestContentDeadReferencesRule:
-    def test_rule_metadata(self):
-        rule = ContentDeadReferencesRule()
-        assert rule.rule_id == "content-dead-references"
-        assert rule.default_severity() == Severity.WARNING
-
-    def test_detects_missing_path(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Check `src/config/settings.py` for details.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentDeadReferencesRule().check(context)
-        assert len(violations) == 1
-        assert "src/config/settings.py" in violations[0].message
-
-    def test_existing_path_passes(self, temp_dir):
-        src = temp_dir / "src" / "main.py"
-        src.parent.mkdir(parents=True)
-        src.write_text("# main")
-        (temp_dir / "CLAUDE.md").write_text("See `src/main.py` for details.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentDeadReferencesRule().check(context)
-        assert len(violations) == 0
-
-    def test_no_files_no_violations(self, temp_dir):
-        context = RepositoryContext(temp_dir)
-        violations = ContentDeadReferencesRule().check(context)
-        assert len(violations) == 0
 
 
 class TestContentTautologicalRule:
@@ -485,31 +455,3 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert violations[0].line == 3
-
-
-class TestContentCrossFileConsistencyRule:
-    def test_rule_metadata(self):
-        rule = ContentCrossFileConsistencyRule()
-        assert rule.rule_id == "content-cross-file-consistency"
-        assert rule.default_severity() == Severity.WARNING
-
-    def test_single_file_no_violations(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Use React and TypeScript.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentCrossFileConsistencyRule().check(context)
-        assert len(violations) == 0
-
-    def test_consistent_tech_passes(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Use React and TypeScript.\n")
-        (temp_dir / "AGENTS.md").write_text("This project uses React with TypeScript.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentCrossFileConsistencyRule().check(context)
-        assert len(violations) == 0
-
-    def test_mismatched_tech_detected(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("This project uses React and Express.\n")
-        (temp_dir / "AGENTS.md").write_text("Built with Vue and Django.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentCrossFileConsistencyRule().check(context)
-        assert len(violations) >= 1
-        assert "mismatch" in violations[0].message.lower()

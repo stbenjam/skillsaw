@@ -16,7 +16,6 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_files,
     _get_body,
     WeakLanguageDetector,
-    DeadReferenceScanner,
     TautologicalDetector,
     CriticalPositionAnalyzer,
     RedundancyDetector,
@@ -69,37 +68,6 @@ class ContentWeakLanguageRule(Rule):
                         f"Weak language ({match.category}): '{match.phrase}' — {match.suggested_fix}",
                         file_path=cf.path,
                         line=match.line,
-                    )
-                )
-        return violations
-
-
-class ContentDeadReferencesRule(Rule):
-    """Detect broken file paths and references in instruction files"""
-
-    formats = ALL_INSTRUCTION_FORMATS
-
-    @property
-    def rule_id(self) -> str:
-        return "content-dead-references"
-
-    @property
-    def description(self) -> str:
-        return "Detect broken file paths, npm scripts, and Makefile targets in instruction files"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
-        scanner = DeadReferenceScanner()
-        for cf in gather_all_content_files(context):
-            for ref in scanner.analyze(cf.path, context.root_path):
-                violations.append(
-                    self.violation(
-                        f"Dead reference: '{ref.reference}' does not exist",
-                        file_path=cf.path,
-                        line=ref.line,
                     )
                 )
         return violations
@@ -783,62 +751,4 @@ class ContentEmbeddedSecretsRule(Rule):
                             )
                         )
                         break
-        return violations
-
-
-class ContentCrossFileConsistencyRule(Rule):
-    """Check consistency across multiple instruction file formats"""
-
-    formats = ALL_INSTRUCTION_FORMATS
-
-    @property
-    def rule_id(self) -> str:
-        return "content-cross-file-consistency"
-
-    @property
-    def description(self) -> str:
-        return "Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def _extract_commands(self, text: str) -> Set[str]:
-        return set(re.findall(r"`((?:npm|yarn|pnpm|make|go|cargo|pip|poetry|dotnet)\s+\S+)`", text))
-
-    def _extract_tech_stack(self, text: str) -> Set[str]:
-        tech_re = re.compile(
-            r"\b(React|Vue|Angular|Next\.?js|Nuxt|Svelte|Express|Django|Flask|"
-            r"FastAPI|Spring|Rails|Laravel|Go|Rust|Python|TypeScript|JavaScript|"
-            r"Java|C#|Ruby|PHP|Swift|Kotlin)\b",
-            re.IGNORECASE,
-        )
-        return {m.group().lower() for m in tech_re.finditer(text)}
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        content_files = gather_all_content_files(context)
-        if len(content_files) < 2:
-            return []
-
-        violations = []
-        all_commands: Dict[Path, Set[str]] = {}
-        all_tech: Dict[Path, Set[str]] = {}
-
-        for cf in content_files:
-            body = _get_body(cf.path)
-            if not body:
-                continue
-            all_commands[cf.path] = self._extract_commands(body)
-            all_tech[cf.path] = self._extract_tech_stack(body)
-
-        paths_with_tech = [(p, t) for p, t in all_tech.items() if t]
-        for i, (path_a, tech_a) in enumerate(paths_with_tech):
-            for path_b, tech_b in paths_with_tech[i + 1 :]:
-                if tech_a and tech_b and not (tech_a & tech_b):
-                    violations.append(
-                        self.violation(
-                            f"Tech stack mismatch: {path_a.name} mentions {', '.join(sorted(tech_a))} "
-                            f"but {path_b.name} mentions {', '.join(sorted(tech_b))}",
-                        )
-                    )
-
         return violations

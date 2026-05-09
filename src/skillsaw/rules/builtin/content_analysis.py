@@ -35,14 +35,6 @@ class WeakLanguageMatch:
 
 
 @dataclass
-class DeadReference:
-    line: int
-    reference: str
-    expected_path: str
-    exists: bool
-
-
-@dataclass
 class TautologicalMatch:
     line: int
     phrase: str
@@ -259,73 +251,6 @@ class WeakLanguageDetector:
             for pattern, fix in _NON_ACTIONABLE:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(WeakLanguageMatch(line_num, m.group(), "non-actionable", fix))
-        return results
-
-
-class DeadReferenceScanner:
-    _BACKTICK_PATH = re.compile(r"`((?:\w[\w.-]*/)+[\w.-]+(?:\.\w+)?)`")
-    _SEE_PATH = re.compile(
-        r"(?:see|refer to|check)\s+((?:\w[\w.-]*/)+[\w.-]+(?:\.\w+)?)", re.IGNORECASE
-    )
-    _MD_LINK = re.compile(r"\[([^\]]*)\]\((\./[^)]+)\)")
-    _NPM_SCRIPT = re.compile(r"`npm run\s+([\w:.-]+)`")
-    _MAKE_TARGET = re.compile(r"`make\s+([\w.-]+)`")
-
-    def analyze(self, path: Path, root: Path) -> List[DeadReference]:
-        content = _get_body(path)
-        if not content:
-            return []
-        results: List[DeadReference] = []
-        for line_num, line in enumerate(content.splitlines(), 1):
-            for m in self._BACKTICK_PATH.finditer(line):
-                ref = m.group(1)
-                expected = root / ref
-                if not expected.exists():
-                    results.append(DeadReference(line_num, ref, str(expected), False))
-
-            for m in self._SEE_PATH.finditer(line):
-                ref = m.group(1)
-                expected = root / ref
-                if not expected.exists():
-                    results.append(DeadReference(line_num, ref, str(expected), False))
-
-            for m in self._MD_LINK.finditer(line):
-                ref = m.group(2)
-                expected = (path.parent / ref).resolve()
-                if not expected.exists():
-                    results.append(DeadReference(line_num, ref, str(expected), False))
-
-            for m in self._NPM_SCRIPT.finditer(line):
-                script_name = m.group(1)
-                pkg_json = root / "package.json"
-                if pkg_json.exists():
-                    pkg_content = read_text(pkg_json)
-                    if pkg_content and f'"{script_name}"' not in pkg_content:
-                        results.append(
-                            DeadReference(
-                                line_num,
-                                f"npm run {script_name}",
-                                str(pkg_json),
-                                False,
-                            )
-                        )
-
-            for m in self._MAKE_TARGET.finditer(line):
-                target = m.group(1)
-                makefile = root / "Makefile"
-                if makefile.exists():
-                    mk_content = read_text(makefile)
-                    if mk_content:
-                        target_re = re.compile(rf"^{re.escape(target)}\s*:", re.MULTILINE)
-                        if not target_re.search(mk_content):
-                            results.append(
-                                DeadReference(
-                                    line_num,
-                                    f"make {target}",
-                                    str(makefile),
-                                    False,
-                                )
-                            )
         return results
 
 

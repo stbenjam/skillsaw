@@ -124,7 +124,6 @@ class LinterConfig:
                 "context-budget": {"enabled": False, "severity": "warning"},
                 # Content intelligence rules (auto-enabled when instruction files detected)
                 "content-weak-language": {"enabled": "auto", "severity": "warning"},
-                "content-dead-references": {"enabled": "auto", "severity": "warning"},
                 "content-tautological": {"enabled": "auto", "severity": "warning"},
                 "content-critical-position": {"enabled": "auto", "severity": "info"},
                 "content-redundant-with-tooling": {"enabled": "auto", "severity": "warning"},
@@ -137,7 +136,6 @@ class LinterConfig:
                 "content-actionability-score": {"enabled": "auto", "severity": "info"},
                 "content-cognitive-chunks": {"enabled": "auto", "severity": "info"},
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
-                "content-cross-file-consistency": {"enabled": "auto", "severity": "warning"},
             }
         )
 
