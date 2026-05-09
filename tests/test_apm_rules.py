@@ -120,6 +120,28 @@ def test_apm_prevents_dot_claude_detection(temp_dir):
     assert context.repo_type != RepositoryType.DOT_CLAUDE
 
 
+def test_apm_repo_with_top_level_skill_md(temp_dir):
+    """APM repo with both .apm/skills/ and a top-level SKILL.md"""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, skills=["my-skill"])
+
+    # Also place a top-level SKILL.md (single-skill style)
+    (repo / "SKILL.md").write_text(
+        "---\nname: top-level-skill\ndescription: A top-level skill\n---\n"
+    )
+
+    context = RepositoryContext(repo)
+    assert context.has_apm is True
+    # Should still be detected as AGENTSKILLS (APM path wins)
+    assert context.repo_type == RepositoryType.AGENTSKILLS
+    # Should discover both the .apm/ skill and the top-level SKILL.md
+    skill_names = {s.name for s in context.skills}
+    assert "my-skill" in skill_names
+    # The top-level SKILL.md uses the repo dir name as the skill "name"
+    assert repo.name in skill_names or (repo / "SKILL.md").parent in [s for s in context.skills]
+
+
 def test_no_apm_falls_through(temp_dir):
     """Without .apm/, detection should work as before"""
     repo = temp_dir / "normal-repo"
@@ -241,6 +263,22 @@ def test_apm_yaml_missing_description_fails(temp_dir):
     context = RepositoryContext(repo)
     violations = ApmYamlValidRule().check(context)
     assert any("description" in v.message for v in violations)
+
+
+def test_apm_yaml_non_string_version_fails(temp_dir):
+    """Non-string version field in apm.yml should fail"""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(
+        repo,
+        skills=["my-skill"],
+        apm_yml="name: test\nversion: 1.0\ndescription: Numeric version\n",
+    )
+
+    context = RepositoryContext(repo)
+    violations = ApmYamlValidRule().check(context)
+    # YAML parses 1.0 as a float, not a string — rule should catch this
+    assert any("version" in v.message and "string" in v.message for v in violations)
 
 
 def test_apm_yaml_not_mapping_fails(temp_dir):

@@ -118,6 +118,12 @@ RULE_GROUPS = [
         "automatically checked by the content-* rules above. Auto-enabled "
         "when `.coderabbit.yaml` is detected.",
     ),
+    (
+        "APM (Agent Package Manager)",
+        ["apm-yaml-valid", "apm-structure-valid"],
+        "Validates repositories using the [APM](https://github.com/microsoft/apm) "
+        "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
+    ),
 ]
 
 
