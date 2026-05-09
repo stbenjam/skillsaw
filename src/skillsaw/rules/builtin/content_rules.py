@@ -257,20 +257,18 @@ class ContentInstructionBudgetRule(Rule):
         violations = []
         if budget.total_count >= 120:
             sev = Severity.ERROR if budget.over_budget else Severity.WARNING
-            violations.append(
-                self.violation(
-                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files "
-                    f"({budget.budget_remaining} remaining)",
-                    severity=sev,
-                )
+            msg = (
+                f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files "
+                f"({budget.budget_remaining} remaining)"
             )
+            for fpath in budget.files_counted:
+                violations.append(self.violation(msg, file_path=fpath, severity=sev))
         elif budget.total_count >= 80:
-            violations.append(
-                self.violation(
-                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit",
-                    severity=Severity.INFO,
-                )
+            msg = (
+                f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit"
             )
+            for fpath in budget.files_counted:
+                violations.append(self.violation(msg, file_path=fpath, severity=Severity.INFO))
         return violations
 
 
@@ -1062,6 +1060,7 @@ class ContentInconsistentTerminologyRule(Rule):
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
             term_usage: Dict[str, int] = defaultdict(int)
+            files_by_term: Dict[str, List[Path]] = defaultdict(list)
             for cf in content_files:
                 body = _get_body(cf.path)
                 if not body:
@@ -1069,13 +1068,17 @@ class ContentInconsistentTerminologyRule(Rule):
                 for pattern in patterns:
                     if pattern.search(body):
                         term_usage[pattern.pattern] += 1
+                        files_by_term[pattern.pattern].append(cf.path)
 
             used_terms = [p for p in term_usage if term_usage[p] > 0]
             if len(used_terms) >= 2:
-                violations.append(
-                    self.violation(
-                        f"Inconsistent terminology: {group_name} — multiple variants used across files. Pick one and use it consistently.",
-                    )
-                )
+                majority_term = max(used_terms, key=lambda p: term_usage[p])
+                minority_files: Set[Path] = set()
+                for term, fpaths in files_by_term.items():
+                    if term != majority_term:
+                        minority_files.update(fpaths)
+                msg = f"Inconsistent terminology: {group_name} — multiple variants used across files. Pick one and use it consistently."
+                for fpath in sorted(minority_files):
+                    violations.append(self.violation(msg, file_path=fpath))
 
         return violations

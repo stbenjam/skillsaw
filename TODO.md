@@ -1,40 +1,22 @@
 # SkillSaw TODO — Content & Autofixing Polish
 
-Please work on the list below.  As you complete items, check them off.  You can use subagents with worktrees if you prefer, but all needs to merged to the pr/foundation-content-llm branch.  Monitor the pull request's github verifications and fix any failures. Use the skillsaw-panel-review at the end, and address any feedback to achieve an approval. You can only push to the not-stbenjam fork.
+Please work on the list below.  As you complete items, check them off.  You can use subagents with worktrees if you prefer, but all needs to merged to the pr/foundation-content-llm branch.  Monitor the pull request's github verifications and fix any failures. Use the skillsaw-panel-review at the end using a subagent with opus asking, asking it to pay close attention to details, and address any feedback to achieve an approval. You can only push to the not-stbenjam fork.
 
-Follow all rules in .claude/rules.  Tests should pass locally before pushing. Make no mistakes, you got this!!
+    - [ ] Fix false-positive LLM tests: `content-instruction-budget` and `content-inconsistent-terminology` produce violations with `file_path=None` (cross-file rules). The `llm_fix` pipeline groups by file and silently drops these, so no LLM call is made and tests pass without actually fixing anything. Fix: emit per-file violations so `llm_fix` can process them. Also fix `LintTool` (tools.py:151) which doesn't pass `since_version` to `is_rule_enabled()`.
+    - [ ] agentskill-name: add autofix, use directory name
+    - [ ] agentskill-valid: add autofix(llm), use directory to fix name, and get llm to generate description of skill
+    - [ ] -naming, -names rules: possible to just downcase and convert to kebab case, unless the directory is also poorly named or something
+    - [ ] plugin-readme: autofix(llm): can write a README for the plugin.  Keep it brief
+    - [ ] marketplace-regstration: autofix: you can register the plugins in the marketplace
+    - [ ] context-budget: should be auto for 0.7.0+, review limits: do they match reccomendations online? can you source a study about effective sizes for each category and include those references 
+    - [ ] content-critical-position: elevate this to warning
+    - [ ] content-readme-overlap: delete this rule, i don't find it useful
+    - [ ] content-section-length: is length configurable? why measure by lines and not tokens (what if no newlines!)
+    - [ ] content-stale-references: is it configurable? e.g. could be used to ban certain models if allowed, maybe this could just be content-banned-references instead
 
-## LLM Fix Pipeline
+    - [ ] LASTLY: run all tests, including LLM tests (see below example), push to pr/foundation-content-llm branch, and make sure the PR to stbenjam/skillsaw passes all github tests
 
-- [x] LintTool runs full-repo linting to check a single file — scope to just the target file's failed rules (big perf win, especially with parallelism)
-- [x] No `--dry-run` mode to preview what the LLM would fix without writing
-- [x] Rollback is all-or-nothing — if total violations don't improve, everything reverts even if some files were fixed successfully. Just report what failed and let the user have the fixes we made
+## How to run LLM tests
 
-## Content Rules Coverage
-
-- [?] Rules only check top-level instruction files — skills, commands, agents, and rules markdown are blind spots (plan exists for `gather_all_content_files()`) — `gather_all_content_files()` already discovers files in skills/, commands/, agents/, rules/ directories. Existing content rules already use it. The blind spot is minimal; files are already covered.
-- [x] No rule for detecting stale/outdated references (e.g., mentioning deprecated APIs, old model names)
-- [x] No rule for inconsistent terminology across files (calling the same thing different names)
-- [?] `content-contradiction` is pattern-based — could miss semantic contradictions that only an LLM would catch — this would require LLM-based rule checking (not just LLM-based fixing), which is a larger architectural change beyond the scope of this PR
-- [?] Review all the content-* rules for value, accuracy, and whether they are helpful or not, consider whether any new rules need to be added and if so, add them, but add rules sparingly — Reviewed: all 15 content rules are solid and well-targeted. No new rules needed; the existing set covers the main categories (weak language, tautological, negative-only, secrets, contradictions, stale refs, inconsistent terms, hook candidates, redundant with tooling). Adding more would risk noise.
-
-## Autofix Coverage
-
-- [x] Only content rules have `llm_fix_prompt` — structural rules (frontmatter, naming, JSON validity) could benefit from deterministic autofixes (`supports_autofix` / `fix()`)
-- [x] No way to see which rules support which fix type (`--fix` vs `--fix --llm`) from `list-rules`
-
-## CLI Polish
-
-- [x] Progress bar doesn't show elapsed time or ETA
-- [x] No `--fix --llm` in the `lint` subcommand — you have to use the separate `fix` subcommand, it probably belongs in the lint subcommand, no?
-
-## Testing
-
-- [x] No integration test for the LLM fix pipeline - make integration tests for every LLM fixable case, and create a .github action to test it, with openrouter (minimax 2.7 probably as default), I'll setup the keys later for you, but create the tests now.
-- [x] No test for parallel execution / thread safety
-
-## Documentation
-
-- [x] Rules list needs to indicate which are auto-fixable, and what is not, and how (e.g. auto, llm, or not fixable)
-- [x] Documentation needs to be updated to highlight the context efficiency features!
+VERTEXAI_LOCATION=global SKILLSAW_MODEL="vertex_ai/claude-sonnet-4-6" SKILLSAW_LLM_INTEGRATION=1 .venv/bin/pytest tests/test_llm_integration.py -v -k "Live"
 
