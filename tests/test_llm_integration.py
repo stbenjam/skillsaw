@@ -94,17 +94,6 @@ def _setup_editorconfig(tmp_path):
     (tmp_path / ".editorconfig").write_text("[*]\nindent_size = 2\n", encoding="utf-8")
 
 
-def _setup_readme_overlap(tmp_path):
-    readme = (
-        "# MyProject\n\n"
-        "This project uses React with TypeScript for the frontend.\n"
-        "We use PostgreSQL for the database and Redis for caching.\n"
-        "The API is built with Express and follows RESTful conventions.\n"
-        "Authentication is handled via JWT tokens stored in httpOnly cookies.\n"
-        "We deploy to AWS using Terraform for infrastructure management.\n"
-    )
-    (tmp_path / "README.md").write_text(readme, encoding="utf-8")
-
 
 def _setup_inconsistent_terminology(tmp_path):
     commands_dir = tmp_path / ".claude" / "commands"
@@ -181,17 +170,6 @@ _low_action_fixed = (
     "Use RabbitMQ for async message processing.\n"
 )
 
-# Content for content-readme-overlap
-_readme_overlap_content = (
-    "# Instructions\n\n"
-    "This project uses React with TypeScript for the frontend.\n"
-    "We use PostgreSQL for the database and Redis for caching.\n"
-    "The API is built with Express and follows RESTful conventions.\n"
-    "Authentication is handled via JWT tokens stored in httpOnly cookies.\n"
-    "We deploy to AWS using Terraform for infrastructure management.\n"
-)
-_readme_overlap_fixed = "# Instructions\n\n" "See @README.md for project stack details.\n"
-
 
 FIX_CASES = [
     FixCase(
@@ -220,13 +198,6 @@ FIX_CASES = [
         rule_id="content-instruction-budget",
         content=_budget_content,
         fixed_content=_budget_fixed,
-    ),
-    FixCase(
-        rule_id="content-readme-overlap",
-        content=_readme_overlap_content,
-        fixed_content=_readme_overlap_fixed,
-        min_severity=Severity.INFO,
-        extra_setup=_setup_readme_overlap,
     ),
     FixCase(
         rule_id="content-negative-only",

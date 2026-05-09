@@ -256,7 +256,6 @@ def test_content_rules_default_to_auto():
         "content-critical-position",
         "content-redundant-with-tooling",
         "content-instruction-budget",
-        "content-readme-overlap",
         "content-negative-only",
         "content-section-length",
         "content-contradiction",

@@ -13,7 +13,6 @@ from skillsaw.rules.builtin.content_rules import (
     ContentCriticalPositionRule,
     ContentRedundantWithToolingRule,
     ContentInstructionBudgetRule,
-    ContentReadmeOverlapRule,
     ContentNegativeOnlyRule,
     ContentSectionLengthRule,
     ContentContradictionRule,
@@ -109,7 +108,7 @@ class TestContentCriticalPositionRule:
     def test_rule_metadata(self):
         rule = ContentCriticalPositionRule()
         assert rule.rule_id == "content-critical-position"
-        assert rule.default_severity() == Severity.INFO
+        assert rule.default_severity() == Severity.WARNING
 
     def test_critical_in_middle_flagged(self, temp_dir):
         lines = [f"Line {i}" for i in range(1, 51)]
@@ -189,36 +188,6 @@ class TestContentInstructionBudgetRule:
         violations = ContentInstructionBudgetRule().check(context)
         assert len(violations) == 0
 
-
-class TestContentReadmeOverlapRule:
-    def test_rule_metadata(self):
-        rule = ContentReadmeOverlapRule()
-        assert rule.rule_id == "content-readme-overlap"
-        assert rule.default_severity() == Severity.INFO
-
-    def test_no_readme_passes(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("# Instructions\nDo stuff.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentReadmeOverlapRule().check(context)
-        assert len(violations) == 0
-
-    def test_no_overlap_passes(self, temp_dir):
-        (temp_dir / "README.md").write_text(
-            "# MyProject\nThis is a web application for managing tasks.\n"
-        )
-        (temp_dir / "CLAUDE.md").write_text("# Instructions\nUse 4-space indentation always.\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentReadmeOverlapRule().check(context)
-        assert len(violations) == 0
-
-    def test_high_overlap_detected(self, temp_dir):
-        shared_text = "This project uses React TypeScript Express PostgreSQL Docker Kubernetes Terraform Ansible Jenkins GitHub Actions monitoring logging authentication authorization middleware testing deployment configuration environment variables secrets management database migrations API endpoints REST GraphQL"
-        (temp_dir / "README.md").write_text(f"# MyProject\n{shared_text}\n")
-        (temp_dir / "CLAUDE.md").write_text(f"# Instructions\n{shared_text}\n")
-        context = RepositoryContext(temp_dir)
-        violations = ContentReadmeOverlapRule().check(context)
-        assert len(violations) >= 1
-        assert "overlap" in violations[0].message.lower()
 
 
 class TestContentNegativeOnlyRule:

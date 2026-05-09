@@ -137,7 +137,7 @@ class ContentCriticalPositionRule(Rule):
         return "Detect critical instructions in the middle of files where LLM attention is lowest"
 
     def default_severity(self) -> Severity:
-        return Severity.INFO
+        return Severity.WARNING
 
     @property
     def llm_fix_prompt(self):
@@ -271,84 +271,6 @@ class ContentInstructionBudgetRule(Rule):
                 violations.append(self.violation(msg, file_path=fpath, severity=Severity.INFO))
         return violations
 
-
-class ContentReadmeOverlapRule(Rule):
-    """Detect significant overlap between instruction files and README"""
-
-    formats = ALL_INSTRUCTION_FORMATS
-    since = "0.7.0"
-
-    _JACCARD_THRESHOLD = 0.6
-
-    @property
-    def rule_id(self) -> str:
-        return "content-readme-overlap"
-
-    @property
-    def description(self) -> str:
-        return "Detect instruction file sections that significantly overlap with README.md content"
-
-    def default_severity(self) -> Severity:
-        return Severity.INFO
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files that have "
-            "sections duplicating README.md content. Replace duplicated "
-            "sections with @import references.\n\n"
-            "Rules:\n"
-            "- Replace duplicated sections with '@path/to/README.md' imports\n"
-            "- Keep instruction-specific content that isn't in the README\n"
-            "- If the section adds constraints beyond what the README says, "
-            "keep those constraints and only remove the duplicated parts\n"
-            "- Preserve markdown formatting"
-        )
-
-    @staticmethod
-    def _word_set(text: str) -> Set[str]:
-        return set(re.findall(r"\b\w{3,}\b", text.lower()))
-
-    @staticmethod
-    def _sentences(text: str) -> List[str]:
-        return [s.strip() for s in re.split(r"[.!?\n]", text) if len(s.strip()) > 20]
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        readme_path = context.root_path / "README.md"
-        if not readme_path.exists():
-            return []
-        readme_content = read_text(readme_path)
-        if not readme_content:
-            return []
-        readme_words = self._word_set(readme_content)
-        if len(readme_words) < 10:
-            return []
-
-        violations = []
-        for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
-            if not body:
-                continue
-            sections = re.split(r"^#{1,6}\s+.+$", body, flags=re.MULTILINE)
-            for section in sections:
-                section = section.strip()
-                if len(section) < 50:
-                    continue
-                section_words = self._word_set(section)
-                if len(section_words) < 5:
-                    continue
-                intersection = section_words & readme_words
-                union = section_words | readme_words
-                jaccard = len(intersection) / len(union) if union else 0
-                if jaccard > self._JACCARD_THRESHOLD:
-                    preview = section[:60].replace("\n", " ")
-                    violations.append(
-                        self.violation(
-                            f"Section overlaps {jaccard:.0%} with README.md: '{preview}...' — consider using @import instead",
-                            file_path=cf.path,
-                        )
-                    )
-        return violations
 
 
 class ContentNegativeOnlyRule(Rule):
