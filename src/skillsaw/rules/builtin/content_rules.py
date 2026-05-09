@@ -1,13 +1,14 @@
 """
-Content intelligence rules — 15 novel rules that analyze instruction file quality.
+Content intelligence rules — analyze instruction file quality.
 
 These rules use shared analyzers from content_analysis.py and apply to ALL
 instruction file formats equally.
 """
 
 import re
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Set
+from typing import Dict, List, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
@@ -865,4 +866,159 @@ class ContentEmbeddedSecretsRule(Rule):
                             )
                         )
                         break
+        return violations
+
+
+class ContentStaleReferencesRule(Rule):
+    """Detect stale or outdated references in instruction files"""
+
+    formats = ALL_INSTRUCTION_FORMATS
+
+    _STALE_MODEL_NAMES = [
+        (re.compile(r"\bgpt-3\.5\b", re.IGNORECASE), "gpt-3.5 is deprecated — use gpt-4o-mini or newer"),
+        (re.compile(r"\btext-davinci\b", re.IGNORECASE), "text-davinci models are retired"),
+        (re.compile(r"\bcode-davinci\b", re.IGNORECASE), "code-davinci models are retired"),
+        (re.compile(r"\bclaude-instant\b", re.IGNORECASE), "claude-instant is deprecated — use claude-haiku or newer"),
+        (re.compile(r"\bclaude-2\b", re.IGNORECASE), "claude-2 is deprecated — use claude-sonnet-4 or newer"),
+        (re.compile(r"\bclaude-v1\b", re.IGNORECASE), "claude-v1 is deprecated — use claude-sonnet-4 or newer"),
+        (re.compile(r"\bclaude-3-opus\b", re.IGNORECASE), "claude-3-opus is deprecated — use claude-opus-4 or newer"),
+        (re.compile(r"\bclaude-3-sonnet\b", re.IGNORECASE), "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer"),
+        (re.compile(r"\bclaude-3-haiku\b", re.IGNORECASE), "claude-3-haiku is deprecated — use claude-haiku-4 or newer"),
+        (re.compile(r"\bclaude-3\.5-sonnet\b", re.IGNORECASE), "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer"),
+        (re.compile(r"\bclaude-3\.5-haiku\b", re.IGNORECASE), "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer"),
+    ]
+
+    _STALE_APIS = [
+        (re.compile(r"\b/v1/complete\b"), "/v1/complete is deprecated — use /v1/messages"),
+        (re.compile(r"\brequests\.get\b.*\bopenai\.com\b"), "Direct HTTP calls to OpenAI are fragile — use the official SDK"),
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-stale-references"
+
+    @property
+    def description(self) -> str:
+        return "Detect references to deprecated models, retired APIs, and outdated tooling"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files that reference "
+            "deprecated or outdated models, APIs, or tooling.\n\n"
+            "Rules:\n"
+            "- Replace deprecated model names with current equivalents\n"
+            "- Update retired API endpoints to current versions\n"
+            "- Preserve the intent of the instruction\n"
+            "- If unsure of the replacement, add a TODO comment\n"
+            "- Preserve markdown formatting"
+        )
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for cf in gather_all_content_files(context):
+            content = read_text(cf.path)
+            if not content:
+                continue
+            for line_num, line in enumerate(content.splitlines(), 1):
+                for pattern, msg in self._STALE_MODEL_NAMES:
+                    if pattern.search(line):
+                        violations.append(
+                            self.violation(
+                                f"Stale reference: {msg}",
+                                file_path=cf.path,
+                                line=line_num,
+                            )
+                        )
+                for pattern, msg in self._STALE_APIS:
+                    if pattern.search(line):
+                        violations.append(
+                            self.violation(
+                                f"Stale reference: {msg}",
+                                file_path=cf.path,
+                                line=line_num,
+                            )
+                        )
+        return violations
+
+
+class ContentInconsistentTerminologyRule(Rule):
+    """Detect inconsistent terminology across instruction files"""
+
+    formats = ALL_INSTRUCTION_FORMATS
+
+    _TERM_GROUPS: List[Tuple[str, List[re.Pattern]]] = [
+        ("directory/folder", [
+            re.compile(r"\bdirector(?:y|ies)\b", re.IGNORECASE),
+            re.compile(r"\bfolders?\b", re.IGNORECASE),
+        ]),
+        ("repo/repository/codebase", [
+            re.compile(r"\brepos?\b", re.IGNORECASE),
+            re.compile(r"\brepositories\b|\brepository\b", re.IGNORECASE),
+            re.compile(r"\bcodebase\b", re.IGNORECASE),
+        ]),
+        ("PR/pull request/merge request", [
+            re.compile(r"\bPRs?\b"),
+            re.compile(r"\bpull\s+requests?\b", re.IGNORECASE),
+            re.compile(r"\bmerge\s+requests?\b", re.IGNORECASE),
+        ]),
+        ("function/method", [
+            re.compile(r"\bfunctions?\b", re.IGNORECASE),
+            re.compile(r"\bmethods?\b", re.IGNORECASE),
+        ]),
+    ]
+
+    MIN_FILES = 2
+
+    @property
+    def rule_id(self) -> str:
+        return "content-inconsistent-terminology"
+
+    @property
+    def description(self) -> str:
+        return "Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files that use "
+            "inconsistent terminology. Standardize on one term per concept "
+            "across all files.\n\n"
+            "Rules:\n"
+            "- Pick the most common term and use it consistently\n"
+            "- Prefer technical terms over informal ones (e.g., 'directory' over 'folder')\n"
+            "- Update all occurrences to use the chosen term\n"
+            "- Preserve markdown formatting"
+        )
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        content_files = gather_all_content_files(context)
+        if len(content_files) < self.MIN_FILES:
+            return []
+
+        violations = []
+        for group_name, patterns in self._TERM_GROUPS:
+            term_usage: Dict[str, int] = defaultdict(int)
+            for cf in content_files:
+                body = _get_body(cf.path)
+                if not body:
+                    continue
+                for pattern in patterns:
+                    if pattern.search(body):
+                        term_usage[pattern.pattern] += 1
+
+            used_terms = [p for p in term_usage if term_usage[p] > 0]
+            if len(used_terms) >= 2:
+                violations.append(
+                    self.violation(
+                        f"Inconsistent terminology: {group_name} — multiple variants used across files. Pick one and use it consistently.",
+                    )
+                )
+
         return violations
