@@ -234,7 +234,9 @@ class Linter:
 
         violations = self.run()
         llm_rules = {r.rule_id: r for r in self.rules if r.llm_fix_prompt is not None}
-        llm_violations = [v for v in violations if v.rule_id in llm_rules]
+        llm_violations = [
+            v for v in violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+        ]
 
         if not llm_violations:
             return LLMFixResult(
@@ -345,7 +347,9 @@ class Linter:
                 callback(1, file_violations)
 
         after_violations = self.run()
-        after_llm = [v for v in after_violations if v.rule_id in llm_rules]
+        after_llm = [
+            v for v in after_violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+        ]
         violations_after = len(after_llm)
 
         if violations_after >= violations_before:

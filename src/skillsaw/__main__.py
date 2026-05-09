@@ -11,6 +11,7 @@ from importlib.metadata import version, PackageNotFoundError
 from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
+from .rule import Severity
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
@@ -372,7 +373,9 @@ def _run_fix(args):
 
     violations = linter.run()
     llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
-    llm_violations = [v for v in violations if v.rule_id in llm_rules]
+    llm_violations = [
+        v for v in violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+    ]
 
     print(f"Linting: {args.path}")
     print(f"Model: {config.llm.model}")
