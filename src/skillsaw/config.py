@@ -149,6 +149,9 @@ class LinterConfig:
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
+                # APM (Agent Package Manager) rules
+                "apm-yaml-valid": {"enabled": "auto", "severity": "error"},
+                "apm-structure-valid": {"enabled": "auto", "severity": "warning"},
             }
         )
 
