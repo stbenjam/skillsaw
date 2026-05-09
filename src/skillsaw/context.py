@@ -71,6 +71,7 @@ class RepositoryContext:
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
         self.detected_formats: Set[str] = self._detect_formats()
+        self.content_paths: List[str] = []
 
     def _discover_instruction_files(self) -> List[Path]:
         """Discover instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repo root."""

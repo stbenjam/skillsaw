@@ -13,7 +13,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixC
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
-    gather_all_instruction_files,
+    gather_all_content_files,
     _get_body,
     WeakLanguageDetector,
     DeadReferenceScanner,
@@ -62,12 +62,12 @@ class ContentWeakLanguageRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = WeakLanguageDetector()
-        for path in gather_all_instruction_files(context):
-            for match in detector.analyze(path):
+        for cf in gather_all_content_files(context):
+            for match in detector.analyze(cf.path):
                 violations.append(
                     self.violation(
                         f"Weak language ({match.category}): '{match.phrase}' — {match.suggested_fix}",
-                        file_path=path,
+                        file_path=cf.path,
                         line=match.line,
                     )
                 )
@@ -93,12 +93,12 @@ class ContentDeadReferencesRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         scanner = DeadReferenceScanner()
-        for path in gather_all_instruction_files(context):
-            for ref in scanner.analyze(path, context.root_path):
+        for cf in gather_all_content_files(context):
+            for ref in scanner.analyze(cf.path, context.root_path):
                 violations.append(
                     self.violation(
                         f"Dead reference: '{ref.reference}' does not exist",
-                        file_path=path,
+                        file_path=cf.path,
                         line=ref.line,
                     )
                 )
@@ -139,12 +139,12 @@ class ContentTautologicalRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = TautologicalDetector()
-        for path in gather_all_instruction_files(context):
-            for match in detector.analyze(path):
+        for cf in gather_all_content_files(context):
+            for match in detector.analyze(cf.path):
                 violations.append(
                     self.violation(
                         f"Tautological: '{match.phrase}' — {match.reason}",
-                        file_path=path,
+                        file_path=cf.path,
                         line=match.line,
                     )
                 )
@@ -204,12 +204,12 @@ class ContentCriticalPositionRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         analyzer = CriticalPositionAnalyzer()
-        for path in gather_all_instruction_files(context):
-            for issue in analyzer.analyze(path):
+        for cf in gather_all_content_files(context):
+            for issue in analyzer.analyze(cf.path):
                 violations.append(
                     self.violation(
                         f"'{issue.keyword}' instruction at line {issue.line} is in the attention dead zone (20-80%) — {issue.suggested_position}",
-                        file_path=path,
+                        file_path=cf.path,
                         line=issue.line,
                     )
                 )
@@ -235,12 +235,12 @@ class ContentRedundantWithToolingRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = RedundancyDetector()
-        for path in gather_all_instruction_files(context):
-            for match in detector.analyze(path, context.root_path):
+        for cf in gather_all_content_files(context):
+            for match in detector.analyze(cf.path, context.root_path):
                 violations.append(
                     self.violation(
                         f"Redundant with {match.existing_config_file} ({match.config_value}): '{match.instruction}'",
-                        file_path=path,
+                        file_path=cf.path,
                         line=match.line,
                     )
                 )
@@ -298,11 +298,11 @@ class ContentInstructionBudgetRule(Rule):
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        files = gather_all_instruction_files(context)
-        if not files:
+        content_files = gather_all_content_files(context)
+        if not content_files:
             return []
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze(files)
+        budget = analyzer.analyze([cf.path for cf in content_files])
         violations = []
         if budget.total_count >= 120:
             sev = Severity.ERROR if budget.over_budget else Severity.WARNING
@@ -361,8 +361,8 @@ class ContentReadmeOverlapRule(Rule):
             return []
 
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             sections = re.split(r"^#{1,6}\s+.+$", body, flags=re.MULTILINE)
@@ -381,7 +381,7 @@ class ContentReadmeOverlapRule(Rule):
                     violations.append(
                         self.violation(
                             f"Section overlaps {jaccard:.0%} with README.md: '{preview}...' — consider using @import instead",
-                            file_path=path,
+                            file_path=cf.path,
                         )
                     )
         return violations
@@ -430,8 +430,8 @@ class ContentNegativeOnlyRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             lines = body.splitlines()
@@ -443,7 +443,7 @@ class ContentNegativeOnlyRule(Rule):
                     violations.append(
                         self.violation(
                             f"Negative-only instruction without alternative: '{line.strip()[:80]}'",
-                            file_path=path,
+                            file_path=cf.path,
                             line=i + 1,
                         )
                     )
@@ -470,8 +470,8 @@ class ContentSectionLengthRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             lines = body.splitlines()
@@ -502,7 +502,7 @@ class ContentSectionLengthRule(Rule):
                     violations.append(
                         self.violation(
                             f"Section '{heading}' is {length} lines (max recommended: {self.MAX_LINES})",
-                            file_path=path,
+                            file_path=cf.path,
                             line=heading_line if heading_line > 0 else None,
                         )
                     )
@@ -552,8 +552,8 @@ class ContentContradictionRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             body_lower = body.lower()
@@ -564,7 +564,7 @@ class ContentContradictionRule(Rule):
                     violations.append(
                         self.violation(
                             f"Possible contradiction: {desc}",
-                            file_path=path,
+                            file_path=cf.path,
                         )
                     )
         return violations
@@ -613,8 +613,8 @@ class ContentHookCandidateRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             for line_num, line in enumerate(body.splitlines(), 1):
@@ -623,7 +623,7 @@ class ContentHookCandidateRule(Rule):
                         violations.append(
                             self.violation(
                                 f"Hook candidate: '{line.strip()[:80]}' — consider automating as a {hook_type}",
-                                file_path=path,
+                                file_path=cf.path,
                                 line=line_num,
                             )
                         )
@@ -661,8 +661,8 @@ class ContentActionabilityScoreRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body:
                 continue
             lines = [l for l in body.splitlines() if l.strip()]
@@ -683,7 +683,7 @@ class ContentActionabilityScoreRule(Rule):
                 violations.append(
                     self.violation(
                         f"Low actionability score: {score}/100 (verbs: {verb_ratio:.0%}, commands: {cmd_ratio:.0%}, paths: {path_ratio:.0%})",
-                        file_path=path,
+                        file_path=cf.path,
                     )
                 )
         return violations
@@ -707,8 +707,8 @@ class ContentCognitiveChunksRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            body = _get_body(path)
+        for cf in gather_all_content_files(context):
+            body = _get_body(cf.path)
             if not body or len(body.strip()) < 100:
                 continue
             lines = body.splitlines()
@@ -718,7 +718,7 @@ class ContentCognitiveChunksRule(Rule):
                 violations.append(
                     self.violation(
                         "No headings in instruction file — add section headings for cognitive chunking",
-                        file_path=path,
+                        file_path=cf.path,
                     )
                 )
                 continue
@@ -727,7 +727,7 @@ class ContentCognitiveChunksRule(Rule):
                 violations.append(
                     self.violation(
                         "All content under a single heading — break into task-organized sections",
-                        file_path=path,
+                        file_path=cf.path,
                     )
                 )
         return violations
@@ -768,8 +768,8 @@ class ContentEmbeddedSecretsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        for path in gather_all_instruction_files(context):
-            content = read_text(path)
+        for cf in gather_all_content_files(context):
+            content = read_text(cf.path)
             if not content:
                 continue
             for line_num, line in enumerate(content.splitlines(), 1):
@@ -778,7 +778,7 @@ class ContentEmbeddedSecretsRule(Rule):
                         violations.append(
                             self.violation(
                                 f"Potential secret detected: {desc}",
-                                file_path=path,
+                                file_path=cf.path,
                                 line=line_num,
                             )
                         )
@@ -815,20 +815,20 @@ class ContentCrossFileConsistencyRule(Rule):
         return {m.group().lower() for m in tech_re.finditer(text)}
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        files = gather_all_instruction_files(context)
-        if len(files) < 2:
+        content_files = gather_all_content_files(context)
+        if len(content_files) < 2:
             return []
 
         violations = []
         all_commands: Dict[Path, Set[str]] = {}
         all_tech: Dict[Path, Set[str]] = {}
 
-        for path in files:
-            body = _get_body(path)
+        for cf in content_files:
+            body = _get_body(cf.path)
             if not body:
                 continue
-            all_commands[path] = self._extract_commands(body)
-            all_tech[path] = self._extract_tech_stack(body)
+            all_commands[cf.path] = self._extract_commands(body)
+            all_tech[cf.path] = self._extract_tech_stack(body)
 
         paths_with_tech = [(p, t) for p, t in all_tech.items() if t]
         for i, (path_a, tech_a) in enumerate(paths_with_tech):

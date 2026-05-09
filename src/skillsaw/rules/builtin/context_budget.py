@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.content_analysis import gather_all_content_files
 
 DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "agents-md": {"warn": 6000, "error": 12000},
@@ -16,12 +17,6 @@ DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "command": {"warn": 2000, "error": 4000},
     "agent": {"warn": 2000, "error": 4000},
     "rule": {"warn": 2000, "error": 4000},
-}
-
-INSTRUCTION_FILE_CATEGORIES = {
-    "agents-md": "AGENTS.md",
-    "claude-md": "CLAUDE.md",
-    "gemini-md": "GEMINI.md",
 }
 
 
@@ -112,37 +107,9 @@ class ContextBudgetRule(Rule):
         violations: List[RuleViolation] = []
         limits = self._get_limits()
 
-        for category, filename in INSTRUCTION_FILE_CATEGORIES.items():
-            warn_limit, error_limit = limits.get(category, (None, None))
-            file_path = context.root_path / filename
-            if file_path.exists():
-                self._check_file(file_path, category, warn_limit, error_limit, violations)
-
-        skill_warn, skill_error = limits.get("skill", (None, None))
-        for skill_path in context.skills:
-            skill_md = skill_path / "SKILL.md"
-            if skill_md.exists():
-                self._check_file(skill_md, "skill", skill_warn, skill_error, violations)
-
-        command_warn, command_error = limits.get("command", (None, None))
-        for plugin_path in context.plugins:
-            commands_dir = plugin_path / "commands"
-            if commands_dir.is_dir():
-                for cmd_file in sorted(commands_dir.glob("*.md")):
-                    self._check_file(cmd_file, "command", command_warn, command_error, violations)
-
-        agent_warn, agent_error = limits.get("agent", (None, None))
-        for plugin_path in context.plugins:
-            agents_dir = plugin_path / "agents"
-            if agents_dir.is_dir():
-                for agent_file in sorted(agents_dir.glob("*.md")):
-                    self._check_file(agent_file, "agent", agent_warn, agent_error, violations)
-
-        rule_warn, rule_error = limits.get("rule", (None, None))
-        for plugin_path in context.plugins:
-            rules_dir = plugin_path / "rules"
-            if rules_dir.is_dir():
-                for rule_file in sorted(rules_dir.rglob("*.md")):
-                    self._check_file(rule_file, "rule", rule_warn, rule_error, violations)
+        for cf in gather_all_content_files(context):
+            warn_limit, error_limit = limits.get(cf.category, (None, None))
+            if warn_limit is not None or error_limit is not None:
+                self._check_file(cf.path, cf.category, warn_limit, error_limit, violations)
 
         return violations

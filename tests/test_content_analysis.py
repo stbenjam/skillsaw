@@ -13,6 +13,8 @@ from skillsaw.rules.builtin.content_analysis import (
     RedundancyDetector,
     InstructionBudgetAnalyzer,
     gather_all_instruction_files,
+    gather_all_content_files,
+    ContentFile,
     _strip_fenced_code_blocks,
 )
 from skillsaw.context import RepositoryContext
@@ -468,3 +470,136 @@ class TestGatherAllInstructionFiles:
         context = RepositoryContext(temp_dir)
         files = gather_all_instruction_files(context)
         assert files == []
+
+
+class TestGatherAllContentFiles:
+    def test_categorizes_instruction_files(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Claude\n")
+        (temp_dir / "AGENTS.md").write_text("# Agents\n")
+        (temp_dir / "GEMINI.md").write_text("# Gemini\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        cats = {cf.path.name: cf.category for cf in cfs}
+        assert cats["CLAUDE.md"] == "claude-md"
+        assert cats["AGENTS.md"] == "agents-md"
+        assert cats["GEMINI.md"] == "gemini-md"
+
+    def test_copilot_is_instruction(self, temp_dir):
+        gh = temp_dir / ".github"
+        gh.mkdir()
+        (gh / "copilot-instructions.md").write_text("# Copilot\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(
+            cf.path.name == "copilot-instructions.md" and cf.category == "instruction" for cf in cfs
+        )
+
+    def test_cursorrules_is_instruction(self, temp_dir):
+        (temp_dir / ".cursorrules").write_text("Some rules\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == ".cursorrules" and cf.category == "instruction" for cf in cfs)
+
+    def test_cursor_mdc_is_instruction(self, temp_dir):
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "style.mdc").write_text("---\ndescription: style\n---\nContent\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "style.mdc" and cf.category == "instruction" for cf in cfs)
+
+    def test_gathers_skill_md(self, temp_dir):
+        (temp_dir / "SKILL.md").write_text("---\nname: my-skill\n---\nContent\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "SKILL.md" and cf.category == "skill" for cf in cfs)
+
+    def test_gathers_skill_references(self, temp_dir):
+        (temp_dir / "SKILL.md").write_text("---\nname: my-skill\n---\nContent\n")
+        refs_dir = temp_dir / "references"
+        refs_dir.mkdir()
+        (refs_dir / "api.md").write_text("# API\n")
+        (refs_dir / "guide.md").write_text("# Guide\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        ref_files = [cf for cf in cfs if cf.category == "skill-ref"]
+        assert len(ref_files) == 2
+        names = {cf.path.name for cf in ref_files}
+        assert names == {"api.md", "guide.md"}
+
+    def test_gathers_commands(self, temp_dir):
+        (temp_dir / ".claude-plugin").mkdir()
+        cmd_dir = temp_dir / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "deploy.md").write_text("# Deploy\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "deploy.md" and cf.category == "command" for cf in cfs)
+
+    def test_gathers_agents(self, temp_dir):
+        (temp_dir / ".claude-plugin").mkdir()
+        agents_dir = temp_dir / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "reviewer.md").write_text("# Reviewer\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "reviewer.md" and cf.category == "agent" for cf in cfs)
+
+    def test_gathers_rules(self, temp_dir):
+        (temp_dir / ".claude-plugin").mkdir()
+        rules_dir = temp_dir / "rules"
+        rules_dir.mkdir()
+        (rules_dir / "style.md").write_text("# Style\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "style.md" and cf.category == "rule" for cf in cfs)
+
+    def test_extra_globs(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "setup.md").write_text("# Setup\n")
+        context = RepositoryContext(temp_dir)
+        context.content_paths = ["docs/*.md"]
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "setup.md" and cf.category == "extra" for cf in cfs)
+
+    def test_no_duplicates(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Claude\n")
+        (temp_dir / "AGENTS.md").write_text("# Agents\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        resolved = [cf.path.resolve() for cf in cfs]
+        assert len(resolved) == len(set(resolved))
+
+    def test_empty_repo(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert cfs == []
+
+    def test_backward_compat_wrapper(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Claude\n")
+        context = RepositoryContext(temp_dir)
+        old = gather_all_instruction_files(context)
+        new = [cf.path for cf in gather_all_content_files(context)]
+        assert all(isinstance(p, Path) for p in old)
+        assert set(p.resolve() for p in old) <= set(p.resolve() for p in new)
+
+    def test_windsurfrules(self, temp_dir):
+        (temp_dir / ".windsurfrules").write_text("Some rules\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == ".windsurfrules" and cf.category == "instruction" for cf in cfs)
+
+    def test_clinerules_file(self, temp_dir):
+        (temp_dir / ".clinerules").write_text("Some rules\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == ".clinerules" and cf.category == "instruction" for cf in cfs)
+
+    def test_kiro_steering(self, temp_dir):
+        steering = temp_dir / ".kiro" / "steering"
+        steering.mkdir(parents=True)
+        (steering / "guide.md").write_text("# Guide\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "guide.md" and cf.category == "instruction" for cf in cfs)

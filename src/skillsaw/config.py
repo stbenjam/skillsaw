@@ -33,6 +33,7 @@ class LinterConfig:
     rules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
+    content_paths: List[str] = field(default_factory=list)
     strict: bool = False
     llm: LLMSettings = field(default_factory=LLMSettings)
 
@@ -68,6 +69,7 @@ class LinterConfig:
             rules=data.get("rules", {}),
             custom_rules=data.get("custom-rules", []),
             exclude_patterns=data.get("exclude", []),
+            content_paths=data.get("content-paths", []),
             strict=data.get("strict", False),
             llm=llm_settings,
         )
@@ -195,12 +197,15 @@ class LinterConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization"""
-        return {
+        d: Dict[str, Any] = {
             "rules": self.rules,
             "custom-rules": self.custom_rules,
             "exclude": self.exclude_patterns,
             "strict": self.strict,
         }
+        if self.content_paths:
+            d["content-paths"] = self.content_paths
+        return d
 
     def save(self, config_path: Path):
         """Save configuration to file with rule descriptions as comments"""

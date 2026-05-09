@@ -47,6 +47,7 @@ class Linter:
         """
         self.context = context
         self.config = config or LinterConfig.default()
+        self.context.content_paths = self.config.content_paths
         self.rules: List[Rule] = []
         self._load_rules()
 

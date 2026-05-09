@@ -136,32 +136,97 @@ _CRITICAL_KEYWORDS = re.compile(
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)", re.MULTILINE)
 
 
-def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
-    """Gather all instruction files across all formats."""
-    files: List[Path] = []
+_INSTRUCTION_FILE_CATEGORIES = {
+    "AGENTS.md": "agents-md",
+    "CLAUDE.md": "claude-md",
+    "GEMINI.md": "gemini-md",
+}
+
+
+@dataclass
+class ContentFile:
+    path: Path
+    category: str
+
+
+def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
+    """Gather all contextual content files across all formats.
+
+    Returns tagged ContentFile objects with category matching context_budget limit keys.
+    Deduplicates by resolved path.
+    """
+    files: List[ContentFile] = []
     seen: Set[Path] = set()
 
-    def _add(p: Path) -> None:
+    def _add(p: Path, category: str) -> None:
         resolved = p.resolve()
         if resolved not in seen and p.exists():
             seen.add(resolved)
-            files.append(p)
+            files.append(ContentFile(path=p, category=category))
 
     for f in context.instruction_files:
-        _add(f)
+        cat = _INSTRUCTION_FILE_CATEGORIES.get(f.name, "instruction")
+        _add(f, cat)
 
-    copilot = context.root_path / ".github" / "copilot-instructions.md"
-    _add(copilot)
-
-    cursorrules = context.root_path / ".cursorrules"
-    _add(cursorrules)
+    _add(context.root_path / ".github" / "copilot-instructions.md", "instruction")
+    _add(context.root_path / ".cursorrules", "instruction")
 
     cursor_rules_dir = context.root_path / ".cursor" / "rules"
     if cursor_rules_dir.is_dir():
         for mdc in sorted(cursor_rules_dir.glob("*.mdc")):
-            _add(mdc)
+            _add(mdc, "instruction")
+
+    kiro_steering = context.root_path / ".kiro" / "steering"
+    if kiro_steering.is_dir():
+        for md in sorted(kiro_steering.glob("*.md")):
+            _add(md, "instruction")
+
+    _add(context.root_path / ".windsurfrules", "instruction")
+
+    clinerules = context.root_path / ".clinerules"
+    if clinerules.is_file():
+        _add(clinerules, "instruction")
+    elif clinerules.is_dir():
+        for md in sorted(clinerules.glob("*.md")):
+            _add(md, "instruction")
+
+    for skill_path in context.skills:
+        _add(skill_path / "SKILL.md", "skill")
+        refs_dir = skill_path / "references"
+        if refs_dir.is_dir():
+            for ref_file in sorted(refs_dir.glob("*.md")):
+                _add(ref_file, "skill-ref")
+
+    for plugin_path in context.plugins:
+        commands_dir = plugin_path / "commands"
+        if commands_dir.is_dir():
+            for cmd_file in sorted(commands_dir.glob("*.md")):
+                _add(cmd_file, "command")
+
+        agents_dir = plugin_path / "agents"
+        if agents_dir.is_dir():
+            for agent_file in sorted(agents_dir.glob("*.md")):
+                _add(agent_file, "agent")
+
+        rules_dir = plugin_path / "rules"
+        if rules_dir.is_dir():
+            for rule_file in sorted(rules_dir.rglob("*.md")):
+                _add(rule_file, "rule")
+
+    for glob_pattern in getattr(context, "content_paths", []):
+        for extra in sorted(context.root_path.glob(glob_pattern)):
+            if extra.is_file():
+                _add(extra, "extra")
 
     return files
+
+
+def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
+    """Gather all contextual content files across all formats.
+
+    Thin wrapper around gather_all_content_files for backward compatibility.
+    """
+    return [cf.path for cf in gather_all_content_files(context)]
 
 
 def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
