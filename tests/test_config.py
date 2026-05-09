@@ -269,8 +269,129 @@ def test_content_rules_default_to_auto():
         assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"
 
 
-def test_for_init_equals_default():
-    """Test that for_init() returns same config as default() now that all rules are auto"""
+def test_for_init_sets_version():
+    """Test that for_init() sets version to current release"""
+    from skillsaw import __version__
+
     init_config = LinterConfig.for_init()
-    default_config = LinterConfig.default()
-    assert init_config.rules == default_config.rules
+    assert init_config.version == __version__
+    assert init_config.rules == LinterConfig.default().rules
+
+
+def test_version_from_file_defaults_to_0_6(tmp_path):
+    """Config files without a version key are treated as 0.6.0"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("rules: {}\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.version == "0.6.0"
+
+
+def test_version_from_file_explicit(tmp_path):
+    """Config files with an explicit version are parsed correctly"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text('version: "0.7.0"\nrules: {}\n')
+    config = LinterConfig.from_file(config_file)
+    assert config.version == "0.7.0"
+
+
+def test_version_gates_new_rules(temp_dir):
+    """Rules with since > config version are skipped"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is False
+    )
+
+
+def test_version_allows_matching_rules(temp_dir):
+    """Rules with since <= config version pass the gate"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.7.0",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_explicit_true_overrides_version_gate(temp_dir):
+    """Explicit enabled: true bypasses version gating"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"enabled": True}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_explicit_false_overrides_version(temp_dir):
+    """Explicit enabled: false is honored regardless of version"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.7.0",
+        rules={"content-weak-language": {"enabled": False}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is False
+    )
+
+
+def test_no_version_means_all_rules_active(temp_dir):
+    """No config version (empty string) means all rules are active"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_save_includes_version(tmp_path):
+    """Test that save() writes the version field"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    parsed = yaml.safe_load(config_path.read_text())
+    assert "version" in parsed
+    assert parsed["version"] == config.version

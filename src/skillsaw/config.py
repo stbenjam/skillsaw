@@ -6,11 +6,17 @@ import os
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Set, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+
+_DEFAULT_VERSION = "0.6.0"
+
+
+def _parse_version(v: str) -> Tuple[int, ...]:
+    return tuple(int(x) for x in v.split("."))
 
 
 @dataclass
@@ -31,6 +37,7 @@ class LLMSettings:
 class LinterConfig:
     """Configuration for the linter"""
 
+    version: str = ""
     rules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
@@ -68,6 +75,7 @@ class LinterConfig:
         )
 
         return cls(
+            version=data.get("version", _DEFAULT_VERSION),
             rules=data.get("rules", {}),
             custom_rules=data.get("custom-rules", []),
             exclude_patterns=data.get("exclude", []),
@@ -145,8 +153,12 @@ class LinterConfig:
 
     @classmethod
     def for_init(cls) -> "LinterConfig":
-        """Config for --init: identical to default() now that all rules use auto-detection."""
-        return cls.default()
+        """Config for --init: sets version to current release so all rules are active."""
+        from . import __version__
+
+        config = cls.default()
+        config.version = __version__
+        return config
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
@@ -170,6 +182,7 @@ class LinterConfig:
         context: "RepositoryContext",
         repo_types=None,
         formats: Optional[Set[str]] = None,
+        since_version: str = "0.1.0",
     ) -> bool:
         """
         Check if a rule is enabled for the given context
@@ -179,10 +192,23 @@ class LinterConfig:
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
             formats: Set of detected format constants the rule requires (None = all)
+            since_version: Minimum config version required for this rule
 
         Returns:
             True if rule should run
         """
+        user_overrides = self.rules.get(rule_id, {})
+        if "enabled" in user_overrides:
+            explicit = user_overrides["enabled"]
+            if explicit is True:
+                return True
+            if explicit is False:
+                return False
+
+        if self.version:
+            if _parse_version(self.version) < _parse_version(since_version):
+                return False
+
         rule_config = self.get_rule_config(rule_id)
         enabled = rule_config.get("enabled", True)
 
@@ -199,12 +225,13 @@ class LinterConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization"""
-        d: Dict[str, Any] = {
-            "rules": self.rules,
-            "custom-rules": self.custom_rules,
-            "exclude": self.exclude_patterns,
-            "strict": self.strict,
-        }
+        d: Dict[str, Any] = {}
+        if self.version:
+            d["version"] = self.version
+        d["rules"] = self.rules
+        d["custom-rules"] = self.custom_rules
+        d["exclude"] = self.exclude_patterns
+        d["strict"] = self.strict
         if self.content_paths:
             d["content-paths"] = self.content_paths
         return d
@@ -221,6 +248,8 @@ class LinterConfig:
         with open(config_path, "w") as f:
             f.write("# skillsaw configuration\n")
             f.write("# https://github.com/stbenjam/skillsaw\n\n")
+            if self.version:
+                f.write(f'version: "{self.version}"\n\n')
             f.write("rules:\n")
             for rule_id, rule_config in self.rules.items():
                 desc = descriptions.get(rule_id, "")

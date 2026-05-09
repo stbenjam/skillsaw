@@ -30,6 +30,7 @@ class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -78,6 +79,7 @@ class ContentTautologicalRule(Rule):
     """Detect tautological instructions that waste instruction budget"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -124,6 +126,7 @@ class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -171,6 +174,7 @@ class ContentRedundantWithToolingRule(Rule):
     """Detect instructions that duplicate existing tooling configuration"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -216,6 +220,7 @@ class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -273,6 +278,7 @@ class ContentReadmeOverlapRule(Rule):
     """Detect significant overlap between instruction files and README"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     _JACCARD_THRESHOLD = 0.6
 
@@ -351,6 +357,7 @@ class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     _NEGATIVE_RE = re.compile(
         r"(?:never\s+use|don'?t\s+use|avoid\s+using|do\s+not\s+use|never\s+do|don'?t\s+do)\s+",
@@ -448,6 +455,7 @@ class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     MAX_LINES = 50
 
@@ -521,6 +529,7 @@ class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def llm_fix_prompt(self):
@@ -597,6 +606,7 @@ class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def llm_fix_prompt(self):
@@ -673,6 +683,7 @@ class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def llm_fix_prompt(self):
@@ -746,6 +757,7 @@ class ContentCognitiveChunksRule(Rule):
     """Check section organization for cognitive chunking"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def rule_id(self) -> str:
@@ -805,6 +817,7 @@ class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     @property
     def llm_fix_prompt(self):
@@ -873,6 +886,7 @@ class ContentStaleReferencesRule(Rule):
     """Detect stale or outdated references in instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     _STALE_MODEL_NAMES = [
         (
@@ -979,6 +993,7 @@ class ContentInconsistentTerminologyRule(Rule):
     """Detect inconsistent terminology across instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+    since = "0.7.0"
 
     _TERM_GROUPS: List[Tuple[str, List[re.Pattern]]] = [
         (

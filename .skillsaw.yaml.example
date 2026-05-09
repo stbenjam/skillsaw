@@ -1,6 +1,8 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
+version: "0.7.0"
+
 rules:
 
   # Plugin must have .claude-plugin/plugin.json
