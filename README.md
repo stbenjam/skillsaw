@@ -11,24 +11,24 @@
 
 ### skillsaw
 
-Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, and CI companion for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
-
-> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+Keep your skills sharp. A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces). Analyzes instruction file quality using attention research, detects weak language and contradictions, and auto-fixes violations with any LLM.
 
 </td>
 </tr></table>
 
+> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+
 ## Features
 
-- 🔍 **Context-Aware** — Automatically detects agentskills repos, single plugins, and marketplaces and enables the right rules
-- 📐 **Rule-Based** — Enable/disable individual rules with configurable severity levels
-- 🏗️ **Scaffolding** — Initialize marketplaces and add plugins, skills, commands, agents, and hooks with `skillsaw add`
-- 📝 **Doc Generation** — Generate HTML or Markdown documentation for your plugins and skills with `skillsaw docs`
-- 🔌 **Extensible** — Load custom rules from Python files
-- ✅ **Comprehensive** — Validates skill format, plugin structure, metadata, command format, and cross-file consistency
-- 🤖 **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
-- 🐳 **Containerized** — Run via Docker for consistent, isolated linting
-- ⚡ **Fast** — Efficient validation with clear, actionable output
+- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
+- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw lint --fix --llm` — parallel processing, scoped re-lint, per-file rollback
+- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
+- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
+- 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
+- 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
+- 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
+- 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
+- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
 
 ## Table of Contents
 
@@ -48,6 +48,10 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
 - [Configuration](#configuration)
 - [Builtin Rules](#builtin-rules)
+- [Autofixing](#autofixing)
+  - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
+  - [LLM-Powered Fixes (`--fix --llm`)](#llm-powered-fixes---fix---llm)
+  - [Standalone Fix Command (`skillsaw fix`)](#standalone-fix-command-skillsaw-fix)
 - [Custom Rules](#custom-rules)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
@@ -72,31 +76,34 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
 # Lint current directory (no install required)
 uvx skillsaw
 
-# Lint specific directory
-skillsaw /path/to/skills
+# Fix structural issues automatically
+skillsaw lint --fix
 
-# Verbose output
+# Fix content quality issues with an LLM
+skillsaw lint --fix --llm
+
+# Preview LLM fixes without writing
+skillsaw lint --fix --llm --dry-run
+
+# Verbose output (includes info-level findings)
 skillsaw -v
 
-# Strict mode (warnings as errors)
+# Strict mode (warnings become errors)
 skillsaw --strict
 
 # Generate default config
 skillsaw init
 
-# List all available rules
+# List all rules with fix support info
 skillsaw list-rules
 
-# Generate documentation
+# Generate plugin/skill documentation
 skillsaw docs
 
-# Initialize a new marketplace
+# Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
-
-# Add a plugin, skill, or hook
 skillsaw add plugin my-plugin
 skillsaw add skill my-skill
-skillsaw add hook PreToolUse
 ```
 
 ## Installation
@@ -281,14 +288,14 @@ See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
 
 These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable for agentskills repos, single plugins, and marketplaces whenever skills are detected.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) |
-| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) |
-| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) |
-| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) |
-| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) |
-| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
+| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
+| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
+| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
+| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
+| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
 
 **`agentskill-structure` parameters:**
 
@@ -298,12 +305,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Plugin Structure
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) |
-| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) |
-| `plugin-naming` | Plugin names should use kebab-case | warning (auto) |
-| `plugin-readme` | Plugin should have a README.md file | warning (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
+| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) | - |
+| `plugin-naming` | Plugin names should use kebab-case | warning (auto) | - |
+| `plugin-readme` | Plugin should have a README.md file | warning (auto) | llm |
 
 **`plugin-json-valid` parameters:**
 
@@ -313,34 +320,34 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Command Format
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `command-naming` | Command files should use kebab-case naming | warning |
-| `command-frontmatter` | Command files must have valid frontmatter with description | error |
-| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning |
-| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `command-naming` | Command files should use kebab-case naming | warning | auto |
+| `command-frontmatter` | Command files must have valid frontmatter with description | error | auto |
+| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |
+| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - |
 
 ### Marketplace
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) |
-| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - |
+| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto |
 
 ### Skills, Agents, Hooks
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error |
-| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto |
+| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 
 ### MCP (Model Context Protocol)
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error |
-| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
+| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - |
 
 **`mcp-prohibited` parameters:**
 
@@ -350,42 +357,133 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Rules Directory
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
 
 ### Openclaw
 
 Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires when `metadata.openclaw` is present.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - |
 
 ### Instruction Files
 
 Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repository root. Checks encoding, non-emptiness, and that `@import` references resolve to existing files. Disabled by default.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (disabled) |
-| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - |
+| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) | - |
 
 ### Context Budget
 
 Warns when instruction and configuration files exceed recommended token limits. Uses a `len(text) / 4` approximation for token counting. Supports per-category `warn` and `error` thresholds. Disabled by default.
 
-| Rule ID | Description | Default Severity |
-|---------|-------------|------------------|
-| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (disabled) |
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `context-budget` | Warn when instruction or config files exceed recommended token limits | warning (auto) | - |
 
 **`context-budget` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+
+### Content Intelligence
+
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
+| `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
+| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm |
+| `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
+| `content-instruction-budget` | Check if total instruction count across all files exceeds LLM instruction budget (~150) | warning (auto) | llm |
+| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
+| `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
+| `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
+| `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
+| `content-actionability-score` | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
+| `content-cognitive-chunks` | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
+| `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
+| `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
+| `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+
+**`content-section-length` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max-tokens` | Maximum estimated tokens per section before triggering a warning | `500` |
+
+**`content-banned-references` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
+| `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 
 <!-- END GENERATED RULES -->
+
+## Autofixing
+
+skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Rules declare which fix type they support (see the **Autofix** column in the rules tables above).
+
+### Deterministic Fixes (`--fix`)
+
+Safe, pattern-based fixes that run instantly without any external dependencies:
+
+```bash
+skillsaw lint --fix              # Apply safe structural fixes
+```
+
+Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
+
+### LLM-Powered Fixes (`--fix --llm`)
+
+All content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
+
+```bash
+# Fix content violations with an LLM (any LiteLLM-compatible model)
+skillsaw lint --fix --llm
+
+# Preview what would change without writing to disk
+skillsaw lint --fix --llm --dry-run
+
+# Use a specific model (OpenAI, Anthropic, Vertex AI, local, etc.)
+skillsaw lint --fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw lint --fix --llm --model openrouter/minimax/minimax-m1
+```
+
+**How it works:**
+
+1. skillsaw lints your repo and groups violations by file
+2. Each file is sent to an LLM agent with 5 scoped tools: `read_file`, `write_file`, `replace_section`, `lint` (re-runs skillsaw), and `diff`
+3. The LLM iteratively edits the file and re-lints until violations are resolved
+4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
+5. Files are processed in parallel with a live progress bar showing ETA
+
+The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
+
+Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
+
+### Standalone Fix Command (`skillsaw fix`)
+
+For more control over LLM fixes, use the standalone `fix` subcommand:
+
+```bash
+skillsaw fix --llm                          # Fix with default model
+skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw fix --llm --all                    # Include info-level violations
+skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
+skillsaw fix --llm --max-iterations 10      # Max iterations per file
+skillsaw fix --llm --dry-run                # Preview changes
+```
+
+This provides a richer terminal UI with progress bars, per-file ETA, and detailed tool call logging. Use `skillsaw fix --llm` for interactive development; use `skillsaw lint --fix --llm` for CI or scripted workflows.
 
 ## Custom Rules
 
@@ -558,13 +656,7 @@ docker build -t skillsaw .
 
 ## Contributing
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions.
 
 ## License
 

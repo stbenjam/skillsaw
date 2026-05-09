@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Set
 import json
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,32 @@ class RepositoryType(Enum):
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
+HAS_CURSOR = "HAS_CURSOR"
+HAS_COPILOT = "HAS_COPILOT"
+HAS_GEMINI = "HAS_GEMINI"
+HAS_AGENTS_MD = "HAS_AGENTS_MD"
+HAS_KIRO = "HAS_KIRO"
+HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
+ALL_INSTRUCTION_FORMATS = frozenset(
+    {
+        HAS_CURSOR,
+        HAS_COPILOT,
+        HAS_GEMINI,
+        HAS_AGENTS_MD,
+        HAS_KIRO,
+        HAS_CLAUDE_MD,
+    }
+)
+
+
 class RepositoryContext:
     """
     Context information about the repository being linted
 
     Automatically detects repository type and gathers relevant metadata.
     """
+
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 
     def __init__(self, root_path: Path):
         """
@@ -45,6 +66,60 @@ class RepositoryContext:
         )  # marketplace metadata for strict:false plugins without plugin.json
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
+        self.instruction_files: List[Path] = self._discover_instruction_files()
+        self.detected_formats: Set[str] = self._detect_formats()
+        self.content_paths: List[str] = []
+        self.exclude_patterns: List[str] = []
+
+    def _discover_instruction_files(self) -> List[Path]:
+        """Discover instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repo root."""
+        return [
+            self.root_path / name
+            for name in self._INSTRUCTION_FILENAMES
+            if (self.root_path / name).exists()
+        ]
+
+    def _detect_formats(self) -> Set[str]:
+        formats: Set[str] = set()
+        if (self.root_path / ".cursor" / "rules").is_dir() or (
+            self.root_path / ".cursorrules"
+        ).exists():
+            formats.add(HAS_CURSOR)
+        if (
+            self.root_path / ".github" / "copilot-instructions.md"
+        ).exists() or self._has_instructions_md():
+            formats.add(HAS_COPILOT)
+        if (self.root_path / "GEMINI.md").exists():
+            formats.add(HAS_GEMINI)
+        if (self.root_path / "AGENTS.md").exists():
+            formats.add(HAS_AGENTS_MD)
+        if (self.root_path / ".kiro").is_dir():
+            formats.add(HAS_KIRO)
+        if (self.root_path / "CLAUDE.md").exists():
+            formats.add(HAS_CLAUDE_MD)
+        return formats
+
+    _WALK_SKIP_DIRS = frozenset(
+        {
+            ".git",
+            ".hg",
+            ".svn",
+            "node_modules",
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".tox",
+            ".mypy_cache",
+        }
+    )
+
+    def _has_instructions_md(self) -> bool:
+        """Walk the repo looking for .instructions.md, skipping heavy directories."""
+        for dirpath, dirnames, filenames in os.walk(self.root_path):
+            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
+            if ".instructions.md" in filenames:
+                return True
+        return False
 
     def _detect_type(self) -> RepositoryType:
         """Detect the type of repository"""

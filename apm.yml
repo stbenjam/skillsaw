@@ -1,6 +1,10 @@
 name: skillsaw
 version: 0.4.0
 description: A configurable linter for agent skills, plugins, and AI coding assistant context
-target: claude
+targets:
+  - claude
+  - cursor
+  - gemini
+  - opencode
 
 dependencies: {}

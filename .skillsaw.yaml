@@ -1,0 +1,10 @@
+# skillsaw self-lint config
+version: "99.0.0"
+
+exclude:
+  - ".claude/*"
+  - ".cursor/*"
+  - ".gemini/*"
+  - ".opencode/*"
+  - ".agents/*"
+  - ".github/instructions/*"

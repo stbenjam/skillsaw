@@ -8,7 +8,13 @@ import yaml
 
 
 from skillsaw.config import LinterConfig, find_config
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import (
+    RepositoryContext,
+    RepositoryType,
+    HAS_CURSOR,
+    HAS_CLAUDE_MD,
+    ALL_INSTRUCTION_FORMATS,
+)
 
 
 def test_default_config():
@@ -172,3 +178,240 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     config = LinterConfig.default()
     context = RepositoryContext(valid_plugin)
     assert config.is_rule_enabled("some-rule", context, None) is True
+
+
+def test_auto_with_formats_enabled_when_format_detected(temp_dir):
+    """Test that auto with formats fires when the format is detected"""
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
+    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+
+
+def test_auto_with_formats_disabled_when_format_missing(temp_dir):
+    """Test that auto with formats does not fire when format is absent"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
+    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+
+
+def test_auto_with_formats_or_repo_types(temp_dir):
+    """Test that either repo_types or formats match enables the rule"""
+    (temp_dir / "CLAUDE.md").write_text("# Instructions")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
+    assert (
+        config.is_rule_enabled(
+            "test-rule",
+            context,
+            {RepositoryType.MARKETPLACE},
+            ALL_INSTRUCTION_FORMATS,
+        )
+        is True
+    )
+
+
+def test_auto_with_formats_and_repo_types_both_miss(temp_dir):
+    """Test that rule is disabled when neither repo_types nor formats match"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={"test-rule": {"enabled": "auto"}})
+    assert (
+        config.is_rule_enabled(
+            "test-rule",
+            context,
+            {RepositoryType.MARKETPLACE},
+            {HAS_CURSOR},
+        )
+        is False
+    )
+
+
+def test_explicit_enabled_overrides_auto_detection(temp_dir):
+    """Test that explicit enabled: true/false in config overrides auto"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={"test-rule": {"enabled": False}})
+    assert config.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is False
+
+    config2 = LinterConfig(rules={"test-rule": {"enabled": True}})
+    assert config2.is_rule_enabled("test-rule", context, None, {HAS_CURSOR}) is True
+
+
+def test_format_specific_rules_default_to_auto():
+    """Test that instruction file rules now default to auto"""
+    config = LinterConfig.default()
+    auto_rules = [
+        "instruction-file-valid",
+        "instruction-imports-valid",
+    ]
+    for rule_id in auto_rules:
+        assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"
+
+
+def test_content_rules_default_to_auto():
+    """Test that content intelligence rules now default to auto"""
+    config = LinterConfig.default()
+    content_rules = [
+        "content-weak-language",
+        "content-tautological",
+        "content-critical-position",
+        "content-redundant-with-tooling",
+        "content-instruction-budget",
+        "content-negative-only",
+        "content-section-length",
+        "content-contradiction",
+        "content-hook-candidate",
+        "content-actionability-score",
+        "content-cognitive-chunks",
+        "content-embedded-secrets",
+        "content-banned-references",
+        "content-inconsistent-terminology",
+    ]
+    for rule_id in content_rules:
+        assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"
+
+
+def test_for_init_sets_version():
+    """Test that for_init() sets version to current release"""
+    from skillsaw import __version__
+
+    init_config = LinterConfig.for_init()
+    assert init_config.version == __version__
+    assert init_config.rules == LinterConfig.default().rules
+
+
+def test_version_from_file_defaults_to_0_6(tmp_path):
+    """Config files without a version key are treated as 0.6.0"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("rules: {}\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.version == "0.6.0"
+
+
+def test_version_from_file_explicit(tmp_path):
+    """Config files with an explicit version are parsed correctly"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text('version: "0.7.0"\nrules: {}\n')
+    config = LinterConfig.from_file(config_file)
+    assert config.version == "0.7.0"
+
+
+def test_version_gates_new_rules(temp_dir):
+    """Rules with since > config version are skipped"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is False
+    )
+
+
+def test_version_allows_matching_rules(temp_dir):
+    """Rules with since <= config version pass the gate"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.7.0",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_explicit_true_overrides_version_gate(temp_dir):
+    """Explicit enabled: true bypasses version gating"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"enabled": True}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_explicit_false_overrides_version(temp_dir):
+    """Explicit enabled: false is honored regardless of version"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.7.0",
+        rules={"content-weak-language": {"enabled": False}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is False
+    )
+
+
+def test_no_version_means_all_rules_active(temp_dir):
+    """No config version (empty string) means all rules are active"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_severity_override_bypasses_version_gate(temp_dir):
+    """Configuring a rule's severity implies the user wants it active"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"severity": "error"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_save_includes_version(tmp_path):
+    """Test that save() writes the version field"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    parsed = yaml.safe_load(config_path.read_text())
+    assert "version" in parsed
+    assert parsed["version"] == config.version

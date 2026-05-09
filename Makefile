@@ -18,9 +18,10 @@ help:
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
-$(VENV)/bin/activate:
-	python3 -m venv $(VENV)
-	$(PIP) install -e '.[dev]'
+$(VENV)/bin/activate: pyproject.toml
+	test -d $(VENV) || python3 -m venv $(VENV)
+	$(PIP) install -e '.[dev,vertexai,bedrock]'
+	touch $(VENV)/bin/activate
 
 venv: $(VENV)/bin/activate
 
@@ -33,10 +34,13 @@ lint: $(VENV)/bin/activate
 test: $(VENV)/bin/activate
 	$(VENV)/bin/pytest tests/ -v --cov=src --cov=rules --cov-report=xml --cov-report=term
 
+# Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV)/bin/activate
 	rm -f .skillsaw.yaml.example
-	$(VENV)/bin/skillsaw init
-	mv .skillsaw.yaml .skillsaw.yaml.example
+	$(eval TMPDIR := $(shell mktemp -d))
+	$(VENV)/bin/skillsaw init $(TMPDIR)
+	mv $(TMPDIR)/.skillsaw.yaml .skillsaw.yaml.example
+	rm -rf $(TMPDIR)
 
 generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py

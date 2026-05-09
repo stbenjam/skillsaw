@@ -1,6 +1,8 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
+version: "0.7.0"
+
 rules:
 
   # Plugin must have .claude-plugin/plugin.json
@@ -34,12 +36,12 @@ rules:
 
   # Command files should have Name, Synopsis, Description, and Implementation sections
   command-sections:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Command Name section should be 'plugin-name:command-name'
   command-name-format:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Marketplace.json must be valid JSON with required fields
@@ -124,18 +126,88 @@ rules:
 
   # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
   instruction-file-valid:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files
   instruction-imports-valid:
-    enabled: true
+    enabled: auto
     severity: warning
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
-    enabled: true
+    enabled: auto
     severity: warning
+
+  # Detect hedging, vague, and non-actionable language in instruction files
+  content-weak-language:
+    enabled: auto
+    severity: warning
+
+  # Detect tautological instructions that the model already follows by default
+  content-tautological:
+    enabled: auto
+    severity: warning
+
+  # Detect critical instructions in the middle of files where LLM attention is lowest
+  content-critical-position:
+    enabled: auto
+    severity: warning
+
+  # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
+  content-redundant-with-tooling:
+    enabled: auto
+    severity: warning
+
+  # Check if total instruction count across all files exceeds LLM instruction budget (~150)
+  content-instruction-budget:
+    enabled: auto
+    severity: warning
+
+  # Detect prohibitions without a positive alternative (agent has no path forward)
+  content-negative-only:
+    enabled: auto
+    severity: warning
+
+  # Warn about markdown sections longer than ~500 tokens
+  content-section-length:
+    enabled: auto
+    severity: info
+
+  # Detect likely contradictions within instruction files using keyword-pair heuristics
+  content-contradiction:
+    enabled: auto
+    severity: warning
+
+  # Detect instructions that should be automated as hooks instead of prose instructions
+  content-hook-candidate:
+    enabled: auto
+    severity: info
+
+  # Score instruction files on actionability (verb density, commands, file references)
+  content-actionability-score:
+    enabled: auto
+    severity: info
+
+  # Check that instruction files are organized into cognitive chunks with headings
+  content-cognitive-chunks:
+    enabled: auto
+    severity: info
+
+  # Detect potential API keys, tokens, and passwords in instruction files
+  content-embedded-secrets:
+    enabled: auto
+    severity: error
+
+  # Detect banned or deprecated model names, APIs, and custom patterns
+  content-banned-references:
+    enabled: auto
+    severity: warning
+
+  # Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')
+  content-inconsistent-terminology:
+    enabled: auto
+    severity: info
 
 # Load custom rules from these files
 custom-rules: []

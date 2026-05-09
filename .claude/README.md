@@ -40,13 +40,6 @@ Serial multi-specialist code review panel for skillsaw PRs. Runs 5 specialist re
 
 ## Rules
 
-### architecture
-
-# Architecture
-
-- `src/skillsaw/context.py` — repo type detection (SINGLE_PLUGIN, MARKETPLACE, AGENTSKILLS, DOT_CLAUDE, UNKNOWN)
-- `src/skillsaw/config.py` — config loading, rule enabling logic, `auto
-
 ### development
 
 # Development Rules

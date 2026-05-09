@@ -2,14 +2,37 @@
 Main linter orchestration
 """
 
-import importlib.util
-import sys
-from pathlib import Path
-from typing import List
+from __future__ import annotations
 
-from .rule import Rule, RuleViolation, Severity
+import importlib.util
+import logging
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
+
+from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
+
+if TYPE_CHECKING:
+    from .llm._litellm import CompletionProvider, TokenUsage
+
+
+@dataclass
+class LLMFixResult:
+    files_modified: List[Path]
+    violations_before: int
+    violations_after: int
+    total_usage: "TokenUsage"
+    diffs: Dict[Path, str]
+    success: bool
+
+    @property
+    def violations_fixed(self) -> int:
+        return max(0, self.violations_before - self.violations_after)
 
 
 class Linter:
@@ -27,6 +50,8 @@ class Linter:
         """
         self.context = context
         self.config = config or LinterConfig.default()
+        self.context.content_paths = self.config.content_paths
+        self.context.exclude_patterns = self.config.exclude_patterns
         self.rules: List[Rule] = []
         self._load_rules()
 
@@ -55,7 +80,11 @@ class Linter:
 
             # Check if enabled for this context
             if self.config.is_rule_enabled(
-                rule_instance.rule_id, self.context, rule_instance.repo_types
+                rule_instance.rule_id,
+                self.context,
+                rule_instance.repo_types,
+                rule_instance.formats,
+                since_version=rule_instance.since,
             ):
                 self.rules.append(rule_instance)
 
@@ -93,7 +122,10 @@ class Linter:
 
                 # Check if enabled
                 if self.config.is_rule_enabled(
-                    rule_instance.rule_id, self.context, rule_instance.repo_types
+                    rule_instance.rule_id,
+                    self.context,
+                    rule_instance.repo_types,
+                    rule_instance.formats,
                 ):
                     self.rules.append(rule_instance)
 
@@ -128,3 +160,391 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
         return violations
+
+    def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
+        """
+        Run all enabled rules and attempt to fix violations.
+
+        Returns:
+            Tuple of (remaining violations, autofix results)
+        """
+        all_violations = self._validate_config()
+        all_fixes: List[AutofixResult] = []
+
+        for rule in self.rules:
+            try:
+                rule_violations = rule.check(self.context)
+            except Exception as e:
+                print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                continue
+
+            if rule_violations and rule.supports_autofix:
+                try:
+                    fixes = rule.fix(self.context, rule_violations)
+                    all_fixes.extend(fixes)
+                    fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
+                    remaining = [v for v in rule_violations if id(v) not in fixed_violations]
+                    all_violations.extend(remaining)
+                except Exception as e:
+                    print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
+                    all_violations.extend(rule_violations)
+            else:
+                all_violations.extend(rule_violations)
+
+        return all_violations, all_fixes
+
+    @staticmethod
+    def apply_fixes(
+        fixes: List[AutofixResult],
+        confidence: AutofixConfidence = AutofixConfidence.SAFE,
+    ) -> List[AutofixResult]:
+        """
+        Write fix results to disk.
+
+        Args:
+            fixes: Autofix results to apply
+            confidence: Minimum confidence level to apply (SAFE = only safe,
+                        SUGGEST = safe + suggest)
+
+        Returns:
+            List of fixes that were actually applied
+        """
+        applied: List[AutofixResult] = []
+        allowed = {AutofixConfidence.SAFE}
+        if confidence == AutofixConfidence.SUGGEST:
+            allowed.add(AutofixConfidence.SUGGEST)
+
+        for fix in fixes:
+            if fix.confidence not in allowed:
+                continue
+            fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+            applied.append(fix)
+
+        return applied
+
+    _SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+
+    @staticmethod
+    def _build_llm_system_prompt(rel_path, violations_list, llm_rules):
+        prompts = set()
+        for v in violations_list:
+            prompt = llm_rules[v.rule_id].llm_fix_prompt
+            if prompt:
+                prompts.add(prompt)
+        formatted = "\n".join(str(v) for v in violations_list)
+        combined = "\n\n".join(prompts)
+        return (
+            f"You are fixing lint violations in: {rel_path}\n\n"
+            f"VIOLATIONS TO FIX:\n{formatted}\n\n"
+            f"RULE GUIDANCE:\n{combined}\n\n"
+            "TOOLS:\n"
+            "- read_file(path) — read a file\n"
+            "- write_file(path, content) — overwrite entire file\n"
+            "- replace_section(path, old_text, new_text) — surgical edit "
+            "(old_text must match exactly)\n"
+            "- lint(path) — re-run the linter to check your work\n"
+            "- diff(path) — see changes vs original\n\n"
+            "INSTRUCTIONS:\n"
+            "1. read_file to see current content\n"
+            "2. Fix each violation using replace_section (prefer small, "
+            "targeted edits over rewriting the whole file)\n"
+            "3. After all edits, call lint() to verify — if violations "
+            "remain, fix them and lint again\n"
+            "4. When done, call diff() then respond with a brief summary\n\n"
+            "IMPORTANT:\n"
+            "- Do not change anything unrelated to the violations\n"
+            "- Preserve the file's structure, formatting, and meaning\n"
+            "- Only modify the specific text that triggers each violation\n"
+            "- NEVER call lint() unless you have made changes since "
+            "the last lint — re-linting unchanged code wastes iterations\n"
+            "- If lint still shows violations after your edits, make a "
+            "different edit before linting again"
+        )
+
+    def _relint_file(self, fpath, violations_list, threshold):
+        from .rules.builtin.utils import invalidate_read_caches
+
+        invalidate_read_caches()
+        failed_rule_ids = {v.rule_id for v in violations_list}
+        failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
+        remaining = []
+        for rule in failed_rules:
+            try:
+                re_violations = rule.check(self.context)
+                remaining.extend(
+                    v
+                    for v in re_violations
+                    if v.file_path
+                    and v.file_path.resolve() == fpath
+                    and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
+                )
+            except Exception as e:
+                logger.warning("Rule %s failed during re-lint of %s: %s", rule.rule_id, fpath, e)
+                remaining.extend(v for v in violations_list if v.rule_id == rule.rule_id)
+        return remaining
+
+    def _llm_process_one_file(
+        self,
+        file_idx,
+        fpath,
+        file_violations,
+        *,
+        provider,
+        llm_rules,
+        originals,
+        file_count,
+        root_resolved,
+        base_max_iter,
+        threshold,
+        emit,
+    ):
+        from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
+        from .llm.engine import LLMEngine
+        from .llm._litellm import TokenUsage
+        import difflib
+
+        file_usage = TokenUsage(0, 0)
+        file_max_iter = max(base_max_iter, len(file_violations) * 5)
+        rel_path = fpath.relative_to(root_resolved)
+
+        rules_for_file = sorted({v.rule_id for v in file_violations})
+        emit(
+            "file_start",
+            file_idx=file_idx,
+            file_count=file_count,
+            rel_path=rel_path,
+            num_violations=len(file_violations),
+            rule_ids=rules_for_file,
+        )
+
+        def _on_engine_event(event_type, **kwargs):
+            emit(
+                event_type,
+                file_idx=file_idx,
+                file_count=file_count,
+                rel_path=rel_path,
+                **kwargs,
+            )
+
+        tools = [
+            ReadFileTool(self.context.root_path),
+            WriteFileTool(self.context.root_path),
+            ReplaceSectionTool(self.context.root_path),
+            LintTool(
+                self.context.root_path,
+                self.config,
+                rule_ids={v.rule_id for v in file_violations},
+            ),
+            DiffTool(self.context.root_path, originals),
+        ]
+
+        current_violations = file_violations
+        total_iterations = 0
+        remaining = []
+        for attempt in range(2):
+            engine = LLMEngine(
+                provider,
+                tools,
+                model=self.config.llm.model,
+                max_iterations=file_max_iter,
+                max_tokens=self.config.llm.max_tokens,
+                on_event=_on_engine_event,
+            )
+            result = engine.run(
+                system_prompt=self._build_llm_system_prompt(
+                    rel_path, current_violations, llm_rules
+                ),
+                user_message=f"Please fix the violations in {rel_path}.",
+            )
+            file_usage.prompt_tokens += result.usage.prompt_tokens
+            file_usage.completion_tokens += result.usage.completion_tokens
+            total_iterations += result.iterations
+
+            remaining = self._relint_file(fpath, current_violations, threshold)
+            if not remaining:
+                break
+
+            if attempt == 0:
+                emit(
+                    "retry",
+                    file_idx=file_idx,
+                    file_count=file_count,
+                    rel_path=rel_path,
+                    remaining=len(remaining),
+                )
+                current_violations = remaining
+
+        changed = False
+        diff_text = None
+        if fpath.exists():
+            current = fpath.read_text(encoding="utf-8")
+            if fpath in originals and current != originals[fpath]:
+                diff_lines = difflib.unified_diff(
+                    originals[fpath].splitlines(keepends=True),
+                    current.splitlines(keepends=True),
+                    fromfile=f"a/{rel_path}",
+                    tofile=f"b/{rel_path}",
+                )
+                diff_text = "".join(diff_lines)
+                if diff_text:
+                    changed = True
+
+        emit(
+            "file_done",
+            file_idx=file_idx,
+            file_count=file_count,
+            rel_path=rel_path,
+            num_violations=len(file_violations),
+            iterations=total_iterations,
+            remaining=len(remaining),
+            changed=changed,
+        )
+
+        return {
+            "fpath": fpath,
+            "usage": file_usage,
+            "diff_text": diff_text,
+            "changed": changed,
+        }
+
+    def _llm_rollback_or_keep(self, files_to_violations, originals, all_diffs, threshold):
+        from .rules.builtin.utils import invalidate_read_caches
+
+        invalidate_read_caches()
+        violations_after = 0
+        kept_files: List[Path] = []
+        kept_diffs: Dict[Path, str] = {}
+
+        for fpath, before_violations in files_to_violations.items():
+            before_count = len(before_violations)
+            if fpath not in originals or fpath not in all_diffs:
+                violations_after += before_count
+                continue
+
+            after_count = sum(1 for v in self._relint_file(fpath, before_violations, threshold))
+
+            if after_count >= before_count:
+                fpath.write_text(originals[fpath], encoding="utf-8")
+                violations_after += before_count
+            else:
+                violations_after += after_count
+                kept_files.append(fpath)
+                kept_diffs[fpath] = all_diffs[fpath]
+
+        return violations_after, kept_files, kept_diffs
+
+    def llm_fix(
+        self,
+        provider: "CompletionProvider",
+        callback: Optional[Callable[..., None]] = None,
+        min_severity: Severity = Severity.WARNING,
+        max_workers: int = 4,
+        dry_run: bool = False,
+    ) -> "LLMFixResult":
+        from .llm._litellm import TokenUsage
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+
+        threshold = self._SEVERITY_ORDER[min_severity]
+        violations = self.run()
+        llm_rules = {r.rule_id: r for r in self.rules if r.llm_fix_prompt is not None}
+        llm_violations = [
+            v
+            for v in violations
+            if v.rule_id in llm_rules and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
+        ]
+
+        if not llm_violations:
+            return LLMFixResult(
+                files_modified=[],
+                violations_before=0,
+                violations_after=0,
+                total_usage=TokenUsage(0, 0),
+                diffs={},
+                success=True,
+            )
+
+        files_to_violations: Dict[Path, List[RuleViolation]] = {}
+        for v in llm_violations:
+            if v.file_path:
+                files_to_violations.setdefault(v.file_path.resolve(), []).append(v)
+
+        originals: Dict[Path, str] = {}
+        for fpath in files_to_violations:
+            if fpath.exists():
+                originals[fpath] = fpath.read_text(encoding="utf-8")
+
+        violations_before = len(llm_violations)
+        file_count = len(files_to_violations)
+        root_resolved = self.context.root_path.resolve()
+
+        _cb_lock = threading.Lock()
+
+        def _emit(event_type, **kw):
+            if callback:
+                with _cb_lock:
+                    callback(event_type, **kw)
+
+        total_usage = TokenUsage(0, 0)
+        all_diffs: Dict[Path, str] = {}
+        files_modified: List[Path] = []
+        completed = 0
+
+        _emit("progress", completed=0, file_count=file_count)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {}
+            for file_idx, (fpath, fv) in enumerate(files_to_violations.items(), 1):
+                future = executor.submit(
+                    self._llm_process_one_file,
+                    file_idx,
+                    fpath,
+                    fv,
+                    provider=provider,
+                    llm_rules=llm_rules,
+                    originals=originals,
+                    file_count=file_count,
+                    root_resolved=root_resolved,
+                    base_max_iter=self.config.llm.max_iterations,
+                    threshold=threshold,
+                    emit=_emit,
+                )
+                future_to_idx[future] = file_idx
+
+            for future in as_completed(future_to_idx):
+                try:
+                    file_result = future.result()
+                except Exception as e:
+                    completed += 1
+                    logger.error("Error processing file: %s", e)
+                    _emit("progress", completed=completed, file_count=file_count)
+                    continue
+
+                completed += 1
+                _emit("progress", completed=completed, file_count=file_count)
+
+                total_usage.prompt_tokens += file_result["usage"].prompt_tokens
+                total_usage.completion_tokens += file_result["usage"].completion_tokens
+                if file_result["diff_text"]:
+                    all_diffs[file_result["fpath"]] = file_result["diff_text"]
+                    files_modified.append(file_result["fpath"])
+
+        violations_after, kept_files, kept_diffs = self._llm_rollback_or_keep(
+            files_to_violations,
+            originals,
+            all_diffs,
+            threshold,
+        )
+
+        if dry_run:
+            for fpath, original_content in originals.items():
+                fpath.write_text(original_content, encoding="utf-8")
+
+        return LLMFixResult(
+            files_modified=[] if dry_run else kept_files,
+            violations_before=violations_before,
+            violations_after=violations_after,
+            total_usage=total_usage,
+            diffs=kept_diffs,
+            success=len(kept_files) > 0,
+        )

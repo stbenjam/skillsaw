@@ -3,6 +3,9 @@ Entry point for skillsaw (and claudelint backward-compat shim)
 """
 
 import argparse
+import logging
+import os
+import shutil
 import sys
 from pathlib import Path
 from importlib.metadata import version, PackageNotFoundError
@@ -10,10 +13,11 @@ from importlib.metadata import version, PackageNotFoundError
 from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
+from .rule import Severity
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix"}
 
 
 def _get_version() -> str:
@@ -83,6 +87,24 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
     lint_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Automatically fix violations where possible (applies safe fixes)",
+    )
+    lint_parser.add_argument(
+        "--llm",
+        "--ai",
+        action="store_true",
+        dest="use_llm",
+        help="Use LLM-powered fixes for content violations (requires --fix)",
+    )
+    lint_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Preview LLM fixes without writing changes (requires --fix --llm)",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -97,6 +119,65 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         metavar="FILE",
         help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
         "Can be specified multiple times.",
+    )
+
+    # --- fix ---
+    fix_parser = subparsers.add_parser(
+        "fix",
+        help="Automatically fix lint violations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    fix_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    fix_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file",
+    )
+    fix_parser.add_argument(
+        "--llm",
+        "--ai",
+        action="store_true",
+        dest="use_llm",
+        help="Use LLM-powered fixes for content violations",
+    )
+    fix_parser.add_argument(
+        "--model",
+        help="Override LLM model (default: from config or claude-sonnet-4-20250514)",
+    )
+    fix_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Max fix iterations per file (default: 3)",
+    )
+    fix_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include info-level violations (default: only errors and warnings)",
+    )
+    fix_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Auto-apply changes without confirmation",
+    )
+    fix_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel LLM workers (default: 4)",
+    )
+    fix_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Preview fixes without writing changes",
     )
 
     # --- init ---
@@ -156,6 +237,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
 
     if args.command == "lint":
         _run_lint(args)
+    elif args.command == "fix":
+        _run_fix(args)
     elif args.command == "init":
         _run_init(args)
     elif args.command == "list-rules":
@@ -213,7 +296,25 @@ def _run_lint(args):
         config.strict = True
 
     linter = Linter(context, config)
-    violations = linter.run()
+
+    if args.fix:
+        violations, fixes = linter.fix()
+        applied = linter.apply_fixes(fixes)
+        if applied and args.fmt == "text":
+            print(f"Fixed {len(applied)} issue(s):")
+            for fix in applied:
+                print(f"  ✓ [{fix.file_path}] {fix.description}")
+            print()
+        suggested = [f for f in fixes if f not in applied]
+        if suggested and args.fmt == "text":
+            print(f"Suggested fixes ({len(suggested)} — review before applying):")
+            for fix in suggested:
+                print(f"  ? [{fix.file_path}] {fix.description}")
+            print()
+        if args.use_llm:
+            _run_llm_fix_inline(args, linter, config)
+    else:
+        violations = linter.run()
 
     stdout_output = format_report(
         args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
@@ -240,6 +341,341 @@ def _run_lint(args):
         sys.exit(0)
 
 
+def _ansi_colors():
+    no_color = "NO_COLOR" in os.environ
+    return {
+        "bold": "" if no_color else "\033[1m",
+        "dim": "" if no_color else "\033[2m",
+        "green": "" if no_color else "\033[92m",
+        "red": "" if no_color else "\033[91m",
+        "yellow": "" if no_color else "\033[93m",
+        "cyan": "" if no_color else "\033[96m",
+        "reset": "" if no_color else "\033[0m",
+        "no_color": no_color,
+    }
+
+
+def _require_llm_provider(config):
+    if not config.llm.model:
+        print(
+            "Error: No model configured. Set llm.model in your config file,"
+            " pass --model, or set SKILLSAW_MODEL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        from .llm._litellm import LiteLLMProvider
+    except ImportError:
+        print(
+            "Error: LLM features require litellm. Install with: pip install skillsaw[llm]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
+    return LiteLLMProvider()
+
+
+def _print_colored_diff(diffs, c, header=None, separator=False):
+    if not diffs:
+        return
+    if header:
+        print(f"\n{c['bold']}{header}{c['reset']}")
+    if separator:
+        print(f"{c['dim']}{'─' * 60}{c['reset']}")
+    for diff_text in diffs.values():
+        for line in diff_text.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                print(f"{c['green']}{line}{c['reset']}")
+            elif line.startswith("-") and not line.startswith("---"):
+                print(f"{c['red']}{line}{c['reset']}")
+            elif line.startswith("@@"):
+                print(f"{c['cyan']}{line}{c['reset']}")
+            else:
+                print(line)
+    if separator:
+        print(f"{c['dim']}{'─' * 60}{c['reset']}")
+
+
+def _print_token_usage(usage, c, indent=""):
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    if total_tokens:
+        print(f"{indent}{c['dim']}~{total_tokens:,} tokens{c['reset']}")
+
+
+def _run_llm_fix_inline(args, linter, config):
+    """Handle --fix --llm from the lint subcommand."""
+    c = _ansi_colors()
+    provider = _require_llm_provider(config)
+    dry_run = getattr(args, "dry_run", False)
+
+    import time
+
+    start_time = time.monotonic()
+
+    def _on_event(event_type, **kw):
+        if event_type == "progress":
+            elapsed = time.monotonic() - start_time
+            print(
+                f"{c['dim']}  [{kw['completed']}/{kw['file_count']} files,"
+                f" {int(elapsed)}s]{c['reset']}",
+                file=sys.stderr,
+            )
+        elif event_type == "file_start":
+            print(
+                f"  {c['bold']}{kw['rel_path']}{c['reset']}"
+                f"  {c['dim']}{kw['num_violations']} violation(s){c['reset']}",
+                file=sys.stderr,
+            )
+        elif event_type == "file_done":
+            remaining = kw.get("remaining", 0)
+            changed = kw.get("changed", False)
+            if not changed:
+                print(f"    {c['yellow']}no changes{c['reset']}", file=sys.stderr)
+            elif remaining == 0:
+                print(
+                    f"    {c['green']}✓ all {kw['num_violations']}"
+                    f" violation(s) fixed{c['reset']}",
+                    file=sys.stderr,
+                )
+            else:
+                fixed = kw["num_violations"] - remaining
+                print(
+                    f"    {c['red']}{fixed} fixed, {remaining} failed{c['reset']}",
+                    file=sys.stderr,
+                )
+
+    result = linter.llm_fix(
+        provider,
+        callback=_on_event,
+        min_severity=Severity.WARNING,
+        max_workers=config.llm.max_workers,
+        dry_run=dry_run,
+    )
+
+    _print_colored_diff(result.diffs, c, header="LLM Changes")
+
+    if dry_run:
+        print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
+
+    _print_token_usage(result.total_usage, c)
+
+
+def _run_fix(args):
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    linter = Linter(context, config)
+
+    if not args.use_llm:
+        violations, fixes = linter.fix()
+        applied = linter.apply_fixes(fixes)
+        if applied:
+            print(f"Fixed {len(applied)} issue(s):")
+            for fix in applied:
+                print(f"  ✓ [{fix.file_path}] {fix.description}")
+        else:
+            print("No auto-fixable violations found.")
+        suggested = [f for f in fixes if f not in applied]
+        if suggested:
+            print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
+            for fix in suggested:
+                print(f"  ? [{fix.file_path}] {fix.description}")
+        sys.exit(0)
+
+    if args.model:
+        config.llm.model = args.model
+    if args.max_iterations:
+        config.llm.max_iterations = args.max_iterations
+
+    c = _ansi_colors()
+    provider = _require_llm_provider(config)
+
+    is_tty = sys.stdout.isatty()
+    term_size = shutil.get_terminal_size((80, 24))
+    term_width = term_size.columns
+    term_rows = term_size.lines
+
+    violations = linter.run()
+    llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
+    min_severity = Severity.INFO if args.all else Severity.WARNING
+    llm_violations = [
+        v
+        for v in violations
+        if v.rule_id in llm_rules
+        and Linter._SEVERITY_ORDER.get(v.severity, 99) <= Linter._SEVERITY_ORDER[min_severity]
+    ]
+
+    files_with_violations = set()
+    for v in llm_violations:
+        if v.file_path:
+            files_with_violations.add(v.file_path.resolve())
+
+    print(f"\n{c['bold']}skillsaw fix{c['reset']} {c['dim']}({config.llm.model}){c['reset']}")
+    print(f"{len(llm_violations)} violation(s) across " f"{len(files_with_violations)} file(s)\n")
+
+    if not llm_violations:
+        print(f"{c['green']}No fixable violations found.{c['reset']}")
+        sys.exit(0)
+
+    def _progress_bar(current, total, width=20):
+        filled = int(width * current / total) if total else 0
+        bar = "█" * filled + "░" * (width - filled)
+        return f"{c['dim']}[{c['reset']}{c['cyan']}{bar}{c['reset']}{c['dim']}]{c['reset']}"
+
+    def _setup_scroll_region():
+        if not is_tty or c["no_color"]:
+            return
+        sys.stdout.write(f"\033[1;{term_rows - 1}r")
+        sys.stdout.write(f"\033[2J")
+        sys.stdout.write(f"\033[1;1H")
+        sys.stdout.flush()
+
+    def _update_status_bar(text):
+        if not is_tty or c["no_color"]:
+            return
+        padded = text[:term_width].ljust(term_width)
+        sys.stdout.write(f"\033[s\033[{term_rows};1H\033[2K{padded}\033[u")
+        sys.stdout.flush()
+
+    def _teardown_scroll_region():
+        if not is_tty or c["no_color"]:
+            return
+        sys.stdout.write(f"\033[1;{term_rows}r")
+        sys.stdout.write(f"\033[{term_rows};1H\033[2K")
+        sys.stdout.flush()
+
+    def _on_event(event_type, **kw):
+        if event_type == "file_start":
+            print(
+                f"{c['bold']}{kw['rel_path']}{c['reset']}"
+                f"  {c['dim']}{kw['num_violations']} violation(s):"
+                f" {', '.join(kw['rule_ids'])}{c['reset']}"
+            )
+        elif event_type == "iteration":
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            print(
+                f"  {tag}{c['dim']}iteration"
+                f" {kw['iteration']}/{kw['max_iterations']}{c['reset']}"
+            )
+        elif event_type == "tool_call":
+            tool_args = kw.get("arguments", {})
+            arg_summary = ""
+            if "path" in tool_args:
+                arg_summary = str(tool_args["path"])
+            elif tool_args:
+                first_key = next(iter(tool_args))
+                val = str(tool_args[first_key])
+                if len(val) > 40:
+                    val = val[:37] + "..."
+                arg_summary = val
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            print(f"  {tag}{kw['name']}({arg_summary})")
+        elif event_type == "retry":
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            print(
+                f"  {tag}{c['yellow']}{kw['remaining']} violation(s)"
+                f" remain, retrying...{c['reset']}"
+            )
+        elif event_type == "file_done":
+            remaining = kw.get("remaining", 0)
+            changed = kw.get("changed", False)
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            if not changed:
+                print(f"  {tag}{c['yellow']}no changes{c['reset']}")
+            elif remaining == 0:
+                print(
+                    f"  {tag}{c['green']}✓ all {kw['num_violations']}"
+                    f" violation(s) fixed{c['reset']}"
+                )
+            else:
+                fixed = kw["num_violations"] - remaining
+                print(f"  {tag}{c['red']}{fixed} fixed," f" {remaining} failed{c['reset']}")
+            print()
+
+    max_workers = args.workers or config.llm.max_workers
+
+    import time
+
+    start_time = time.monotonic()
+
+    def _on_event_with_timer(event_type, **kw):
+        if event_type == "progress":
+            elapsed = time.monotonic() - start_time
+            elapsed_str = f"{int(elapsed)}s"
+            eta_str = ""
+            if 0 < kw["completed"] < kw["file_count"]:
+                rate = elapsed / kw["completed"]
+                remaining = rate * (kw["file_count"] - kw["completed"])
+                eta_str = f" ETA {int(remaining)}s"
+            bar = _progress_bar(kw["completed"], kw["file_count"])
+            status = f" {kw['completed']}/{kw['file_count']} files {elapsed_str}{eta_str}"
+            _update_status_bar(f" {bar}{status}")
+            return
+        _on_event(event_type, **kw)
+
+    dry_run = getattr(args, "dry_run", False)
+
+    _setup_scroll_region()
+    try:
+        result = linter.llm_fix(
+            provider,
+            callback=_on_event_with_timer,
+            min_severity=min_severity,
+            max_workers=max_workers,
+            dry_run=dry_run,
+        )
+    finally:
+        _teardown_scroll_region()
+
+    if not result.success:
+        print(f"\n{c['red']}LLM fix did not improve violations" f" — changes reverted.{c['reset']}")
+        sys.exit(1)
+
+    if not result.diffs and not result.files_modified:
+        print(f"{c['green']}No fixable violations found.{c['reset']}")
+        sys.exit(0)
+
+    label = "Dry-run results" if dry_run else "Results"
+    print(f"\n{c['bold']}{label}{c['reset']}")
+    print(
+        f"  {c['green']}{result.violations_fixed} fixed{c['reset']}"
+        f" {c['dim']}of {result.violations_before}{c['reset']}"
+    )
+    if result.violations_after > 0:
+        print(f"  {c['yellow']}{result.violations_after} remaining{c['reset']}")
+    if dry_run:
+        print(f"  {c['yellow']}dry-run — no files were modified{c['reset']}")
+    else:
+        print(f"  {len(result.files_modified)} file(s) modified")
+
+    _print_token_usage(result.total_usage, c, indent="  ")
+    _print_colored_diff(result.diffs, c, header="Changes", separator=True)
+
+    sys.exit(0)
+
+
 def _run_init(args):
     config_path = args.path / ".skillsaw.yaml"
     if config_path.exists():
@@ -258,9 +694,16 @@ def _run_list_rules():
     print("Available builtin rules:\n")
     for rule_class in BUILTIN_RULES:
         rule = rule_class()
+        fix_types = []
+        if rule.supports_autofix:
+            fix_types.append("auto")
+        if rule.llm_fix_prompt is not None:
+            fix_types.append("llm")
+        fix_label = ", ".join(fix_types) if fix_types else "none"
         print(f"  {rule.rule_id}")
         print(f"    {rule.description}")
         print(f"    Default severity: {rule.default_severity().value}")
+        print(f"    Autofix: {fix_label}")
         print()
     sys.exit(0)
 

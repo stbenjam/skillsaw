@@ -1,1 +1,6 @@
 .claude/** linguist-generated=true
+.cursor/** linguist-generated=true
+.gemini/** linguist-generated=true
+.opencode/** linguist-generated=true
+.agents/** linguist-generated=true
+.github/instructions/** linguist-generated=true

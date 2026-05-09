@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, heading_line
 
@@ -47,6 +47,41 @@ class CommandNamingRule(Rule):
     @staticmethod
     def _is_kebab_case(name: str) -> bool:
         return bool(re.match(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$", name))
+
+    @staticmethod
+    def _to_kebab(name: str) -> str:
+        s = re.sub(r"([a-z])([A-Z])", r"\1-\2", name)
+        s = re.sub(r"[^a-z0-9]+", "-", s.lower())
+        s = re.sub(r"-+", "-", s).strip("-")
+        return s
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+            old_name = v.file_path.stem
+            new_name = self._to_kebab(old_name)
+            if not self._is_kebab_case(new_name) or new_name == old_name:
+                continue
+            new_path = v.file_path.with_name(f"{new_name}.md")
+            if new_path.exists():
+                continue
+            content = v.file_path.read_text(encoding="utf-8")
+            results.append(
+                AutofixResult(
+                    rule_id=self.rule_id,
+                    file_path=new_path,
+                    confidence=AutofixConfidence.SUGGEST,
+                    original_content="",
+                    fixed_content=content,
+                    description=f"Rename '{old_name}.md' to '{new_name}.md'",
+                    violations_fixed=[v],
+                )
+            )
+        return results
 
 
 class CommandFrontmatterRule(Rule):
@@ -101,6 +136,46 @@ class CommandFrontmatterRule(Rule):
                     )
 
         return violations
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+            original = v.file_path.read_text(encoding="utf-8")
+            if "Missing frontmatter" in v.message:
+                fixed = f"---\ndescription: \n---\n{original}"
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=v.file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=original,
+                        fixed_content=fixed,
+                        description="Added missing frontmatter with description field",
+                        violations_fixed=[v],
+                    )
+                )
+            elif "Missing 'description'" in v.message and original.startswith("---"):
+                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
+                if fm_match:
+                    fm_end = fm_match.end()
+                    fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
+                    fixed += original[fm_end:]
+                    results.append(
+                        AutofixResult(
+                            rule_id=self.rule_id,
+                            file_path=v.file_path,
+                            confidence=AutofixConfidence.SAFE,
+                            original_content=original,
+                            fixed_content=fixed,
+                            description="Added missing description field to frontmatter",
+                            violations_fixed=[v],
+                        )
+                    )
+        return results
 
 
 class CommandSectionsRule(Rule):

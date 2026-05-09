@@ -3,10 +3,33 @@ Pytest fixtures and configuration
 """
 
 import json
+import os
 import pytest
 from pathlib import Path
 import tempfile
 import shutil
+
+
+def _load_dotenv():
+    """Load .env file from project root if it exists."""
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            value = value.strip().strip("'\"")
+            if key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv()
 
 
 @pytest.fixture

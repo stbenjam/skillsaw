@@ -64,6 +64,23 @@ from .context_budget import (
     ContextBudgetRule,
 )
 
+from .content_rules import (
+    ContentWeakLanguageRule,
+    ContentTautologicalRule,
+    ContentCriticalPositionRule,
+    ContentRedundantWithToolingRule,
+    ContentInstructionBudgetRule,
+    ContentNegativeOnlyRule,
+    ContentSectionLengthRule,
+    ContentContradictionRule,
+    ContentHookCandidateRule,
+    ContentActionabilityScoreRule,
+    ContentCognitiveChunksRule,
+    ContentEmbeddedSecretsRule,
+    ContentBannedReferencesRule,
+    ContentInconsistentTerminologyRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -104,6 +121,21 @@ BUILTIN_RULES = [
     InstructionImportsValidRule,
     # Context budget
     ContextBudgetRule,
+    # Content intelligence
+    ContentWeakLanguageRule,
+    ContentTautologicalRule,
+    ContentCriticalPositionRule,
+    ContentRedundantWithToolingRule,
+    ContentInstructionBudgetRule,
+    ContentNegativeOnlyRule,
+    ContentSectionLengthRule,
+    ContentContradictionRule,
+    ContentHookCandidateRule,
+    ContentActionabilityScoreRule,
+    ContentCognitiveChunksRule,
+    ContentEmbeddedSecretsRule,
+    ContentBannedReferencesRule,
+    ContentInconsistentTerminologyRule,
 ]
 
 
@@ -136,4 +168,18 @@ __all__ = [
     "InstructionFileValidRule",
     "InstructionImportsValidRule",
     "ContextBudgetRule",
+    "ContentWeakLanguageRule",
+    "ContentTautologicalRule",
+    "ContentCriticalPositionRule",
+    "ContentRedundantWithToolingRule",
+    "ContentInstructionBudgetRule",
+    "ContentNegativeOnlyRule",
+    "ContentSectionLengthRule",
+    "ContentContradictionRule",
+    "ContentHookCandidateRule",
+    "ContentActionabilityScoreRule",
+    "ContentCognitiveChunksRule",
+    "ContentEmbeddedSecretsRule",
+    "ContentBannedReferencesRule",
+    "ContentInconsistentTerminologyRule",
 ]

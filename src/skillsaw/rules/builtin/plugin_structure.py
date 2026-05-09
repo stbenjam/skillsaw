@@ -187,6 +187,18 @@ class PluginReadmeRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are creating a README.md for a Claude Code plugin.\n\n"
+            "Rules:\n"
+            "- Read the plugin.json and any command/skill files to understand what the plugin does\n"
+            "- Write a brief README with: plugin name as heading, one-line description, "
+            "list of commands/skills, and basic usage\n"
+            "- Keep it concise — under 50 lines\n"
+            "- Use markdown formatting"
+        )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
@@ -194,7 +206,7 @@ class PluginReadmeRule(Rule):
             readme = plugin_path / "README.md"
             if not readme.exists():
                 violations.append(
-                    self.violation("Missing README.md (recommended)", file_path=plugin_path)
+                    self.violation("Missing README.md (recommended)", file_path=readme)
                 )
 
         return violations

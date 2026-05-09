@@ -44,17 +44,29 @@ class McpValidJsonRule(Rule):
         return violations
 
     def _validate_mcp_file(self, mcp_json: Path) -> List[RuleViolation]:
-        """Validate standalone .mcp.json file"""
+        """Validate standalone .mcp.json file.
+
+        Accepts two formats:
+        - Wrapped: {"mcpServers": {"name": {...}}}
+        - Flat: {"name": {"type": "...", ...}}  (server names as top-level keys)
+        """
         violations = []
 
-        # Try to parse JSON
         data, error = read_json(mcp_json)
         if error:
             violations.append(self.violation(f"Invalid JSON: {error}", file_path=mcp_json))
             return violations
 
-        # Validate structure
-        violations.extend(self._validate_mcp_structure(data, mcp_json))
+        if not isinstance(data, dict):
+            violations.append(
+                self.violation("MCP configuration must be a JSON object", file_path=mcp_json)
+            )
+            return violations
+
+        if "mcpServers" in data:
+            violations.extend(self._validate_mcp_structure(data, mcp_json))
+        else:
+            violations.extend(self._validate_mcp_structure({"mcpServers": data}, mcp_json))
 
         return violations
 
@@ -271,30 +283,36 @@ class McpProhibitedRule(Rule):
         return violations
 
     def _check_mcp_file(self, mcp_json: Path, allowlist: set) -> List[RuleViolation]:
-        """Check .mcp.json for non-allowlisted servers"""
+        """Check .mcp.json for non-allowlisted servers.
+
+        Accepts both wrapped (mcpServers key) and flat formats.
+        """
         violations = []
 
         data, error = read_json(mcp_json)
         if error:
             return violations
 
-        if "mcpServers" in data:
-            prohibited = self._get_prohibited_servers(data["mcpServers"], allowlist)
-            if prohibited:
-                if allowlist:
-                    violations.append(
-                        self.violation(
-                            f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
-                            file_path=mcp_json,
-                        )
+        servers = data.get("mcpServers", data) if isinstance(data, dict) else {}
+        if not isinstance(servers, dict):
+            return violations
+
+        prohibited = self._get_prohibited_servers(servers, allowlist)
+        if prohibited:
+            if allowlist:
+                violations.append(
+                    self.violation(
+                        f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
+                        file_path=mcp_json,
                     )
-                else:
-                    violations.append(
-                        self.violation(
-                            "Plugin defines MCP servers in .mcp.json",
-                            file_path=mcp_json,
-                        )
+                )
+            else:
+                violations.append(
+                    self.violation(
+                        "Plugin defines MCP servers in .mcp.json",
+                        file_path=mcp_json,
                     )
+                )
 
         return violations
 

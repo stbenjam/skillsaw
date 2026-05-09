@@ -1,0 +1,14 @@
+language: en-US
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  sequence_diagrams: true
+  poem: false
+  path_filters:
+    - "!.claude/**"
+    - "!.cursor/**"
+    - "!.gemini/**"
+    - "!.opencode/**"
+    - "!.agents/**"
+    - "!.github/instructions/**"

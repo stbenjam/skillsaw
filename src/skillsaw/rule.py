@@ -3,7 +3,7 @@ Base classes for linting rules
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
@@ -18,6 +18,12 @@ class Severity(Enum):
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
+
+
+class AutofixConfidence(Enum):
+    SAFE = "safe"
+    SUGGEST = "suggest"
+    LLM = "llm"
 
 
 @dataclass
@@ -43,11 +49,24 @@ class RuleViolation:
         return f"{icon} {self.severity.value.upper()}{location}: {self.message}"
 
 
+@dataclass
+class AutofixResult:
+    rule_id: str
+    file_path: Path
+    confidence: AutofixConfidence
+    original_content: str
+    fixed_content: str
+    description: str
+    violations_fixed: List[RuleViolation] = field(default_factory=list)
+
+
 class Rule(ABC):
     """Base class for linting rules"""
 
     repo_types = None
+    formats = None
     config_schema = {}
+    since = "0.1.0"
 
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -102,6 +121,28 @@ class Rule(ABC):
             List of violations found
         """
         pass
+
+    def fix(
+        self,
+        context: "RepositoryContext",
+        violations: List[RuleViolation],
+    ) -> List[AutofixResult]:
+        """
+        Attempt to fix violations found by check().
+
+        Override in subclasses to provide autofix capability.
+        Rules without a fix() override continue to work — this default
+        returns an empty list.
+        """
+        return []
+
+    @property
+    def supports_autofix(self) -> bool:
+        return type(self).fix is not Rule.fix
+
+    @property
+    def llm_fix_prompt(self) -> Optional[str]:
+        return None
 
     def violation(
         self,

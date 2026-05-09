@@ -7,7 +7,16 @@ import sys
 from pathlib import Path
 
 
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import (
+    RepositoryContext,
+    RepositoryType,
+    HAS_CURSOR,
+    HAS_COPILOT,
+    HAS_GEMINI,
+    HAS_AGENTS_MD,
+    HAS_KIRO,
+    HAS_CLAUDE_MD,
+)
 
 
 def test_single_plugin_detection(valid_plugin):
@@ -243,3 +252,119 @@ def test_dot_claude_not_detected_empty(temp_dir):
 
     context = RepositoryContext(temp_dir)
     assert context.repo_type == RepositoryType.UNKNOWN
+
+
+def test_detected_formats_empty(temp_dir):
+    """Empty repo has no detected formats"""
+    context = RepositoryContext(temp_dir)
+    assert context.detected_formats == set()
+
+
+def test_detected_formats_cursor_rules_dir(temp_dir):
+    """Detect .cursor/rules/ directory"""
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    context = RepositoryContext(temp_dir)
+    assert HAS_CURSOR in context.detected_formats
+
+
+def test_detected_formats_cursorrules_file(temp_dir):
+    """Detect legacy .cursorrules file"""
+    (temp_dir / ".cursorrules").write_text("some rules")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CURSOR in context.detected_formats
+
+
+def test_detected_formats_copilot(temp_dir):
+    """Detect .github/copilot-instructions.md"""
+    (temp_dir / ".github").mkdir()
+    (temp_dir / ".github" / "copilot-instructions.md").write_text("# Instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_COPILOT in context.detected_formats
+
+
+def test_detected_formats_gemini(temp_dir):
+    """Detect GEMINI.md at root"""
+    (temp_dir / "GEMINI.md").write_text("# Gemini instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_GEMINI in context.detected_formats
+
+
+def test_detected_formats_agents_md(temp_dir):
+    """Detect AGENTS.md at root"""
+    (temp_dir / "AGENTS.md").write_text("# Agent instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_AGENTS_MD in context.detected_formats
+
+
+def test_detected_formats_kiro(temp_dir):
+    """Detect .kiro/ directory"""
+    (temp_dir / ".kiro").mkdir()
+    context = RepositoryContext(temp_dir)
+    assert HAS_KIRO in context.detected_formats
+
+
+def test_detected_formats_claude_md(temp_dir):
+    """Detect CLAUDE.md at root"""
+    (temp_dir / "CLAUDE.md").write_text("# Claude instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CLAUDE_MD in context.detected_formats
+
+
+def test_detected_formats_multiple(temp_dir):
+    """Detect multiple formats in the same repo"""
+    (temp_dir / "CLAUDE.md").write_text("# Claude")
+    (temp_dir / "AGENTS.md").write_text("# Agents")
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    context = RepositoryContext(temp_dir)
+    assert HAS_CLAUDE_MD in context.detected_formats
+    assert HAS_AGENTS_MD in context.detected_formats
+    assert HAS_CURSOR in context.detected_formats
+    assert HAS_COPILOT not in context.detected_formats
+
+
+def test_apm_dir_with_dot_claude_detected_normally(temp_dir):
+    """.apm/ repos are linted via their .claude/ output"""
+    apm_dir = temp_dir / ".apm"
+    apm_dir.mkdir()
+    (apm_dir / "instructions").mkdir()
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "commands").mkdir()
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+
+
+def test_apm_dir_with_skills_detected_as_agentskills(temp_dir):
+    """.apm/ with SKILL.md is detected via normal agentskills detection"""
+    apm_dir = temp_dir / ".apm"
+    apm_dir.mkdir()
+    (apm_dir / "skills").mkdir()
+    (temp_dir / "SKILL.md").write_text("---\nname: test\n---\n")
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.AGENTSKILLS
+
+
+def test_apm_dir_does_not_skip_format_detection(temp_dir):
+    """.apm/ repos still detect instruction file formats normally"""
+    apm_dir = temp_dir / ".apm"
+    apm_dir.mkdir()
+    (apm_dir / "instructions").mkdir()
+    (temp_dir / "CLAUDE.md").write_text("# Instructions")
+    (temp_dir / "GEMINI.md").write_text("# Instructions")
+    (temp_dir / "AGENTS.md").write_text("# Instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CLAUDE_MD in context.detected_formats
+    assert HAS_GEMINI in context.detected_formats
+    assert HAS_AGENTS_MD in context.detected_formats
+
+
+def test_apm_dir_does_not_override_marketplace(temp_dir):
+    """Marketplace detection still takes priority over .apm/"""
+    apm_dir = temp_dir / ".apm"
+    apm_dir.mkdir()
+    (apm_dir / "instructions").mkdir()
+    claude_plugin = temp_dir / ".claude-plugin"
+    claude_plugin.mkdir()
+    (claude_plugin / "marketplace.json").write_text('{"name": "test", "plugins": []}')
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE

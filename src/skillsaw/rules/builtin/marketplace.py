@@ -2,9 +2,11 @@
 Rules for validating marketplace structure
 """
 
+import json
+from pathlib import Path
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.utils import read_json
 
@@ -143,3 +145,60 @@ class MarketplaceRegistrationRule(Rule):
                 )
 
         return violations
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        if not violations:
+            return results
+
+        marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
+        if not marketplace_file.exists():
+            return results
+
+        original = marketplace_file.read_text(encoding="utf-8")
+        try:
+            data = json.loads(original)
+        except json.JSONDecodeError:
+            return results
+
+        if "plugins" not in data:
+            data["plugins"] = []
+
+        fixed_violations = []
+        for v in violations:
+            if "not registered" not in v.message:
+                continue
+            name_match = v.message.split("'")
+            if len(name_match) < 2:
+                continue
+            plugin_name = name_match[1]
+            if any(p.get("name") == plugin_name for p in data["plugins"]):
+                continue
+            rel_source = plugin_name
+            for plugin_path in context.plugins:
+                if context.get_plugin_name(plugin_path) == plugin_name:
+                    try:
+                        rel_source = str(plugin_path.relative_to(context.root_path))
+                    except ValueError:
+                        pass
+                    break
+            data["plugins"].append({"name": plugin_name, "source": rel_source})
+            fixed_violations.append(v)
+
+        if fixed_violations:
+            fixed = json.dumps(data, indent=2) + "\n"
+            results.append(
+                AutofixResult(
+                    rule_id=self.rule_id,
+                    file_path=marketplace_file,
+                    confidence=AutofixConfidence.SUGGEST,
+                    original_content=original,
+                    fixed_content=fixed,
+                    description=f"Registered {len(fixed_violations)} plugin(s) in marketplace.json",
+                    violations_fixed=fixed_violations,
+                )
+            )
+
+        return results

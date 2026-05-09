@@ -10,6 +10,9 @@ black>=26,<27
 flake8>=6.0
 mypy>=1.0
 
+# LLM integration
+litellm>=1.40
+
 # Build
 build>=0.10
 twine>=4.0
