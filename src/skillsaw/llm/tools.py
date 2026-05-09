@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import difflib
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, TYPE_CHECKING
+from typing import Any, Dict, Optional, Protocol, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..config import LinterConfig
@@ -121,9 +121,12 @@ class LintTool:
         "required": ["path"],
     }
 
-    def __init__(self, root: Path, config: "LinterConfig"):
+    def __init__(
+        self, root: Path, config: "LinterConfig", rule_ids: Optional[Set[str]] = None
+    ):
         self._root = root
         self._config = config
+        self._rule_ids = rule_ids
 
     def execute(self, *, path: str) -> str:
         resolved = _resolve_safe(self._root, path)
@@ -131,20 +134,39 @@ class LintTool:
             return "Error: path escapes repository root"
 
         from ..context import RepositoryContext
-        from ..linter import Linter
+        from ..rules.builtin import BUILTIN_RULES
         from ..rules.builtin.utils import invalidate_read_caches
+        from ..rule import Rule
 
         invalidate_read_caches()
         context = RepositoryContext(self._root)
         context.content_paths = self._config.content_paths
-        linter = Linter(context, self._config)
-        violations = linter.run()
-        file_violations = [
-            v for v in violations if v.file_path and v.file_path.resolve() == resolved
-        ]
-        if not file_violations:
+
+        violations = []
+        for rule_class in BUILTIN_RULES:
+            rule = rule_class()
+            if self._rule_ids and rule.rule_id not in self._rule_ids:
+                continue
+            config = self._config.get_rule_config(rule.rule_id)
+            if config:
+                rule = rule_class(config)
+            if not self._config.is_rule_enabled(
+                rule.rule_id, context, rule.repo_types, rule.formats
+            ):
+                continue
+            try:
+                rule_violations = rule.check(context)
+                violations.extend(
+                    v
+                    for v in rule_violations
+                    if v.file_path and v.file_path.resolve() == resolved
+                )
+            except Exception:
+                pass
+
+        if not violations:
             return "No violations found."
-        return "\n".join(str(v) for v in file_violations)
+        return "\n".join(str(v) for v in violations)
 
 
 class DiffTool:

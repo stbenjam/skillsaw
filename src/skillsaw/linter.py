@@ -373,7 +373,7 @@ class Linter:
                 ReadFileTool(self.context.root_path),
                 WriteFileTool(self.context.root_path),
                 ReplaceSectionTool(self.context.root_path),
-                LintTool(self.context.root_path, self.config),
+                LintTool(self.context.root_path, self.config, rule_ids={v.rule_id for v in file_violations}),
                 DiffTool(self.context.root_path, originals),
             ]
 
@@ -471,31 +471,45 @@ class Linter:
         from .rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches()
-        after_violations = self.run()
-        after_llm = [
-            v
-            for v in after_violations
-            if v.rule_id in llm_rules and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
-        ]
-        violations_after = len(after_llm)
+        violations_after = 0
+        kept_files: List[Path] = []
+        kept_diffs: Dict[Path, str] = {}
 
-        if violations_after >= violations_before:
-            for fpath, original_content in originals.items():
-                fpath.write_text(original_content, encoding="utf-8")
-            return LLMFixResult(
-                files_modified=[],
-                violations_before=violations_before,
-                violations_after=violations_before,
-                total_usage=total_usage,
-                diffs={},
-                success=False,
-            )
+        for fpath, before_violations in files_to_violations.items():
+            before_count = len(before_violations)
+            if fpath not in originals or fpath not in all_diffs:
+                violations_after += before_count
+                continue
+
+            failed_rule_ids = {v.rule_id for v in before_violations}
+            failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
+            after_count = 0
+            for rule in failed_rules:
+                try:
+                    re_violations = rule.check(self.context)
+                    after_count += sum(
+                        1
+                        for v in re_violations
+                        if v.file_path
+                        and v.file_path.resolve() == fpath
+                        and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
+                    )
+                except Exception:
+                    pass
+
+            if after_count >= before_count:
+                fpath.write_text(originals[fpath], encoding="utf-8")
+                violations_after += before_count
+            else:
+                violations_after += after_count
+                kept_files.append(fpath)
+                kept_diffs[fpath] = all_diffs[fpath]
 
         return LLMFixResult(
-            files_modified=files_modified,
+            files_modified=kept_files,
             violations_before=violations_before,
             violations_after=violations_after,
             total_usage=total_usage,
-            diffs=all_diffs,
-            success=True,
+            diffs=kept_diffs,
+            success=len(kept_files) > 0,
         )
