@@ -56,7 +56,8 @@ def format_text(
             output.append(f"  {fmt_violation(v)}")
 
     output.append(f"\n{bold}Scanned:{reset}")
-    output.append(f"  Repo type: {context.repo_type.value}")
+    repo_types_str = ", ".join(sorted(t.value for t in context.repo_types if t.value != "unknown"))
+    output.append(f"  Repo type: {repo_types_str or 'unknown'}")
     output.append(f"  Plugins:   {len(context.plugins)}")
     output.append(f"  Skills:    {len(context.skills)}")
     output.append(f"  Rules run: {len(rules)}")

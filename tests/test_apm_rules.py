@@ -51,14 +51,15 @@ def _make_apm_repo(root: Path, skills=None, instructions=False, apm_yml=None):
 
 
 def test_detect_apm_repo(temp_dir):
-    """Repo with .apm/skills/ should be detected as AGENTSKILLS"""
+    """Repo with .apm/skills/ should be detected as APM and AGENTSKILLS"""
     repo = temp_dir / "apm-repo"
     repo.mkdir()
     _make_apm_repo(repo, skills=["my-skill"])
 
     context = RepositoryContext(repo)
     assert context.has_apm is True
-    assert context.repo_type == RepositoryType.AGENTSKILLS
+    assert RepositoryType.APM in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
 
 
 def test_detect_apm_repo_instructions_only(temp_dir):
@@ -69,8 +70,8 @@ def test_detect_apm_repo_instructions_only(temp_dir):
 
     context = RepositoryContext(repo)
     assert context.has_apm is True
-    # No SKILL.md found, so repo type is UNKNOWN (not enough to be AGENTSKILLS)
-    assert context.repo_type == RepositoryType.UNKNOWN
+    assert RepositoryType.APM in context.repo_types
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
 
 
 def test_apm_repo_discovers_skills(temp_dir):
@@ -116,8 +117,8 @@ def test_apm_prevents_dot_claude_detection(temp_dir):
     (claude_skills / "SKILL.md").write_text("---\nname: my-skill\ndescription: Compiled\n---\n")
 
     context = RepositoryContext(repo)
-    assert context.repo_type == RepositoryType.AGENTSKILLS
-    assert context.repo_type != RepositoryType.DOT_CLAUDE
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert RepositoryType.DOT_CLAUDE not in context.repo_types
 
 
 def test_apm_repo_with_top_level_skill_md(temp_dir):
@@ -133,8 +134,8 @@ def test_apm_repo_with_top_level_skill_md(temp_dir):
 
     context = RepositoryContext(repo)
     assert context.has_apm is True
-    # Should still be detected as AGENTSKILLS (APM path wins)
-    assert context.repo_type == RepositoryType.AGENTSKILLS
+    assert RepositoryType.APM in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
     # Should discover both the .apm/ skill and the top-level SKILL.md
     skill_names = {s.name for s in context.skills}
     assert "my-skill" in skill_names

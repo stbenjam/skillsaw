@@ -337,13 +337,14 @@ def test_apm_dir_with_dot_claude_not_dot_claude(temp_dir):
 
 
 def test_apm_dir_with_skills_detected_as_agentskills(temp_dir):
-    """.apm/ with SKILL.md is detected via normal agentskills detection"""
+    """.apm/ with SKILL.md is detected as both APM and AGENTSKILLS"""
     apm_dir = temp_dir / ".apm"
     apm_dir.mkdir()
     (apm_dir / "skills").mkdir()
     (temp_dir / "SKILL.md").write_text("---\nname: test\n---\n")
     context = RepositoryContext(temp_dir)
-    assert context.repo_type == RepositoryType.AGENTSKILLS
+    assert RepositoryType.APM in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
 
 
 def test_apm_dir_does_not_skip_format_detection(temp_dir):

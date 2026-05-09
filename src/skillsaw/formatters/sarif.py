@@ -67,6 +67,7 @@ def format_sarif(
                 "properties": {
                     "stats": {
                         "repo_type": context.repo_type.value,
+                        "repo_types": sorted(t.value for t in context.repo_types),
                         "plugins": len(context.plugins),
                         "skills": len(context.skills),
                         "rules_run": len(rules),

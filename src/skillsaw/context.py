@@ -58,6 +58,7 @@ class RepositoryContext:
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
         RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
