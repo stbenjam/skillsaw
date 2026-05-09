@@ -160,6 +160,52 @@ class TestCoderabbitInstructionsRule:
         violations = CoderabbitInstructionsRule().check(context)
         assert len(violations) == 2
 
+    def test_truncation_with_many_weak_phrases(self, temp_dir):
+        """When 4+ weak-language matches are found, the message should truncate with '(and N more)'."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"
+            "  instructions: |\n"
+            "    Maybe check for nulls.\n"
+            "    Perhaps validate inputs.\n"
+            "    Try to follow the style guide.\n"
+            "    You might want to add tests.\n"
+            "    Could potentially break things.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 1
+        assert "(and 2 more)" in violations[0].message
+
+    def test_consider_with_action_verb_flagged(self, temp_dir):
+        """'consider using' should be flagged as weak language."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  instructions: 'Consider using type hints everywhere.'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 1
+        assert "consider" in violations[0].message.lower()
+
+    def test_consider_without_action_verb_passes(self, temp_dir):
+        """'consider the following' should NOT be flagged -- it is legitimate."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  instructions: 'Consider the following constraints when reviewing.'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 0
+
+    def test_severity_override_respected(self, temp_dir):
+        """User severity overrides from config should apply to weak-language violations."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n  instructions: 'Maybe check for null pointers.'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = CoderabbitInstructionsRule(config={"severity": "error"})
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.ERROR
+
     def test_invalid_yaml_skipped(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text(":\n  bad: [unterminated\n")
         context = RepositoryContext(temp_dir)

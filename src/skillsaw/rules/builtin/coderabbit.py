@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import yaml
 
@@ -28,7 +28,13 @@ _WEAK_LANGUAGE_PATTERNS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\btry to\b", re.IGNORECASE), "try to"),
     (re.compile(r"\bmight want to\b", re.IGNORECASE), "might want to"),
     (re.compile(r"\bcould potentially\b", re.IGNORECASE), "could potentially"),
-    (re.compile(r"\bconsider\b", re.IGNORECASE), "consider"),
+    (
+        re.compile(
+            r"\bconsider\s+(?:using|adding|implementing|creating|setting|enabling|disabling|replacing|switching|migrating|wrapping|converting)\b",
+            re.IGNORECASE,
+        ),
+        "consider",
+    ),
     (re.compile(r"\bif possible\b", re.IGNORECASE), "if possible"),
     (re.compile(r"\bwhen feasible\b", re.IGNORECASE), "when feasible"),
     (re.compile(r"\bit would be nice\b", re.IGNORECASE), "it would be nice"),
@@ -253,8 +259,8 @@ class CoderabbitInstructionsRule(Rule):
     # Content checks
     # ------------------------------------------------------------------
 
-    @staticmethod
     def _check_weak_language(
+        self,
         file_path: Path,
         location: str,
         text: str,
@@ -271,9 +277,7 @@ class CoderabbitInstructionsRule(Rule):
             phrases = ", ".join(f"'{p}'" for p in found[:3])
             suffix = f" (and {len(found) - 3} more)" if len(found) > 3 else ""
             violations.append(
-                RuleViolation(
-                    rule_id="coderabbit-instructions",
-                    severity=Severity.WARNING,
+                self.violation(
                     message=(
                         f"Weak/hedge language in {location}: {phrases}{suffix}. "
                         "Use direct, imperative language in LLM instructions."
