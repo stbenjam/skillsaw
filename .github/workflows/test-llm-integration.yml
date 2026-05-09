@@ -9,7 +9,7 @@ on:
 jobs:
   llm-integration:
     runs-on: ubuntu-latest
-    if: github.repository == 'stbenjam/skillsaw'
+    if: github.repository == 'stbenjam/skillsaw' || github.repository == 'not-stbenjam/skillsaw'
     steps:
       - uses: actions/checkout@v4
 
