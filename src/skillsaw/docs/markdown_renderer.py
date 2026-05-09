@@ -30,7 +30,9 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
 
 
 def _render_single_page(docs: DocsOutput) -> str:
-    lines: List[str] = [f"# {docs.title}", ""]
+    lines: List[str] = []
+    if docs.title:
+        lines += [f"# {docs.title}", ""]
     plugin = docs.plugins[0] if docs.plugins else None
 
     if plugin:
@@ -173,7 +175,7 @@ def _append_command(lines: List[str], cmd: CommandDoc) -> None:
 def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
-    for skill in skills:
+    for skill in sorted(skills, key=lambda s: s.name.lower()):
         lines.append(f"### {skill.name}")
         lines.append("")
         if skill.description:

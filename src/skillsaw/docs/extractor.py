@@ -30,7 +30,7 @@ def extract_docs(
     plugins = [_extract_plugin(context, p) for p in context.plugins]
 
     marketplace = None
-    if context.repo_type == RepositoryType.MARKETPLACE and context.marketplace_data:
+    if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
         md = context.marketplace_data
         marketplace = MarketplaceDoc(
             name=md.get("name", ""),
@@ -39,7 +39,7 @@ def extract_docs(
         )
 
     standalone_skills: List[SkillDoc] = []
-    if context.repo_type == RepositoryType.AGENTSKILLS:
+    if RepositoryType.AGENTSKILLS in context.repo_types:
         plugin_skill_paths = {s.dir_path.resolve() for p in plugins for s in p.skills}
         for skill_path in context.skills:
             if skill_path.resolve() not in plugin_skill_paths:
@@ -65,8 +65,8 @@ def _default_title(
 ) -> str:
     if marketplace and marketplace.name:
         return marketplace.name
-    if context.repo_type == RepositoryType.DOT_CLAUDE:
-        return context.root_path.name
+    if RepositoryType.DOT_CLAUDE in context.repo_types:
+        return ""
     if len(plugins) == 1 and plugins[0].name:
         return plugins[0].name
     return context.repo_type.value.replace("-", " ").title() + " Documentation"

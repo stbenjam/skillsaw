@@ -147,6 +147,8 @@ class LinterConfig:
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
                 "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
+                # CodeRabbit config
+                "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
             }
         )
 
@@ -218,7 +220,7 @@ class LinterConfig:
         if enabled == "auto":
             if repo_types is None and formats is None:
                 return True
-            if repo_types is not None and context.repo_type in repo_types:
+            if repo_types is not None and repo_types & context.repo_types:
                 return True
             if formats is not None and formats & context.detected_formats:
                 return True

@@ -426,6 +426,14 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 
+### CodeRabbit
+
+Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) are automatically checked by the content-* rules above. Auto-enabled when `.coderabbit.yaml` is detected.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
+
 <!-- END GENERATED RULES -->
 
 ## Autofixing

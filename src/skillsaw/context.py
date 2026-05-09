@@ -21,6 +21,7 @@ class RepositoryType(Enum):
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
+    CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -30,6 +31,7 @@ HAS_GEMINI = "HAS_GEMINI"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
+HAS_CODERABBIT = "HAS_CODERABBIT"
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
@@ -38,6 +40,7 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_AGENTS_MD,
         HAS_KIRO,
         HAS_CLAUDE_MD,
+        HAS_CODERABBIT,
     }
 )
 
@@ -51,6 +54,14 @@ class RepositoryContext:
 
     _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 
+    _TYPE_PRIORITY = [
+        RepositoryType.MARKETPLACE,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.DOT_CLAUDE,
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.CODERABBIT,
+    ]
+
     def __init__(self, root_path: Path):
         """
         Initialize repository context
@@ -59,7 +70,7 @@ class RepositoryContext:
             root_path: Root directory of the repository
         """
         self.root_path = root_path.resolve()
-        self.repo_type = self._detect_type()
+        self.repo_types: Set[RepositoryType] = self._detect_types()
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
             {}
@@ -70,6 +81,14 @@ class RepositoryContext:
         self.detected_formats: Set[str] = self._detect_formats()
         self.content_paths: List[str] = []
         self.exclude_patterns: List[str] = []
+
+    @property
+    def repo_type(self) -> RepositoryType:
+        """Primary repo type for backward compatibility."""
+        for t in self._TYPE_PRIORITY:
+            if t in self.repo_types:
+                return t
+        return RepositoryType.UNKNOWN
 
     def _discover_instruction_files(self) -> List[Path]:
         """Discover instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repo root."""
@@ -97,6 +116,8 @@ class RepositoryContext:
             formats.add(HAS_KIRO)
         if (self.root_path / "CLAUDE.md").exists():
             formats.add(HAS_CLAUDE_MD)
+        if (self.root_path / ".coderabbit.yaml").exists():
+            formats.add(HAS_CODERABBIT)
         return formats
 
     _WALK_SKIP_DIRS = frozenset(
@@ -121,29 +142,39 @@ class RepositoryContext:
                 return True
         return False
 
-    def _detect_type(self) -> RepositoryType:
-        """Detect the type of repository"""
-        # Check for marketplace
+    def _detect_types(self) -> Set[RepositoryType]:
+        """Detect all applicable repository types.
+
+        A repository may match multiple types simultaneously (e.g. a marketplace
+        that also has a .coderabbit.yaml).  SINGLE_PLUGIN and MARKETPLACE are
+        mutually exclusive (elif chain), but everything else is independent.
+        """
+        types: Set[RepositoryType] = set()
+
+        # Marketplace / single-plugin (mutually exclusive)
         if (self.root_path / ".claude-plugin" / "marketplace.json").exists():
-            return RepositoryType.MARKETPLACE
+            types.add(RepositoryType.MARKETPLACE)
+        elif (self.root_path / ".claude-plugin").exists():
+            types.add(RepositoryType.SINGLE_PLUGIN)
+        elif (self.root_path / "plugins").exists():
+            types.add(RepositoryType.MARKETPLACE)
 
-        # Check for single plugin at root (even without plugin.json so we can validate it)
-        if (self.root_path / ".claude-plugin").exists():
-            return RepositoryType.SINGLE_PLUGIN
-
-        # Check for plugins directory (marketplace without registration)
-        if (self.root_path / "plugins").exists():
-            return RepositoryType.MARKETPLACE
-
-        # Check for .claude/ directory (before agentskills, since .claude/ with skills is DOT_CLAUDE)
-        if self._is_dot_claude():
-            return RepositoryType.DOT_CLAUDE
-
-        # Check for agentskills.io skill repo
+        # Agentskills
         if self._is_agentskills_repo():
-            return RepositoryType.AGENTSKILLS
+            types.add(RepositoryType.AGENTSKILLS)
 
-        return RepositoryType.UNKNOWN
+        # CodeRabbit
+        if (self.root_path / ".coderabbit.yaml").exists():
+            types.add(RepositoryType.CODERABBIT)
+
+        # DOT_CLAUDE
+        if self._is_dot_claude():
+            types.add(RepositoryType.DOT_CLAUDE)
+
+        if not types:
+            types.add(RepositoryType.UNKNOWN)
+
+        return types
 
     def _is_agentskills_repo(self) -> bool:
         """Check if this looks like an agentskills.io skill repository"""
@@ -302,22 +333,25 @@ class RepositoryContext:
         1. Single plugin at repository root
         2. Traditional plugins/ directory (backward compatibility)
         3. Marketplace.json-defined sources (flat structures, custom paths, remote)
+
+        Multiple types can contribute plugins simultaneously.
         """
         plugins: List[Path] = []
         discovered_paths: Set[Path] = set()
 
-        if self.repo_type == RepositoryType.SINGLE_PLUGIN:
+        if RepositoryType.SINGLE_PLUGIN in self.repo_types:
             plugins.append(self.root_path)
             discovered_paths.add(self.root_path.resolve())
 
-        elif self.repo_type == RepositoryType.DOT_CLAUDE:
+        if RepositoryType.DOT_CLAUDE in self.repo_types:
             claude_dir = (
                 self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
             )
-            plugins.append(claude_dir)
-            discovered_paths.add(claude_dir.resolve())
+            if claude_dir.resolve() not in discovered_paths:
+                plugins.append(claude_dir)
+                discovered_paths.add(claude_dir.resolve())
 
-        elif self.repo_type == RepositoryType.MARKETPLACE:
+        if RepositoryType.MARKETPLACE in self.repo_types:
             # Discover from plugins/ directory (backward compatibility)
             self._discover_from_plugins_dir(plugins, discovered_paths)
 
@@ -461,7 +495,7 @@ class RepositoryContext:
         skills: List[Path] = []
         discovered: Set[Path] = set()
 
-        if self.repo_type == RepositoryType.AGENTSKILLS:
+        if RepositoryType.AGENTSKILLS in self.repo_types:
             # Single skill at root
             if (self.root_path / "SKILL.md").exists():
                 skills.append(self.root_path)

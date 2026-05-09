@@ -109,6 +109,15 @@ RULE_GROUPS = [
         "[docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) "
         "for the full research basis behind each rule.",
     ),
+    (
+        "CodeRabbit",
+        ["coderabbit-yaml-valid"],
+        "Validates `.coderabbit.yaml` config files for YAML syntax. "
+        "Instruction text fields (`reviews.instructions`, per-path "
+        "instructions, per-tool instructions, `chat.instructions`) are "
+        "automatically checked by the content-* rules above. Auto-enabled "
+        "when `.coderabbit.yaml` is detected.",
+    ),
 ]
 
 

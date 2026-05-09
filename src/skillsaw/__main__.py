@@ -120,6 +120,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
         "Can be specified multiple times.",
     )
+    lint_parser.add_argument(
+        "--type",
+        dest="repo_types",
+        action="append",
+        default=[],
+        metavar="TYPE",
+        help="Override auto-detected repository type (repeatable). "
+        "Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit.",
+    )
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -265,6 +274,21 @@ def _run_lint(args):
     if args.fmt == "text":
         print(f"Linting: {args.path}\n")
     context = RepositoryContext(args.path)
+
+    # Override repo_types if --type was provided
+    if args.repo_types:
+        type_map = {t.value: t for t in RepositoryType}
+        override_types = set()
+        for val in args.repo_types:
+            if val not in type_map:
+                print(
+                    f"Error: Unknown repository type '{val}'. "
+                    f"Valid types: {', '.join(sorted(type_map.keys()))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            override_types.add(type_map[val])
+        context.repo_types = override_types
 
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)

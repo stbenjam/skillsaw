@@ -16,6 +16,7 @@ from skillsaw.context import (
     HAS_AGENTS_MD,
     HAS_KIRO,
     HAS_CLAUDE_MD,
+    HAS_CODERABBIT,
 )
 
 
@@ -368,3 +369,135 @@ def test_apm_dir_does_not_override_marketplace(temp_dir):
     (claude_plugin / "marketplace.json").write_text('{"name": "test", "plugins": []}')
     context = RepositoryContext(temp_dir)
     assert context.repo_type == RepositoryType.MARKETPLACE
+
+
+# --- Multi-type detection tests ---
+
+
+def test_multi_type_coderabbit_and_dot_claude(temp_dir):
+    """Repo with both .coderabbit.yaml and .claude/ gets both CODERABBIT and DOT_CLAUDE types"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "commands").mkdir()
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.CODERABBIT in context.repo_types
+    assert RepositoryType.DOT_CLAUDE in context.repo_types
+    # Primary type should be DOT_CLAUDE (higher priority than CODERABBIT)
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+
+
+def test_multi_type_coderabbit_and_marketplace(temp_dir):
+    """Repo with .coderabbit.yaml and marketplace gets both types"""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text('{"name": "test", "plugins": []}')
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.CODERABBIT in context.repo_types
+    assert RepositoryType.MARKETPLACE in context.repo_types
+    # Primary type should be MARKETPLACE (highest priority)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+
+
+def test_multi_type_coderabbit_alone(temp_dir):
+    """Repo with only .coderabbit.yaml is just CODERABBIT"""
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.CODERABBIT in context.repo_types
+    assert RepositoryType.UNKNOWN not in context.repo_types
+    assert context.repo_type == RepositoryType.CODERABBIT
+
+
+def test_multi_type_repo_types_set(temp_dir):
+    """repo_types is a set, repo_type is backward-compat property"""
+    (temp_dir / "SKILL.md").write_text("---\nname: skill\ndescription: A skill\n---\n")
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+
+    context = RepositoryContext(temp_dir)
+    assert isinstance(context.repo_types, set)
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert RepositoryType.CODERABBIT in context.repo_types
+
+
+def test_multi_type_unknown_only_when_empty(temp_dir):
+    """UNKNOWN is only set when no other type matches"""
+    context = RepositoryContext(temp_dir)
+    assert context.repo_types == {RepositoryType.UNKNOWN}
+    assert context.repo_type == RepositoryType.UNKNOWN
+
+
+def test_multi_type_dot_claude_and_agentskills(temp_dir):
+    """Repo with .claude/skills/ has both DOT_CLAUDE and AGENTSKILLS in repo_types"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    skill_dir = claude_dir / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: Test\n---\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.DOT_CLAUDE in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    # DOT_CLAUDE has higher priority than AGENTSKILLS for backward compat
+    assert context.repo_type == RepositoryType.DOT_CLAUDE
+
+
+def test_detected_formats_coderabbit(temp_dir):
+    """Detect .coderabbit.yaml sets HAS_CODERABBIT format flag"""
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CODERABBIT in context.detected_formats
+
+
+def test_coderabbit_only_repo_gets_content_rules(temp_dir):
+    """A coderabbit-only repo with instruction text should trigger content rules"""
+    from skillsaw.config import LinterConfig
+    from skillsaw.linter import Linter
+
+    (temp_dir / ".coderabbit.yaml").write_text(
+        "reviews:\n  instructions: |\n    Try to use consistent formatting.\n"
+    )
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+    weak = [v for v in violations if v.rule_id == "content-weak-language"]
+    assert len(weak) >= 1, "content-weak-language should fire on coderabbit instruction text"
+
+
+def test_coderabbit_repo_no_command_violations(temp_dir):
+    """A coderabbit-only repo should produce no command/skill violations"""
+    from skillsaw.config import LinterConfig
+    from skillsaw.linter import Linter
+
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+    irrelevant = [
+        v
+        for v in violations
+        if v.rule_id
+        in {
+            "command-naming",
+            "command-frontmatter",
+            "skill-frontmatter",
+            "agent-frontmatter",
+            "hooks-json-valid",
+            "mcp-valid-json",
+        }
+    ]
+    assert len(irrelevant) == 0, f"Should have no command/skill violations: {irrelevant}"
+
+
+def test_coderabbit_with_claude_md_gets_both_formats(temp_dir):
+    """Repo with both .coderabbit.yaml and CLAUDE.md has both format flags"""
+    (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+    (temp_dir / "CLAUDE.md").write_text("# Instructions\n")
+    context = RepositoryContext(temp_dir)
+    assert HAS_CODERABBIT in context.detected_formats
+    assert HAS_CLAUDE_MD in context.detected_formats

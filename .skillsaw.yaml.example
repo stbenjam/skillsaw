@@ -209,6 +209,11 @@ rules:
     enabled: auto
     severity: info
 
+  # .coderabbit.yaml must be valid YAML
+  coderabbit-yaml-valid:
+    enabled: auto
+    severity: error
+
 # Load custom rules from these files
 custom-rules: []
 

@@ -81,6 +81,10 @@ from .content_rules import (
     ContentInconsistentTerminologyRule,
 )
 
+from .coderabbit import (
+    CoderabbitYamlValidRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -136,6 +140,8 @@ BUILTIN_RULES = [
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    # CodeRabbit
+    CoderabbitYamlValidRule,
 ]
 
 
@@ -182,4 +188,5 @@ __all__ = [
     "ContentEmbeddedSecretsRule",
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
+    "CoderabbitYamlValidRule",
 ]

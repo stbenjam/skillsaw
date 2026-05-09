@@ -16,9 +16,12 @@ def format_json(
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
+    repo_types_list = sorted(t.value for t in context.repo_types)
+
     if verbose:
         stats = {
             "repo_type": context.repo_type.value,
+            "repo_types": repo_types_list,
             "plugins": [str(p) for p in context.plugins],
             "skills": [str(s) for s in context.skills],
             "rules_run": [r.rule_id for r in rules],
@@ -26,6 +29,7 @@ def format_json(
     else:
         stats = {
             "repo_type": context.repo_type.value,
+            "repo_types": repo_types_list,
             "plugins": len(context.plugins),
             "skills": len(context.skills),
             "rules_run": len(rules),
