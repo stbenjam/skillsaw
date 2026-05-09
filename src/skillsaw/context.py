@@ -395,7 +395,10 @@ class RepositoryContext:
             plugins.append(self.root_path)
             discovered_paths.add(self.root_path.resolve())
 
-        if RepositoryType.DOT_CLAUDE in self.repo_types:
+        if (
+            RepositoryType.DOT_CLAUDE in self.repo_types
+            and RepositoryType.MARKETPLACE not in self.repo_types
+        ):
             claude_dir = (
                 self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
             )

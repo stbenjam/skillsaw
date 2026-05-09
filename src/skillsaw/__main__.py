@@ -746,6 +746,18 @@ def _run_docs(args):
             file=sys.stderr,
         )
 
+    config_path = find_config(args.path)
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+    context.exclude_patterns = config.exclude_patterns
+    context.apply_excludes()
+
     from .docs import extract_docs, render_html, render_markdown
 
     docs_output = extract_docs(context, title=args.title)

@@ -3,7 +3,7 @@
 import json
 from typing import List
 
-from ..rule import Rule, RuleViolation
+from ..rule import Rule, RuleViolation, Severity
 from . import get_counts, relative_path
 
 
@@ -47,6 +47,7 @@ def format_json(
                 "line": v.line,
             }
             for v in violations
+            if verbose or v.severity != Severity.INFO
         ],
         "summary": {
             "errors": errors,
