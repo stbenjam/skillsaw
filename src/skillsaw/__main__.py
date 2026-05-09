@@ -92,6 +92,19 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Automatically fix violations where possible (applies safe fixes)",
     )
     lint_parser.add_argument(
+        "--llm",
+        "--ai",
+        action="store_true",
+        dest="use_llm",
+        help="Use LLM-powered fixes for content violations (requires --fix)",
+    )
+    lint_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Preview LLM fixes without writing changes (requires --fix --llm)",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -159,6 +172,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=int,
         default=None,
         help="Number of parallel LLM workers (default: 4)",
+    )
+    fix_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Preview fixes without writing changes",
     )
 
     # --- init ---
@@ -292,6 +311,8 @@ def _run_lint(args):
             for fix in suggested:
                 print(f"  ? [{fix.file_path}] {fix.description}")
             print()
+        if args.use_llm:
+            _run_llm_fix_inline(args, linter, config)
     else:
         violations = linter.run()
 
@@ -318,6 +339,89 @@ def _run_lint(args):
         sys.exit(1)
     else:
         sys.exit(0)
+
+
+def _run_llm_fix_inline(args, linter, config):
+    """Handle --fix --llm from the lint subcommand."""
+    try:
+        from .llm._litellm import LiteLLMProvider
+    except ImportError:
+        print(
+            "Error: LLM features require litellm. Install with: pip install skillsaw[llm]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
+    provider = LiteLLMProvider()
+
+    no_color = "NO_COLOR" in os.environ
+    bold = "" if no_color else "\033[1m"
+    dim = "" if no_color else "\033[2m"
+    green = "" if no_color else "\033[92m"
+    red = "" if no_color else "\033[91m"
+    yellow = "" if no_color else "\033[93m"
+    reset = "" if no_color else "\033[0m"
+
+    dry_run = getattr(args, "dry_run", False)
+
+    import time
+
+    start_time = time.monotonic()
+
+    def _on_event(event_type, **kw):
+        if event_type == "progress":
+            elapsed = time.monotonic() - start_time
+            print(
+                f"{dim}  [{kw['completed']}/{kw['file_count']} files, {int(elapsed)}s]{reset}",
+                file=sys.stderr,
+            )
+        elif event_type == "file_start":
+            print(
+                f"  {bold}{kw['rel_path']}{reset}"
+                f"  {dim}{kw['num_violations']} violation(s){reset}",
+                file=sys.stderr,
+            )
+        elif event_type == "file_done":
+            remaining = kw.get("remaining", 0)
+            changed = kw.get("changed", False)
+            if not changed:
+                print(f"    {yellow}no changes{reset}", file=sys.stderr)
+            elif remaining == 0:
+                print(
+                    f"    {green}✓ all {kw['num_violations']} violation(s) fixed{reset}",
+                    file=sys.stderr,
+                )
+            else:
+                fixed = kw["num_violations"] - remaining
+                print(f"    {red}{fixed} fixed, {remaining} failed{reset}", file=sys.stderr)
+
+    result = linter.llm_fix(
+        provider,
+        callback=_on_event,
+        min_severity=Severity.WARNING,
+        max_workers=config.llm.max_workers,
+        dry_run=dry_run,
+    )
+
+    if result.diffs:
+        print(f"\n{bold}LLM Changes{reset}")
+        for diff_text in result.diffs.values():
+            for line in diff_text.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    print(f"{green}{line}{reset}")
+                elif line.startswith("-") and not line.startswith("---"):
+                    print(f"{red}{line}{reset}")
+                else:
+                    print(line)
+
+    if dry_run:
+        print(f"\n{yellow}dry-run — no files were modified{reset}")
+
+    usage = result.total_usage
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    if total_tokens:
+        print(f"{dim}~{total_tokens:,} tokens{reset}")
 
 
 def _run_fix(args):
@@ -497,10 +601,35 @@ def _run_fix(args):
 
     max_workers = args.workers or config.llm.max_workers
 
+    import time
+
+    start_time = time.monotonic()
+
+    def _on_event_with_timer(event_type, **kw):
+        if event_type == "progress":
+            elapsed = time.monotonic() - start_time
+            elapsed_str = f"{int(elapsed)}s"
+            eta_str = ""
+            if kw["completed"] > 0 and kw["completed"] < kw["file_count"]:
+                rate = elapsed / kw["completed"]
+                remaining = rate * (kw["file_count"] - kw["completed"])
+                eta_str = f" ETA {int(remaining)}s"
+            bar = _progress_bar(kw["completed"], kw["file_count"])
+            status = f" {kw['completed']}/{kw['file_count']} files {elapsed_str}{eta_str}"
+            _update_status_bar(f" {bar}{status}")
+            return
+        _on_event(event_type, **kw)
+
+    dry_run = getattr(args, "dry_run", False)
+
     _setup_scroll_region()
     try:
         result = linter.llm_fix(
-            provider, callback=_on_event, min_severity=min_severity, max_workers=max_workers
+            provider,
+            callback=_on_event_with_timer,
+            min_severity=min_severity,
+            max_workers=max_workers,
+            dry_run=dry_run,
         )
     finally:
         _teardown_scroll_region()
@@ -509,18 +638,22 @@ def _run_fix(args):
         print(f"\n{red}LLM fix did not improve violations" f" — changes reverted.{reset}")
         sys.exit(1)
 
-    if not result.files_modified:
+    if not result.diffs and not result.files_modified:
         print(f"{green}No fixable violations found.{reset}")
         sys.exit(0)
 
-    print(f"\n{bold}Results{reset}")
+    label = "Dry-run results" if dry_run else "Results"
+    print(f"\n{bold}{label}{reset}")
     print(
         f"  {green}{result.violations_fixed} fixed{reset}"
         f" {dim}of {result.violations_before}{reset}"
     )
     if result.violations_after > 0:
         print(f"  {yellow}{result.violations_after} remaining{reset}")
-    print(f"  {len(result.files_modified)} file(s) modified")
+    if dry_run:
+        print(f"  {yellow}dry-run — no files were modified{reset}")
+    else:
+        print(f"  {len(result.files_modified)} file(s) modified")
 
     usage = result.total_usage
     total_tokens = usage.prompt_tokens + usage.completion_tokens
@@ -562,9 +695,16 @@ def _run_list_rules():
     print("Available builtin rules:\n")
     for rule_class in BUILTIN_RULES:
         rule = rule_class()
+        fix_types = []
+        if rule.supports_autofix:
+            fix_types.append("auto")
+        if rule.llm_fix_prompt is not None:
+            fix_types.append("llm")
+        fix_label = ", ".join(fix_types) if fix_types else "none"
         print(f"  {rule.rule_id}")
         print(f"    {rule.description}")
         print(f"    Default severity: {rule.default_severity().value}")
+        print(f"    Autofix: {fix_label}")
         print()
     sys.exit(0)
 

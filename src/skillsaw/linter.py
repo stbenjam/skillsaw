@@ -228,6 +228,7 @@ class Linter:
         callback: Optional[Callable[..., None]] = None,
         min_severity: Severity = Severity.WARNING,
         max_workers: int = 4,
+        dry_run: bool = False,
     ) -> "LLMFixResult":
         from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
         from .llm.engine import LLMEngine
@@ -505,8 +506,12 @@ class Linter:
                 kept_files.append(fpath)
                 kept_diffs[fpath] = all_diffs[fpath]
 
+        if dry_run:
+            for fpath, original_content in originals.items():
+                fpath.write_text(original_content, encoding="utf-8")
+
         return LLMFixResult(
-            files_modified=kept_files,
+            files_modified=[] if dry_run else kept_files,
             violations_before=violations_before,
             violations_after=violations_after,
             total_usage=total_usage,
