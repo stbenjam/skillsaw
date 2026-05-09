@@ -48,7 +48,10 @@ generate-docs: $(VENV)/bin/activate
 generate-claude-readme: $(VENV)/bin/activate
 	$(VENV)/bin/skillsaw docs --format markdown -o .claude/README.md
 
-update: apm generate-example generate-docs generate-claude-readme format
+self-lint: $(VENV)/bin/activate
+	$(VENV)/bin/skillsaw lint .
+
+update: apm generate-example generate-docs generate-claude-readme format self-lint
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
