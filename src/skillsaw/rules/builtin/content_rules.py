@@ -284,15 +284,20 @@ class ContentNegativeOnlyRule(Rule):
         r"(?:"
         r"\binstead\b"
         r"|instead\s*,?\s+use"
-        r"|prefer\s+\w+"
+        r"|prefer\s+\S+"
         r"|replace\s+with"
-        r"|\buse\s+\w+"
-        r"|\bapply\s+\w+"
-        r"|\bset\s+\w+"
-        r"|\bchoose\s+\w+"
+        r"|\buse\s+\S+"
+        r"|\bapply\s+\S+"
+        r"|\bset\s+\S+"
+        r"|\bchoose\s+\S+"
         r"|\bswitch\s+to\b"
         r"|\bopt\s+for\b"
         r"|\brather\s+than\b"
+        r"|\balways\b"
+        r"|\bfollow\s+\S+"
+        r"|\badd\s+\S+"
+        r"|\bgenerate\s+\S+"
+        r"|\bsummarize\s+\S+"
         r")",
         re.IGNORECASE,
     )
@@ -355,6 +360,9 @@ class ContentNegativeOnlyRule(Rule):
                 continue
             lines = body.splitlines()
             for i, line in enumerate(lines):
+                stripped = line.lstrip()
+                if stripped.startswith("#"):
+                    continue
                 if not self._NEGATIVE_RE.search(line):
                     continue
                 if not self._has_positive_alternative(line, lines, i):
