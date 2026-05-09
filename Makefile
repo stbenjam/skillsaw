@@ -18,9 +18,10 @@ help:
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
-$(VENV)/bin/activate:
-	python3 -m venv $(VENV)
+$(VENV)/bin/activate: pyproject.toml
+	test -d $(VENV) || python3 -m venv $(VENV)
 	$(PIP) install -e '.[dev,vertexai,bedrock]'
+	touch $(VENV)/bin/activate
 
 venv: $(VENV)/bin/activate
 
