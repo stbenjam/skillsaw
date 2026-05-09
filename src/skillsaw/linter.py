@@ -270,15 +270,17 @@ class Linter:
         files_modified: List[Path] = []
         violations_before = len(llm_violations)
 
-        engine_config = EngineLLMConfig(
-            model=self.config.llm.model,
-            max_tokens=4096,
-            max_iterations=self.config.llm.max_iterations,
-            max_total_tokens=self.config.llm.max_tokens,
-        )
+        base_max_iter = self.config.llm.max_iterations
 
         file_count = len(files_to_violations)
         for file_idx, (fpath, file_violations) in enumerate(files_to_violations.items(), 1):
+            file_max_iter = max(base_max_iter, len(file_violations) * 5)
+            engine_config = EngineLLMConfig(
+                model=self.config.llm.model,
+                max_tokens=4096,
+                max_iterations=file_max_iter,
+                max_total_tokens=self.config.llm.max_tokens,
+            )
             rel_path = fpath.relative_to(self.context.root_path.resolve())
             logger.debug(
                 "[%d/%d] Fixing %s (%d violations)",
