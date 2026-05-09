@@ -407,3 +407,64 @@ def test_lint_real_apm_repo():
     assert len(context.skills) > 0
     apm_skills = [s for s in context.skills if ".apm" in str(s)]
     assert len(apm_skills) > 0
+
+
+# --- Content rules apply to APM files ---
+
+
+def test_content_weak_language_in_apm_instructions(temp_dir):
+    """content-weak-language should detect issues in .apm/instructions/ files."""
+    from skillsaw.rules.builtin.content_rules import ContentWeakLanguageRule
+
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, instructions=True)
+
+    # Overwrite the instruction file with weak language
+    instr_file = repo / ".apm" / "instructions" / "dev.instructions.md"
+    instr_file.write_text("Try to handle errors gracefully if possible.\n")
+
+    context = RepositoryContext(repo)
+    rule = ContentWeakLanguageRule()
+    violations = rule.check(context)
+    assert len(violations) >= 1
+    assert any(
+        "try to" in v.message.lower() or "gracefully" in v.message.lower() for v in violations
+    )
+
+
+def test_content_weak_language_in_apm_agents(temp_dir):
+    """content-weak-language should detect issues in .apm/agents/ files."""
+    from skillsaw.rules.builtin.content_rules import ContentWeakLanguageRule
+
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    apm_dir = repo / ".apm"
+    agents_dir = apm_dir / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.agent.md").write_text(
+        "You should probably be careful when reviewing code.\n"
+    )
+    (repo / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+
+    context = RepositoryContext(repo)
+    rule = ContentWeakLanguageRule()
+    violations = rule.check(context)
+    assert len(violations) >= 1
+
+
+def test_content_tautological_in_apm_instructions(temp_dir):
+    """content-tautological should detect issues in .apm/instructions/ files."""
+    from skillsaw.rules.builtin.content_rules import ContentTautologicalRule
+
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(repo, instructions=True)
+
+    instr_file = repo / ".apm" / "instructions" / "dev.instructions.md"
+    instr_file.write_text("Always write clean code and follow best practices.\n")
+
+    context = RepositoryContext(repo)
+    rule = ContentTautologicalRule()
+    violations = rule.check(context)
+    assert len(violations) >= 1

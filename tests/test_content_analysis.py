@@ -555,3 +555,123 @@ class TestGatherAllContentFiles:
         context = RepositoryContext(temp_dir)
         cfs = gather_all_content_files(context)
         assert any(cf.path.name == "guide.md" and cf.category == "instruction" for cf in cfs)
+
+    def test_apm_instructions_gathered(self, temp_dir):
+        """APM instruction files should be gathered with 'instruction' category."""
+        apm_dir = temp_dir / ".apm"
+        instr_dir = apm_dir / "instructions"
+        instr_dir.mkdir(parents=True)
+        (instr_dir / "dev.instructions.md").write_text("# Dev instructions\n")
+        (instr_dir / "style.instructions.md").write_text("# Style guide\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        instr_files = [cf for cf in cfs if cf.category == "instruction"]
+        names = {cf.path.name for cf in instr_files}
+        assert "dev.instructions.md" in names
+        assert "style.instructions.md" in names
+
+    def test_apm_agents_gathered(self, temp_dir):
+        """APM agent files should be gathered with 'agent' category."""
+        apm_dir = temp_dir / ".apm"
+        agents_dir = apm_dir / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "reviewer.agent.md").write_text("# Reviewer agent\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "reviewer.agent.md" and cf.category == "agent" for cf in cfs)
+
+    def test_apm_prompts_gathered(self, temp_dir):
+        """APM prompt files should be gathered with 'prompt' category."""
+        apm_dir = temp_dir / ".apm"
+        prompts_dir = apm_dir / "prompts"
+        prompts_dir.mkdir(parents=True)
+        (prompts_dir / "review.md").write_text("# Review prompt\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "review.md" and cf.category == "prompt" for cf in cfs)
+
+    def test_apm_chatmodes_gathered(self, temp_dir):
+        """APM chatmode files should be gathered with 'chatmode' category."""
+        apm_dir = temp_dir / ".apm"
+        chatmodes_dir = apm_dir / "chatmodes"
+        chatmodes_dir.mkdir(parents=True)
+        (chatmodes_dir / "concise.md").write_text("# Concise mode\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "concise.md" and cf.category == "chatmode" for cf in cfs)
+
+    def test_apm_context_gathered(self, temp_dir):
+        """APM context files should be gathered with 'context' category."""
+        apm_dir = temp_dir / ".apm"
+        context_dir = apm_dir / "context"
+        context_dir.mkdir(parents=True)
+        (context_dir / "project-overview.md").write_text("# Project Overview\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "project-overview.md" and cf.category == "context" for cf in cfs)
+
+    def test_apm_all_content_types_gathered(self, temp_dir):
+        """All APM content types should be gathered when present."""
+        apm_dir = temp_dir / ".apm"
+        for subdir, filename in [
+            ("instructions", "dev.instructions.md"),
+            ("agents", "helper.agent.md"),
+            ("prompts", "template.md"),
+            ("chatmodes", "brief.md"),
+            ("context", "overview.md"),
+        ]:
+            d = apm_dir / subdir
+            d.mkdir(parents=True, exist_ok=True)
+            (d / filename).write_text(f"# {subdir}\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        categories = {cf.category for cf in cfs}
+        assert "instruction" in categories
+        assert "agent" in categories
+        assert "prompt" in categories
+        assert "chatmode" in categories
+        assert "context" in categories
+
+    def test_apm_skips_compiled_cursor_rules(self, temp_dir):
+        """When APM is present, .cursor/rules/ should be skipped."""
+        apm_dir = temp_dir / ".apm"
+        apm_dir.mkdir()
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        # Create compiled cursor rules
+        cursor_rules = temp_dir / ".cursor" / "rules"
+        cursor_rules.mkdir(parents=True)
+        (cursor_rules / "generated.mdc").write_text("---\ndescription: gen\n---\nContent\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert not any(cf.path.name == "generated.mdc" for cf in cfs)
+
+    def test_apm_skips_compiled_plugin_content(self, temp_dir):
+        """When APM is present, plugin content in .claude/ should be skipped."""
+        apm_dir = temp_dir / ".apm"
+        skills_dir = apm_dir / "skills" / "my-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: A skill\n---\n")
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        # Create compiled .claude/ output with agents
+        claude_agents = temp_dir / ".claude" / "agents"
+        claude_agents.mkdir(parents=True)
+        (claude_agents / "compiled-agent.md").write_text("# Compiled agent\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert not any(cf.path.name == "compiled-agent.md" for cf in cfs)
+
+    def test_apm_keeps_root_instruction_files(self, temp_dir):
+        """Root-level CLAUDE.md/AGENTS.md should still be gathered with APM."""
+        apm_dir = temp_dir / ".apm"
+        apm_dir.mkdir()
+        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        (temp_dir / "CLAUDE.md").write_text("# Claude instructions\n")
+        context = RepositoryContext(temp_dir)
+        cfs = gather_all_content_files(context)
+        assert any(cf.path.name == "CLAUDE.md" for cf in cfs)

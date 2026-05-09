@@ -487,13 +487,10 @@ class TestDocsCLI:
         assert "not found" in result.stderr.lower() or "not found" in result.stdout.lower()
 
     def test_docs_apm_repo_finds_skills(self, temp_dir):
-        """Repos with .apm/ should still generate docs for .claude/ skills."""
+        """Repos with .apm/ should generate docs for .apm/skills/ (source, not compiled output)."""
         apm_dir = temp_dir / ".apm"
         apm_dir.mkdir()
-        (apm_dir / "skills").mkdir()
-        claude_dir = temp_dir / ".claude"
-        claude_dir.mkdir()
-        skills_dir = claude_dir / "skills"
+        skills_dir = apm_dir / "skills"
         skills_dir.mkdir()
         skill_dir = skills_dir / "my-skill"
         skill_dir.mkdir()

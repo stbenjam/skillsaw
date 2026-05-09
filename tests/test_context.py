@@ -323,8 +323,8 @@ def test_detected_formats_multiple(temp_dir):
     assert HAS_COPILOT not in context.detected_formats
 
 
-def test_apm_dir_with_dot_claude_detected_normally(temp_dir):
-    """.apm/ repos are linted via their .claude/ output"""
+def test_apm_dir_with_dot_claude_not_dot_claude(temp_dir):
+    """When .apm/ is present, .claude/ is compiled output — not DOT_CLAUDE"""
     apm_dir = temp_dir / ".apm"
     apm_dir.mkdir()
     (apm_dir / "instructions").mkdir()
@@ -332,7 +332,8 @@ def test_apm_dir_with_dot_claude_detected_normally(temp_dir):
     claude_dir.mkdir()
     (claude_dir / "commands").mkdir()
     context = RepositoryContext(temp_dir)
-    assert context.repo_type == RepositoryType.DOT_CLAUDE
+    # .claude/ is compiled output when .apm/ exists, so should NOT be DOT_CLAUDE
+    assert context.repo_type != RepositoryType.DOT_CLAUDE
 
 
 def test_apm_dir_with_skills_detected_as_agentskills(temp_dir):
