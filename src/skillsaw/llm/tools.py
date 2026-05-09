@@ -132,8 +132,11 @@ class LintTool:
 
         from ..context import RepositoryContext
         from ..linter import Linter
+        from ..rules.builtin.utils import invalidate_read_caches
 
+        invalidate_read_caches()
         context = RepositoryContext(self._root)
+        context.content_paths = self._config.content_paths
         linter = Linter(context, self._config)
         violations = linter.run()
         file_violations = [
