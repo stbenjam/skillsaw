@@ -41,7 +41,7 @@ class TestAutoFixConfidence:
 class TestEngineConfig:
     def test_defaults(self):
         config = EngineConfig()
-        assert config.model == "claude-sonnet-4-20250514"
+        assert config.model == ""
         assert config.max_tokens == 4096
         assert config.max_iterations == 5
         assert config.max_total_tokens == 500_000
@@ -54,7 +54,7 @@ class TestEngineConfig:
     def test_env_not_set(self, monkeypatch):
         monkeypatch.delenv("SKILLSAW_MODEL", raising=False)
         config = EngineConfig()
-        assert config.model == "claude-sonnet-4-20250514"
+        assert config.model == ""
 
 
 class TestReadFileTool:
@@ -292,7 +292,7 @@ class TestLLMConfigFromYaml:
         config_file = tmp_path / ".skillsaw.yaml"
         config_file.write_text("rules: {}\n", encoding="utf-8")
         config = LinterConfig.from_file(config_file)
-        assert config.llm.model == "claude-sonnet-4-20250514"
+        assert config.llm.model == ""
         assert config.llm.max_iterations == 10
         assert config.llm.confirm is True
 

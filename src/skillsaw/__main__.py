@@ -343,6 +343,14 @@ def _run_lint(args):
 
 def _run_llm_fix_inline(args, linter, config):
     """Handle --fix --llm from the lint subcommand."""
+    if not config.llm.model:
+        print(
+            "Error: No model configured. Set llm.model in your config file,"
+            " pass --model, or set SKILLSAW_MODEL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     try:
         from .llm._litellm import LiteLLMProvider
     except ImportError:
@@ -470,6 +478,14 @@ def _run_fix(args):
         config.llm.model = args.model
     if args.max_iterations:
         config.llm.max_iterations = args.max_iterations
+
+    if not config.llm.model:
+        print(
+            "Error: No model configured. Set llm.model in your config file,"
+            " pass --model, or set SKILLSAW_MODEL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     try:
         from .llm._litellm import LiteLLMProvider

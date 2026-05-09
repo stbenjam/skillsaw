@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 @dataclass
 class EngineConfig:
-    model: str = "minimax/minimax-m2.5:free"
+    model: str = ""
     max_tokens: int = 4096
     max_iterations: int = 5
     max_total_tokens: int = 500_000
