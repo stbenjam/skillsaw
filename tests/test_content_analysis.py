@@ -318,7 +318,7 @@ class TestInstructionBudgetAnalyzer:
         content = "- Use 4-space indentation\n- Run tests before commits\n- Check for errors\nSome description.\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([temp_dir / "CLAUDE.md"])
+        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
         assert budget.total_count == 3
         assert not budget.over_budget
 
@@ -326,30 +326,29 @@ class TestInstructionBudgetAnalyzer:
         lines = [f"- Use tool_{i}" for i in range(160)]
         (temp_dir / "CLAUDE.md").write_text("\n".join(lines) + "\n")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([temp_dir / "CLAUDE.md"])
+        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
         assert budget.over_budget
         assert budget.budget_remaining == 0
 
     def test_empty_file(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([temp_dir / "CLAUDE.md"])
+        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
         assert budget.total_count == 0
         assert not budget.over_budget
 
-    def test_multiple_files(self, temp_dir):
+    def test_single_file_counted(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("- Use X\n- Run Y\n")
-        (temp_dir / "AGENTS.md").write_text("- Check Z\n- Avoid W\n")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([temp_dir / "CLAUDE.md", temp_dir / "AGENTS.md"])
-        assert budget.total_count == 4
-        assert len(budget.files_counted) == 2
+        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        assert budget.total_count == 2
+        assert len(budget.files_counted) == 1
 
     def test_non_imperative_not_counted(self, temp_dir):
         content = "# Instructions\n\nThis project is a web app.\nIt was built in 2024.\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([temp_dir / "CLAUDE.md"])
+        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
         assert budget.total_count == 0
 
 

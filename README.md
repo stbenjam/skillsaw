@@ -402,7 +402,7 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
 | `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm |
 | `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
-| `content-instruction-budget` | Check if total instruction count across all files exceeds LLM instruction budget (~150) | warning (auto) | llm |
+| `content-instruction-budget` | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm |
 | `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
 | `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
 | `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |

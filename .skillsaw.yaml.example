@@ -159,7 +159,7 @@ rules:
     enabled: auto
     severity: warning
 
-  # Check if total instruction count across all files exceeds LLM instruction budget (~150)
+  # Check if instruction count in a file exceeds LLM instruction budget (~150)
   content-instruction-budget:
     enabled: auto
     severity: warning

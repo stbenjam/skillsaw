@@ -228,7 +228,7 @@ class ContentInstructionBudgetRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Check if total instruction count across all files exceeds LLM instruction budget (~150)"
+        return "Check if instruction count in a file exceeds LLM instruction budget (~150)"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -236,9 +236,9 @@ class ContentInstructionBudgetRule(Rule):
     @property
     def llm_fix_prompt(self):
         return (
-            "You are reducing the instruction count in AI coding assistant "
-            "instruction files. The total number of imperative instructions "
-            "across all files exceeds the recommended budget.\n\n"
+            "You are reducing the instruction count in an AI coding assistant "
+            "instruction file. The number of imperative instructions in this "
+            "file exceeds the recommended budget.\n\n"
             "Rules:\n"
             "- Merge duplicate or near-duplicate instructions\n"
             "- Remove tautological instructions the model follows by default\n"
@@ -253,20 +253,22 @@ class ContentInstructionBudgetRule(Rule):
         if not content_files:
             return []
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze([cf.path for cf in content_files])
         violations = []
-        if budget.total_count >= 120:
-            sev = Severity.ERROR if budget.over_budget else Severity.WARNING
-            msg = (
-                f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files "
-                f"({budget.budget_remaining} remaining)"
-            )
-            for fpath in budget.files_counted:
-                violations.append(self.violation(msg, file_path=fpath, severity=sev))
-        elif budget.total_count >= 80:
-            msg = f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit"
-            for fpath in budget.files_counted:
-                violations.append(self.violation(msg, file_path=fpath, severity=Severity.INFO))
+        for cf in content_files:
+            budget = analyzer.analyze_file(cf.path)
+            if budget.total_count >= 120:
+                sev = Severity.ERROR if budget.over_budget else Severity.WARNING
+                msg = (
+                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
+                    f"({budget.budget_remaining} remaining)"
+                )
+                violations.append(self.violation(msg, file_path=cf.path, severity=sev))
+            elif budget.total_count >= 80:
+                msg = (
+                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
+                    f"— approaching limit"
+                )
+                violations.append(self.violation(msg, file_path=cf.path, severity=Severity.INFO))
         return violations
 
 
