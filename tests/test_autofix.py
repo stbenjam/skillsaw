@@ -222,7 +222,7 @@ class TestLinterFix:
         context = RepositoryContext(valid_plugin)
         config = LinterConfig.default()
         linter = Linter(context, config)
-        violations, fixes = linter.fix()
+        _violations, fixes = linter.fix()
         assert fixes == []
 
     def test_fix_applies_safe_fixes(self, temp_dir):
@@ -376,7 +376,7 @@ class TestEndToEndFix:
         violations_before = linter.run()
         assert len(violations_before) == 1
 
-        violations, fixes = linter.fix()
+        _violations, fixes = linter.fix()
         applied = Linter.apply_fixes(fixes)
 
         assert len(applied) == 1

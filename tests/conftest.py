@@ -22,6 +22,8 @@ def _load_dotenv():
         if "=" in line:
             key, _, value = line.partition("=")
             key = key.strip()
+            if not key:
+                continue
             value = value.strip().strip("'\"")
             if key not in os.environ:
                 os.environ[key] = value

@@ -263,6 +263,8 @@ def test_content_rules_default_to_auto():
         "content-actionability-score",
         "content-cognitive-chunks",
         "content-embedded-secrets",
+        "content-banned-references",
+        "content-inconsistent-terminology",
     ]
     for rule_id in content_rules:
         assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"

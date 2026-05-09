@@ -625,7 +625,7 @@ def _run_fix(args):
             elapsed = time.monotonic() - start_time
             elapsed_str = f"{int(elapsed)}s"
             eta_str = ""
-            if kw["completed"] > 0 and kw["completed"] < kw["file_count"]:
+            if 0 < kw["completed"] < kw["file_count"]:
                 rate = elapsed / kw["completed"]
                 remaining = rate * (kw["file_count"] - kw["completed"])
                 eta_str = f" ETA {int(remaining)}s"

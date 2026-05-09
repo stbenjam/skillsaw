@@ -278,8 +278,9 @@ class Linter:
                     and v.file_path.resolve() == fpath
                     and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Rule %s failed during re-lint of %s: %s", rule.rule_id, fpath, e)
+                remaining.extend(v for v in violations_list if v.rule_id == rule.rule_id)
         return remaining
 
     def _llm_process_one_file(

@@ -87,8 +87,8 @@ class LiteLLMProvider:
 
         usage_info = response.usage
         usage = TokenUsage(
-            prompt_tokens=usage_info.prompt_tokens or 0,
-            completion_tokens=usage_info.completion_tokens or 0,
+            prompt_tokens=getattr(usage_info, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage_info, "completion_tokens", 0) or 0,
         )
 
         return CompletionResult(
