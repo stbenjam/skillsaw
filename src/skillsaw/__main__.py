@@ -750,8 +750,9 @@ def _run_docs(args):
     if config_path:
         try:
             config = LinterConfig.from_file(config_path)
-        except ValueError:
-            config = LinterConfig.default()
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
         config = LinterConfig.default()
     context.exclude_patterns = config.exclude_patterns
