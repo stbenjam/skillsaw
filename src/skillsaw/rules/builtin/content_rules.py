@@ -356,7 +356,19 @@ class ContentNegativeOnlyRule(Rule):
         re.IGNORECASE,
     )
     _POSITIVE_RE = re.compile(
-        r"(?:use\s+\w+(?:\s+\w+)*\s+instead|instead\s*,?\s+use|prefer\s+\w+|replace\s+with|\binstead\b)",
+        r"(?:"
+        r"\binstead\b"
+        r"|instead\s*,?\s+use"
+        r"|prefer\s+\w+"
+        r"|replace\s+with"
+        r"|\buse\s+\w+"
+        r"|\bapply\s+\w+"
+        r"|\bset\s+\w+"
+        r"|\bchoose\s+\w+"
+        r"|\bswitch\s+to\b"
+        r"|\bopt\s+for\b"
+        r"|\brather\s+than\b"
+        r")",
         re.IGNORECASE,
     )
 
@@ -387,6 +399,29 @@ class ContentNegativeOnlyRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    def _has_positive_alternative(self, line, lines, line_idx):
+        neg_match = self._NEGATIVE_RE.search(line)
+        if not neg_match:
+            return False
+
+        text_before_neg = line[: neg_match.start()]
+        if self._POSITIVE_RE.search(text_before_neg):
+            return True
+
+        text_after_neg = line[neg_match.end() :]
+        if self._POSITIVE_RE.search(text_after_neg):
+            return True
+
+        start = max(0, line_idx - 2)
+        end = min(len(lines), line_idx + 5)
+        for j in range(start, end):
+            if j == line_idx:
+                continue
+            if self._POSITIVE_RE.search(lines[j]):
+                return True
+
+        return False
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
@@ -397,8 +432,7 @@ class ContentNegativeOnlyRule(Rule):
             for i, line in enumerate(lines):
                 if not self._NEGATIVE_RE.search(line):
                     continue
-                window = "\n".join(lines[max(0, i - 1) : i + 4])
-                if not self._POSITIVE_RE.search(window):
+                if not self._has_positive_alternative(line, lines, i):
                     violations.append(
                         self.violation(
                             f"Negative-only instruction without alternative: '{line.strip()[:80]}'",
