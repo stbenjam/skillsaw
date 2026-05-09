@@ -299,44 +299,6 @@ class Linter:
                     rule_ids=rules_for_file,
                 )
 
-            rule_prompts = set()
-            for v in file_violations:
-                prompt = llm_rules[v.rule_id].llm_fix_prompt
-                if prompt:
-                    rule_prompts.add(prompt)
-
-            formatted_violations = "\n".join(str(v) for v in file_violations)
-            combined_prompts = "\n\n".join(rule_prompts)
-
-            system_prompt = (
-                f"You are fixing lint violations in the file {rel_path}.\n\n"
-                f"{combined_prompts}\n\n"
-                f"Current violations:\n{formatted_violations}\n\n"
-                "Available tools:\n"
-                "- read_file(path) — read a file\n"
-                "- write_file(path, content) — overwrite a file\n"
-                "- replace_section(path, old_text, new_text) — surgical edit\n"
-                "- lint(path) — run skillsaw lint and see remaining violations\n"
-                "- diff(path) — see what you've changed vs the original\n\n"
-                "Workflow:\n"
-                "1. Read the file to understand context\n"
-                "2. Use replace_section to fix violations\n"
-                "3. Run lint() to verify your fixes resolved the violations\n"
-                "4. If violations remain, fix them and lint again\n"
-                "5. When lint returns no violations (or only unrelated ones), "
-                "run diff() to confirm your changes are minimal and correct\n"
-                "6. Respond with a summary of changes made\n\n"
-                "Do not change anything unrelated to the violations listed above."
-            )
-
-            tools = [
-                ReadFileTool(self.context.root_path),
-                WriteFileTool(self.context.root_path),
-                ReplaceSectionTool(self.context.root_path),
-                LintTool(self.context.root_path, self.config),
-                DiffTool(self.context.root_path, originals),
-            ]
-
             def _on_engine_event(event_type, **kwargs):
                 if callback:
                     callback(
@@ -347,14 +309,87 @@ class Linter:
                         **kwargs,
                     )
 
-            engine = LLMEngine(provider, tools, engine_config, on_event=_on_engine_event)
-            result = engine.run(
-                system_prompt=system_prompt,
-                user_message=f"Please fix the violations in {rel_path}.",
-            )
+            def _build_system_prompt(violations_list):
+                prompts = set()
+                for v in violations_list:
+                    prompt = llm_rules[v.rule_id].llm_fix_prompt
+                    if prompt:
+                        prompts.add(prompt)
+                formatted = "\n".join(str(v) for v in violations_list)
+                combined = "\n\n".join(prompts)
+                return (
+                    f"You are fixing lint violations in the file {rel_path}.\n\n"
+                    f"{combined}\n\n"
+                    f"Current violations:\n{formatted}\n\n"
+                    "Available tools:\n"
+                    "- read_file(path) — read a file\n"
+                    "- write_file(path, content) — overwrite a file\n"
+                    "- replace_section(path, old_text, new_text) — surgical edit\n"
+                    "- lint(path) — run skillsaw lint and see remaining violations\n"
+                    "- diff(path) — see what you've changed vs the original\n\n"
+                    "Workflow:\n"
+                    "1. Read the file to understand context\n"
+                    "2. Use replace_section to fix violations\n"
+                    "3. Run lint() to verify your fixes resolved the violations\n"
+                    "4. If violations remain, fix them and lint again\n"
+                    "5. When lint returns no violations (or only unrelated ones), "
+                    "run diff() to confirm your changes are minimal and correct\n"
+                    "6. Respond with a summary of changes made\n\n"
+                    "Do not change anything unrelated to the violations listed above."
+                )
 
-            total_usage.prompt_tokens += result.usage.prompt_tokens
-            total_usage.completion_tokens += result.usage.completion_tokens
+            def _relint_file(violations_list):
+                failed_rule_ids = {v.rule_id for v in violations_list}
+                failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
+                remaining = []
+                for rule in failed_rules:
+                    try:
+                        re_violations = rule.check(self.context)
+                        remaining.extend(
+                            v
+                            for v in re_violations
+                            if v.file_path
+                            and v.file_path.resolve() == fpath
+                            and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
+                        )
+                    except Exception:
+                        pass
+                return remaining
+
+            tools = [
+                ReadFileTool(self.context.root_path),
+                WriteFileTool(self.context.root_path),
+                ReplaceSectionTool(self.context.root_path),
+                LintTool(self.context.root_path, self.config),
+                DiffTool(self.context.root_path, originals),
+            ]
+
+            current_violations = file_violations
+            total_iterations = 0
+            for attempt in range(2):
+                engine = LLMEngine(provider, tools, engine_config, on_event=_on_engine_event)
+                result = engine.run(
+                    system_prompt=_build_system_prompt(current_violations),
+                    user_message=f"Please fix the violations in {rel_path}.",
+                )
+                total_usage.prompt_tokens += result.usage.prompt_tokens
+                total_usage.completion_tokens += result.usage.completion_tokens
+                total_iterations += result.iterations
+
+                remaining = _relint_file(current_violations)
+                if not remaining:
+                    break
+
+                if attempt == 0 and remaining:
+                    if callback:
+                        callback(
+                            "retry",
+                            file_idx=file_idx,
+                            file_count=file_count,
+                            rel_path=rel_path,
+                            remaining=len(remaining),
+                        )
+                    current_violations = remaining
 
             changed = False
             if fpath.exists():
@@ -372,23 +407,6 @@ class Linter:
                         files_modified.append(fpath)
                         changed = True
 
-            remaining = 0
-            if changed:
-                failed_rule_ids = {v.rule_id for v in file_violations}
-                failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
-                for rule in failed_rules:
-                    try:
-                        re_violations = rule.check(self.context)
-                        remaining += sum(
-                            1
-                            for v in re_violations
-                            if v.file_path
-                            and v.file_path.resolve() == fpath
-                            and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
-                        )
-                    except Exception:
-                        pass
-
             if callback:
                 callback(
                     "file_done",
@@ -396,8 +414,8 @@ class Linter:
                     file_count=file_count,
                     rel_path=rel_path,
                     num_violations=len(file_violations),
-                    iterations=result.iterations,
-                    remaining=remaining,
+                    iterations=total_iterations,
+                    remaining=len(remaining),
                     changed=changed,
                 )
 

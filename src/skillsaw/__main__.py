@@ -439,6 +439,8 @@ def _run_fix(args):
                     val = val[:37] + "..."
                 arg_summary = val
             print(f"  {dim}├{reset} {kw['name']}({arg_summary})")
+        elif event_type == "retry":
+            print(f"  {yellow}├ {kw['remaining']} violation(s) remain," f" retrying...{reset}")
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
@@ -448,7 +450,7 @@ def _run_fix(args):
                 print(f"  {green}└ ✓ all {kw['num_violations']} " f"violation(s) fixed{reset}")
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {yellow}└ {fixed} fixed, " f"{remaining} remaining{reset}")
+                print(f"  {red}└ {fixed} fixed, " f"{remaining} failed{reset}")
             print()
 
     result = linter.llm_fix(provider, callback=_on_event, min_severity=min_severity)
