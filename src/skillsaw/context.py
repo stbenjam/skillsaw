@@ -151,8 +151,11 @@ class RepositoryContext:
 
     def _detect_apm(self) -> bool:
         """Check if this repository uses the APM (Agent Package Manager) format"""
-        apm_dir = self.root_path / ".apm"
-        return apm_dir.is_dir()
+        if (self.root_path / ".apm").is_dir():
+            return True
+        if (self.root_path / "apm.yml").is_file():
+            return True
+        return False
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.
