@@ -13,7 +13,7 @@ from .linter import Linter
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "enable", "disable", "bundles"}
 
 
 def _get_version() -> str:
@@ -45,6 +45,10 @@ Examples:
   skillsaw lint /path/to/skills   # Lint specific directory
   skillsaw init                   # Generate default config
   skillsaw list-rules             # List available rules
+  skillsaw bundles                # List available rule bundles
+  skillsaw enable cursor          # Enable all Cursor rules
+  skillsaw disable content        # Disable all content rules
+  skillsaw enable cursor-mdc-valid  # Enable a single rule
   skillsaw docs                   # Generate documentation
   skillsaw add marketplace        # Scaffold a new marketplace
 
@@ -152,6 +156,56 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    # --- enable ---
+    enable_parser = subparsers.add_parser(
+        "enable",
+        help="Enable a rule or bundle in .skillsaw.yaml",
+    )
+    enable_parser.add_argument(
+        "name",
+        help="Rule ID or bundle name to enable",
+    )
+    enable_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Directory containing .skillsaw.yaml (default: current directory)",
+    )
+    enable_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would change without writing",
+    )
+
+    # --- disable ---
+    disable_parser = subparsers.add_parser(
+        "disable",
+        help="Disable a rule or bundle in .skillsaw.yaml",
+    )
+    disable_parser.add_argument(
+        "name",
+        help="Rule ID or bundle name to disable",
+    )
+    disable_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Directory containing .skillsaw.yaml (default: current directory)",
+    )
+    disable_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would change without writing",
+    )
+
+    # --- bundles ---
+    subparsers.add_parser(
+        "bundles",
+        help="List available rule bundles",
+    )
+
     args = parser.parse_args()
 
     if args.command == "lint":
@@ -162,6 +216,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         _run_list_rules()
     elif args.command == "docs":
         _run_docs(args)
+    elif args.command == "enable":
+        _run_enable(args)
+    elif args.command == "disable":
+        _run_disable(args)
+    elif args.command == "bundles":
+        _run_bundles()
 
 
 def _run_lint(args):
@@ -301,6 +361,82 @@ def _run_docs(args):
             (output_dir / filename).write_text(content, encoding="utf-8")
         file_list = ", ".join(sorted(pages.keys()))
         print(f"Documentation written to {output_dir}/ ({len(pages)} file(s): {file_list})")
+
+
+def _run_enable(args):
+    from .bundles import resolve_names, enable_rules
+
+    name = args.name
+    rule_ids, was_bundle = resolve_names(name)
+
+    if not rule_ids:
+        print(f"Error: '{name}' is not a known rule or bundle.", file=sys.stderr)
+        print("Run 'skillsaw bundles' to see available bundles.", file=sys.stderr)
+        print("Run 'skillsaw list-rules' to see available rules.", file=sys.stderr)
+        sys.exit(1)
+
+    results = enable_rules(rule_ids, args.path, dry_run=args.dry_run)
+
+    if was_bundle:
+        enabled_count = sum(1 for _, action in results if action == "enabled")
+        verb = "Would enable" if args.dry_run else "Enabled"
+        print(f"{verb} {enabled_count} rule(s) in bundle '{name}':")
+    else:
+        verb = "Would enable" if args.dry_run else "Enabled"
+
+    for rid, action in results:
+        if action == "enabled":
+            print(f"  {rid} ✓")
+        else:
+            print(f"  {rid} (already enabled)")
+
+    if args.dry_run:
+        print("\n(dry run — no changes written)")
+
+
+def _run_disable(args):
+    from .bundles import resolve_names, disable_rules
+
+    name = args.name
+    rule_ids, was_bundle = resolve_names(name)
+
+    if not rule_ids:
+        print(f"Error: '{name}' is not a known rule or bundle.", file=sys.stderr)
+        print("Run 'skillsaw bundles' to see available bundles.", file=sys.stderr)
+        print("Run 'skillsaw list-rules' to see available rules.", file=sys.stderr)
+        sys.exit(1)
+
+    results = disable_rules(rule_ids, args.path, dry_run=args.dry_run)
+
+    if was_bundle:
+        disabled_count = sum(1 for _, action in results if action == "disabled")
+        verb = "Would disable" if args.dry_run else "Disabled"
+        print(f"{verb} {disabled_count} rule(s) in bundle '{name}':")
+    else:
+        verb = "Would disable" if args.dry_run else "Disabled"
+
+    for rid, action in results:
+        if action == "disabled":
+            print(f"  {rid} ✓")
+        else:
+            print(f"  {rid} (already disabled)")
+
+    if args.dry_run:
+        print("\n(dry run — no changes written)")
+
+
+def _run_bundles():
+    from .bundles import BUILTIN_BUNDLES, get_bundle_rules
+
+    print("Available rule bundles:\n")
+    for bundle_name, description in BUILTIN_BUNDLES.items():
+        rules = get_bundle_rules(bundle_name)
+        print(f"  {bundle_name} ({len(rules)} rules)")
+        print(f"    {description}")
+        for rid in rules:
+            print(f"      - {rid}")
+        print()
+    sys.exit(0)
 
 
 def claudelint_shim():
