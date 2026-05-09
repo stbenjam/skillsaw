@@ -387,6 +387,25 @@ def test_no_version_means_all_rules_active(temp_dir):
     )
 
 
+def test_severity_override_bypasses_version_gate(temp_dir):
+    """Configuring a rule's severity implies the user wants it active"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"severity": "error"}},
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
 def test_save_includes_version(tmp_path):
     """Test that save() writes the version field"""
     config = LinterConfig.for_init()

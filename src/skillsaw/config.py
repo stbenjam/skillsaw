@@ -204,8 +204,12 @@ class LinterConfig:
                 return True
             if explicit is False:
                 return False
+            # enabled: "auto" falls through to version gate + auto logic below
 
-        if self.version:
+        # Any non-enabled override (e.g. severity) implies the user wants this rule
+        has_non_enabled_overrides = bool({k for k in user_overrides if k != "enabled"})
+
+        if not has_non_enabled_overrides and self.version:
             if _parse_version(self.version) < _parse_version(since_version):
                 return False
 
