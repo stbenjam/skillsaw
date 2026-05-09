@@ -4,7 +4,6 @@ Main linter orchestration
 
 from __future__ import annotations
 
-import fnmatch
 import importlib.util
 import logging
 import sys
@@ -147,13 +146,9 @@ class Linter:
 
     def _is_excluded(self, violation: RuleViolation) -> bool:
         """Check if a violation's file path matches any exclude pattern."""
-        if not self.config.exclude_patterns or violation.file_path is None:
+        if violation.file_path is None:
             return False
-        try:
-            rel = str(violation.file_path.resolve().relative_to(self.context.root_path))
-        except ValueError:
-            return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in self.config.exclude_patterns)
+        return self.context.is_path_excluded(violation.file_path)
 
     def run(self) -> List[RuleViolation]:
         """
@@ -190,20 +185,22 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 continue
 
-            if rule_violations and rule.supports_autofix:
+            visible = [v for v in rule_violations if not self._is_excluded(v)]
+
+            if visible and rule.supports_autofix:
                 try:
-                    fixes = rule.fix(self.context, rule_violations)
+                    fixes = rule.fix(self.context, visible)
                     all_fixes.extend(fixes)
                     fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
-                    remaining = [v for v in rule_violations if id(v) not in fixed_violations]
+                    remaining = [v for v in visible if id(v) not in fixed_violations]
                     all_violations.extend(remaining)
                 except Exception as e:
                     print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
-                    all_violations.extend(rule_violations)
+                    all_violations.extend(visible)
             else:
-                all_violations.extend(rule_violations)
+                all_violations.extend(visible)
 
-        return [v for v in all_violations if not self._is_excluded(v)], all_fixes
+        return all_violations, all_fixes
 
     @staticmethod
     def apply_fixes(
