@@ -149,11 +149,25 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
 
     Returns tagged ContentFile objects with category matching context_budget limit keys.
     Deduplicates by resolved path.
+
+    When APM (.apm/) is present, content is gathered from the APM source
+    directories instead of compiled output directories (.claude/, .cursor/,
+    .gemini/, .opencode/, .agents/).
     """
     files: List[ContentFile] = []
     seen: Set[Path] = set()
     exclude = getattr(context, "exclude_patterns", [])
     root = context.root_path.resolve()
+
+    # Build set of compiled output directories to skip when APM is present
+    apm_compiled_roots: Set[Path] = set()
+    if context.has_apm:
+        from skillsaw.context import RepositoryContext as _RC
+
+        for compiled_dir_name in _RC.APM_COMPILED_DIRS:
+            compiled_path = (context.root_path / compiled_dir_name).resolve()
+            if compiled_path.is_dir():
+                apm_compiled_roots.add(compiled_path)
 
     def _is_excluded(p: Path) -> bool:
         if not exclude:
@@ -164,12 +178,20 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
             return False
         return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
 
+    def _is_in_compiled_dir(p: Path) -> bool:
+        """Check if a path is inside an APM compiled output directory."""
+        if not apm_compiled_roots:
+            return False
+        resolved = p.resolve()
+        return any(resolved == excl or resolved.is_relative_to(excl) for excl in apm_compiled_roots)
+
     def _add(p: Path, category: str) -> None:
         resolved = p.resolve()
         if resolved not in seen and p.exists() and not _is_excluded(p):
             seen.add(resolved)
             files.append(ContentFile(path=p, category=category))
 
+    # --- Root-level instruction files (not compiled output) ---
     for f in context.instruction_files:
         cat = _INSTRUCTION_FILE_CATEGORIES.get(f.name, "instruction")
         _add(f, cat)
@@ -177,8 +199,9 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
     _add(context.root_path / ".github" / "copilot-instructions.md", "instruction")
     _add(context.root_path / ".cursorrules", "instruction")
 
+    # Skip compiled output directories when APM is present
     cursor_rules_dir = context.root_path / ".cursor" / "rules"
-    if cursor_rules_dir.is_dir():
+    if cursor_rules_dir.is_dir() and not _is_in_compiled_dir(cursor_rules_dir):
         for mdc in sorted(cursor_rules_dir.glob("*.mdc")):
             _add(mdc, "instruction")
 
@@ -196,6 +219,7 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
         for md in sorted(clinerules.glob("*.md")):
             _add(md, "instruction")
 
+    # --- Skills ---
     for skill_path in context.skills:
         _add(skill_path / "SKILL.md", "skill")
         refs_dir = skill_path / "references"
@@ -203,7 +227,11 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
             for ref_file in sorted(refs_dir.glob("*.md")):
                 _add(ref_file, "skill-ref")
 
+    # --- Plugin content (skip compiled dirs when APM present) ---
     for plugin_path in context.plugins:
+        if _is_in_compiled_dir(plugin_path):
+            continue
+
         commands_dir = plugin_path / "commands"
         if commands_dir.is_dir():
             for cmd_file in sorted(commands_dir.glob("*.md")):
@@ -221,6 +249,41 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
 
     _add(context.root_path / ".coderabbit.yaml", "coderabbit")
 
+    # --- APM source directories ---
+    if context.has_apm:
+        apm_dir = context.root_path / ".apm"
+
+        # .apm/instructions/*.instructions.md
+        apm_instructions = apm_dir / "instructions"
+        if apm_instructions.is_dir():
+            for md in sorted(apm_instructions.glob("*.instructions.md")):
+                _add(md, "instruction")
+
+        # .apm/agents/*.agent.md
+        apm_agents = apm_dir / "agents"
+        if apm_agents.is_dir():
+            for md in sorted(apm_agents.glob("*.agent.md")):
+                _add(md, "agent")
+
+        # .apm/prompts/*.md
+        apm_prompts = apm_dir / "prompts"
+        if apm_prompts.is_dir():
+            for md in sorted(apm_prompts.glob("*.md")):
+                _add(md, "prompt")
+
+        # .apm/chatmodes/*.md
+        apm_chatmodes = apm_dir / "chatmodes"
+        if apm_chatmodes.is_dir():
+            for md in sorted(apm_chatmodes.glob("*.md")):
+                _add(md, "chatmode")
+
+        # .apm/context/*.md
+        apm_context = apm_dir / "context"
+        if apm_context.is_dir():
+            for md in sorted(apm_context.glob("*.md")):
+                _add(md, "context")
+
+    # --- Extra content paths from config ---
     for glob_pattern in getattr(context, "content_paths", []):
         for extra in sorted(context.root_path.glob(glob_pattern)):
             if extra.is_file():
@@ -469,13 +532,16 @@ class TautologicalDetector:
 
 
 class CriticalPositionAnalyzer:
+    def __init__(self, min_lines: int = 50):
+        self._min_lines = min_lines
+
     def analyze(self, path: Path) -> List[PositionIssue]:
         content = _get_body(path)
         if not content:
             return []
         lines = content.splitlines()
         total = len(lines)
-        if total < 10:
+        if total < self._min_lines:
             return []
         results: List[PositionIssue] = []
         for line_num, line in enumerate(lines, 1):

@@ -2,13 +2,13 @@
 description: Guidelines for implementing new linter rules
 ---
 
-# Writing New Linter Rules
-
-## Line Numbers
-
 Rules MUST report line numbers in violations whenever the violation can be
 traced to a specific line in a file. This enables the GitHub Action to post
 inline PR comments on the exact line.
+
+# Writing New Linter Rules
+
+## Line Numbers
 
 - **Frontmatter fields:** Use `_frontmatter_key_line()` (see
   `agentskills.py`) or a similar helper to find the line of the offending key.

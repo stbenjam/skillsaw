@@ -1,13 +1,13 @@
-# Development Rules
-
-skillsaw is a configurable, rule-based linter for agentskills.io skills,
-Claude Code plugins, and plugin marketplaces.
-
 ## CRITICAL: Always run `make update` before making a PR
 
 `make update` regenerates all generated files: README rule docs, example config,
 and `.claude/` from `.apm/`. PRs that skip this step will have stale docs. Run it
 every time, no exceptions.
+
+# Development Rules
+
+skillsaw is a configurable, rule-based linter for agentskills.io skills,
+Claude Code plugins, and plugin marketplaces.
 
 ## Backward Compatibility
 

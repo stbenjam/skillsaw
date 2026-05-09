@@ -128,6 +128,16 @@ class ContentCriticalPositionRule(Rule):
     formats = ALL_INSTRUCTION_FORMATS
     since = "0.7.0"
 
+    _DEFAULT_MIN_LINES = 50
+
+    config_schema = {
+        "min-lines": {
+            "type": "int",
+            "default": 50,
+            "description": "Minimum file length (in lines) before the rule activates",
+        },
+    }
+
     @property
     def rule_id(self) -> str:
         return "content-critical-position"
@@ -157,7 +167,8 @@ class ContentCriticalPositionRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        analyzer = CriticalPositionAnalyzer()
+        min_lines = self.config.get("min-lines", self._DEFAULT_MIN_LINES)
+        analyzer = CriticalPositionAnalyzer(min_lines=min_lines)
         for cf in gather_all_content_files(context):
             for issue in analyzer.analyze(cf.path):
                 violations.append(

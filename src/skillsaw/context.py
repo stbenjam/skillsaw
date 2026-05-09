@@ -22,6 +22,7 @@ class RepositoryType(Enum):
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
+    APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -57,10 +58,15 @@ class RepositoryContext:
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
         RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
     ]
+
+    # Compiled output directories that APM generates from .apm/ sources.
+    # When .apm/ is present these are generated artifacts and should not be linted.
+    APM_COMPILED_DIRS = frozenset((".claude", ".cursor", ".gemini", ".opencode", ".agents"))
 
     def __init__(self, root_path: Path):
         """
@@ -70,6 +76,7 @@ class RepositoryContext:
             root_path: Root directory of the repository
         """
         self.root_path = root_path.resolve()
+        self.has_apm = self._detect_apm()
         self.repo_types: Set[RepositoryType] = self._detect_types()
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
@@ -142,6 +149,14 @@ class RepositoryContext:
                 return True
         return False
 
+    def _detect_apm(self) -> bool:
+        """Check if this repository uses the APM (Agent Package Manager) format"""
+        if (self.root_path / ".apm").is_dir():
+            return True
+        if (self.root_path / "apm.yml").is_file():
+            return True
+        return False
+
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.
 
@@ -167,6 +182,10 @@ class RepositoryContext:
         if (self.root_path / ".coderabbit.yaml").exists():
             types.add(RepositoryType.CODERABBIT)
 
+        # APM
+        if self.has_apm:
+            types.add(RepositoryType.APM)
+
         # DOT_CLAUDE
         if self._is_dot_claude():
             types.add(RepositoryType.DOT_CLAUDE)
@@ -182,7 +201,12 @@ class RepositoryContext:
             return True
 
         # Standard discovery paths (checked explicitly since they start with dot)
-        for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
+        for discovery_path in (
+            ".apm/skills",
+            ".claude/skills",
+            ".github/skills",
+            ".agents/skills",
+        ):
             skills_path = self.root_path / discovery_path
             if skills_path.is_dir() and self._has_skill_md_recursive(skills_path):
                 return True
@@ -191,7 +215,13 @@ class RepositoryContext:
         return self._has_skill_md_recursive(self.root_path)
 
     def _is_dot_claude(self) -> bool:
-        """Check if this is a .claude/ directory or a repo containing one"""
+        """Check if this is a .claude/ directory or a repo containing one.
+
+        When APM is present, .claude/ is a compiled output directory and should
+        not drive repo type detection.
+        """
+        if self.has_apm:
+            return False
         claude_dir = self.root_path
         if self.root_path.name != ".claude":
             claude_dir = self.root_path / ".claude"
@@ -491,9 +521,20 @@ class RepositoryContext:
 
         For AGENTSKILLS repos: root (single skill) or subdirs with SKILL.md.
         For plugin repos: skills from plugin_path/skills/*/.
+
+        When APM is present, skills are discovered from .apm/skills/ and
+        compiled output directories are excluded.
         """
         skills: List[Path] = []
         discovered: Set[Path] = set()
+
+        # Build set of compiled output directories to skip when APM is present
+        apm_excluded_roots: Set[Path] = set()
+        if self.has_apm:
+            for compiled_dir_name in self.APM_COMPILED_DIRS:
+                compiled_path = (self.root_path / compiled_dir_name).resolve()
+                if compiled_path.is_dir():
+                    apm_excluded_roots.add(compiled_path)
 
         if RepositoryType.AGENTSKILLS in self.repo_types:
             # Single skill at root
@@ -504,11 +545,23 @@ class RepositoryContext:
                 # Skill collection: immediate subdirs with SKILL.md
                 self._discover_skills_in_dir(self.root_path, skills, discovered)
 
-            # Standard discovery paths
-            for discovery_path in (".claude/skills", ".github/skills", ".agents/skills"):
+            # Standard discovery paths (including APM)
+            for discovery_path in (
+                ".apm/skills",
+                ".claude/skills",
+                ".github/skills",
+                ".agents/skills",
+            ):
                 skills_path = self.root_path / discovery_path
-                if skills_path.is_dir():
-                    self._discover_skills_in_dir(skills_path, skills, discovered)
+                if not skills_path.is_dir():
+                    continue
+                # Skip compiled output dirs when APM is present
+                if any(
+                    skills_path.resolve() == excl or skills_path.resolve().is_relative_to(excl)
+                    for excl in apm_excluded_roots
+                ):
+                    continue
+                self._discover_skills_in_dir(skills_path, skills, discovered)
 
         # For plugin repos, also discover embedded skills
         for plugin_path in self.plugins:

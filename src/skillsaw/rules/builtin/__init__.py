@@ -85,6 +85,11 @@ from .coderabbit import (
     CoderabbitYamlValidRule,
 )
 
+from .apm import (
+    ApmYamlValidRule,
+    ApmStructureValidRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -142,6 +147,9 @@ BUILTIN_RULES = [
     ContentInconsistentTerminologyRule,
     # CodeRabbit
     CoderabbitYamlValidRule,
+    # APM (Agent Package Manager)
+    ApmYamlValidRule,
+    ApmStructureValidRule,
 ]
 
 
@@ -189,4 +197,6 @@ __all__ = [
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
     "CoderabbitYamlValidRule",
+    "ApmYamlValidRule",
+    "ApmStructureValidRule",
 ]

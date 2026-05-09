@@ -413,6 +413,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
 
+**`content-critical-position` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `min-lines` | Minimum file length (in lines) before the rule activates | `50` |
+
 **`content-section-length` parameters:**
 
 | Parameter | Description | Default |
@@ -433,6 +439,15 @@ Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fiel
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
+
+### APM (Agent Package Manager)
+
+Validates repositories using the [APM](https://github.com/microsoft/apm) directory layout (`.apm/`). Auto-enables when `.apm/` is detected.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `apm-yaml-valid` | apm.yml must exist with valid YAML and required fields (name, version, description) | error (auto) | - |
+| `apm-structure-valid` | .apm/ directory must contain skills/ or instructions/ with valid structure | warning (auto) | - |
 
 <!-- END GENERATED RULES -->
 

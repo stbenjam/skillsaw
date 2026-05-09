@@ -153,6 +153,7 @@ rules:
   content-critical-position:
     enabled: auto
     severity: warning
+    min-lines: 50
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
@@ -213,6 +214,16 @@ rules:
   coderabbit-yaml-valid:
     enabled: auto
     severity: error
+
+  # apm.yml must exist with valid YAML and required fields (name, version, description)
+  apm-yaml-valid:
+    enabled: auto
+    severity: error
+
+  # .apm/ directory must contain skills/ or instructions/ with valid structure
+  apm-structure-valid:
+    enabled: auto
+    severity: warning
 
 # Load custom rules from these files
 custom-rules: []
