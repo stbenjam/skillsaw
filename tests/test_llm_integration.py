@@ -260,7 +260,7 @@ FIX_CASES = [
         fixed_content="# Config\n\nSet api_key = $API_KEY from environment variables\n",
     ),
     FixCase(
-        rule_id="content-stale-references",
+        rule_id="content-banned-references",
         content="# Config\n\nUse claude-2 for summarization tasks.\nUse gpt-3.5 for classification.\n",
         fixed_content="# Config\n\nUse claude-sonnet-4 for summarization tasks.\nUse gpt-4o-mini for classification.\n",
     ),

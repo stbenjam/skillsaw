@@ -818,68 +818,47 @@ class ContentEmbeddedSecretsRule(Rule):
         return violations
 
 
-class ContentStaleReferencesRule(Rule):
-    """Detect stale or outdated references in instruction files"""
+class ContentBannedReferencesRule(Rule):
+    """Detect banned or deprecated references in instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
     since = "0.7.0"
 
-    _STALE_MODEL_NAMES = [
-        (
-            re.compile(r"\bgpt-3\.5\b", re.IGNORECASE),
-            "gpt-3.5 is deprecated — use gpt-4o-mini or newer",
-        ),
-        (re.compile(r"\btext-davinci\b", re.IGNORECASE), "text-davinci models are retired"),
-        (re.compile(r"\bcode-davinci\b", re.IGNORECASE), "code-davinci models are retired"),
-        (
-            re.compile(r"\bclaude-instant\b", re.IGNORECASE),
-            "claude-instant is deprecated — use claude-haiku or newer",
-        ),
-        (
-            re.compile(r"\bclaude-2\b", re.IGNORECASE),
-            "claude-2 is deprecated — use claude-sonnet-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-v1\b", re.IGNORECASE),
-            "claude-v1 is deprecated — use claude-sonnet-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-3-opus\b", re.IGNORECASE),
-            "claude-3-opus is deprecated — use claude-opus-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-3-sonnet\b", re.IGNORECASE),
-            "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-3-haiku\b", re.IGNORECASE),
-            "claude-3-haiku is deprecated — use claude-haiku-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-3\.5-sonnet\b", re.IGNORECASE),
-            "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer",
-        ),
-        (
-            re.compile(r"\bclaude-3\.5-haiku\b", re.IGNORECASE),
-            "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer",
-        ),
+    _BUILTIN_PATTERNS = [
+        (r"\bgpt-3\.5\b", "gpt-3.5 is deprecated — use gpt-4o-mini or newer"),
+        (r"\btext-davinci\b", "text-davinci models are retired"),
+        (r"\bcode-davinci\b", "code-davinci models are retired"),
+        (r"\bclaude-instant\b", "claude-instant is deprecated — use claude-haiku or newer"),
+        (r"\bclaude-2\b", "claude-2 is deprecated — use claude-sonnet-4 or newer"),
+        (r"\bclaude-v1\b", "claude-v1 is deprecated — use claude-sonnet-4 or newer"),
+        (r"\bclaude-3-opus\b", "claude-3-opus is deprecated — use claude-opus-4 or newer"),
+        (r"\bclaude-3-sonnet\b", "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer"),
+        (r"\bclaude-3-haiku\b", "claude-3-haiku is deprecated — use claude-haiku-4 or newer"),
+        (r"\bclaude-3\.5-sonnet\b", "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer"),
+        (r"\bclaude-3\.5-haiku\b", "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer"),
+        (r"\b/v1/complete\b", "/v1/complete is deprecated — use /v1/messages"),
     ]
 
-    _STALE_APIS = [
-        (re.compile(r"\b/v1/complete\b"), "/v1/complete is deprecated — use /v1/messages"),
-        (
-            re.compile(r"\brequests\.get\b.*\bopenai\.com\b"),
-            "Direct HTTP calls to OpenAI are fragile — use the official SDK",
-        ),
-    ]
+    config_schema = {
+        "banned": {
+            "type": "list",
+            "default": [],
+            "description": "Additional banned patterns as list of {pattern, message} dicts",
+        },
+        "skip-builtins": {
+            "type": "bool",
+            "default": False,
+            "description": "Disable built-in deprecated model/API checks",
+        },
+    }
 
     @property
     def rule_id(self) -> str:
-        return "content-stale-references"
+        return "content-banned-references"
 
     @property
     def description(self) -> str:
-        return "Detect references to deprecated models, retired APIs, and outdated tooling"
+        return "Detect banned or deprecated model names, APIs, and custom patterns"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -888,36 +867,44 @@ class ContentStaleReferencesRule(Rule):
     def llm_fix_prompt(self):
         return (
             "You are fixing AI coding assistant instruction files that reference "
-            "deprecated or outdated models, APIs, or tooling.\n\n"
+            "banned or deprecated models, APIs, or tooling.\n\n"
             "Rules:\n"
             "- Replace deprecated model names with current equivalents\n"
             "- Update retired API endpoints to current versions\n"
+            "- Remove or replace banned references per the violation message\n"
             "- Preserve the intent of the instruction\n"
-            "- If unsure of the replacement, add a TODO comment\n"
             "- Preserve markdown formatting"
         )
 
+    def _get_patterns(self) -> List[Tuple[re.Pattern, str]]:
+        patterns: List[Tuple[re.Pattern, str]] = []
+        if not self.config.get("skip-builtins", False):
+            for regex_str, msg in self._BUILTIN_PATTERNS:
+                patterns.append((re.compile(regex_str, re.IGNORECASE), msg))
+        for entry in self.config.get("banned", []):
+            if isinstance(entry, dict) and "pattern" in entry:
+                msg = entry.get("message", f"Banned reference: matches '{entry['pattern']}'")
+                try:
+                    patterns.append((re.compile(entry["pattern"], re.IGNORECASE), msg))
+                except re.error:
+                    pass
+        return patterns
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        patterns = self._get_patterns()
+        if not patterns:
+            return []
         violations = []
         for cf in gather_all_content_files(context):
             content = read_text(cf.path)
             if not content:
                 continue
             for line_num, line in enumerate(content.splitlines(), 1):
-                for pattern, msg in self._STALE_MODEL_NAMES:
+                for pattern, msg in patterns:
                     if pattern.search(line):
                         violations.append(
                             self.violation(
-                                f"Stale reference: {msg}",
-                                file_path=cf.path,
-                                line=line_num,
-                            )
-                        )
-                for pattern, msg in self._STALE_APIS:
-                    if pattern.search(line):
-                        violations.append(
-                            self.violation(
-                                f"Stale reference: {msg}",
+                                f"Banned reference: {msg}",
                                 file_path=cf.path,
                                 line=line_num,
                             )

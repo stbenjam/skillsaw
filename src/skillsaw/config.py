@@ -145,7 +145,7 @@ class LinterConfig:
                 "content-actionability-score": {"enabled": "auto", "severity": "info"},
                 "content-cognitive-chunks": {"enabled": "auto", "severity": "info"},
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
-                "content-stale-references": {"enabled": "auto", "severity": "warning"},
+                "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
             }
         )

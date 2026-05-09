@@ -20,7 +20,7 @@ from skillsaw.rules.builtin.content_rules import (
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentStaleReferencesRule,
+    ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
 )
 
@@ -408,33 +408,33 @@ class TestContentEmbeddedSecretsRule:
         assert violations[0].line == 3
 
 
-class TestContentStaleReferencesRule:
+class TestContentBannedReferencesRule:
     def test_rule_metadata(self):
-        rule = ContentStaleReferencesRule()
-        assert rule.rule_id == "content-stale-references"
+        rule = ContentBannedReferencesRule()
+        assert rule.rule_id == "content-banned-references"
         assert rule.default_severity() == Severity.WARNING
 
     def test_detects_deprecated_model(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use claude-2 for summarization.\n")
         context = RepositoryContext(temp_dir)
-        violations = ContentStaleReferencesRule().check(context)
+        violations = ContentBannedReferencesRule().check(context)
         assert len(violations) >= 1
 
     def test_detects_old_gpt(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use gpt-3.5 for classification.\n")
         context = RepositoryContext(temp_dir)
-        violations = ContentStaleReferencesRule().check(context)
+        violations = ContentBannedReferencesRule().check(context)
         assert len(violations) >= 1
 
     def test_current_model_passes(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use claude-sonnet-4 for summarization.\n")
         context = RepositoryContext(temp_dir)
-        violations = ContentStaleReferencesRule().check(context)
+        violations = ContentBannedReferencesRule().check(context)
         assert len(violations) == 0
 
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
-        violations = ContentStaleReferencesRule().check(context)
+        violations = ContentBannedReferencesRule().check(context)
         assert len(violations) == 0
 
 

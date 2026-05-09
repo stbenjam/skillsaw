@@ -77,7 +77,7 @@ from .content_rules import (
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentStaleReferencesRule,
+    ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
 )
 
@@ -134,7 +134,7 @@ BUILTIN_RULES = [
     ContentActionabilityScoreRule,
     ContentCognitiveChunksRule,
     ContentEmbeddedSecretsRule,
-    ContentStaleReferencesRule,
+    ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
 ]
 
@@ -180,6 +180,6 @@ __all__ = [
     "ContentActionabilityScoreRule",
     "ContentCognitiveChunksRule",
     "ContentEmbeddedSecretsRule",
-    "ContentStaleReferencesRule",
+    "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
 ]
