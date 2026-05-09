@@ -337,10 +337,14 @@ class Linter:
                     "3. After all edits, call lint() to verify — if violations "
                     "remain, fix them and lint again\n"
                     "4. When done, call diff() then respond with a brief summary\n\n"
-                    "IMPORTANT: Do not change anything unrelated to the "
-                    "violations. Preserve the file's structure, formatting, "
-                    "and meaning. Only modify the specific text that triggers "
-                    "each violation."
+                    "IMPORTANT:\n"
+                    "- Do not change anything unrelated to the violations\n"
+                    "- Preserve the file's structure, formatting, and meaning\n"
+                    "- Only modify the specific text that triggers each violation\n"
+                    "- NEVER call lint() unless you have made changes since "
+                    "the last lint — re-linting unchanged code wastes iterations\n"
+                    "- If lint still shows violations after your edits, make a "
+                    "different edit before linting again"
                 )
 
             def _relint_file(violations_list):
