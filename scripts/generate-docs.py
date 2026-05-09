@@ -100,7 +100,7 @@ RULE_GROUPS = [
             "content-banned-references",
             "content-inconsistent-terminology",
         ],
-        "14 rules that go beyond structural validation to analyze the *quality* of "
+        "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
         "([lost-in-the-middle](https://arxiv.org/abs/2307.03172), "
         "[instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) "

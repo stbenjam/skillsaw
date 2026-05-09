@@ -1,6 +1,6 @@
 # Content Intelligence Rules — Research & Justification
 
-skillsaw's 14 content intelligence rules analyze the *quality* of AI context
+skillsaw's content intelligence rules analyze the *quality* of AI context
 building blocks (skills, instructions, etc.). Each rule is grounded in published
 research on LLM behavior, prompt engineering best practices, or established
 software engineering principles.

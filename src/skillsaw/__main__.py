@@ -341,8 +341,21 @@ def _run_lint(args):
         sys.exit(0)
 
 
-def _run_llm_fix_inline(args, linter, config):
-    """Handle --fix --llm from the lint subcommand."""
+def _ansi_colors():
+    no_color = "NO_COLOR" in os.environ
+    return {
+        "bold": "" if no_color else "\033[1m",
+        "dim": "" if no_color else "\033[2m",
+        "green": "" if no_color else "\033[92m",
+        "red": "" if no_color else "\033[91m",
+        "yellow": "" if no_color else "\033[93m",
+        "cyan": "" if no_color else "\033[96m",
+        "reset": "" if no_color else "\033[0m",
+        "no_color": no_color,
+    }
+
+
+def _require_llm_provider(config):
     if not config.llm.model:
         print(
             "Error: No model configured. Set llm.model in your config file,"
@@ -361,16 +374,40 @@ def _run_llm_fix_inline(args, linter, config):
         sys.exit(1)
 
     logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
-    provider = LiteLLMProvider()
+    return LiteLLMProvider()
 
-    no_color = "NO_COLOR" in os.environ
-    bold = "" if no_color else "\033[1m"
-    dim = "" if no_color else "\033[2m"
-    green = "" if no_color else "\033[92m"
-    red = "" if no_color else "\033[91m"
-    yellow = "" if no_color else "\033[93m"
-    reset = "" if no_color else "\033[0m"
 
+def _print_colored_diff(diffs, c, header=None, separator=False):
+    if not diffs:
+        return
+    if header:
+        print(f"\n{c['bold']}{header}{c['reset']}")
+    if separator:
+        print(f"{c['dim']}{'─' * 60}{c['reset']}")
+    for diff_text in diffs.values():
+        for line in diff_text.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                print(f"{c['green']}{line}{c['reset']}")
+            elif line.startswith("-") and not line.startswith("---"):
+                print(f"{c['red']}{line}{c['reset']}")
+            elif line.startswith("@@"):
+                print(f"{c['cyan']}{line}{c['reset']}")
+            else:
+                print(line)
+    if separator:
+        print(f"{c['dim']}{'─' * 60}{c['reset']}")
+
+
+def _print_token_usage(usage, c, indent=""):
+    total_tokens = usage.prompt_tokens + usage.completion_tokens
+    if total_tokens:
+        print(f"{indent}{c['dim']}~{total_tokens:,} tokens{c['reset']}")
+
+
+def _run_llm_fix_inline(args, linter, config):
+    """Handle --fix --llm from the lint subcommand."""
+    c = _ansi_colors()
+    provider = _require_llm_provider(config)
     dry_run = getattr(args, "dry_run", False)
 
     import time
@@ -381,28 +418,33 @@ def _run_llm_fix_inline(args, linter, config):
         if event_type == "progress":
             elapsed = time.monotonic() - start_time
             print(
-                f"{dim}  [{kw['completed']}/{kw['file_count']} files, {int(elapsed)}s]{reset}",
+                f"{c['dim']}  [{kw['completed']}/{kw['file_count']} files,"
+                f" {int(elapsed)}s]{c['reset']}",
                 file=sys.stderr,
             )
         elif event_type == "file_start":
             print(
-                f"  {bold}{kw['rel_path']}{reset}"
-                f"  {dim}{kw['num_violations']} violation(s){reset}",
+                f"  {c['bold']}{kw['rel_path']}{c['reset']}"
+                f"  {c['dim']}{kw['num_violations']} violation(s){c['reset']}",
                 file=sys.stderr,
             )
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
             if not changed:
-                print(f"    {yellow}no changes{reset}", file=sys.stderr)
+                print(f"    {c['yellow']}no changes{c['reset']}", file=sys.stderr)
             elif remaining == 0:
                 print(
-                    f"    {green}✓ all {kw['num_violations']} violation(s) fixed{reset}",
+                    f"    {c['green']}✓ all {kw['num_violations']}"
+                    f" violation(s) fixed{c['reset']}",
                     file=sys.stderr,
                 )
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"    {red}{fixed} fixed, {remaining} failed{reset}", file=sys.stderr)
+                print(
+                    f"    {c['red']}{fixed} fixed, {remaining} failed{c['reset']}",
+                    file=sys.stderr,
+                )
 
     result = linter.llm_fix(
         provider,
@@ -412,24 +454,12 @@ def _run_llm_fix_inline(args, linter, config):
         dry_run=dry_run,
     )
 
-    if result.diffs:
-        print(f"\n{bold}LLM Changes{reset}")
-        for diff_text in result.diffs.values():
-            for line in diff_text.splitlines():
-                if line.startswith("+") and not line.startswith("+++"):
-                    print(f"{green}{line}{reset}")
-                elif line.startswith("-") and not line.startswith("---"):
-                    print(f"{red}{line}{reset}")
-                else:
-                    print(line)
+    _print_colored_diff(result.diffs, c, header="LLM Changes")
 
     if dry_run:
-        print(f"\n{yellow}dry-run — no files were modified{reset}")
+        print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
 
-    usage = result.total_usage
-    total_tokens = usage.prompt_tokens + usage.completion_tokens
-    if total_tokens:
-        print(f"{dim}~{total_tokens:,} tokens{reset}")
+    _print_token_usage(result.total_usage, c)
 
 
 def _run_fix(args):
@@ -479,44 +509,13 @@ def _run_fix(args):
     if args.max_iterations:
         config.llm.max_iterations = args.max_iterations
 
-    if not config.llm.model:
-        print(
-            "Error: No model configured. Set llm.model in your config file,"
-            " pass --model, or set SKILLSAW_MODEL.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    c = _ansi_colors()
+    provider = _require_llm_provider(config)
 
-    try:
-        from .llm._litellm import LiteLLMProvider
-    except ImportError:
-        print(
-            "Error: LLM features require litellm. Install with: pip install skillsaw[llm]",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(message)s",
-        stream=sys.stderr,
-    )
-
-    provider = LiteLLMProvider()
-
-    no_color = "NO_COLOR" in os.environ
     is_tty = sys.stdout.isatty()
     term_size = shutil.get_terminal_size((80, 24))
     term_width = term_size.columns
     term_rows = term_size.lines
-
-    bold = "" if no_color else "\033[1m"
-    dim = "" if no_color else "\033[2m"
-    green = "" if no_color else "\033[92m"
-    red = "" if no_color else "\033[91m"
-    yellow = "" if no_color else "\033[93m"
-    cyan = "" if no_color else "\033[96m"
-    reset = "" if no_color else "\033[0m"
 
     violations = linter.run()
     llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
@@ -533,20 +532,20 @@ def _run_fix(args):
         if v.file_path:
             files_with_violations.add(v.file_path.resolve())
 
-    print(f"\n{bold}skillsaw fix{reset} {dim}({config.llm.model}){reset}")
+    print(f"\n{c['bold']}skillsaw fix{c['reset']} {c['dim']}({config.llm.model}){c['reset']}")
     print(f"{len(llm_violations)} violation(s) across " f"{len(files_with_violations)} file(s)\n")
 
     if not llm_violations:
-        print(f"{green}No fixable violations found.{reset}")
+        print(f"{c['green']}No fixable violations found.{c['reset']}")
         sys.exit(0)
 
     def _progress_bar(current, total, width=20):
         filled = int(width * current / total) if total else 0
         bar = "█" * filled + "░" * (width - filled)
-        return f"{dim}[{reset}{cyan}{bar}{reset}{dim}]{reset}"
+        return f"{c['dim']}[{c['reset']}{c['cyan']}{bar}{c['reset']}{c['dim']}]{c['reset']}"
 
     def _setup_scroll_region():
-        if not is_tty or no_color:
+        if not is_tty or c["no_color"]:
             return
         sys.stdout.write(f"\033[1;{term_rows - 1}r")
         sys.stdout.write(f"\033[2J")
@@ -554,34 +553,32 @@ def _run_fix(args):
         sys.stdout.flush()
 
     def _update_status_bar(text):
-        if not is_tty or no_color:
+        if not is_tty or c["no_color"]:
             return
         padded = text[:term_width].ljust(term_width)
         sys.stdout.write(f"\033[s\033[{term_rows};1H\033[2K{padded}\033[u")
         sys.stdout.flush()
 
     def _teardown_scroll_region():
-        if not is_tty or no_color:
+        if not is_tty or c["no_color"]:
             return
         sys.stdout.write(f"\033[1;{term_rows}r")
         sys.stdout.write(f"\033[{term_rows};1H\033[2K")
         sys.stdout.flush()
 
     def _on_event(event_type, **kw):
-        if event_type == "progress":
-            bar = _progress_bar(kw["completed"], kw["file_count"])
-            status = f" {kw['completed']}/{kw['file_count']} files complete"
-            _update_status_bar(f" {bar}{status}")
-            return
-        elif event_type == "file_start":
+        if event_type == "file_start":
             print(
-                f"{bold}{kw['rel_path']}{reset}"
-                f"  {dim}{kw['num_violations']} violation(s):"
-                f" {', '.join(kw['rule_ids'])}{reset}"
+                f"{c['bold']}{kw['rel_path']}{c['reset']}"
+                f"  {c['dim']}{kw['num_violations']} violation(s):"
+                f" {', '.join(kw['rule_ids'])}{c['reset']}"
             )
         elif event_type == "iteration":
-            tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{dim}iteration" f" {kw['iteration']}/{kw['max_iterations']}{reset}")
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            print(
+                f"  {tag}{c['dim']}iteration"
+                f" {kw['iteration']}/{kw['max_iterations']}{c['reset']}"
+            )
         elif event_type == "tool_call":
             tool_args = kw.get("arguments", {})
             arg_summary = ""
@@ -593,22 +590,28 @@ def _run_fix(args):
                 if len(val) > 40:
                     val = val[:37] + "..."
                 arg_summary = val
-            tag = f"{dim}[{kw['rel_path']}]{reset} "
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
             print(f"  {tag}{kw['name']}({arg_summary})")
         elif event_type == "retry":
-            tag = f"{dim}[{kw['rel_path']}]{reset} "
-            print(f"  {tag}{yellow}{kw['remaining']} violation(s)" f" remain, retrying...{reset}")
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+            print(
+                f"  {tag}{c['yellow']}{kw['remaining']} violation(s)"
+                f" remain, retrying...{c['reset']}"
+            )
         elif event_type == "file_done":
             remaining = kw.get("remaining", 0)
             changed = kw.get("changed", False)
-            tag = f"{dim}[{kw['rel_path']}]{reset} "
+            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
             if not changed:
-                print(f"  {tag}{yellow}no changes{reset}")
+                print(f"  {tag}{c['yellow']}no changes{c['reset']}")
             elif remaining == 0:
-                print(f"  {tag}{green}✓ all {kw['num_violations']}" f" violation(s) fixed{reset}")
+                print(
+                    f"  {tag}{c['green']}✓ all {kw['num_violations']}"
+                    f" violation(s) fixed{c['reset']}"
+                )
             else:
                 fixed = kw["num_violations"] - remaining
-                print(f"  {tag}{red}{fixed} fixed," f" {remaining} failed{reset}")
+                print(f"  {tag}{c['red']}{fixed} fixed," f" {remaining} failed{c['reset']}")
             print()
 
     max_workers = args.workers or config.llm.max_workers
@@ -647,44 +650,28 @@ def _run_fix(args):
         _teardown_scroll_region()
 
     if not result.success:
-        print(f"\n{red}LLM fix did not improve violations" f" — changes reverted.{reset}")
+        print(f"\n{c['red']}LLM fix did not improve violations" f" — changes reverted.{c['reset']}")
         sys.exit(1)
 
     if not result.diffs and not result.files_modified:
-        print(f"{green}No fixable violations found.{reset}")
+        print(f"{c['green']}No fixable violations found.{c['reset']}")
         sys.exit(0)
 
     label = "Dry-run results" if dry_run else "Results"
-    print(f"\n{bold}{label}{reset}")
+    print(f"\n{c['bold']}{label}{c['reset']}")
     print(
-        f"  {green}{result.violations_fixed} fixed{reset}"
-        f" {dim}of {result.violations_before}{reset}"
+        f"  {c['green']}{result.violations_fixed} fixed{c['reset']}"
+        f" {c['dim']}of {result.violations_before}{c['reset']}"
     )
     if result.violations_after > 0:
-        print(f"  {yellow}{result.violations_after} remaining{reset}")
+        print(f"  {c['yellow']}{result.violations_after} remaining{c['reset']}")
     if dry_run:
-        print(f"  {yellow}dry-run — no files were modified{reset}")
+        print(f"  {c['yellow']}dry-run — no files were modified{c['reset']}")
     else:
         print(f"  {len(result.files_modified)} file(s) modified")
 
-    usage = result.total_usage
-    total_tokens = usage.prompt_tokens + usage.completion_tokens
-    print(f"  {dim}~{total_tokens:,} tokens{reset}")
-
-    if result.diffs:
-        print(f"\n{bold}Changes{reset}")
-        print(f"{dim}{'─' * 60}{reset}")
-        for diff_text in result.diffs.values():
-            for line in diff_text.splitlines():
-                if line.startswith("+") and not line.startswith("+++"):
-                    print(f"{green}{line}{reset}")
-                elif line.startswith("-") and not line.startswith("---"):
-                    print(f"{red}{line}{reset}")
-                elif line.startswith("@@"):
-                    print(f"{cyan}{line}{reset}")
-                else:
-                    print(line)
-        print(f"{dim}{'─' * 60}{reset}")
+    _print_token_usage(result.total_usage, c, indent="  ")
+    _print_colored_diff(result.diffs, c, header="Changes", separator=True)
 
     sys.exit(0)
 

@@ -51,6 +51,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - [Autofixing](#autofixing)
   - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
   - [LLM-Powered Fixes (`--fix --llm`)](#llm-powered-fixes---fix---llm)
+  - [Standalone Fix Command (`skillsaw fix`)](#standalone-fix-command-skillsaw-fix)
 - [Custom Rules](#custom-rules)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
@@ -393,7 +394,7 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 ### Content Intelligence
 
-14 rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -468,6 +469,21 @@ skillsaw lint --fix --llm --model openrouter/minimax/minimax-m1
 The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
+
+### Standalone Fix Command (`skillsaw fix`)
+
+For more control over LLM fixes, use the standalone `fix` subcommand:
+
+```bash
+skillsaw fix --llm                          # Fix with default model
+skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw fix --llm --all                    # Include info-level violations
+skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
+skillsaw fix --llm --max-iterations 10      # Max iterations per file
+skillsaw fix --llm --dry-run                # Preview changes
+```
+
+This provides a richer terminal UI with progress bars, per-file ETA, and detailed tool call logging. Use `skillsaw fix --llm` for interactive development; use `skillsaw lint --fix --llm` for CI or scripted workflows.
 
 ## Custom Rules
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Set
 import json
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +85,9 @@ class RepositoryContext:
             self.root_path / ".cursorrules"
         ).exists():
             formats.add(HAS_CURSOR)
-        if (self.root_path / ".github" / "copilot-instructions.md").exists() or any(
-            self.root_path.glob("**/.instructions.md")
-        ):
+        if (
+            self.root_path / ".github" / "copilot-instructions.md"
+        ).exists() or self._has_instructions_md():
             formats.add(HAS_COPILOT)
         if (self.root_path / "GEMINI.md").exists():
             formats.add(HAS_GEMINI)
@@ -97,6 +98,28 @@ class RepositoryContext:
         if (self.root_path / "CLAUDE.md").exists():
             formats.add(HAS_CLAUDE_MD)
         return formats
+
+    _WALK_SKIP_DIRS = frozenset(
+        {
+            ".git",
+            ".hg",
+            ".svn",
+            "node_modules",
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".tox",
+            ".mypy_cache",
+        }
+    )
+
+    def _has_instructions_md(self) -> bool:
+        """Walk the repo looking for .instructions.md, skipping heavy directories."""
+        for dirpath, dirnames, filenames in os.walk(self.root_path):
+            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
+            if ".instructions.md" in filenames:
+                return True
+        return False
 
     def _detect_type(self) -> RepositoryType:
         """Detect the type of repository"""

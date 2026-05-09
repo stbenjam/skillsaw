@@ -18,12 +18,23 @@ def read_text(file_path: Path) -> Optional[str]:
         return None
 
 
+_extra_caches = []
+
+
+def register_cache(func):
+    """Register an lru_cache-decorated function for bulk invalidation."""
+    _extra_caches.append(func)
+    return func
+
+
 def invalidate_read_caches():
     """Clear all file-reading caches. Call after modifying files on disk."""
     read_text.cache_clear()
     read_json.cache_clear()
     frontmatter_key_line.cache_clear()
     heading_line.cache_clear()
+    for cache in _extra_caches:
+        cache.cache_clear()
 
 
 @lru_cache(maxsize=512)

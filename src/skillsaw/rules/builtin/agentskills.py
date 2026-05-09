@@ -11,7 +11,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line
+from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line, register_cache
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
@@ -29,6 +29,7 @@ def _to_kebab(name: str) -> str:
     return s
 
 
+@register_cache
 @lru_cache(maxsize=512)
 def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
     """
