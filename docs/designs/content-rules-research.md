@@ -5,8 +5,7 @@ building blocks (skills, instructions, etc.). Each rule is grounded in published
 research on LLM behavior, prompt engineering best practices, or established
 software engineering principles.
 
-This document explains **why each rule exists**, what research supports it, and
-how `content-instruction-budget` differs from `context-budget`.
+This document explains **why each rule exists**, and what research supports it.
 
 ---
 
