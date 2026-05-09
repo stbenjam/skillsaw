@@ -423,6 +423,7 @@ def _run_fix(args):
         if not is_tty or no_color:
             return
         sys.stdout.write(f"\033[1;{term_rows - 1}r")
+        sys.stdout.write(f"\033[2J")
         sys.stdout.write(f"\033[1;1H")
         sys.stdout.flush()
 
