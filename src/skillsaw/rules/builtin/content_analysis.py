@@ -7,9 +7,9 @@ in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
@@ -116,20 +116,6 @@ _CRITICAL_KEYWORDS = re.compile(
 )
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)", re.MULTILINE)
-
-_SECRET_PATTERNS = [
-    (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
-    (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
-    (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
-    (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
-    (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
-    (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
-    (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
-    (r"\bxoxb-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack bot token"),
-    (r"\bxoxp-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack user token"),
-    (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", "Hardcoded password"),
-    (r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded API key"),
-]
 
 
 def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
@@ -265,8 +251,8 @@ class TautologicalDetector:
         results: List[TautologicalMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
             for pattern, reason in _TAUTOLOGICAL_PHRASES:
-                if re.search(pattern, line, re.IGNORECASE):
-                    m = re.search(pattern, line, re.IGNORECASE)
+                m = re.search(pattern, line, re.IGNORECASE)
+                if m:
                     results.append(TautologicalMatch(line_num, m.group(), reason))
         return results
 

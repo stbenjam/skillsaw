@@ -7,7 +7,7 @@ instruction file formats equally.
 
 import re
 from pathlib import Path
-from typing import List, Set
+from typing import Dict, List, Set
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
@@ -118,7 +118,7 @@ class ContentTautologicalRule(Rule):
         violations: List[RuleViolation],
     ) -> List[AutofixResult]:
         results = []
-        files_to_fix: dict[Path, List[int]] = {}
+        files_to_fix: Dict[Path, List[int]] = {}
         for v in violations:
             if v.file_path and v.line:
                 files_to_fix.setdefault(v.file_path, []).append(v.line)
@@ -210,7 +210,7 @@ class ContentRedundantWithToolingRule(Rule):
         violations: List[RuleViolation],
     ) -> List[AutofixResult]:
         results = []
-        files_to_fix: dict[Path, List[int]] = {}
+        files_to_fix: Dict[Path, List[int]] = {}
         for v in violations:
             if v.file_path and v.line:
                 files_to_fix.setdefault(v.file_path, []).append(v.line)
@@ -742,8 +742,8 @@ class ContentCrossFileConsistencyRule(Rule):
             return []
 
         violations = []
-        all_commands: dict[Path, Set[str]] = {}
-        all_tech: dict[Path, Set[str]] = {}
+        all_commands: Dict[Path, Set[str]] = {}
+        all_tech: Dict[Path, Set[str]] = {}
 
         for path in files:
             body = _get_body(path)
