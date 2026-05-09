@@ -36,10 +36,12 @@ class LLMEngine:
         provider: CompletionProvider,
         tools: list,
         config: Optional[LLMConfig] = None,
+        on_event: Optional[Any] = None,
     ):
         self._provider = provider
         self._tools = {t.name: t for t in tools}
         self._config = config or LLMConfig()
+        self._on_event = on_event
         self._messages: List[Dict[str, Any]] = []
         self._total_usage = TokenUsage(0, 0)
 
@@ -80,6 +82,12 @@ class LLMEngine:
         for _ in range(self._config.max_iterations):
             iterations += 1
             logger.debug("Iteration %d/%d", iterations, self._config.max_iterations)
+            if self._on_event:
+                self._on_event(
+                    "iteration",
+                    iteration=iterations,
+                    max_iterations=self._config.max_iterations,
+                )
             total_tokens = self._total_usage.prompt_tokens + self._total_usage.completion_tokens
             if total_tokens >= self._config.max_total_tokens:
                 return LLMResult(
@@ -140,14 +148,14 @@ class LLMEngine:
             self._messages.append(assistant_msg)
 
             for tc in result.tool_calls:
+                args_dict = tc.arguments if isinstance(tc.arguments, dict) else {}
                 logger.debug(
                     "  Tool: %s(%s)",
                     tc.name,
-                    ", ".join(
-                        f"{k}={v!r}"
-                        for k, v in (tc.arguments.items() if isinstance(tc.arguments, dict) else [])
-                    ),
+                    ", ".join(f"{k}={v!r}" for k, v in args_dict.items()),
                 )
+                if self._on_event:
+                    self._on_event("tool_call", name=tc.name, arguments=args_dict)
                 tool_result = self._dispatch_tool(tc)
                 all_tool_calls.append(
                     ToolCallRecord(

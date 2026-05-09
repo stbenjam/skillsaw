@@ -412,25 +412,46 @@ def _run_fix(args):
         print(f"{green}No fixable violations found.{reset}")
         sys.exit(0)
 
-    def _progress_bar(current, total, width=30):
+    def _progress_bar(current, total, width=20):
         filled = int(width * current / total) if total else 0
         bar = "█" * filled + "░" * (width - filled)
         return f"{dim}[{reset}{cyan}{bar}{reset}{dim}]{reset}"
 
-    def _progress(file_idx, file_count, rel_path, num_violations, done=False):
-        if done:
-            return
-        bar = _progress_bar(file_idx - 1, file_count)
-        status = f"  {bar} {dim}{file_idx}/{file_count}{reset}  {rel_path}"
-        if is_tty:
-            print(f"\r{status:{term_width}}", end="", file=sys.stderr, flush=True)
-        else:
-            print(status, file=sys.stderr)
+    def _on_event(event_type, **kw):
+        if event_type == "file_start":
+            bar = _progress_bar(kw["file_idx"] - 1, kw["file_count"])
+            print(f"{bar} {bold}{kw['file_idx']}/{kw['file_count']}{reset}" f"  {kw['rel_path']}")
+            print(
+                f"  {dim}{kw['num_violations']} violation(s):"
+                f" {', '.join(kw['rule_ids'])}{reset}"
+            )
+        elif event_type == "iteration":
+            print(f"  {dim}iteration {kw['iteration']}/{kw['max_iterations']}{reset}")
+        elif event_type == "tool_call":
+            args = kw.get("arguments", {})
+            arg_summary = ""
+            if "path" in args:
+                arg_summary = str(args["path"])
+            elif args:
+                first_key = next(iter(args))
+                val = str(args[first_key])
+                if len(val) > 40:
+                    val = val[:37] + "..."
+                arg_summary = val
+            print(f"  {dim}├{reset} {kw['name']}({arg_summary})")
+        elif event_type == "file_done":
+            remaining = kw.get("remaining", 0)
+            changed = kw.get("changed", False)
+            if not changed:
+                print(f"  {yellow}└ no changes{reset}")
+            elif remaining == 0:
+                print(f"  {green}└ ✓ all {kw['num_violations']} " f"violation(s) fixed{reset}")
+            else:
+                fixed = kw["num_violations"] - remaining
+                print(f"  {yellow}└ {fixed} fixed, " f"{remaining} remaining{reset}")
+            print()
 
-    result = linter.llm_fix(provider, callback=_progress, min_severity=min_severity)
-
-    if is_tty:
-        print("\r" + " " * term_width + "\r", end="", file=sys.stderr, flush=True)
+    result = linter.llm_fix(provider, callback=_on_event, min_severity=min_severity)
 
     if not result.success:
         print(f"\n{red}LLM fix did not improve violations — changes reverted.{reset}")

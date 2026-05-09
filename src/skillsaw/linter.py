@@ -289,7 +289,15 @@ class Linter:
             )
 
             if callback:
-                callback(file_idx, file_count, rel_path, len(file_violations))
+                rules_for_file = sorted({v.rule_id for v in file_violations})
+                callback(
+                    "file_start",
+                    file_idx=file_idx,
+                    file_count=file_count,
+                    rel_path=rel_path,
+                    num_violations=len(file_violations),
+                    rule_ids=rules_for_file,
+                )
 
             rule_prompts = set()
             for v in file_violations:
@@ -329,7 +337,17 @@ class Linter:
                 DiffTool(self.context.root_path, originals),
             ]
 
-            engine = LLMEngine(provider, tools, engine_config)
+            def _on_engine_event(event_type, **kwargs):
+                if callback:
+                    callback(
+                        event_type,
+                        file_idx=file_idx,
+                        file_count=file_count,
+                        rel_path=rel_path,
+                        **kwargs,
+                    )
+
+            engine = LLMEngine(provider, tools, engine_config, on_event=_on_engine_event)
             result = engine.run(
                 system_prompt=system_prompt,
                 user_message=f"Please fix the violations in {rel_path}.",
@@ -338,6 +356,7 @@ class Linter:
             total_usage.prompt_tokens += result.usage.prompt_tokens
             total_usage.completion_tokens += result.usage.completion_tokens
 
+            changed = False
             if fpath.exists():
                 current = fpath.read_text(encoding="utf-8")
                 if fpath in originals and current != originals[fpath]:
@@ -351,9 +370,36 @@ class Linter:
                     if diff_text:
                         all_diffs[fpath] = diff_text
                         files_modified.append(fpath)
+                        changed = True
+
+            remaining = 0
+            if changed:
+                failed_rule_ids = {v.rule_id for v in file_violations}
+                failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
+                for rule in failed_rules:
+                    try:
+                        re_violations = rule.check(self.context)
+                        remaining += sum(
+                            1
+                            for v in re_violations
+                            if v.file_path
+                            and v.file_path.resolve() == fpath
+                            and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
+                        )
+                    except Exception:
+                        pass
 
             if callback:
-                callback(file_idx, file_count, rel_path, len(file_violations), done=True)
+                callback(
+                    "file_done",
+                    file_idx=file_idx,
+                    file_count=file_count,
+                    rel_path=rel_path,
+                    num_violations=len(file_violations),
+                    iterations=result.iterations,
+                    remaining=remaining,
+                    changed=changed,
+                )
 
         after_violations = self.run()
         after_llm = [
