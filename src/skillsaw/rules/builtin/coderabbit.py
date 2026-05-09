@@ -85,6 +85,26 @@ def _find_nth_key_line(raw: str, key: str, n: int) -> Optional[int]:
     return None
 
 
+def _find_nth_list_item_key_line(raw: str, key: str, n: int, after_line: int = 0) -> Optional[int]:
+    """Find the *n*-th (0-based) YAML list-item key (``- key:``) after *after_line*.
+
+    In YAML sequences the first key of each item is prefixed with ``- ``,
+    e.g. ``  - name: value``.  The standard ``_find_nth_key_line`` helper
+    doesn't match these because ``-`` is not whitespace.  This variant
+    matches both ``- key:`` and bare ``key:`` lines.
+    """
+    pattern = re.compile(rf"^\s*-\s+{re.escape(key)}\s*:")
+    count = 0
+    for i, line in enumerate(raw.splitlines(), 1):
+        if i <= after_line:
+            continue
+        if pattern.match(line):
+            if count == n:
+                return i
+            count += 1
+    return None
+
+
 def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[int]]]:
     """Extract all instruction text fields from a parsed CodeRabbit config.
 
@@ -135,6 +155,35 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
                     if tool_line is not None:
                         line = _find_yaml_key_line_after(raw, "instructions", tool_line)
                     results.append((f"reviews.tools.{tool_name}.instructions", ti, line))
+
+        # reviews.pre_merge_checks.custom_checks[].instructions
+        pre_merge = reviews.get("pre_merge_checks")
+        if isinstance(pre_merge, dict):
+            custom_checks = pre_merge.get("custom_checks")
+            if isinstance(custom_checks, list):
+                # Find the "custom_checks" key so we only look within it.
+                custom_checks_line = _find_yaml_key_line(raw, "custom_checks") or 0
+                for idx, check in enumerate(custom_checks):
+                    if not isinstance(check, dict):
+                        continue
+                    ci = check.get("instructions")
+                    if isinstance(ci, str) and ci.strip():
+                        check_name = check.get("name", f"[{idx}]")
+                        # Find the nth list-item "- name:" after custom_checks,
+                        # then the "instructions" key following it.
+                        name_line = _find_nth_list_item_key_line(
+                            raw, "name", idx, after_line=custom_checks_line
+                        )
+                        line = None
+                        if name_line is not None:
+                            line = _find_yaml_key_line_after(raw, "instructions", name_line)
+                        results.append(
+                            (
+                                f"reviews.pre_merge_checks.custom_checks[{check_name}].instructions",
+                                ci,
+                                line,
+                            )
+                        )
 
     # chat.instructions
     chat = data.get("chat")

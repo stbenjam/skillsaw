@@ -148,6 +148,69 @@ class TestCoderabbitInstructionsRule:
         assert len(violations) == 1
         assert "chat.instructions" in violations[0].message
 
+    def test_weak_language_in_custom_check_instructions(self, temp_dir):
+        content = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Go Error Handling'\n"
+            "        mode: warning\n"
+            "        instructions: 'Maybe check for error handling.'\n"
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 1
+        assert "custom_checks" in violations[0].message
+        assert "Go Error Handling" in violations[0].message
+
+    def test_clean_custom_check_instructions_passes(self, temp_dir):
+        content = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Go Error Handling'\n"
+            "        mode: warning\n"
+            "        instructions: 'Ensure all errors are wrapped with fmt.Errorf.'\n"
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 0
+
+    def test_custom_check_instructions_line_number(self, temp_dir):
+        content = (
+            "language: en-US\n"
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Go Error Handling'\n"
+            "        mode: warning\n"
+            "        instructions: 'Maybe check things.'\n"
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].line == 7
+
+    def test_multiple_custom_checks_with_issues(self, temp_dir):
+        content = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Check A'\n"
+            "        instructions: 'Maybe do A.'\n"
+            "      - name: 'Check B'\n"
+            "        instructions: 'Perhaps do B.'\n"
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 2
+        assert "Check A" in violations[0].message
+        assert "Check B" in violations[1].message
+
     def test_multiple_instruction_fields_with_issues(self, temp_dir):
         content = (
             "reviews:\n"
@@ -304,6 +367,74 @@ class TestExtractInstructions:
 
     def test_non_string_instructions_skipped(self):
         raw = "reviews:\n  instructions:\n    - item1\n    - item2\n"
+        import yaml
+
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 0
+
+    def test_custom_check_instructions(self):
+        raw = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Go Error Handling'\n"
+            "        mode: warning\n"
+            "        instructions: 'Check error handling.'\n"
+            "      - name: 'SQL Injection'\n"
+            "        mode: error\n"
+            "        instructions: 'Prevent SQL injection.'\n"
+        )
+        import yaml
+
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 2
+        assert "Go Error Handling" in result[0][0]
+        assert result[0][1] == "Check error handling."
+        assert "SQL Injection" in result[1][0]
+        assert result[1][1] == "Prevent SQL injection."
+
+    def test_custom_check_instructions_line_numbers(self):
+        raw = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Go Error Handling'\n"
+            "        instructions: 'Check error handling.'\n"
+            "      - name: 'SQL Injection'\n"
+            "        instructions: 'Prevent SQL injection.'\n"
+        )
+        import yaml
+
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 2
+        assert result[0][2] == 5  # line of first instructions key
+        assert result[1][2] == 7  # line of second instructions key
+
+    def test_custom_check_empty_instructions_skipped(self):
+        raw = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Check A'\n"
+            "        instructions: ''\n"
+        )
+        import yaml
+
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 0
+
+    def test_custom_check_no_instructions_field(self):
+        raw = (
+            "reviews:\n"
+            "  pre_merge_checks:\n"
+            "    custom_checks:\n"
+            "      - name: 'Check A'\n"
+            "        mode: warning\n"
+        )
         import yaml
 
         data = yaml.safe_load(raw)
