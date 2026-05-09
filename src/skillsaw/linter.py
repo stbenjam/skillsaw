@@ -220,10 +220,13 @@ class Linter:
 
         return applied
 
+    _SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+
     def llm_fix(
         self,
         provider: "CompletionProvider",
         callback: Optional[Callable[[int, List[RuleViolation]], None]] = None,
+        min_severity: Severity = Severity.WARNING,
     ) -> "LLMFixResult":
         from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
         from .llm.engine import LLMEngine
@@ -232,10 +235,13 @@ class Linter:
 
         import difflib
 
+        threshold = self._SEVERITY_ORDER[min_severity]
         violations = self.run()
         llm_rules = {r.rule_id: r for r in self.rules if r.llm_fix_prompt is not None}
         llm_violations = [
-            v for v in violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+            v
+            for v in violations
+            if v.rule_id in llm_rules and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
         ]
 
         if not llm_violations:
@@ -348,7 +354,9 @@ class Linter:
 
         after_violations = self.run()
         after_llm = [
-            v for v in after_violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+            v
+            for v in after_violations
+            if v.rule_id in llm_rules and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
         ]
         violations_after = len(after_llm)
 

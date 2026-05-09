@@ -142,6 +142,11 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Max fix iterations per file (default: 3)",
     )
     fix_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include info-level violations (default: only errors and warnings)",
+    )
+    fix_parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
@@ -373,8 +378,12 @@ def _run_fix(args):
 
     violations = linter.run()
     llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
+    min_severity = Severity.INFO if args.all else Severity.WARNING
     llm_violations = [
-        v for v in violations if v.rule_id in llm_rules and v.severity != Severity.INFO
+        v
+        for v in violations
+        if v.rule_id in llm_rules
+        and Linter._SEVERITY_ORDER.get(v.severity, 99) <= Linter._SEVERITY_ORDER[min_severity]
     ]
 
     print(f"Linting: {args.path}")
@@ -390,7 +399,7 @@ def _run_fix(args):
         rel = path.relative_to(args.path) if path else "?"
         print(f"  ✎ Fixed {rel} ({len(file_violations)} violation(s))")
 
-    result = linter.llm_fix(provider, callback=_progress)
+    result = linter.llm_fix(provider, callback=_progress, min_severity=min_severity)
 
     if not result.success:
         print("LLM fix did not improve violations — changes reverted.")
