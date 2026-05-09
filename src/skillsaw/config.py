@@ -147,6 +147,9 @@ class LinterConfig:
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
                 "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
+                # CodeRabbit config
+                "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
+                "coderabbit-instructions": {"enabled": "auto", "severity": "warning"},
             }
         )
 

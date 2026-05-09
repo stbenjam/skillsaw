@@ -109,6 +109,15 @@ RULE_GROUPS = [
         "[docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) "
         "for the full research basis behind each rule.",
     ),
+    (
+        "CodeRabbit",
+        ["coderabbit-yaml-valid", "coderabbit-instructions"],
+        "Validates `.coderabbit.yaml` config files. Checks YAML syntax and "
+        "scans instruction text fields (`reviews.instructions`, per-path "
+        "instructions, per-tool instructions, `chat.instructions`) for "
+        "content quality issues such as weak/hedge language. Auto-enabled "
+        "when `.coderabbit.yaml` is detected.",
+    ),
 ]
 
 

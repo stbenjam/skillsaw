@@ -426,6 +426,15 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 
+### CodeRabbit
+
+Validates `.coderabbit.yaml` config files. Checks YAML syntax and scans instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) for content quality issues such as weak/hedge language. Auto-enabled when `.coderabbit.yaml` is detected.
+
+| Rule ID | Description | Default Severity |
+|---------|-------------|------------------|
+| `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) |
+| `coderabbit-instructions` | Check .coderabbit.yaml instruction fields for content quality issues | warning (auto) |
+
 <!-- END GENERATED RULES -->
 
 ## Autofixing
