@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, heading_line
 
@@ -101,6 +101,44 @@ class CommandFrontmatterRule(Rule):
                     )
 
         return violations
+
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[AutofixResult]:
+        results: List[AutofixResult] = []
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+            original = v.file_path.read_text(encoding="utf-8")
+            if "Missing frontmatter" in v.message:
+                fixed = f"---\ndescription: \n---\n{original}"
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=v.file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=original,
+                        fixed_content=fixed,
+                        description="Added missing frontmatter with description field",
+                        violations_fixed=[v],
+                    )
+                )
+            elif "Missing 'description'" in v.message and original.startswith("---"):
+                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
+                if fm_match:
+                    fm_end = fm_match.end()
+                    fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
+                    fixed += original[fm_end:]
+                    results.append(
+                        AutofixResult(
+                            rule_id=self.rule_id,
+                            file_path=v.file_path,
+                            confidence=AutofixConfidence.SAFE,
+                            original_content=original,
+                            fixed_content=fixed,
+                            description="Added missing description field to frontmatter",
+                            violations_fixed=[v],
+                        )
+                    )
+        return results
 
 
 class CommandSectionsRule(Rule):
