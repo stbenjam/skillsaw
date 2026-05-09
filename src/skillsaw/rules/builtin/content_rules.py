@@ -852,20 +852,17 @@ class ContentBannedReferencesRule(Rule):
     since = "0.7.0"
 
     _BUILTIN_PATTERNS = [
-        (r"\bgpt-3\.5\b", "gpt-3.5 is deprecated — use gpt-4o-mini or newer"),
+        (r"\bgpt-3\.5\b", "gpt-3.5 is deprecated"),
         (r"\btext-davinci\b", "text-davinci models are retired"),
         (r"\bcode-davinci\b", "code-davinci models are retired"),
-        (r"\bclaude-instant\b", "claude-instant is deprecated — use claude-haiku or newer"),
-        (r"\bclaude-2\b", "claude-2 is deprecated — use claude-sonnet-4 or newer"),
-        (r"\bclaude-v1\b", "claude-v1 is deprecated — use claude-sonnet-4 or newer"),
-        (r"\bclaude-3-opus\b", "claude-3-opus is deprecated — use claude-opus-4 or newer"),
-        (r"\bclaude-3-sonnet\b", "claude-3-sonnet is deprecated — use claude-sonnet-4 or newer"),
-        (r"\bclaude-3-haiku\b", "claude-3-haiku is deprecated — use claude-haiku-4 or newer"),
-        (
-            r"\bclaude-3\.5-sonnet\b",
-            "claude-3.5-sonnet is deprecated — use claude-sonnet-4 or newer",
-        ),
-        (r"\bclaude-3\.5-haiku\b", "claude-3.5-haiku is deprecated — use claude-haiku-4 or newer"),
+        (r"\bclaude-instant\b", "claude-instant is deprecated"),
+        (r"\bclaude-2\b", "claude-2 is deprecated"),
+        (r"\bclaude-v1\b", "claude-v1 is deprecated"),
+        (r"\bclaude-3-opus\b", "claude-3-opus is deprecated"),
+        (r"\bclaude-3-sonnet\b", "claude-3-sonnet is deprecated"),
+        (r"\bclaude-3-haiku\b", "claude-3-haiku is deprecated"),
+        (r"\bclaude-3\.5-sonnet\b", "claude-3.5-sonnet is deprecated"),
+        (r"\bclaude-3\.5-haiku\b", "claude-3.5-haiku is deprecated"),
         (r"\b/v1/complete\b", "/v1/complete is deprecated — use /v1/messages"),
     ]
 

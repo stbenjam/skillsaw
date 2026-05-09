@@ -24,6 +24,10 @@ from skillsaw.rules.builtin.content_rules import (
     ContentInconsistentTerminologyRule,
 )
 
+# Stripe test keys built from parts to avoid triggering GitHub push protection
+_STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
+_STRIPE_RK = "rk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
+
 
 @pytest.fixture
 def temp_dir():
@@ -405,6 +409,77 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert violations[0].line == 3
+
+    @pytest.mark.parametrize(
+        "secret,expected_desc",
+        [
+            ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),
+            ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),
+            ("ASIAIOSFODNN7EXAMPLE", "AWS temporary access key"),
+            ("xoxa-123456789012-abcdefghij", "Slack app token"),
+            ("xoxr-123456789012-abcdefghij", "Slack refresh token"),
+            (_STRIPE_SK, "Stripe secret key"),
+            (_STRIPE_RK, "Stripe restricted key"),
+            ("AIzaSyATESTFAKEKEYDONOTUSE0000000000000", "Google API key"),
+            ("SK00000000000000000000000000000000", "Twilio API key"),
+            (
+                "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijk",
+                "SendGrid API key",
+            ),
+            ("npm_abcdefghijklmnopqrstuvwxyz1234567890", "npm access token"),
+            ("pypi-abcdefghijklmnopqrstuvwxyz", "PyPI API token"),
+            (
+                "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",
+                "JSON Web Token",
+            ),
+            ("-----BEGIN RSA PRIVATE KEY-----", "Private key"),
+            ("-----BEGIN OPENSSH PRIVATE KEY-----", "Private key"),
+            ("secret_key = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded secret key"),
+            ("access_token = 'abcdefghijklmnopqrstuvwxyz'", "Hardcoded access token"),
+        ],
+        ids=[
+            "anthropic",
+            "github-refresh",
+            "aws-temp",
+            "slack-app",
+            "slack-refresh",
+            "stripe-secret",
+            "stripe-restricted",
+            "google",
+            "twilio",
+            "sendgrid",
+            "npm",
+            "pypi",
+            "jwt",
+            "rsa-private-key",
+            "openssh-private-key",
+            "generic-secret-key",
+            "generic-access-token",
+        ],
+    )
+    def test_detects_secret_pattern(self, temp_dir, secret, expected_desc):
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {secret}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert expected_desc in violations[0].message
+
+    def test_no_false_positive_on_env_var_reference(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Set api_key = $OPENAI_API_KEY from environment.\n"
+            "Use `export STRIPE_KEY=...` to configure.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_false_positive_on_short_placeholder(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use sk-YOUR_KEY as the token.\n" "Set password = 'short'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
 
 
 class TestContentBannedReferencesRule:

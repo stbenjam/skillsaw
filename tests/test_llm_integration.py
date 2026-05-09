@@ -261,7 +261,7 @@ FIX_CASES = [
     FixCase(
         rule_id="content-banned-references",
         content="# Config\n\nUse claude-2 for summarization tasks.\nUse gpt-3.5 for classification.\n",
-        fixed_content="# Config\n\nUse claude-sonnet-4 for summarization tasks.\nUse gpt-4o-mini for classification.\n",
+        fixed_content="# Config\n\nUse a current Claude model for summarization tasks.\nUse a current GPT model for classification.\n",
     ),
     FixCase(
         rule_id="content-inconsistent-terminology",
