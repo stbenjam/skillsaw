@@ -29,6 +29,8 @@ Keep your skills sharp. A configurable linter, scaffolding tool, doc generator, 
 - 🤖 **CI-Ready** — GitHub Action posts inline PR comments with automatic deduplication and thread resolution
 - 🐳 **Containerized** — Run via Docker for consistent, isolated linting
 - ⚡ **Fast** — Efficient validation with clear, actionable output
+- 🧠 **Content Intelligence** — 15 rules that analyze instruction file quality: detect weak language, tautological instructions, attention dead zones, secrets, stale references, and more
+- 🔧 **Autofixing** — Deterministic fixes for structural issues (`--fix`) and LLM-powered fixes for content quality (`--fix --llm`) with parallel processing, per-file rollback, and dry-run preview
 
 ## Table of Contents
 
@@ -386,6 +388,39 @@ Warns when instruction and configuration files exceed recommended token limits. 
 | `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
 
 <!-- END GENERATED RULES -->
+
+## Autofixing
+
+skillsaw supports two levels of autofixing:
+
+### Deterministic Fixes (`--fix`)
+
+Safe, pattern-based fixes that run without any external dependencies:
+
+```bash
+skillsaw lint --fix              # Apply safe structural fixes
+```
+
+Structural rules like `command-frontmatter`, `skill-frontmatter`, and `agent-frontmatter` can automatically add missing frontmatter and required fields. These fixes are marked as **SAFE** confidence and applied automatically.
+
+### LLM-Powered Fixes (`--fix --llm`)
+
+Content intelligence rules support LLM-powered fixes that iteratively improve instruction file quality:
+
+```bash
+skillsaw lint --fix --llm        # Fix content violations with LLM
+skillsaw lint --fix --llm --dry-run  # Preview changes without writing
+skillsaw fix --llm --model openrouter/minimax/minimax-m1  # Use a specific model
+```
+
+The LLM fix pipeline:
+- Processes files in parallel with configurable worker count
+- Uses scoped re-linting (only re-checks failed rules per file) for fast iteration
+- Per-file rollback: keeps fixes that improved a file, reverts files that didn't improve
+- Shows elapsed time and ETA in the progress bar
+- Supports `--dry-run` to preview all changes without writing to disk
+
+Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
 ## Custom Rules
 
