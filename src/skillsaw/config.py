@@ -2,13 +2,28 @@
 Configuration management for skillsaw
 """
 
+import os
+
 import yaml
 from pathlib import Path
-from typing import ClassVar, Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Set, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+
+
+@dataclass
+class LLMSettings:
+    model: str = "claude-sonnet-4-20250514"
+    max_iterations: int = 3
+    max_tokens: int = 500_000
+    confirm: bool = True
+
+    def __post_init__(self):
+        env_model = os.environ.get("SKILLSAW_MODEL")
+        if env_model:
+            self.model = env_model
 
 
 @dataclass
@@ -19,6 +34,7 @@ class LinterConfig:
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
     strict: bool = False
+    llm: LLMSettings = field(default_factory=LLMSettings)
 
     @classmethod
     def from_file(cls, config_path: Path) -> "LinterConfig":
@@ -40,11 +56,20 @@ class LinterConfig:
         except (yaml.YAMLError, IOError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
+        llm_data = data.get("llm", {})
+        llm_settings = LLMSettings(
+            model=llm_data.get("model", LLMSettings.model),
+            max_iterations=llm_data.get("max_iterations", LLMSettings.max_iterations),
+            max_tokens=llm_data.get("max_tokens", LLMSettings.max_tokens),
+            confirm=llm_data.get("confirm", LLMSettings.confirm),
+        )
+
         return cls(
             rules=data.get("rules", {}),
             custom_rules=data.get("custom-rules", []),
             exclude_patterns=data.get("exclude", []),
             strict=data.get("strict", False),
+            llm=llm_settings,
         )
 
     @classmethod
@@ -63,8 +88,8 @@ class LinterConfig:
                 # Command format rules
                 "command-naming": {"enabled": True, "severity": "warning"},
                 "command-frontmatter": {"enabled": True, "severity": "error"},
-                "command-sections": {"enabled": True, "severity": "warning"},
-                "command-name-format": {"enabled": True, "severity": "warning"},
+                "command-sections": {"enabled": False, "severity": "warning"},
+                "command-name-format": {"enabled": False, "severity": "warning"},
                 # Marketplace rules (auto-enabled for marketplace repos)
                 "marketplace-json-valid": {"enabled": "auto", "severity": "error"},
                 "marketplace-registration": {"enabled": "auto", "severity": "error"},
@@ -90,28 +115,34 @@ class LinterConfig:
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
                 # Openclaw metadata
                 "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
-                # Instruction file validation (disabled for back-compat; --init enables)
-                "instruction-file-valid": {"enabled": False, "severity": "warning"},
-                "instruction-imports-valid": {"enabled": False, "severity": "warning"},
-                # Context budget (disabled for back-compat; --init enables)
+                # Instruction file validation (auto-enabled when instruction files detected)
+                "instruction-file-valid": {"enabled": "auto", "severity": "warning"},
+                "instruction-imports-valid": {"enabled": "auto", "severity": "warning"},
+                # Context budget (opt-in; checks token limits across skills/commands/files)
                 "context-budget": {"enabled": False, "severity": "warning"},
+                # Content intelligence rules (auto-enabled when instruction files detected)
+                "content-weak-language": {"enabled": "auto", "severity": "warning"},
+                "content-dead-references": {"enabled": "auto", "severity": "warning"},
+                "content-tautological": {"enabled": "auto", "severity": "warning"},
+                "content-critical-position": {"enabled": "auto", "severity": "info"},
+                "content-redundant-with-tooling": {"enabled": "auto", "severity": "warning"},
+                "content-instruction-budget": {"enabled": "auto", "severity": "warning"},
+                "content-readme-overlap": {"enabled": "auto", "severity": "info"},
+                "content-negative-only": {"enabled": "auto", "severity": "warning"},
+                "content-section-length": {"enabled": "auto", "severity": "info"},
+                "content-contradiction": {"enabled": "auto", "severity": "warning"},
+                "content-hook-candidate": {"enabled": "auto", "severity": "info"},
+                "content-actionability-score": {"enabled": "auto", "severity": "info"},
+                "content-cognitive-chunks": {"enabled": "auto", "severity": "info"},
+                "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
+                "content-cross-file-consistency": {"enabled": "auto", "severity": "warning"},
             }
         )
 
-    _INIT_OVERRIDES: ClassVar[Dict[str, Dict[str, Any]]] = {
-        "instruction-file-valid": {"enabled": True},
-        "instruction-imports-valid": {"enabled": True},
-        "context-budget": {"enabled": True},
-    }
-
     @classmethod
     def for_init(cls) -> "LinterConfig":
-        """Config for --init: like default() but enables opt-in rules."""
-        config = cls.default()
-        for rule_id, overrides in cls._INIT_OVERRIDES.items():
-            if rule_id in config.rules:
-                config.rules[rule_id].update(overrides)
-        return config
+        """Config for --init: identical to default() now that all rules use auto-detection."""
+        return cls.default()
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
@@ -129,7 +160,13 @@ class LinterConfig:
         merged = {**defaults, **overrides}
         return merged
 
-    def is_rule_enabled(self, rule_id: str, context: "RepositoryContext", repo_types=None) -> bool:
+    def is_rule_enabled(
+        self,
+        rule_id: str,
+        context: "RepositoryContext",
+        repo_types=None,
+        formats: Optional[Set[str]] = None,
+    ) -> bool:
         """
         Check if a rule is enabled for the given context
 
@@ -137,6 +174,7 @@ class LinterConfig:
             rule_id: Rule identifier
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
+            formats: Set of detected format constants the rule requires (None = all)
 
         Returns:
             True if rule should run
@@ -145,9 +183,13 @@ class LinterConfig:
         enabled = rule_config.get("enabled", True)
 
         if enabled == "auto":
-            if repo_types is None:
+            if repo_types is None and formats is None:
                 return True
-            return context.repo_type in repo_types
+            if repo_types is not None and context.repo_type in repo_types:
+                return True
+            if formats is not None and formats & context.detected_formats:
+                return True
+            return False
 
         return bool(enabled)
 

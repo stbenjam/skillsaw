@@ -34,12 +34,12 @@ rules:
 
   # Command files should have Name, Synopsis, Description, and Implementation sections
   command-sections:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Command Name section should be 'plugin-name:command-name'
   command-name-format:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Marketplace.json must be valid JSON with required fields
@@ -134,6 +134,81 @@ rules:
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
+    enabled: true
+    severity: warning
+
+  # Detect hedging, vague, and non-actionable language in instruction files
+  content-weak-language:
+    enabled: true
+    severity: warning
+
+  # Detect broken file paths, npm scripts, and Makefile targets in instruction files
+  content-dead-references:
+    enabled: true
+    severity: warning
+
+  # Detect tautological instructions that the model already follows by default
+  content-tautological:
+    enabled: true
+    severity: warning
+
+  # Detect critical instructions in the middle of files where LLM attention is lowest
+  content-critical-position:
+    enabled: true
+    severity: info
+
+  # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
+  content-redundant-with-tooling:
+    enabled: true
+    severity: warning
+
+  # Check if total instruction count across all files exceeds LLM instruction budget (~150)
+  content-instruction-budget:
+    enabled: true
+    severity: warning
+
+  # Detect instruction file sections that significantly overlap with README.md content
+  content-readme-overlap:
+    enabled: true
+    severity: info
+
+  # Detect prohibitions without a positive alternative (agent has no path forward)
+  content-negative-only:
+    enabled: true
+    severity: warning
+
+  # Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)
+  content-section-length:
+    enabled: true
+    severity: info
+
+  # Detect likely contradictions within instruction files using keyword-pair heuristics
+  content-contradiction:
+    enabled: true
+    severity: warning
+
+  # Detect instructions that should be automated as hooks instead of prose instructions
+  content-hook-candidate:
+    enabled: true
+    severity: info
+
+  # Score instruction files on actionability (verb density, commands, file references)
+  content-actionability-score:
+    enabled: true
+    severity: info
+
+  # Check that instruction files are organized into cognitive chunks with headings
+  content-cognitive-chunks:
+    enabled: true
+    severity: info
+
+  # Detect potential API keys, tokens, and passwords in instruction files
+  content-embedded-secrets:
+    enabled: true
+    severity: error
+
+  # Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
+  content-cross-file-consistency:
     enabled: true
     severity: warning
 

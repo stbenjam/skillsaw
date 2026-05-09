@@ -7,7 +7,7 @@ import re
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
@@ -19,6 +19,8 @@ _IMPORT_RE = re.compile(r"^\s*@(\S+)")
 
 class InstructionFileValidRule(Rule):
     """Check that instruction files are valid UTF-8 and non-empty"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     @property
     def rule_id(self) -> str:
@@ -57,6 +59,8 @@ class InstructionFileValidRule(Rule):
 
 class InstructionImportsValidRule(Rule):
     """Check that @import references in instruction files resolve to existing paths"""
+
+    formats = ALL_INSTRUCTION_FORMATS
 
     @property
     def rule_id(self) -> str:

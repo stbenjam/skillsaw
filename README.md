@@ -317,8 +317,8 @@ These rules validate skills against the [agentskills.io specification](https://a
 |---------|-------------|------------------|
 | `command-naming` | Command files should use kebab-case naming | warning |
 | `command-frontmatter` | Command files must have valid frontmatter with description | error |
-| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning |
-| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning |
+| `command-sections` | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) |
+| `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) |
 
 ### Marketplace
 
