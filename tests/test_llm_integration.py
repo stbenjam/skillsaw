@@ -359,6 +359,7 @@ class TestLLMFixLive:
         _make_dot_claude_repo(tmp_path, content)
 
         config = LinterConfig.default()
+        config.llm.model = os.environ.get("SKILLSAW_MODEL", "openrouter/minimax/minimax-m2.7")
         context = RepositoryContext(tmp_path)
         linter = Linter(context, config)
 
