@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import List
 
-from .rule import Rule, RuleViolation, Severity
+from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
 
@@ -128,3 +128,64 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
         return violations
+
+    def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
+        """
+        Run all enabled rules and attempt to fix violations.
+
+        Returns:
+            Tuple of (remaining violations, autofix results)
+        """
+        all_violations = self._validate_config()
+        all_fixes: List[AutofixResult] = []
+
+        for rule in self.rules:
+            try:
+                rule_violations = rule.check(self.context)
+            except Exception as e:
+                print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                continue
+
+            if rule_violations and rule.supports_autofix:
+                try:
+                    fixes = rule.fix(self.context, rule_violations)
+                    all_fixes.extend(fixes)
+                    fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
+                    remaining = [v for v in rule_violations if id(v) not in fixed_violations]
+                    all_violations.extend(remaining)
+                except Exception as e:
+                    print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
+                    all_violations.extend(rule_violations)
+            else:
+                all_violations.extend(rule_violations)
+
+        return all_violations, all_fixes
+
+    @staticmethod
+    def apply_fixes(
+        fixes: List[AutofixResult],
+        confidence: AutofixConfidence = AutofixConfidence.SAFE,
+    ) -> List[AutofixResult]:
+        """
+        Write fix results to disk.
+
+        Args:
+            fixes: Autofix results to apply
+            confidence: Minimum confidence level to apply (SAFE = only safe,
+                        SUGGEST = safe + suggest)
+
+        Returns:
+            List of fixes that were actually applied
+        """
+        applied: List[AutofixResult] = []
+        allowed = {AutofixConfidence.SAFE}
+        if confidence == AutofixConfidence.SUGGEST:
+            allowed.add(AutofixConfidence.SUGGEST)
+
+        for fix in fixes:
+            if fix.confidence not in allowed:
+                continue
+            fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+            applied.append(fix)
+
+        return applied

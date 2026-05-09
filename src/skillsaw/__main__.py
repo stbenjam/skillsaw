@@ -83,6 +83,11 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
     lint_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Automatically fix violations where possible (applies safe fixes)",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -213,7 +218,23 @@ def _run_lint(args):
         config.strict = True
 
     linter = Linter(context, config)
-    violations = linter.run()
+
+    if args.fix:
+        violations, fixes = linter.fix()
+        applied = linter.apply_fixes(fixes)
+        if applied and args.fmt == "text":
+            print(f"Fixed {len(applied)} issue(s):")
+            for fix in applied:
+                print(f"  ✓ [{fix.file_path}] {fix.description}")
+            print()
+        suggested = [f for f in fixes if f not in applied]
+        if suggested and args.fmt == "text":
+            print(f"Suggested fixes ({len(suggested)} — review before applying):")
+            for fix in suggested:
+                print(f"  ? [{fix.file_path}] {fix.description}")
+            print()
+    else:
+        violations = linter.run()
 
     stdout_output = format_report(
         args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
