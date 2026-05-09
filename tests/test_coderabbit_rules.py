@@ -1,7 +1,7 @@
 """Tests for .coderabbit.yaml linting rules."""
 
 from skillsaw.config import LinterConfig
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.coderabbit import (
     CoderabbitYamlValidRule,
@@ -19,7 +19,7 @@ class TestCoderabbitYamlValidRule:
         rule = CoderabbitYamlValidRule()
         assert rule.rule_id == "coderabbit-yaml-valid"
         assert rule.default_severity() == Severity.ERROR
-        assert rule.repo_types is None
+        assert rule.repo_types == {RepositoryType.CODERABBIT}
 
     def test_no_file_passes(self, temp_dir):
         context = RepositoryContext(temp_dir)
@@ -83,7 +83,7 @@ class TestCoderabbitInstructionsRule:
         rule = CoderabbitInstructionsRule()
         assert rule.rule_id == "coderabbit-instructions"
         assert rule.default_severity() == Severity.WARNING
-        assert rule.repo_types is None
+        assert rule.repo_types == {RepositoryType.CODERABBIT}
 
     def test_no_file_passes(self, temp_dir):
         context = RepositoryContext(temp_dir)
@@ -448,6 +448,52 @@ class TestExtractInstructions:
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-type detection
+# ---------------------------------------------------------------------------
+
+
+class TestCoderabbitMultiType:
+    def test_coderabbit_rules_fire_alongside_dot_claude(self, temp_dir):
+        """CodeRabbit rules should fire when .coderabbit.yaml is present alongside .claude/"""
+        claude_dir = temp_dir / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "commands").mkdir()
+        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  instructions: 'Maybe be strict.'\n")
+
+        context = RepositoryContext(temp_dir)
+        assert RepositoryType.CODERABBIT in context.repo_types
+        assert RepositoryType.DOT_CLAUDE in context.repo_types
+
+        # The coderabbit rules should still fire
+        violations = CoderabbitInstructionsRule().check(context)
+        assert len(violations) == 1
+        assert "weak" in violations[0].message.lower() or "hedge" in violations[0].message.lower()
+
+    def test_coderabbit_rules_auto_enabled_with_coderabbit_type(self, temp_dir):
+        """When repo has CODERABBIT type, auto-enabled coderabbit rules should fire"""
+        (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+        context = RepositoryContext(temp_dir)
+        config = LinterConfig.default()
+
+        assert config.is_rule_enabled(
+            "coderabbit-yaml-valid",
+            context,
+            {RepositoryType.CODERABBIT},
+        )
+
+    def test_coderabbit_rules_not_enabled_without_coderabbit_type(self, temp_dir):
+        """Without .coderabbit.yaml, auto-enabled coderabbit rules should not fire"""
+        context = RepositoryContext(temp_dir)
+        config = LinterConfig.default()
+
+        assert not config.is_rule_enabled(
+            "coderabbit-yaml-valid",
+            context,
+            {RepositoryType.CODERABBIT},
+        )
 
 
 # ---------------------------------------------------------------------------

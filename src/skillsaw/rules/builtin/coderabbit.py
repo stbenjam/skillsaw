@@ -15,7 +15,7 @@ from typing import Any, List, Optional, Tuple
 import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.utils import read_text
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,8 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
 class CoderabbitYamlValidRule(Rule):
     """Validate that .coderabbit.yaml is valid YAML"""
 
+    repo_types = {RepositoryType.CODERABBIT}
+
     @property
     def rule_id(self) -> str:
         return "coderabbit-yaml-valid"
@@ -265,6 +267,8 @@ class CoderabbitYamlValidRule(Rule):
 
 class CoderabbitInstructionsRule(Rule):
     """Check instruction text in .coderabbit.yaml for content quality issues"""
+
+    repo_types = {RepositoryType.CODERABBIT}
 
     @property
     def rule_id(self) -> str:

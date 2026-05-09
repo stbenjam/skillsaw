@@ -31,7 +31,7 @@ class MarketplaceJsonValidRule(Rule):
         violations = []
 
         # Only check if marketplace exists
-        if context.repo_type != RepositoryType.MARKETPLACE:
+        if RepositoryType.MARKETPLACE not in context.repo_types:
             return violations
 
         marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
