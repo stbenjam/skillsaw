@@ -102,18 +102,6 @@ class TestContentTautologicalRule:
         violations = ContentTautologicalRule().check(context)
         assert len(violations) == 0
 
-    def test_autofix_removes_tautological_lines(self, temp_dir):
-        content = "# Rules\nAlways write clean code.\nUse 4-space indentation.\nBe helpful.\n"
-        (temp_dir / "CLAUDE.md").write_text(content)
-        context = RepositoryContext(temp_dir)
-        rule = ContentTautologicalRule()
-        violations = rule.check(context)
-        assert len(violations) >= 2
-        fixes = rule.fix(context, violations)
-        assert len(fixes) >= 1
-        assert "write clean code" not in fixes[0].fixed_content.lower()
-        assert "4-space" in fixes[0].fixed_content
-
 
 class TestContentCriticalPositionRule:
     def test_rule_metadata(self):
@@ -173,17 +161,6 @@ class TestContentRedundantWithToolingRule:
         context = RepositoryContext(temp_dir)
         violations = ContentRedundantWithToolingRule().check(context)
         assert len(violations) == 0
-
-    def test_autofix_removes_redundant(self, temp_dir):
-        (temp_dir / ".editorconfig").write_text("[*]\nindent_size = 4\n")
-        content = "# Style\nUse 4 spaces for indentation.\nFocus on readability.\n"
-        (temp_dir / "CLAUDE.md").write_text(content)
-        context = RepositoryContext(temp_dir)
-        rule = ContentRedundantWithToolingRule()
-        violations = rule.check(context)
-        fixes = rule.fix(context, violations)
-        if fixes:
-            assert "readability" in fixes[0].fixed_content
 
 
 class TestContentInstructionBudgetRule:

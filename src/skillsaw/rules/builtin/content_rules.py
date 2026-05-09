@@ -7,9 +7,9 @@ instruction file formats equally.
 
 import re
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import List, Set
 
-from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
@@ -118,40 +118,6 @@ class ContentTautologicalRule(Rule):
                 )
         return violations
 
-    def fix(
-        self,
-        context: RepositoryContext,
-        violations: List[RuleViolation],
-    ) -> List[AutofixResult]:
-        results = []
-        files_to_fix: Dict[Path, List[int]] = {}
-        for v in violations:
-            if v.file_path and v.line:
-                files_to_fix.setdefault(v.file_path, []).append(v.line)
-
-        for file_path, lines_to_remove in files_to_fix.items():
-            content = read_text(file_path)
-            if content is None:
-                continue
-            all_lines = content.splitlines(keepends=True)
-            remove_set = set(lines_to_remove)
-            new_lines = [line for i, line in enumerate(all_lines, 1) if i not in remove_set]
-            new_content = "".join(new_lines)
-            if new_content != content:
-                fixed_violations = [v for v in violations if v.file_path == file_path]
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=content,
-                        fixed_content=new_content,
-                        description="Remove tautological instructions",
-                        violations_fixed=fixed_violations,
-                    )
-                )
-        return results
-
 
 class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
@@ -168,6 +134,22 @@ class ContentCriticalPositionRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are reorganizing AI coding assistant instruction files to "
+            "improve LLM attention. Critical instructions (IMPORTANT, MUST, "
+            "NEVER, ALWAYS, CRITICAL, WARNING, REQUIRED) should be in the "
+            "first 20% or last 20% of the file.\n\n"
+            "Rules:\n"
+            "- Move flagged critical instructions to the top or bottom of the file\n"
+            "- Prefer moving to the top when the instruction is a constraint\n"
+            "- Prefer moving to the bottom when it's a reminder or checklist item\n"
+            "- Preserve section structure — move the whole section if needed\n"
+            "- Do NOT change the content of the instructions\n"
+            "- Preserve markdown formatting"
+        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
@@ -200,6 +182,20 @@ class ContentRedundantWithToolingRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files. Remove "
+            "instructions that duplicate settings already enforced by tooling "
+            "config files (.editorconfig, .eslintrc, .prettierrc, tsconfig.json).\n\n"
+            "Rules:\n"
+            "- Remove lines that restate what a config file already enforces\n"
+            "- If the line is in a list, remove the list item\n"
+            "- If removing leaves an empty section, remove the section heading too\n"
+            "- Do NOT remove instructions that go beyond what the config enforces\n"
+            "- Preserve markdown formatting"
+        )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = RedundancyDetector()
@@ -213,40 +209,6 @@ class ContentRedundantWithToolingRule(Rule):
                     )
                 )
         return violations
-
-    def fix(
-        self,
-        context: RepositoryContext,
-        violations: List[RuleViolation],
-    ) -> List[AutofixResult]:
-        results = []
-        files_to_fix: Dict[Path, List[int]] = {}
-        for v in violations:
-            if v.file_path and v.line:
-                files_to_fix.setdefault(v.file_path, []).append(v.line)
-
-        for file_path, lines_to_remove in files_to_fix.items():
-            content = read_text(file_path)
-            if content is None:
-                continue
-            all_lines = content.splitlines(keepends=True)
-            remove_set = set(lines_to_remove)
-            new_lines = [line for i, line in enumerate(all_lines, 1) if i not in remove_set]
-            new_content = "".join(new_lines)
-            if new_content != content:
-                fixed_violations = [v for v in violations if v.file_path == file_path]
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=content,
-                        fixed_content=new_content,
-                        description="Remove instructions redundant with tooling config",
-                        violations_fixed=fixed_violations,
-                    )
-                )
-        return results
 
 
 class ContentInstructionBudgetRule(Rule):
@@ -264,6 +226,21 @@ class ContentInstructionBudgetRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are reducing the instruction count in AI coding assistant "
+            "instruction files. The total number of imperative instructions "
+            "across all files exceeds the recommended budget.\n\n"
+            "Rules:\n"
+            "- Merge duplicate or near-duplicate instructions\n"
+            "- Remove tautological instructions the model follows by default\n"
+            "- Consolidate related instructions into fewer, more precise ones\n"
+            "- Prefer removing vague instructions over specific ones\n"
+            "- Do NOT remove project-specific constraints or requirements\n"
+            "- Preserve markdown formatting"
+        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         content_files = gather_all_content_files(context)
@@ -308,6 +285,20 @@ class ContentReadmeOverlapRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files that have "
+            "sections duplicating README.md content. Replace duplicated "
+            "sections with @import references.\n\n"
+            "Rules:\n"
+            "- Replace duplicated sections with '@path/to/README.md' imports\n"
+            "- Keep instruction-specific content that isn't in the README\n"
+            "- If the section adds constraints beyond what the README says, "
+            "keep those constraints and only remove the duplicated parts\n"
+            "- Preserve markdown formatting"
+        )
 
     @staticmethod
     def _word_set(text: str) -> Set[str]:
@@ -436,6 +427,20 @@ class ContentSectionLengthRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.INFO
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are reorganizing AI coding assistant instruction files. "
+            "Long sections (over 50 lines) should be broken into smaller, "
+            "focused subsections.\n\n"
+            "Rules:\n"
+            "- Split long sections into 10-30 line subsections with descriptive headings\n"
+            "- Group related instructions under the same subsection\n"
+            "- Use one heading level deeper than the parent section\n"
+            "- Do NOT change the content of the instructions\n"
+            "- Preserve markdown formatting"
+        )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
@@ -481,6 +486,21 @@ class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files that contain "
+            "contradictory instructions. Resolve contradictions by choosing the "
+            "more specific or more useful instruction.\n\n"
+            "Rules:\n"
+            "- When two instructions conflict, keep the more specific one\n"
+            "- If both are valid in different contexts, add context qualifiers\n"
+            "- Example: 'move fast' + 'write comprehensive tests' → "
+            "'Write focused tests for critical paths'\n"
+            "- Do NOT remove instructions that aren't contradictory\n"
+            "- Preserve markdown formatting"
+        )
 
     _CONTRADICTION_PAIRS = [
         (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
@@ -543,6 +563,21 @@ class ContentHookCandidateRule(Rule):
 
     formats = ALL_INSTRUCTION_FORMATS
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files. Replace "
+            "prose instructions that describe automated workflows with a note "
+            "to configure the appropriate hook instead.\n\n"
+            "Rules:\n"
+            "- Replace 'always run X before committing' with a comment suggesting "
+            "a pre-commit hook\n"
+            "- Replace 'run tests before push' with a suggestion for a pre-push hook\n"
+            "- Replace 'after every change, do X' with a PostToolUse hook suggestion\n"
+            "- Keep the instruction but rewrite it as a hook configuration reminder\n"
+            "- Preserve markdown formatting"
+        )
+
     _HOOK_PATTERNS = [
         (
             re.compile(r"\balways run\s+.+\s+(?:after|before)\b", re.IGNORECASE),
@@ -603,6 +638,21 @@ class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are improving AI coding assistant instruction files that have "
+            "low actionability scores. Make instructions more actionable by "
+            "adding specific commands, file paths, and concrete actions.\n\n"
+            "Rules:\n"
+            "- Replace vague prose with imperative instructions\n"
+            "- Add specific commands (e.g., `npm test`, `make lint`)\n"
+            "- Add file paths where relevant (e.g., `src/config.ts`)\n"
+            "- Convert descriptions into action items\n"
+            "- Do NOT add instructions that don't match the project\n"
+            "- Preserve markdown formatting"
+        )
 
     _VERB_RE = re.compile(
         r"\b(?:use|run|create|add|remove|check|set|write|read|call|return|throw|"
@@ -673,6 +723,21 @@ class ContentCognitiveChunksRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.INFO
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are reorganizing AI coding assistant instruction files for "
+            "better cognitive chunking. Add section headings to organize "
+            "instructions into logical groups.\n\n"
+            "Rules:\n"
+            "- Add descriptive markdown headings to group related instructions\n"
+            "- Use ## for top-level sections, ### for subsections\n"
+            "- Group by task or domain (e.g., '## Testing', '## Code Style')\n"
+            "- Aim for 10-30 lines per section\n"
+            "- Do NOT change the content of the instructions\n"
+            "- Preserve markdown formatting"
+        )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
@@ -705,6 +770,21 @@ class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
     formats = ALL_INSTRUCTION_FORMATS
+
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing AI coding assistant instruction files that contain "
+            "embedded secrets (API keys, tokens, passwords). Replace secrets "
+            "with environment variable references.\n\n"
+            "Rules:\n"
+            "- Replace hardcoded secrets with environment variable references\n"
+            "- Example: 'api_key = \"sk-abc123\"' → 'api_key = os.environ[\"API_KEY\"]'\n"
+            "- For instruction prose, replace with placeholder like '$API_KEY'\n"
+            "- Add a note about storing secrets in .env or environment variables\n"
+            "- Do NOT remove the instruction, just redact the secret\n"
+            "- Preserve markdown formatting"
+        )
 
     _PATTERNS = [
         (re.compile(p), desc)
