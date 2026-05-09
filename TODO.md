@@ -16,7 +16,7 @@ Please work on the list below.  As you complete items, check them off.  You can 
 
     - [x] Update the PR description on stbenjam/skillsaw PR #59 to accurately describe all the changes in this branch
     - [x] Jazz up the README to highlight dynamic rules and LLM fixing capabilities
-    - [ ] LASTLY: run all tests, including LLM tests (see below example), push to pr/foundation-content-llm branch, and make sure the PR to stbenjam/skillsaw passes all github tests.  Stop the cron job when you're done.
+    - [x] LASTLY: run all tests, including LLM tests (see below example), push to pr/foundation-content-llm branch, and make sure the PR to stbenjam/skillsaw passes all github tests.  Stop the cron job when you're done.
 
 ## How to run LLM tests
 
