@@ -1,10 +1,10 @@
-# Writing New Linter Rules
-
-## Line Numbers
-
 Rules MUST report line numbers in violations whenever the violation can be
 traced to a specific line in a file. This enables the GitHub Action to post
 inline PR comments on the exact line.
+
+# Writing New Linter Rules
+
+## Line Numbers
 
 - **Frontmatter fields:** Use `_frontmatter_key_line()` (see
   `agentskills.py`) or a similar helper to find the line of the offending key.
@@ -19,3 +19,13 @@ inline PR comments on the exact line.
   If a field is missing, there's no line to point to — omit the line number.
 
 When in doubt, report the line. An approximate line is better than no line.
+
+## Rule Design
+
+Rules declare `repo_types` to control when `enabled: auto` fires:
+- `repo_types = {RepositoryType.MARKETPLACE}` — marketplace only
+- `repo_types = {RepositoryType.AGENTSKILLS, RepositoryType.SINGLE_PLUGIN, RepositoryType.MARKETPLACE}` — wherever skills exist
+- `repo_types = None` — always (default)
+
+Rules that accept parameters should declare `config_schema` on the class so
+that docs and example config are generated automatically.

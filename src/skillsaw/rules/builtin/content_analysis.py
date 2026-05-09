@@ -532,13 +532,16 @@ class TautologicalDetector:
 
 
 class CriticalPositionAnalyzer:
+    def __init__(self, min_lines: int = 50):
+        self._min_lines = min_lines
+
     def analyze(self, path: Path) -> List[PositionIssue]:
         content = _get_body(path)
         if not content:
             return []
         lines = content.splitlines()
         total = len(lines)
-        if total < 10:
+        if total < self._min_lines:
             return []
         results: List[PositionIssue] = []
         for line_num, line in enumerate(lines, 1):

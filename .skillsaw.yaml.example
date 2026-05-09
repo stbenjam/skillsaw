@@ -153,6 +153,7 @@ rules:
   content-critical-position:
     enabled: auto
     severity: warning
+    min-lines: 50
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:

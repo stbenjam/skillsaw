@@ -88,6 +88,7 @@ class FixCase:
     min_severity: Severity = Severity.WARNING
     extra_setup: Optional[Callable] = None
     extra_fixed_files: dict = field(default_factory=dict)
+    rule_config: dict = field(default_factory=dict)
 
 
 def _setup_editorconfig(tmp_path):
@@ -195,6 +196,7 @@ FIX_CASES = [
         content=_critical_content,
         fixed_content=_critical_fixed,
         min_severity=Severity.INFO,
+        rule_config={"min-lines": 10},
     ),
     FixCase(
         rule_id="content-redundant-with-tooling",
@@ -287,6 +289,8 @@ class TestLLMFixByRule:
 
         config = LinterConfig.default()
         config.llm.model = "fake-model"
+        if case.rule_config:
+            config.rules.setdefault(case.rule_id, {}).update(case.rule_config)
         context = RepositoryContext(tmp_path)
         linter = Linter(context, config)
 

@@ -413,6 +413,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
 
+**`content-critical-position` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `min-lines` | Minimum file length (in lines) before the rule activates | `50` |
+
 **`content-section-length` parameters:**
 
 | Parameter | Description | Default |

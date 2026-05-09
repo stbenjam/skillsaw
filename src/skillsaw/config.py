@@ -135,7 +135,11 @@ class LinterConfig:
                 # Content intelligence rules (auto-enabled when instruction files detected)
                 "content-weak-language": {"enabled": "auto", "severity": "warning"},
                 "content-tautological": {"enabled": "auto", "severity": "warning"},
-                "content-critical-position": {"enabled": "auto", "severity": "warning"},
+                "content-critical-position": {
+                    "enabled": "auto",
+                    "severity": "warning",
+                    "min-lines": 50,
+                },
                 "content-redundant-with-tooling": {"enabled": "auto", "severity": "warning"},
                 "content-instruction-budget": {"enabled": "auto", "severity": "warning"},
                 "content-negative-only": {"enabled": "auto", "severity": "warning"},
