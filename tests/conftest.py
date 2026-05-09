@@ -36,7 +36,7 @@ _load_dotenv()
 def temp_dir():
     """Create a temporary directory for testing"""
     tmp = tempfile.mkdtemp()
-    yield Path(tmp)
+    yield Path(tmp).resolve()
     shutil.rmtree(tmp)
 
 

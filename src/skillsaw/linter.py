@@ -4,6 +4,7 @@ Main linter orchestration
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import logging
 import sys
@@ -52,6 +53,7 @@ class Linter:
         self.config = config or LinterConfig.default()
         self.context.content_paths = self.config.content_paths
         self.context.exclude_patterns = self.config.exclude_patterns
+        self.context.apply_excludes()
         self.rules: List[Rule] = []
         self._load_rules()
 
@@ -143,6 +145,16 @@ class Linter:
                 )
         return warnings
 
+    def _is_excluded(self, violation: RuleViolation) -> bool:
+        """Check if a violation's file path matches any exclude pattern."""
+        if not self.config.exclude_patterns or violation.file_path is None:
+            return False
+        try:
+            rel = str(violation.file_path.resolve().relative_to(self.context.root_path))
+        except ValueError:
+            return False
+        return any(fnmatch.fnmatch(rel, pat) for pat in self.config.exclude_patterns)
+
     def run(self) -> List[RuleViolation]:
         """
         Run all enabled rules
@@ -159,7 +171,7 @@ class Linter:
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
-        return violations
+        return [v for v in violations if not self._is_excluded(v)]
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -191,7 +203,7 @@ class Linter:
             else:
                 all_violations.extend(rule_violations)
 
-        return all_violations, all_fixes
+        return [v for v in all_violations if not self._is_excluded(v)], all_fixes
 
     @staticmethod
     def apply_fixes(

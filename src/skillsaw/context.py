@@ -4,6 +4,7 @@ Repository context detection and management
 
 from __future__ import annotations
 
+import fnmatch
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Set
@@ -96,6 +97,25 @@ class RepositoryContext:
             if t in self.repo_types:
                 return t
         return RepositoryType.UNKNOWN
+
+    def apply_excludes(self) -> None:
+        """Filter plugins, skills, and instruction_files by exclude_patterns.
+
+        Must be called after exclude_patterns is set (e.g. from config).
+        """
+        if not self.exclude_patterns:
+            return
+
+        def _excluded(p: Path) -> bool:
+            try:
+                rel = str(p.resolve().relative_to(self.root_path))
+            except ValueError:
+                return False
+            return any(fnmatch.fnmatch(rel, pat) for pat in self.exclude_patterns)
+
+        self.plugins = [p for p in self.plugins if not _excluded(p)]
+        self.skills = [p for p in self.skills if not _excluded(p)]
+        self.instruction_files = [p for p in self.instruction_files if not _excluded(p)]
 
     def _discover_instruction_files(self) -> List[Path]:
         """Discover instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repo root."""

@@ -137,7 +137,8 @@ def test_self_lint():
     """Skillsaw's own .claude/ directory should pass linting with no errors"""
     repo_root = Path(__file__).parent.parent
     context = RepositoryContext(repo_root)
-    config = LinterConfig.default()
+    config_path = repo_root / ".skillsaw.yaml"
+    config = LinterConfig.from_file(config_path) if config_path.exists() else LinterConfig.default()
     linter = Linter(context, config)
 
     # Exclude intentional test fixtures (PR #29: code scanning test)
