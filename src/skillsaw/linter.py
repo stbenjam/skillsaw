@@ -225,7 +225,7 @@ class Linter:
     def llm_fix(
         self,
         provider: "CompletionProvider",
-        callback: Optional[Callable[[int, List[RuleViolation]], None]] = None,
+        callback: Optional[Callable[..., None]] = None,
         min_severity: Severity = Severity.WARNING,
     ) -> "LLMFixResult":
         from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
@@ -280,13 +280,16 @@ class Linter:
         file_count = len(files_to_violations)
         for file_idx, (fpath, file_violations) in enumerate(files_to_violations.items(), 1):
             rel_path = fpath.relative_to(self.context.root_path.resolve())
-            logger.info(
+            logger.debug(
                 "[%d/%d] Fixing %s (%d violations)",
                 file_idx,
                 file_count,
                 rel_path,
                 len(file_violations),
             )
+
+            if callback:
+                callback(file_idx, file_count, rel_path, len(file_violations))
 
             rule_prompts = set()
             for v in file_violations:
@@ -350,7 +353,7 @@ class Linter:
                         files_modified.append(fpath)
 
             if callback:
-                callback(1, file_violations)
+                callback(file_idx, file_count, rel_path, len(file_violations), done=True)
 
         after_violations = self.run()
         after_llm = [

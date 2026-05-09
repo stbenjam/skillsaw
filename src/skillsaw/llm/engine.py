@@ -79,7 +79,7 @@ class LLMEngine:
 
         for _ in range(self._config.max_iterations):
             iterations += 1
-            logger.info("Iteration %d/%d", iterations, self._config.max_iterations)
+            logger.debug("Iteration %d/%d", iterations, self._config.max_iterations)
             total_tokens = self._total_usage.prompt_tokens + self._total_usage.completion_tokens
             if total_tokens >= self._config.max_total_tokens:
                 return LLMResult(
@@ -140,7 +140,7 @@ class LLMEngine:
             self._messages.append(assistant_msg)
 
             for tc in result.tool_calls:
-                logger.info(
+                logger.debug(
                     "  Tool: %s(%s)",
                     tc.name,
                     ", ".join(

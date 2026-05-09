@@ -4,6 +4,8 @@ Entry point for skillsaw (and claudelint backward-compat shim)
 
 import argparse
 import logging
+import os
+import shutil
 import sys
 from pathlib import Path
 from importlib.metadata import version, PackageNotFoundError
@@ -369,12 +371,24 @@ def _run_fix(args):
         sys.exit(1)
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARNING,
         format="%(message)s",
         stream=sys.stderr,
     )
 
     provider = LiteLLMProvider()
+
+    no_color = "NO_COLOR" in os.environ
+    is_tty = sys.stderr.isatty()
+    term_width = shutil.get_terminal_size((80, 24)).columns
+
+    bold = "" if no_color else "\033[1m"
+    dim = "" if no_color else "\033[2m"
+    green = "" if no_color else "\033[92m"
+    red = "" if no_color else "\033[91m"
+    yellow = "" if no_color else "\033[93m"
+    cyan = "" if no_color else "\033[96m"
+    reset = "" if no_color else "\033[0m"
 
     violations = linter.run()
     llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}
@@ -386,51 +400,74 @@ def _run_fix(args):
         and Linter._SEVERITY_ORDER.get(v.severity, 99) <= Linter._SEVERITY_ORDER[min_severity]
     ]
 
-    print(f"Linting: {args.path}")
-    print(f"Model: {config.llm.model}")
-    print(f"Found {len(llm_violations)} LLM-fixable violation(s) across {len(llm_rules)} rule(s)\n")
+    files_with_violations = set()
+    for v in llm_violations:
+        if v.file_path:
+            files_with_violations.add(v.file_path.resolve())
+
+    print(f"\n{bold}skillsaw fix{reset} {dim}({config.llm.model}){reset}")
+    print(f"{len(llm_violations)} violation(s) across " f"{len(files_with_violations)} file(s)\n")
 
     if not llm_violations:
-        print("No LLM-fixable violations found.")
+        print(f"{green}No fixable violations found.{reset}")
         sys.exit(0)
 
-    def _progress(files_done, file_violations):
-        path = file_violations[0].file_path if file_violations else None
-        rel = path.relative_to(args.path) if path else "?"
-        print(f"  ✎ Fixed {rel} ({len(file_violations)} violation(s))")
+    def _progress_bar(current, total, width=30):
+        filled = int(width * current / total) if total else 0
+        bar = "█" * filled + "░" * (width - filled)
+        return f"{dim}[{reset}{cyan}{bar}{reset}{dim}]{reset}"
+
+    def _progress(file_idx, file_count, rel_path, num_violations, done=False):
+        if done:
+            return
+        bar = _progress_bar(file_idx - 1, file_count)
+        status = f"  {bar} {dim}{file_idx}/{file_count}{reset}  {rel_path}"
+        if is_tty:
+            print(f"\r{status:{term_width}}", end="", file=sys.stderr, flush=True)
+        else:
+            print(status, file=sys.stderr)
 
     result = linter.llm_fix(provider, callback=_progress, min_severity=min_severity)
 
+    if is_tty:
+        print("\r" + " " * term_width + "\r", end="", file=sys.stderr, flush=True)
+
     if not result.success:
-        print("LLM fix did not improve violations — changes reverted.")
+        print(f"\n{red}LLM fix did not improve violations — changes reverted.{reset}")
         sys.exit(1)
 
     if not result.files_modified:
-        print("No LLM-fixable violations found.")
+        print(f"{green}No fixable violations found.{reset}")
         sys.exit(0)
 
+    print(f"{bold}Results{reset}")
     print(
-        f"Fixed {result.violations_fixed} of {result.violations_before} "
-        f"LLM-fixable violations across {len(result.files_modified)} file(s)\n"
+        f"  {green}{result.violations_fixed} fixed{reset}"
+        f" {dim}of {result.violations_before}{reset}"
     )
-
-    if result.diffs:
-        print("── Changes " + "─" * 50 + "\n")
-        for diff_text in result.diffs.values():
-            print(diff_text)
-        print()
+    if result.violations_after > 0:
+        print(f"  {yellow}{result.violations_after} remaining{reset}")
+    print(f"  {len(result.files_modified)} file(s) modified")
 
     usage = result.total_usage
     total_tokens = usage.prompt_tokens + usage.completion_tokens
-    print(
-        f"Token usage: ~{total_tokens:,} tokens "
-        f"(prompt: {usage.prompt_tokens:,} / completion: {usage.completion_tokens:,})"
-    )
+    print(f"  {dim}~{total_tokens:,} tokens{reset}")
 
-    if result.violations_after > 0:
-        print(f"\n{result.violations_after} violation(s) remain.")
+    if result.diffs:
+        print(f"\n{bold}Changes{reset}")
+        print(f"{dim}{'─' * 60}{reset}")
+        for diff_text in result.diffs.values():
+            for line in diff_text.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    print(f"{green}{line}{reset}")
+                elif line.startswith("-") and not line.startswith("---"):
+                    print(f"{red}{line}{reset}")
+                elif line.startswith("@@"):
+                    print(f"{cyan}{line}{reset}")
+                else:
+                    print(line)
+        print(f"{dim}{'─' * 60}{reset}")
 
-    print("Changes applied.")
     sys.exit(0)
 
 
