@@ -1,0 +1,766 @@
+"""
+Content intelligence rules — 15 novel rules that analyze instruction file quality.
+
+These rules use shared analyzers from content_analysis.py and apply to ALL
+instruction file formats equally.
+"""
+
+import re
+from pathlib import Path
+from typing import List, Set
+
+from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.content_analysis import (
+    gather_all_instruction_files,
+    _get_body,
+    WeakLanguageDetector,
+    DeadReferenceScanner,
+    TautologicalDetector,
+    CriticalPositionAnalyzer,
+    RedundancyDetector,
+    InstructionBudgetAnalyzer,
+    _HEADING_RE,
+    _TAUTOLOGICAL_PHRASES,
+)
+
+
+class ContentWeakLanguageRule(Rule):
+    """Detect hedging, vague, and non-actionable language in instruction files"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-weak-language"
+
+    @property
+    def description(self) -> str:
+        return "Detect hedging, vague, and non-actionable language in instruction files"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        detector = WeakLanguageDetector()
+        for path in gather_all_instruction_files(context):
+            for match in detector.analyze(path):
+                violations.append(
+                    self.violation(
+                        f"Weak language ({match.category}): '{match.phrase}' — {match.suggested_fix}",
+                        file_path=path,
+                        line=match.line,
+                    )
+                )
+        return violations
+
+
+class ContentDeadReferencesRule(Rule):
+    """Detect broken file paths and references in instruction files"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-dead-references"
+
+    @property
+    def description(self) -> str:
+        return "Detect broken file paths, npm scripts, and Makefile targets in instruction files"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        scanner = DeadReferenceScanner()
+        for path in gather_all_instruction_files(context):
+            for ref in scanner.analyze(path, context.root_path):
+                violations.append(
+                    self.violation(
+                        f"Dead reference: '{ref.reference}' does not exist",
+                        file_path=path,
+                        line=ref.line,
+                    )
+                )
+        return violations
+
+
+class ContentTautologicalRule(Rule):
+    """Detect tautological instructions that waste instruction budget"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-tautological"
+
+    @property
+    def description(self) -> str:
+        return "Detect tautological instructions that the model already follows by default"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        detector = TautologicalDetector()
+        for path in gather_all_instruction_files(context):
+            for match in detector.analyze(path):
+                violations.append(
+                    self.violation(
+                        f"Tautological: '{match.phrase}' — {match.reason}",
+                        file_path=path,
+                        line=match.line,
+                    )
+                )
+        return violations
+
+    def fix(
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+    ) -> List[AutofixResult]:
+        results = []
+        files_to_fix: dict[Path, List[int]] = {}
+        for v in violations:
+            if v.file_path and v.line:
+                files_to_fix.setdefault(v.file_path, []).append(v.line)
+
+        for file_path, lines_to_remove in files_to_fix.items():
+            content = read_text(file_path)
+            if content is None:
+                continue
+            all_lines = content.splitlines(keepends=True)
+            remove_set = set(lines_to_remove)
+            new_lines = [line for i, line in enumerate(all_lines, 1) if i not in remove_set]
+            new_content = "".join(new_lines)
+            if new_content != content:
+                fixed_violations = [v for v in violations if v.file_path == file_path]
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=content,
+                        fixed_content=new_content,
+                        description="Remove tautological instructions",
+                        violations_fixed=fixed_violations,
+                    )
+                )
+        return results
+
+
+class ContentCriticalPositionRule(Rule):
+    """Detect critical instructions buried in the attention dead zone"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-critical-position"
+
+    @property
+    def description(self) -> str:
+        return "Detect critical instructions in the middle of files where LLM attention is lowest"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        analyzer = CriticalPositionAnalyzer()
+        for path in gather_all_instruction_files(context):
+            for issue in analyzer.analyze(path):
+                violations.append(
+                    self.violation(
+                        f"'{issue.keyword}' instruction at line {issue.line} is in the attention dead zone (20-80%) — {issue.suggested_position}",
+                        file_path=path,
+                        line=issue.line,
+                    )
+                )
+        return violations
+
+
+class ContentRedundantWithToolingRule(Rule):
+    """Detect instructions that duplicate existing tooling configuration"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-redundant-with-tooling"
+
+    @property
+    def description(self) -> str:
+        return "Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        detector = RedundancyDetector()
+        for path in gather_all_instruction_files(context):
+            for match in detector.analyze(path, context.root_path):
+                violations.append(
+                    self.violation(
+                        f"Redundant with {match.existing_config_file} ({match.config_value}): '{match.instruction}'",
+                        file_path=path,
+                        line=match.line,
+                    )
+                )
+        return violations
+
+    def fix(
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+    ) -> List[AutofixResult]:
+        results = []
+        files_to_fix: dict[Path, List[int]] = {}
+        for v in violations:
+            if v.file_path and v.line:
+                files_to_fix.setdefault(v.file_path, []).append(v.line)
+
+        for file_path, lines_to_remove in files_to_fix.items():
+            content = read_text(file_path)
+            if content is None:
+                continue
+            all_lines = content.splitlines(keepends=True)
+            remove_set = set(lines_to_remove)
+            new_lines = [line for i, line in enumerate(all_lines, 1) if i not in remove_set]
+            new_content = "".join(new_lines)
+            if new_content != content:
+                fixed_violations = [v for v in violations if v.file_path == file_path]
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=content,
+                        fixed_content=new_content,
+                        description="Remove instructions redundant with tooling config",
+                        violations_fixed=fixed_violations,
+                    )
+                )
+        return results
+
+
+class ContentInstructionBudgetRule(Rule):
+    """Check total instruction count across all instruction files"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-instruction-budget"
+
+    @property
+    def description(self) -> str:
+        return "Check if total instruction count across all files exceeds LLM instruction budget (~150)"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        files = gather_all_instruction_files(context)
+        if not files:
+            return []
+        analyzer = InstructionBudgetAnalyzer()
+        budget = analyzer.analyze(files)
+        violations = []
+        if budget.total_count >= 120:
+            sev = Severity.ERROR if budget.over_budget else Severity.WARNING
+            violations.append(
+                self.violation(
+                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files "
+                    f"({budget.budget_remaining} remaining)",
+                    severity=sev,
+                )
+            )
+        elif budget.total_count >= 80:
+            violations.append(
+                self.violation(
+                    f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions across {len(budget.files_counted)} files — approaching limit",
+                    severity=Severity.INFO,
+                )
+            )
+        return violations
+
+
+class ContentReadmeOverlapRule(Rule):
+    """Detect significant overlap between instruction files and README"""
+
+    _JACCARD_THRESHOLD = 0.6
+
+    @property
+    def rule_id(self) -> str:
+        return "content-readme-overlap"
+
+    @property
+    def description(self) -> str:
+        return "Detect instruction file sections that significantly overlap with README.md content"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    @staticmethod
+    def _word_set(text: str) -> Set[str]:
+        return set(re.findall(r"\b\w{3,}\b", text.lower()))
+
+    @staticmethod
+    def _sentences(text: str) -> List[str]:
+        return [s.strip() for s in re.split(r"[.!?\n]", text) if len(s.strip()) > 20]
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        readme_path = context.root_path / "README.md"
+        if not readme_path.exists():
+            return []
+        readme_content = read_text(readme_path)
+        if not readme_content:
+            return []
+        readme_words = self._word_set(readme_content)
+        if len(readme_words) < 10:
+            return []
+
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            sections = re.split(r"^#{1,6}\s+.+$", body, flags=re.MULTILINE)
+            for section in sections:
+                section = section.strip()
+                if len(section) < 50:
+                    continue
+                section_words = self._word_set(section)
+                if len(section_words) < 5:
+                    continue
+                intersection = section_words & readme_words
+                union = section_words | readme_words
+                jaccard = len(intersection) / len(union) if union else 0
+                if jaccard > self._JACCARD_THRESHOLD:
+                    preview = section[:60].replace("\n", " ")
+                    violations.append(
+                        self.violation(
+                            f"Section overlaps {jaccard:.0%} with README.md: '{preview}...' — consider using @import instead",
+                            file_path=path,
+                        )
+                    )
+        return violations
+
+
+class ContentNegativeOnlyRule(Rule):
+    """Detect 'never/don't/avoid X' without a positive alternative"""
+
+    _NEGATIVE_RE = re.compile(
+        r"(?:never\s+use|don'?t\s+use|avoid\s+using|do\s+not\s+use|never\s+do|don'?t\s+do)\s+",
+        re.IGNORECASE,
+    )
+    _POSITIVE_RE = re.compile(
+        r"(?:use\s+\w+(?:\s+\w+)*\s+instead|instead\s*,?\s+use|prefer\s+\w+|replace\s+with|\binstead\b)",
+        re.IGNORECASE,
+    )
+
+    @property
+    def rule_id(self) -> str:
+        return "content-negative-only"
+
+    @property
+    def description(self) -> str:
+        return "Detect prohibitions without a positive alternative (agent has no path forward)"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            lines = body.splitlines()
+            for i, line in enumerate(lines):
+                if not self._NEGATIVE_RE.search(line):
+                    continue
+                window = "\n".join(lines[max(0, i - 1) : i + 4])
+                if not self._POSITIVE_RE.search(window):
+                    violations.append(
+                        self.violation(
+                            f"Negative-only instruction without alternative: '{line.strip()[:80]}'",
+                            file_path=path,
+                            line=i + 1,
+                        )
+                    )
+        return violations
+
+
+class ContentSectionLengthRule(Rule):
+    """Warn about overly long markdown sections"""
+
+    MAX_LINES = 50
+
+    @property
+    def rule_id(self) -> str:
+        return "content-section-length"
+
+    @property
+    def description(self) -> str:
+        return "Warn about markdown sections longer than 50 lines (optimal: 10-30 lines)"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            lines = body.splitlines()
+            sections: List[tuple] = []
+            current_heading_line = 0
+            current_heading_text = "(top of file)"
+            section_start = 0
+
+            for i, line in enumerate(lines):
+                m = _HEADING_RE.match(line)
+                if m:
+                    if i > section_start:
+                        sections.append(
+                            (current_heading_text, current_heading_line, section_start, i)
+                        )
+                    current_heading_text = m.group(2)
+                    current_heading_line = i + 1
+                    section_start = i + 1
+
+            if len(lines) > section_start:
+                sections.append(
+                    (current_heading_text, current_heading_line, section_start, len(lines))
+                )
+
+            for heading, heading_line, start, end in sections:
+                length = end - start
+                if length > self.MAX_LINES:
+                    violations.append(
+                        self.violation(
+                            f"Section '{heading}' is {length} lines (max recommended: {self.MAX_LINES})",
+                            file_path=path,
+                            line=heading_line if heading_line > 0 else None,
+                        )
+                    )
+        return violations
+
+
+class ContentContradictionRule(Rule):
+    """Detect likely contradictions within instruction files"""
+
+    _CONTRADICTION_PAIRS = [
+        (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
+        (
+            r"\bkeep it simple\b",
+            r"\bhandle all edge cases\b",
+            "'keep it simple' vs 'handle all edge cases'",
+        ),
+        (
+            r"\bdon'?t over-?engineer\b",
+            r"\bdetailed architecture\b",
+            "'don't over-engineer' vs 'detailed architecture'",
+        ),
+        (r"\bminimal\b", r"\bexhaustive\b", "'minimal' vs 'exhaustive'"),
+        (
+            r"\bdon'?t add comments\b",
+            r"\bdocument\s+(everything|all|every)\b",
+            "'don't add comments' vs 'document everything'",
+        ),
+        (
+            r"\bavoid abstractions?\b",
+            r"\bcreate\s+(abstractions?|interfaces?|base\s+class)\b",
+            "'avoid abstractions' vs 'create abstractions'",
+        ),
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-contradiction"
+
+    @property
+    def description(self) -> str:
+        return "Detect likely contradictions within instruction files using keyword-pair heuristics"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            body_lower = body.lower()
+            for pat_a, pat_b, desc in self._CONTRADICTION_PAIRS:
+                match_a = re.search(pat_a, body_lower)
+                match_b = re.search(pat_b, body_lower)
+                if match_a and match_b:
+                    violations.append(
+                        self.violation(
+                            f"Possible contradiction: {desc}",
+                            file_path=path,
+                        )
+                    )
+        return violations
+
+
+class ContentHookCandidateRule(Rule):
+    """Detect instructions that should be automated hooks"""
+
+    _HOOK_PATTERNS = [
+        (
+            re.compile(r"\balways run\s+.+\s+(?:after|before)\b", re.IGNORECASE),
+            "PostToolUse or PreToolUse hook",
+        ),
+        (
+            re.compile(r"\bformat\s+(?:code|files?)\s+before\s+committ?ing\b", re.IGNORECASE),
+            "pre-commit hook",
+        ),
+        (
+            re.compile(r"\bnever\s+push\s+without\s+(?:running\s+)?tests?\b", re.IGNORECASE),
+            "pre-push hook or Stop hook",
+        ),
+        (re.compile(r"\balways\s+lint\s+before\b", re.IGNORECASE), "pre-commit hook"),
+        (
+            re.compile(r"\brun\s+tests?\s+before\s+(?:every\s+)?commit\b", re.IGNORECASE),
+            "pre-commit hook",
+        ),
+        (
+            re.compile(r"\bafter\s+(?:every|each)\s+(?:change|edit|save)\b", re.IGNORECASE),
+            "PostToolUse hook",
+        ),
+        (re.compile(r"\bbefore\s+(?:every|each)\s+commit\b", re.IGNORECASE), "pre-commit hook"),
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-hook-candidate"
+
+    @property
+    def description(self) -> str:
+        return "Detect instructions that should be automated as hooks instead of prose instructions"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                for pattern, hook_type in self._HOOK_PATTERNS:
+                    if pattern.search(line):
+                        violations.append(
+                            self.violation(
+                                f"Hook candidate: '{line.strip()[:80]}' — consider automating as a {hook_type}",
+                                file_path=path,
+                                line=line_num,
+                            )
+                        )
+                        break
+        return violations
+
+
+class ContentActionabilityScoreRule(Rule):
+    """Compute an actionability score for instruction files"""
+
+    _VERB_RE = re.compile(
+        r"\b(?:use|run|create|add|remove|check|set|write|read|call|return|throw|"
+        r"avoid|prefer|include|exclude|follow|implement|test|validate|verify|"
+        r"handle|log|format|configure|install|update|delete|move|copy|import|"
+        r"export|define|declare|initialize|override|extend|wrap|deploy|build|"
+        r"commit|push|pull|merge|rebase|review|ensure|make|keep|always|never)\b",
+        re.IGNORECASE,
+    )
+    _COMMAND_RE = re.compile(r"`[^`]+`")
+    _PATH_RE = re.compile(r"(?:`[^`]*[/\\][^`]*`|[\w./\\]+\.\w{1,5})")
+    WARN_THRESHOLD = 40
+
+    @property
+    def rule_id(self) -> str:
+        return "content-actionability-score"
+
+    @property
+    def description(self) -> str:
+        return "Score instruction files on actionability (verb density, commands, file references)"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body:
+                continue
+            lines = [l for l in body.splitlines() if l.strip()]
+            if len(lines) < 5:
+                continue
+            total = len(lines)
+            verb_lines = sum(1 for l in lines if self._VERB_RE.search(l))
+            cmd_lines = sum(1 for l in lines if self._COMMAND_RE.search(l))
+            path_lines = sum(1 for l in lines if self._PATH_RE.search(l))
+
+            verb_ratio = verb_lines / total
+            cmd_ratio = cmd_lines / total
+            path_ratio = path_lines / total
+            score = int((verb_ratio * 50) + (cmd_ratio * 30) + (path_ratio * 20))
+            score = min(100, score)
+
+            if score < self.WARN_THRESHOLD:
+                violations.append(
+                    self.violation(
+                        f"Low actionability score: {score}/100 (verbs: {verb_ratio:.0%}, commands: {cmd_ratio:.0%}, paths: {path_ratio:.0%})",
+                        file_path=path,
+                    )
+                )
+        return violations
+
+
+class ContentCognitiveChunksRule(Rule):
+    """Check section organization for cognitive chunking"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-cognitive-chunks"
+
+    @property
+    def description(self) -> str:
+        return "Check that instruction files are organized into cognitive chunks with headings"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            body = _get_body(path)
+            if not body or len(body.strip()) < 100:
+                continue
+            lines = body.splitlines()
+            headings = [l for l in lines if _HEADING_RE.match(l)]
+
+            if not headings and len(lines) > 10:
+                violations.append(
+                    self.violation(
+                        "No headings in instruction file — add section headings for cognitive chunking",
+                        file_path=path,
+                    )
+                )
+                continue
+
+            if len(headings) == 1 and len(lines) > 30:
+                violations.append(
+                    self.violation(
+                        "All content under a single heading — break into task-organized sections",
+                        file_path=path,
+                    )
+                )
+        return violations
+
+
+class ContentEmbeddedSecretsRule(Rule):
+    """Detect potential secrets embedded in instruction files"""
+
+    _PATTERNS = [
+        (re.compile(p), desc)
+        for p, desc in [
+            (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
+            (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
+            (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
+            (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
+            (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
+            (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
+            (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
+            (r"\bxoxb-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack bot token"),
+            (r"\bxoxp-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]{24}", "Slack user token"),
+            (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", "Hardcoded password"),
+            (r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded API key"),
+        ]
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-embedded-secrets"
+
+    @property
+    def description(self) -> str:
+        return "Detect potential API keys, tokens, and passwords in instruction files"
+
+    def default_severity(self) -> Severity:
+        return Severity.ERROR
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for path in gather_all_instruction_files(context):
+            content = read_text(path)
+            if not content:
+                continue
+            for line_num, line in enumerate(content.splitlines(), 1):
+                for pattern, desc in self._PATTERNS:
+                    if pattern.search(line):
+                        violations.append(
+                            self.violation(
+                                f"Potential secret detected: {desc}",
+                                file_path=path,
+                                line=line_num,
+                            )
+                        )
+                        break
+        return violations
+
+
+class ContentCrossFileConsistencyRule(Rule):
+    """Check consistency across multiple instruction file formats"""
+
+    @property
+    def rule_id(self) -> str:
+        return "content-cross-file-consistency"
+
+    @property
+    def description(self) -> str:
+        return "Check consistency across multiple instruction file formats (CLAUDE.md, AGENTS.md, .cursorrules, etc.)"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def _extract_commands(self, text: str) -> Set[str]:
+        return set(re.findall(r"`((?:npm|yarn|pnpm|make|go|cargo|pip|poetry|dotnet)\s+\S+)`", text))
+
+    def _extract_tech_stack(self, text: str) -> Set[str]:
+        tech_re = re.compile(
+            r"\b(React|Vue|Angular|Next\.?js|Nuxt|Svelte|Express|Django|Flask|"
+            r"FastAPI|Spring|Rails|Laravel|Go|Rust|Python|TypeScript|JavaScript|"
+            r"Java|C#|Ruby|PHP|Swift|Kotlin)\b",
+            re.IGNORECASE,
+        )
+        return {m.group().lower() for m in tech_re.finditer(text)}
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        files = gather_all_instruction_files(context)
+        if len(files) < 2:
+            return []
+
+        violations = []
+        all_commands: dict[Path, Set[str]] = {}
+        all_tech: dict[Path, Set[str]] = {}
+
+        for path in files:
+            body = _get_body(path)
+            if not body:
+                continue
+            all_commands[path] = self._extract_commands(body)
+            all_tech[path] = self._extract_tech_stack(body)
+
+        paths_with_tech = [(p, t) for p, t in all_tech.items() if t]
+        for i, (path_a, tech_a) in enumerate(paths_with_tech):
+            for path_b, tech_b in paths_with_tech[i + 1 :]:
+                if tech_a and tech_b and not (tech_a & tech_b):
+                    violations.append(
+                        self.violation(
+                            f"Tech stack mismatch: {path_a.name} mentions {', '.join(sorted(tech_a))} "
+                            f"but {path_b.name} mentions {', '.join(sorted(tech_b))}",
+                        )
+                    )
+
+        return violations

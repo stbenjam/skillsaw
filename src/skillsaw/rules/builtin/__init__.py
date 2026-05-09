@@ -64,6 +64,24 @@ from .context_budget import (
     ContextBudgetRule,
 )
 
+from .content_rules import (
+    ContentWeakLanguageRule,
+    ContentDeadReferencesRule,
+    ContentTautologicalRule,
+    ContentCriticalPositionRule,
+    ContentRedundantWithToolingRule,
+    ContentInstructionBudgetRule,
+    ContentReadmeOverlapRule,
+    ContentNegativeOnlyRule,
+    ContentSectionLengthRule,
+    ContentContradictionRule,
+    ContentHookCandidateRule,
+    ContentActionabilityScoreRule,
+    ContentCognitiveChunksRule,
+    ContentEmbeddedSecretsRule,
+    ContentCrossFileConsistencyRule,
+)
+
 # All builtin rules
 BUILTIN_RULES = [
     # Plugin structure
@@ -104,6 +122,22 @@ BUILTIN_RULES = [
     InstructionImportsValidRule,
     # Context budget
     ContextBudgetRule,
+    # Content intelligence
+    ContentWeakLanguageRule,
+    ContentDeadReferencesRule,
+    ContentTautologicalRule,
+    ContentCriticalPositionRule,
+    ContentRedundantWithToolingRule,
+    ContentInstructionBudgetRule,
+    ContentReadmeOverlapRule,
+    ContentNegativeOnlyRule,
+    ContentSectionLengthRule,
+    ContentContradictionRule,
+    ContentHookCandidateRule,
+    ContentActionabilityScoreRule,
+    ContentCognitiveChunksRule,
+    ContentEmbeddedSecretsRule,
+    ContentCrossFileConsistencyRule,
 ]
 
 
@@ -136,4 +170,19 @@ __all__ = [
     "InstructionFileValidRule",
     "InstructionImportsValidRule",
     "ContextBudgetRule",
+    "ContentWeakLanguageRule",
+    "ContentDeadReferencesRule",
+    "ContentTautologicalRule",
+    "ContentCriticalPositionRule",
+    "ContentRedundantWithToolingRule",
+    "ContentInstructionBudgetRule",
+    "ContentReadmeOverlapRule",
+    "ContentNegativeOnlyRule",
+    "ContentSectionLengthRule",
+    "ContentContradictionRule",
+    "ContentHookCandidateRule",
+    "ContentActionabilityScoreRule",
+    "ContentCognitiveChunksRule",
+    "ContentEmbeddedSecretsRule",
+    "ContentCrossFileConsistencyRule",
 ]
