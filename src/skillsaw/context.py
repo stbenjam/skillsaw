@@ -31,6 +31,7 @@ HAS_GEMINI = "HAS_GEMINI"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
+HAS_CODERABBIT = "HAS_CODERABBIT"
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
@@ -39,6 +40,7 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_AGENTS_MD,
         HAS_KIRO,
         HAS_CLAUDE_MD,
+        HAS_CODERABBIT,
     }
 )
 
@@ -114,6 +116,8 @@ class RepositoryContext:
             formats.add(HAS_KIRO)
         if (self.root_path / "CLAUDE.md").exists():
             formats.add(HAS_CLAUDE_MD)
+        if (self.root_path / ".coderabbit.yaml").exists():
+            formats.add(HAS_CODERABBIT)
         return formats
 
     _WALK_SKIP_DIRS = frozenset(
