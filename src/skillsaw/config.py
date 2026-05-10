@@ -19,6 +19,7 @@ class LinterConfig:
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
     strict: bool = False
+    version: str = ""
 
     @classmethod
     def from_file(cls, config_path: Path) -> "LinterConfig":
@@ -45,6 +46,7 @@ class LinterConfig:
             custom_rules=data.get("custom-rules", []),
             exclude_patterns=data.get("exclude", []),
             strict=data.get("strict", False),
+            version=str(data.get("version", "")),
         )
 
     @classmethod
@@ -129,7 +131,13 @@ class LinterConfig:
         merged = {**defaults, **overrides}
         return merged
 
-    def is_rule_enabled(self, rule_id: str, context: "RepositoryContext", repo_types=None) -> bool:
+    def is_rule_enabled(
+        self,
+        rule_id: str,
+        context: "RepositoryContext",
+        repo_types=None,
+        since_version: str = "0.1.0",
+    ) -> bool:
         """
         Check if a rule is enabled for the given context
 
@@ -137,10 +145,23 @@ class LinterConfig:
             rule_id: Rule identifier
             context: Repository context
             repo_types: Set of RepositoryType values the rule applies to (None = all)
+            since_version: Minimum skillsaw version that introduced this rule.
+                           If the config declares a ``version`` older than this,
+                           the rule is silently skipped.
 
         Returns:
             True if rule should run
         """
+        # If the config pins a version older than the rule's ``since``, skip it.
+        if self.version:
+            try:
+                cfg_ver = tuple(int(x) for x in str(self.version).split("."))
+                since_ver = tuple(int(x) for x in since_version.split("."))
+                if cfg_ver < since_ver:
+                    return False
+            except (ValueError, TypeError):
+                pass  # Malformed version — ignore the gate
+
         rule_config = self.get_rule_config(rule_id)
         enabled = rule_config.get("enabled", True)
 
@@ -153,12 +174,18 @@ class LinterConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization"""
-        return {
-            "rules": self.rules,
-            "custom-rules": self.custom_rules,
-            "exclude": self.exclude_patterns,
-            "strict": self.strict,
-        }
+        d: Dict[str, Any] = {}
+        if self.version:
+            d["version"] = self.version
+        d.update(
+            {
+                "rules": self.rules,
+                "custom-rules": self.custom_rules,
+                "exclude": self.exclude_patterns,
+                "strict": self.strict,
+            }
+        )
+        return d
 
     def save(self, config_path: Path):
         """Save configuration to file with rule descriptions as comments"""

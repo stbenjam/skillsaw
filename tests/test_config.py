@@ -172,3 +172,39 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     config = LinterConfig.default()
     context = RepositoryContext(valid_plugin)
     assert config.is_rule_enabled("some-rule", context, None) is True
+
+
+def test_since_version_gates_rule(valid_plugin):
+    """Test that since_version gates a rule when config declares an older version"""
+    config = LinterConfig.default()
+    config.version = "0.5.0"
+    context = RepositoryContext(valid_plugin)
+
+    # Rule with since_version newer than config version should be disabled
+    assert (
+        config.is_rule_enabled("plugin-json-required", context, None, since_version="0.6.0")
+        is False
+    )
+
+
+def test_since_version_allows_rule_when_config_version_matches(valid_plugin):
+    """Test that since_version allows a rule when config version >= since"""
+    config = LinterConfig.default()
+    config.version = "0.6.0"
+    context = RepositoryContext(valid_plugin)
+
+    assert (
+        config.is_rule_enabled("plugin-json-required", context, None, since_version="0.6.0") is True
+    )
+
+
+def test_since_version_allows_rule_when_no_config_version(valid_plugin):
+    """Test that since_version does not gate when config has no version"""
+    config = LinterConfig.default()
+    # config.version defaults to "" — no version gate
+    context = RepositoryContext(valid_plugin)
+
+    assert (
+        config.is_rule_enabled("plugin-json-required", context, None, since_version="99.0.0")
+        is True
+    )

@@ -48,6 +48,7 @@ class Rule(ABC):
 
     repo_types = None
     config_schema = {}
+    since = "0.1.0"
 
     def __init__(self, config: Dict[str, Any] = None):
         """

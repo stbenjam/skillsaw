@@ -55,7 +55,10 @@ class Linter:
 
             # Check if enabled for this context
             if self.config.is_rule_enabled(
-                rule_instance.rule_id, self.context, rule_instance.repo_types
+                rule_instance.rule_id,
+                self.context,
+                rule_instance.repo_types,
+                since_version=rule_instance.since,
             ):
                 self.rules.append(rule_instance)
 
@@ -93,7 +96,10 @@ class Linter:
 
                 # Check if enabled
                 if self.config.is_rule_enabled(
-                    rule_instance.rule_id, self.context, rule_instance.repo_types
+                    rule_instance.rule_id,
+                    self.context,
+                    rule_instance.repo_types,
+                    since_version=rule_instance.since,
                 ):
                     self.rules.append(rule_instance)
 

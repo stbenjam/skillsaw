@@ -319,3 +319,117 @@ class DisabledRule(Rule):
     # Custom rule should not be loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
     assert "disabled-rule" not in rule_ids
+
+
+def test_custom_rule_respects_since_version_gate(valid_plugin, temp_dir):
+    """Test that custom rules with a since version are gated by config version"""
+    # Create a custom rule with since = "0.8.0"
+    custom_rule_file = temp_dir / "versioned_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class VersionedRule(Rule):
+    since = "0.8.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "versioned-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule introduced in 0.8.0"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("versioned violation")]
+""")
+
+    # Config with version 0.7.0 — older than the rule's since (0.8.0)
+    config = LinterConfig(
+        custom_rules=[str(custom_rule_file)],
+        version="0.7.0",
+    )
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+
+    # The rule should NOT be loaded because config version < rule since
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "versioned-rule" not in rule_ids
+
+
+def test_custom_rule_loads_when_config_version_meets_since(valid_plugin, temp_dir):
+    """Test that custom rules load when config version >= rule since"""
+    custom_rule_file = temp_dir / "versioned_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class VersionedRule(Rule):
+    since = "0.8.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "versioned-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule introduced in 0.8.0"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("versioned violation")]
+""")
+
+    # Config with version 0.8.0 — equal to the rule's since
+    config = LinterConfig(
+        custom_rules=[str(custom_rule_file)],
+        version="0.8.0",
+    )
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+
+    # The rule SHOULD be loaded because config version >= rule since
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "versioned-rule" in rule_ids
+
+
+def test_custom_rule_loads_when_no_config_version(valid_plugin, temp_dir):
+    """Test that custom rules with since always load when config has no version"""
+    custom_rule_file = temp_dir / "versioned_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class VersionedRule(Rule):
+    since = "0.8.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "versioned-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule introduced in 0.8.0"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("versioned violation")]
+""")
+
+    # Config without a version — should not gate any rules
+    config = LinterConfig(
+        custom_rules=[str(custom_rule_file)],
+    )
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+
+    # The rule SHOULD be loaded because no version gate is active
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "versioned-rule" in rule_ids
