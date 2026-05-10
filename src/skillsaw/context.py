@@ -207,7 +207,7 @@ class RepositoryContext:
             types.add(RepositoryType.MARKETPLACE)
         elif (self.root_path / ".claude-plugin").exists():
             types.add(RepositoryType.SINGLE_PLUGIN)
-        elif (self.root_path / "plugins").exists():
+        elif (self.root_path / "plugins").is_dir():
             types.add(RepositoryType.MARKETPLACE)
 
         # Agentskills
@@ -432,7 +432,7 @@ class RepositoryContext:
     def _discover_from_plugins_dir(self, plugins: List[Path], discovered_paths: Set[Path]) -> None:
         """Discover plugins from traditional plugins/ directory"""
         plugins_dir = self.root_path / "plugins"
-        if not plugins_dir.exists():
+        if not plugins_dir.is_dir():
             return
 
         for item in plugins_dir.iterdir():
