@@ -415,7 +415,7 @@ class TestLLMFixDryRun:
         actual = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
         assert actual == content
         assert len(result.files_modified) == 0
-        assert len(result.diffs) > 0 or result.violations_before > 0
+        assert len(result.diffs) > 0
 
 
 class TestLLMFixScopedLinting:
