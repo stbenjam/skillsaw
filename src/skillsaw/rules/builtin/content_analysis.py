@@ -17,16 +17,43 @@ import yaml
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
 
-_FENCED_CODE_RE = re.compile(r"^(`{3,}|~{3,}).*\n(?:.*\n)*?\1\s*$", re.MULTILINE)
+_OPENING_FENCE_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})")
+_CLOSING_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 
 
 def _strip_fenced_code_blocks(text: str) -> str:
-    """Replace content inside fenced code blocks with blank lines to preserve line numbers."""
+    """Replace content inside fenced code blocks with blank lines to preserve line numbers.
 
-    def _blank_lines(m: re.Match) -> str:
-        return "\n" * m.group().count("\n")
+    Implements CommonMark fenced code block detection:
+    - Opening fence: 0-3 spaces indent, then 3+ backticks or tildes
+    - Closing fence: 0-3 spaces indent (independent of opening), same character,
+      length >= opening fence length, no other content on the line
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    fence_char: str | None = None
+    fence_len = 0
+    in_fence = False
 
-    return _FENCED_CODE_RE.sub(_blank_lines, text)
+    for line in lines:
+        if not in_fence:
+            m = _OPENING_FENCE_RE.match(line)
+            if m:
+                fence_char = m.group(2)[0]  # '`' or '~'
+                fence_len = len(m.group(2))
+                in_fence = True
+                result.append("")
+            else:
+                result.append(line)
+        else:
+            cm = _CLOSING_FENCE_RE.match(line)
+            if cm and cm.group(1)[0] == fence_char and len(cm.group(1)) >= fence_len:
+                in_fence = False
+                fence_char = None
+                fence_len = 0
+            result.append("")
+
+    return "\n".join(result)
 
 
 @dataclass
