@@ -268,6 +268,17 @@ def test_empty_frontmatter_is_valid(dot_claude_with_rules):
     assert len(violations) == 0
 
 
+def test_frontmatter_with_dashes_in_value(dot_claude_with_rules):
+    """Frontmatter with --- inside a YAML value must not truncate parsing"""
+    content = '---\npaths:\n  - "src/---internal/**/*.ts"\n---\n\n# Rules\n'
+    _write_rule(dot_claude_with_rules, "dashes.md", content)
+
+    context = RepositoryContext(dot_claude_with_rules)
+    rule = RulesValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
 def test_rule_metadata():
     """Verify rule ID, description, and default severity"""
     rule = RulesValidRule()

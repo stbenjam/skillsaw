@@ -22,11 +22,11 @@ def _parse_frontmatter(content: str):
     if not content.startswith("---"):
         return None, None
 
-    match = re.match(r"^---\n(.*?)---", content, re.DOTALL)
+    match = re.match(r"^---\n(.*?\n)?---[ \t]*\n", content, re.DOTALL)
     if not match:
         return None, "Unterminated frontmatter (missing closing '---')"
 
-    raw = match.group(1).rstrip("\n")
+    raw = (match.group(1) or "").rstrip("\n")
     try:
         data = yaml.safe_load(raw) if raw else None
     except yaml.YAMLError as e:
