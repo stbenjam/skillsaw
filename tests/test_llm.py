@@ -1,6 +1,7 @@
 """Tests for the LLM-as-judge autofix engine."""
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -479,6 +480,121 @@ class TestLLMConfigFromYaml:
         config_file.write_text("llm:\n  model: gpt-4o\n", encoding="utf-8")
         config = LinterConfig.from_file(config_file)
         assert config.llm.model == "custom-model"
+
+
+class TestMaxIterationsCLIOverride:
+    """Tests for --max-iterations CLI validation and override."""
+
+    def test_max_iterations_zero_rejected(self, tmp_path):
+        """--max-iterations 0 must be rejected with a clear error."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "fix",
+                "--llm",
+                "--max-iterations",
+                "0",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "--max-iterations must be >= 1" in result.stderr
+
+    def test_max_iterations_negative_rejected(self, tmp_path):
+        """--max-iterations -1 must be rejected with a clear error."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "fix",
+                "--llm",
+                "--max-iterations",
+                "-1",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "--max-iterations must be >= 1" in result.stderr
+
+    def test_max_iterations_positive_overrides_config(self):
+        """--max-iterations with a positive value overrides the config default."""
+        from argparse import Namespace
+        from unittest.mock import patch
+
+        from skillsaw.__main__ import _run_fix
+        from skillsaw.config import LinterConfig
+
+        config = LinterConfig.default()
+        args = Namespace(
+            path=Path("."),
+            config=None,
+            use_llm=True,
+            model=None,
+            max_iterations=5,
+            all=False,
+            yes=False,
+            workers=None,
+            dry_run=False,
+        )
+
+        with (
+            patch("skillsaw.__main__.RepositoryContext"),
+            patch("skillsaw.__main__.find_config", return_value=None),
+            patch("skillsaw.__main__.LinterConfig.default", return_value=config),
+            patch("skillsaw.__main__._require_llm_provider", side_effect=SystemExit(1)),
+        ):
+            try:
+                _run_fix(args)
+            except SystemExit:
+                pass
+
+        assert config.llm.max_iterations == 5
+
+    def test_max_iterations_not_passed_keeps_default(self):
+        """When --max-iterations is omitted, the config default is preserved."""
+        from argparse import Namespace
+        from unittest.mock import patch
+
+        from skillsaw.__main__ import _run_fix
+        from skillsaw.config import LinterConfig
+
+        config = LinterConfig.default()
+        default_value = config.llm.max_iterations
+        args = Namespace(
+            path=Path("."),
+            config=None,
+            use_llm=True,
+            model=None,
+            max_iterations=None,
+            all=False,
+            yes=False,
+            workers=None,
+            dry_run=False,
+        )
+
+        with (
+            patch("skillsaw.__main__.RepositoryContext"),
+            patch("skillsaw.__main__.find_config", return_value=None),
+            patch("skillsaw.__main__.LinterConfig.default", return_value=config),
+            patch("skillsaw.__main__._require_llm_provider", side_effect=SystemExit(1)),
+        ):
+            try:
+                _run_fix(args)
+            except SystemExit:
+                pass
+
+        assert config.llm.max_iterations == default_value
 
 
 class TestContentRuleLLMPrompts:

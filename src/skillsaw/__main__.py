@@ -530,7 +530,13 @@ def _run_fix(args):
 
     if args.model:
         config.llm.model = args.model
-    if args.max_iterations:
+    if args.max_iterations is not None:
+        if args.max_iterations < 1:
+            print(
+                f"Error: --max-iterations must be >= 1, got {args.max_iterations}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         config.llm.max_iterations = args.max_iterations
 
     c = _ansi_colors()
