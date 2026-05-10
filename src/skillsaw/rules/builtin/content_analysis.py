@@ -396,10 +396,18 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
     if not isinstance(data, dict):
         return results
 
+    # Track the total number of `instructions:` keys encountered in the YAML
+    # (including skipped ones) so that _find_nth_key_line resolves to the
+    # correct occurrence.  Using len(results) would miscount when earlier
+    # entries are empty/None/non-string and therefore not added to results.
+    instructions_keys_seen = 0
+
     # reviews.instructions
     reviews = data.get("reviews")
     if isinstance(reviews, dict):
         instr = reviews.get("instructions")
+        if "instructions" in reviews:
+            instructions_keys_seen += 1
         if isinstance(instr, str) and instr.strip():
             # Find the "instructions" key that appears after "reviews"
             reviews_line = _find_yaml_key_line(raw, "reviews")
@@ -416,13 +424,16 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
             for idx, entry in enumerate(path_instructions):
                 if not isinstance(entry, dict):
                     continue
+                has_key = "instructions" in entry
                 pi = entry.get("instructions")
                 if isinstance(pi, str) and pi.strip():
                     path_val = entry.get("path", f"[{idx}]")
-                    line = _find_nth_key_line(raw, "instructions", len(results))
+                    line = _find_nth_key_line(raw, "instructions", instructions_keys_seen)
                     results.append(
                         (f"reviews.path_instructions[{path_val}].instructions", pi, line)
                     )
+                if has_key:
+                    instructions_keys_seen += 1
 
         # reviews.tools.<tool>.instructions
         tools = reviews.get("tools")

@@ -359,6 +359,61 @@ class TestExtractInstructions:
         result = _extract_instructions(data, raw)
         assert len(result) == 0
 
+    def test_path_instructions_line_number_when_reviews_instructions_empty(self):
+        """Line numbers should be correct when reviews.instructions is empty/skipped.
+
+        When reviews.instructions exists but is empty, it is not added to
+        results.  The path_instructions loop must still count the skipped key
+        so that _find_nth_key_line resolves to the right occurrence.
+        """
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: ''\n"  # line 2 -- skipped (empty)
+            "  path_instructions:\n"  # line 3
+            "    - path: '*.py'\n"  # line 4
+            "      instructions: 'Use types'\n"  # line 5
+        )
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 1
+        assert result[0][0] == "reviews.path_instructions[*.py].instructions"
+        assert result[0][2] == 5  # must point to line 5, not line 2
+
+    def test_path_instructions_line_number_when_reviews_instructions_none(self):
+        """Same as above but reviews.instructions is null (None)."""
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions:\n"  # line 2 -- null, skipped
+            "  path_instructions:\n"  # line 3
+            "    - path: '*.py'\n"  # line 4
+            "      instructions: 'Use types'\n"  # line 5
+        )
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 1
+        assert result[0][2] == 5
+
+    def test_path_instructions_line_number_with_multiple_skipped(self):
+        """Line numbers correct when multiple path_instructions entries are skipped."""
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: ''\n"  # line 2 -- skipped
+            "  path_instructions:\n"  # line 3
+            "    - path: '*.md'\n"  # line 4
+            "      instructions: ''\n"  # line 5 -- skipped
+            "    - path: '*.py'\n"  # line 6
+            "      instructions: 'Check types'\n"  # line 7
+            "    - path: '*.rs'\n"  # line 8
+            "      instructions: 'Check safety'\n"  # line 9
+        )
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 2
+        assert result[0][0] == "reviews.path_instructions[*.py].instructions"
+        assert result[0][2] == 7
+        assert result[1][0] == "reviews.path_instructions[*.rs].instructions"
+        assert result[1][2] == 9
+
     def test_no_reviews_no_chat(self):
         raw = "language: en-US\n"
         data = yaml.safe_load(raw)
