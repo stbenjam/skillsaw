@@ -333,6 +333,29 @@ class TestLiteLLMProviderEdgeCases:
         assert result.usage.prompt_tokens == 0
         assert result.usage.completion_tokens == 0
 
+    def test_missing_choices_attribute_preserves_usage(self):
+        """Provider should preserve prompt usage even when choices attribute is missing."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        usage = SimpleNamespace(prompt_tokens=55, completion_tokens=0)
+        mock_litellm.completion.return_value = SimpleNamespace(usage=usage)
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert result.content is None
+        assert result.tool_calls == []
+        assert result.usage.prompt_tokens == 55
+        assert result.usage.completion_tokens == 0
+
     def test_invalid_json_tool_call_arguments(self):
         """Provider should handle invalid JSON in tool call arguments gracefully."""
         from unittest.mock import MagicMock, patch
