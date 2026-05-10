@@ -84,7 +84,7 @@ def _extract_plugin(context: RepositoryContext, plugin_path: Path) -> PluginDoc:
         name=name,
         path=plugin_path,
         description=meta.get("description", ""),
-        version=meta.get("version", ""),
+        version=str(meta.get("version", "")),
         author=author_val if isinstance(author_val, dict) else None,
         commands=_extract_commands(plugin_path),
         skills=_extract_skills(plugin_path),
