@@ -10,7 +10,7 @@ import fnmatch
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Callable, List, Optional, Set, Tuple
 
 import yaml
 
@@ -180,6 +180,39 @@ class ContentFile:
     line_offset: int = 0
     body: Optional[str] = None
 
+    def file_line(self, body_line: int) -> int:
+        """Translate a 1-based body line number to a 1-based file line number."""
+        return body_line + self.line_offset
+
+
+def _gather_coderabbit_files(
+    context: RepositoryContext,
+    seen: Set[Path],
+    _is_excluded: Callable,
+) -> List[ContentFile]:
+    """Yield one ContentFile per instruction block in .coderabbit.yaml."""
+    cr_path = context.root_path / ".coderabbit.yaml"
+    cr_resolved = cr_path.resolve()
+    if cr_resolved in seen or not cr_path.exists() or _is_excluded(cr_path):
+        return []
+    seen.add(cr_resolved)
+    cr_raw = read_text(cr_path)
+    if not cr_raw:
+        return []
+    try:
+        cr_data = yaml.safe_load(cr_raw)
+    except yaml.YAMLError:
+        return []
+    if not cr_data:
+        return []
+    results: List[ContentFile] = []
+    for _label, text, line in _extract_instructions(cr_data, cr_raw):
+        offset = (line - 1) if line else 0
+        results.append(
+            ContentFile(path=cr_path, category="coderabbit", line_offset=offset, body=text)
+        )
+    return results
+
 
 def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
     """Gather all contextual content files across all formats.
@@ -285,27 +318,7 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
                 _add(rule_file, "rule")
 
     # .coderabbit.yaml: yield one ContentFile per instruction block
-    cr_path = context.root_path / ".coderabbit.yaml"
-    cr_resolved = cr_path.resolve()
-    if cr_resolved not in seen and cr_path.exists() and not _is_excluded(cr_path):
-        seen.add(cr_resolved)
-        cr_raw = read_text(cr_path)
-        if cr_raw:
-            try:
-                cr_data = yaml.safe_load(cr_raw)
-            except yaml.YAMLError:
-                cr_data = None
-            if cr_data:
-                for _label, text, line in _extract_instructions(cr_data, cr_raw):
-                    offset = (line - 1) if line else 0
-                    files.append(
-                        ContentFile(
-                            path=cr_path,
-                            category="coderabbit",
-                            line_offset=offset,
-                            body=text,
-                        )
-                    )
+    files.extend(_gather_coderabbit_files(context, seen, _is_excluded))
 
     # --- APM source directories ---
     if context.has_apm:
@@ -542,18 +555,18 @@ class WeakLanguageDetector:
             for pattern, fix in _HEDGING:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(
-                        WeakLanguageMatch(line_num + cf.line_offset, m.group(), "hedging", fix)
+                        WeakLanguageMatch(cf.file_line(line_num), m.group(), "hedging", fix)
                     )
             for pattern, fix in _VAGUENESS:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(
-                        WeakLanguageMatch(line_num + cf.line_offset, m.group(), "vagueness", fix)
+                        WeakLanguageMatch(cf.file_line(line_num), m.group(), "vagueness", fix)
                     )
             for pattern, fix in _NON_ACTIONABLE:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(
                         WeakLanguageMatch(
-                            line_num + cf.line_offset, m.group(), "non-actionable", fix
+                            cf.file_line(line_num), m.group(), "non-actionable", fix
                         )
                     )
         return results
@@ -569,7 +582,7 @@ class TautologicalDetector:
             for pattern, reason in _TAUTOLOGICAL_PHRASES:
                 m = re.search(pattern, line, re.IGNORECASE)
                 if m:
-                    results.append(TautologicalMatch(line_num + cf.line_offset, m.group(), reason))
+                    results.append(TautologicalMatch(cf.file_line(line_num), m.group(), reason))
         return results
 
 
@@ -595,7 +608,7 @@ class CriticalPositionAnalyzer:
                 score = 0.5
                 results.append(
                     PositionIssue(
-                        line_num + cf.line_offset,
+                        cf.file_line(line_num),
                         m.group(),
                         score,
                         "Move to the first 20% or last 20% of the file for better attention",
@@ -644,7 +657,7 @@ class RedundancyDetector:
         has_tsconfig = (root / "tsconfig.json").exists()
 
         for line_num, line in enumerate(content.splitlines(), 1):
-            adjusted = line_num + cf.line_offset
+            adjusted = cf.file_line(line_num)
             if has_editorconfig:
                 for pattern, config_key in self._INDENT_PATTERNS:
                     if pattern.search(line):
