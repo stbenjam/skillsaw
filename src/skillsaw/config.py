@@ -65,6 +65,24 @@ class LinterConfig:
         except (yaml.YAMLError, IOError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
+        rules = data.get("rules") or {}
+        custom_rules = data.get("custom-rules") or []
+        exclude_patterns = data.get("exclude") or []
+        strict = bool(data.get("strict") or False)
+
+        if not isinstance(rules, dict):
+            raise ValueError(
+                f"'rules' must be a mapping, got {type(rules).__name__}. "
+                "Each rule should be a key with a mapping value, e.g.:\n"
+                "  rules:\n"
+                "    plugin-json-required:\n"
+                "      enabled: true"
+            )
+        if not isinstance(custom_rules, list):
+            raise ValueError(f"'custom-rules' must be a list, got {type(custom_rules).__name__}")
+        if not isinstance(exclude_patterns, list):
+            raise ValueError(f"'exclude' must be a list, got {type(exclude_patterns).__name__}")
+
         llm_data = data.get("llm", {})
         llm_settings = LLMSettings(
             model=llm_data.get("model", LLMSettings.model),
@@ -76,11 +94,11 @@ class LinterConfig:
 
         return cls(
             version=data.get("version", _DEFAULT_VERSION),
-            rules=data.get("rules", {}),
-            custom_rules=data.get("custom-rules", []),
-            exclude_patterns=data.get("exclude", []),
+            rules=rules,
+            custom_rules=custom_rules,
+            exclude_patterns=exclude_patterns,
             content_paths=data.get("content-paths", []),
-            strict=data.get("strict", False),
+            strict=strict,
             llm=llm_settings,
         )
 
@@ -183,7 +201,7 @@ class LinterConfig:
             Rule configuration dict
         """
         defaults = self.default().rules.get(rule_id, {})
-        overrides = self.rules.get(rule_id, {})
+        overrides = self.rules.get(rule_id) or {}
         merged = {**defaults, **overrides}
         return merged
 
