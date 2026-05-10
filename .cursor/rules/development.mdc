@@ -26,6 +26,6 @@ Claude Code plugins, and plugin marketplaces.
 
 1. `make test` — run the full test suite.
 2. `make lint` — check formatting (or `make format` to fix).
-3. `make update` — regenerate all generated files.
-4. Bump version via `scripts/bump-version.sh`.
+3. Bump version via `scripts/bump-version.sh`.
+4. `make update` — regenerate all generated files (must come after version bump).
 5. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure exit 0.

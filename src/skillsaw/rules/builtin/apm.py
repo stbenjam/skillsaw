@@ -2,26 +2,24 @@
 Rules for validating APM (Agent Package Manager) format repositories
 """
 
-import re
 from typing import List, Optional
 
 import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.utils import read_text, yaml_key_line
 
 
 def _yaml_key_line(file_path, key: str) -> Optional[int]:
-    """Find the line number of a top-level key in a YAML file."""
+    """Find the line number of a top-level key in a YAML file.
+
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
+    """
     content = read_text(file_path)
     if content is None:
         return None
-    pattern = re.compile(rf"^{re.escape(key)}\s*:")
-    for i, line in enumerate(content.splitlines(), 1):
-        if pattern.match(line):
-            return i
-    return None
+    return yaml_key_line(content, key, top_level=True)
 
 
 class ApmYamlValidRule(Rule):
