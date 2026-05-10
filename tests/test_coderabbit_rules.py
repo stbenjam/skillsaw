@@ -182,9 +182,10 @@ class TestGetBodyCoderabbit:
     def test_extracts_review_instructions(self, temp_dir):
         cr = temp_dir / ".coderabbit.yaml"
         cr.write_text("reviews:\n  instructions: 'Do stuff.'\n")
-        body = _get_body(cr)
+        body, offset = _get_body(cr)
         assert body is not None
         assert "Do stuff." in body
+        assert offset == 0
 
     def test_extracts_multiple_instruction_fields(self, temp_dir):
         cr = temp_dir / ".coderabbit.yaml"
@@ -194,22 +195,25 @@ class TestGetBodyCoderabbit:
             "chat:\n"
             "  instructions: 'Chat stuff.'\n"
         )
-        body = _get_body(cr)
+        body, offset = _get_body(cr)
         assert body is not None
         assert "Review stuff." in body
         assert "Chat stuff." in body
+        assert offset == 0
 
     def test_returns_empty_for_no_instructions(self, temp_dir):
         cr = temp_dir / ".coderabbit.yaml"
         cr.write_text("language: en-US\n")
-        body = _get_body(cr)
+        body, offset = _get_body(cr)
         assert body == ""
+        assert offset == 0
 
     def test_returns_empty_for_invalid_yaml(self, temp_dir):
         cr = temp_dir / ".coderabbit.yaml"
         cr.write_text(":\n  bad: [unterminated\n")
-        body = _get_body(cr)
+        body, offset = _get_body(cr)
         assert body == ""
+        assert offset == 0
 
 
 # ---------------------------------------------------------------------------

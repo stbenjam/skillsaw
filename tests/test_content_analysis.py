@@ -14,6 +14,7 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_instruction_files,
     gather_all_content_files,
     ContentFile,
+    _get_body,
     _strip_fenced_code_blocks,
 )
 from skillsaw.context import RepositoryContext
@@ -675,3 +676,115 @@ class TestGatherAllContentFiles:
         context = RepositoryContext(temp_dir)
         cfs = gather_all_content_files(context)
         assert any(cf.path.name == "CLAUDE.md" for cf in cfs)
+
+
+class TestMdcFrontmatterLineOffset:
+    """Verify that .mdc files report correct line numbers accounting for frontmatter."""
+
+    MDC_CONTENT = (
+        "---\n"
+        "description: My rule\n"
+        'globs: "**/*.py"\n'
+        "---\n"
+        "Line one of the body.\n"
+        "Try to handle errors gracefully.\n"
+        "Line three of the body.\n"
+    )
+
+    def test_get_body_returns_offset_for_mdc(self, temp_dir):
+        """_get_body should return the frontmatter line count for .mdc files."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "style.mdc"
+        mdc.write_text(self.MDC_CONTENT)
+        body, offset = _get_body(mdc)
+        assert offset == 4  # 4 lines: ---, description, globs, ---
+        assert body is not None
+        assert "Try to handle" in body
+        assert "description:" not in body
+
+    def test_get_body_returns_zero_offset_for_md(self, temp_dir):
+        """_get_body should return 0 offset for regular .md files."""
+        md = temp_dir / "CLAUDE.md"
+        md.write_text("# Title\nSome content.\n")
+        body, offset = _get_body(md)
+        assert offset == 0
+
+    def test_get_body_returns_zero_offset_for_mdc_without_frontmatter(self, temp_dir):
+        """_get_body should return 0 offset for .mdc files with no frontmatter."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "bare.mdc"
+        mdc.write_text("Just body content.\n")
+        body, offset = _get_body(mdc)
+        assert offset == 0
+
+    def test_weak_language_line_number_in_mdc(self, temp_dir):
+        """WeakLanguageDetector should report the correct file line for .mdc files."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "style.mdc"
+        mdc.write_text(self.MDC_CONTENT)
+        detector = WeakLanguageDetector()
+        results = detector.analyze(mdc)
+        assert len(results) >= 1
+        # "Try to handle errors gracefully" is on line 6 of the file
+        # (4 frontmatter lines + 2nd line of body)
+        assert results[0].line == 6
+
+    def test_tautological_line_number_in_mdc(self, temp_dir):
+        """TautologicalDetector should report the correct file line for .mdc files."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "style.mdc"
+        mdc.write_text(
+            "---\n"
+            "description: My rule\n"
+            'globs: "**/*.py"\n'
+            "---\n"
+            "Line one.\n"
+            "Write clean code.\n"
+            "Line three.\n"
+        )
+        detector = TautologicalDetector()
+        results = detector.analyze(mdc)
+        assert len(results) >= 1
+        # "Write clean code" is on line 6 (4 fm + 2nd body line)
+        assert results[0].line == 6
+
+    def test_critical_position_line_number_in_mdc(self, temp_dir):
+        """CriticalPositionAnalyzer should report correct file lines for .mdc files."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "style.mdc"
+        # Build a 50-line body with IMPORTANT in the middle (line 25 of body)
+        body_lines = [f"Line {i}" for i in range(1, 51)]
+        body_lines[24] = "IMPORTANT: Never skip tests."
+        content = "---\ndescription: test\n---\n" + "\n".join(body_lines) + "\n"
+        mdc.write_text(content)
+        analyzer = CriticalPositionAnalyzer()
+        results = analyzer.analyze(mdc)
+        assert len(results) >= 1
+        # Line 25 of body + 3 frontmatter lines = line 28
+        assert results[0].line == 28
+
+    def test_redundancy_line_number_in_mdc(self, temp_dir):
+        """RedundancyDetector should report correct file lines for .mdc files."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True)
+        mdc = rules_dir / "style.mdc"
+        mdc.write_text(
+            "---\n"
+            "description: My rule\n"
+            'globs: "**/*.py"\n'
+            "---\n"
+            "Line one.\n"
+            "Use 4 spaces for indentation.\n"
+            "Line three.\n"
+        )
+        (temp_dir / ".editorconfig").write_text("[*]\nindent_size = 4\n")
+        detector = RedundancyDetector()
+        results = detector.analyze(mdc, temp_dir)
+        assert len(results) >= 1
+        # "Use 4 spaces" is on line 6 (4 fm + 2nd body line)
+        assert results[0].line == 6

@@ -613,3 +613,48 @@ class TestContentInconsistentTerminologyRule:
         context = RepositoryContext(temp_dir)
         violations = ContentInconsistentTerminologyRule().check(context)
         assert len(violations) == 0
+
+
+class TestMdcFrontmatterLineOffsetInRules:
+    """Content rules should report correct file line numbers for .mdc files."""
+
+    def _make_mdc(self, temp_dir, body):
+        """Create an .mdc file with 4-line frontmatter and the given body."""
+        rules_dir = temp_dir / ".cursor" / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        mdc = rules_dir / "test.mdc"
+        mdc.write_text("---\n" "description: Test rule\n" 'globs: "**/*.py"\n' "---\n" + body)
+        return mdc
+
+    def test_negative_only_line_offset(self, temp_dir):
+        """ContentNegativeOnlyRule should offset line numbers by frontmatter size."""
+        self._make_mdc(temp_dir, "Line one.\nNever use var in JavaScript.\nLine three.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        mdc_violations = [v for v in violations if v.file_path.suffix == ".mdc"]
+        assert len(mdc_violations) >= 1
+        # "Never use var" is body line 2, file line 6 (4 fm + 2)
+        assert mdc_violations[0].line == 6
+
+    def test_hook_candidate_line_offset(self, temp_dir):
+        """ContentHookCandidateRule should offset line numbers by frontmatter size."""
+        self._make_mdc(
+            temp_dir,
+            "Line one.\nAlways run tests before commit.\nLine three.\n",
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentHookCandidateRule().check(context)
+        mdc_violations = [v for v in violations if v.file_path.suffix == ".mdc"]
+        assert len(mdc_violations) >= 1
+        # "Always run tests before commit" is body line 2, file line 6
+        assert mdc_violations[0].line == 6
+
+    def test_weak_language_rule_line_offset(self, temp_dir):
+        """ContentWeakLanguageRule should report offset lines for .mdc files."""
+        self._make_mdc(temp_dir, "Line one.\nTry to handle errors gracefully.\nLine three.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        mdc_violations = [v for v in violations if v.file_path.suffix == ".mdc"]
+        assert len(mdc_violations) >= 1
+        # All weak-language hits are on body line 2 = file line 6
+        assert all(v.line == 6 for v in mdc_violations)

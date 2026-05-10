@@ -300,8 +300,15 @@ def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
     return [cf.path for cf in gather_all_content_files(context)]
 
 
-def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
-    """Read file and return the instruction body text.
+def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Tuple[Optional[str], int]:
+    """Read file and return the instruction body text plus a line offset.
+
+    Returns ``(body_text, frontmatter_line_count)`` where
+    *frontmatter_line_count* is the number of lines consumed by YAML
+    frontmatter (for ``.mdc`` files) or ``0`` for other formats.  Callers
+    should add *frontmatter_line_count* to any 1-based line numbers derived
+    from *body_text* so that reported line numbers refer to positions in the
+    original file.
 
     Handles special file types:
     - ``.mdc``: strips YAML frontmatter.
@@ -310,16 +317,20 @@ def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
     """
     content = read_text(path)
     if content is None:
-        return None
+        return None, 0
+    fm_lines = 0
     if path.name == ".coderabbit.yaml":
         body = _extract_coderabbit_instructions_body(content)
     elif path.suffix == ".mdc":
         _, body = parse_frontmatter(content)
+        # Count how many lines the frontmatter occupies (everything before the body).
+        if body is not content:
+            fm_lines = content.count("\n", 0, len(content) - len(body))
     else:
         body = content
     if strip_code_blocks:
         body = _strip_fenced_code_blocks(body)
-    return body
+    return body, fm_lines
 
 
 # ---------------------------------------------------------------------------
@@ -500,11 +511,11 @@ def _extract_coderabbit_instructions_body(raw: str) -> str:
 
 class WeakLanguageDetector:
     def analyze(self, path: Path) -> List[WeakLanguageMatch]:
-        content = _get_body(path)
+        content, fm_offset = _get_body(path)
         if not content:
             return []
         results: List[WeakLanguageMatch] = []
-        for line_num, line in enumerate(content.splitlines(), 1):
+        for line_num, line in enumerate(content.splitlines(), 1 + fm_offset):
             for pattern, fix in _HEDGING:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(WeakLanguageMatch(line_num, m.group(), "hedging", fix))
@@ -519,11 +530,11 @@ class WeakLanguageDetector:
 
 class TautologicalDetector:
     def analyze(self, path: Path) -> List[TautologicalMatch]:
-        content = _get_body(path)
+        content, fm_offset = _get_body(path)
         if not content:
             return []
         results: List[TautologicalMatch] = []
-        for line_num, line in enumerate(content.splitlines(), 1):
+        for line_num, line in enumerate(content.splitlines(), 1 + fm_offset):
             for pattern, reason in _TAUTOLOGICAL_PHRASES:
                 m = re.search(pattern, line, re.IGNORECASE)
                 if m:
@@ -536,7 +547,7 @@ class CriticalPositionAnalyzer:
         self._min_lines = min_lines
 
     def analyze(self, path: Path) -> List[PositionIssue]:
-        content = _get_body(path)
+        content, fm_offset = _get_body(path)
         if not content:
             return []
         lines = content.splitlines()
@@ -544,16 +555,16 @@ class CriticalPositionAnalyzer:
         if total < self._min_lines:
             return []
         results: List[PositionIssue] = []
-        for line_num, line in enumerate(lines, 1):
+        for body_idx, line in enumerate(lines):
             m = _CRITICAL_KEYWORDS.search(line)
             if not m:
                 continue
-            position = line_num / total
+            position = (body_idx + 1) / total
             if 0.2 < position < 0.8:
                 score = 0.5
                 results.append(
                     PositionIssue(
-                        line_num,
+                        body_idx + 1 + fm_offset,
                         m.group(),
                         score,
                         "Move to the first 20% or last 20% of the file for better attention",
@@ -571,7 +582,7 @@ class RedundancyDetector:
     ]
 
     def analyze(self, path: Path, root: Path) -> List[RedundancyMatch]:
-        content = _get_body(path)
+        content, fm_offset = _get_body(path)
         if not content:
             return []
         results: List[RedundancyMatch] = []
@@ -601,7 +612,7 @@ class RedundancyDetector:
         has_prettier = any((root / n).exists() for n in prettierrc_names)
         has_tsconfig = (root / "tsconfig.json").exists()
 
-        for line_num, line in enumerate(content.splitlines(), 1):
+        for line_num, line in enumerate(content.splitlines(), 1 + fm_offset):
             if has_editorconfig:
                 for pattern, config_key in self._INDENT_PATTERNS:
                     if pattern.search(line):
@@ -660,7 +671,7 @@ class InstructionBudgetAnalyzer:
     BUDGET = 150
 
     def analyze_file(self, path: Path) -> InstructionBudget:
-        content = _get_body(path)
+        content, _ = _get_body(path)
         if not content:
             return InstructionBudget(
                 total_count=0,

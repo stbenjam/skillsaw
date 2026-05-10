@@ -370,7 +370,7 @@ class ContentNegativeOnlyRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, fm_offset = _get_body(cf.path)
             if not body:
                 continue
             lines = body.splitlines()
@@ -385,7 +385,7 @@ class ContentNegativeOnlyRule(Rule):
                         self.violation(
                             f"Negative-only instruction without alternative: '{line.strip()[:80]}'",
                             file_path=cf.path,
-                            line=i + 1,
+                            line=i + 1 + fm_offset,
                         )
                     )
         return violations
@@ -442,7 +442,7 @@ class ContentSectionLengthRule(Rule):
         max_tokens = self.config.get("max-tokens", self._DEFAULT_MAX_TOKENS)
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, fm_offset = _get_body(cf.path)
             if not body:
                 continue
             lines = body.splitlines()
@@ -459,7 +459,7 @@ class ContentSectionLengthRule(Rule):
                             (current_heading_text, current_heading_line, section_start, i)
                         )
                     current_heading_text = m.group(2)
-                    current_heading_line = i + 1
+                    current_heading_line = i + 1 + fm_offset
                     section_start = i + 1
 
             if len(lines) > section_start:
@@ -541,7 +541,7 @@ class ContentContradictionRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, _ = _get_body(cf.path)
             if not body:
                 continue
             body_lower = body.lower()
@@ -618,10 +618,10 @@ class ContentHookCandidateRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, fm_offset = _get_body(cf.path)
             if not body:
                 continue
-            for line_num, line in enumerate(body.splitlines(), 1):
+            for line_num, line in enumerate(body.splitlines(), 1 + fm_offset):
                 for pattern, hook_type in self._HOOK_PATTERNS:
                     if pattern.search(line):
                         violations.append(
@@ -682,7 +682,7 @@ class ContentActionabilityScoreRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, _ = _get_body(cf.path)
             if not body:
                 continue
             lines = [l for l in body.splitlines() if l.strip()]
@@ -744,7 +744,7 @@ class ContentCognitiveChunksRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_files(context):
-            body = _get_body(cf.path)
+            body, _ = _get_body(cf.path)
             if not body or len(body.strip()) < 100:
                 continue
             lines = body.splitlines()
@@ -1037,7 +1037,7 @@ class ContentInconsistentTerminologyRule(Rule):
             term_usage: Dict[str, int] = defaultdict(int)
             files_by_term: Dict[str, List[Path]] = defaultdict(list)
             for cf in content_files:
-                body = _get_body(cf.path)
+                body, _ = _get_body(cf.path)
                 if not body:
                     continue
                 for pattern in patterns:
