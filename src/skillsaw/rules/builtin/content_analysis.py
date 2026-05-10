@@ -483,6 +483,19 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
     return results
 
 
+def _is_block_scalar(lines: List[str], key_line: Optional[int]) -> bool:
+    """Return ``True`` if the YAML key at *key_line* uses a block scalar indicator."""
+    if key_line is None or key_line < 1 or key_line > len(lines):
+        return False
+    key_content = lines[key_line - 1]
+    colon_idx = key_content.find(":")
+    if colon_idx >= 0:
+        after_colon = key_content[colon_idx + 1 :].split("#", 1)[0].strip()
+        if after_colon in ("|", ">", "|-", ">-", "|+", ">+"):
+            return True
+    return False
+
+
 def _instruction_text_start_line(lines: List[str], key_line: Optional[int]) -> Optional[int]:
     """Determine the real start line of an instruction's text content.
 
@@ -494,15 +507,41 @@ def _instruction_text_start_line(lines: List[str], key_line: Optional[int]) -> O
         return None
     if key_line < 1 or key_line > len(lines):
         return key_line
-    key_content = lines[key_line - 1]
-    # After "instructions:", if a block scalar indicator follows, text is next line
-    colon_idx = key_content.find(":")
-    if colon_idx >= 0:
-        # Strip comments and whitespace after the colon
-        after_colon = key_content[colon_idx + 1 :].split("#", 1)[0].strip()
-        if after_colon in ("|", ">", "|-", ">-", "|+", ">+"):
-            return key_line + 1
+    if _is_block_scalar(lines, key_line):
+        return key_line + 1
     return key_line
+
+
+def _extract_raw_block_lines(lines: List[str], start_line: int) -> List[str]:
+    """Extract the physical content lines of a YAML block scalar.
+
+    Starting from *start_line* (1-based, the first content line after ``|``
+    or ``>``), collects lines that belong to the block by checking indentation.
+    Returns the de-indented content lines so they can be placed at their
+    real positions in the assembled body.
+    """
+    if start_line < 1 or start_line > len(lines):
+        return []
+    # Determine the indentation of the first content line.
+    first = lines[start_line - 1]
+    indent = len(first) - len(first.lstrip())
+    if indent == 0:
+        return []
+    result: List[str] = []
+    for i in range(start_line - 1, len(lines)):
+        line = lines[i]
+        # An empty or whitespace-only line within the block is preserved.
+        if line.strip() == "":
+            result.append("")
+            continue
+        cur_indent = len(line) - len(line.lstrip())
+        if cur_indent < indent:
+            break
+        result.append(line[indent:])
+    # Strip trailing empty lines (YAML block scalars don't include them).
+    while result and result[-1] == "":
+        result.pop()
+    return result
 
 
 def _extract_coderabbit_instructions_body(raw: str) -> str:
@@ -511,6 +550,10 @@ def _extract_coderabbit_instructions_body(raw: str) -> str:
     Builds a body string where each instruction's text is placed at its
     real line offset in the YAML file (padded with blank lines) so that
     content analyzers report correct line numbers.
+
+    For block scalars (both ``|`` literal and ``>`` folded), the raw physical
+    lines are extracted from the YAML source so that line positions are
+    preserved even when PyYAML would collapse them.
 
     Returns an empty string on parse failure or when no instructions exist.
     """
@@ -522,21 +565,26 @@ def _extract_coderabbit_instructions_body(raw: str) -> str:
     if not instructions:
         return ""
 
-    # Build a list of (start_line, text) tuples sorted by position.
+    # Build a list of (start_line, text_lines) tuples sorted by position.
     raw_lines = raw.splitlines()
-    positioned: List[Tuple[int, str]] = []
+    positioned: List[Tuple[int, List[str]]] = []
     for _, text, key_line in instructions:
         start = _instruction_text_start_line(raw_lines, key_line)
         if start is None:
             start = 1
-        positioned.append((start, text))
+        # For block scalars, extract raw physical lines to preserve line
+        # fidelity (folded '>' scalars collapse lines after parsing).
+        if _is_block_scalar(raw_lines, key_line):
+            text_lines = _extract_raw_block_lines(raw_lines, start)
+        else:
+            text_lines = text.splitlines()
+        positioned.append((start, text_lines))
     positioned.sort(key=lambda t: t[0])
 
     # Assemble body: pad with blank lines so each text block sits at its
     # real line number.
     result_lines: List[str] = []
-    for start, text in positioned:
-        text_lines = text.splitlines()
+    for start, text_lines in positioned:
         # Pad up to the target line.  start is 1-based; len(result_lines)
         # is the count of lines already emitted (0-based next index).
         while len(result_lines) < start - 1:

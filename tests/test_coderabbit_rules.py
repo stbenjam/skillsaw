@@ -374,6 +374,42 @@ class TestCoderabbitBodyLineAlignment:
         assert lines[2] == "Check nulls."  # line 3
         assert lines[3] == "Validate inputs."  # line 4
 
+    def test_folded_scalar_alignment(self):
+        """Folded '>' scalars preserve physical line positions, not collapsed text."""
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: >\n"  # line 2
+            "    Always validate inputs.\n"  # line 3
+            "    Try to handle retries.\n"  # line 4
+            "    Check for errors.\n"  # line 5
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        # Each physical line should appear at its real position
+        assert lines[2] == "Always validate inputs."  # line 3
+        assert lines[3] == "Try to handle retries."  # line 4
+        assert lines[4] == "Check for errors."  # line 5
+
+    def test_folded_scalar_violation_line_numbers(self, temp_dir):
+        """Violations in folded '>' scalars should report correct physical lines."""
+        content = (
+            "reviews:\n"  # line 1
+            "  instructions: >\n"  # line 2
+            "    Always validate inputs.\n"  # line 3
+            "    Try to handle retries.\n"  # line 4
+            "    Check for errors.\n"  # line 5
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        # "Try to" is on physical line 4
+        try_violations = [v for v in coderabbit_violations if "try to" in v.message.lower()]
+        assert len(try_violations) == 1
+        assert try_violations[0].line == 4, f"Expected line 4, got {try_violations[0].line}"
+
     def test_empty_body_on_no_instructions(self):
         raw = "language: en-US\n"
         body = _extract_coderabbit_instructions_body(raw)
