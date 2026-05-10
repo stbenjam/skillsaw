@@ -414,6 +414,28 @@ class TestExtractInstructions:
         assert result[1][0] == "reviews.path_instructions[*.rs].instructions"
         assert result[1][2] == 9
 
+    def test_path_instructions_line_number_with_tools_before_path(self):
+        """Line numbers correct when tools.instructions appears before path_instructions in YAML."""
+        raw = (
+            "reviews:\n"  # line 1
+            "  tools:\n"  # line 2
+            "    biome:\n"  # line 3
+            "      instructions: 'Use biome'\n"  # line 4
+            "  path_instructions:\n"  # line 5
+            "    - path: '*.py'\n"  # line 6
+            "      instructions: 'Check types'\n"  # line 7
+            "    - path: '*.rs'\n"  # line 8
+            "      instructions: 'Check safety'\n"  # line 9
+        )
+        data = yaml.safe_load(raw)
+        result = _extract_instructions(data, raw)
+        assert len(result) == 3
+        by_label = {r[0]: r[2] for r in result}
+        # path entries must resolve to their own lines, not the tools line
+        assert by_label["reviews.path_instructions[*.py].instructions"] == 7
+        assert by_label["reviews.path_instructions[*.rs].instructions"] == 9
+        assert by_label["reviews.tools.biome.instructions"] == 4
+
     def test_no_reviews_no_chat(self):
         raw = "language: en-US\n"
         data = yaml.safe_load(raw)
