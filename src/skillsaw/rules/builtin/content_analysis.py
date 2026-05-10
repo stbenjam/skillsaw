@@ -177,6 +177,8 @@ _INSTRUCTION_FILE_CATEGORIES = {
 class ContentFile:
     path: Path
     category: str
+    line_offset: int = 0
+    body: Optional[str] = None
 
 
 def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
@@ -282,7 +284,28 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add(rule_file, "rule")
 
-    _add(context.root_path / ".coderabbit.yaml", "coderabbit")
+    # .coderabbit.yaml: yield one ContentFile per instruction block
+    cr_path = context.root_path / ".coderabbit.yaml"
+    cr_resolved = cr_path.resolve()
+    if cr_resolved not in seen and cr_path.exists() and not _is_excluded(cr_path):
+        seen.add(cr_resolved)
+        cr_raw = read_text(cr_path)
+        if cr_raw:
+            try:
+                cr_data = yaml.safe_load(cr_raw)
+            except yaml.YAMLError:
+                cr_data = None
+            if cr_data:
+                for _label, text, line in _extract_instructions(cr_data, cr_raw):
+                    offset = (line - 1) if line else 0
+                    files.append(
+                        ContentFile(
+                            path=cr_path,
+                            category="coderabbit",
+                            line_offset=offset,
+                            body=text,
+                        )
+                    )
 
     # --- APM source directories ---
     if context.has_apm:
@@ -340,21 +363,31 @@ def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
 
     Handles special file types:
     - ``.mdc``: strips YAML frontmatter.
-    - ``.coderabbit.yaml``: extracts and concatenates all ``instructions``
-      field values so content analyzers see only instruction text.
     """
     content = read_text(path)
     if content is None:
         return None
-    if path.name == ".coderabbit.yaml":
-        body = _extract_coderabbit_instructions_body(content)
-    elif path.suffix == ".mdc":
+    if path.suffix == ".mdc":
         _, body = parse_frontmatter(content)
     else:
         body = content
     if strip_code_blocks:
         body = _strip_fenced_code_blocks(body)
     return body
+
+
+def _get_body_from_cf(cf: ContentFile, *, strip_code_blocks: bool = True) -> Optional[str]:
+    """Return instruction body text for a ContentFile.
+
+    If ``cf.body`` is pre-populated (e.g. coderabbit instruction fragments),
+    returns that directly.  Otherwise falls through to ``_get_body(cf.path)``.
+    """
+    if cf.body is not None:
+        body = cf.body
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+    return _get_body(cf.path, strip_code_blocks=strip_code_blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -499,43 +532,36 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
     return results
 
 
-def _extract_coderabbit_instructions_body(raw: str) -> str:
-    """Extract instruction text from raw .coderabbit.yaml content.
-
-    Parses the YAML and concatenates all ``instructions`` field values
-    separated by double newlines so content analyzers see only plain text.
-    Returns an empty string on parse failure or when no instructions exist.
-    """
-    try:
-        data = yaml.safe_load(raw)
-    except yaml.YAMLError:
-        return ""
-    instructions = _extract_instructions(data, raw)
-    return "\n\n".join(text for _, text, _ in instructions)
-
-
 class WeakLanguageDetector:
-    def analyze(self, path: Path) -> List[WeakLanguageMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentFile) -> List[WeakLanguageMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[WeakLanguageMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
             for pattern, fix in _HEDGING:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "hedging", fix))
+                    results.append(
+                        WeakLanguageMatch(line_num + cf.line_offset, m.group(), "hedging", fix)
+                    )
             for pattern, fix in _VAGUENESS:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "vagueness", fix))
+                    results.append(
+                        WeakLanguageMatch(line_num + cf.line_offset, m.group(), "vagueness", fix)
+                    )
             for pattern, fix in _NON_ACTIONABLE:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "non-actionable", fix))
+                    results.append(
+                        WeakLanguageMatch(
+                            line_num + cf.line_offset, m.group(), "non-actionable", fix
+                        )
+                    )
         return results
 
 
 class TautologicalDetector:
-    def analyze(self, path: Path) -> List[TautologicalMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentFile) -> List[TautologicalMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[TautologicalMatch] = []
@@ -543,7 +569,7 @@ class TautologicalDetector:
             for pattern, reason in _TAUTOLOGICAL_PHRASES:
                 m = re.search(pattern, line, re.IGNORECASE)
                 if m:
-                    results.append(TautologicalMatch(line_num, m.group(), reason))
+                    results.append(TautologicalMatch(line_num + cf.line_offset, m.group(), reason))
         return results
 
 
@@ -551,8 +577,8 @@ class CriticalPositionAnalyzer:
     def __init__(self, min_lines: int = 50):
         self._min_lines = min_lines
 
-    def analyze(self, path: Path) -> List[PositionIssue]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentFile) -> List[PositionIssue]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         lines = content.splitlines()
@@ -569,7 +595,7 @@ class CriticalPositionAnalyzer:
                 score = 0.5
                 results.append(
                     PositionIssue(
-                        line_num,
+                        line_num + cf.line_offset,
                         m.group(),
                         score,
                         "Move to the first 20% or last 20% of the file for better attention",
@@ -586,8 +612,8 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
 
-    def analyze(self, path: Path, root: Path) -> List[RedundancyMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentFile, root: Path) -> List[RedundancyMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[RedundancyMatch] = []
@@ -618,12 +644,13 @@ class RedundancyDetector:
         has_tsconfig = (root / "tsconfig.json").exists()
 
         for line_num, line in enumerate(content.splitlines(), 1):
+            adjusted = line_num + cf.line_offset
             if has_editorconfig:
                 for pattern, config_key in self._INDENT_PATTERNS:
                     if pattern.search(line):
                         results.append(
                             RedundancyMatch(
-                                line_num,
+                                adjusted,
                                 line.strip(),
                                 ".editorconfig",
                                 config_key,
@@ -643,7 +670,7 @@ class RedundancyDetector:
                     )
                     results.append(
                         RedundancyMatch(
-                            line_num,
+                            adjusted,
                             line.strip(),
                             config_file,
                             "style rule",
@@ -658,7 +685,7 @@ class RedundancyDetector:
                 ):
                     results.append(
                         RedundancyMatch(
-                            line_num,
+                            adjusted,
                             line.strip(),
                             "tsconfig.json",
                             "strict mode",
@@ -675,8 +702,8 @@ class InstructionBudgetAnalyzer:
     )
     BUDGET = 150
 
-    def analyze_file(self, path: Path) -> InstructionBudget:
-        content = _get_body(path)
+    def analyze_file(self, cf: ContentFile) -> InstructionBudget:
+        content = _get_body_from_cf(cf)
         if not content:
             return InstructionBudget(
                 total_count=0,
@@ -691,7 +718,7 @@ class InstructionBudgetAnalyzer:
         remaining = self.BUDGET - total
         return InstructionBudget(
             total_count=total,
-            files_counted=[path],
+            files_counted=[cf.path],
             budget_remaining=max(0, remaining),
             over_budget=total > self.BUDGET,
         )
