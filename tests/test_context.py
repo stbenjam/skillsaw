@@ -255,6 +255,18 @@ def test_plugins_file_not_detected_as_marketplace(temp_dir):
     assert len(context.plugins) == 0
 
 
+def test_plugins_file_with_marketplace_json_no_crash(temp_dir):
+    """A file named 'plugins' should be ignored even if marketplace.json exists"""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text(json.dumps({"name": "test", "plugins": []}))
+    (temp_dir / "plugins").write_text("Not a directory")
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
+
+
 def test_dot_claude_not_detected_empty(temp_dir):
     """Empty .claude/ without marker dirs should not be DOT_CLAUDE"""
     claude_dir = temp_dir / ".claude"
