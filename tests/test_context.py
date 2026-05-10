@@ -283,6 +283,44 @@ def test_detected_formats_copilot(temp_dir):
     assert HAS_COPILOT in context.detected_formats
 
 
+def test_detected_formats_copilot_named_instructions_md(temp_dir):
+    """Detect <name>.instructions.md files (e.g. coding.instructions.md)"""
+    (temp_dir / ".github").mkdir()
+    (temp_dir / ".github" / "coding.instructions.md").write_text("# Coding")
+    context = RepositoryContext(temp_dir)
+    assert HAS_COPILOT in context.detected_formats
+
+
+def test_named_instructions_md_in_instruction_files(temp_dir):
+    """Named .instructions.md files are collected in instruction_files for linting"""
+    github_dir = temp_dir / ".github"
+    github_dir.mkdir()
+    coding = github_dir / "coding.instructions.md"
+    coding.write_text("# Coding standards")
+    testing = github_dir / "testing.instructions.md"
+    testing.write_text("# Testing guidelines")
+
+    context = RepositoryContext(temp_dir)
+
+    names = [f.name for f in context.instruction_files]
+    assert "coding.instructions.md" in names
+    assert "testing.instructions.md" in names
+
+
+def test_named_instructions_md_content_analysis(temp_dir):
+    """Named .instructions.md files are included in content analysis"""
+    from skillsaw.rules.builtin.content_analysis import gather_all_content_files
+
+    github_dir = temp_dir / ".github"
+    github_dir.mkdir()
+    (github_dir / "coding.instructions.md").write_text("# Coding standards")
+
+    context = RepositoryContext(temp_dir)
+    files = gather_all_content_files(context)
+    paths = [cf.path for cf in files]
+    assert github_dir / "coding.instructions.md" in paths
+
+
 def test_detected_formats_gemini(temp_dir):
     """Detect GEMINI.md at root"""
     (temp_dir / "GEMINI.md").write_text("# Gemini instructions")

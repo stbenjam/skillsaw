@@ -120,12 +120,30 @@ class RepositoryContext:
         self.instruction_files = [p for p in self.instruction_files if not self.is_path_excluded(p)]
 
     def _discover_instruction_files(self) -> List[Path]:
-        """Discover instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) at the repo root."""
-        return [
+        """Discover instruction files at the repo root and named .instructions.md files.
+
+        Finds:
+        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md
+        - Any ``*.instructions.md`` files anywhere in the repo tree (Copilot
+          named instruction files such as ``coding.instructions.md``)
+        """
+        files: List[Path] = [
             self.root_path / name
             for name in self._INSTRUCTION_FILENAMES
             if (self.root_path / name).exists()
         ]
+        files.extend(self._find_named_instructions_md())
+        return files
+
+    def _find_named_instructions_md(self) -> List[Path]:
+        """Walk the repo collecting ``*.instructions.md`` files, skipping heavy directories."""
+        found: List[Path] = []
+        for dirpath, dirnames, filenames in os.walk(self.root_path):
+            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
+            for f in filenames:
+                if f.endswith(".instructions.md"):
+                    found.append(Path(dirpath) / f)
+        return sorted(found)
 
     def _detect_formats(self) -> Set[str]:
         formats: Set[str] = set()
@@ -164,12 +182,8 @@ class RepositoryContext:
     )
 
     def _has_instructions_md(self) -> bool:
-        """Walk the repo looking for .instructions.md, skipping heavy directories."""
-        for dirpath, dirnames, filenames in os.walk(self.root_path):
-            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
-            if ".instructions.md" in filenames:
-                return True
-        return False
+        """Check whether any ``*.instructions.md`` files were discovered."""
+        return any(f.name.endswith(".instructions.md") for f in self.instruction_files)
 
     def _detect_apm(self) -> bool:
         """Check if this repository uses the APM (Agent Package Manager) format"""
