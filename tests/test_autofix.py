@@ -2,6 +2,7 @@
 Tests for the autofix framework infrastructure
 """
 
+import json
 from pathlib import Path
 from typing import List
 
@@ -17,6 +18,8 @@ from skillsaw.rule import (
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
+from skillsaw.rules.builtin.skills import SkillFrontmatterRule
+from skillsaw.rules.builtin.agents import AgentFrontmatterRule
 
 
 class NoFixRule(Rule):
@@ -453,3 +456,140 @@ class TestEndToEndFix:
 
         violations_after = linter.run()
         assert len(violations_after) == 0
+
+
+class TestSkillFixBothFieldsMissing:
+    """Regression: when both name and description are missing from SKILL.md
+    frontmatter, the fix must produce a single AutofixResult that adds both
+    fields, not two conflicting results that overwrite each other."""
+
+    def test_skill_fix_adds_both_fields_at_once(self, temp_dir):
+        # Create a plugin with a skill whose frontmatter has neither name nor description
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        skills_dir = plugin_dir / "skills"
+        skills_dir.mkdir()
+
+        skill_dir = skills_dir / "my-skill"
+        skill_dir.mkdir()
+
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text("---\nsome-field: value\n---\n\n# My Skill\n")
+
+        context = RepositoryContext(plugin_dir)
+        rule = SkillFrontmatterRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 2
+        messages = {v.message for v in violations}
+        assert "Missing 'name' in SKILL.md frontmatter" in messages
+        assert "Missing 'description' in SKILL.md frontmatter" in messages
+
+        fixes = rule.fix(context, violations)
+        # Must produce exactly one fix, not two conflicting ones
+        assert len(fixes) == 1
+
+        fix = fixes[0]
+        assert "name: my-skill" in fix.fixed_content
+        assert "description: " in fix.fixed_content
+        assert len(fix.violations_fixed) == 2
+
+    def test_skill_fix_single_field_still_works(self, temp_dir):
+        """Ensure fixing just one missing field still works correctly."""
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        skills_dir = plugin_dir / "skills"
+        skills_dir.mkdir()
+
+        skill_dir = skills_dir / "my-skill"
+        skill_dir.mkdir()
+
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text("---\nname: my-skill\n---\n\n# My Skill\n")
+
+        context = RepositoryContext(plugin_dir)
+        rule = SkillFrontmatterRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "description" in violations[0].message
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert "description: " in fixes[0].fixed_content
+        assert "name: my-skill" in fixes[0].fixed_content
+
+
+class TestAgentFixBothFieldsMissing:
+    """Regression: when both name and description are missing from agent
+    frontmatter, the fix must produce a single AutofixResult that adds both
+    fields, not two conflicting results that overwrite each other."""
+
+    def test_agent_fix_adds_both_fields_at_once(self, temp_dir):
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        agents_dir = plugin_dir / "agents"
+        agents_dir.mkdir()
+
+        agent_md = agents_dir / "my-agent.md"
+        agent_md.write_text("---\nsome-field: value\n---\n\n# My Agent\n")
+
+        context = RepositoryContext(plugin_dir)
+        rule = AgentFrontmatterRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 2
+        messages = {v.message for v in violations}
+        assert "Missing 'name' in frontmatter" in messages
+        assert "Missing 'description' in frontmatter" in messages
+
+        fixes = rule.fix(context, violations)
+        # Must produce exactly one fix, not two conflicting ones
+        assert len(fixes) == 1
+
+        fix = fixes[0]
+        assert "name: my-agent" in fix.fixed_content
+        assert "description: " in fix.fixed_content
+        assert len(fix.violations_fixed) == 2
+
+    def test_agent_fix_single_field_still_works(self, temp_dir):
+        """Ensure fixing just one missing field still works correctly."""
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        agents_dir = plugin_dir / "agents"
+        agents_dir.mkdir()
+
+        agent_md = agents_dir / "my-agent.md"
+        agent_md.write_text("---\nname: my-agent\n---\n\n# My Agent\n")
+
+        context = RepositoryContext(plugin_dir)
+        rule = AgentFrontmatterRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "description" in violations[0].message
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert "description: " in fixes[0].fixed_content
+        assert "name: my-agent" in fixes[0].fixed_content
