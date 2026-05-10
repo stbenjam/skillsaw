@@ -188,7 +188,10 @@ class TestParallelLLMFix:
         started_files = set()
         finished_files = set()
         for event_type, kw in events:
-            rel_path = str(kw.get("rel_path", ""))
+            if event_type not in {"file_start", "file_done"}:
+                continue
+            assert kw.get("rel_path"), f"{event_type} missing rel_path"
+            rel_path = str(kw["rel_path"])
             if event_type == "file_start":
                 assert rel_path not in started_files, f"Duplicate file_start for {rel_path}"
                 started_files.add(rel_path)
