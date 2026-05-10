@@ -102,11 +102,12 @@ class RepositoryContext:
         other discovered data reflect the updated types.
         """
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
-        self.plugin_metadata = {}
+        self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
         self.plugins = self._discover_plugins()
-        self.skills = self._discover_skills()
-        self.instruction_files = self._discover_instruction_files()
-        self.detected_formats = self._detect_formats()
+        self.skills: List[Path] = self._discover_skills()
+        self.instruction_files: List[Path] = self._discover_instruction_files()
+        self.detected_formats: Set[str] = self._detect_formats()
+        self.apply_excludes()
 
     @property
     def repo_type(self) -> RepositoryType:

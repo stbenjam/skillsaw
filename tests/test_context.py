@@ -592,3 +592,25 @@ def test_rediscover_updates_after_repo_types_change(temp_dir):
     ctx.rediscover()
     assert len(ctx.plugins) == 1
     assert ctx.get_plugin_name(ctx.plugins[0]) == "my-plugin"
+
+
+def test_rediscover_applies_excludes(temp_dir):
+    """rediscover() re-applies exclude_patterns to newly discovered items"""
+    # Set up an agentskills repo with two skills
+    skill_a = temp_dir / "skill-a"
+    skill_a.mkdir()
+    (skill_a / "SKILL.md").write_text("---\nname: skill-a\ndescription: A\n---\n")
+    skill_b = temp_dir / "skill-b"
+    skill_b.mkdir()
+    (skill_b / "SKILL.md").write_text("---\nname: skill-b\ndescription: B\n---\n")
+
+    ctx = RepositoryContext(temp_dir, repo_types={RepositoryType.AGENTSKILLS})
+    assert len(ctx.skills) == 2
+
+    # Set excludes and rediscover — skill-b should be excluded
+    ctx.exclude_patterns = ["skill-b"]
+    ctx.repo_types = {RepositoryType.AGENTSKILLS}
+    ctx.rediscover()
+    skill_names = [s.name for s in ctx.skills]
+    assert "skill-a" in skill_names
+    assert "skill-b" not in skill_names
