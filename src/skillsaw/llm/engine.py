@@ -119,8 +119,9 @@ class LLMEngine:
                     budget_exhausted=False,
                 )
 
-            self._total_usage.prompt_tokens += result.usage.prompt_tokens
-            self._total_usage.completion_tokens += result.usage.completion_tokens
+            if result.usage:
+                self._total_usage.prompt_tokens += result.usage.prompt_tokens
+                self._total_usage.completion_tokens += result.usage.completion_tokens
 
             if not result.tool_calls:
                 return LLMResult(

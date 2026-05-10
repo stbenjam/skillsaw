@@ -243,6 +243,159 @@ class TestLLMEngine:
         assert len(result.tool_calls) == 1
         assert "Error: unknown tool" in result.tool_calls[0].result
 
+    def test_none_usage_in_result(self):
+        """Engine should not crash when CompletionResult.usage is None."""
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content="Done!",
+                    tool_calls=[],
+                    usage=None,
+                )
+            ]
+        )
+        engine = LLMEngine(provider, [])
+        result = engine.run("system", "user")
+        assert result.text == "Done!"
+        assert result.usage.prompt_tokens == 0
+        assert result.usage.completion_tokens == 0
+
+    def test_none_usage_with_tool_calls(self):
+        """Engine should not crash when usage is None across multiple iterations."""
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="call_1", name="unknown", arguments={})],
+                    usage=None,
+                ),
+                CompletionResult(
+                    content="ok",
+                    tool_calls=[],
+                    usage=TokenUsage(10, 10),
+                ),
+            ]
+        )
+        engine = LLMEngine(provider, [])
+        result = engine.run("system", "user")
+        assert result.text == "ok"
+        assert result.usage.prompt_tokens == 10
+        assert result.usage.completion_tokens == 10
+
+
+class TestLiteLLMProviderEdgeCases:
+    """Tests for edge cases in the LiteLLM provider's complete() method."""
+
+    def test_empty_choices_list(self):
+        """Provider should return empty result but still extract usage when choices is empty."""
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = []
+        mock_response.usage.prompt_tokens = 42
+        mock_response.usage.completion_tokens = 0
+        mock_litellm.completion.return_value = mock_response
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert result.content is None
+        assert result.tool_calls == []
+        assert result.usage.prompt_tokens == 42
+        assert result.usage.completion_tokens == 0
+
+    def test_missing_choices_attribute(self):
+        """Provider should return empty result when response has no choices attribute."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        mock_litellm.completion.return_value = SimpleNamespace()
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert result.content is None
+        assert result.tool_calls == []
+        assert result.usage.prompt_tokens == 0
+        assert result.usage.completion_tokens == 0
+
+    def test_missing_choices_attribute_preserves_usage(self):
+        """Provider should preserve prompt usage even when choices attribute is missing."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        usage = SimpleNamespace(prompt_tokens=55, completion_tokens=0)
+        mock_litellm.completion.return_value = SimpleNamespace(usage=usage)
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert result.content is None
+        assert result.tool_calls == []
+        assert result.usage.prompt_tokens == 55
+        assert result.usage.completion_tokens == 0
+
+    def test_invalid_json_tool_call_arguments(self):
+        """Provider should handle invalid JSON in tool call arguments gracefully."""
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        mock_response = MagicMock()
+        mock_choice = MagicMock()
+        mock_message = MagicMock()
+
+        mock_tool_call = MagicMock()
+        mock_tool_call.id = "call_1"
+        mock_tool_call.function.name = "read_file"
+        mock_tool_call.function.arguments = "not valid json {{{{"
+
+        mock_message.content = None
+        mock_message.tool_calls = [mock_tool_call]
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+
+        mock_litellm.completion.return_value = mock_response
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert len(result.tool_calls) == 1
+        tc = result.tool_calls[0]
+        assert tc.name == "read_file"
+        assert "_error" in tc.arguments
+        assert "invalid JSON" in tc.arguments["_error"]
+        assert tc.arguments["_raw"] == "not valid json {{{{"
+
 
 class TestLLMConfigFromYaml:
     def test_llm_settings_in_config(self, tmp_path):

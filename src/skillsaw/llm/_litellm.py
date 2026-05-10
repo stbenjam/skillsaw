@@ -23,7 +23,7 @@ class TokenUsage:
 class CompletionResult:
     content: Optional[str]
     tool_calls: List[ToolCall]
-    usage: TokenUsage
+    usage: Optional[TokenUsage]
 
 
 class CompletionProvider(Protocol):
@@ -66,7 +66,21 @@ class LiteLLMProvider:
             kwargs["tools"] = tools
 
         response = litellm.completion(**kwargs)
-        choice = response.choices[0]
+
+        usage_info = getattr(response, "usage", None)
+        usage = TokenUsage(
+            prompt_tokens=getattr(usage_info, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage_info, "completion_tokens", 0) or 0,
+        )
+
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            return CompletionResult(
+                content=None,
+                tool_calls=[],
+                usage=usage,
+            )
+        choice = choices[0]
         message = choice.message
 
         tool_calls: List[ToolCall] = []
@@ -76,7 +90,10 @@ class LiteLLMProvider:
             for tc in message.tool_calls:
                 args = tc.function.arguments
                 if isinstance(args, str):
-                    args = json.loads(args)
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"_raw": args, "_error": "invalid JSON in tool call arguments"}
                 tool_calls.append(
                     ToolCall(
                         id=tc.id,
@@ -84,12 +101,6 @@ class LiteLLMProvider:
                         arguments=args,
                     )
                 )
-
-        usage_info = response.usage
-        usage = TokenUsage(
-            prompt_tokens=getattr(usage_info, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage_info, "completion_tokens", 0) or 0,
-        )
 
         return CompletionResult(
             content=message.content,
