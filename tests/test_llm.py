@@ -132,6 +132,14 @@ class TestDiffTool:
         result = tool.execute(path="test.md")
         assert result == "No changes."
 
+    def test_diff_new_file(self, tmp_path):
+        content = "new content\n"
+        (tmp_path / "test.md").write_text(content, encoding="utf-8")
+        resolved = (tmp_path / "test.md").resolve()
+        tool = DiffTool(tmp_path, {resolved: None})
+        result = tool.execute(path="test.md")
+        assert "+new content" in result
+
     def test_diff_no_snapshot(self, tmp_path):
         (tmp_path / "test.md").write_text("content", encoding="utf-8")
         tool = DiffTool(tmp_path, {})

@@ -389,11 +389,23 @@ class Linter:
 
         changed = False
         diff_text = None
-        if fpath.exists():
+        if fpath.exists() and fpath in originals:
             current = fpath.read_text(encoding="utf-8")
-            if fpath in originals and current != originals[fpath]:
+            original = originals[fpath]
+            if original is None:
+                # File was created by the LLM (didn't exist before)
                 diff_lines = difflib.unified_diff(
-                    originals[fpath].splitlines(keepends=True),
+                    [],
+                    current.splitlines(keepends=True),
+                    fromfile=f"a/{rel_path}",
+                    tofile=f"b/{rel_path}",
+                )
+                diff_text = "".join(diff_lines)
+                if diff_text:
+                    changed = True
+            elif current != original:
+                diff_lines = difflib.unified_diff(
+                    original.splitlines(keepends=True),
                     current.splitlines(keepends=True),
                     fromfile=f"a/{rel_path}",
                     tofile=f"b/{rel_path}",
@@ -437,7 +449,13 @@ class Linter:
             after_count = sum(1 for v in self._relint_file(fpath, before_violations, threshold))
 
             if after_count >= before_count:
-                fpath.write_text(originals[fpath], encoding="utf-8")
+                original = originals[fpath]
+                if original is None:
+                    # File didn't exist before — remove the LLM-created file
+                    if fpath.exists():
+                        fpath.unlink()
+                else:
+                    fpath.write_text(original, encoding="utf-8")
                 violations_after += before_count
             else:
                 violations_after += after_count
@@ -482,10 +500,12 @@ class Linter:
             if v.file_path:
                 files_to_violations.setdefault(v.file_path.resolve(), []).append(v)
 
-        originals: Dict[Path, str] = {}
+        originals: Dict[Path, Optional[str]] = {}
         for fpath in files_to_violations:
             if fpath.exists():
                 originals[fpath] = fpath.read_text(encoding="utf-8")
+            else:
+                originals[fpath] = None  # sentinel: file doesn't exist yet
 
         violations_before = len(llm_violations)
         file_count = len(files_to_violations)
@@ -551,7 +571,12 @@ class Linter:
 
         if dry_run:
             for fpath, original_content in originals.items():
-                fpath.write_text(original_content, encoding="utf-8")
+                if original_content is None:
+                    # File didn't exist before — remove the LLM-created file
+                    if fpath.exists():
+                        fpath.unlink()
+                else:
+                    fpath.write_text(original_content, encoding="utf-8")
 
         return LLMFixResult(
             files_modified=[] if dry_run else kept_files,
