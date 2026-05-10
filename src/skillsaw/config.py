@@ -233,7 +233,9 @@ class LinterConfig:
             Rule configuration dict
         """
         defaults = self.default().rules.get(rule_id, {})
-        overrides = self.rules.get(rule_id) or {}
+        overrides = self.rules.get(rule_id)
+        if overrides is None:
+            overrides = {}
         merged = {**defaults, **overrides}
         return merged
 
