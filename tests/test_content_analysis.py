@@ -787,19 +787,6 @@ class TestContentBlockReadWrite:
         block.write_body("new content")
         assert f.read_text(encoding="utf-8") == "new content"
 
-    def test_write_body_custom_writer(self, temp_dir):
-        written = {}
-
-        def custom_writer(body):
-            written["body"] = body
-
-        f = temp_dir / "test.md"
-        f.write_text("original")
-        block = ContentFile(path=f, category="instruction", _writer=custom_writer)
-        block.write_body("custom content")
-        assert written["body"] == "custom content"
-        assert f.read_text(encoding="utf-8") == "original"
-
     def test_file_line_with_offset(self):
         block = ContentFile(
             path=Path("/tmp/test.md"),

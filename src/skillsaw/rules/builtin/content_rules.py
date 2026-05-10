@@ -383,7 +383,7 @@ class ContentNegativeOnlyRule(Rule):
                         self.violation(
                             f"Negative-only instruction without alternative: '{line.strip()[:80]}'",
                             block=cf,
-                            line=cf.file_line(i + 1),
+                            line=i + 1,
                         )
                     )
         return violations
@@ -473,7 +473,7 @@ class ContentSectionLengthRule(Rule):
                         self.violation(
                             f"Section '{heading}' is ~{token_count} tokens (max recommended: {max_tokens})",
                             block=cf,
-                            line=cf.file_line(heading_line) if heading_line > 0 else None,
+                            line=heading_line if heading_line > 0 else None,
                         )
                     )
         return violations
@@ -626,7 +626,7 @@ class ContentHookCandidateRule(Rule):
                             self.violation(
                                 f"Hook candidate: '{line.strip()[:80]}' — consider automating as a {hook_type}",
                                 block=cf,
-                                line=cf.file_line(line_num),
+                                line=line_num,
                             )
                         )
                         break

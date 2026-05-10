@@ -17,7 +17,7 @@ from .rule import Severity
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree"}
 
 
 def _get_version() -> str:
@@ -235,6 +235,25 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     )
     docs_parser.add_argument("--title", default=None, help="Custom title for the documentation")
 
+    # --- tree ---
+    tree_parser = subparsers.add_parser(
+        "tree",
+        help="Display the repository lint tree",
+    )
+    tree_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    tree_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file",
+    )
+
     # --- add ---
     subparsers.add_parser(
         "add",
@@ -254,6 +273,41 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         _run_list_rules()
     elif args.command == "docs":
         _run_docs(args)
+    elif args.command == "tree":
+        _run_tree(args)
+
+
+def _run_tree(args):
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    context.content_paths = config.content_paths
+    context.exclude_patterns = config.exclude_patterns
+    context.apply_excludes()
+
+    tree = context.lint_tree
+    print(tree.print_tree(root_path=context.root_path))
+    sys.exit(0)
 
 
 def _run_lint(args):

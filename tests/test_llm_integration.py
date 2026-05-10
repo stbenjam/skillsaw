@@ -554,7 +554,7 @@ class TestLLMFixNonExistentFile:
         assert len(readme_violations) >= 1, "Expected plugin-readme violation"
 
         readme_content = "# test-plugin\n\nA test plugin.\n"
-        provider = _fake_file_fix_provider(readme_content, path="README.md")
+        provider = _fake_fix_provider(readme_content)
 
         result = linter.llm_fix(provider)
         assert result.violations_before > 0
@@ -576,7 +576,7 @@ class TestLLMFixNonExistentFile:
         linter = Linter(context, config)
 
         readme_content = "# test-plugin\n\nA test plugin.\n"
-        provider = _fake_file_fix_provider(readme_content, path="README.md")
+        provider = _fake_fix_provider(readme_content)
 
         result = linter.llm_fix(provider, dry_run=True)
         # The file should NOT exist on disk after dry-run

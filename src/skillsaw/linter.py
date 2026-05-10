@@ -339,23 +339,25 @@ class Linter:
             "- NEVER call lint_block() without making changes first"
         )
 
-    def _relint_file(self, fpath, violations_list, threshold):
+    def _relint_file(self, fpath, violations_list, threshold, *, block=None):
         from .rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches(fpath)
+        self.context.rebuild_lint_tree()
         failed_rule_ids = {v.rule_id for v in violations_list}
         failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
         remaining = []
         for rule in failed_rules:
             try:
                 re_violations = rule.check(self.context)
-                remaining.extend(
-                    v
-                    for v in re_violations
-                    if v.file_path
-                    and v.file_path.resolve() == fpath
-                    and self._SEVERITY_ORDER.get(v.severity, 99) <= threshold
-                )
+                for v in re_violations:
+                    if self._SEVERITY_ORDER.get(v.severity, 99) > threshold:
+                        continue
+                    if block is not None:
+                        if v.block == block:
+                            remaining.append(v)
+                    elif v.file_path and v.file_path.resolve() == fpath:
+                        remaining.append(v)
             except Exception as e:
                 logger.warning("Rule %s failed during re-lint of %s: %s", rule.rule_id, fpath, e)
                 remaining.extend(v for v in violations_list if v.rule_id == rule.rule_id)
@@ -583,7 +585,9 @@ class Linter:
             block_usage.completion_tokens += result.usage.completion_tokens
             total_iterations += result.iterations
 
-            remaining = self._relint_file(block.path.resolve(), current_violations, threshold)
+            remaining = self._relint_file(
+                block.path.resolve(), current_violations, threshold, block=block
+            )
             if not remaining:
                 break
 
@@ -690,16 +694,13 @@ class Linter:
                 success=True,
             )
 
-        # Split violations into block-based and file-based
-        block_violations: Dict[int, List[RuleViolation]] = {}
+        # Group violations by block (all violations now have blocks via auto-wrap)
+        block_violations: Dict[Any, List[RuleViolation]] = {}
         file_violations: Dict[Path, List[RuleViolation]] = {}
-        block_map: Dict[int, Any] = {}
 
         for v in llm_violations:
             if v.block is not None:
-                bid = id(v.block)
-                block_violations.setdefault(bid, []).append(v)
-                block_map[bid] = v.block
+                block_violations.setdefault(v.block, []).append(v)
             elif v.file_path:
                 file_violations.setdefault(v.file_path.resolve(), []).append(v)
 
@@ -732,12 +733,12 @@ class Linter:
             future_to_idx = {}
             unit_idx = 0
 
-            for bid, bv in block_violations.items():
+            for block, bv in block_violations.items():
                 unit_idx += 1
                 future = executor.submit(
                     self._llm_process_one_block,
                     unit_idx,
-                    block_map[bid],
+                    block,
                     bv,
                     provider=provider,
                     llm_rules=llm_rules,
@@ -812,15 +813,15 @@ class Linter:
         for br in block_results:
             block = br["block"]
             original_body = br["original_body"]
+            before_count = len(block_violations.get(block, []))
             if not br["changed"]:
+                violations_after += before_count
                 continue
-
-            bid = id(block)
-            before_count = len(block_violations.get(bid, []))
             after_remaining = self._relint_file(
                 block.path.resolve(),
-                block_violations.get(bid, []),
+                block_violations.get(block, []),
                 threshold,
+                block=block,
             )
             after_count = len(after_remaining)
 
@@ -844,7 +845,10 @@ class Linter:
                     fpath.write_text(original_content, encoding="utf-8")
             for br in block_results:
                 if br["changed"]:
-                    br["block"].write_body(br["original_body"])
+                    if not br["original_body"] and br["block"].path.exists():
+                        br["block"].path.unlink()
+                    else:
+                        br["block"].write_body(br["original_body"])
 
         return LLMFixResult(
             files_modified=[] if dry_run else kept_files,

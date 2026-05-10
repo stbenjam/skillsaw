@@ -23,7 +23,7 @@ from skillsaw.llm.tools import (
     DiffBlockTool,
     LintBlockTool,
 )
-from skillsaw.rules.builtin.content_analysis import ContentBlock
+from skillsaw.rules.builtin.content_analysis import FileContentBlock as ContentBlock
 from skillsaw.rule import AutofixConfidence, Severity
 
 

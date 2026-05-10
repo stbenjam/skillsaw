@@ -319,7 +319,7 @@ class LintBlockTool:
         context.apply_excludes()
 
         violations = []
-        resolved = block.path.resolve()
+        target_block = self._state.block
         for rule_class in BUILTIN_RULES:
             rule = rule_class()
             if self._rule_ids and rule.rule_id not in self._rule_ids:
@@ -337,9 +337,7 @@ class LintBlockTool:
                 continue
             try:
                 rule_violations = rule.check(context)
-                violations.extend(
-                    v for v in rule_violations if v.file_path and v.file_path.resolve() == resolved
-                )
+                violations.extend(v for v in rule_violations if v.block == target_block)
             except Exception as e:
                 return f"Error running lint ({rule.rule_id}): {e}"
 
