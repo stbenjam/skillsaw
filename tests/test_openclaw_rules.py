@@ -5,7 +5,7 @@ Tests for openclaw metadata validation rule
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.rule import Severity
-from skillsaw.rules.builtin.openclaw import OpenclawMetadataRule
+from skillsaw.rules.builtin.openclaw import OpenclawMetadataRule, _build_frontmatter_line_map
 
 # --- config ---
 
@@ -622,3 +622,91 @@ def test_line_numbers_on_os_field(temp_dir):
     violations = OpenclawMetadataRule().check(context)
     assert len(violations) == 1
     assert violations[0].line == 6
+
+
+# --- _build_frontmatter_line_map: first-occurrence-wins ---
+
+
+def test_line_map_first_occurrence_wins(temp_dir):
+    """Duplicate key names at different nesting levels must not collide.
+
+    When 'os' appears both at the top-level and nested inside an install
+    entry, the line map should record the *first* (top-level) occurrence
+    so that violations about the top-level field get the correct line.
+    """
+    skill = temp_dir / "dup-keys"
+    skill.mkdir()
+    skill_md = skill / "SKILL.md"
+    skill_md.write_text(
+        "---\n"  # 1
+        "name: dup-keys\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    os:\n"  # 6  <- first 'os'
+        "      - linux\n"  # 7
+        "    install:\n"  # 8
+        "      - os:\n"  # 9  <- second 'os' (nested)
+        "          - darwin\n"  # 10
+        "        kind: brew\n"  # 11
+        "        bins:\n"  # 12
+        "          - tool\n"  # 13
+        "---\n"
+    )
+    line_map = _build_frontmatter_line_map(skill_md)
+    # The top-level 'os' at line 6 must win over the nested 'os' at line 9.
+    assert line_map["os"] == 6
+
+
+def test_line_map_first_occurrence_wins_bins(temp_dir):
+    """'bins' under requires (first) must not be overwritten by 'bins' under install."""
+    skill = temp_dir / "dup-bins"
+    skill.mkdir()
+    skill_md = skill / "SKILL.md"
+    skill_md.write_text(
+        "---\n"  # 1
+        "name: dup-bins\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    requires:\n"  # 6
+        "      bins:\n"  # 7  <- first 'bins'
+        "        - req-tool\n"  # 8
+        "    install:\n"  # 9
+        "      - kind: brew\n"  # 10
+        "        bins:\n"  # 11 <- second 'bins' (nested)
+        "          - inst-tool\n"  # 12
+        "---\n"
+    )
+    line_map = _build_frontmatter_line_map(skill_md)
+    # The first 'bins' at line 7 must win.
+    assert line_map["bins"] == 7
+
+
+def test_top_level_os_line_with_nested_install_os(temp_dir):
+    """End-to-end: violation about top-level os reports the correct line
+    even when a nested install entry also has an 'os' key."""
+    skill = temp_dir / "e2e-os"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: e2e-os\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    os: darwin\n"  # 6  <- top-level os (wrong type: should be list)
+        "    install:\n"  # 7
+        "      - os:\n"  # 8  <- nested os
+        "          - darwin\n"  # 9
+        "        kind: brew\n"  # 10
+        "        formula: tool\n"  # 11
+        "        bins:\n"  # 12
+        "          - tool\n"  # 13
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    os_violations = [v for v in violations if "'metadata.openclaw.os'" in v.message]
+    assert len(os_violations) == 1
+    # Must point to line 6 (top-level os), NOT line 8 (nested install os).
+    assert os_violations[0].line == 6

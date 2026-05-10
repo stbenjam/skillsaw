@@ -12,7 +12,15 @@ from skillsaw.rules.builtin.agentskills import _parse_skill_md
 
 
 def _build_frontmatter_line_map(skill_md: Path) -> Dict[str, int]:
-    """Map YAML key names to their line numbers in SKILL.md frontmatter."""
+    """Map YAML key names to their line numbers in SKILL.md frontmatter.
+
+    When the same key name appears at different nesting levels (e.g. ``os``
+    under the top-level openclaw block *and* inside an ``install`` entry),
+    only the **first** occurrence is recorded.  This avoids a deeper nested
+    duplicate silently overwriting the line number of the top-level field,
+    which would cause violations about top-level fields to report a wrong
+    line number.
+    """
     result: Dict[str, int] = {}
     try:
         lines = skill_md.read_text().splitlines()
@@ -29,11 +37,11 @@ def _build_frontmatter_line_map(skill_md: Path) -> Dict[str, int]:
             continue
         m = re.match(r"^(\s*)-\s+(\w[\w-]*):", line)
         if m:
-            result[m.group(2)] = i
+            result.setdefault(m.group(2), i)
             continue
         m = re.match(r"^(\s*)(\w[\w-]*):", line)
         if m:
-            result[m.group(2)] = i
+            result.setdefault(m.group(2), i)
     return result
 
 
