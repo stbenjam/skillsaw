@@ -46,7 +46,7 @@ def format_sarif(
                     },
                 },
             }
-            if v.line is not None:
+            if v.line is not None and v.line >= 1:
                 location["physicalLocation"]["region"] = {"startLine": v.line}
             result["locations"] = [location]
         results.append(result)
