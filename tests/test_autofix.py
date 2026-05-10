@@ -20,6 +20,7 @@ from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
 from skillsaw.rules.builtin.skills import SkillFrontmatterRule
 from skillsaw.rules.builtin.agents import AgentFrontmatterRule
+from skillsaw.rules.builtin.command_format import CommandNamingRule
 
 
 class NoFixRule(Rule):
@@ -593,3 +594,239 @@ class TestAgentFixBothFieldsMissing:
         assert len(fixes) == 1
         assert "description: " in fixes[0].fixed_content
         assert "name: my-agent" in fixes[0].fixed_content
+
+
+def _make_plugin(tmp_path, plugin_name, command_files):
+    """Helper: create a minimal plugin with the given command files."""
+    plugin_dir = tmp_path / plugin_name
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir(exist_ok=True)
+    (claude_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": plugin_name,
+                "description": "test",
+                "version": "1.0.0",
+                "author": {"name": "Test"},
+            }
+        )
+    )
+
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir(exist_ok=True)
+    for filename, content in command_files.items():
+        (commands_dir / filename).write_text(content)
+
+    return plugin_dir
+
+
+class TestCommandRenameFix:
+    """Regression: CommandNamingRule.fix() must rename files via Path.rename(),
+    not write-then-leave-duplicate.  Also guards against data loss on
+    case-insensitive filesystems."""
+
+    def test_rename_removes_old_file(self, temp_dir):
+        """After applying a rename fix, the old file must not exist."""
+        content = "---\ndescription: test\n---\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"MyCommand.md": content})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].rename_from is not None
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 1
+
+        commands_dir = plugin_dir / "commands"
+        assert (commands_dir / "my-command.md").exists()
+        assert not (commands_dir / "MyCommand.md").exists()
+        assert (commands_dir / "my-command.md").read_text() == content
+
+    def test_rename_snake_case(self, temp_dir):
+        content = "hello"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"do_thing.md": content})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+
+        fixes = rule.fix(context, violations)
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 1
+
+        commands_dir = plugin_dir / "commands"
+        assert (commands_dir / "do-thing.md").exists()
+        assert not (commands_dir / "do_thing.md").exists()
+
+    def test_no_fix_for_already_kebab(self, temp_dir):
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"good-name.md": "ok"})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 0
+
+    def test_multiple_bad_names(self, temp_dir):
+        plugin_dir = _make_plugin(
+            temp_dir,
+            "my-plugin",
+            {"MyCmd.md": "a", "Another_Cmd.md": "b", "good-cmd.md": "c"},
+        )
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 2
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 2
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 2
+
+        commands_dir = plugin_dir / "commands"
+        assert (commands_dir / "my-cmd.md").exists()
+        assert (commands_dir / "another-cmd.md").exists()
+        assert (commands_dir / "good-cmd.md").exists()
+        assert not (commands_dir / "MyCmd.md").exists()
+        assert not (commands_dir / "Another_Cmd.md").exists()
+
+    def test_skip_when_target_exists(self, temp_dir):
+        """If the target file already exists, the fix should be skipped."""
+        plugin_dir = _make_plugin(
+            temp_dir,
+            "my-plugin",
+            {"MyCommand.md": "old", "my-command.md": "existing"},
+        )
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1  # Only MyCommand.md is bad
+
+        fixes = rule.fix(context, violations)
+        # Should skip because my-command.md already exists
+        assert len(fixes) == 0
+
+    def test_apply_rename_skips_missing_source(self, temp_dir):
+        """If rename_from no longer exists at apply time, skip silently."""
+        src = temp_dir / "old.md"
+        dst = temp_dir / "new.md"
+        src.write_text("content")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="content",
+            fixed_content="content",
+            description="rename",
+            rename_from=src,
+        )
+
+        # Remove source before applying
+        src.unlink()
+
+        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 0
+        assert not dst.exists()
+
+    def test_apply_rename_skips_existing_target(self, temp_dir):
+        """If the target already exists (different file), skip."""
+        src = temp_dir / "old.md"
+        dst = temp_dir / "new.md"
+        src.write_text("old content")
+        dst.write_text("existing content")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="old content",
+            fixed_content="old content",
+            description="rename",
+            rename_from=src,
+        )
+
+        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 0
+        # Both files should be untouched
+        assert src.read_text() == "old content"
+        assert dst.read_text() == "existing content"
+
+    def test_rename_from_defaults_to_none(self):
+        """AutofixResult.rename_from defaults to None for non-rename fixes."""
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=Path("/tmp/test.txt"),
+            confidence=AutofixConfidence.SAFE,
+            original_content="a",
+            fixed_content="b",
+            description="not a rename",
+        )
+        assert fix.rename_from is None
+
+    def test_case_only_rename(self, temp_dir):
+        """Case-only rename (e.g. MyCommand.md -> mycommand.md) must work
+        on both case-sensitive and case-insensitive filesystems."""
+        content = "---\ndescription: test\n---\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"MyCommand.md": content})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].rename_from is not None
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 1
+
+        commands_dir = plugin_dir / "commands"
+        # The kebab-case file must exist with correct content
+        assert (commands_dir / "my-command.md").exists()
+        assert (commands_dir / "my-command.md").read_text() == content
+
+    def test_apply_fix_isolates_oserror(self, temp_dir):
+        """One fix raising OSError must not prevent subsequent fixes."""
+        good_target = temp_dir / "good.txt"
+        good_target.write_text("original")
+
+        # Point the first fix at a path inside a non-existent, read-only
+        # parent so write_text raises OSError.
+        bad_target = temp_dir / "no-such-dir" / "bad.txt"
+
+        fixes = [
+            AutofixResult(
+                rule_id="a",
+                file_path=bad_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="x",
+                fixed_content="y",
+                description="will fail",
+            ),
+            AutofixResult(
+                rule_id="b",
+                file_path=good_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="original",
+                fixed_content="fixed",
+                description="should succeed",
+            ),
+        ]
+
+        applied = Linter.apply_fixes(fixes)
+        # The second fix must still be applied despite the first failing
+        assert len(applied) == 1
+        assert applied[0].rule_id == "b"
+        assert good_target.read_text() == "fixed"

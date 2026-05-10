@@ -58,6 +58,7 @@ class AutofixResult:
     fixed_content: str
     description: str
     violations_fixed: List[RuleViolation] = field(default_factory=list)
+    rename_from: Optional[Path] = None
 
 
 class Rule(ABC):

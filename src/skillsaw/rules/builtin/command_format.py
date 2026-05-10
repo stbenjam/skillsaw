@@ -62,23 +62,30 @@ class CommandNamingRule(Rule):
         for v in violations:
             if not v.file_path or not v.file_path.exists():
                 continue
-            old_name = v.file_path.stem
+            old_path = v.file_path
+            old_name = old_path.stem
             new_name = self._to_kebab(old_name)
             if not self._is_kebab_case(new_name) or new_name == old_name:
                 continue
-            new_path = v.file_path.with_name(f"{new_name}.md")
-            if new_path.exists():
+            new_path = old_path.with_name(f"{new_name}.md")
+            # Skip if the target already exists (and isn't the same file
+            # on a case-insensitive filesystem).
+            if new_path.exists() and new_path.resolve() != old_path.resolve():
                 continue
-            content = v.file_path.read_text(encoding="utf-8")
+            try:
+                content = old_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
                     file_path=new_path,
                     confidence=AutofixConfidence.SUGGEST,
-                    original_content="",
+                    original_content=content,
                     fixed_content=content,
                     description=f"Rename '{old_name}.md' to '{new_name}.md'",
                     violations_fixed=[v],
+                    rename_from=old_path,
                 )
             )
         return results
