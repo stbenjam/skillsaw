@@ -88,7 +88,9 @@ class AgentFrontmatterRule(Rule):
             if not file_path.exists():
                 continue
 
-            original = file_path.read_text(encoding="utf-8")
+            original = read_text(file_path)
+            if original is None:
+                continue
             messages = {v.message for v in file_violations}
 
             # Case 1: Missing frontmatter block entirely

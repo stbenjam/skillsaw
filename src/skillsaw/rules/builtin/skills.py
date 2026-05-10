@@ -118,7 +118,9 @@ class SkillFrontmatterRule(Rule):
             if not file_path.exists():
                 continue
 
-            original = file_path.read_text(encoding="utf-8")
+            original = read_text(file_path)
+            if original is None:
+                continue
 
             # Case 2: Missing frontmatter block entirely
             if any("Missing frontmatter" in m for m in messages):
