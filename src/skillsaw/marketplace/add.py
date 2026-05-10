@@ -464,7 +464,9 @@ def add_hook(
     data.setdefault("hooks", {})
     data["hooks"].setdefault(event, [])
     hook_cmd = f"./hooks/{event}.sh"
-    if not any(h.get("hooks", [{}])[0].get("command") == hook_cmd for h in data["hooks"][event]):
+    if not any(
+        (h.get("hooks") or [{}])[0].get("command") == hook_cmd for h in data["hooks"][event]
+    ):
         data["hooks"][event].append(
             {
                 "hooks": [
