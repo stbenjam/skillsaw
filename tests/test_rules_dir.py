@@ -279,6 +279,17 @@ def test_frontmatter_with_dashes_in_value(dot_claude_with_rules):
     assert len(violations) == 0
 
 
+def test_frontmatter_no_trailing_newline(dot_claude_with_rules):
+    """Frontmatter ending at EOF without trailing newline is valid"""
+    content = '---\npaths:\n  - "src/**/*.ts"\n---'
+    _write_rule(dot_claude_with_rules, "no-trailing.md", content)
+
+    context = RepositoryContext(dot_claude_with_rules)
+    rule = RulesValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
 def test_rule_metadata():
     """Verify rule ID, description, and default severity"""
     rule = RulesValidRule()

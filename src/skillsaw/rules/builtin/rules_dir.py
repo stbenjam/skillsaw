@@ -22,7 +22,7 @@ def _parse_frontmatter(content: str):
     if not content.startswith("---"):
         return None, None
 
-    match = re.match(r"^---\n(.*?\n)?---[ \t]*\n", content, re.DOTALL)
+    match = re.match(r"^---[ \t]*\n(.*?\n)?---[ \t]*(?:\n|$)", content, re.DOTALL)
     if not match:
         return None, "Unterminated frontmatter (missing closing '---')"
 
