@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_files,
@@ -29,7 +29,7 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -78,7 +78,7 @@ class ContentWeakLanguageRule(Rule):
 class ContentTautologicalRule(Rule):
     """Detect tautological instructions that waste instruction budget"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -125,7 +125,7 @@ class ContentTautologicalRule(Rule):
 class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     _DEFAULT_MIN_LINES = 50
@@ -186,7 +186,7 @@ class ContentCriticalPositionRule(Rule):
 class ContentRedundantWithToolingRule(Rule):
     """Detect instructions that duplicate existing tooling configuration"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -232,7 +232,7 @@ class ContentRedundantWithToolingRule(Rule):
 class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -288,7 +288,7 @@ class ContentInstructionBudgetRule(Rule):
 class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     _NEGATIVE_RE = re.compile(
@@ -394,7 +394,7 @@ class ContentNegativeOnlyRule(Rule):
 class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     _DEFAULT_MAX_TOKENS = 500
@@ -484,7 +484,7 @@ class ContentSectionLengthRule(Rule):
 class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -561,7 +561,7 @@ class ContentContradictionRule(Rule):
 class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -638,7 +638,7 @@ class ContentHookCandidateRule(Rule):
 class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -712,7 +712,7 @@ class ContentActionabilityScoreRule(Rule):
 class ContentCognitiveChunksRule(Rule):
     """Check section organization for cognitive chunking"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -772,7 +772,7 @@ class ContentCognitiveChunksRule(Rule):
 class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     @property
@@ -871,7 +871,7 @@ class ContentEmbeddedSecretsRule(Rule):
 class ContentBannedReferencesRule(Rule):
     """Detect banned or deprecated references in instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     _BUILTIN_PATTERNS = [
@@ -965,7 +965,7 @@ class ContentBannedReferencesRule(Rule):
 class ContentInconsistentTerminologyRule(Rule):
     """Detect inconsistent terminology across instruction files"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     _TERM_GROUPS: List[Tuple[str, List[re.Pattern]]] = [
