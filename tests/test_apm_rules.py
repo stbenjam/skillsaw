@@ -282,6 +282,23 @@ def test_apm_yaml_non_string_version_fails(temp_dir):
     assert any("version" in v.message and "string" in v.message for v in violations)
 
 
+def test_apm_yaml_integer_version_reports_type_error(temp_dir):
+    """version: 0 is present but wrong type — should say 'must be a string', not 'Missing'"""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    _make_apm_repo(
+        repo,
+        skills=["my-skill"],
+        apm_yml="name: test\nversion: 0\ndescription: Integer version\n",
+    )
+
+    context = RepositoryContext(repo)
+    violations = ApmYamlValidRule().check(context)
+    assert len(violations) == 1
+    assert "must be a string" in violations[0].message
+    assert "Missing" not in violations[0].message
+
+
 def test_apm_yaml_not_mapping_fails(temp_dir):
     """apm.yml that is not a mapping should fail"""
     repo = temp_dir / "apm-repo"

@@ -90,7 +90,7 @@ class ApmYamlValidRule(Rule):
         # Required fields
         for field in ("name", "version", "description"):
             value = data.get(field)
-            if not value:
+            if value is None:
                 violations.append(
                     self.violation(
                         f"Missing required field '{field}' in apm.yml",
