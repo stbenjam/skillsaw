@@ -172,3 +172,36 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     config = LinterConfig.default()
     context = RepositoryContext(valid_plugin)
     assert config.is_rule_enabled("some-rule", context, None) is True
+
+
+def test_get_rule_config_with_null_value():
+    """Test that get_rule_config handles None rule values (YAML key with no value)"""
+    config = LinterConfig(rules={"plugin-json-required": None})
+    result = config.get_rule_config("plugin-json-required")
+    # Should fall back to defaults instead of crashing
+    assert result["enabled"] == "auto"
+    assert result["severity"] == "error"
+
+
+def test_is_rule_enabled_with_null_value(valid_plugin):
+    """Test that is_rule_enabled handles None rule values (YAML key with no value)"""
+    config = LinterConfig(rules={"plugin-json-required": None})
+    context = RepositoryContext(valid_plugin)
+    # Should not raise TypeError; the rule should use its default config
+    enabled = config.is_rule_enabled(
+        "plugin-json-required", context, {RepositoryType.SINGLE_PLUGIN}
+    )
+    assert enabled is True
+
+
+def test_from_file_with_null_rule_value(temp_dir):
+    """Test loading a config file where a rule key has no value"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    # This YAML has a rule key with no value, which parses as None
+    config_file.write_text("rules:\n  plugin-json-required:\n")
+
+    config = LinterConfig.from_file(config_file)
+    # get_rule_config should not crash
+    result = config.get_rule_config("plugin-json-required")
+    assert result["enabled"] == "auto"
+    assert result["severity"] == "error"
