@@ -65,23 +65,55 @@ class LinterConfig:
         except (yaml.YAMLError, IOError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
-        rules = data.get("rules") or {}
-        custom_rules = data.get("custom-rules") or []
-        exclude_patterns = data.get("exclude") or []
-        strict = bool(data.get("strict") or False)
+        raw_rules = data.get("rules")
+        raw_custom_rules = data.get("custom-rules")
+        raw_exclude = data.get("exclude")
+        raw_strict = data.get("strict")
 
-        if not isinstance(rules, dict):
+        if raw_rules is None:
+            rules = {}
+        elif isinstance(raw_rules, dict):
+            rules = raw_rules
+        else:
             raise ValueError(
-                f"'rules' must be a mapping, got {type(rules).__name__}. "
+                f"'rules' must be a mapping, got {type(raw_rules).__name__}. "
                 "Each rule should be a key with a mapping value, e.g.:\n"
                 "  rules:\n"
                 "    plugin-json-required:\n"
                 "      enabled: true"
             )
-        if not isinstance(custom_rules, list):
-            raise ValueError(f"'custom-rules' must be a list, got {type(custom_rules).__name__}")
-        if not isinstance(exclude_patterns, list):
-            raise ValueError(f"'exclude' must be a list, got {type(exclude_patterns).__name__}")
+
+        for rule_id, rule_config in rules.items():
+            if rule_config is None:
+                rules[rule_id] = {}
+            elif not isinstance(rule_config, dict):
+                raise ValueError(
+                    f"'rules.{rule_id}' must be a mapping or null, "
+                    f"got {type(rule_config).__name__}"
+                )
+
+        if raw_custom_rules is None:
+            custom_rules = []
+        elif isinstance(raw_custom_rules, list):
+            custom_rules = raw_custom_rules
+        else:
+            raise ValueError(
+                f"'custom-rules' must be a list, got {type(raw_custom_rules).__name__}"
+            )
+
+        if raw_exclude is None:
+            exclude_patterns = []
+        elif isinstance(raw_exclude, list):
+            exclude_patterns = raw_exclude
+        else:
+            raise ValueError(f"'exclude' must be a list, got {type(raw_exclude).__name__}")
+
+        if raw_strict is None:
+            strict = False
+        elif isinstance(raw_strict, bool):
+            strict = raw_strict
+        else:
+            raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
         llm_data = data.get("llm", {})
         llm_settings = LLMSettings(
