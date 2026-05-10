@@ -127,6 +127,22 @@ def sync_comments(repo, pr_number, new_comments):
     return [c for c in new_comments if c["fingerprint"] not in existing]
 
 
+def build_summary_body(non_diff_violations):
+    """Build the markdown table body for violations outside the diff."""
+    lines = ["### skillsaw: additional violations\n"]
+    lines.append("| Severity | Rule | File | Message |")
+    lines.append("|----------|------|------|---------|")
+    for v in non_diff_violations:
+        icon = SEVERITY_ICONS.get(v["severity"], "")
+        path = v.get("file_path", "")
+        line = v.get("line")
+        loc = f"`{path}:{line}`" if line else f"`{path}`"
+        msg = v['message'].replace('|', '\\|').replace('\n', ' ')
+        lines.append(f"| {icon} {v['severity']} | `{v['rule_id']}` | {loc} | {msg} |")
+    lines.append(f"\n{SUMMARY_MARKER}")
+    return "\n".join(lines)
+
+
 def upsert_summary_comment(repo, pr_number, non_diff_violations):
     """Create or update a single issue comment for violations outside the diff."""
     page = 1
@@ -152,17 +168,7 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
     if not non_diff_violations:
         return
 
-    lines = ["### skillsaw: additional violations\n"]
-    lines.append("| Severity | Rule | File | Message |")
-    lines.append("|----------|------|------|---------|")
-    for v in non_diff_violations:
-        icon = SEVERITY_ICONS.get(v["severity"], "")
-        path = v.get("file_path", "")
-        line = v.get("line")
-        loc = f"`{path}:{line}`" if line else f"`{path}`"
-        lines.append(f"| {icon} {v['severity']} | `{v['rule_id']}` | {loc} | {v['message']} |")
-    lines.append(f"\n{SUMMARY_MARKER}")
-    body = "\n".join(lines)
+    body = build_summary_body(non_diff_violations)
 
     if existing_id:
         github_api("PATCH", f"/repos/{repo}/issues/comments/{existing_id}", {"body": body})
