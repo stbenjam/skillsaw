@@ -8,7 +8,7 @@ import fnmatch
 from pathlib import Path
 from typing import Set, TYPE_CHECKING
 
-from .lint_target import LintTarget, MarketplaceNode, PluginNode, SkillNode, CodeRabbitNode
+from .lint_target import LintTarget, ApmNode, MarketplaceNode, PluginNode, SkillNode, CodeRabbitNode
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -163,40 +163,44 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             root.children.append(skill_node)
 
     # --- .coderabbit.yaml ---
-    cr_blocks = CodeRabbitContentBlock.gather(context, seen, _is_excluded)
-    if cr_blocks:
-        cr_container = CodeRabbitNode(path=context.root_path / ".coderabbit.yaml")
+    cr_path = context.root_path / ".coderabbit.yaml"
+    if cr_path.exists() and not _is_excluded(cr_path):
+        cr_container = CodeRabbitNode(path=cr_path)
+        cr_blocks = CodeRabbitContentBlock.gather(context, seen, _is_excluded)
         cr_container.children.extend(cr_blocks)
         root.children.append(cr_container)
 
     # --- APM source directories ---
     if context.has_apm:
         apm_dir = context.root_path / ".apm"
+        apm_node = ApmNode(path=apm_dir)
 
         apm_instructions = apm_dir / "instructions"
         if apm_instructions.is_dir():
             for md in sorted(apm_instructions.glob("*.instructions.md")):
-                _add_block(root, md, InstructionBlock)
+                _add_block(apm_node, md, InstructionBlock)
 
         apm_agents = apm_dir / "agents"
         if apm_agents.is_dir():
             for md in sorted(apm_agents.glob("*.agent.md")):
-                _add_block(root, md, AgentBlock)
+                _add_block(apm_node, md, AgentBlock)
 
         apm_prompts = apm_dir / "prompts"
         if apm_prompts.is_dir():
             for md in sorted(apm_prompts.glob("*.md")):
-                _add_block(root, md, PromptBlock)
+                _add_block(apm_node, md, PromptBlock)
 
         apm_chatmodes = apm_dir / "chatmodes"
         if apm_chatmodes.is_dir():
             for md in sorted(apm_chatmodes.glob("*.md")):
-                _add_block(root, md, ChatmodeBlock)
+                _add_block(apm_node, md, ChatmodeBlock)
 
         apm_context = apm_dir / "context"
         if apm_context.is_dir():
             for md in sorted(apm_context.glob("*.md")):
-                _add_block(root, md, ContextFileBlock)
+                _add_block(apm_node, md, ContextFileBlock)
+
+        root.children.append(apm_node)
 
     # --- Extra content paths from config ---
     for glob_pattern in getattr(context, "content_paths", []):

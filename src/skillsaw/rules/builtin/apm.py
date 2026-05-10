@@ -8,6 +8,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import ApmNode
 from skillsaw.rules.builtin.utils import read_text, yaml_key_line
 
 
@@ -130,10 +131,13 @@ class ApmStructureValidRule(Rule):
         if not context.has_apm:
             return []
 
-        violations = []
-        apm_dir = context.root_path / ".apm"
+        apm_nodes = context.lint_tree.find(ApmNode)
+        if not apm_nodes:
+            return []
 
-        # Check that .apm/ has at least one of the expected subdirectories
+        violations = []
+        apm_dir = apm_nodes[0].path
+
         has_skills = (apm_dir / "skills").is_dir()
         has_instructions = (apm_dir / "instructions").is_dir()
 
@@ -145,7 +149,6 @@ class ApmStructureValidRule(Rule):
                 )
             )
 
-        # Validate that each skill subdirectory has SKILL.md
         if has_skills:
             skills_dir = apm_dir / "skills"
             try:

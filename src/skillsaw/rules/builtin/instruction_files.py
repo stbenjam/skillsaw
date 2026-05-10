@@ -8,11 +8,14 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.rules.builtin.content_analysis import (
+    ClaudeMdBlock,
+    GeminiMdBlock,
+    InstructionBlock,
+)
 from skillsaw.rules.builtin.utils import read_text
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
-
-IMPORT_SUPPORTING_FILES = ("CLAUDE.md", "GEMINI.md")
 
 _IMPORT_RE = re.compile(r"^\s*@(\S+)")
 
@@ -36,23 +39,24 @@ class InstructionFileValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for filename in INSTRUCTION_FILES:
-            file_path = context.root_path / filename
-            if not file_path.exists():
+        for block in context.lint_tree.find(InstructionBlock):
+            if block.path.name not in INSTRUCTION_FILES:
                 continue
 
-            content = read_text(file_path)
+            content = read_text(block.path)
             if content is None:
                 violations.append(
                     self.violation(
-                        f"Failed to read {filename} (invalid encoding or I/O error)",
-                        file_path=file_path,
+                        f"Failed to read {block.path.name} (invalid encoding or I/O error)",
+                        file_path=block.path,
                     )
                 )
                 continue
 
             if not content.strip():
-                violations.append(self.violation(f"{filename} is empty", file_path=file_path))
+                violations.append(
+                    self.violation(f"{block.path.name} is empty", file_path=block.path)
+                )
 
         return violations
 
@@ -76,11 +80,11 @@ class InstructionImportsValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for filename in IMPORT_SUPPORTING_FILES:
-            file_path = context.root_path / filename
-            if not file_path.exists():
-                continue
-
+        import_blocks = context.lint_tree.find(ClaudeMdBlock) + context.lint_tree.find(
+            GeminiMdBlock
+        )
+        for block in import_blocks:
+            file_path = block.path
             content = read_text(file_path)
             if content is None:
                 continue

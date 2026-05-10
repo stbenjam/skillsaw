@@ -14,13 +14,8 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import CodeRabbitNode
 from skillsaw.rules.builtin.utils import read_text
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-_CODERABBIT_FILENAME = ".coderabbit.yaml"
 
 # ---------------------------------------------------------------------------
 # Rules
@@ -45,16 +40,18 @@ class CoderabbitYamlValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        cr_path = context.root_path / _CODERABBIT_FILENAME
 
-        if not cr_path.exists():
+        cr_nodes = context.lint_tree.find(CodeRabbitNode)
+        if not cr_nodes:
             return violations
+
+        cr_path = cr_nodes[0].path
 
         raw = read_text(cr_path)
         if raw is None:
             violations.append(
                 self.violation(
-                    f"Failed to read {_CODERABBIT_FILENAME} (invalid encoding or I/O error)",
+                    "Failed to read .coderabbit.yaml (invalid encoding or I/O error)",
                     file_path=cr_path,
                 )
             )
@@ -65,10 +62,10 @@ class CoderabbitYamlValidRule(Rule):
         except yaml.YAMLError as exc:
             line: Optional[int] = None
             if hasattr(exc, "problem_mark") and exc.problem_mark is not None:
-                line = exc.problem_mark.line + 1  # 0-based → 1-based
+                line = exc.problem_mark.line + 1
             violations.append(
                 self.violation(
-                    f"Invalid YAML in {_CODERABBIT_FILENAME}: {exc}",
+                    f"Invalid YAML in .coderabbit.yaml: {exc}",
                     file_path=cr_path,
                     line=line,
                 )
@@ -78,7 +75,7 @@ class CoderabbitYamlValidRule(Rule):
         if not isinstance(data, dict):
             violations.append(
                 self.violation(
-                    f"{_CODERABBIT_FILENAME} must be a YAML mapping at the top level",
+                    ".coderabbit.yaml must be a YAML mapping at the top level",
                     file_path=cr_path,
                 )
             )

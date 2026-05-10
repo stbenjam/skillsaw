@@ -91,6 +91,14 @@ class SkillNode(LintTarget):
 
 
 @dataclass
+class ApmNode(LintTarget):
+    """The .apm/ directory container."""
+
+    def tree_label(self) -> str:
+        return ".apm/"
+
+
+@dataclass
 class CodeRabbitNode(LintTarget):
     """A .coderabbit.yaml file container."""
 
