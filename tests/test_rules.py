@@ -229,6 +229,93 @@ def test_plugin_json_missing_name_is_error(temp_dir):
     assert len(warnings) == 2
 
 
+def test_plugin_json_valid_version_rejects_trailing_garbage(temp_dir):
+    """Test that version strings with trailing garbage are rejected"""
+    import json
+
+    invalid_versions = [
+        "1.0.0garbage",
+        "1.0.0.0.0",
+        "1.0.0; rm -rf /",
+        "1.0.0 ",
+        "1.0.0!",
+    ]
+
+    for bad_version in invalid_versions:
+        plugin_dir = temp_dir / "ver-plugin"
+        plugin_dir.mkdir(exist_ok=True)
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir(exist_ok=True)
+
+        with open(claude_dir / "plugin.json", "w") as f:
+            json.dump(
+                {
+                    "name": "ver-plugin",
+                    "description": "Test",
+                    "version": bad_version,
+                    "author": {"name": "Test"},
+                },
+                f,
+            )
+
+        (plugin_dir / "commands").mkdir(exist_ok=True)
+
+        context = RepositoryContext(plugin_dir)
+        rule = PluginJsonValidRule()
+        violations = rule.check(context)
+
+        version_violations = [
+            v for v in violations if "semver" in v.message.lower() or "Version" in v.message
+        ]
+        assert len(version_violations) == 1, f"Expected version '{bad_version}' to be rejected"
+
+
+def test_plugin_json_valid_version_accepts_semver_prerelease(temp_dir):
+    """Test that valid semver versions with prerelease/build metadata are accepted"""
+    import json
+
+    valid_versions = [
+        "1.0.0",
+        "0.1.0",
+        "10.20.30",
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-0.3.7",
+        "1.0.0+build.123",
+        "1.0.0-beta+build.456",
+    ]
+
+    for good_version in valid_versions:
+        plugin_dir = temp_dir / "ver-plugin"
+        plugin_dir.mkdir(exist_ok=True)
+
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir(exist_ok=True)
+
+        with open(claude_dir / "plugin.json", "w") as f:
+            json.dump(
+                {
+                    "name": "ver-plugin",
+                    "description": "Test",
+                    "version": good_version,
+                    "author": {"name": "Test"},
+                },
+                f,
+            )
+
+        (plugin_dir / "commands").mkdir(exist_ok=True)
+
+        context = RepositoryContext(plugin_dir)
+        rule = PluginJsonValidRule()
+        violations = rule.check(context)
+
+        version_violations = [
+            v for v in violations if "semver" in v.message.lower() or "Version" in v.message
+        ]
+        assert len(version_violations) == 0, f"Expected version '{good_version}' to be accepted"
+
+
 def test_command_name_format_reports_line_number(temp_dir):
     """CommandNameFormatRule should report the line of the ## Name heading"""
     import json
