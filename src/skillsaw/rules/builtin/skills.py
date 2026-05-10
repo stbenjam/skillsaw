@@ -148,13 +148,9 @@ class SkillFrontmatterRule(Rule):
                 if fm_match:
                     fm_text = fm_match.group(1)
                     additions = []
-                    if missing_name and not re.search(
-                        r"^name\s*:", fm_text, re.MULTILINE
-                    ):
+                    if missing_name and not re.search(r"^name\s*:", fm_text, re.MULTILINE):
                         additions.append(f"name: {file_path.parent.name}")
-                    if missing_desc and not re.search(
-                        r"^description\s*:", fm_text, re.MULTILINE
-                    ):
+                    if missing_desc and not re.search(r"^description\s*:", fm_text, re.MULTILINE):
                         additions.append("description: ")
                     if additions:
                         insert = "\n".join(additions) + "\n"

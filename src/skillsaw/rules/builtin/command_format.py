@@ -160,9 +160,7 @@ class CommandFrontmatterRule(Rule):
                 )
             elif "Missing 'description'" in v.message and original.startswith("---"):
                 fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
-                if fm_match and not re.search(
-                    r"^description\s*:", fm_match.group(1), re.MULTILINE
-                ):
+                if fm_match and not re.search(r"^description\s*:", fm_match.group(1), re.MULTILINE):
                     fm_end = fm_match.end()
                     fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
                     fixed += original[fm_end:]
