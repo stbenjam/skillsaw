@@ -611,6 +611,7 @@ class TestLintToolExceptionHandling:
         result = tool.execute(path="skill.md")
 
         assert "Error running lint" in result
+        assert "test/exploding" in result
         assert "kaboom" in result
 
     def test_rule_exception_not_swallowed_as_clean(self, tmp_path, monkeypatch):
@@ -646,4 +647,5 @@ class TestLintToolExceptionHandling:
 
         assert result != "No violations found."
         assert "Error running lint" in result
+        assert "test/broken" in result
         assert "something went wrong" in result
