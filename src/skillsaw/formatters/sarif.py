@@ -28,6 +28,22 @@ def format_sarif(
                 "shortDescription": {"text": r.description},
             }
 
+    # Add synthetic descriptors for violations whose rule_id has no
+    # matching Rule instance (e.g. "invalid-config" from _validate_config).
+    # SARIF consumers that enforce referential integrity require every
+    # ruleId referenced by a result to appear in runs[].tool.driver.rules[].
+    _SYNTHETIC_DESCRIPTIONS = {
+        "invalid-config": "Unknown rule ID in configuration",
+    }
+    for v in violations:
+        if v.rule_id not in seen:
+            seen[v.rule_id] = {
+                "id": v.rule_id,
+                "shortDescription": {
+                    "text": _SYNTHETIC_DESCRIPTIONS.get(v.rule_id, v.rule_id),
+                },
+            }
+
     results = []
     filtered = violations if verbose else [v for v in violations if v.severity != Severity.INFO]
     for v in filtered:
