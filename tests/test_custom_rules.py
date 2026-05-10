@@ -284,6 +284,57 @@ class ViolationRule(Rule):
     assert any("This is a test violation" in v.message for v in violations)
 
 
+def test_custom_rule_version_gate(valid_plugin, temp_dir):
+    """Test that custom rules respect the since version gate"""
+    # Create a custom rule with since = "0.8.0"
+    custom_rule_file = temp_dir / "versioned_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class VersionedRule(Rule):
+    since = "0.8.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "versioned-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule gated behind version 0.8.0"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("versioned violation")]
+""")
+
+    # Config with version older than the rule's since — rule should NOT load
+    config_old = LinterConfig(
+        version="0.7.0",
+        custom_rules=[str(custom_rule_file)],
+    )
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config_old)
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert (
+        "versioned-rule" not in rule_ids
+    ), "Custom rule with since='0.8.0' should be excluded when config version is '0.7.0'"
+
+    # Config with version equal to the rule's since — rule SHOULD load
+    config_new = LinterConfig(
+        version="0.8.0",
+        custom_rules=[str(custom_rule_file)],
+    )
+    context2 = RepositoryContext(valid_plugin)
+    linter2 = Linter(context2, config_new)
+    rule_ids2 = [rule.rule_id for rule in linter2.rules]
+    assert (
+        "versioned-rule" in rule_ids2
+    ), "Custom rule with since='0.8.0' should load when config version is '0.8.0'"
+
+
 def test_custom_rule_respects_disabled_config(valid_plugin, temp_dir):
     """Test that custom rules respect the enabled/disabled config"""
     # Create a custom rule

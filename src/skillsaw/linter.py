@@ -127,6 +127,7 @@ class Linter:
                     self.context,
                     rule_instance.repo_types,
                     rule_instance.formats,
+                    since_version=rule_instance.since,
                 ):
                     self.rules.append(rule_instance)
 
