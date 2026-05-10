@@ -51,8 +51,9 @@ class SkillFrontmatterRule(Rule):
                 )
                 continue
 
-            frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+            frontmatter_match = re.match(r"^---\r?\n(.*?)\r?\n---", content, re.DOTALL)
             if not frontmatter_match:
+                violations.append(self.violation("Invalid frontmatter format", file_path=skill_md))
                 continue
 
             frontmatter = frontmatter_match.group(1)
@@ -134,7 +135,7 @@ class SkillFrontmatterRule(Rule):
             missing_name = any("Missing 'name'" in m for m in messages)
             missing_desc = any("Missing 'description'" in m for m in messages)
             if (missing_name or missing_desc) and original.startswith("---"):
-                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
+                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", original, re.DOTALL)
                 if fm_match:
                     fm_text = fm_match.group(1)
                     additions = []
