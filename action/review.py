@@ -137,7 +137,7 @@ def build_summary_body(non_diff_violations):
         path = v.get("file_path", "")
         line = v.get("line")
         loc = f"`{path}:{line}`" if line else f"`{path}`"
-        msg = v['message'].replace('|', '\\|').replace('\n', ' ')
+        msg = " ".join(v["message"].splitlines()).replace("|", r"\|")
         lines.append(f"| {icon} {v['severity']} | `{v['rule_id']}` | {loc} | {msg} |")
     lines.append(f"\n{SUMMARY_MARKER}")
     return "\n".join(lines)

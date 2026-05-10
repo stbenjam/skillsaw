@@ -68,6 +68,21 @@ class TestSummaryBodyEscaping:
         body = build_summary_body(violations)
         assert "Simple message" in body
 
+    def test_crlf_in_message_is_normalized(self):
+        violations = [
+            {
+                "severity": "error",
+                "rule_id": "test-rule",
+                "file_path": "crlf.py",
+                "line": 1,
+                "message": "line one\r\nline two\rline three",
+            }
+        ]
+        body = build_summary_body(violations)
+        rows = _table_data_rows(body)
+        assert len(rows) == 1
+        assert "line one line two line three" in rows[0]
+
     def test_multiple_pipes_all_escaped(self):
         violations = [
             {
