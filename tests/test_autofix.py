@@ -361,7 +361,15 @@ class TestApplyFixes:
         assert safe_target.read_text() == "fixed-safe"
         assert suggest_target.read_text() == "original-suggest"
 
-    def test_apply_skips_llm_by_default(self, temp_dir):
+    @pytest.mark.parametrize(
+        "requested, expected_applied",
+        [
+            (AutofixConfidence.SAFE, 0),
+            (AutofixConfidence.SUGGEST, 0),
+            (AutofixConfidence.LLM, 1),
+        ],
+    )
+    def test_apply_llm_confidence_filtering(self, temp_dir, requested, expected_applied):
         target = temp_dir / "test.txt"
         target.write_text("original")
 
@@ -374,43 +382,9 @@ class TestApplyFixes:
             description="test fix",
         )
 
-        applied = Linter.apply_fixes([fix])
-        assert len(applied) == 0
-        assert target.read_text() == "original"
-
-    def test_apply_skips_llm_when_suggest_requested(self, temp_dir):
-        target = temp_dir / "test.txt"
-        target.write_text("original")
-
-        fix = AutofixResult(
-            rule_id="test",
-            file_path=target,
-            confidence=AutofixConfidence.LLM,
-            original_content="original",
-            fixed_content="fixed",
-            description="test fix",
-        )
-
-        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
-        assert len(applied) == 0
-        assert target.read_text() == "original"
-
-    def test_apply_llm_when_llm_requested(self, temp_dir):
-        target = temp_dir / "test.txt"
-        target.write_text("original")
-
-        fix = AutofixResult(
-            rule_id="test",
-            file_path=target,
-            confidence=AutofixConfidence.LLM,
-            original_content="original",
-            fixed_content="fixed",
-            description="test fix",
-        )
-
-        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.LLM)
-        assert len(applied) == 1
-        assert target.read_text() == "fixed"
+        applied = Linter.apply_fixes([fix], confidence=requested)
+        assert len(applied) == expected_applied
+        assert target.read_text() == ("fixed" if expected_applied else "original")
 
     def test_apply_llm_includes_all_confidence_levels(self, temp_dir):
         """When confidence=LLM, all fix levels (SAFE, SUGGEST, LLM) are applied."""
