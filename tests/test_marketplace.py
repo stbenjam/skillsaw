@@ -369,6 +369,26 @@ class TestAddComponents:
         assert len(data["hooks"]["PreToolUse"]) == 1
         assert len(data["hooks"]["PostToolUse"]) == 1
 
+    def test_add_hook_with_existing_empty_hooks_list(self, temp_dir):
+        """Adding a hook when hooks.json has an entry with an empty 'hooks' list should not crash."""
+        root = self._init_with_plugin(temp_dir)
+        hooks_dir = root / "plugins" / "my-plugin" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        hooks_json = hooks_dir / "hooks.json"
+        # Simulate a pre-existing entry with an empty hooks list
+        hooks_json.write_text(
+            json.dumps({"hooks": {"PreToolUse": [{"hooks": []}]}}, indent=2),
+            encoding="utf-8",
+        )
+
+        result = add_hook("PreToolUse", "my-plugin", path=root)
+        assert result.exists()
+
+        data = json.loads(hooks_json.read_text())
+        # The original empty entry should remain, and a new entry should be appended
+        assert len(data["hooks"]["PreToolUse"]) == 2
+        assert data["hooks"]["PreToolUse"][1]["hooks"][0]["type"] == "command"
+
     def test_add_command_rejects_duplicate(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
         add_command("greet", "my-plugin", path=root)
