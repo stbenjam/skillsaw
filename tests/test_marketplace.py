@@ -55,6 +55,19 @@ class TestBranding:
         result = apply_replacements("Hello {{NAME}}", {"NAME": "World"})
         assert result == "Hello World"
 
+    def test_apply_replacements_no_double_substitution(self):
+        """Values containing {{PLACEHOLDER}} patterns must not be substituted again."""
+        result = apply_replacements(
+            "name={{NAME}} owner={{OWNER}}",
+            {"NAME": "{{OWNER}}", "OWNER": "alice"},
+        )
+        # NAME should become the literal string "{{OWNER}}", not "alice"
+        assert result == "name={{OWNER}} owner=alice"
+
+    def test_apply_replacements_empty(self):
+        """An empty replacements dict should return the content unchanged."""
+        assert apply_replacements("{{FOO}}", {}) == "{{FOO}}"
+
     def test_build_replacements(self):
         r = build_replacements("my-mp", "alice", "alice/my-mp", COLOR_PRESETS["ocean-blue"])
         assert r["MARKETPLACE_NAME"] == "my-mp"
