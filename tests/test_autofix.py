@@ -361,6 +361,75 @@ class TestApplyFixes:
         assert safe_target.read_text() == "fixed-safe"
         assert suggest_target.read_text() == "original-suggest"
 
+    @pytest.mark.parametrize(
+        "requested, expected_applied",
+        [
+            (AutofixConfidence.SAFE, 0),
+            (AutofixConfidence.SUGGEST, 0),
+            (AutofixConfidence.LLM, 1),
+        ],
+    )
+    def test_apply_llm_confidence_filtering(self, temp_dir, requested, expected_applied):
+        target = temp_dir / "test.txt"
+        target.write_text("original")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.LLM,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        applied = Linter.apply_fixes([fix], confidence=requested)
+        assert len(applied) == expected_applied
+        assert target.read_text() == ("fixed" if expected_applied else "original")
+
+    def test_apply_llm_includes_all_confidence_levels(self, temp_dir):
+        """When confidence=LLM, all fix levels (SAFE, SUGGEST, LLM) are applied."""
+        safe_target = temp_dir / "safe.txt"
+        safe_target.write_text("original-safe")
+
+        suggest_target = temp_dir / "suggest.txt"
+        suggest_target.write_text("original-suggest")
+
+        llm_target = temp_dir / "llm.txt"
+        llm_target.write_text("original-llm")
+
+        fixes = [
+            AutofixResult(
+                rule_id="a",
+                file_path=safe_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="original-safe",
+                fixed_content="fixed-safe",
+                description="safe fix",
+            ),
+            AutofixResult(
+                rule_id="b",
+                file_path=suggest_target,
+                confidence=AutofixConfidence.SUGGEST,
+                original_content="original-suggest",
+                fixed_content="fixed-suggest",
+                description="suggest fix",
+            ),
+            AutofixResult(
+                rule_id="c",
+                file_path=llm_target,
+                confidence=AutofixConfidence.LLM,
+                original_content="original-llm",
+                fixed_content="fixed-llm",
+                description="llm fix",
+            ),
+        ]
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.LLM)
+        assert len(applied) == 3
+        assert safe_target.read_text() == "fixed-safe"
+        assert suggest_target.read_text() == "fixed-suggest"
+        assert llm_target.read_text() == "fixed-llm"
+
 
 class TestEndToEndFix:
     def test_full_fix_workflow(self, temp_dir):
