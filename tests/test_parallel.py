@@ -189,6 +189,75 @@ class TestParallelLLMFix:
         assert result1 != result2 or "No violations" in result1
 
 
+class TestPerFileCacheInvalidation:
+    """Test that per-file cache invalidation does not disturb other files."""
+
+    def test_invalidate_single_file_preserves_others(self, tmp_path):
+        """Invalidating one file's cache must not affect cached reads for other files."""
+        from skillsaw.rules.builtin.utils import read_text, invalidate_read_caches
+
+        file_a = tmp_path / "a.md"
+        file_b = tmp_path / "b.md"
+        file_a.write_text("original-a", encoding="utf-8")
+        file_b.write_text("original-b", encoding="utf-8")
+
+        # Warm both caches
+        invalidate_read_caches()  # full clear first
+        assert read_text(file_a) == "original-a"
+        assert read_text(file_b) == "original-b"
+
+        # Modify file_a on disk and invalidate only its cache
+        file_a.write_text("modified-a", encoding="utf-8")
+        invalidate_read_caches(file_a)
+
+        # file_a should reflect the new content
+        assert read_text(file_a) == "modified-a"
+        # file_b must still return the cached (original) value
+        assert read_text(file_b) == "original-b"
+
+    def test_concurrent_invalidation_is_isolated(self, tmp_path):
+        """Concurrent threads invalidating different files must not interfere."""
+        from skillsaw.rules.builtin.utils import read_text, invalidate_read_caches
+
+        num_files = 10
+        files = []
+        for i in range(num_files):
+            f = tmp_path / f"file{i}.md"
+            f.write_text(f"original-{i}", encoding="utf-8")
+            files.append(f)
+
+        # Warm all caches
+        invalidate_read_caches()
+        for f in files:
+            read_text(f)
+
+        # Modify all files on disk
+        for i, f in enumerate(files):
+            f.write_text(f"modified-{i}", encoding="utf-8")
+
+        errors = []
+
+        def invalidate_and_read(idx):
+            try:
+                f = files[idx]
+                invalidate_read_caches(f)
+                result = read_text(f)
+                if result != f"modified-{idx}":
+                    errors.append(f"file{idx}: expected 'modified-{idx}', got '{result}'")
+            except Exception as e:
+                errors.append(str(e))
+
+        threads = [
+            threading.Thread(target=invalidate_and_read, args=(i,)) for i in range(num_files)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Thread errors: {errors}"
+
+
 class TestParallelLintToolIsolation:
     """Test that LintTool instances don't interfere with each other."""
 

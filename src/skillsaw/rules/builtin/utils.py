@@ -2,23 +2,111 @@
 
 import json
 import re
-from functools import lru_cache
+import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 
 
-@lru_cache(maxsize=512)
-def read_text(file_path: Path) -> Optional[str]:
-    """Cached file read. Returns None on I/O or encoding errors."""
-    try:
-        return file_path.read_text(encoding="utf-8")
-    except (IOError, UnicodeDecodeError):
-        return None
+class FileCache:
+    """Thread-safe cache that supports per-file invalidation.
+
+    Internally uses a two-level dictionary::
+
+        resolved_path -> { sub_key -> value }
+
+    ``invalidate(file_path)`` is O(1) -- it pops the entire inner dict
+    for that path.  A global ``maxsize`` caps the total number of entries
+    across all registered functions to prevent unbounded memory growth.
+    """
+
+    def __init__(self, maxsize: int = 2048):
+        self._lock = threading.Lock()
+        self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
+        self._maxsize = maxsize
+        self._total_entries = 0
+
+    def cached(self, func: Callable) -> Callable:
+        """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
+        store: Dict[Path, Dict[tuple, Any]] = {}
+        self._stores.append(store)
+
+        def wrapper(*args, **kwargs):
+            # The first positional arg is always the file path.
+            file_path = args[0] if args else None
+            resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            sub_key = (args[1:], tuple(sorted(kwargs.items())))
+            with self._lock:
+                bucket = store.get(resolved)
+                if bucket is not None and sub_key in bucket:
+                    return bucket[sub_key]
+            # Compute outside the lock to avoid holding it during I/O.
+            result = func(*args, **kwargs)
+            with self._lock:
+                if self._total_entries >= self._maxsize:
+                    self._evict_oldest()
+                bucket = store.setdefault(resolved, {})
+                if sub_key not in bucket:
+                    self._total_entries += 1
+                bucket[sub_key] = result
+            return result
+
+        wrapper._store = store  # type: ignore[attr-defined]
+
+        def _clear():
+            with self._lock:
+                n = sum(len(b) for b in store.values())
+                store.clear()
+                self._total_entries -= n
+
+        wrapper.cache_clear = _clear  # type: ignore[attr-defined]
+        return wrapper
+
+    def _evict_oldest(self):
+        """Drop roughly half the entries across all stores (called under lock)."""
+        target = self._maxsize // 2
+        evicted = 0
+        for store in self._stores:
+            paths_to_remove = []
+            for path, bucket in store.items():
+                evicted += len(bucket)
+                paths_to_remove.append(path)
+                if evicted >= target:
+                    break
+            for p in paths_to_remove:
+                del store[p]
+            if evicted >= target:
+                break
+        self._total_entries -= evicted
+
+    def invalidate(self, file_path: Optional[Path] = None):
+        """Drop cache entries.
+
+        If *file_path* is given, only entries keyed by that resolved path
+        are removed -- O(number of registered functions), safe to call from
+        a worker thread without disturbing other threads' cached results.
+
+        If *file_path* is ``None`` every entry in every registered store is
+        cleared (equivalent to the old ``invalidate_read_caches()``).
+        """
+        with self._lock:
+            if file_path is None:
+                for store in self._stores:
+                    store.clear()
+                self._total_entries = 0
+            else:
+                resolved = file_path.resolve()
+                for store in self._stores:
+                    bucket = store.pop(resolved, None)
+                    if bucket is not None:
+                        self._total_entries -= len(bucket)
 
 
-_extra_caches = []
+# Singleton cache used by all utility functions.
+_file_cache = FileCache()
+
+_extra_caches: list = []
 
 
 def register_cache(func):
@@ -27,17 +115,36 @@ def register_cache(func):
     return func
 
 
-def invalidate_read_caches():
-    """Clear all file-reading caches. Call after modifying files on disk."""
-    read_text.cache_clear()
-    read_json.cache_clear()
-    frontmatter_key_line.cache_clear()
-    heading_line.cache_clear()
+def invalidate_read_caches(file_path: Optional[Path] = None):
+    """Clear file-reading caches.
+
+    Args:
+        file_path: When given, only entries for this specific file are
+            evicted from the main ``FileCache``.  When ``None``, *all*
+            cached entries are dropped (legacy full-clear behaviour).
+
+    Note:
+        Functions registered via ``register_cache`` (legacy ``lru_cache``
+        decorators) are always fully cleared regardless of *file_path*,
+        as ``lru_cache`` does not support per-key eviction.
+    """
+    _file_cache.invalidate(file_path)
+    # lru_cache functions registered via register_cache do not support
+    # per-key eviction, so we must clear them entirely in both cases.
     for cache in _extra_caches:
         cache.cache_clear()
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
+def read_text(file_path: Path) -> Optional[str]:
+    """Cached file read. Returns None on I/O or encoding errors."""
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except (IOError, UnicodeDecodeError):
+        return None
+
+
+@_file_cache.cached
 def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached JSON file read. Returns (data, error)."""
     content = read_text(file_path)
@@ -49,7 +156,7 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, str(e)
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     """Find the line number of a top-level key in YAML frontmatter."""
     content = read_text(file_path)
@@ -101,7 +208,7 @@ def extract_section(content: str, heading: str, level: int = 2) -> str:
     return m.group(1).strip() if m else ""
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
 def heading_line(file_path: Path, heading: str, level: int = 2) -> Optional[int]:
     """Find the line number of a markdown heading."""
     content = read_text(file_path)

@@ -136,7 +136,7 @@ class LintTool:
         from ..rules.builtin.utils import invalidate_read_caches
         from ..rule import Rule
 
-        invalidate_read_caches()
+        invalidate_read_caches(resolved)
         context = RepositoryContext(self._root)
         context.content_paths = self._config.content_paths
 

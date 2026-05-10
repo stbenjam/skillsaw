@@ -277,7 +277,7 @@ class Linter:
     def _relint_file(self, fpath, violations_list, threshold):
         from .rules.builtin.utils import invalidate_read_caches
 
-        invalidate_read_caches()
+        invalidate_read_caches(fpath)
         failed_rule_ids = {v.rule_id for v in violations_list}
         failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
         remaining = []
