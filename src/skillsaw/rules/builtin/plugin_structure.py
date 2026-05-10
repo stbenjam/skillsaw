@@ -8,6 +8,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_json
+from skillsaw.version import is_valid_semver
 from skillsaw.context import RepositoryContext, RepositoryType
 
 PLUGIN_REPO_TYPES = {RepositoryType.SINGLE_PLUGIN, RepositoryType.MARKETPLACE}
@@ -117,9 +118,7 @@ class PluginJsonValidRule(Rule):
             # Validate version format (semver)
             if "version" in data:
                 version = data["version"]
-                if not re.match(
-                    r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$", str(version)
-                ):
+                if not is_valid_semver(version):
                     violations.append(
                         self.violation(
                             f"Version '{version}' should follow semver (X.Y.Z)",

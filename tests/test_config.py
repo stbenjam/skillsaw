@@ -8,7 +8,8 @@ import pytest
 import yaml
 
 
-from skillsaw.config import LinterConfig, find_config, _parse_version
+from skillsaw.config import LinterConfig, find_config
+from skillsaw.version import parse_version as _parse_version
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
