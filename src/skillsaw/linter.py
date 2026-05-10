@@ -220,8 +220,10 @@ class Linter:
         """
         applied: List[AutofixResult] = []
         allowed = {AutofixConfidence.SAFE}
-        if confidence == AutofixConfidence.SUGGEST:
+        if confidence in (AutofixConfidence.SUGGEST, AutofixConfidence.LLM):
             allowed.add(AutofixConfidence.SUGGEST)
+        if confidence == AutofixConfidence.LLM:
+            allowed.add(AutofixConfidence.LLM)
 
         for fix in fixes:
             if fix.confidence not in allowed:
