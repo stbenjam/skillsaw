@@ -144,6 +144,12 @@ class TestReplaceSectionTool:
         result = tool.execute(path="subdir", old_text="a", new_text="b")
         assert "Error: path is a directory" in result
 
+    def test_replace_on_binary_file(self, tmp_path):
+        (tmp_path / "binary.bin").write_bytes(b"\x80\x81\x82\xff\xfe")
+        tool = ReplaceSectionTool(tmp_path)
+        result = tool.execute(path="binary.bin", old_text="a", new_text="b")
+        assert "Error: file is not valid UTF-8 text" in result
+
 
 class TestDiffTool:
     def test_diff_with_changes(self, tmp_path):

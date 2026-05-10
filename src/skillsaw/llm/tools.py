@@ -111,7 +111,10 @@ class ReplaceSectionTool:
             return f"Error: file not found: {path}"
         if resolved.is_dir():
             return f"Error: path is a directory, not a file: {path}"
-        content = resolved.read_text(encoding="utf-8")
+        try:
+            content = resolved.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"Error: file is not valid UTF-8 text (binary file?): {path}"
         count = content.count(old_text)
         if count == 0:
             return "Error: old_text not found in file"
