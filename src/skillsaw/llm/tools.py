@@ -178,8 +178,8 @@ class LintTool:
                 violations.extend(
                     v for v in rule_violations if v.file_path and v.file_path.resolve() == resolved
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                return f"Error running lint ({rule.rule_id}): {e}"
 
         if not violations:
             return "No violations found."

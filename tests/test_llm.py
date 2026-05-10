@@ -14,8 +14,9 @@ from skillsaw.llm.tools import (
     WriteFileTool,
     ReplaceSectionTool,
     DiffTool,
+    LintTool,
 )
-from skillsaw.rule import AutofixConfidence
+from skillsaw.rule import AutofixConfidence, Severity
 
 
 class FakeProvider:
@@ -571,3 +572,80 @@ class TestLintToolExcludePatterns:
         tool_excluded = LintTool(tmp_path, config_excluded, rule_ids={"agentskill-valid"})
         result_excluded = tool_excluded.execute(path="my-skill/SKILL.md")
         assert result_excluded == "No violations found."
+
+
+class TestLintToolExceptionHandling:
+    """LintTool.execute must surface rule exceptions, not swallow them."""
+
+    def test_rule_exception_is_reported(self, tmp_path, monkeypatch):
+        """When a rule's check() raises, the error must be returned to the LLM."""
+        from skillsaw.config import LinterConfig
+        from skillsaw.rule import Rule
+        from skillsaw.context import RepositoryContext
+
+        class ExplodingRule(Rule):
+            rule_id = "test/exploding"
+            name = "Exploding Rule"
+            description = "Always raises"
+
+            def default_severity(self):
+                return Severity.ERROR
+
+            def check(self, context: RepositoryContext):
+                raise RuntimeError("kaboom")
+
+        # Create a minimal file to lint
+        target = tmp_path / "skill.md"
+        target.write_text("---\ntitle: test\n---\n", encoding="utf-8")
+
+        config_file = tmp_path / ".skillsaw.yaml"
+        config_file.write_text("rules: {}\n", encoding="utf-8")
+        config = LinterConfig.from_file(config_file)
+
+        # Patch BUILTIN_RULES so only our exploding rule runs
+        import skillsaw.rules.builtin as builtin_mod
+
+        monkeypatch.setattr(builtin_mod, "BUILTIN_RULES", [ExplodingRule])
+
+        tool = LintTool(tmp_path, config)
+        result = tool.execute(path="skill.md")
+
+        assert "Error running lint" in result
+        assert "test/exploding" in result
+        assert "kaboom" in result
+
+    def test_rule_exception_not_swallowed_as_clean(self, tmp_path, monkeypatch):
+        """Verify the result is NOT 'No violations found' when a rule crashes."""
+        from skillsaw.config import LinterConfig
+        from skillsaw.rule import Rule
+        from skillsaw.context import RepositoryContext
+
+        class BrokenRule(Rule):
+            rule_id = "test/broken"
+            name = "Broken Rule"
+            description = "Always raises ValueError"
+
+            def default_severity(self):
+                return Severity.ERROR
+
+            def check(self, context: RepositoryContext):
+                raise ValueError("something went wrong")
+
+        target = tmp_path / "skill.md"
+        target.write_text("---\ntitle: test\n---\n", encoding="utf-8")
+
+        config_file = tmp_path / ".skillsaw.yaml"
+        config_file.write_text("rules: {}\n", encoding="utf-8")
+        config = LinterConfig.from_file(config_file)
+
+        import skillsaw.rules.builtin as builtin_mod
+
+        monkeypatch.setattr(builtin_mod, "BUILTIN_RULES", [BrokenRule])
+
+        tool = LintTool(tmp_path, config)
+        result = tool.execute(path="skill.md")
+
+        assert result != "No violations found."
+        assert "Error running lint" in result
+        assert "test/broken" in result
+        assert "something went wrong" in result
