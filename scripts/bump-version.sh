@@ -22,14 +22,17 @@ fi
 echo "Bumping version: $current_version -> $new_version"
 
 # Use python for portable in-place editing (works on both macOS and Linux)
-python3 -c "
-import re, sys
-for path, pattern, repl in [
-    ('$PYPROJECT', r'^version = \"$current_version\"', 'version = \"$new_version\"'),
-    ('$INIT_PY', r'^__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
+"$REPO_ROOT/.venv/bin/python3" -c "
+import sys
+for path, old, new in [
+    ('$PYPROJECT', 'version = \"$current_version\"', 'version = \"$new_version\"'),
+    ('$INIT_PY', '__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
 ]:
     text = open(path).read()
-    text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
+    if old not in text:
+        print(f'Error: could not find {old!r} in {path}', file=sys.stderr)
+        sys.exit(1)
+    text = text.replace(old, new, 1)
     open(path, 'w').write(text)
 "
 
