@@ -344,6 +344,19 @@ class ContentNegativeOnlyRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    def _is_positive_inside_negative(self, text, pos_match):
+        """Return True if the positive match is embedded within a negative construction."""
+        # Look backwards from the positive match start for a negative prefix
+        prefix = text[: pos_match.start()]
+        # Check if a negative construction leads into this positive match
+        # e.g. "don't use exec" — the "use exec" is not truly positive
+        trailing_neg = re.search(
+            r"(?:never\s+|don'?t\s+|avoid\s+|do\s+not\s+)\s*$",
+            prefix,
+            re.IGNORECASE,
+        )
+        return trailing_neg is not None
+
     def _has_positive_alternative(self, line, lines, line_idx):
         neg_match = self._NEGATIVE_RE.search(line)
         if not neg_match:
@@ -354,8 +367,9 @@ class ContentNegativeOnlyRule(Rule):
             return True
 
         text_after_neg = line[neg_match.end() :]
-        if self._POSITIVE_RE.search(text_after_neg):
-            return True
+        for pos_match in self._POSITIVE_RE.finditer(text_after_neg):
+            if not self._is_positive_inside_negative(text_after_neg, pos_match):
+                return True
 
         start = max(0, line_idx - 2)
         end = min(len(lines), line_idx + 5)

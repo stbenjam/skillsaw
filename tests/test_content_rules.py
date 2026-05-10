@@ -290,6 +290,13 @@ class TestContentNegativeOnlyRule:
         violations = ContentNegativeOnlyRule().check(context)
         assert len(violations) == 0
 
+    def test_multiple_negatives_on_same_line_flagged(self, temp_dir):
+        """Two negatives should not mask each other as false positive alternatives."""
+        (temp_dir / "CLAUDE.md").write_text("Never use eval, don't use exec.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) >= 1
+
 
 class TestContentSectionLengthRule:
     def test_rule_metadata(self):
