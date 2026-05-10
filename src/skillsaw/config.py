@@ -40,11 +40,21 @@ class LinterConfig:
         except (yaml.YAMLError, IOError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Failed to load config from {config_path}: "
+                f"expected a YAML mapping, got {type(data).__name__}"
+            )
+
+        raw_rules = data.get("rules") or {}
+        # Sanitize individual rule values: null entries become empty dicts
+        rules = {k: v if isinstance(v, dict) else {} for k, v in raw_rules.items()}
+
         return cls(
-            rules=data.get("rules") or {},
+            rules=rules,
             custom_rules=data.get("custom-rules") or [],
             exclude_patterns=data.get("exclude") or [],
-            strict=data.get("strict", False),
+            strict=bool(data.get("strict", False)),
         )
 
     @classmethod

@@ -200,3 +200,33 @@ def test_config_null_custom_rules_and_exclude(temp_dir):
     config = LinterConfig.from_file(config_file)
     assert config.custom_rules == []
     assert config.exclude_patterns == []
+
+
+def test_config_null_individual_rule_value(temp_dir):
+    """Test that a rule set to null (e.g. 'some-rule: null') does not crash"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required: null\n")
+    config = LinterConfig.from_file(config_file)
+    # The null value should be sanitized to an empty dict
+    assert config.rules["plugin-json-required"] == {}
+    # get_rule_config should still merge defaults without crashing
+    rule_config = config.get_rule_config("plugin-json-required")
+    assert rule_config["enabled"] == "auto"
+
+
+def test_config_null_strict_key(temp_dir):
+    """Test that strict: null resolves to False, not None"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("strict: null\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.strict is False
+
+
+def test_config_non_dict_top_level(temp_dir):
+    """Test that a non-mapping YAML top level raises ValueError"""
+    import pytest
+
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("[1, 2, 3]\n")
+    with pytest.raises(ValueError, match="expected a YAML mapping"):
+        LinterConfig.from_file(config_file)
