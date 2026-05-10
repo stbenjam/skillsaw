@@ -456,3 +456,4 @@ def test_html_non_verbose_hides_info(valid_plugin):
     # In non-verbose, the info violation row should not appear in the table
     # but the error and warning should
     assert "Missing plugin.json" in output_normal
+    assert "Recommended field" not in output_normal
