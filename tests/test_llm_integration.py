@@ -417,10 +417,13 @@ class TestLLMFixDryRun:
         assert len(result.files_modified) == 0
         assert len(result.diffs) > 0 or result.violations_before > 0
 
-    def test_dry_run_rollback_not_failure(self, tmp_path):
-        """Dry-run with LLM changes that don't improve violations should not
-        be treated as a fatal error by the CLI (gh issue: exit-code-1 in
-        dry-run when result.success is False)."""
+    def test_dry_run_rollback_preserves_original(self, tmp_path):
+        """Dry-run rollback when LLM changes don't improve violations.
+
+        Verifies linter-level behaviour: the original file is untouched,
+        result.success is False, and no files are recorded as modified.
+        The CLI wrapper (_run_fix) maps this to exit-code 0 for dry-run;
+        see src/skillsaw/__main__.py."""
         content = "# Instructions\n\nTry to be careful when deploying.\n"
         _make_dot_claude_repo(tmp_path, content)
 
