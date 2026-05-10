@@ -170,8 +170,6 @@ class ContentCriticalPositionRule(Rule):
         min_lines = self.config.get("min-lines", self._DEFAULT_MIN_LINES)
         analyzer = CriticalPositionAnalyzer(min_lines=min_lines)
         for cf in gather_all_content_files(context):
-            if cf.category == "coderabbit":
-                continue
             for issue in analyzer.analyze(cf):
                 violations.append(
                     self.violation(
