@@ -318,13 +318,11 @@ def test_version_from_file_explicit(tmp_path):
 
 
 def test_version_gates_new_rules(temp_dir):
-    """Rules with since > config version are skipped"""
+    """Rules with since > config version are skipped when not explicitly configured"""
     (temp_dir / "CLAUDE.md").write_text("# Test")
     context = RepositoryContext(temp_dir)
-    config = LinterConfig(
-        version="0.6.0",
-        rules={"content-weak-language": {"enabled": "auto"}},
-    )
+    # No user overrides for this rule — version gate should block it
+    config = LinterConfig(version="0.6.0", rules={})
     assert (
         config.is_rule_enabled(
             "content-weak-language",
@@ -426,6 +424,44 @@ def test_severity_override_bypasses_version_gate(temp_dir):
             since_version="0.7.0",
         )
         is True
+    )
+
+
+def test_explicit_auto_overrides_version_gate(temp_dir):
+    """Explicit enabled: auto in user config bypasses version gating"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.6.0",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    # The user explicitly set enabled: auto, so the version gate should
+    # not block the rule even though config version < since_version.
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is True
+    )
+
+
+def test_implicit_auto_blocked_by_version_gate(temp_dir):
+    """When enabled: auto comes from defaults (not user config), version gate applies"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    # No user overrides for this rule — auto comes from defaults
+    config = LinterConfig(version="0.6.0", rules={})
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="0.7.0",
+        )
+        is False
     )
 
 
