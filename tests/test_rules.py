@@ -455,6 +455,14 @@ def test_null_severity_uses_default():
     assert rule.severity == rule.default_severity()
 
 
+def test_unhashable_severity_raises_helpful_error():
+    """Test that an unhashable severity (list/dict) gives a helpful ValueError"""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid severity.*Valid values:"):
+        PluginJsonRequiredRule({"severity": ["error", "warning"]})
+
+
 def test_valid_severity_override():
     """Test that a valid severity string overrides the default"""
     rule = PluginJsonRequiredRule({"severity": "warning"})

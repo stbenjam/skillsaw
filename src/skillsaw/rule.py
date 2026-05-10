@@ -66,7 +66,7 @@ class Rule(ABC):
         else:
             try:
                 self._severity = Severity(severity_str)
-            except (ValueError, KeyError):
+            except (ValueError, TypeError):
                 valid = ", ".join(s.value for s in Severity)
                 raise ValueError(
                     f"Invalid severity '{severity_str}' for rule '{self.rule_id}'. "
