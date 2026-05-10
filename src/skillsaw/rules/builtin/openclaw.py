@@ -321,8 +321,9 @@ class OpenclawMetadataRule(Rule):
                     )
                 )
 
-            if "stripComponents" in entry and not isinstance(
-                entry["stripComponents"], (int, float)
+            if "stripComponents" in entry and (
+                not isinstance(entry["stripComponents"], (int, float))
+                or isinstance(entry["stripComponents"], bool)
             ):
                 violations.append(
                     self.violation(

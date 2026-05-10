@@ -556,6 +556,19 @@ def test_evals_entry_missing_id_warns(temp_dir):
     assert any("id" in v.message for v in violations)
 
 
+def test_evals_entry_boolean_id_fails(temp_dir):
+    skill = temp_dir / "bool-id"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: bool-id\ndescription: Bool id\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text(json.dumps({"evals": [{"id": True, "prompt": "Test"}]}))
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert any("id" in v.message and "number" in v.message for v in violations)
+
+
 def test_evals_entry_missing_prompt_warns(temp_dir):
     skill = temp_dir / "no-prompt"
     skill.mkdir()

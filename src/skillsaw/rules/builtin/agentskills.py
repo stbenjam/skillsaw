@@ -591,7 +591,7 @@ class AgentSkillEvalsRule(Rule):
                     violations.append(
                         self.violation(f"evals[{i}] missing required 'id'", file_path=evals_json)
                     )
-                elif not isinstance(entry["id"], (int, float)):
+                elif not isinstance(entry["id"], (int, float)) or isinstance(entry["id"], bool):
                     violations.append(
                         self.violation(f"evals[{i}] 'id' must be a number", file_path=evals_json)
                     )

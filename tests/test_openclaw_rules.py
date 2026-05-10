@@ -459,6 +459,21 @@ def test_install_strip_components_wrong_type_fails(temp_dir):
     assert any("stripComponents" in v.message and "number" in v.message for v in violations)
 
 
+def test_install_strip_components_boolean_fails(temp_dir):
+    skill = temp_dir / "bool-strip"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bool-strip\ndescription: Bool strip\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://x.com/a\n"
+        "        stripComponents: true\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("stripComponents" in v.message and "number" in v.message for v in violations)
+
+
 def test_install_string_fields_wrong_type_fails(temp_dir):
     skill = temp_dir / "bad-strings"
     skill.mkdir()
