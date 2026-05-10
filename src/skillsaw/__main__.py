@@ -674,6 +674,9 @@ def _run_fix(args):
         _teardown_scroll_region()
 
     if not result.success:
+        if dry_run:
+            print(f"\n{c['yellow']}LLM fix would not improve violations.{c['reset']}")
+            sys.exit(0)
         print(f"\n{c['red']}LLM fix did not improve violations" f" — changes reverted.{c['reset']}")
         sys.exit(1)
 
