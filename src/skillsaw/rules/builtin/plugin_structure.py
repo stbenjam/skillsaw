@@ -111,7 +111,9 @@ class PluginJsonValidRule(Rule):
             # Validate version format (semver)
             if "version" in data:
                 version = data["version"]
-                if not re.match(r"^\d+\.\d+\.\d+", str(version)):
+                if not re.match(
+                    r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$", str(version)
+                ):
                     violations.append(
                         self.violation(
                             f"Version '{version}' should follow semver (X.Y.Z)",
