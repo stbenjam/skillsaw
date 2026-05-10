@@ -89,15 +89,16 @@ class ApmYamlValidRule(Rule):
 
         # Required fields
         for field in ("name", "version", "description"):
-            value = data.get(field)
-            if not value:
+            if field not in data:
                 violations.append(
                     self.violation(
                         f"Missing required field '{field}' in apm.yml",
                         file_path=apm_yml,
                     )
                 )
-            elif not isinstance(value, str):
+                continue
+            value = data[field]
+            if not isinstance(value, str):
                 violations.append(
                     self.violation(
                         f"Field '{field}' must be a string in apm.yml",
