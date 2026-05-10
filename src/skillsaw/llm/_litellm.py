@@ -66,6 +66,12 @@ class LiteLLMProvider:
             kwargs["tools"] = tools
 
         response = litellm.completion(**kwargs)
+        if not response.choices:
+            return CompletionResult(
+                content=None,
+                tool_calls=[],
+                usage=TokenUsage(),
+            )
         choice = response.choices[0]
         message = choice.message
 
@@ -76,7 +82,10 @@ class LiteLLMProvider:
             for tc in message.tool_calls:
                 args = tc.function.arguments
                 if isinstance(args, str):
-                    args = json.loads(args)
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"_raw": args, "_error": "invalid JSON in tool call arguments"}
                 tool_calls.append(
                     ToolCall(
                         id=tc.id,
