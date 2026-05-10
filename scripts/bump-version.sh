@@ -21,20 +21,32 @@ fi
 
 echo "Bumping version: $current_version -> $new_version"
 
-# Use python for portable in-place editing (works on both macOS and Linux)
-"$REPO_ROOT/.venv/bin/python3" -c "
+# Use python for portable in-place editing (works on both macOS and Linux).
+# Values are passed as arguments (not interpolated into source) to avoid
+# injection if a version string contains quotes or backslashes.
+"$REPO_ROOT/.venv/bin/python3" - "$PYPROJECT" "$INIT_PY" "$current_version" "$new_version" <<'PY'
 import sys
-for path, old, new in [
-    ('$PYPROJECT', 'version = \"$current_version\"', 'version = \"$new_version\"'),
-    ('$INIT_PY', '__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
-]:
-    text = open(path).read()
+from pathlib import Path
+
+pyproject, init_py, current_version, new_version = sys.argv[1:]
+targets = [
+    (pyproject, f'version = "{current_version}"', f'version = "{new_version}"'),
+    (init_py, f'__version__ = "{current_version}"', f'__version__ = "{new_version}"'),
+]
+
+# Phase 1: validate all files before writing any
+updates = []
+for path, old, new in targets:
+    text = Path(path).read_text(encoding="utf-8")
     if old not in text:
-        print(f'Error: could not find {old!r} in {path}', file=sys.stderr)
+        print(f"Error: could not find {old!r} in {path}", file=sys.stderr)
         sys.exit(1)
-    text = text.replace(old, new, 1)
-    open(path, 'w').write(text)
-"
+    updates.append((path, text.replace(old, new, 1)))
+
+# Phase 2: write all files
+for path, content in updates:
+    Path(path).write_text(content, encoding="utf-8")
+PY
 
 echo "Updated:"
 echo "  $PYPROJECT"
