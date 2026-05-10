@@ -29,6 +29,7 @@ keywords = ["agentskills", "claude", "claude-code", "linter", "plugin", "skills"
 requires-python = ">=3.9"
 dependencies = [
     "PyYAML>=6.0",
+    "ruamel.yaml>=0.18",
 ]
 
 [project.optional-dependencies]
@@ -112,4 +113,8 @@ strict_equality = true
 
 [[tool.mypy.overrides]]
 module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ruamel.*"
 ignore_missing_imports = true

@@ -2,39 +2,27 @@
 Rules for validating openclaw metadata in SKILL.md frontmatter
 """
 
-import re
 from pathlib import Path
 from typing import Dict, List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.agentskills import _parse_skill_md
+from skillsaw.rules.builtin.utils import read_text, yaml_line_map, _extract_frontmatter_text
 
 
 def _build_frontmatter_line_map(skill_md: Path) -> Dict[str, int]:
-    """Map YAML key names to their line numbers in SKILL.md frontmatter."""
-    result: Dict[str, int] = {}
-    try:
-        lines = skill_md.read_text().splitlines()
-    except IOError:
-        return result
-    in_frontmatter = False
-    for i, line in enumerate(lines, start=1):
-        if i == 1 and line.strip() == "---":
-            in_frontmatter = True
-            continue
-        if in_frontmatter and line.strip() == "---":
-            break
-        if not in_frontmatter:
-            continue
-        m = re.match(r"^(\s*)-\s+(\w[\w-]*):", line)
-        if m:
-            result[m.group(2)] = i
-            continue
-        m = re.match(r"^(\s*)(\w[\w-]*):", line)
-        if m:
-            result[m.group(2)] = i
-    return result
+    """Map YAML key names to their line numbers in SKILL.md frontmatter.
+
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
+    """
+    content = read_text(skill_md)
+    if content is None:
+        return {}
+    fm_text, offset = _extract_frontmatter_text(content)
+    if fm_text is None:
+        return {}
+    return yaml_line_map(fm_text, line_offset=offset)
 
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}

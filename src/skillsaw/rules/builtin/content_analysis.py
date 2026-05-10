@@ -15,7 +15,15 @@ from typing import Any, List, Optional, Set, Tuple
 import yaml
 
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
+from skillsaw.rules.builtin.utils import (
+    read_text,
+    parse_frontmatter,
+    yaml_key_line as _yaml_key_line_util,
+    yaml_key_line_after as _yaml_key_line_after_util,
+    yaml_key_lines as _yaml_key_lines_util,
+    yaml_nth_key_line as _yaml_nth_key_line_util,
+    yaml_nth_list_item_key_line as _yaml_nth_list_item_key_line_util,
+)
 
 _OPENING_FENCE_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})")
 _CLOSING_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
@@ -359,59 +367,40 @@ _CODERABBIT_FILENAME = ".coderabbit.yaml"
 def _find_yaml_key_line(raw: str, key: str) -> Optional[int]:
     """Find the line number of a YAML key in raw text.
 
-    Scans line-by-line for ``key:`` at any indentation level.  Returns
-    the 1-based line number of the *last* occurrence so that nested keys
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
+    Returns the 1-based line number of the *last* occurrence so that nested keys
     such as ``instructions`` resolve to the most specific location when
     the caller is walking a particular branch of the tree.  For
     top-level unique keys the result is the same either way.
     """
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
-    last: Optional[int] = None
-    for i, line in enumerate(raw.splitlines(), 1):
-        if pattern.match(line):
-            last = i
-    return last
+    all_lines = _yaml_key_lines_util(raw, key)
+    return all_lines[-1] if all_lines else None
 
 
 def _find_yaml_key_line_after(raw: str, key: str, after_line: int) -> Optional[int]:
-    """Find the line number of a YAML key occurring after a given line."""
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
-    for i, line in enumerate(raw.splitlines(), 1):
-        if i > after_line and pattern.match(line):
-            return i
-    return None
+    """Find the line number of a YAML key occurring after a given line.
+
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
+    """
+    return _yaml_key_line_after_util(raw, key, after_line)
 
 
 def _find_nth_key_line(raw: str, key: str, n: int) -> Optional[int]:
-    """Find the line number of the *n*-th (0-based) occurrence of *key*."""
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
-    count = 0
-    for i, line in enumerate(raw.splitlines(), 1):
-        if pattern.match(line):
-            if count == n:
-                return i
-            count += 1
-    return None
+    """Find the line number of the *n*-th (0-based) occurrence of *key*.
+
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
+    """
+    return _yaml_nth_key_line_util(raw, key, n)
 
 
 def _find_nth_list_item_key_line(raw: str, key: str, n: int, after_line: int = 0) -> Optional[int]:
     """Find the *n*-th (0-based) YAML list-item key (``- key:``) after *after_line*.
 
+    Uses ruamel.yaml round-trip parsing for accurate line tracking.
     In YAML sequences the first key of each item is prefixed with ``- ``,
-    e.g. ``  - name: value``.  The standard ``_find_nth_key_line`` helper
-    doesn't match these because ``-`` is not whitespace.  This variant
-    matches both ``- key:`` and bare ``key:`` lines.
+    e.g. ``  - name: value``.
     """
-    pattern = re.compile(rf"^\s*-\s+{re.escape(key)}\s*:")
-    count = 0
-    for i, line in enumerate(raw.splitlines(), 1):
-        if i <= after_line:
-            continue
-        if pattern.match(line):
-            if count == n:
-                return i
-            count += 1
-    return None
+    return _yaml_nth_list_item_key_line_util(raw, key, n, after_line=after_line)
 
 
 def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[int]]]:
