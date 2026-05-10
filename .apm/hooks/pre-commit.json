@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "if": "command.startsWith('git commit')",
+            "type": "command",
+            "command": "./pre-commit.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
