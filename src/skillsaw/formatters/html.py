@@ -34,14 +34,16 @@ def format_html(
 
     def location(v: RuleViolation) -> str:
         rel = relative_path(v.file_path, context.root_path)
-        if rel and v.line:
-            return html.escape(f"{rel}:{v.line}")
+        if rel and v.file_line:
+            return html.escape(f"{rel}:{v.file_line}")
         if rel:
             return html.escape(rel)
         return "-"
 
     severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
-    visible.sort(key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.line or 0))
+    visible.sort(
+        key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.file_line or 0)
+    )
 
     rows = ""
     for v in visible:

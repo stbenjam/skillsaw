@@ -16,7 +16,14 @@ from skillsaw.llm.tools import (
     ReplaceSectionTool,
     DiffTool,
     LintTool,
+    BlockState,
+    ReadBlockTool,
+    WriteBlockTool,
+    ReplaceBlockSectionTool,
+    DiffBlockTool,
+    LintBlockTool,
 )
+from skillsaw.rules.builtin.content_analysis import ContentBlock
 from skillsaw.rule import AutofixConfidence, Severity
 
 
@@ -765,3 +772,128 @@ class TestLintToolExceptionHandling:
         assert "Error running lint" in result
         assert "test/broken" in result
         assert "something went wrong" in result
+
+
+class TestBlockState:
+    def test_init_reads_body(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("hello world", encoding="utf-8")
+        block = ContentBlock(path=f, category="instruction")
+        state = BlockState(block)
+        assert state.body == "hello world"
+        assert state.original == "hello world"
+
+    def test_body_mutation_independent(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("original", encoding="utf-8")
+        block = ContentBlock(path=f, category="instruction")
+        state = BlockState(block)
+        state.body = "modified"
+        assert state.original == "original"
+
+
+class TestReadBlockTool:
+    def test_returns_body(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("content here", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = ReadBlockTool(state)
+        assert tool.execute() == "content here"
+
+    def test_returns_mutated_body(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("original", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        state.body = "modified"
+        tool = ReadBlockTool(state)
+        assert tool.execute() == "modified"
+
+    def test_tool_metadata(self):
+        assert ReadBlockTool.__dict__["name"] == "read_block"
+
+
+class TestWriteBlockTool:
+    def test_overwrites_body(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("old", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = WriteBlockTool(state)
+        result = tool.execute(content="new content")
+        assert "Updated block" in result
+        assert state.body == "new content"
+        assert state.original == "old"
+
+
+class TestReplaceBlockSectionTool:
+    def test_replace_unique(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("Hello world", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = ReplaceBlockSectionTool(state)
+        result = tool.execute(old_text="Hello", new_text="Goodbye")
+        assert "Replaced 1 occurrence" in result
+        assert state.body == "Goodbye world"
+
+    def test_not_found(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("Hello", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = ReplaceBlockSectionTool(state)
+        result = tool.execute(old_text="missing", new_text="x")
+        assert "Error: old_text not found" in result
+
+    def test_multiple_matches(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("aaa bbb aaa", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = ReplaceBlockSectionTool(state)
+        result = tool.execute(old_text="aaa", new_text="ccc")
+        assert "found 2 times" in result
+
+
+class TestDiffBlockTool:
+    def test_shows_diff(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("line 1\nline 2\n", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        state.body = "line 1\nmodified\n"
+        tool = DiffBlockTool(state)
+        result = tool.execute()
+        assert "-line 2" in result
+        assert "+modified" in result
+
+    def test_no_changes(self, tmp_path):
+        f = tmp_path / "test.md"
+        f.write_text("unchanged\n", encoding="utf-8")
+        state = BlockState(ContentBlock(path=f, category="instruction"))
+        tool = DiffBlockTool(state)
+        assert tool.execute() == "No changes."
+
+
+class TestLintBlockTool:
+    def test_no_violations(self, tmp_path):
+        from skillsaw.config import LinterConfig
+
+        f = tmp_path / "CLAUDE.md"
+        (tmp_path / ".git").mkdir()
+        f.write_text("# Instructions\n\nUse precise language.\n", encoding="utf-8")
+        block = ContentBlock(path=f, category="claude-md")
+        state = BlockState(block)
+        config = LinterConfig.default()
+        tool = LintBlockTool(state, config, root=tmp_path)
+        result = tool.execute()
+        assert result == "No violations found."
+
+    def test_writes_body_to_disk(self, tmp_path):
+        from skillsaw.config import LinterConfig
+
+        f = tmp_path / "CLAUDE.md"
+        (tmp_path / ".git").mkdir()
+        f.write_text("original", encoding="utf-8")
+        block = ContentBlock(path=f, category="claude-md")
+        state = BlockState(block)
+        state.body = "updated content"
+        config = LinterConfig.default()
+        tool = LintBlockTool(state, config, root=tmp_path)
+        tool.execute()
+        assert f.read_text(encoding="utf-8") == "updated content"

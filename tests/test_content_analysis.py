@@ -752,3 +752,70 @@ class TestGatherAllContentFiles:
         context = RepositoryContext(temp_dir)
         cfs = gather_all_content_files(context)
         assert any(cf.path.name == "CLAUDE.md" for cf in cfs)
+
+
+class TestContentBlockReadWrite:
+    def test_read_body_from_file(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("# Heading\n\nBody text\n")
+        block = ContentFile(path=f, category="instruction")
+        body = block.read_body(strip_code_blocks=False)
+        assert body == "# Heading\n\nBody text\n"
+
+    def test_read_body_from_preloaded(self, temp_dir):
+        block = ContentFile(
+            path=temp_dir / "nonexistent.md",
+            category="instruction",
+            body="preloaded content",
+        )
+        body = block.read_body(strip_code_blocks=False)
+        assert body == "preloaded content"
+
+    def test_read_body_strips_code_blocks(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("Before\n```python\nprint('hi')\n```\nAfter\n")
+        block = ContentFile(path=f, category="instruction")
+        body = block.read_body(strip_code_blocks=True)
+        assert "print" not in body
+        assert "Before" in body
+        assert "After" in body
+
+    def test_write_body_default(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("original")
+        block = ContentFile(path=f, category="instruction")
+        block.write_body("new content")
+        assert f.read_text(encoding="utf-8") == "new content"
+
+    def test_write_body_custom_writer(self, temp_dir):
+        written = {}
+
+        def custom_writer(body):
+            written["body"] = body
+
+        f = temp_dir / "test.md"
+        f.write_text("original")
+        block = ContentFile(path=f, category="instruction", _writer=custom_writer)
+        block.write_body("custom content")
+        assert written["body"] == "custom content"
+        assert f.read_text(encoding="utf-8") == "original"
+
+    def test_file_line_with_offset(self):
+        block = ContentFile(
+            path=Path("/tmp/test.md"),
+            category="instruction",
+            line_offset=10,
+        )
+        assert block.file_line(5) == 15
+
+    def test_file_line_with_line_map(self):
+        block = ContentFile(
+            path=Path("/tmp/test.md"),
+            category="instruction",
+            _line_map=lambda body_line: body_line * 2,
+        )
+        assert block.file_line(5) == 10
+
+    def test_read_body_nonexistent_no_body(self, temp_dir):
+        block = ContentFile(path=temp_dir / "missing.md", category="instruction")
+        assert block.read_body() is None

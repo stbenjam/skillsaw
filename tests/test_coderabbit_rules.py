@@ -444,3 +444,49 @@ class TestCoderabbitConfig:
     def test_yaml_valid_default_severity_error(self):
         config = LinterConfig.default()
         assert config.get_rule_config("coderabbit-yaml-valid").get("severity") == "error"
+
+
+class TestCoderabbitWriterRoundTrip:
+    """Verify write_body preserves YAML structure for coderabbit blocks."""
+
+    def test_write_body_updates_instruction(self, temp_dir):
+        yaml_content = (
+            "reviews:\n"
+            "  instructions: 'Original review instructions.'\n"
+            "chat:\n"
+            "  instructions: 'Original chat instructions.'\n"
+        )
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text(yaml_content)
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 2
+
+        review_block = [cf for cf in cr_files if cf.body == "Original review instructions."][0]
+        review_block.write_body("Updated review instructions.")
+
+        updated = cr_path.read_text(encoding="utf-8")
+        assert "Updated review instructions." in updated
+        assert "Original chat instructions." in updated
+
+    def test_write_body_preserves_yaml_keys(self, temp_dir):
+        yaml_content = (
+            "language: en-US\n"
+            "reviews:\n"
+            "  instructions: 'Do review stuff.'\n"
+            "  high_level_summary: true\n"
+        )
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text(yaml_content)
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+
+        cr_files[0].write_body("Better review stuff.")
+
+        updated = cr_path.read_text(encoding="utf-8")
+        assert "Better review stuff." in updated
+        assert "language: en-US" in updated
+        assert "high_level_summary: true" in updated

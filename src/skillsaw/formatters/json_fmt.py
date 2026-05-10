@@ -44,7 +44,7 @@ def format_json(
                 "severity": v.severity.value,
                 "message": v.message,
                 "file_path": relative_path(v.file_path, context.root_path),
-                "line": v.line,
+                "line": v.file_line,
             }
             for v in violations
             if verbose or v.severity != Severity.INFO

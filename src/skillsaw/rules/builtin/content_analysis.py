@@ -15,6 +15,8 @@ from typing import Any, Callable, List, Optional, Set, Tuple
 import yaml
 
 from skillsaw.context import RepositoryContext
+from ruamel.yaml import YAML as _RuamelYAML
+
 from skillsaw.rules.builtin.utils import (
     read_text,
     parse_frontmatter,
@@ -174,12 +176,13 @@ _INSTRUCTION_FILE_CATEGORIES = {
 
 
 @dataclass
-class ContentFile:
+class ContentBlock:
     path: Path
     category: str
     line_offset: int = 0
     body: Optional[str] = None
     _line_map: Optional[Callable[[int], int]] = field(default=None, repr=False)
+    _writer: Optional[Callable[[str], None]] = field(default=None, repr=False)
 
     def file_line(self, body_line: int) -> int:
         """Translate a 1-based body line number to a 1-based file line number."""
@@ -187,13 +190,89 @@ class ContentFile:
             return self._line_map(body_line)
         return body_line + self.line_offset
 
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        """Return the block's text content."""
+        if self.body is not None:
+            body = self.body
+        else:
+            content = read_text(self.path)
+            if content is None:
+                return None
+            if self.path.suffix == ".mdc":
+                _, body = parse_frontmatter(content)
+            else:
+                body = content
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
 
-def _gather_coderabbit_files(
+    def write_body(self, new_body: str) -> None:
+        """Write fixed content back to the correct location."""
+        if self._writer is not None:
+            self._writer(new_body)
+        else:
+            self.path.write_text(new_body, encoding="utf-8")
+
+
+ContentFile = ContentBlock
+
+
+def _make_coderabbit_writer(path: Path, yaml_path: str) -> Callable[[str], None]:
+    """Return a closure that updates one instruction value in .coderabbit.yaml.
+
+    Uses ruamel.yaml round-trip to preserve comments, ordering, and formatting.
+    ``yaml_path`` is a dotted path like ``reviews.instructions`` or
+    ``reviews.tools.biome.instructions``.  Array entries use bracket syntax
+    like ``reviews.path_instructions[src/**].instructions``.
+    """
+
+    def _write(new_body: str) -> None:
+        ruyaml = _RuamelYAML()
+        ruyaml.preserve_quotes = True
+        raw = path.read_text(encoding="utf-8")
+        data = ruyaml.load(raw)
+        if data is None:
+            return
+
+        parts = yaml_path.split(".")
+        node = data
+        for i, part in enumerate(parts[:-1]):
+            if "[" in part:
+                key = part[: part.index("[")]
+                node = node.get(key) if isinstance(node, dict) else None
+            else:
+                node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                return
+
+            if isinstance(node, list) and "[" in parts[i]:
+                bracket_val = parts[i][parts[i].index("[") + 1 : parts[i].index("]")]
+                for item in node:
+                    if isinstance(item, dict):
+                        name = item.get("name") or item.get("path")
+                        if str(name) == bracket_val:
+                            node = item
+                            break
+
+        last_key = parts[-1]
+        if isinstance(node, dict) and last_key in node:
+            node[last_key] = new_body
+
+        from io import StringIO
+
+        buf = StringIO()
+        ruyaml.dump(data, buf)
+        path.write_text(buf.getvalue(), encoding="utf-8")
+
+    return _write
+
+
+def _gather_coderabbit_blocks(
     context: RepositoryContext,
     seen: Set[Path],
     _is_excluded: Callable,
-) -> List[ContentFile]:
-    """Yield one ContentFile per instruction block in .coderabbit.yaml."""
+) -> List[ContentBlock]:
+    """Yield one ContentBlock per instruction block in .coderabbit.yaml."""
     cr_path = context.root_path / ".coderabbit.yaml"
     cr_resolved = cr_path.resolve()
     if cr_resolved in seen or not cr_path.exists() or _is_excluded(cr_path):
@@ -208,26 +287,32 @@ def _gather_coderabbit_files(
         return []
     if not cr_data:
         return []
-    results: List[ContentFile] = []
-    for _label, text, line in _extract_instructions(cr_data, cr_raw):
+    results: List[ContentBlock] = []
+    for label, text, line in _extract_instructions(cr_data, cr_raw):
         offset = (line - 1) if line else 0
         results.append(
-            ContentFile(path=cr_path, category="coderabbit", line_offset=offset, body=text)
+            ContentBlock(
+                path=cr_path,
+                category="coderabbit",
+                line_offset=offset,
+                body=text,
+                _writer=_make_coderabbit_writer(cr_path, label),
+            )
         )
     return results
 
 
-def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
-    """Gather all contextual content files across all formats.
+def gather_all_content_blocks(context: RepositoryContext) -> List[ContentBlock]:
+    """Gather all content blocks across all formats.
 
-    Returns tagged ContentFile objects with category matching context_budget limit keys.
+    Returns tagged ContentBlock objects with category matching context_budget limit keys.
     Deduplicates by resolved path.
 
     When APM (.apm/) is present, content is gathered from the APM source
     directories instead of compiled output directories (.claude/, .cursor/,
     .gemini/, .opencode/, .agents/).
     """
-    files: List[ContentFile] = []
+    files: List[ContentBlock] = []
     seen: Set[Path] = set()
     exclude = getattr(context, "exclude_patterns", [])
     root = context.root_path.resolve()
@@ -262,7 +347,7 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
         resolved = p.resolve()
         if resolved not in seen and p.exists() and not _is_excluded(p):
             seen.add(resolved)
-            files.append(ContentFile(path=p, category=category))
+            files.append(ContentBlock(path=p, category=category))
 
     # --- Root-level instruction files (not compiled output) ---
     for f in context.instruction_files:
@@ -320,8 +405,8 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add(rule_file, "rule")
 
-    # .coderabbit.yaml: yield one ContentFile per instruction block
-    files.extend(_gather_coderabbit_files(context, seen, _is_excluded))
+    # .coderabbit.yaml: yield one ContentBlock per instruction block
+    files.extend(_gather_coderabbit_blocks(context, seen, _is_excluded))
 
     # --- APM source directories ---
     if context.has_apm:
@@ -366,44 +451,25 @@ def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
     return files
 
 
-def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
-    """Gather all contextual content files across all formats.
+gather_all_content_files = gather_all_content_blocks
 
-    Thin wrapper around gather_all_content_files for backward compatibility.
-    """
-    return [cf.path for cf in gather_all_content_files(context)]
+
+def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
+    """Thin wrapper for backward compatibility."""
+    return [block.path for block in gather_all_content_blocks(context)]
 
 
 def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
     """Read file and return the instruction body text.
 
-    Handles special file types:
-    - ``.mdc``: strips YAML frontmatter.
+    Prefer ``ContentBlock.read_body()`` for new code.
     """
-    content = read_text(path)
-    if content is None:
-        return None
-    if path.suffix == ".mdc":
-        _, body = parse_frontmatter(content)
-    else:
-        body = content
-    if strip_code_blocks:
-        body = _strip_fenced_code_blocks(body)
-    return body
+    return ContentBlock(path=path, category="file").read_body(strip_code_blocks=strip_code_blocks)
 
 
-def _get_body_from_cf(cf: ContentFile, *, strip_code_blocks: bool = True) -> Optional[str]:
-    """Return instruction body text for a ContentFile.
-
-    If ``cf.body`` is pre-populated (e.g. coderabbit instruction fragments),
-    returns that directly.  Otherwise falls through to ``_get_body(cf.path)``.
-    """
-    if cf.body is not None:
-        body = cf.body
-        if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-        return body
-    return _get_body(cf.path, strip_code_blocks=strip_code_blocks)
+def _get_body_from_cf(cf: ContentBlock, *, strip_code_blocks: bool = True) -> Optional[str]:
+    """Backward-compat wrapper around ``ContentBlock.read_body()``."""
+    return cf.read_body(strip_code_blocks=strip_code_blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +615,7 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
 
 
 class WeakLanguageDetector:
-    def analyze(self, cf: ContentFile) -> List[WeakLanguageMatch]:
+    def analyze(self, cf: ContentBlock) -> List[WeakLanguageMatch]:
         content = _get_body_from_cf(cf)
         if not content:
             return []
@@ -568,15 +634,13 @@ class WeakLanguageDetector:
             for pattern, fix in _NON_ACTIONABLE:
                 for m in re.finditer(pattern, line, re.IGNORECASE):
                     results.append(
-                        WeakLanguageMatch(
-                            cf.file_line(line_num), m.group(), "non-actionable", fix
-                        )
+                        WeakLanguageMatch(cf.file_line(line_num), m.group(), "non-actionable", fix)
                     )
         return results
 
 
 class TautologicalDetector:
-    def analyze(self, cf: ContentFile) -> List[TautologicalMatch]:
+    def analyze(self, cf: ContentBlock) -> List[TautologicalMatch]:
         content = _get_body_from_cf(cf)
         if not content:
             return []
@@ -593,7 +657,7 @@ class CriticalPositionAnalyzer:
     def __init__(self, min_lines: int = 50):
         self._min_lines = min_lines
 
-    def analyze(self, cf: ContentFile) -> List[PositionIssue]:
+    def analyze(self, cf: ContentBlock) -> List[PositionIssue]:
         content = _get_body_from_cf(cf)
         if not content:
             return []
@@ -628,7 +692,7 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
 
-    def analyze(self, cf: ContentFile, root: Path) -> List[RedundancyMatch]:
+    def analyze(self, cf: ContentBlock, root: Path) -> List[RedundancyMatch]:
         content = _get_body_from_cf(cf)
         if not content:
             return []
@@ -718,7 +782,7 @@ class InstructionBudgetAnalyzer:
     )
     BUDGET = 150
 
-    def analyze_file(self, cf: ContentFile) -> InstructionBudget:
+    def analyze_file(self, cf: ContentBlock) -> InstructionBudget:
         content = _get_body_from_cf(cf)
         if not content:
             return InstructionBudget(

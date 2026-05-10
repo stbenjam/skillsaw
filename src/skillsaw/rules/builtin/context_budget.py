@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.utils import read_text
-from skillsaw.rules.builtin.content_analysis import gather_all_content_files
+from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 # Anthropic recommends keeping instruction files under ~5k tokens to avoid
 # attention degradation.  These defaults use 6k warn / 12k error for primary
@@ -116,7 +116,7 @@ class ContextBudgetRule(Rule):
         violations: List[RuleViolation] = []
         limits = self._get_limits()
 
-        for cf in gather_all_content_files(context):
+        for cf in gather_all_content_blocks(context):
             warn_limit, error_limit = limits.get(cf.category, (None, None))
             if warn_limit is not None or error_limit is not None:
                 self._check_file(cf.path, cf.category, warn_limit, error_limit, violations)
