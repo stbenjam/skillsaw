@@ -5,9 +5,9 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "if": "command.startsWith('git commit')",
             "type": "command",
-            "command": "./pre-commit.sh"
+            "command": "./pre-commit.sh",
+            "if": "Bash(git commit*)"
           }
         ]
       }

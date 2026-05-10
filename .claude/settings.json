@@ -5,9 +5,9 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "if": "command.startsWith('git commit')",
             "type": "command",
-            "command": ".claude/hooks/skillsaw/pre-commit.sh"
+            "command": ".claude/hooks/skillsaw/pre-commit.sh",
+            "if": "Bash(git commit*)"
           }
         ],
         "_apm_source": "skillsaw"
@@ -16,9 +16,9 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "if": "command.startsWith('git push') && command.includes('--force')",
             "type": "command",
-            "command": ".claude/hooks/skillsaw/pre-push.sh"
+            "command": ".claude/hooks/skillsaw/pre-push.sh",
+            "if": "Bash(git push*--force*)"
           }
         ],
         "_apm_source": "skillsaw"
