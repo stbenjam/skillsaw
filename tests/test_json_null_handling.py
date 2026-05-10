@@ -130,7 +130,45 @@ def test_mcp_prohibited_null_plugin_json(temp_dir):
     assert isinstance(violations, list)
 
 
+def test_mcp_prohibited_null_mcp_servers(temp_dir):
+    """McpProhibitedRule must not crash when mcpServers is null."""
+    plugin_dir = _create_plugin_with_mcp_content(temp_dir, json.dumps({"mcpServers": None}))
+    context = RepositoryContext(plugin_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert isinstance(violations, list)
+    assert len(violations) == 0
+
+
+def test_mcp_prohibited_list_mcp_servers(temp_dir):
+    """McpProhibitedRule must not crash when mcpServers is a list instead of dict."""
+    plugin_dir = _create_plugin_with_mcp_content(
+        temp_dir, json.dumps({"mcpServers": ["server-a", "server-b"]})
+    )
+    context = RepositoryContext(plugin_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert isinstance(violations, list)
+    assert len(violations) == 0
+
+
 # -- context.py: is_registered_in_marketplace --------------------------------
+
+
+def test_marketplace_with_null_plugins(temp_dir):
+    """is_registered_in_marketplace must not crash when plugins is null."""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+
+    marketplace_json = {
+        "name": "null-plugins-marketplace",
+        "owner": {"name": "Owner"},
+        "plugins": None,
+    }
+    (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+
+    context = RepositoryContext(temp_dir)
+    assert not context.is_registered_in_marketplace("any-plugin")
 
 
 def test_marketplace_with_string_plugin_entries(temp_dir):

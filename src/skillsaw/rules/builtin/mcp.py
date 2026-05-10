@@ -338,6 +338,7 @@ class McpProhibitedRule(Rule):
             if not isinstance(mcp_servers, dict):
                 return violations
 
+
             prohibited = self._get_prohibited_servers(mcp_servers, allowlist)
             if prohibited:
                 if allowlist:
