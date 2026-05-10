@@ -313,6 +313,26 @@ def test_name_at_root_skips_dir_check(temp_dir):
     assert not any("does not match directory" in v.message for v in violations)
 
 
+def test_name_fix_with_extra_whitespace(temp_dir):
+    """Fix should work even when name field has extra whitespace after the colon."""
+    skill = temp_dir / "Bad-Name"
+    skill.mkdir()
+    content = "---\nname:   Bad-Name\ndescription: Extra whitespace\n---\n"
+    (skill / "SKILL.md").write_text(content)
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillNameRule()
+    violations = rule.check(context)
+    assert len(violations) >= 1
+
+    results = rule.fix(context, violations)
+    assert len(results) >= 1
+    # The fixed content should have normalized whitespace and the corrected name
+    assert "name: bad-name" in results[0].fixed_content
+    # The original extra whitespace line should be gone
+    assert "name:   Bad-Name" not in results[0].fixed_content
+
+
 # --- agentskill-description ---
 
 

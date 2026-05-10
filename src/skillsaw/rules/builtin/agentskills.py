@@ -335,7 +335,13 @@ class AgentSkillNameRule(Rule):
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed = original.replace(f"name: {old_name}", f"name: {new_name}", 1)
+            fixed = re.sub(
+                r"^name:\s*.+$",
+                f"name: {new_name}",
+                original,
+                count=1,
+                flags=re.MULTILINE,
+            )
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
