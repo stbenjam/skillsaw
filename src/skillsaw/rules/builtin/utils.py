@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 
@@ -225,8 +226,6 @@ def heading_line(file_path: Path, heading: str, level: int = 2) -> Optional[int]
 # Centralized YAML line-number utilities (ruamel.yaml round-trip)
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_TEXT_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", re.DOTALL)
-
 
 def _extract_frontmatter_text(content: str) -> Tuple[Optional[str], int]:
     """Extract raw frontmatter YAML text and its line offset in the file.
@@ -235,7 +234,7 @@ def _extract_frontmatter_text(content: str) -> Tuple[Optional[str], int]:
     before the YAML content (i.e. the ``---`` line itself, so typically 1).
     Returns ``(None, 0)`` when no frontmatter is found.
     """
-    m = _FRONTMATTER_TEXT_RE.match(content)
+    m = _FRONTMATTER_RE.match(content)
     if not m:
         return None, 0
     # The opening --- is on line 1, so the YAML content starts at line 2.
@@ -252,7 +251,7 @@ def _ruamel_load(text: str) -> Any:
     ry.preserve_quotes = True
     try:
         return ry.load(text)
-    except Exception:
+    except _RuamelYAMLError:
         return None
 
 
@@ -471,29 +470,31 @@ def _collect_list_item_key_lines(node: Any, key: str, results: List[int]) -> Non
 
 def _resolve_path_line(node: Any, path: str, line_offset: int) -> Optional[int]:
     """Resolve a dotted path like ``a.b[0].c`` and return the 1-based line."""
-    import re as _re
-
-    parts = _re.split(r"\.|(?=\[)", path)
+    parts = re.split(r"\.|(?=\[)", path)
     current = node
-    last_key: Optional[str] = None
-    last_map: Any = None
+    last_container: Any = None
+    last_accessor: Any = None
 
     for part in parts:
         if not part:
             continue
-        idx_match = _re.fullmatch(r"\[(\d+)\]", part)
+        idx_match = re.fullmatch(r"\[(\d+)\]", part)
         if idx_match:
             idx = int(idx_match.group(1))
             if not isinstance(current, (CommentedSeq, list)) or idx >= len(current):
                 return None
+            last_container = current
+            last_accessor = idx
             current = current[idx]
         else:
             if not isinstance(current, CommentedMap) or part not in current:
                 return None
-            last_map = current
-            last_key = part
+            last_container = current
+            last_accessor = part
             current = current[part]
 
-    if last_map is not None and last_key is not None:
-        return last_map.lc.key(last_key)[0] + 1 + line_offset
+    if isinstance(last_container, CommentedMap) and isinstance(last_accessor, str):
+        return last_container.lc.key(last_accessor)[0] + 1 + line_offset
+    if isinstance(last_container, CommentedSeq) and isinstance(last_accessor, int):
+        return last_container.lc.item(last_accessor)[0] + 1 + line_offset
     return None
