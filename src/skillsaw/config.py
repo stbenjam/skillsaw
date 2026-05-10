@@ -282,6 +282,8 @@ class LinterConfig:
             f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
             f.write("\n# Exclude patterns (glob format)\n")
             f.write(f"exclude: {self._yaml_value(self.exclude_patterns)}\n")
+            f.write("\n# Additional markdown files to run content rules on (glob format)\n")
+            f.write(f"content-paths: {self._yaml_value(self.content_paths)}\n")
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
 

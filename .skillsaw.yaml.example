@@ -231,5 +231,8 @@ custom-rules: []
 # Exclude patterns (glob format)
 exclude: []
 
+# Additional markdown files to run content rules on (glob format)
+content-paths: []
+
 # Treat warnings as errors
 strict: false
