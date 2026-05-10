@@ -6,6 +6,8 @@ in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
 .cursorrules, copilot-instructions.md, .cursor/rules/*.mdc, .coderabbit.yaml).
 """
 
+from __future__ import annotations
+
 import fnmatch
 import re
 from abc import abstractmethod
