@@ -243,3 +243,105 @@ def test_dot_claude_not_detected_empty(temp_dir):
 
     context = RepositoryContext(temp_dir)
     assert context.repo_type == RepositoryType.UNKNOWN
+
+
+def test_repo_type_override_marketplace(temp_dir):
+    """Test that repo_type override causes marketplace discovery to run"""
+    # Create a repo that looks like a marketplace but would NOT be auto-detected
+    # (no .claude-plugin dir, no plugins/ dir). Instead it has a plugins/ dir
+    # with plugin subdirectories, but without the .claude-plugin/marketplace.json
+    # so auto-detect would say UNKNOWN.
+    plugins_dir = temp_dir / "plugins"
+    plugins_dir.mkdir()
+
+    plugin_dir = plugins_dir / "my-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / ".claude-plugin").mkdir()
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "description": "A plugin", "version": "1.0.0"})
+    )
+    (plugin_dir / "commands").mkdir()
+    (plugin_dir / "commands" / "test.md").write_text("---\ndescription: Test\n---\n# Test")
+
+    # Without override: auto-detects as MARKETPLACE (because plugins/ dir exists)
+    context_auto = RepositoryContext(temp_dir)
+    assert context_auto.repo_type == RepositoryType.MARKETPLACE
+    assert len(context_auto.plugins) == 1
+
+    # With override to SINGLE_PLUGIN: should use that type and discover accordingly
+    context_override = RepositoryContext(temp_dir, repo_type=RepositoryType.SINGLE_PLUGIN)
+    assert context_override.repo_type == RepositoryType.SINGLE_PLUGIN
+    # SINGLE_PLUGIN discovers root_path as the plugin
+    assert len(context_override.plugins) == 1
+    assert context_override.plugins[0].resolve() == temp_dir.resolve()
+
+
+def test_repo_type_override_forces_discovery(temp_dir):
+    """Test that --type override actually re-runs discovery with the new type.
+
+    This is the core regression test: a repo that auto-detects as UNKNOWN
+    but is overridden to MARKETPLACE should discover marketplace plugins.
+    """
+    # Create marketplace structure
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [
+            {
+                "name": "test-plugin",
+                "source": "./plugins/test-plugin",
+                "description": "A test plugin",
+            }
+        ],
+    }
+    (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+
+    plugins_dir = temp_dir / "plugins"
+    plugins_dir.mkdir()
+    plugin_dir = plugins_dir / "test-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / ".claude-plugin").mkdir()
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "test-plugin", "description": "Test", "version": "1.0.0"})
+    )
+    (plugin_dir / "commands").mkdir()
+    (plugin_dir / "commands" / "test.md").write_text("---\ndescription: Test\n---\n# Test")
+
+    # This auto-detects as MARKETPLACE — verify the override path works too
+    context = RepositoryContext(temp_dir, repo_type=RepositoryType.MARKETPLACE)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 1
+    assert context.get_plugin_name(context.plugins[0]) == "test-plugin"
+
+
+def test_repo_type_override_to_dot_claude(temp_dir):
+    """Test overriding repo type to DOT_CLAUDE triggers correct discovery"""
+    # Create .claude structure
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "commands").mkdir()
+
+    # Without override, auto-detects as DOT_CLAUDE
+    context_auto = RepositoryContext(temp_dir)
+    assert context_auto.repo_type == RepositoryType.DOT_CLAUDE
+    assert len(context_auto.plugins) == 1
+
+    # Override to UNKNOWN — should find no plugins
+    context_override = RepositoryContext(temp_dir, repo_type=RepositoryType.UNKNOWN)
+    assert context_override.repo_type == RepositoryType.UNKNOWN
+    assert len(context_override.plugins) == 0
+
+
+def test_repo_type_override_none_uses_autodetect(temp_dir):
+    """Passing repo_type=None should behave identically to auto-detection"""
+    claude_dir = temp_dir / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "skills").mkdir()
+
+    context_default = RepositoryContext(temp_dir)
+    context_none = RepositoryContext(temp_dir, repo_type=None)
+
+    assert context_default.repo_type == context_none.repo_type
+    assert len(context_default.plugins) == len(context_none.plugins)

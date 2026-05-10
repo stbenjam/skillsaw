@@ -83,6 +83,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
     lint_parser.add_argument(
+        "--type",
+        dest="repo_type",
+        default=None,
+        choices=[t.value for t in RepositoryType if t != RepositoryType.UNKNOWN],
+        help="Override auto-detected repository type (forces discovery to use this type)",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -181,7 +188,13 @@ def _run_lint(args):
 
     if args.fmt == "text":
         print(f"Linting: {args.path}\n")
-    context = RepositoryContext(args.path)
+
+    # Resolve --type override to RepositoryType enum
+    repo_type_override = None
+    if args.repo_type:
+        repo_type_override = RepositoryType(args.repo_type)
+
+    context = RepositoryContext(args.path, repo_type=repo_type_override)
 
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)

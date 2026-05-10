@@ -30,15 +30,17 @@ class RepositoryContext:
     Automatically detects repository type and gathers relevant metadata.
     """
 
-    def __init__(self, root_path: Path):
+    def __init__(self, root_path: Path, repo_type: Optional[RepositoryType] = None):
         """
         Initialize repository context
 
         Args:
             root_path: Root directory of the repository
+            repo_type: Override auto-detected repository type. When provided,
+                discovery runs using this type instead of the detected one.
         """
         self.root_path = root_path.resolve()
-        self.repo_type = self._detect_type()
+        self.repo_type = repo_type if repo_type is not None else self._detect_type()
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
             {}
