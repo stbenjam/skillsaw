@@ -151,6 +151,57 @@ class TestExtractor:
         assert len(plugin.commands) == 1
         assert len(plugin.skills) == 1
 
+    def test_extract_numeric_version_float(self, temp_dir):
+        """Float version in plugin.json (e.g. 0.7) must not crash the extractor."""
+        plugin_dir = temp_dir / "float-ver"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "float-ver", "description": "d", "version": 0.7})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert isinstance(plugin.version, str)
+        assert plugin.version == "0.7"
+
+    def test_extract_numeric_version_int(self, temp_dir):
+        """Integer version in plugin.json (e.g. 1) must not crash the extractor."""
+        plugin_dir = temp_dir / "int-ver"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "int-ver", "description": "d", "version": 1})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert isinstance(plugin.version, str)
+        assert plugin.version == "1"
+
+    def test_extract_null_version(self, temp_dir):
+        """Explicit null version in plugin.json must produce empty string, not 'None'."""
+        plugin_dir = temp_dir / "null-ver"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "null-ver", "description": "d", "version": None})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert isinstance(plugin.version, str)
+        assert plugin.version == ""
+
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
         docs = extract_docs(ctx, title="My Custom Title")
