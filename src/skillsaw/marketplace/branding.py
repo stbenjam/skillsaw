@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -99,10 +100,18 @@ def build_replacements(
 
 
 def apply_replacements(content: str, replacements: Dict[str, str]) -> str:
-    """Apply {{PLACEHOLDER}} substitutions to a string."""
-    for key, value in replacements.items():
-        content = content.replace(f"{{{{{key}}}}}", value)
-    return content
+    """Apply {{PLACEHOLDER}} substitutions to a string.
+
+    All placeholders are replaced simultaneously via a single ``re.sub`` pass
+    so that user-supplied values containing ``{{PLACEHOLDER}}`` patterns are
+    never double-substituted.
+    """
+    if not replacements:
+        return content
+
+    # Build a pattern that matches any known placeholder in one pass.
+    pattern = re.compile(r"\{\{(" + "|".join(re.escape(k) for k in replacements) + r")\}\}")
+    return pattern.sub(lambda m: replacements[m.group(1)], content)
 
 
 def apply_branding(root: Path, replacements: Optional[Dict[str, str]] = None) -> None:
