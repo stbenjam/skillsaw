@@ -17,7 +17,7 @@ import yaml
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text, parse_frontmatter
 
-_FENCED_CODE_RE = re.compile(r"^(`{3,}|~{3,}).*\n(?:.*\n)*?\1\s*$", re.MULTILINE)
+_FENCED_CODE_RE = re.compile(r"^( {0,3})(`{3,}|~{3,}).*\n(?:.*\n)*?\1\2\s*$", re.MULTILINE)
 
 
 def _strip_fenced_code_blocks(text: str) -> str:

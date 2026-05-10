@@ -61,6 +61,48 @@ class TestStripFencedCodeBlocks:
         assert lines[4] == "B"
         assert lines[8] == "C"
 
+    def test_strips_indented_backtick_blocks_1_space(self):
+        content = "Before\n ```\n code here\n ```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code here" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_strips_indented_backtick_blocks_2_spaces(self):
+        content = "- Example:\n  ```\n  Try to handle errors gracefully.\n  ```\nMore text.\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "Try to handle errors gracefully" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_strips_indented_backtick_blocks_3_spaces(self):
+        content = "Before\n   ```\n   code\n   ```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_4_space_indent_not_stripped(self):
+        """4+ spaces of indentation is not a valid CommonMark code fence."""
+        content = "Before\n    ```\n    code\n    ```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code" in result
+
+    def test_strips_indented_tilde_blocks(self):
+        content = "Before\n  ~~~\n  code\n  ~~~\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_indented_fence_preserves_line_count(self):
+        content = "Line 1\n  ```python\n  x = 1\n  y = 2\n  ```\nLine 6\n"
+        result = _strip_fenced_code_blocks(content)
+        assert result.count("\n") == content.count("\n")
+
+    def test_indented_closing_fence_must_match_opening_indent(self):
+        """Closing fence must have the same indentation as the opening fence."""
+        content = "Before\n  ```\n  code\n```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        # Mismatched indent means it's not a valid fence pair
+        assert "code" in result
+
 
 class TestWeakLanguageDetector:
     def test_detects_hedging(self, temp_dir):
@@ -117,6 +159,13 @@ class TestWeakLanguageDetector:
         (temp_dir / "code_block.md").write_text(content)
         detector = WeakLanguageDetector()
         results = detector.analyze(temp_dir / "code_block.md")
+        assert len(results) == 0
+
+    def test_skips_indented_fenced_code_blocks(self, temp_dir):
+        content = "Real instruction.\n- Example:\n  ```\n  Try to handle errors gracefully.\n  ```\nMore text.\n"
+        (temp_dir / "indented.md").write_text(content)
+        detector = WeakLanguageDetector()
+        results = detector.analyze(temp_dir / "indented.md")
         assert len(results) == 0
 
     def test_consider_requires_action_verb(self, temp_dir):
