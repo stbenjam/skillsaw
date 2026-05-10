@@ -53,6 +53,18 @@ class TestReadFileTool:
         result = tool.execute(path="../../../etc/passwd")
         assert "Error: path escapes repository root" in result
 
+    def test_read_directory(self, tmp_path):
+        (tmp_path / "subdir").mkdir()
+        tool = ReadFileTool(tmp_path)
+        result = tool.execute(path="subdir")
+        assert "Error: path is a directory" in result
+
+    def test_read_binary_file(self, tmp_path):
+        (tmp_path / "binary.bin").write_bytes(b"\x80\x81\x82\xff\xfe")
+        tool = ReadFileTool(tmp_path)
+        result = tool.execute(path="binary.bin")
+        assert "Error: file is not valid UTF-8 text" in result
+
     def test_tool_metadata(self):
         tool = ReadFileTool(Path("/tmp"))
         assert tool.name == "read_file"
@@ -82,6 +94,18 @@ class TestWriteFileTool:
         tool = WriteFileTool(tmp_path)
         tool.execute(path="sub/dir/file.md", content="nested")
         assert (tmp_path / "sub" / "dir" / "file.md").read_text() == "nested"
+
+    def test_write_to_existing_directory(self, tmp_path):
+        (tmp_path / "subdir").mkdir()
+        tool = WriteFileTool(tmp_path)
+        result = tool.execute(path="subdir", content="data")
+        assert "Error: path is an existing directory" in result
+
+    def test_write_parent_is_file(self, tmp_path):
+        (tmp_path / "afile").write_text("I am a file", encoding="utf-8")
+        tool = WriteFileTool(tmp_path)
+        result = tool.execute(path="afile/child.md", content="data")
+        assert "Error: a parent component of the path is a file" in result
 
 
 class TestReplaceSectionTool:
@@ -113,6 +137,12 @@ class TestReplaceSectionTool:
         tool = ReplaceSectionTool(tmp_path)
         result = tool.execute(path="missing.md", old_text="a", new_text="b")
         assert "Error: file not found" in result
+
+    def test_replace_on_directory(self, tmp_path):
+        (tmp_path / "subdir").mkdir()
+        tool = ReplaceSectionTool(tmp_path)
+        result = tool.execute(path="subdir", old_text="a", new_text="b")
+        assert "Error: path is a directory" in result
 
 
 class TestDiffTool:

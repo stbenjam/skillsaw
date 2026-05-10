@@ -50,7 +50,12 @@ class ReadFileTool:
             return "Error: path escapes repository root"
         if not resolved.exists():
             return f"Error: file not found: {path}"
-        return resolved.read_text(encoding="utf-8")
+        if resolved.is_dir():
+            return f"Error: path is a directory, not a file: {path}"
+        try:
+            return resolved.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"Error: file is not valid UTF-8 text (binary file?): {path}"
 
 
 class WriteFileTool:
@@ -72,7 +77,12 @@ class WriteFileTool:
         resolved = _resolve_safe(self._root, path)
         if resolved is None:
             return "Error: path escapes repository root"
-        resolved.parent.mkdir(parents=True, exist_ok=True)
+        if resolved.is_dir():
+            return f"Error: path is an existing directory, not a file: {path}"
+        try:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+        except (NotADirectoryError, FileExistsError):
+            return f"Error: a parent component of the path is a file, not a directory: {path}"
         resolved.write_text(content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}"
 
@@ -99,6 +109,8 @@ class ReplaceSectionTool:
             return "Error: path escapes repository root"
         if not resolved.exists():
             return f"Error: file not found: {path}"
+        if resolved.is_dir():
+            return f"Error: path is a directory, not a file: {path}"
         content = resolved.read_text(encoding="utf-8")
         count = content.count(old_text)
         if count == 0:
