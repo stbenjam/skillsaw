@@ -3,6 +3,7 @@ Configuration management for skillsaw
 """
 
 import os
+import re
 
 import yaml
 from pathlib import Path
@@ -13,10 +14,6 @@ if TYPE_CHECKING:
     from .context import RepositoryContext
 
 _DEFAULT_VERSION = "0.6.0"
-
-
-def _parse_version(v: str) -> Tuple[int, ...]:
-    return tuple(int(x) for x in v.split("."))
 
 
 @dataclass
@@ -31,6 +28,30 @@ class LLMSettings:
         env_model = os.environ.get("SKILLSAW_MODEL")
         if env_model:
             self.model = env_model
+
+
+def _parse_version(v: str) -> Tuple[int, ...]:
+    """Parse a version string like '1.2.3' into a tuple of ints.
+
+    Strips a leading 'v'/'V' prefix and ignores pre-release suffixes
+    (e.g. '-beta', '-rc1').  Raises :class:`ValueError` with a
+    human-readable message when the string cannot be parsed.
+    """
+    original = v
+    v = v.strip()
+    # Strip optional leading 'v' or 'V'
+    v = re.sub(r"^[vV]", "", v)
+    # Strip pre-release / build-metadata suffix (everything from the first
+    # hyphen or plus onward, per semver)
+    v = re.split(r"[-+]", v, maxsplit=1)[0]
+    parts = v.split(".")
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError as err:
+        raise ValueError(
+            f"Invalid version string '{original}': expected a numeric "
+            f"version like '1.0.0', got non-numeric component"
+        ) from err
 
 
 @dataclass

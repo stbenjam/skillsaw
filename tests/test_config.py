@@ -4,10 +4,11 @@ Tests for configuration management
 
 import sys
 from pathlib import Path
+import pytest
 import yaml
 
 
-from skillsaw.config import LinterConfig, find_config
+from skillsaw.config import LinterConfig, find_config, _parse_version
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
@@ -734,3 +735,53 @@ def test_severity_override_on_auto_rule_still_fires_when_matching(marketplace_re
         config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
         is True
     )
+
+
+class TestParseVersion:
+    """Tests for _parse_version()"""
+
+    def test_simple_semver(self):
+        assert _parse_version("1.2.3") == (1, 2, 3)
+
+    def test_two_part_version(self):
+        assert _parse_version("1.0") == (1, 0)
+
+    def test_single_number(self):
+        assert _parse_version("5") == (5,)
+
+    def test_strips_v_prefix(self):
+        assert _parse_version("v1.0.0") == (1, 0, 0)
+
+    def test_strips_uppercase_v_prefix(self):
+        assert _parse_version("V2.3.4") == (2, 3, 4)
+
+    def test_strips_prerelease_suffix(self):
+        assert _parse_version("1.0.0-beta") == (1, 0, 0)
+
+    def test_strips_prerelease_rc(self):
+        assert _parse_version("1.0.0-rc1") == (1, 0, 0)
+
+    def test_strips_build_metadata(self):
+        assert _parse_version("1.0.0+build.123") == (1, 0, 0)
+
+    def test_v_prefix_with_prerelease(self):
+        assert _parse_version("v1.0.0-alpha") == (1, 0, 0)
+
+    def test_whitespace_stripped(self):
+        assert _parse_version("  1.2.3  ") == (1, 2, 3)
+
+    def test_non_numeric_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Invalid version string 'latest'"):
+            _parse_version("latest")
+
+    def test_empty_string_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Invalid version string"):
+            _parse_version("")
+
+    def test_garbage_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Invalid version string"):
+            _parse_version("abc.def.ghi")
+
+    def test_partial_numeric_raises_valueerror(self):
+        with pytest.raises(ValueError, match="Invalid version string"):
+            _parse_version("1.2.x")
