@@ -201,6 +201,53 @@ def test_no_agents_directory(plugin_without_agents):
     assert len(violations) == 0
 
 
+@pytest.fixture
+def plugin_with_missing_both_fields(temp_dir):
+    """Create a plugin with agent missing both name and description"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+
+    agents_dir = plugin_dir / "agents"
+    agents_dir.mkdir()
+
+    agent_content = """---
+some-other-field: value
+---
+
+# Test Agent
+"""
+    (agents_dir / "both-missing.md").write_text(agent_content)
+
+    return plugin_dir
+
+
+def test_fix_both_name_and_description_missing(plugin_with_missing_both_fields):
+    """Test that fixing both missing name and description produces a single
+    AutofixResult that contains both fields, not two conflicting results."""
+    context = RepositoryContext(plugin_with_missing_both_fields)
+    rule = AgentFrontmatterRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 2
+    messages = {v.message for v in violations}
+    assert "Missing 'name' in frontmatter" in messages
+    assert "Missing 'description' in frontmatter" in messages
+
+    fixes = rule.fix(context, violations)
+    # Must produce exactly one fix for the file, not two conflicting ones
+    assert len(fixes) == 1
+
+    fix = fixes[0]
+    assert "name: both-missing" in fix.fixed_content
+    assert "description: " in fix.fixed_content
+    # Both violations should be covered by the single fix
+    assert len(fix.violations_fixed) == 2
+
+
 def test_rule_metadata():
     """Test rule metadata"""
     rule = AgentFrontmatterRule()
