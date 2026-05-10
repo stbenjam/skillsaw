@@ -2,23 +2,86 @@
 
 import json
 import re
-from functools import lru_cache
+import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 
 
-@lru_cache(maxsize=512)
-def read_text(file_path: Path) -> Optional[str]:
-    """Cached file read. Returns None on I/O or encoding errors."""
-    try:
-        return file_path.read_text(encoding="utf-8")
-    except (IOError, UnicodeDecodeError):
-        return None
+class FileCache:
+    """Thread-safe cache that supports per-file invalidation.
+
+    Each cached function is keyed by its arguments (which must include a
+    file path).  ``invalidate(file_path)`` removes only entries whose
+    first positional argument matches the given path, so concurrent
+    threads operating on different files never interfere with each other.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stores: List[Dict] = []  # one dict per registered function
+
+    def cached(self, func: Callable) -> Callable:
+        """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
+        store: Dict[tuple, Any] = {}
+        self._stores.append(store)
+
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            with self._lock:
+                if key in store:
+                    return store[key]
+            # Compute outside the lock to avoid holding it during I/O.
+            result = func(*args, **kwargs)
+            with self._lock:
+                store[key] = result
+            return result
+
+        wrapper._store = store  # type: ignore[attr-defined]
+        wrapper.cache_clear = lambda: store.clear()  # type: ignore[attr-defined]
+        return wrapper
+
+    def invalidate(self, file_path: Optional[Path] = None):
+        """Drop cache entries.
+
+        If *file_path* is given, only entries whose first positional arg
+        equals *file_path* are removed -- safe to call from a worker thread
+        without disturbing other threads' cached results.
+
+        If *file_path* is ``None`` every entry in every registered store is
+        cleared (equivalent to the old ``invalidate_read_caches()``).
+        """
+        with self._lock:
+            if file_path is None:
+                for store in self._stores:
+                    store.clear()
+            else:
+                resolved = file_path.resolve()
+                for store in self._stores:
+                    keys_to_remove = [
+                        k
+                        for k in store
+                        if k[0] and len(k[0]) > 0 and _path_matches(k[0][0], resolved)
+                    ]
+                    for k in keys_to_remove:
+                        del store[k]
 
 
-_extra_caches = []
+def _path_matches(arg: Any, resolved_path: Path) -> bool:
+    """Return True if *arg* is a Path that resolves to *resolved_path*."""
+    if isinstance(arg, Path):
+        try:
+            return arg.resolve() == resolved_path
+        except (OSError, ValueError):
+            return False
+    return False
+
+
+# Singleton cache used by all utility functions.
+_file_cache = FileCache()
+
+_extra_caches: list = []
 
 
 def register_cache(func):
@@ -27,17 +90,31 @@ def register_cache(func):
     return func
 
 
-def invalidate_read_caches():
-    """Clear all file-reading caches. Call after modifying files on disk."""
-    read_text.cache_clear()
-    read_json.cache_clear()
-    frontmatter_key_line.cache_clear()
-    heading_line.cache_clear()
+def invalidate_read_caches(file_path: Optional[Path] = None):
+    """Clear file-reading caches.
+
+    Args:
+        file_path: When given, only entries for this specific file are
+            evicted.  When ``None``, *all* cached entries are dropped
+            (legacy full-clear behaviour).
+    """
+    _file_cache.invalidate(file_path)
+    # lru_cache functions registered via register_cache do not support
+    # per-key eviction, so we must clear them entirely in both cases.
     for cache in _extra_caches:
         cache.cache_clear()
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
+def read_text(file_path: Path) -> Optional[str]:
+    """Cached file read. Returns None on I/O or encoding errors."""
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except (IOError, UnicodeDecodeError):
+        return None
+
+
+@_file_cache.cached
 def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached JSON file read. Returns (data, error)."""
     content = read_text(file_path)
@@ -49,7 +126,7 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, str(e)
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     """Find the line number of a top-level key in YAML frontmatter."""
     content = read_text(file_path)
@@ -101,7 +178,7 @@ def extract_section(content: str, heading: str, level: int = 2) -> str:
     return m.group(1).strip() if m else ""
 
 
-@lru_cache(maxsize=512)
+@_file_cache.cached
 def heading_line(file_path: Path, heading: str, level: int = 2) -> Optional[int]:
     """Find the line number of a markdown heading."""
     content = read_text(file_path)
