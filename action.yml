@@ -100,7 +100,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Post PR review
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
       shell: bash
       run: python3 "${{ github.action_path }}/action/review.py"
       env:
