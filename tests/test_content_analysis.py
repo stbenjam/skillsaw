@@ -104,6 +104,29 @@ class TestStripFencedCodeBlocks:
         assert "code" not in result
         assert result.count("\n") == content.count("\n")
 
+    def test_closing_fence_longer_than_opening(self):
+        """Closing fence can be longer than the opening fence per CommonMark spec."""
+        content = "Before\n```\ncode\n`````\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
+
+    def test_closing_fence_shorter_than_opening_does_not_close(self):
+        """Closing fence shorter than opening does NOT close the block."""
+        content = "Before\n`````\ncode\n```\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        # The ``` does not close `````, so everything after ````` is inside the block
+        assert "code" not in result
+        assert "After" not in result
+
+    def test_mismatched_fence_char_does_not_close(self):
+        """Closing fence must use the same character as the opening fence."""
+        content = "Before\n```\ncode\n~~~\nAfter\n"
+        result = _strip_fenced_code_blocks(content)
+        # ~~~ does not close ```, so code stays inside
+        assert "code" not in result
+        assert "After" not in result
+
 
 class TestWeakLanguageDetector:
     def test_detects_hedging(self, temp_dir):
