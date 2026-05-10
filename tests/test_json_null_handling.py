@@ -192,9 +192,7 @@ def test_mcp_prohibited_null_mcp_servers_in_plugin_json(temp_dir):
 
 def test_mcp_prohibited_list_mcp_servers_in_plugin_json(temp_dir):
     """McpProhibitedRule must not crash when plugin.json has mcpServers: []."""
-    plugin_dir = _create_single_plugin(
-        temp_dir, json.dumps({"name": "list-mcp", "mcpServers": []})
-    )
+    plugin_dir = _create_single_plugin(temp_dir, json.dumps({"name": "list-mcp", "mcpServers": []}))
     context = RepositoryContext(plugin_dir)
     rule = McpProhibitedRule()
     violations = rule.check(context)
