@@ -8,7 +8,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import ApmNode
+from skillsaw.lint_target import ApmConfigNode, ApmNode
 from skillsaw.rules.builtin.utils import read_text, yaml_key_line
 
 
@@ -45,16 +45,16 @@ class ApmYamlValidRule(Rule):
         if not context.has_apm:
             return []
 
-        violations = []
-        apm_yml = context.root_path / "apm.yml"
-
-        if not apm_yml.exists():
-            violations.append(
+        config_nodes = context.lint_tree.find(ApmConfigNode)
+        if not config_nodes:
+            return [
                 self.violation(
                     "Missing apm.yml at repository root (required for APM repos)",
                 )
-            )
-            return violations
+            ]
+
+        violations = []
+        apm_yml = config_nodes[0].path
 
         content = read_text(apm_yml)
         if content is None:

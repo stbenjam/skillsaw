@@ -91,6 +91,14 @@ class SkillNode(LintTarget):
 
 
 @dataclass
+class ApmConfigNode(LintTarget):
+    """The apm.yml manifest file."""
+
+    def tree_label(self) -> str:
+        return "apm.yml"
+
+
+@dataclass
 class ApmNode(LintTarget):
     """The .apm/ directory container."""
 

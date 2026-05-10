@@ -8,7 +8,15 @@ import fnmatch
 from pathlib import Path
 from typing import Set, TYPE_CHECKING
 
-from .lint_target import LintTarget, ApmNode, MarketplaceNode, PluginNode, SkillNode, CodeRabbitNode
+from .lint_target import (
+    LintTarget,
+    ApmConfigNode,
+    ApmNode,
+    MarketplaceNode,
+    PluginNode,
+    SkillNode,
+    CodeRabbitNode,
+)
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -170,8 +178,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         cr_container.children.extend(cr_blocks)
         root.children.append(cr_container)
 
-    # --- APM source directories ---
+    # --- APM ---
     if context.has_apm:
+        apm_yml = context.root_path / "apm.yml"
+        if apm_yml.exists() and not _is_excluded(apm_yml):
+            root.children.append(ApmConfigNode(path=apm_yml))
+
         apm_dir = context.root_path / ".apm"
         apm_node = ApmNode(path=apm_dir)
 
