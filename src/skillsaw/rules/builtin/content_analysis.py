@@ -8,7 +8,7 @@ in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
 
 import fnmatch
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Set, Tuple
 
@@ -179,9 +179,12 @@ class ContentFile:
     category: str
     line_offset: int = 0
     body: Optional[str] = None
+    _line_map: Optional[Callable[[int], int]] = field(default=None, repr=False)
 
     def file_line(self, body_line: int) -> int:
         """Translate a 1-based body line number to a 1-based file line number."""
+        if self._line_map is not None:
+            return self._line_map(body_line)
         return body_line + self.line_offset
 
 
