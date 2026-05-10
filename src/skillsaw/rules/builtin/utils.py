@@ -12,42 +12,80 @@ import yaml
 class FileCache:
     """Thread-safe cache that supports per-file invalidation.
 
-    Each cached function is keyed by its arguments (which must include a
-    file path).  ``invalidate(file_path)`` removes only entries whose
-    first positional argument matches the given path, so concurrent
-    threads operating on different files never interfere with each other.
+    Internally uses a two-level dictionary::
+
+        resolved_path -> { sub_key -> value }
+
+    ``invalidate(file_path)`` is O(1) -- it pops the entire inner dict
+    for that path.  A global ``maxsize`` caps the total number of entries
+    across all registered functions to prevent unbounded memory growth.
     """
 
-    def __init__(self):
+    def __init__(self, maxsize: int = 2048):
         self._lock = threading.Lock()
-        self._stores: List[Dict] = []  # one dict per registered function
+        self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
+        self._maxsize = maxsize
+        self._total_entries = 0
 
     def cached(self, func: Callable) -> Callable:
         """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
-        store: Dict[tuple, Any] = {}
+        store: Dict[Path, Dict[tuple, Any]] = {}
         self._stores.append(store)
 
         def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
+            # The first positional arg is always the file path.
+            file_path = args[0] if args else None
+            resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            sub_key = (args[1:], tuple(sorted(kwargs.items())))
             with self._lock:
-                if key in store:
-                    return store[key]
+                bucket = store.get(resolved)
+                if bucket is not None and sub_key in bucket:
+                    return bucket[sub_key]
             # Compute outside the lock to avoid holding it during I/O.
             result = func(*args, **kwargs)
             with self._lock:
-                store[key] = result
+                if self._total_entries >= self._maxsize:
+                    self._evict_oldest()
+                bucket = store.setdefault(resolved, {})
+                if sub_key not in bucket:
+                    self._total_entries += 1
+                bucket[sub_key] = result
             return result
 
         wrapper._store = store  # type: ignore[attr-defined]
-        wrapper.cache_clear = lambda: store.clear()  # type: ignore[attr-defined]
+
+        def _clear():
+            with self._lock:
+                n = sum(len(b) for b in store.values())
+                store.clear()
+                self._total_entries -= n
+
+        wrapper.cache_clear = _clear  # type: ignore[attr-defined]
         return wrapper
+
+    def _evict_oldest(self):
+        """Drop roughly half the entries across all stores (called under lock)."""
+        target = self._maxsize // 2
+        evicted = 0
+        for store in self._stores:
+            paths_to_remove = []
+            for path, bucket in store.items():
+                evicted += len(bucket)
+                paths_to_remove.append(path)
+                if evicted >= target:
+                    break
+            for p in paths_to_remove:
+                del store[p]
+            if evicted >= target:
+                break
+        self._total_entries -= evicted
 
     def invalidate(self, file_path: Optional[Path] = None):
         """Drop cache entries.
 
-        If *file_path* is given, only entries whose first positional arg
-        equals *file_path* are removed -- safe to call from a worker thread
-        without disturbing other threads' cached results.
+        If *file_path* is given, only entries keyed by that resolved path
+        are removed -- O(number of registered functions), safe to call from
+        a worker thread without disturbing other threads' cached results.
 
         If *file_path* is ``None`` every entry in every registered store is
         cleared (equivalent to the old ``invalidate_read_caches()``).
@@ -56,26 +94,13 @@ class FileCache:
             if file_path is None:
                 for store in self._stores:
                     store.clear()
+                self._total_entries = 0
             else:
                 resolved = file_path.resolve()
                 for store in self._stores:
-                    keys_to_remove = [
-                        k
-                        for k in store
-                        if k[0] and len(k[0]) > 0 and _path_matches(k[0][0], resolved)
-                    ]
-                    for k in keys_to_remove:
-                        del store[k]
-
-
-def _path_matches(arg: Any, resolved_path: Path) -> bool:
-    """Return True if *arg* is a Path that resolves to *resolved_path*."""
-    if isinstance(arg, Path):
-        try:
-            return arg.resolve() == resolved_path
-        except (OSError, ValueError):
-            return False
-    return False
+                    bucket = store.pop(resolved, None)
+                    if bucket is not None:
+                        self._total_entries -= len(bucket)
 
 
 # Singleton cache used by all utility functions.
@@ -95,8 +120,13 @@ def invalidate_read_caches(file_path: Optional[Path] = None):
 
     Args:
         file_path: When given, only entries for this specific file are
-            evicted.  When ``None``, *all* cached entries are dropped
-            (legacy full-clear behaviour).
+            evicted from the main ``FileCache``.  When ``None``, *all*
+            cached entries are dropped (legacy full-clear behaviour).
+
+    Note:
+        Functions registered via ``register_cache`` (legacy ``lru_cache``
+        decorators) are always fully cleared regardless of *file_path*,
+        as ``lru_cache`` does not support per-key eviction.
     """
     _file_cache.invalidate(file_path)
     # lru_cache functions registered via register_cache do not support
