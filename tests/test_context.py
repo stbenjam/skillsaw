@@ -503,3 +503,92 @@ def test_coderabbit_with_claude_md_gets_both_formats(temp_dir):
     context = RepositoryContext(temp_dir)
     assert HAS_CODERABBIT in context.detected_formats
     assert HAS_CLAUDE_MD in context.detected_formats
+
+
+# --- repo_types override tests ---
+
+
+def test_repo_types_override_triggers_discovery(temp_dir):
+    """Passing repo_types to RepositoryContext uses override for discovery"""
+    # Create a directory that would auto-detect as UNKNOWN (empty temp_dir)
+    # but has a plugins/ subdirectory with a plugin that should only be
+    # discovered when repo_types includes MARKETPLACE.
+    plugins_dir = temp_dir / "plugins"
+    plugins_dir.mkdir()
+    plugin_dir = plugins_dir / "my-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / ".claude-plugin").mkdir()
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "description": "test", "version": "1.0.0"})
+    )
+    (plugin_dir / "commands").mkdir()
+
+    # Without override, auto-detection sees plugins/ and picks MARKETPLACE
+    auto_ctx = RepositoryContext(temp_dir)
+    assert RepositoryType.MARKETPLACE in auto_ctx.repo_types
+    assert len(auto_ctx.plugins) >= 1
+
+    # With an override to AGENTSKILLS only, the MARKETPLACE discovery path
+    # should NOT run, so no plugins are discovered from plugins/.
+    override_ctx = RepositoryContext(temp_dir, repo_types={RepositoryType.AGENTSKILLS})
+    assert override_ctx.repo_types == {RepositoryType.AGENTSKILLS}
+    assert len(override_ctx.plugins) == 0
+
+
+def test_repo_types_override_excludes_marketplace_plugins(temp_dir):
+    """Overriding to non-MARKETPLACE excludes marketplace plugin discovery"""
+    # Create a marketplace layout
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text(
+        json.dumps(
+            {
+                "name": "test-marketplace",
+                "plugins": [
+                    {"name": "mp-plugin", "source": "./plugins/mp-plugin", "description": "test"}
+                ],
+            }
+        )
+    )
+    plugins_dir = temp_dir / "plugins" / "mp-plugin"
+    plugins_dir.mkdir(parents=True)
+    (plugins_dir / ".claude-plugin").mkdir()
+    (plugins_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "mp-plugin", "description": "test", "version": "1.0.0"})
+    )
+    (plugins_dir / "commands").mkdir()
+
+    # Auto-detect: picks up MARKETPLACE and discovers plugin
+    auto_ctx = RepositoryContext(temp_dir)
+    assert RepositoryType.MARKETPLACE in auto_ctx.repo_types
+    assert len(auto_ctx.plugins) >= 1
+
+    # Override to AGENTSKILLS only: marketplace discovery should not run
+    override_ctx = RepositoryContext(temp_dir, repo_types={RepositoryType.AGENTSKILLS})
+    assert override_ctx.repo_types == {RepositoryType.AGENTSKILLS}
+    # No plugins from marketplace discovery
+    assert len(override_ctx.plugins) == 0
+
+
+def test_rediscover_updates_after_repo_types_change(temp_dir):
+    """rediscover() re-runs discovery after repo_types is mutated"""
+    # Set up a marketplace-like layout
+    plugins_dir = temp_dir / "plugins"
+    plugins_dir.mkdir()
+    plugin_dir = plugins_dir / "my-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / ".claude-plugin").mkdir()
+    (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "description": "test", "version": "1.0.0"})
+    )
+    (plugin_dir / "commands").mkdir()
+
+    # Start with AGENTSKILLS override — no plugins discovered
+    ctx = RepositoryContext(temp_dir, repo_types={RepositoryType.AGENTSKILLS})
+    assert len(ctx.plugins) == 0
+
+    # Mutate and rediscover
+    ctx.repo_types = {RepositoryType.MARKETPLACE}
+    ctx.rediscover()
+    assert len(ctx.plugins) == 1
+    assert ctx.get_plugin_name(ctx.plugins[0]) == "my-plugin"

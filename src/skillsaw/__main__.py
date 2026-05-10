@@ -273,9 +273,9 @@ def _run_lint(args):
 
     if args.fmt == "text":
         print(f"Linting: {args.path}\n")
-    context = RepositoryContext(args.path)
 
-    # Override repo_types if --type was provided
+    # Parse --type before constructing context so discovery uses the override
+    override_types = None
     if args.repo_types:
         type_map = {t.value: t for t in RepositoryType}
         override_types = set()
@@ -288,7 +288,8 @@ def _run_lint(args):
                 )
                 sys.exit(1)
             override_types.add(type_map[val])
-        context.repo_types = override_types
+
+    context = RepositoryContext(args.path, repo_types=override_types)
 
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)

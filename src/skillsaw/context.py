@@ -69,16 +69,21 @@ class RepositoryContext:
     # When .apm/ is present these are generated artifacts and should not be linted.
     APM_COMPILED_DIRS = frozenset((".claude", ".cursor", ".gemini", ".opencode", ".agents"))
 
-    def __init__(self, root_path: Path):
+    def __init__(self, root_path: Path, repo_types: Optional[Set[RepositoryType]] = None):
         """
         Initialize repository context
 
         Args:
             root_path: Root directory of the repository
+            repo_types: Optional set of repository types to use instead of auto-detection.
+                        When provided, discovery is driven by these types rather than
+                        the auto-detected ones.
         """
         self.root_path = root_path.resolve()
         self.has_apm = self._detect_apm()
-        self.repo_types: Set[RepositoryType] = self._detect_types()
+        self.repo_types: Set[RepositoryType] = (
+            repo_types if repo_types is not None else self._detect_types()
+        )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
             {}
@@ -89,6 +94,19 @@ class RepositoryContext:
         self.detected_formats: Set[str] = self._detect_formats()
         self.content_paths: List[str] = []
         self.exclude_patterns: List[str] = []
+
+    def rediscover(self) -> None:
+        """Re-run discovery using the current repo_types.
+
+        Call this after mutating ``repo_types`` so that plugins, skills, and
+        other discovered data reflect the updated types.
+        """
+        self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
+        self.plugin_metadata = {}
+        self.plugins = self._discover_plugins()
+        self.skills = self._discover_skills()
+        self.instruction_files = self._discover_instruction_files()
+        self.detected_formats = self._detect_formats()
 
     @property
     def repo_type(self) -> RepositoryType:
