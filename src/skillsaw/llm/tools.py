@@ -139,6 +139,8 @@ class LintTool:
         invalidate_read_caches()
         context = RepositoryContext(self._root)
         context.content_paths = self._config.content_paths
+        context.exclude_patterns = self._config.exclude_patterns
+        context.apply_excludes()
 
         violations = []
         for rule_class in BUILTIN_RULES:

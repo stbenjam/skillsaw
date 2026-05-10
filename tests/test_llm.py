@@ -338,3 +338,39 @@ class TestLLMFixResult:
             success=False,
         )
         assert result.violations_fixed == 0
+
+
+class TestLintToolExcludePatterns:
+    """LintTool must honour config exclude_patterns."""
+
+    def _make_skill(self, tmp_path):
+        """Create a skill with a missing 'name' field so agentskill-valid fires."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\ndescription: a test skill\n---\n# My Skill\nDoes things.\n",
+            encoding="utf-8",
+        )
+        return skill_md
+
+    def test_lint_tool_respects_exclude_patterns(self, tmp_path):
+        from skillsaw.config import LinterConfig
+        from skillsaw.llm.tools import LintTool
+
+        skill_md = self._make_skill(tmp_path)
+
+        # Config with no excludes — the rule should fire.
+        config_no_exclude = LinterConfig.default()
+        config_no_exclude.version = "999.0.0"
+        tool_no_exclude = LintTool(tmp_path, config_no_exclude, rule_ids={"agentskill-valid"})
+        result_no_exclude = tool_no_exclude.execute(path="my-skill/SKILL.md")
+        assert "Missing required 'name' field" in result_no_exclude
+
+        # Config with an exclude pattern covering the skill directory.
+        config_excluded = LinterConfig.default()
+        config_excluded.version = "999.0.0"
+        config_excluded.exclude_patterns = ["my-skill"]
+        tool_excluded = LintTool(tmp_path, config_excluded, rule_ids={"agentskill-valid"})
+        result_excluded = tool_excluded.execute(path="my-skill/SKILL.md")
+        assert result_excluded == "No violations found."
