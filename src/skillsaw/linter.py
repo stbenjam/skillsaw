@@ -231,29 +231,38 @@ class Linter:
             if fix.confidence not in allowed:
                 continue
 
-            if fix.rename_from is not None:
-                # Rename operation: use Path.rename() for atomicity and
-                # safety on case-insensitive filesystems (macOS/Windows).
-                # If the source no longer exists or the target already exists
-                # (and isn't the same file on a case-insensitive FS), skip.
-                src = fix.rename_from
-                dst = fix.file_path
-                if not src.exists():
-                    continue
-                # On case-insensitive filesystems src and dst may resolve to
-                # the same inode even when their names differ in casing.
-                # Path.rename() handles this correctly, but we must not skip
-                # a case-only rename via the ``dst.exists()`` guard.
-                same_file = src.resolve() == dst.resolve()
-                if dst.exists() and not same_file:
-                    continue
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                src.rename(dst)
-                # If the content also changed, write the updated content
-                if fix.fixed_content != fix.original_content:
-                    dst.write_text(fix.fixed_content, encoding="utf-8")
-            else:
-                fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+            try:
+                if fix.rename_from is not None:
+                    # Rename operation: use Path.rename() for atomicity and
+                    # safety on case-insensitive filesystems (macOS/Windows).
+                    # If the source no longer exists or the target already exists
+                    # (and isn't the same file on a case-insensitive FS), skip.
+                    src = fix.rename_from
+                    dst = fix.file_path
+                    if not src.exists():
+                        continue
+                    # On case-insensitive filesystems src and dst may resolve to
+                    # the same inode even when their names differ in casing.
+                    # Path.rename() handles this correctly, but we must not skip
+                    # a case-only rename via the ``dst.exists()`` guard.
+                    same_file = src.resolve() == dst.resolve()
+                    if dst.exists() and not same_file:
+                        continue
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    src.rename(dst)
+                    # If the content also changed, write the updated content
+                    if fix.fixed_content != fix.original_content:
+                        dst.write_text(fix.fixed_content, encoding="utf-8")
+                else:
+                    fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+            except OSError as exc:
+                logger.warning(
+                    "Failed to apply fix for %s on %s: %s",
+                    fix.rule_id,
+                    fix.file_path,
+                    exc,
+                )
+                continue
 
             applied.append(fix)
 

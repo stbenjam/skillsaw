@@ -773,3 +773,60 @@ class TestCommandRenameFix:
             description="not a rename",
         )
         assert fix.rename_from is None
+
+    def test_case_only_rename(self, temp_dir):
+        """Case-only rename (e.g. MyCommand.md -> mycommand.md) must work
+        on both case-sensitive and case-insensitive filesystems."""
+        content = "---\ndescription: test\n---\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"MyCommand.md": content})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandNamingRule()
+
+        violations = rule.check(context)
+        assert len(violations) == 1
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].rename_from is not None
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 1
+
+        commands_dir = plugin_dir / "commands"
+        # The kebab-case file must exist with correct content
+        assert (commands_dir / "my-command.md").exists()
+        assert (commands_dir / "my-command.md").read_text() == content
+
+    def test_apply_fix_isolates_oserror(self, temp_dir):
+        """One fix raising OSError must not prevent subsequent fixes."""
+        good_target = temp_dir / "good.txt"
+        good_target.write_text("original")
+
+        # Point the first fix at a path inside a non-existent, read-only
+        # parent so write_text raises OSError.
+        bad_target = temp_dir / "no-such-dir" / "bad.txt"
+
+        fixes = [
+            AutofixResult(
+                rule_id="a",
+                file_path=bad_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="x",
+                fixed_content="y",
+                description="will fail",
+            ),
+            AutofixResult(
+                rule_id="b",
+                file_path=good_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="original",
+                fixed_content="fixed",
+                description="should succeed",
+            ),
+        ]
+
+        applied = Linter.apply_fixes(fixes)
+        # The second fix must still be applied despite the first failing
+        assert len(applied) == 1
+        assert applied[0].rule_id == "b"
+        assert good_target.read_text() == "fixed"

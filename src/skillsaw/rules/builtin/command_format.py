@@ -72,7 +72,10 @@ class CommandNamingRule(Rule):
             # on a case-insensitive filesystem).
             if new_path.exists() and new_path.resolve() != old_path.resolve():
                 continue
-            content = old_path.read_text(encoding="utf-8")
+            try:
+                content = old_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
