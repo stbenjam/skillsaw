@@ -361,6 +361,19 @@ class TestCoderabbitBodyLineAlignment:
         assert lines[1] == ""
         assert lines[2] == "Do stuff."
 
+    def test_block_scalar_with_comment_alignment(self):
+        """Block scalar indicator with trailing YAML comment should still work."""
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: | # this is a comment\n"  # line 2
+            "    Check nulls.\n"  # line 3
+            "    Validate inputs.\n"  # line 4
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        assert lines[2] == "Check nulls."  # line 3
+        assert lines[3] == "Validate inputs."  # line 4
+
     def test_empty_body_on_no_instructions(self):
         raw = "language: en-US\n"
         body = _extract_coderabbit_instructions_body(raw)

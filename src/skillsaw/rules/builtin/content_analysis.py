@@ -483,7 +483,7 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
     return results
 
 
-def _instruction_text_start_line(raw: str, key_line: Optional[int]) -> Optional[int]:
+def _instruction_text_start_line(lines: List[str], key_line: Optional[int]) -> Optional[int]:
     """Determine the real start line of an instruction's text content.
 
     For YAML block scalars (``|`` or ``>``), the text starts on the line
@@ -492,14 +492,14 @@ def _instruction_text_start_line(raw: str, key_line: Optional[int]) -> Optional[
     """
     if key_line is None:
         return None
-    lines = raw.splitlines()
     if key_line < 1 or key_line > len(lines):
         return key_line
     key_content = lines[key_line - 1]
     # After "instructions:", if a block scalar indicator follows, text is next line
     colon_idx = key_content.find(":")
     if colon_idx >= 0:
-        after_colon = key_content[colon_idx + 1 :].strip()
+        # Strip comments and whitespace after the colon
+        after_colon = key_content[colon_idx + 1 :].split("#", 1)[0].strip()
         if after_colon in ("|", ">", "|-", ">-", "|+", ">+"):
             return key_line + 1
     return key_line
@@ -523,9 +523,10 @@ def _extract_coderabbit_instructions_body(raw: str) -> str:
         return ""
 
     # Build a list of (start_line, text) tuples sorted by position.
+    raw_lines = raw.splitlines()
     positioned: List[Tuple[int, str]] = []
     for _, text, key_line in instructions:
-        start = _instruction_text_start_line(raw, key_line)
+        start = _instruction_text_start_line(raw_lines, key_line)
         if start is None:
             start = 1
         positioned.append((start, text))
