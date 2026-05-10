@@ -60,6 +60,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Initialize a Marketplace](#initialize-a-marketplace)
   - [Add Components](#add-components)
   - [Context Detection](#context-detection)
+- [Lint Tree](#lint-tree)
 - [Documentation Generation](#documentation-generation)
 - [Exit Codes](#exit-codes)
 - [Example Output](#example-output)
@@ -99,6 +100,9 @@ skillsaw init
 
 # List all rules with fix support info
 skillsaw list-rules
+
+# View the lint tree (what skillsaw sees)
+skillsaw tree
 
 # Generate plugin/skill documentation
 skillsaw docs
@@ -634,6 +638,33 @@ skillsaw automatically detects your repo type and places files in the right loca
 - **`.claude/` repo** — components go under `.claude/`
 
 In a marketplace with multiple plugins, specify `--plugin <name>` or skillsaw will prompt interactively.
+
+## Lint Tree
+
+`skillsaw tree` visualizes the typed lint tree — the internal data structure that all rules operate on. Every lintable entity (plugins, skills, commands, agents, instruction files, config files) is a typed node in the tree.
+
+```bash
+# View the lint tree
+skillsaw tree
+
+# View a specific path
+skillsaw tree /path/to/repo
+```
+
+Example output:
+
+```
+my-marketplace/
+    ├── AGENTS.md (agents-md)
+    ├── marketplace.json
+    ├── plugins/ [marketplace]
+    │   └── my-plugin/ [plugin]
+    │       ├── hello.md (command)
+    │       └── my-skill/ [skill]
+    │           └── SKILL.md (skill)
+    └── .coderabbit.yaml
+        └── reviews.instructions (coderabbit)
+```
 
 ## Documentation Generation
 
