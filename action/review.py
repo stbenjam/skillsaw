@@ -75,6 +75,8 @@ def get_diff_info(repo, pr_number):
                     current_line += 1
                 elif line.startswith("-"):
                     pass
+                elif line.startswith("\\"):
+                    pass
                 else:
                     current_line += 1
         page += 1
