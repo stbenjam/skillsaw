@@ -47,6 +47,9 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Single Plugin](#single-plugin)
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
 - [Configuration](#configuration)
+  - [Version Pinning](#version-pinning)
+  - [Exclude Patterns](#exclude-patterns)
+  - [Content Paths](#content-paths)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
@@ -279,6 +282,43 @@ skillsaw init
 This creates a config file with all builtin rules, their defaults, and
 descriptions. Edit it to enable, disable, or customize rules for your project.
 See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
+
+### Version Pinning
+
+The config file includes a `version` field set to the skillsaw version that
+created it. New rules introduced after that version are automatically skipped
+unless you bump the version or explicitly enable them. Repos **without** a
+`.skillsaw.yaml` run all rules at the latest version — you get new rules
+automatically but may occasionally fail after a skillsaw upgrade.
+
+### Exclude Patterns
+
+Skip files and directories using glob patterns:
+
+```yaml
+exclude:
+  - "vendor/**"
+  - "generated/**"
+  - "node_modules/**"
+```
+
+### Content Paths
+
+By default, content intelligence rules only analyze recognized instruction
+files (CLAUDE.md, AGENTS.md, `.cursor/rules/`, `.apm/instructions/`, etc.).
+Use `content-paths` to extend coverage to any text files that contain
+instructions for humans or AI agents — markdown, `.mdc`, `.txt`, or any
+other format:
+
+```yaml
+content-paths:
+  - "src/**/instructions/**/*.md"
+  - ".cursor/rules/*.mdc"
+  - "docs/runbooks/*.txt"
+```
+
+Matched files are analyzed by all content-\* rules and support LLM-powered
+fixes via `skillsaw fix --llm`.
 
 ## Builtin Rules
 
