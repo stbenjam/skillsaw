@@ -205,3 +205,36 @@ def test_from_file_with_null_rule_value(temp_dir):
     result = config.get_rule_config("plugin-json-required")
     assert result["enabled"] == "auto"
     assert result["severity"] == "error"
+
+
+def test_from_file_with_null_rules_key(temp_dir):
+    """Test loading a config file where the top-level rules key is null"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    # YAML 'rules:' with no content parses as rules=None
+    config_file.write_text("rules:\n")
+
+    config = LinterConfig.from_file(config_file)
+    # rules should be normalized to empty dict by from_file
+    assert config.rules == {}
+    # get_rule_config should return defaults without crashing
+    result = config.get_rule_config("plugin-json-required")
+    assert result["enabled"] == "auto"
+    assert result["severity"] == "error"
+
+
+def test_get_rule_config_with_null_rules_attr():
+    """Test that get_rule_config handles self.rules being None"""
+    config = LinterConfig(rules=None)
+    # Should not raise AttributeError
+    result = config.get_rule_config("plugin-json-required")
+    assert result["enabled"] == "auto"
+    assert result["severity"] == "error"
+
+
+def test_get_rule_config_with_scalar_rule_value():
+    """Test that get_rule_config handles a scalar (non-dict) rule value"""
+    config = LinterConfig(rules={"plugin-json-required": True})
+    # A boolean value should be treated as non-dict and fall back to defaults
+    result = config.get_rule_config("plugin-json-required")
+    assert result["enabled"] == "auto"
+    assert result["severity"] == "error"

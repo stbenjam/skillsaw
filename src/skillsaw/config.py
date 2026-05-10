@@ -41,9 +41,9 @@ class LinterConfig:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
         return cls(
-            rules=data.get("rules", {}),
-            custom_rules=data.get("custom-rules", []),
-            exclude_patterns=data.get("exclude", []),
+            rules=data.get("rules") or {},
+            custom_rules=data.get("custom-rules") or [],
+            exclude_patterns=data.get("exclude") or [],
             strict=data.get("strict", False),
         )
 
@@ -125,7 +125,10 @@ class LinterConfig:
             Rule configuration dict
         """
         defaults = self.default().rules.get(rule_id, {})
-        overrides = self.rules.get(rule_id, {}) or {}
+        rules = self.rules if isinstance(self.rules, dict) else {}
+        overrides = rules.get(rule_id)
+        if not isinstance(overrides, dict):
+            overrides = {}
         merged = {**defaults, **overrides}
         return merged
 
