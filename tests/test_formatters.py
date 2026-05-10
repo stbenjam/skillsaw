@@ -332,6 +332,27 @@ def test_sarif_locations(valid_plugin):
     assert v1_loc["region"]["startLine"] == 3
 
 
+def test_sarif_line_zero_omits_region(valid_plugin):
+    """SARIF spec requires startLine >= 1; line=0 must not emit a region."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.WARNING,
+            message="line zero violation",
+            file_path=Path("plugins/foo/.claude-plugin"),
+            line=0,
+        ),
+    ]
+
+    output = format_sarif(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    result = data["runs"][0]["results"][0]
+    loc = result["locations"][0]["physicalLocation"]
+    assert "region" not in loc, "startLine: 0 violates SARIF spec (minimum is 1)"
+
+
 def test_sarif_stats_in_properties(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
