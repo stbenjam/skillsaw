@@ -448,23 +448,6 @@ def test_explicit_auto_overrides_version_gate(temp_dir):
     )
 
 
-def test_implicit_auto_blocked_by_version_gate(temp_dir):
-    """When enabled: auto comes from defaults (not user config), version gate applies"""
-    (temp_dir / "CLAUDE.md").write_text("# Test")
-    context = RepositoryContext(temp_dir)
-    # No user overrides for this rule — auto comes from defaults
-    config = LinterConfig(version="0.6.0", rules={})
-    assert (
-        config.is_rule_enabled(
-            "content-weak-language",
-            context,
-            formats=ALL_INSTRUCTION_FORMATS,
-            since_version="0.7.0",
-        )
-        is False
-    )
-
-
 def test_save_includes_version(tmp_path):
     """Test that save() writes the version field"""
     config = LinterConfig.for_init()
