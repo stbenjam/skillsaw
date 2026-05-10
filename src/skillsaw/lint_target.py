@@ -69,6 +69,14 @@ class LintTarget:
 
 
 @dataclass
+class MarketplaceConfigNode(LintTarget):
+    """The .claude-plugin/marketplace.json manifest file."""
+
+    def tree_label(self) -> str:
+        return "marketplace.json"
+
+
+@dataclass
 class MarketplaceNode(LintTarget):
     """A marketplace plugins directory."""
 

@@ -12,6 +12,7 @@ from .lint_target import (
     LintTarget,
     ApmConfigNode,
     ApmNode,
+    MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
     SkillNode,
@@ -114,6 +115,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     elif clinerules.is_dir():
         for md in sorted(clinerules.glob("*.md")):
             _add_block(root, md, InstructionBlock)
+
+    # --- Marketplace config ---
+    marketplace_json = context.root_path / ".claude-plugin" / "marketplace.json"
+    if marketplace_json.exists() and not _is_excluded(marketplace_json):
+        root.children.append(MarketplaceConfigNode(path=marketplace_json))
 
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}

@@ -8,7 +8,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.lint_target import PluginNode
+from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -35,13 +35,17 @@ class MarketplaceJsonValidRule(Rule):
         if RepositoryType.MARKETPLACE not in context.repo_types:
             return violations
 
-        marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
-
-        if not marketplace_file.exists():
+        config_nodes = context.lint_tree.find(MarketplaceConfigNode)
+        if not config_nodes:
             violations.append(
-                self.violation("Marketplace file not found", file_path=marketplace_file)
+                self.violation(
+                    "Marketplace file not found",
+                    file_path=context.root_path / ".claude-plugin" / "marketplace.json",
+                )
             )
             return violations
+
+        marketplace_file = config_nodes[0].path
 
         # Try to parse
         marketplace, error = read_json(marketplace_file)
@@ -132,7 +136,11 @@ class MarketplaceRegistrationRule(Rule):
         if not context.has_marketplace():
             return violations
 
-        marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
+        config_nodes = context.lint_tree.find(MarketplaceConfigNode)
+        if not config_nodes:
+            return violations
+
+        marketplace_file = config_nodes[0].path
 
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_name = context.get_plugin_name(plugin_node.path)
@@ -154,9 +162,11 @@ class MarketplaceRegistrationRule(Rule):
         if not violations:
             return results
 
-        marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
-        if not marketplace_file.exists():
+        config_nodes = context.lint_tree.find(MarketplaceConfigNode)
+        if not config_nodes:
             return results
+
+        marketplace_file = config_nodes[0].path
 
         original = marketplace_file.read_text(encoding="utf-8")
         try:
