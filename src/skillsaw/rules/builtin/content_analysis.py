@@ -287,9 +287,14 @@ def _gather_coderabbit_blocks(
         return []
     if not cr_data:
         return []
+    cr_lines = cr_raw.splitlines()
     results: List[ContentBlock] = []
     for label, text, line in _extract_instructions(cr_data, cr_raw):
-        offset = (line - 1) if line else 0
+        offset = 0
+        if line:
+            key_text = cr_lines[line - 1] if line <= len(cr_lines) else ""
+            is_block_scalar = bool(re.search(r":\s*[|>]", key_text))
+            offset = line if is_block_scalar else (line - 1)
         results.append(
             ContentBlock(
                 path=cr_path,

@@ -228,6 +228,19 @@ class TestGatherContentFilesCoderabbit:
         assert cr_files[0].file_line(1) == 2  # instructions key on line 2
         assert cr_files[1].file_line(1) == 4  # instructions key on line 4
 
+    def test_line_offsets_block_scalar(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"  # 1
+            "  instructions: |\n"  # 2
+            "    Block review text.\n"  # 3
+        )
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+        # Body line 1 should map to file line 3 (one past the key line)
+        assert cr_files[0].file_line(1) == 3
+
     def test_no_instructions_yields_nothing(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
         context = RepositoryContext(temp_dir)
