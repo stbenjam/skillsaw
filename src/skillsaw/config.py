@@ -87,7 +87,10 @@ class LinterConfig:
     @classmethod
     def default(cls) -> "LinterConfig":
         """Create default configuration with all builtin rules enabled"""
+        from . import __version__
+
         return cls(
+            version=__version__,
             rules={
                 # Plugin structure rules (auto-enabled for plugin/marketplace repos)
                 "plugin-json-required": {"enabled": "auto", "severity": "error"},
@@ -156,7 +159,7 @@ class LinterConfig:
                 # APM (Agent Package Manager) rules
                 "apm-yaml-valid": {"enabled": "auto", "severity": "error"},
                 "apm-structure-valid": {"enabled": "auto", "severity": "warning"},
-            }
+            },
         )
 
     @classmethod

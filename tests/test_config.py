@@ -270,6 +270,28 @@ def test_content_rules_default_to_auto():
         assert config.rules[rule_id]["enabled"] == "auto", f"{rule_id} should be auto"
 
 
+def test_default_config_sets_current_version():
+    """No config file means all rules run — version must be current release"""
+    from skillsaw import __version__
+
+    config = LinterConfig.default()
+    assert config.version == __version__
+
+
+def test_no_config_skips_version_gate(temp_dir):
+    """Without a config file, version-gated rules should still be enabled"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig.default()
+    assert config.is_rule_enabled(
+        "content-weak-language",
+        context,
+        repo_types=None,
+        formats=frozenset({"HAS_CLAUDE_MD"}),
+        since_version="0.7.0",
+    )
+
+
 def test_for_init_sets_version():
     """Test that for_init() sets version to current release"""
     from skillsaw import __version__
