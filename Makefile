@@ -31,7 +31,7 @@ lint: $(VENV)/bin/activate
 	$(VENV)/bin/black --check src/ tests/
 
 test: $(VENV)/bin/activate
-	$(VENV)/bin/pytest tests/ -v --cov=src --cov=rules --cov-report=xml --cov-report=term
+	$(VENV)/bin/pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
 
 generate-example: $(VENV)/bin/activate
 	rm -f .skillsaw.yaml.example
