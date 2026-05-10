@@ -32,7 +32,7 @@ lint: $(VENV)/bin/activate
 	$(VENV)/bin/black --check src/ tests/
 
 test: $(VENV)/bin/activate
-	$(VENV)/bin/pytest tests/ -v --cov=src --cov=rules --cov-report=xml --cov-report=term
+	$(VENV)/bin/pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV)/bin/activate
