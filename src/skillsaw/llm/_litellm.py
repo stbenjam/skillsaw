@@ -23,7 +23,7 @@ class TokenUsage:
 class CompletionResult:
     content: Optional[str]
     tool_calls: List[ToolCall]
-    usage: TokenUsage
+    usage: Optional[TokenUsage]
 
 
 class CompletionProvider(Protocol):
@@ -66,13 +66,21 @@ class LiteLLMProvider:
             kwargs["tools"] = tools
 
         response = litellm.completion(**kwargs)
-        if not response.choices:
+
+        usage_info = getattr(response, "usage", None)
+        usage = TokenUsage(
+            prompt_tokens=getattr(usage_info, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage_info, "completion_tokens", 0) or 0,
+        )
+
+        choices = getattr(response, "choices", None) or []
+        if not choices:
             return CompletionResult(
                 content=None,
                 tool_calls=[],
-                usage=TokenUsage(),
+                usage=usage,
             )
-        choice = response.choices[0]
+        choice = choices[0]
         message = choice.message
 
         tool_calls: List[ToolCall] = []
@@ -93,12 +101,6 @@ class LiteLLMProvider:
                         arguments=args,
                     )
                 )
-
-        usage_info = response.usage
-        usage = TokenUsage(
-            prompt_tokens=getattr(usage_info, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage_info, "completion_tokens", 0) or 0,
-        )
 
         return CompletionResult(
             content=message.content,

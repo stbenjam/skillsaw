@@ -287,14 +287,38 @@ class TestLiteLLMProviderEdgeCases:
     """Tests for edge cases in the LiteLLM provider's complete() method."""
 
     def test_empty_choices_list(self):
-        """Provider should return empty result when choices list is empty."""
+        """Provider should return empty result but still extract usage when choices is empty."""
         from unittest.mock import MagicMock, patch
         from skillsaw.llm._litellm import LiteLLMProvider
 
         mock_litellm = MagicMock()
         mock_response = MagicMock()
         mock_response.choices = []
+        mock_response.usage.prompt_tokens = 42
+        mock_response.usage.completion_tokens = 0
         mock_litellm.completion.return_value = mock_response
+
+        provider = LiteLLMProvider()
+        with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
+            result = provider.complete(
+                messages=[{"role": "user", "content": "hello"}],
+                tools=[],
+                model="test-model",
+            )
+
+        assert result.content is None
+        assert result.tool_calls == []
+        assert result.usage.prompt_tokens == 42
+        assert result.usage.completion_tokens == 0
+
+    def test_missing_choices_attribute(self):
+        """Provider should return empty result when response has no choices attribute."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        mock_litellm = MagicMock()
+        mock_litellm.completion.return_value = SimpleNamespace()
 
         provider = LiteLLMProvider()
         with patch("skillsaw.llm._litellm._get_litellm", return_value=mock_litellm):
