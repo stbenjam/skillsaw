@@ -41,9 +41,9 @@ class LinterConfig:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
 
         return cls(
-            rules=data.get("rules", {}),
-            custom_rules=data.get("custom-rules", []),
-            exclude_patterns=data.get("exclude", []),
+            rules=data.get("rules") or {},
+            custom_rules=data.get("custom-rules") or [],
+            exclude_patterns=data.get("exclude") or [],
             strict=data.get("strict", False),
         )
 

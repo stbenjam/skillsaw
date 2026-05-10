@@ -172,3 +172,31 @@ def test_auto_without_repo_types_always_enabled(valid_plugin):
     config = LinterConfig.default()
     context = RepositoryContext(valid_plugin)
     assert config.is_rule_enabled("some-rule", context, None) is True
+
+
+def test_config_null_rules_key(temp_dir):
+    """Test that a config with rules: null or bare rules: does not crash"""
+    # Explicit YAML null
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules: null\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.rules == {}
+    # Ensure downstream methods work without AttributeError
+    rule_config = config.get_rule_config("plugin-json-required")
+    assert rule_config["enabled"] == "auto"
+
+    # Bare key (also YAML null)
+    config_file.write_text("rules:\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.rules == {}
+    rule_config = config.get_rule_config("plugin-json-required")
+    assert rule_config["enabled"] == "auto"
+
+
+def test_config_null_custom_rules_and_exclude(temp_dir):
+    """Test that null custom-rules and exclude keys do not crash"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("custom-rules: null\nexclude: null\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.custom_rules == []
+    assert config.exclude_patterns == []
