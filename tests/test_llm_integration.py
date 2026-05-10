@@ -415,7 +415,7 @@ class TestLLMFixDryRun:
         actual = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
         assert actual == content
         assert len(result.files_modified) == 0
-        assert len(result.diffs) > 0 or result.violations_before > 0
+        assert len(result.diffs) > 0
 
     def test_dry_run_rollback_preserves_original(self, tmp_path):
         """Dry-run rollback when LLM changes don't improve violations.
