@@ -185,6 +185,23 @@ class TestExtractor:
         assert isinstance(plugin.version, str)
         assert plugin.version == "1"
 
+    def test_extract_null_version(self, temp_dir):
+        """Explicit null version in plugin.json must produce empty string, not 'None'."""
+        plugin_dir = temp_dir / "null-ver"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "null-ver", "description": "d", "version": None})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert isinstance(plugin.version, str)
+        assert plugin.version == ""
+
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
         docs = extract_docs(ctx, title="My Custom Title")
