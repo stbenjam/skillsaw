@@ -89,6 +89,12 @@ class PluginJsonValidRule(Rule):
                 violations.append(self.violation(f"Invalid JSON: {error}", file_path=plugin_json))
                 continue
 
+            if not isinstance(data, dict):
+                violations.append(
+                    self.violation("Expected JSON object in plugin.json", file_path=plugin_json)
+                )
+                continue
+
             # Check required fields
             required_fields = ["name"]
             for field in required_fields:

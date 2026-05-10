@@ -79,6 +79,9 @@ class McpValidJsonRule(Rule):
             # If plugin.json is invalid, plugin-json-valid rule will catch it
             return violations
 
+        if not isinstance(data, dict):
+            return violations
+
         # Only validate if mcpServers field exists
         if "mcpServers" not in data:
             return violations
@@ -293,7 +296,10 @@ class McpProhibitedRule(Rule):
         if error:
             return violations
 
-        servers = data.get("mcpServers", data) if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return violations
+
+        servers = data.get("mcpServers", data)
         if not isinstance(servers, dict):
             return violations
 
@@ -324,8 +330,15 @@ class McpProhibitedRule(Rule):
         if error:
             return violations
 
+        if not isinstance(data, dict):
+            return violations
+
         if "mcpServers" in data:
-            prohibited = self._get_prohibited_servers(data["mcpServers"], allowlist)
+            mcp_servers = data["mcpServers"]
+            if not isinstance(mcp_servers, dict):
+                return violations
+
+            prohibited = self._get_prohibited_servers(mcp_servers, allowlist)
             if prohibited:
                 if allowlist:
                     violations.append(

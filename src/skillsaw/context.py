@@ -453,7 +453,11 @@ class RepositoryContext:
         if not self.marketplace_data or "plugins" not in self.marketplace_data:
             return
 
-        for plugin_entry in self.marketplace_data["plugins"]:
+        marketplace_plugins = self.marketplace_data["plugins"]
+        if not isinstance(marketplace_plugins, list):
+            return
+
+        for plugin_entry in marketplace_plugins:
             if not isinstance(plugin_entry, dict):
                 continue
             source = plugin_entry.get("source")
@@ -516,7 +520,11 @@ class RepositoryContext:
         if not self.marketplace_data or "plugins" not in self.marketplace_data:
             return False
 
-        return any(p.get("name") == plugin_name for p in self.marketplace_data["plugins"])
+        plugins = self.marketplace_data["plugins"]
+        if not isinstance(plugins, list):
+            return False
+
+        return any(isinstance(p, dict) and p.get("name") == plugin_name for p in plugins)
 
     def get_plugin_metadata(self, plugin_path: Path) -> Optional[Dict[str, Any]]:
         """
