@@ -96,12 +96,13 @@ class TestStripFencedCodeBlocks:
         result = _strip_fenced_code_blocks(content)
         assert result.count("\n") == content.count("\n")
 
-    def test_indented_closing_fence_must_match_opening_indent(self):
-        """Closing fence must have the same indentation as the opening fence."""
+    def test_indented_closing_fence_allows_different_indent(self):
+        """Closing fence can have different indentation (0-3 spaces) than opening fence."""
         content = "Before\n  ```\n  code\n```\nAfter\n"
         result = _strip_fenced_code_blocks(content)
-        # Mismatched indent means it's not a valid fence pair
-        assert "code" in result
+        # Per CommonMark spec, closing fence can be 0-3 spaces regardless of opening
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
 
 
 class TestWeakLanguageDetector:
