@@ -180,7 +180,7 @@ class DiffTool:
         "required": ["path"],
     }
 
-    def __init__(self, root: Path, originals: Dict[Path, str]):
+    def __init__(self, root: Path, originals: Dict[Path, Optional[str]]):
         self._root = root
         self._originals = originals
 
@@ -190,7 +190,8 @@ class DiffTool:
             return "Error: path escapes repository root"
         if resolved not in self._originals:
             return "Error: no original snapshot for this file"
-        original = self._originals[resolved].splitlines(keepends=True)
+        orig = self._originals[resolved]
+        original = [] if orig is None else orig.splitlines(keepends=True)
         current = resolved.read_text(encoding="utf-8").splitlines(keepends=True)
         diff = difflib.unified_diff(original, current, fromfile=f"a/{path}", tofile=f"b/{path}")
         result = "".join(diff)

@@ -418,6 +418,103 @@ class TestLLMFixDryRun:
         assert len(result.diffs) > 0 or result.violations_before > 0
 
 
+class TestLLMFixNonExistentFile:
+    """Test that llm_fix correctly handles violations for files that don't exist yet."""
+
+    def _make_plugin_repo(self, tmp_path):
+        """Create a minimal plugin repo that triggers plugin-readme (missing README.md)."""
+        # .claude-plugin dir is needed to detect as SINGLE_PLUGIN repo type
+        claude_plugin = tmp_path / ".claude-plugin"
+        claude_plugin.mkdir()
+        plugin_json = claude_plugin / "plugin.json"
+        plugin_json.write_text(
+            '{"name": "test-plugin", "description": "A test plugin", "version": "1.0.0"}',
+            encoding="utf-8",
+        )
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "hello.md").write_text(
+            "---\ndescription: Say hello\n---\nSay hello to the user.\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_created_file_reported_as_modified(self, tmp_path):
+        """When LLM creates a missing file that fixes violations, it should be reported."""
+        self._make_plugin_repo(tmp_path)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        config.rules["plugin-readme"] = {"enabled": True}
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        # Verify that plugin-readme fires
+        violations = linter.run()
+        readme_violations = [v for v in violations if v.rule_id == "plugin-readme"]
+        assert len(readme_violations) >= 1, "Expected plugin-readme violation"
+
+        readme_content = "# test-plugin\n\nA test plugin.\n"
+        provider = _fake_fix_provider(readme_content, path="README.md")
+
+        result = linter.llm_fix(provider)
+        assert result.violations_before > 0
+        # The created file should be reported as modified
+        assert len(result.files_modified) > 0, "Created file should be in files_modified"
+        # Diffs should be generated for the new file
+        assert len(result.diffs) > 0, "Diff should be generated for created file"
+        # The file should exist on disk
+        assert (tmp_path / "README.md").exists()
+
+    def test_dry_run_cleans_up_created_file(self, tmp_path):
+        """In dry-run mode, files created by the LLM should be removed afterward."""
+        self._make_plugin_repo(tmp_path)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        config.rules["plugin-readme"] = {"enabled": True}
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        readme_content = "# test-plugin\n\nA test plugin.\n"
+        provider = _fake_fix_provider(readme_content, path="README.md")
+
+        result = linter.llm_fix(provider, dry_run=True)
+        # The file should NOT exist on disk after dry-run
+        assert not (tmp_path / "README.md").exists(), "Dry-run should clean up LLM-created files"
+        # files_modified should be empty in dry-run
+        assert len(result.files_modified) == 0
+        # But diffs should still be available
+        assert result.violations_before > 0
+
+    def test_rollback_deletes_created_file_on_no_improvement(self, tmp_path):
+        """When rollback fires for a created file, the file should be deleted (not restored)."""
+        self._make_plugin_repo(tmp_path)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        config.rules["plugin-readme"] = {"enabled": True}
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        # Use a provider that does nothing useful (doesn't write the file)
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content="I can't fix this.",
+                    tool_calls=[],
+                    usage=TokenUsage(100, 20),
+                ),
+            ]
+        )
+
+        result = linter.llm_fix(provider)
+        # File should NOT exist (LLM didn't create it)
+        assert not (tmp_path / "README.md").exists()
+        # All violations remain unfixed
+        assert result.violations_after == result.violations_before
+
+
 class TestLLMFixScopedLinting:
     """Test that LintTool only runs relevant rules."""
 
