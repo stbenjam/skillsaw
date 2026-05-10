@@ -437,3 +437,166 @@ def test_save_includes_version(tmp_path):
     parsed = yaml.safe_load(config_path.read_text())
     assert "version" in parsed
     assert parsed["version"] == config.version
+
+
+# --- Null/wrong-type YAML config field tests ---
+
+
+def test_null_rules_does_not_crash(temp_dir):
+    """rules: null should not crash, should behave like empty dict"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n")  # YAML parses bare key as None
+
+    config = LinterConfig.from_file(config_file)
+    assert config.rules == {}
+
+
+def test_null_custom_rules_does_not_crash(temp_dir):
+    """custom-rules: null should not crash, should behave like empty list"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("custom-rules:\n")
+
+    config = LinterConfig.from_file(config_file)
+    assert config.custom_rules == []
+
+
+def test_null_exclude_does_not_crash(temp_dir):
+    """exclude: null should not crash, should behave like empty list"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("exclude:\n")
+
+    config = LinterConfig.from_file(config_file)
+    assert config.exclude_patterns == []
+
+
+def test_null_strict_does_not_crash(temp_dir):
+    """strict: null should not crash, should behave like False"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("strict:\n")
+
+    config = LinterConfig.from_file(config_file)
+    assert config.strict is False
+
+
+def test_explicit_null_rules(temp_dir):
+    """rules: null (explicit) should not crash"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules: null\n")
+
+    config = LinterConfig.from_file(config_file)
+    assert config.rules == {}
+
+
+def test_rules_as_list_raises_error(temp_dir):
+    """rules as a list instead of dict should raise a clear ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  - plugin-json-required\n  - plugin-naming\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'rules' must be a mapping"):
+        LinterConfig.from_file(config_file)
+
+
+def test_custom_rules_wrong_type_raises_error(temp_dir):
+    """custom-rules as a string should raise a clear ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('custom-rules: "my_rule.py"\n')
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'custom-rules' must be a list"):
+        LinterConfig.from_file(config_file)
+
+
+def test_exclude_wrong_type_raises_error(temp_dir):
+    """exclude as a string should raise a clear ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('exclude: "*.pyc"\n')
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'exclude' must be a list"):
+        LinterConfig.from_file(config_file)
+
+
+def test_null_rule_config_value(temp_dir):
+    """A rule key with null value should not crash get_rule_config"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required:\n")
+
+    config = LinterConfig.from_file(config_file)
+    # Should not crash; null rule config treated as empty override
+    rule_config = config.get_rule_config("plugin-json-required")
+    # Should still get defaults
+    assert "enabled" in rule_config
+
+
+def test_all_fields_null_does_not_crash(temp_dir):
+    """Config with every field set to null should load without crashing"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\ncustom-rules:\nexclude:\nstrict:\n")
+
+    config = LinterConfig.from_file(config_file)
+    assert config.rules == {}
+    assert config.custom_rules == []
+    assert config.exclude_patterns == []
+    assert config.strict is False
+
+
+# --- Falsey wrong-type regression tests ---
+
+
+def test_rules_empty_list_raises_error(temp_dir):
+    """rules: [] (falsey but wrong type) should raise ValueError, not silently become {}"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules: []\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'rules' must be a mapping"):
+        LinterConfig.from_file(config_file)
+
+
+def test_custom_rules_empty_string_raises_error(temp_dir):
+    """custom-rules: '' (falsey but wrong type) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("custom-rules: ''\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'custom-rules' must be a list"):
+        LinterConfig.from_file(config_file)
+
+
+def test_exclude_empty_string_raises_error(temp_dir):
+    """exclude: '' (falsey but wrong type) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("exclude: ''\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'exclude' must be a list"):
+        LinterConfig.from_file(config_file)
+
+
+def test_strict_string_raises_error(temp_dir):
+    """strict: 'false' (string, not bool) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("strict: 'false'\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'strict' must be a boolean"):
+        LinterConfig.from_file(config_file)
+
+
+def test_rule_config_non_mapping_raises_error(temp_dir):
+    """rules: {plugin-json-required: true} should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required: true\n")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'rules.plugin-json-required' must be a mapping or null"):
+        LinterConfig.from_file(config_file)
