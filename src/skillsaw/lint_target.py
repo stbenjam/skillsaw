@@ -57,6 +57,14 @@ class LintTarget:
 
 
 @dataclass
+class MarketplaceNode(LintTarget):
+    """A marketplace plugins directory."""
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [marketplace]"
+
+
+@dataclass
 class PluginNode(LintTarget):
     """A plugin directory."""
 

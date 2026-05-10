@@ -8,7 +8,7 @@ import fnmatch
 from pathlib import Path
 from typing import Callable, List, Set, TYPE_CHECKING
 
-from .lint_target import LintTarget, PluginNode, SkillNode
+from .lint_target import LintTarget, MarketplaceNode, PluginNode, SkillNode
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -101,6 +101,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
+    marketplace_dir = context.root_path / "plugins"
+    marketplace_node: MarketplaceNode | None = None
+    if context.has_marketplace() and marketplace_dir.is_dir():
+        marketplace_node = MarketplaceNode(path=marketplace_dir)
+        root.children.append(marketplace_node)
+
     for plugin_path in context.plugins:
         if _is_in_compiled_dir(plugin_path):
             continue
@@ -122,7 +128,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 _add_content(plugin_node, rule_file, "rule")
 
         plugin_nodes[plugin_path.resolve()] = plugin_node
-        root.children.append(plugin_node)
+        if marketplace_node is not None and plugin_path.resolve().is_relative_to(
+            marketplace_dir.resolve()
+        ):
+            marketplace_node.children.append(plugin_node)
+        else:
+            root.children.append(plugin_node)
 
     # --- Skills (nest inside parent plugin when applicable) ---
     for skill_path in context.skills:
