@@ -8,6 +8,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -133,8 +134,8 @@ class MarketplaceRegistrationRule(Rule):
 
         marketplace_file = context.root_path / ".claude-plugin" / "marketplace.json"
 
-        for plugin_path in context.plugins:
-            plugin_name = context.get_plugin_name(plugin_path)
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_name = context.get_plugin_name(plugin_node.path)
 
             if not context.is_registered_in_marketplace(plugin_name):
                 violations.append(
@@ -177,10 +178,10 @@ class MarketplaceRegistrationRule(Rule):
             if any(p.get("name") == plugin_name for p in data["plugins"]):
                 continue
             rel_source = plugin_name
-            for plugin_path in context.plugins:
-                if context.get_plugin_name(plugin_path) == plugin_name:
+            for plugin_node in context.lint_tree.find(PluginNode):
+                if context.get_plugin_name(plugin_node.path) == plugin_name:
                     try:
-                        rel_source = str(plugin_path.relative_to(context.root_path))
+                        rel_source = str(plugin_node.path.relative_to(context.root_path))
                     except ValueError:
                         pass
                     break

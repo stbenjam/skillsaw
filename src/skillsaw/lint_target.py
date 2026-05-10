@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, List, Type, TypeVar
+from typing import Iterator, List, Optional, Type, TypeVar
 
 T = TypeVar("T", bound="LintTarget")
 
@@ -25,6 +25,16 @@ class LintTarget:
 
     def find(self, target_type: Type[T]) -> List[T]:
         return [n for n in self.walk() if isinstance(n, target_type)]
+
+    def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
+        """Find the nearest ancestor of ``target`` that is an instance of ``parent_type``."""
+        for node in self.walk():
+            if not isinstance(node, parent_type):
+                continue
+            for child in node.walk():
+                if child is target:
+                    return node
+        return None
 
     def content_blocks(self) -> list:
         from .rules.builtin.content_analysis import ContentBlock
@@ -78,3 +88,11 @@ class SkillNode(LintTarget):
 
     def tree_label(self) -> str:
         return f"{self.path.name}/ [skill]"
+
+
+@dataclass
+class CodeRabbitNode(LintTarget):
+    """A .coderabbit.yaml file container."""
+
+    def tree_label(self) -> str:
+        return ".coderabbit.yaml"

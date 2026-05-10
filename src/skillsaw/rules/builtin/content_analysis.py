@@ -470,6 +470,111 @@ class CodeRabbitContentBlock(ContentBlock):
         return results
 
 
+# ---------------------------------------------------------------------------
+# Typed content blocks — each hardcodes its category as a class default.
+# Rules discover blocks via ``find(BlockType)``; ``category`` is kept for
+# backward compat (context_budget limits key on it).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(eq=False)
+class InstructionBlock(FileContentBlock):
+    """Generic instruction files: .cursorrules, .windsurfrules, copilot-instructions, etc."""
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
+class ClaudeMdBlock(InstructionBlock):
+    """CLAUDE.md instruction file."""
+
+    category: str = "claude-md"
+
+
+@dataclass(eq=False)
+class AgentsMdBlock(InstructionBlock):
+    """AGENTS.md instruction file."""
+
+    category: str = "agents-md"
+
+
+@dataclass(eq=False)
+class GeminiMdBlock(InstructionBlock):
+    """GEMINI.md instruction file."""
+
+    category: str = "gemini-md"
+
+
+@dataclass(eq=False)
+class CursorRuleBlock(FrontmatterContentBlock):
+    """.cursor/rules/*.mdc files."""
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
+class CommandBlock(FileContentBlock):
+    """commands/*.md in plugins."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class AgentBlock(FileContentBlock):
+    """agents/*.md in plugins or APM agent files."""
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
+class SkillBlock(FileContentBlock):
+    """SKILL.md in skills."""
+
+    category: str = "skill"
+
+
+@dataclass(eq=False)
+class SkillRefBlock(FileContentBlock):
+    """references/*.md in skills."""
+
+    category: str = "skill-ref"
+
+
+@dataclass(eq=False)
+class PluginRuleBlock(FileContentBlock):
+    """rules/*.md in plugins."""
+
+    category: str = "rule"
+
+
+@dataclass(eq=False)
+class PromptBlock(FileContentBlock):
+    """APM prompt files."""
+
+    category: str = "prompt"
+
+
+@dataclass(eq=False)
+class ChatmodeBlock(FileContentBlock):
+    """APM chatmode files."""
+
+    category: str = "chatmode"
+
+
+@dataclass(eq=False)
+class ContextFileBlock(FileContentBlock):
+    """APM context files."""
+
+    category: str = "context"
+
+
+@dataclass(eq=False)
+class ExtraBlock(FileContentBlock):
+    """Extra content paths from config."""
+
+    category: str = "extra"
+
+
 # Backward compat aliases
 ContentFile = FileContentBlock
 

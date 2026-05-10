@@ -29,45 +29,39 @@ class AgentFrontmatterRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
-            agents_dir = plugin_path / "agents"
-            if not agents_dir.exists():
+        from skillsaw.rules.builtin.content_analysis import AgentBlock
+
+        for agent_block in context.lint_tree.find(AgentBlock):
+            agent_file = agent_block.path
+            content = read_text(agent_file)
+            if content is None:
+                violations.append(
+                    self.violation(f"Failed to read file: {agent_file}", file_path=agent_file)
+                )
                 continue
 
-            # Check all .md files in agents directory
-            for agent_file in agents_dir.glob("*.md"):
-                content = read_text(agent_file)
-                if content is None:
-                    violations.append(
-                        self.violation(f"Failed to read file: {agent_file}", file_path=agent_file)
-                    )
-                    continue
+            if not content.startswith("---"):
+                violations.append(self.violation("Missing frontmatter", file_path=agent_file))
+                continue
 
-                # Check for frontmatter
-                if not content.startswith("---"):
-                    violations.append(self.violation("Missing frontmatter", file_path=agent_file))
-                    continue
+            frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+            if not frontmatter_match:
+                violations.append(
+                    self.violation("Invalid frontmatter format", file_path=agent_file)
+                )
+                continue
 
-                # Parse frontmatter
-                frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
-                if not frontmatter_match:
-                    violations.append(
-                        self.violation("Invalid frontmatter format", file_path=agent_file)
-                    )
-                    continue
+            frontmatter = frontmatter_match.group(1)
 
-                frontmatter = frontmatter_match.group(1)
+            if "name:" not in frontmatter:
+                violations.append(
+                    self.violation("Missing 'name' in frontmatter", file_path=agent_file)
+                )
 
-                # Check for required fields
-                if "name:" not in frontmatter:
-                    violations.append(
-                        self.violation("Missing 'name' in frontmatter", file_path=agent_file)
-                    )
-
-                if "description:" not in frontmatter:
-                    violations.append(
-                        self.violation("Missing 'description' in frontmatter", file_path=agent_file)
-                    )
+            if "description:" not in frontmatter:
+                violations.append(
+                    self.violation("Missing 'description' in frontmatter", file_path=agent_file)
+                )
 
         return violations
 

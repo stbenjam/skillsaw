@@ -9,6 +9,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import PluginNode, SkillNode
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -29,8 +30,8 @@ class SkillFrontmatterRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
-            skills_dir = plugin_path / "skills"
+        for plugin_node in context.lint_tree.find(PluginNode):
+            skills_dir = plugin_node.path / "skills"
             if not skills_dir.exists():
                 continue
 
@@ -50,7 +51,6 @@ class SkillFrontmatterRule(Rule):
                     )
                     continue
 
-                # Check for frontmatter
                 if not content.startswith("---"):
                     violations.append(
                         self.violation(
@@ -59,14 +59,12 @@ class SkillFrontmatterRule(Rule):
                     )
                     continue
 
-                # Parse frontmatter
                 frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
                 if not frontmatter_match:
                     continue
 
                 frontmatter = frontmatter_match.group(1)
 
-                # Check for recommended fields
                 if "name:" not in frontmatter:
                     violations.append(
                         self.violation("Missing 'name' in SKILL.md frontmatter", file_path=skill_md)

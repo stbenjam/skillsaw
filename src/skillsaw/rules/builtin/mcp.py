@@ -7,6 +7,7 @@ from pathlib import Path
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -30,7 +31,8 @@ class McpValidJsonRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             # Check for .mcp.json at plugin root
             mcp_json = plugin_path / ".mcp.json"
             if mcp_json.exists():
@@ -272,7 +274,8 @@ class McpProhibitedRule(Rule):
         # Get allowlist from config
         allowlist = set(self.config.get("allowlist", []))
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             # Check for .mcp.json at plugin root
             mcp_json = plugin_path / ".mcp.json"
             if mcp_json.exists():

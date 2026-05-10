@@ -9,6 +9,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_json
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import PluginNode
 
 PLUGIN_REPO_TYPES = {RepositoryType.SINGLE_PLUGIN, RepositoryType.MARKETPLACE}
 
@@ -32,7 +33,8 @@ class PluginJsonRequiredRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
             if not plugin_json.exists():
                 # Check if plugin has strict: false in marketplace metadata
@@ -77,7 +79,8 @@ class PluginJsonValidRule(Rule):
         violations = []
         recommended_fields = self.config.get("recommended-fields", self.DEFAULT_RECOMMENDED_FIELDS)
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
 
             if not plugin_json.exists():
@@ -160,7 +163,8 @@ class PluginNamingRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             plugin_name = context.get_plugin_name(plugin_path)
 
             if not self._is_kebab_case(plugin_name):
@@ -210,7 +214,8 @@ class PluginReadmeRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             readme = plugin_path / "README.md"
             if not readme.exists():
                 violations.append(

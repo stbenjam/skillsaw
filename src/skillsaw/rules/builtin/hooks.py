@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 # Valid hook event types
@@ -115,7 +116,8 @@ class HooksJsonValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_path = plugin_node.path
             hooks_dir = plugin_path / "hooks"
             if not hooks_dir.exists():
                 continue

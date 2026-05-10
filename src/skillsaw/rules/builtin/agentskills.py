@@ -11,6 +11,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line, register_cache
 
 # agentskills.io spec constraints
@@ -136,7 +137,8 @@ class AgentSkillValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             skill_md = skill_path / "SKILL.md"
             frontmatter, error = _parse_skill_md(skill_path)
 
@@ -265,7 +267,8 @@ class AgentSkillNameRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             skill_md = skill_path / "SKILL.md"
             frontmatter, error = _parse_skill_md(skill_path)
 
@@ -374,7 +377,8 @@ class AgentSkillDescriptionRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             skill_md = skill_path / "SKILL.md"
             frontmatter, error = _parse_skill_md(skill_path)
 
@@ -443,7 +447,8 @@ class AgentSkillStructureRule(Rule):
         violations = []
         allowed = set(self.config.get("allowed_dirs", DEFAULT_ALLOWED_DIRS))
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             try:
                 for item in skill_path.iterdir():
                     if not item.is_dir() or item.name.startswith("."):
@@ -486,7 +491,8 @@ class AgentSkillEvalsRequiredRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             evals_json = skill_path / "evals" / "evals.json"
             if not evals_json.exists():
                 violations.append(
@@ -523,7 +529,8 @@ class AgentSkillEvalsRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
+        for skill_node in context.lint_tree.find(SkillNode):
+            skill_path = skill_node.path
             evals_dir = skill_path / "evals"
             evals_json = evals_dir / "evals.json"
 
