@@ -215,7 +215,7 @@ def main():
             rule = rules_by_id[rule_id]
             rule_config = defaults.rules.get(rule_id, {})
             enabled = rule_config.get("enabled", True)
-            severity = rule.default_severity().value
+            severity = rule_config.get("severity", rule.default_severity().value)
 
             if enabled == "auto":
                 severity_str = f"{severity} (auto)"
