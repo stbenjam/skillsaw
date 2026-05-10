@@ -516,7 +516,10 @@ class RepositoryContext:
         if not self.marketplace_data or "plugins" not in self.marketplace_data:
             return False
 
-        return any(p.get("name") == plugin_name for p in self.marketplace_data["plugins"])
+        return any(
+            isinstance(p, dict) and p.get("name") == plugin_name
+            for p in self.marketplace_data["plugins"]
+        )
 
     def get_plugin_metadata(self, plugin_path: Path) -> Optional[Dict[str, Any]]:
         """
