@@ -156,13 +156,15 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
     lines.append("| Severity | Rule | File | Message |")
     lines.append("|----------|------|------|---------|")
     for v in non_diff_violations:
+        if not isinstance(v, dict):
+            continue
         severity = v.get("severity", "warning")
         icon = SEVERITY_ICONS.get(severity, "")
-        path = v.get("file_path", "")
+        path = v.get("file_path", "").replace("|", "\\|")
         line = v.get("line")
         loc = f"`{path}:{line}`" if line else f"`{path}`"
-        rule_id = v.get("rule_id", "unknown")
-        message = v.get("message", "")
+        rule_id = v.get("rule_id", "unknown").replace("|", "\\|")
+        message = v.get("message", "").replace("|", "\\|")
         lines.append(f"| {icon} {severity} | `{rule_id}` | {loc} | {message} |")
     lines.append(f"\n{SUMMARY_MARKER}")
     body = "\n".join(lines)
@@ -191,8 +193,9 @@ def main():
         return
 
     missing = []
-    for var in ("GITHUB_REPOSITORY", "PR_NUMBER", "HEAD_SHA"):
-        if var not in os.environ:
+    for var in ("GITHUB_TOKEN", "GITHUB_REPOSITORY", "PR_NUMBER", "HEAD_SHA"):
+        value = os.environ.get(var)
+        if value is None or not value.strip():
             missing.append(var)
     if missing:
         print(
@@ -205,6 +208,9 @@ def main():
     head_sha = os.environ["HEAD_SHA"]
 
     violations = report.get("violations", [])
+    if not isinstance(violations, list):
+        print("Invalid report format: 'violations' must be a list.", file=sys.stderr)
+        return
     if not violations:
         print("No violations found.")
         try:
@@ -229,6 +235,8 @@ def main():
     new_comments = []
     non_diff_violations = []
     for v in violations:
+        if not isinstance(v, dict):
+            continue
         path = v.get("file_path")
         line = v.get("line")
         if not path:

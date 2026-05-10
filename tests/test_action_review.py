@@ -62,13 +62,13 @@ class TestMissingEnvVars:
         return str(f)
 
     def test_all_missing(self, tmp_path):
+        """All required vars missing triggers sys.exit(1)."""
         report = self._write_report(tmp_path)
-        env = {"SKILLSAW_REPORT_FILE": report, "GITHUB_TOKEN": "t"}
-        # Remove the three required vars if they exist
+        env = {"SKILLSAW_REPORT_FILE": report}
         clean = {
             k: v
             for k, v in os.environ.items()
-            if k not in ("GITHUB_REPOSITORY", "PR_NUMBER", "HEAD_SHA")
+            if k not in ("GITHUB_TOKEN", "GITHUB_REPOSITORY", "PR_NUMBER", "HEAD_SHA")
         }
         clean.update(env)
         with mock.patch.dict(os.environ, clean, clear=True):
@@ -175,3 +175,151 @@ class TestMalformedViolations:
             review.upsert_summary_comment("o/r", "1", violations)
         # The POST call should have been made without crashing
         assert api.call_count == 2  # one GET page, one POST
+
+    def test_non_dict_violations_skipped(self, tmp_path):
+        """Non-dict entries in the violations list are silently skipped."""
+        report_path = tmp_path / "report.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "violations": [
+                        "not-a-dict",
+                        None,
+                        42,
+                        {"file_path": "ok.py", "rule_id": "R1", "message": "good"},
+                    ]
+                }
+            )
+        )
+        env = {
+            "SKILLSAW_REPORT_FILE": str(report_path),
+            "GITHUB_TOKEN": "t",
+            "GITHUB_REPOSITORY": "owner/repo",
+            "PR_NUMBER": "1",
+            "HEAD_SHA": "abc123",
+        }
+        diff_files = {"ok.py"}
+        diff_lines = set()
+        captured = []
+
+        def fake_sync(repo, pr, comments):
+            captured.extend(comments)
+            return comments
+
+        with mock.patch.dict(os.environ, env):
+            with mock.patch.object(review, "get_diff_info", return_value=(diff_files, diff_lines)):
+                with mock.patch.object(review, "sync_comments", side_effect=fake_sync):
+                    with mock.patch.object(review, "upsert_summary_comment"):
+                        with mock.patch.object(review, "github_api"):
+                            review.main()
+        # Only the valid dict violation should produce a comment
+        assert len(captured) == 1
+
+    def test_non_dict_violations_skipped_in_summary(self):
+        """Non-dict entries in non_diff_violations are skipped by the summary."""
+        violations = [
+            "not-a-dict",
+            None,
+            {"severity": "error", "file_path": "x.py", "rule_id": "R1", "message": "m"},
+        ]
+        with mock.patch.object(review, "github_api") as api:
+            api.return_value = []
+            review.upsert_summary_comment("o/r", "1", violations)
+        # Should POST without crashing; only one valid row
+        assert api.call_count == 2
+
+    def test_violations_not_a_list(self, tmp_path, capsys):
+        """If violations is not a list, main() returns early with an error."""
+        report_path = tmp_path / "report.json"
+        report_path.write_text(json.dumps({"violations": "oops"}))
+        env = {
+            "SKILLSAW_REPORT_FILE": str(report_path),
+            "GITHUB_TOKEN": "t",
+            "GITHUB_REPOSITORY": "owner/repo",
+            "PR_NUMBER": "1",
+            "HEAD_SHA": "abc123",
+        }
+        with mock.patch.dict(os.environ, env):
+            review.main()
+        assert "must be a list" in capsys.readouterr().err
+
+    def test_missing_github_token(self, tmp_path, capsys):
+        """Missing GITHUB_TOKEN is caught by env var validation."""
+        report_path = tmp_path / "report.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "violations": [
+                        {
+                            "file_path": "a.py",
+                            "severity": "error",
+                            "rule_id": "R1",
+                            "message": "bad",
+                        }
+                    ]
+                }
+            )
+        )
+        env = {
+            "SKILLSAW_REPORT_FILE": str(report_path),
+            "GITHUB_REPOSITORY": "owner/repo",
+            "PR_NUMBER": "1",
+            "HEAD_SHA": "abc",
+        }
+        clean = {k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"}
+        clean.update(env)
+        with mock.patch.dict(os.environ, clean, clear=True):
+            with pytest.raises(SystemExit):
+                review.main()
+        assert "GITHUB_TOKEN" in capsys.readouterr().err
+
+    def test_empty_env_var_treated_as_missing(self, tmp_path, capsys):
+        """Empty or whitespace-only env vars are treated as missing."""
+        report_path = tmp_path / "report.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "violations": [
+                        {
+                            "file_path": "a.py",
+                            "severity": "error",
+                            "rule_id": "R1",
+                            "message": "bad",
+                        }
+                    ]
+                }
+            )
+        )
+        env = {
+            "SKILLSAW_REPORT_FILE": str(report_path),
+            "GITHUB_TOKEN": "t",
+            "GITHUB_REPOSITORY": "  ",
+            "PR_NUMBER": "",
+            "HEAD_SHA": "abc",
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            with pytest.raises(SystemExit):
+                review.main()
+        err = capsys.readouterr().err
+        assert "GITHUB_REPOSITORY" in err
+        assert "PR_NUMBER" in err
+        assert "HEAD_SHA" not in err
+
+    def test_pipe_chars_escaped_in_summary(self):
+        """Pipe characters in violation fields are escaped in the Markdown table."""
+        violations = [
+            {
+                "severity": "error",
+                "file_path": "path|with|pipes.py",
+                "rule_id": "rule|id",
+                "message": "msg|with|pipe",
+            }
+        ]
+        with mock.patch.object(review, "github_api") as api:
+            api.return_value = []
+            review.upsert_summary_comment("o/r", "1", violations)
+        posted_body = api.call_args[0][2]["body"]
+        # The literal pipe chars should be escaped to avoid breaking the table
+        assert "rule\\|id" in posted_body
+        assert "msg\\|with\\|pipe" in posted_body
+        assert "path\\|with\\|pipes.py" in posted_body
