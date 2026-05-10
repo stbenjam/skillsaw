@@ -120,12 +120,22 @@ _long_section_fixed = (
     "# Instructions\n\n## Phase 1\n\n"
     + "\n".join(
         f"Configure application setting number {i} to the recommended production value for optimal performance."
-        for i in range(30)
+        for i in range(15)
     )
     + "\n\n## Phase 2\n\n"
     + "\n".join(
         f"Configure application setting number {i} to the recommended production value for optimal performance."
-        for i in range(30, 60)
+        for i in range(15, 30)
+    )
+    + "\n\n## Phase 3\n\n"
+    + "\n".join(
+        f"Configure application setting number {i} to the recommended production value for optimal performance."
+        for i in range(30, 45)
+    )
+    + "\n\n## Phase 4\n\n"
+    + "\n".join(
+        f"Configure application setting number {i} to the recommended production value for optimal performance."
+        for i in range(45, 60)
     )
     + "\n"
 )
@@ -168,15 +178,15 @@ _low_action_content = (
 _low_action_fixed = (
     "# Guidelines\n\n"
     "Use microservices architecture for all new services.\n"
-    "Build the frontend as a single-page application with React.\n"
-    "Use normalized tables in the database schema.\n"
-    "Deploy using containers via `docker compose up`.\n"
-    "Monitor with Prometheus at `http://prometheus:9090`.\n"
-    "Send logs to the centralized logging service.\n"
-    "Use JWT tokens for authentication.\n"
-    "Implement role-based authorization checks.\n"
-    "Cache frequently accessed data in Redis.\n"
-    "Use RabbitMQ for async message processing.\n"
+    "Build the frontend as a single-page application with `npm run build`.\n"
+    "Run `alembic upgrade head` to apply normalized table migrations.\n"
+    "Deploy using containers via `docker compose up -d`.\n"
+    "Monitor services with `curl http://prometheus:9090/api/v1/targets`.\n"
+    "Configure centralized logging in `config/logging.yaml`.\n"
+    "Set JWT secret in `src/auth/config.ts` and run `npm run auth:init`.\n"
+    "Define role permissions in `src/auth/roles.yaml`.\n"
+    "Configure Redis caching in `src/cache/redis.conf`.\n"
+    "Run `rabbitmqctl status` to verify the message queue is running.\n"
 )
 
 
@@ -320,6 +330,10 @@ class TestLLMFixByRule:
 
         result = linter.llm_fix(provider, min_severity=case.min_severity)
         assert result.violations_before > 0
+        assert result.violations_after < result.violations_before, (
+            f"{case.rule_id}: expected improvement, got "
+            f"{result.violations_before} → {result.violations_after}"
+        )
 
     @pytest.mark.parametrize("case", FIX_CASES, ids=[c.rule_id for c in FIX_CASES])
     @live
