@@ -200,6 +200,7 @@ class TestAutofixConfidence:
     def test_values(self):
         assert AutofixConfidence.SAFE.value == "safe"
         assert AutofixConfidence.SUGGEST.value == "suggest"
+        assert AutofixConfidence.LLM.value == "llm"
 
 
 class TestRuleSupportsAutofix:
@@ -329,6 +330,100 @@ class TestApplyFixes:
         applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
         assert len(applied) == 1
         assert target.read_text() == "fixed"
+
+    def test_apply_skips_llm_by_default(self, temp_dir):
+        target = temp_dir / "test.txt"
+        target.write_text("original")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.LLM,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        applied = Linter.apply_fixes([fix])
+        assert len(applied) == 0
+        assert target.read_text() == "original"
+
+    def test_apply_skips_llm_when_suggest(self, temp_dir):
+        target = temp_dir / "test.txt"
+        target.write_text("original")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.LLM,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
+        assert len(applied) == 0
+        assert target.read_text() == "original"
+
+    def test_apply_llm_when_requested(self, temp_dir):
+        target = temp_dir / "test.txt"
+        target.write_text("original")
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.LLM,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.LLM)
+        assert len(applied) == 1
+        assert target.read_text() == "fixed"
+
+    def test_apply_llm_includes_safe_and_suggest(self, temp_dir):
+        safe_target = temp_dir / "safe.txt"
+        safe_target.write_text("original-safe")
+
+        suggest_target = temp_dir / "suggest.txt"
+        suggest_target.write_text("original-suggest")
+
+        llm_target = temp_dir / "llm.txt"
+        llm_target.write_text("original-llm")
+
+        fixes = [
+            AutofixResult(
+                rule_id="a",
+                file_path=safe_target,
+                confidence=AutofixConfidence.SAFE,
+                original_content="original-safe",
+                fixed_content="fixed-safe",
+                description="safe fix",
+            ),
+            AutofixResult(
+                rule_id="b",
+                file_path=suggest_target,
+                confidence=AutofixConfidence.SUGGEST,
+                original_content="original-suggest",
+                fixed_content="fixed-suggest",
+                description="suggest fix",
+            ),
+            AutofixResult(
+                rule_id="c",
+                file_path=llm_target,
+                confidence=AutofixConfidence.LLM,
+                original_content="original-llm",
+                fixed_content="fixed-llm",
+                description="llm fix",
+            ),
+        ]
+
+        applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.LLM)
+        assert len(applied) == 3
+        assert safe_target.read_text() == "fixed-safe"
+        assert suggest_target.read_text() == "fixed-suggest"
+        assert llm_target.read_text() == "fixed-llm"
 
     def test_apply_mixed_confidence(self, temp_dir):
         safe_target = temp_dir / "safe.txt"

@@ -213,15 +213,17 @@ class Linter:
         Args:
             fixes: Autofix results to apply
             confidence: Minimum confidence level to apply (SAFE = only safe,
-                        SUGGEST = safe + suggest)
+                        SUGGEST = safe + suggest, LLM = all)
 
         Returns:
             List of fixes that were actually applied
         """
         applied: List[AutofixResult] = []
         allowed = {AutofixConfidence.SAFE}
-        if confidence == AutofixConfidence.SUGGEST:
+        if confidence in (AutofixConfidence.SUGGEST, AutofixConfidence.LLM):
             allowed.add(AutofixConfidence.SUGGEST)
+        if confidence == AutofixConfidence.LLM:
+            allowed.add(AutofixConfidence.LLM)
 
         for fix in fixes:
             if fix.confidence not in allowed:
