@@ -156,11 +156,14 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
     lines.append("| Severity | Rule | File | Message |")
     lines.append("|----------|------|------|---------|")
     for v in non_diff_violations:
-        icon = SEVERITY_ICONS.get(v["severity"], "")
+        severity = v.get("severity", "warning")
+        icon = SEVERITY_ICONS.get(severity, "")
         path = v.get("file_path", "")
         line = v.get("line")
         loc = f"`{path}:{line}`" if line else f"`{path}`"
-        lines.append(f"| {icon} {v['severity']} | `{v['rule_id']}` | {loc} | {v['message']} |")
+        rule_id = v.get("rule_id", "unknown")
+        message = v.get("message", "")
+        lines.append(f"| {icon} {severity} | `{rule_id}` | {loc} | {message} |")
     lines.append(f"\n{SUMMARY_MARKER}")
     body = "\n".join(lines)
 
@@ -172,7 +175,7 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
 
 def main():
     report_file = os.environ.get("SKILLSAW_REPORT_FILE", "")
-    if not report_file or not os.path.exists(report_file):
+    if not report_file or not os.path.isfile(report_file):
         print("No skillsaw report found, skipping review.", file=sys.stderr)
         return
 
@@ -187,6 +190,16 @@ def main():
         print(f"Failed to parse report JSON: {e}", file=sys.stderr)
         return
 
+    missing = []
+    for var in ("GITHUB_REPOSITORY", "PR_NUMBER", "HEAD_SHA"):
+        if var not in os.environ:
+            missing.append(var)
+    if missing:
+        print(
+            f"Missing required environment variable(s): {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     repo = os.environ["GITHUB_REPOSITORY"]
     pr_number = os.environ["PR_NUMBER"]
     head_sha = os.environ["HEAD_SHA"]
@@ -225,10 +238,13 @@ def main():
             non_diff_violations.append(v)
             continue
 
-        fp = fingerprint(v["rule_id"], path, v["message"])
-        icon = SEVERITY_ICONS.get(v["severity"], "")
+        rule_id = v.get("rule_id", "unknown")
+        message = v.get("message", "")
+        severity = v.get("severity", "warning")
+        fp = fingerprint(rule_id, path, message)
+        icon = SEVERITY_ICONS.get(severity, "")
         body = (
-            f"{icon} **{v['severity']}** (`{v['rule_id']}`): {v['message']}\n"
+            f"{icon} **{severity}** (`{rule_id}`): {message}\n"
             f"<!-- skillsaw:{fp} -->"
         )
 
