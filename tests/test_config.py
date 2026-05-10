@@ -689,3 +689,17 @@ def test_explicit_enabled_auto_with_non_matching_repo(valid_plugin):
         config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
         is False
     )
+
+
+def test_severity_override_on_auto_rule_respects_repo_type(valid_plugin):
+    """Overriding severity on an 'auto' rule should not bypass repo type checks"""
+    context = RepositoryContext(valid_plugin)
+    # marketplace-registration is enabled: "auto" for MARKETPLACE repos.
+    # valid_plugin is SINGLE_PLUGIN.
+    config = LinterConfig(
+        rules={"marketplace-registration": {"severity": "warning"}},
+    )
+    assert (
+        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        is False
+    )
