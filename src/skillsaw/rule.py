@@ -61,7 +61,17 @@ class Rule(ABC):
 
         # Get severity from config or use default
         severity_str = self.config.get("severity", self.default_severity().value)
-        self._severity = Severity(severity_str)
+        if severity_str is None:
+            self._severity = self.default_severity()
+        else:
+            try:
+                self._severity = Severity(severity_str)
+            except (ValueError, KeyError):
+                valid = ", ".join(s.value for s in Severity)
+                raise ValueError(
+                    f"Invalid severity '{severity_str}' for rule '{self.rule_id}'. "
+                    f"Valid values: {valid}"
+                )
 
     @property
     @abstractmethod
