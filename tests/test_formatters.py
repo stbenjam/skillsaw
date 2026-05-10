@@ -435,6 +435,15 @@ def test_sarif_synthetic_descriptor_for_unknown_rule_id(valid_plugin):
     rule_ids = {r["id"] for r in rules}
     assert "custom-unknown-rule" in rule_ids
 
+    # Fallback description should be the raw rule_id itself
+    descriptor = next(r for r in rules if r["id"] == "custom-unknown-rule")
+    assert descriptor["shortDescription"]["text"] == "custom-unknown-rule"
+
+    # The result must reference the synthetic descriptor
+    results = data["runs"][0]["results"]
+    assert len(results) == 1
+    assert results[0]["ruleId"] == "custom-unknown-rule"
+
 
 # --- HTML formatter ---
 
