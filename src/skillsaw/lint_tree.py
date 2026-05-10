@@ -99,17 +99,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         for md in sorted(clinerules.glob("*.md")):
             _add_content(root, md, "instruction")
 
-    # --- Skills ---
-    for skill_path in context.skills:
-        skill_node = SkillNode(path=skill_path)
-        _add_content(skill_node, skill_path / "SKILL.md", "skill")
-        refs_dir = skill_path / "references"
-        if refs_dir.is_dir():
-            for ref_file in sorted(refs_dir.glob("*.md")):
-                _add_content(skill_node, ref_file, "skill-ref")
-        root.children.append(skill_node)
-
-    # --- Plugins ---
+    # --- Plugins (build first so skills can nest inside them) ---
+    plugin_nodes: dict[Path, PluginNode] = {}
     for plugin_path in context.plugins:
         if _is_in_compiled_dir(plugin_path):
             continue
@@ -130,7 +121,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add_content(plugin_node, rule_file, "rule")
 
+        plugin_nodes[plugin_path.resolve()] = plugin_node
         root.children.append(plugin_node)
+
+    # --- Skills (nest inside parent plugin when applicable) ---
+    for skill_path in context.skills:
+        skill_node = SkillNode(path=skill_path)
+        _add_content(skill_node, skill_path / "SKILL.md", "skill")
+        refs_dir = skill_path / "references"
+        if refs_dir.is_dir():
+            for ref_file in sorted(refs_dir.glob("*.md")):
+                _add_content(skill_node, ref_file, "skill-ref")
+
+        parent_plugin = None
+        for plugin_resolved, plugin_node in plugin_nodes.items():
+            if skill_path.resolve().is_relative_to(plugin_resolved):
+                parent_plugin = plugin_node
+                break
+        if parent_plugin is not None:
+            parent_plugin.children.append(skill_node)
+        else:
+            root.children.append(skill_node)
 
     # --- .coderabbit.yaml ---
     cr_blocks = CodeRabbitContentBlock.gather(context, seen, _is_excluded)
