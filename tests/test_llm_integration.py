@@ -417,6 +417,59 @@ class TestLLMFixDryRun:
         assert len(result.files_modified) == 0
         assert len(result.diffs) > 0 or result.violations_before > 0
 
+    def test_dry_run_rollback_not_failure(self, tmp_path):
+        """Dry-run with LLM changes that don't improve violations should not
+        be treated as a fatal error by the CLI (gh issue: exit-code-1 in
+        dry-run when result.success is False)."""
+        content = "# Instructions\n\nTry to be careful when deploying.\n"
+        _make_dot_claude_repo(tmp_path, content)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        # LLM produces worse content — rollback expected
+        worse_content = (
+            "# Instructions\n\nTry to be careful when deploying.\n"
+            "Consider using caution.\nIf possible, be careful.\n"
+        )
+        rel_path = "CLAUDE.md"
+        provider = FakeProvider(
+            [
+                CompletionResult(
+                    content=None,
+                    tool_calls=[ToolCall(id="1", name="read_file", arguments={"path": rel_path})],
+                    usage=TokenUsage(100, 20),
+                ),
+                CompletionResult(
+                    content=None,
+                    tool_calls=[
+                        ToolCall(
+                            id="2",
+                            name="write_file",
+                            arguments={"path": rel_path, "content": worse_content},
+                        )
+                    ],
+                    usage=TokenUsage(100, 50),
+                ),
+                CompletionResult(
+                    content="Done.",
+                    tool_calls=[],
+                    usage=TokenUsage(100, 20),
+                ),
+            ],
+        )
+
+        result = linter.llm_fix(provider, dry_run=True)
+        # Original file must be untouched
+        actual = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert actual == content
+        # result.success is False because no improvements were kept, but
+        # in dry-run the CLI should treat this as exit 0 (informational)
+        assert not result.success
+        assert len(result.files_modified) == 0
+
 
 class TestLLMFixScopedLinting:
     """Test that LintTool only runs relevant rules."""
