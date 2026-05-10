@@ -167,7 +167,7 @@ class RepositoryContext:
         """Walk the repo looking for .instructions.md, skipping heavy directories."""
         for dirpath, dirnames, filenames in os.walk(self.root_path):
             dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
-            if ".instructions.md" in filenames:
+            if any(f.endswith(".instructions.md") for f in filenames):
                 return True
         return False
 

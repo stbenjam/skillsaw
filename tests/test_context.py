@@ -283,6 +283,15 @@ def test_detected_formats_copilot(temp_dir):
     assert HAS_COPILOT in context.detected_formats
 
 
+def test_detected_formats_copilot_named_instructions_md(temp_dir):
+    """Detect <name>.instructions.md files (e.g. coding.instructions.md)"""
+    instr_dir = temp_dir / ".github" / "instructions"
+    instr_dir.mkdir(parents=True)
+    (instr_dir / "coding.instructions.md").write_text("# Coding guidelines")
+    context = RepositoryContext(temp_dir)
+    assert HAS_COPILOT in context.detected_formats
+
+
 def test_detected_formats_gemini(temp_dir):
     """Detect GEMINI.md at root"""
     (temp_dir / "GEMINI.md").write_text("# Gemini instructions")
