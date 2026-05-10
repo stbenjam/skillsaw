@@ -241,8 +241,8 @@ def test_plugin_json_valid_version_rejects_trailing_garbage(temp_dir):
         "1.0.0!",
     ]
 
-    for bad_version in invalid_versions:
-        plugin_dir = temp_dir / "ver-plugin"
+    for i, bad_version in enumerate(invalid_versions):
+        plugin_dir = temp_dir / f"ver-plugin-invalid-{i}"
         plugin_dir.mkdir(exist_ok=True)
 
         claude_dir = plugin_dir / ".claude-plugin"
@@ -281,13 +281,15 @@ def test_plugin_json_valid_version_accepts_semver_prerelease(temp_dir):
         "10.20.30",
         "1.0.0-alpha",
         "1.0.0-alpha.1",
+        "1.0.0-alpha-1",
         "1.0.0-0.3.7",
         "1.0.0+build.123",
+        "1.0.0+build-meta.123",
         "1.0.0-beta+build.456",
     ]
 
-    for good_version in valid_versions:
-        plugin_dir = temp_dir / "ver-plugin"
+    for i, good_version in enumerate(valid_versions):
+        plugin_dir = temp_dir / f"ver-plugin-valid-{i}"
         plugin_dir.mkdir(exist_ok=True)
 
         claude_dir = plugin_dir / ".claude-plugin"

@@ -112,7 +112,7 @@ class PluginJsonValidRule(Rule):
             if "version" in data:
                 version = data["version"]
                 if not re.match(
-                    r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$", str(version)
+                    r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$", str(version)
                 ):
                     violations.append(
                         self.violation(
