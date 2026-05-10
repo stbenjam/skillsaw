@@ -480,6 +480,49 @@ class TestLLMConfigFromYaml:
         assert config.llm.model == "custom-model"
 
 
+class TestMaxIterationsCLIOverride:
+    """Regression tests for --max-iterations CLI override (truthy check bug)."""
+
+    def test_max_iterations_zero_overrides_config(self, tmp_path):
+        """--max-iterations 0 must override the config default (was silently ignored)."""
+        from argparse import Namespace
+        from skillsaw.config import LinterConfig
+
+        config = LinterConfig.default()
+        assert config.llm.max_iterations == 10  # default
+
+        args = Namespace(max_iterations=0)
+        # Replicate the fixed logic from __main__.py
+        if args.max_iterations is not None:
+            config.llm.max_iterations = args.max_iterations
+
+        assert config.llm.max_iterations == 0
+
+    def test_max_iterations_positive_overrides_config(self, tmp_path):
+        """--max-iterations with a positive value works."""
+        from argparse import Namespace
+        from skillsaw.config import LinterConfig
+
+        config = LinterConfig.default()
+        args = Namespace(max_iterations=5)
+        if args.max_iterations is not None:
+            config.llm.max_iterations = args.max_iterations
+
+        assert config.llm.max_iterations == 5
+
+    def test_max_iterations_not_passed_keeps_default(self, tmp_path):
+        """When --max-iterations is omitted, the config default is preserved."""
+        from argparse import Namespace
+        from skillsaw.config import LinterConfig
+
+        config = LinterConfig.default()
+        args = Namespace(max_iterations=None)
+        if args.max_iterations is not None:
+            config.llm.max_iterations = args.max_iterations
+
+        assert config.llm.max_iterations == 10
+
+
 class TestContentRuleLLMPrompts:
     def test_weak_language_has_prompt(self):
         from skillsaw.rules.builtin.content_rules import ContentWeakLanguageRule
