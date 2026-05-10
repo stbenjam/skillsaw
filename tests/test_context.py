@@ -246,6 +246,27 @@ def test_dot_claude_skills_discovery(temp_dir):
     assert context.skills[0].resolve() == skill_dir.resolve()
 
 
+def test_plugins_file_not_detected_as_marketplace(temp_dir):
+    """A regular file named 'plugins' should not be detected as a marketplace"""
+    (temp_dir / "plugins").write_text("This is a plain file, not a directory")
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type != RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
+
+
+def test_plugins_file_with_marketplace_json_no_crash(temp_dir):
+    """A file named 'plugins' should be ignored even if marketplace.json exists"""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text(json.dumps({"name": "test", "plugins": []}))
+    (temp_dir / "plugins").write_text("Not a directory")
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
+
+
 def test_dot_claude_not_detected_empty(temp_dir):
     """Empty .claude/ without marker dirs should not be DOT_CLAUDE"""
     claude_dir = temp_dir / ".claude"
