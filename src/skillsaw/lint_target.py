@@ -28,13 +28,15 @@ class LintTarget:
 
     def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
         """Find the nearest ancestor of ``target`` that is an instance of ``parent_type``."""
+        result: Optional[T] = None
         for node in self.walk():
             if not isinstance(node, parent_type):
                 continue
             for child in node.walk():
                 if child is target:
-                    return node
-        return None
+                    result = node
+                    break
+        return result
 
     def content_blocks(self) -> list:
         from .rules.builtin.content_analysis import ContentBlock
