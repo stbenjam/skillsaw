@@ -18,6 +18,7 @@ from skillsaw.rules.builtin.command_format import (
     CommandFrontmatterRule,
     CommandNameFormatRule,
 )
+from skillsaw.rules.builtin.skills import SkillFrontmatterRule
 from skillsaw.rules.builtin.marketplace import (
     MarketplaceJsonValidRule,
     MarketplaceRegistrationRule,
@@ -556,3 +557,88 @@ def test_valid_severity_override():
     """Test that a valid severity string overrides the default"""
     rule = PluginJsonRequiredRule({"severity": "warning"})
     assert rule.severity == Severity.WARNING
+
+
+# --- substring false-negative tests ---
+
+
+def test_skill_frontmatter_substring_does_not_mask_missing_name(temp_dir):
+    """Test that 'full-name:' in SKILL.md frontmatter doesn't suppress 'Missing name' violation"""
+    import json
+
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    with open(claude_dir / "plugin.json", "w") as f:
+        json.dump({"name": "test-plugin"}, f)
+
+    skills_dir = plugin_dir / "skills"
+    skills_dir.mkdir()
+    skill_dir = skills_dir / "my-skill"
+    skill_dir.mkdir()
+
+    (skill_dir / "SKILL.md").write_text(
+        "---\nfull-name: My Skill\ndescription: A skill\n---\n\n# My Skill\n"
+    )
+
+    context = RepositoryContext(plugin_dir)
+    rule = SkillFrontmatterRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "name" in violations[0].message.lower()
+
+
+def test_skill_frontmatter_substring_does_not_mask_missing_description(temp_dir):
+    """Test that 'long-description:' in SKILL.md frontmatter doesn't suppress 'Missing description' violation"""
+    import json
+
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    with open(claude_dir / "plugin.json", "w") as f:
+        json.dump({"name": "test-plugin"}, f)
+
+    skills_dir = plugin_dir / "skills"
+    skills_dir.mkdir()
+    skill_dir = skills_dir / "my-skill"
+    skill_dir.mkdir()
+
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: My Skill\nlong-description: Not real\n---\n\n# My Skill\n"
+    )
+
+    context = RepositoryContext(plugin_dir)
+    rule = SkillFrontmatterRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "description" in violations[0].message.lower()
+
+
+def test_command_frontmatter_substring_does_not_mask_missing_description(temp_dir):
+    """Test that 'long-description:' in command frontmatter doesn't suppress 'Missing description' violation"""
+    import json
+
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    with open(claude_dir / "plugin.json", "w") as f:
+        json.dump({"name": "test-plugin"}, f)
+
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir()
+
+    (commands_dir / "test-cmd.md").write_text(
+        "---\nlong-description: Not real\n---\n\n## Name\ntest-plugin:test-cmd\n"
+    )
+
+    context = RepositoryContext(plugin_dir)
+    rule = CommandFrontmatterRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "description" in violations[0].message.lower()

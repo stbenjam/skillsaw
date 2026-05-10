@@ -130,7 +130,7 @@ class CommandFrontmatterRule(Rule):
                 frontmatter = frontmatter_match.group(1)
 
                 # Check for required fields
-                if "description:" not in frontmatter:
+                if not re.search(r"^description\s*:", frontmatter, re.MULTILINE):
                     violations.append(
                         self.violation("Missing 'description' in frontmatter", file_path=cmd_file)
                     )
@@ -160,7 +160,9 @@ class CommandFrontmatterRule(Rule):
                 )
             elif "Missing 'description'" in v.message and original.startswith("---"):
                 fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
-                if fm_match:
+                if fm_match and not re.search(
+                    r"^description\s*:", fm_match.group(1), re.MULTILINE
+                ):
                     fm_end = fm_match.end()
                     fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
                     fixed += original[fm_end:]

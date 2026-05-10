@@ -67,12 +67,12 @@ class SkillFrontmatterRule(Rule):
                 frontmatter = frontmatter_match.group(1)
 
                 # Check for recommended fields
-                if "name:" not in frontmatter:
+                if not re.search(r"^name\s*:", frontmatter, re.MULTILINE):
                     violations.append(
                         self.violation("Missing 'name' in SKILL.md frontmatter", file_path=skill_md)
                     )
 
-                if "description:" not in frontmatter:
+                if not re.search(r"^description\s*:", frontmatter, re.MULTILINE):
                     violations.append(
                         self.violation(
                             "Missing 'description' in SKILL.md frontmatter", file_path=skill_md
@@ -148,9 +148,13 @@ class SkillFrontmatterRule(Rule):
                 if fm_match:
                     fm_text = fm_match.group(1)
                     additions = []
-                    if missing_name and "name:" not in fm_text:
+                    if missing_name and not re.search(
+                        r"^name\s*:", fm_text, re.MULTILINE
+                    ):
                         additions.append(f"name: {file_path.parent.name}")
-                    if missing_desc and "description:" not in fm_text:
+                    if missing_desc and not re.search(
+                        r"^description\s*:", fm_text, re.MULTILINE
+                    ):
                         additions.append("description: ")
                     if additions:
                         insert = "\n".join(additions) + "\n"

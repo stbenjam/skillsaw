@@ -248,6 +248,64 @@ def test_fix_both_name_and_description_missing(plugin_with_missing_both_fields):
     assert len(fix.violations_fixed) == 2
 
 
+def test_substring_field_does_not_mask_missing_name(temp_dir):
+    """Test that a field like 'full-name:' does not suppress 'Missing name' violation"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+
+    agents_dir = plugin_dir / "agents"
+    agents_dir.mkdir()
+
+    # frontmatter has 'full-name' but NOT 'name'
+    agent_content = """---
+full-name: Some Agent
+description: "An agent"
+---
+
+# Agent
+"""
+    (agents_dir / "agent.md").write_text(agent_content)
+
+    context = RepositoryContext(plugin_dir)
+    rule = AgentFrontmatterRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "name" in violations[0].message.lower()
+
+
+def test_substring_field_does_not_mask_missing_description(temp_dir):
+    """Test that a field like 'long-description:' does not suppress 'Missing description' violation"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+
+    agents_dir = plugin_dir / "agents"
+    agents_dir.mkdir()
+
+    # frontmatter has 'long-description' but NOT 'description'
+    agent_content = """---
+name: test-agent
+long-description: "Not the real description field"
+---
+
+# Agent
+"""
+    (agents_dir / "agent.md").write_text(agent_content)
+
+    context = RepositoryContext(plugin_dir)
+    rule = AgentFrontmatterRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "description" in violations[0].message.lower()
+
+
 def test_rule_metadata():
     """Test rule metadata"""
     rule = AgentFrontmatterRule()
