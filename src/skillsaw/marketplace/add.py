@@ -111,12 +111,15 @@ def _find_plugin_context(path: Path, plugin_name: Optional[str]) -> Tuple[Path, 
             mp_path = mp_root / ".claude-plugin" / "marketplace.json"
             data = json.loads(mp_path.read_text(encoding="utf-8"))
             plugins = data.get("plugins", [])
-            if not plugins:
+            if not isinstance(plugins, list):
+                raise ValueError("Invalid marketplace.json: 'plugins' must be a list.")
+            valid_plugins = [p for p in plugins if isinstance(p, dict) and "name" in p]
+            if not valid_plugins:
                 raise FileNotFoundError(
                     "No plugins found in this marketplace. Run 'skillsaw add plugin' first."
                 )
-            if len(plugins) == 1:
-                plugin_name = plugins[0]["name"]
+            if len(valid_plugins) == 1:
+                plugin_name = valid_plugins[0]["name"]
             else:
                 raise ValueError(
                     "Multiple plugins in this marketplace. Use --plugin to specify which one."
@@ -180,7 +183,9 @@ def _register_plugin(root: Path, name: str, source: str, description: str) -> No
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
     data.setdefault("plugins", [])
-    if not any(p.get("name") == name for p in data["plugins"]):
+    if not isinstance(data["plugins"], list):
+        data["plugins"] = []
+    if not any(isinstance(p, dict) and p.get("name") == name for p in data["plugins"]):
         data["plugins"].append(
             {
                 "name": name,
@@ -211,8 +216,13 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
     """Find the directory for an existing plugin."""
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
-    for entry in data.get("plugins", []):
-        if entry["name"] == plugin_name:
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list):
+        raise ValueError("Invalid marketplace.json: 'plugins' must be a list.")
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("name") == plugin_name:
             source = entry.get("source", f"./plugins/{plugin_name}")
             resolved = (root / source).resolve()
             if not resolved.is_relative_to(root.resolve()):

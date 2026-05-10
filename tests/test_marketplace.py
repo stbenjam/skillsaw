@@ -22,6 +22,8 @@ from skillsaw.marketplace.branding import (
 from skillsaw.marketplace.init import init_marketplace
 from skillsaw.marketplace.add import (
     _find_plugin_context,
+    _register_plugin,
+    _resolve_plugin_dir,
     add_agent,
     add_command,
     add_hook,
@@ -591,6 +593,126 @@ class TestContextDetection:
         )
         assert result.returncode == 0, f"Failed:\n{result.stdout}\n{result.stderr}"
         assert (root / ".claude" / "skills" / "cli-skill" / "SKILL.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Malformed marketplace.json
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedMarketplaceJson:
+    """Malformed marketplace.json must not crash with unhandled exceptions."""
+
+    def _make_marketplace(self, temp_dir, plugins_value):
+        """Create a minimal marketplace with a custom plugins value."""
+        root = temp_dir / "mp"
+        root.mkdir()
+        (root / ".claude-plugin").mkdir()
+        data = {"name": "test-mp", "owner": {"name": "testuser"}, "plugins": plugins_value}
+        (root / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+        return root
+
+    # -- _find_plugin_context --------------------------------------------------
+
+    def test_find_plugin_context_int_entry(self, temp_dir):
+        """plugins: [42] should not raise TypeError."""
+        root = self._make_marketplace(temp_dir, [42])
+        with pytest.raises(FileNotFoundError, match="No plugins found"):
+            _find_plugin_context(root, None)
+
+    def test_find_plugin_context_null_entry(self, temp_dir):
+        """plugins: [null] should not raise TypeError."""
+        root = self._make_marketplace(temp_dir, [None])
+        with pytest.raises(FileNotFoundError, match="No plugins found"):
+            _find_plugin_context(root, None)
+
+    def test_find_plugin_context_dict_missing_name(self, temp_dir):
+        """plugins: [{"source": "./foo"}] should not raise KeyError."""
+        root = self._make_marketplace(temp_dir, [{"source": "./foo"}])
+        with pytest.raises(FileNotFoundError, match="No plugins found"):
+            _find_plugin_context(root, None)
+
+    def test_find_plugin_context_plugins_is_string(self, temp_dir):
+        """plugins: "some-string" should raise ValueError, not iterate chars."""
+        root = self._make_marketplace(temp_dir, "some-string")
+        with pytest.raises(ValueError, match="must be a list"):
+            _find_plugin_context(root, None)
+
+    def test_find_plugin_context_valid_among_invalid(self, temp_dir):
+        """One valid entry among invalid ones should auto-select."""
+        root = self._make_marketplace(
+            temp_dir,
+            [42, None, {"source": "./foo"}, {"name": "good", "source": "./plugins/good"}],
+        )
+        # Create the plugin directory so _resolve_plugin_dir succeeds
+        plugin_dir = root / "plugins" / "good"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / ".claude-plugin").mkdir()
+        (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "good"}), encoding="utf-8"
+        )
+
+        _root, resolved_dir, _mp_type = _find_plugin_context(root, None)
+        assert resolved_dir == plugin_dir.resolve()
+
+    # -- _register_plugin ------------------------------------------------------
+
+    def test_register_plugin_plugins_is_string(self, temp_dir):
+        """_register_plugin should recover when plugins is a string."""
+        root = self._make_marketplace(temp_dir, "bad")
+        # Should not raise; should reset plugins to a list and add the entry
+        _register_plugin(root, "new-plugin", "./plugins/new-plugin", "desc")
+
+        data = json.loads(
+            (root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        assert isinstance(data["plugins"], list)
+        assert any(p["name"] == "new-plugin" for p in data["plugins"])
+
+    def test_register_plugin_skips_non_dict_entries(self, temp_dir):
+        """_register_plugin should not crash on non-dict entries when checking duplicates."""
+        root = self._make_marketplace(temp_dir, [42, None, {"name": "existing"}])
+        _register_plugin(root, "new-plugin", "./plugins/new-plugin", "desc")
+
+        data = json.loads(
+            (root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+        )
+        names = [p["name"] for p in data["plugins"] if isinstance(p, dict)]
+        assert "new-plugin" in names
+
+    # -- _resolve_plugin_dir ---------------------------------------------------
+
+    def test_resolve_plugin_dir_null_entries(self, temp_dir):
+        """_resolve_plugin_dir should skip null entries without crashing."""
+        root = self._make_marketplace(
+            temp_dir,
+            [None, {"name": "foo", "source": "./plugins/foo"}],
+        )
+        plugin_dir = root / "plugins" / "foo"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "foo")
+        assert resolved == plugin_dir.resolve()
+
+    def test_resolve_plugin_dir_int_entries(self, temp_dir):
+        """_resolve_plugin_dir should skip int entries without crashing."""
+        root = self._make_marketplace(temp_dir, [42, 0])
+        with pytest.raises(FileNotFoundError, match="not found in marketplace"):
+            _resolve_plugin_dir(root, "missing")
+
+    def test_resolve_plugin_dir_dict_without_name(self, temp_dir):
+        """_resolve_plugin_dir should skip entries without 'name' key."""
+        root = self._make_marketplace(temp_dir, [{"source": "./bar"}])
+        with pytest.raises(FileNotFoundError, match="not found in marketplace"):
+            _resolve_plugin_dir(root, "bar")
+
+    def test_resolve_plugin_dir_plugins_is_string(self, temp_dir):
+        """_resolve_plugin_dir should raise ValueError when plugins is a string."""
+        root = self._make_marketplace(temp_dir, "not-a-list")
+        with pytest.raises(ValueError, match="must be a list"):
+            _resolve_plugin_dir(root, "any-plugin")
 
 
 # ---------------------------------------------------------------------------
