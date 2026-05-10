@@ -175,6 +175,34 @@ class TestParallelLLMFix:
         progress_events = [e for e in events if e[0] == "progress"]
         assert len(progress_events) > 0
 
+        # Verify ordering: each file's file_start must precede its file_done
+        file_start_events = [e for e in events if e[0] == "file_start"]
+        file_done_events = [e for e in events if e[0] == "file_done"]
+
+        assert len(file_start_events) > 0, "Expected at least one file_start event"
+        assert len(file_start_events) == len(
+            file_done_events
+        ), "Every file_start must have a corresponding file_done"
+
+        # For each file, file_start must appear before file_done in the event list
+        started_files = set()
+        finished_files = set()
+        for event_type, kw in events:
+            rel_path = str(kw.get("rel_path", ""))
+            if event_type == "file_start":
+                assert rel_path not in started_files, f"Duplicate file_start for {rel_path}"
+                started_files.add(rel_path)
+            elif event_type == "file_done":
+                assert (
+                    rel_path in started_files
+                ), f"file_done for {rel_path} without preceding file_start"
+                assert rel_path not in finished_files, f"Duplicate file_done for {rel_path}"
+                finished_files.add(rel_path)
+
+        assert (
+            started_files == finished_files
+        ), f"Some files started but never finished: {started_files - finished_files}"
+
     def test_lint_tool_scoped_per_file(self, tmp_path):
         """Verify each file gets its own scoped LintTool."""
         _make_dot_claude_repo(tmp_path)
