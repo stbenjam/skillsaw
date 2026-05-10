@@ -363,8 +363,9 @@ class ContentNegativeOnlyRule(Rule):
             return False
 
         text_before_neg = line[: neg_match.start()]
-        if self._POSITIVE_RE.search(text_before_neg):
-            return True
+        for pos_match in self._POSITIVE_RE.finditer(text_before_neg):
+            if not self._is_positive_inside_negative(text_before_neg, pos_match):
+                return True
 
         text_after_neg = line[neg_match.end() :]
         for pos_match in self._POSITIVE_RE.finditer(text_after_neg):
@@ -376,8 +377,10 @@ class ContentNegativeOnlyRule(Rule):
         for j in range(start, end):
             if j == line_idx:
                 continue
-            if self._POSITIVE_RE.search(lines[j]):
-                return True
+            nearby = lines[j]
+            for pos_match in self._POSITIVE_RE.finditer(nearby):
+                if not self._is_positive_inside_negative(nearby, pos_match):
+                    return True
 
         return False
 

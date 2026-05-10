@@ -297,6 +297,27 @@ class TestContentNegativeOnlyRule:
         violations = ContentNegativeOnlyRule().check(context)
         assert len(violations) >= 1
 
+    def test_negative_before_negative_not_false_positive(self, temp_dir):
+        """A negative construction before another negative should not count as positive."""
+        (temp_dir / "CLAUDE.md").write_text("Don't use eval, never use exec.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) >= 1
+
+    def test_nearby_negative_line_not_false_positive(self, temp_dir):
+        """A nearby line with a negative should not mask the current line's violation."""
+        (temp_dir / "CLAUDE.md").write_text("Never use eval.\nDon't use exec.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) >= 2
+
+    def test_nearby_positive_line_still_passes(self, temp_dir):
+        """A nearby line with a genuine positive should still suppress the violation."""
+        (temp_dir / "CLAUDE.md").write_text("Never use eval.\nUse a safe parser instead.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
 
 class TestContentSectionLengthRule:
     def test_rule_metadata(self):
