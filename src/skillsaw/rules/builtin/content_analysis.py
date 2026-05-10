@@ -483,11 +483,35 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
     return results
 
 
+def _instruction_text_start_line(raw: str, key_line: Optional[int]) -> Optional[int]:
+    """Determine the real start line of an instruction's text content.
+
+    For YAML block scalars (``|`` or ``>``), the text starts on the line
+    *after* the key.  For inline/flow scalars the text is on the same line
+    as the key.  Returns ``None`` when *key_line* is ``None``.
+    """
+    if key_line is None:
+        return None
+    lines = raw.splitlines()
+    if key_line < 1 or key_line > len(lines):
+        return key_line
+    key_content = lines[key_line - 1]
+    # After "instructions:", if a block scalar indicator follows, text is next line
+    colon_idx = key_content.find(":")
+    if colon_idx >= 0:
+        after_colon = key_content[colon_idx + 1 :].strip()
+        if after_colon in ("|", ">", "|-", ">-", "|+", ">+"):
+            return key_line + 1
+    return key_line
+
+
 def _extract_coderabbit_instructions_body(raw: str) -> str:
     """Extract instruction text from raw .coderabbit.yaml content.
 
-    Parses the YAML and concatenates all ``instructions`` field values
-    separated by double newlines so content analyzers see only plain text.
+    Builds a body string where each instruction's text is placed at its
+    real line offset in the YAML file (padded with blank lines) so that
+    content analyzers report correct line numbers.
+
     Returns an empty string on parse failure or when no instructions exist.
     """
     try:
@@ -495,7 +519,30 @@ def _extract_coderabbit_instructions_body(raw: str) -> str:
     except yaml.YAMLError:
         return ""
     instructions = _extract_instructions(data, raw)
-    return "\n\n".join(text for _, text, _ in instructions)
+    if not instructions:
+        return ""
+
+    # Build a list of (start_line, text) tuples sorted by position.
+    positioned: List[Tuple[int, str]] = []
+    for _, text, key_line in instructions:
+        start = _instruction_text_start_line(raw, key_line)
+        if start is None:
+            start = 1
+        positioned.append((start, text))
+    positioned.sort(key=lambda t: t[0])
+
+    # Assemble body: pad with blank lines so each text block sits at its
+    # real line number.
+    result_lines: List[str] = []
+    for start, text in positioned:
+        text_lines = text.splitlines()
+        # Pad up to the target line.  start is 1-based; len(result_lines)
+        # is the count of lines already emitted (0-based next index).
+        while len(result_lines) < start - 1:
+            result_lines.append("")
+        result_lines.extend(text_lines)
+
+    return "\n".join(result_lines)
 
 
 class WeakLanguageDetector:

@@ -170,6 +170,70 @@ class TestContentRulesOnCoderabbit:
         ]
         assert len(coderabbit_violations) >= 1
 
+    def test_violation_line_numbers_match_real_file_inline(self, temp_dir):
+        """Violations in .coderabbit.yaml should report real YAML line numbers."""
+        content = (
+            "language: en-US\n"  # line 1
+            "reviews:\n"  # line 2
+            "  instructions: 'Try to check for null pointers.'\n"  # line 3
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
+        # "Try to" is on the instructions: key line (line 3), not line 1
+        for v in coderabbit_violations:
+            assert v.line == 3, f"Expected line 3, got {v.line}: {v.message}"
+
+    def test_violation_line_numbers_match_real_file_block_scalar(self, temp_dir):
+        """Block scalar instructions should report real YAML line numbers."""
+        content = (
+            "reviews:\n"  # line 1
+            "  instructions: |\n"  # line 2
+            "    Always check for null pointers.\n"  # line 3
+            "    Try to validate all inputs.\n"  # line 4
+            "    Handle errors with retries.\n"  # line 5
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 1
+        # "Try to" is on line 4 of the real file
+        try_violations = [v for v in coderabbit_violations if "try to" in v.message.lower()]
+        assert len(try_violations) == 1
+        assert try_violations[0].line == 4, f"Expected line 4, got {try_violations[0].line}"
+
+    def test_violation_line_numbers_multiple_instruction_sections(self, temp_dir):
+        """Line numbers should be correct across multiple instruction sections."""
+        content = (
+            "reviews:\n"  # line 1
+            "  instructions: |\n"  # line 2
+            "    Always check null pointers.\n"  # line 3
+            "    Validate all inputs.\n"  # line 4
+            "  path_instructions:\n"  # line 5
+            "    - path: 'src/**'\n"  # line 6
+            "      instructions: 'Try to follow the style guide.'\n"  # line 7
+            "chat:\n"  # line 8
+            "  instructions: 'You might want to add docs.'\n"  # line 9
+        )
+        (temp_dir / ".coderabbit.yaml").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        coderabbit_violations = [
+            v for v in violations if v.file_path == temp_dir / ".coderabbit.yaml"
+        ]
+        assert len(coderabbit_violations) >= 2
+        lines = sorted(v.line for v in coderabbit_violations)
+        # "Try to" is on line 7, "You might want to" is on line 9
+        assert 7 in lines, f"Expected line 7 in {lines}"
+        assert 9 in lines, f"Expected line 9 in {lines}"
+
 
 # ---------------------------------------------------------------------------
 # _get_body for .coderabbit.yaml
@@ -209,6 +273,102 @@ class TestGetBodyCoderabbit:
         cr = temp_dir / ".coderabbit.yaml"
         cr.write_text(":\n  bad: [unterminated\n")
         body = _get_body(cr)
+        assert body == ""
+
+    def test_body_preserves_line_numbers_for_block_scalar(self, temp_dir):
+        """_get_body should place instruction text at real YAML line positions."""
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text(
+            "reviews:\n"  # line 1
+            "  instructions: |\n"  # line 2
+            "    First instruction.\n"  # line 3
+            "    Second instruction.\n"  # line 4
+        )
+        body = _get_body(cr)
+        assert body is not None
+        lines = body.splitlines()
+        # lines[2] (0-indexed) is line 3 (1-indexed) -> "First instruction."
+        assert "First instruction." in lines[2]
+        assert "Second instruction." in lines[3]
+
+    def test_body_preserves_line_numbers_for_inline_scalar(self, temp_dir):
+        """Inline instruction text should appear at the key's line."""
+        cr = temp_dir / ".coderabbit.yaml"
+        cr.write_text(
+            "language: en-US\n"  # line 1
+            "reviews:\n"  # line 2
+            "  instructions: 'Do stuff.'\n"  # line 3
+        )
+        body = _get_body(cr)
+        assert body is not None
+        lines = body.splitlines()
+        # line 3 (1-indexed) = lines[2] (0-indexed)
+        assert "Do stuff." in lines[2]
+
+
+# ---------------------------------------------------------------------------
+# _extract_coderabbit_instructions_body line alignment
+# ---------------------------------------------------------------------------
+
+
+class TestCoderabbitBodyLineAlignment:
+    """Verify _extract_coderabbit_instructions_body aligns text to real lines."""
+
+    def test_block_scalar_alignment(self):
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: |\n"  # line 2
+            "    Check nulls.\n"  # line 3
+            "    Validate inputs.\n"  # line 4
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        assert lines[2] == "Check nulls."  # line 3
+        assert lines[3] == "Validate inputs."  # line 4
+
+    def test_inline_scalar_alignment(self):
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: 'Do stuff.'\n"  # line 2
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        assert lines[1] == "Do stuff."  # line 2
+
+    def test_multiple_sections_alignment(self):
+        raw = (
+            "reviews:\n"  # line 1
+            "  instructions: |\n"  # line 2
+            "    Review stuff.\n"  # line 3
+            "chat:\n"  # line 4
+            "  instructions: 'Chat stuff.'\n"  # line 5
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        assert lines[2] == "Review stuff."  # line 3
+        assert lines[4] == "Chat stuff."  # line 5
+
+    def test_padding_lines_are_blank(self):
+        raw = (
+            "language: en-US\n"  # line 1
+            "reviews:\n"  # line 2
+            "  instructions: 'Do stuff.'\n"  # line 3
+        )
+        body = _extract_coderabbit_instructions_body(raw)
+        lines = body.splitlines()
+        # Lines 1-2 should be blank padding
+        assert lines[0] == ""
+        assert lines[1] == ""
+        assert lines[2] == "Do stuff."
+
+    def test_empty_body_on_no_instructions(self):
+        raw = "language: en-US\n"
+        body = _extract_coderabbit_instructions_body(raw)
+        assert body == ""
+
+    def test_empty_body_on_invalid_yaml(self):
+        raw = ":\n  bad: [unterminated\n"
+        body = _extract_coderabbit_instructions_body(raw)
         assert body == ""
 
 
