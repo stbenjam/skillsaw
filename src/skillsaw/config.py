@@ -268,6 +268,17 @@ class LinterConfig:
             if explicit is False:
                 return False
             # enabled: "auto" falls through to version gate + auto logic below
+        else:
+            # Any non-enabled override (e.g. severity) without an explicit
+            # ``enabled`` key on a disabled-by-default rule implies the user
+            # wants it active.  We must NOT do this for ``enabled: "auto"``
+            # rules — those rely on repo-type / format detection.
+            if user_overrides:
+                default_enabled = self.default().rules.get(rule_id, {}).get("enabled", True)
+                if default_enabled is False:
+                    return True
+                # For "auto" rules, non-enabled overrides don't change
+                # activation — fall through to version gate + auto logic.
 
         # Any non-enabled override (e.g. severity) implies the user wants this rule
         has_non_enabled_overrides = bool({k for k in user_overrides if k != "enabled"})

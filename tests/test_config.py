@@ -600,3 +600,92 @@ def test_rule_config_non_mapping_raises_error(temp_dir):
 
     with pytest.raises(ValueError, match="'rules.plugin-json-required' must be a mapping or null"):
         LinterConfig.from_file(config_file)
+
+
+# --- Non-enabled config overrides tests ---
+
+
+def test_severity_override_enables_disabled_rule(temp_dir):
+    """Setting severity on a disabled-by-default rule should implicitly enable it"""
+    context = RepositoryContext(temp_dir)
+    # mcp-prohibited defaults to enabled: false
+    config = LinterConfig(
+        rules={"mcp-prohibited": {"severity": "error"}},
+    )
+    assert config.is_rule_enabled("mcp-prohibited", context) is True
+
+
+def test_non_enabled_override_enables_disabled_rule(temp_dir):
+    """Any non-enabled override on a disabled-by-default rule should enable it"""
+    context = RepositoryContext(temp_dir)
+    # agentskill-structure defaults to enabled: false
+    config = LinterConfig(
+        rules={"agentskill-structure": {"severity": "warning"}},
+    )
+    assert config.is_rule_enabled("agentskill-structure", context) is True
+
+
+def test_explicit_enabled_false_still_disables(temp_dir):
+    """Explicit enabled: false must still win even when other overrides are present"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        rules={"mcp-prohibited": {"enabled": False, "severity": "error"}},
+    )
+    assert config.is_rule_enabled("mcp-prohibited", context) is False
+
+
+def test_explicit_enabled_true_with_overrides(temp_dir):
+    """Explicit enabled: true with other overrides should stay enabled"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        rules={"mcp-prohibited": {"enabled": True, "severity": "error"}},
+    )
+    assert config.is_rule_enabled("mcp-prohibited", context) is True
+
+
+def test_no_overrides_disabled_rule_stays_disabled(temp_dir):
+    """A disabled-by-default rule with no user overrides stays disabled"""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(rules={})
+    assert config.is_rule_enabled("mcp-prohibited", context) is False
+
+
+def test_all_disabled_default_rules_enabled_by_severity(temp_dir):
+    """All rules that default to enabled: false should be activated by a severity override"""
+    context = RepositoryContext(temp_dir)
+    disabled_rules = [
+        "mcp-prohibited",
+        "agentskill-structure",
+        "agentskill-evals-required",
+    ]
+    for rule_id in disabled_rules:
+        config = LinterConfig(
+            rules={rule_id: {"severity": "error"}},
+        )
+        assert (
+            config.is_rule_enabled(rule_id, context) is True
+        ), f"{rule_id} should be enabled when severity is overridden"
+
+
+def test_explicit_enabled_auto_with_matching_repo(marketplace_repo):
+    """Explicit enabled: auto should still work with matching repo types"""
+    context = RepositoryContext(marketplace_repo)
+    config = LinterConfig(
+        rules={"marketplace-registration": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        is True
+    )
+
+
+def test_explicit_enabled_auto_with_non_matching_repo(valid_plugin):
+    """Explicit enabled: auto should not fire when repo type doesn't match"""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig(
+        rules={"marketplace-registration": {"enabled": "auto"}},
+    )
+    assert (
+        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        is False
+    )
