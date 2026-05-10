@@ -216,7 +216,10 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
     """Find the directory for an existing plugin."""
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
-    for entry in data.get("plugins", []):
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list):
+        raise ValueError("Invalid marketplace.json: 'plugins' must be a list.")
+    for entry in plugins:
         if not isinstance(entry, dict):
             continue
         if entry.get("name") == plugin_name:

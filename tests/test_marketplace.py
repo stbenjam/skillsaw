@@ -695,6 +695,12 @@ class TestMalformedMarketplaceJson:
         with pytest.raises(FileNotFoundError, match="not found in marketplace"):
             _resolve_plugin_dir(root, "bar")
 
+    def test_resolve_plugin_dir_plugins_is_string(self, temp_dir):
+        """_resolve_plugin_dir should raise ValueError when plugins is a string."""
+        root = self._make_marketplace(temp_dir, "not-a-list")
+        with pytest.raises(ValueError, match="must be a list"):
+            _resolve_plugin_dir(root, "any-plugin")
+
 
 # ---------------------------------------------------------------------------
 # CLI integration
