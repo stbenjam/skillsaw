@@ -517,3 +517,42 @@ def test_marketplace_plugin_entry_valid(temp_dir):
     rule = MarketplaceJsonValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+# --- severity config validation ---
+
+
+def test_invalid_severity_string_raises_helpful_error():
+    """Test that an invalid severity string gives a helpful ValueError"""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid severity 'critical'.*Valid values:"):
+        PluginJsonRequiredRule({"severity": "critical"})
+
+
+def test_invalid_severity_integer_raises_helpful_error():
+    """Test that an integer severity gives a helpful ValueError"""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid severity '42'.*Valid values:"):
+        PluginJsonRequiredRule({"severity": 42})
+
+
+def test_null_severity_uses_default():
+    """Test that severity: null falls back to the rule's default severity"""
+    rule = PluginJsonRequiredRule({"severity": None})
+    assert rule.severity == rule.default_severity()
+
+
+def test_unhashable_severity_raises_helpful_error():
+    """Test that an unhashable severity (list/dict) gives a helpful ValueError"""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid severity.*Valid values:"):
+        PluginJsonRequiredRule({"severity": ["error", "warning"]})
+
+
+def test_valid_severity_override():
+    """Test that a valid severity string overrides the default"""
+    rule = PluginJsonRequiredRule({"severity": "warning"})
+    assert rule.severity == Severity.WARNING
