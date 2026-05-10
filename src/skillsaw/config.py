@@ -261,7 +261,8 @@ class LinterConfig:
             True if rule should run
         """
         user_overrides = self.rules.get(rule_id, {})
-        if "enabled" in user_overrides:
+        has_explicit_enabled = "enabled" in user_overrides
+        if has_explicit_enabled:
             explicit = user_overrides["enabled"]
             if explicit is True:
                 return True
@@ -280,10 +281,11 @@ class LinterConfig:
                 # For "auto" rules, non-enabled overrides don't change
                 # activation — fall through to version gate + auto logic.
 
-        # Any non-enabled override (e.g. severity) implies the user wants this rule
-        has_non_enabled_overrides = bool({k for k in user_overrides if k != "enabled"})
+        # Any explicit user override (enabled or otherwise) implies the user
+        # wants this rule, so skip the version gate.
+        has_user_overrides = bool(user_overrides)
 
-        if not has_non_enabled_overrides and self.version:
+        if not has_user_overrides and self.version:
             if _parse_version(self.version) < _parse_version(since_version):
                 return False
 
