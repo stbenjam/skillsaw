@@ -12,6 +12,12 @@ _SEVERITY_MAP = {
     "info": "note",
 }
 
+# Human-readable descriptions for synthetic rule IDs that have no backing
+# Rule instance (e.g. "invalid-config" emitted by Linter._validate_config).
+_SYNTHETIC_DESCRIPTIONS = {
+    "invalid-config": "Unknown rule ID in configuration",
+}
+
 
 def format_sarif(
     violations: List[RuleViolation],
@@ -26,6 +32,19 @@ def format_sarif(
             seen[r.rule_id] = {
                 "id": r.rule_id,
                 "shortDescription": {"text": r.description},
+            }
+
+    # Add synthetic descriptors for violations whose rule_id has no
+    # matching Rule instance (e.g. "invalid-config" from _validate_config).
+    # SARIF consumers that enforce referential integrity require every
+    # ruleId referenced by a result to appear in runs[].tool.driver.rules[].
+    for v in violations:
+        if v.rule_id not in seen:
+            seen[v.rule_id] = {
+                "id": v.rule_id,
+                "shortDescription": {
+                    "text": _SYNTHETIC_DESCRIPTIONS.get(v.rule_id, v.rule_id),
+                },
             }
 
     results = []

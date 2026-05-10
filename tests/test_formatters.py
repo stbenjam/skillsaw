@@ -391,6 +391,60 @@ def test_sarif_stats_in_properties(valid_plugin):
     assert stats["rules_run"] == len(linter.rules)
 
 
+def test_sarif_invalid_config_has_rule_descriptor(valid_plugin):
+    """Violations with rule_id='invalid-config' must have a matching rule descriptor."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="invalid-config",
+            severity=Severity.WARNING,
+            message="Unknown rule 'bogus-rule' in config — rule does not exist and will be ignored",
+        ),
+    ]
+
+    output = format_sarif(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    rules = data["runs"][0]["tool"]["driver"]["rules"]
+    rule_ids = {r["id"] for r in rules}
+    assert "invalid-config" in rule_ids
+
+    descriptor = next(r for r in rules if r["id"] == "invalid-config")
+    assert descriptor["shortDescription"]["text"] == "Unknown rule ID in configuration"
+
+    results = data["runs"][0]["results"]
+    assert len(results) == 1
+    assert results[0]["ruleId"] == "invalid-config"
+
+
+def test_sarif_synthetic_descriptor_for_unknown_rule_id(valid_plugin):
+    """Any violation with a rule_id not in the rules list gets a synthetic descriptor."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="custom-unknown-rule",
+            severity=Severity.ERROR,
+            message="Something went wrong",
+        ),
+    ]
+
+    output = format_sarif(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    rules = data["runs"][0]["tool"]["driver"]["rules"]
+    rule_ids = {r["id"] for r in rules}
+    assert "custom-unknown-rule" in rule_ids
+
+    # Fallback description should be the raw rule_id itself
+    descriptor = next(r for r in rules if r["id"] == "custom-unknown-rule")
+    assert descriptor["shortDescription"]["text"] == "custom-unknown-rule"
+
+    # The result must reference the synthetic descriptor
+    results = data["runs"][0]["results"]
+    assert len(results) == 1
+    assert results[0]["ruleId"] == "custom-unknown-rule"
+
+
 # --- HTML formatter ---
 
 
