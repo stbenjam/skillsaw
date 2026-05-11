@@ -46,6 +46,9 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [agentskills.io Skills](#agentskillsio-skills)
   - [Single Plugin](#single-plugin)
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
+  - [`.claude/` Directory](#claude-directory)
+  - [CodeRabbit](#coderabbit)
+  - [APM (Agent Package Manager)](#apm-agent-package-manager)
 - [Configuration](#configuration)
   - [Version Pinning](#version-pinning)
   - [Exclude Patterns](#exclude-patterns)
@@ -199,7 +202,7 @@ jobs:
 
 ## Repository Types
 
-skillsaw automatically detects your repository structure:
+skillsaw automatically detects your repository structure. A repository can match multiple types simultaneously (e.g. an agentskills repo that also has `.coderabbit.yaml`).
 
 ### agentskills.io Skills
 
@@ -274,6 +277,18 @@ marketplace/
 #### Custom Paths and Mixed Structures
 
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
+
+### `.claude/` Directory
+
+Repositories with a `.claude/` directory containing commands, skills, hooks, agents, or rules. When APM is present, `.claude/` is treated as compiled output and this type is not detected.
+
+### CodeRabbit
+
+Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction fragments within the config.
+
+### APM (Agent Package Manager)
+
+Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
 
 ## Configuration
 
