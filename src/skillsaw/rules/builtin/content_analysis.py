@@ -579,6 +579,14 @@ class ParsedFrontmatterBlock(FileContentBlock):
             return {}
         return _yaml_line_map(fm_text, line_offset=offset)
 
+    def tree_label(self) -> str:
+        label = super().tree_label()
+        fm = self.frontmatter
+        if fm and isinstance(fm.get("description"), str):
+            desc_tokens = len(fm["description"]) // 4
+            label += f" [desc: {desc_tokens:,} tokens]"
+        return label
+
 
 @dataclass(eq=False)
 class CommandBlock(ParsedFrontmatterBlock):
