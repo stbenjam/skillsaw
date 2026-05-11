@@ -5,7 +5,7 @@ Rule for warning when instruction/config files exceed recommended token limits.
 from typing import Any, Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -57,7 +57,7 @@ def _estimate_tokens(text: str) -> int:
 class ContextBudgetRule(Rule):
     """Warn or error when files exceed recommended token limits"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     config_schema = {
