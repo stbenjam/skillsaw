@@ -321,6 +321,19 @@ def _run_tree(args):
 
 
 def _run_lint(args):
+    if args.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+    else:
+        logging.basicConfig(
+            level=logging.WARNING,
+            format="%(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+
     cli_version = _get_version()
 
     output_formats = {}
@@ -461,7 +474,7 @@ def _require_llm_provider(config):
         )
         sys.exit(1)
 
-    logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
+    logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s", stream=sys.stderr)
     return LiteLLMProvider()
 
 

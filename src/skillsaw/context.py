@@ -82,6 +82,9 @@ class RepositoryContext:
         self.root_path = root_path.resolve()
         self.has_apm = self._detect_apm()
         self.repo_types: Set[RepositoryType] = self._detect_types()
+        logger.info(
+            "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
+        )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
             {}

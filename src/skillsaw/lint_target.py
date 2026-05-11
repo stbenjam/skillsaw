@@ -17,6 +17,7 @@ class LintTarget:
 
     path: Path
     children: List["LintTarget"] = field(default_factory=list)
+    parent: Optional["LintTarget"] = field(default=None, repr=False)
 
     def walk(self) -> Iterator["LintTarget"]:
         yield self
@@ -27,16 +28,19 @@ class LintTarget:
         return [n for n in self.walk() if isinstance(n, target_type)]
 
     def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
-        """Find the nearest ancestor of ``target`` that is an instance of ``parent_type``."""
-        result: Optional[T] = None
-        for node in self.walk():
-            if not isinstance(node, parent_type):
-                continue
-            for child in node.walk():
-                if child is target:
-                    result = node
-                    break
-        return result
+        """Find the nearest ancestor of ``target`` that is ``parent_type``."""
+        node = target.parent
+        while node is not None:
+            if isinstance(node, parent_type):
+                return node
+            node = node.parent
+        return None
+
+    def set_parents(self) -> None:
+        """Set parent back-pointers for the entire subtree."""
+        for child in self.children:
+            child.parent = self
+            child.set_parents()
 
     def content_blocks(self) -> list:
         from .rules.builtin.content_analysis import ContentBlock

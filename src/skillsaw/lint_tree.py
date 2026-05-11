@@ -5,8 +5,11 @@ Build the repository lint tree — single discovery entrypoint.
 from __future__ import annotations
 
 import fnmatch
+import logging
 from pathlib import Path
 from typing import Set, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from .lint_target import (
     LintTarget,
@@ -72,6 +75,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return False
         return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
 
+    apm_source_root = (context.root_path / ".apm").resolve() if context.has_apm else None
+
+    def _is_in_apm_source(p: Path) -> bool:
+        if apm_source_root is None:
+            return False
+        resolved = p.resolve()
+        return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
+
     def _is_in_compiled_dir(p: Path) -> bool:
         if not apm_compiled_roots:
             return False
@@ -89,8 +100,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen.add(resolved)
         parent.children.append(block_cls(path=p))
 
-    # --- Root-level instruction files ---
+    # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
+        if _is_in_apm_source(f):
+            continue
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
         _add_block(root, f, block_cls)
 
@@ -157,8 +170,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         else:
             root.children.append(plugin_node)
 
-    # --- Skills (nest inside parent plugin when applicable) ---
+    # --- Skills (nest inside parent plugin when applicable; skip .apm/) ---
     for skill_path in context.skills:
+        if _is_in_apm_source(skill_path):
+            continue
         skill_node = SkillNode(path=skill_path)
         _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
         refs_dir = skill_path / "references"
@@ -218,6 +233,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             for md in sorted(apm_context.glob("*.md")):
                 _add_block(apm_node, md, ContextFileBlock)
 
+        apm_skills = apm_dir / "skills"
+        if apm_skills.is_dir():
+            for skill_path in context.skills:
+                if skill_path.resolve().is_relative_to(apm_skills.resolve()):
+                    skill_node = SkillNode(path=skill_path)
+                    _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+                    refs_dir = skill_path / "references"
+                    if refs_dir.is_dir():
+                        for ref_file in sorted(refs_dir.glob("*.md")):
+                            _add_block(skill_node, ref_file, SkillRefBlock)
+                    apm_node.children.append(skill_node)
+
         root.children.append(apm_node)
 
     # --- Extra content paths from config ---
@@ -226,4 +253,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)
 
+    root.set_parents()
+    nodes = list(root.walk())
+    logger.info("Built lint tree: %d nodes", len(nodes))
     return root

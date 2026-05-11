@@ -100,6 +100,7 @@ def test_find_parent_returns_nearest():
     plugin.children = [skill]
     marketplace.children = [plugin]
     root.children = [marketplace]
+    root.set_parents()
 
     parent = root.find_parent(leaf, PluginNode)
     assert parent is plugin
@@ -112,6 +113,7 @@ def test_find_parent_returns_none_when_no_match():
     root = LintTarget(path=Path("/root"))
     child = LintTarget(path=Path("/child"))
     root.children = [child]
+    root.set_parents()
 
     assert root.find_parent(child, PluginNode) is None
 
@@ -123,6 +125,7 @@ def test_find_parent_skips_non_ancestors():
     target = LintTarget(path=Path("/target"))
     p2.children = [target]
     root.children = [p1, p2]
+    root.set_parents()
 
     parent = root.find_parent(target, PluginNode)
     assert parent is p2

@@ -72,14 +72,12 @@ class Linter:
         from .rules.builtin import BUILTIN_RULES
 
         for rule_class in BUILTIN_RULES:
-            # Instantiate to discover rule_id (a property, not accessible on the class)
             rule_instance = rule_class()
             self._known_rule_ids.add(rule_instance.rule_id)
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
                 rule_instance = rule_class(config)
 
-            # Check if enabled for this context
             if self.config.is_rule_enabled(
                 rule_instance.rule_id,
                 self.context,
@@ -88,6 +86,9 @@ class Linter:
                 since_version=rule_instance.since,
             ):
                 self.rules.append(rule_instance)
+                logger.info("Rule %-30s enabled", rule_instance.rule_id)
+            else:
+                logger.info("Rule %-30s skipped (not applicable)", rule_instance.rule_id)
 
     def _load_custom_rule(self, rule_path: str):
         """
@@ -97,7 +98,6 @@ class Linter:
             rule_path: Path to Python file containing Rule subclass
         """
         path = Path(rule_path)
-        # If relative path, resolve relative to repository root
         if not path.is_absolute():
             path = self.context.root_path / path
         path = path.resolve()
@@ -105,23 +105,21 @@ class Linter:
         if not path.exists():
             raise FileNotFoundError(f"Custom rule file not found: {path}")
 
-        # Load the module
+        logger.info("Loading custom rules from %s", path)
+
         spec = importlib.util.spec_from_file_location("custom_rule", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        # Find Rule subclasses in the module
         for name in dir(module):
             obj = getattr(module, name)
             if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
-                # Instantiate to discover rule_id (a property, not accessible on the class)
                 rule_instance = obj()
                 self._known_rule_ids.add(rule_instance.rule_id)
                 config = self.config.get_rule_config(rule_instance.rule_id)
                 if config:
                     rule_instance = obj(config)
 
-                # Check if enabled
                 if self.config.is_rule_enabled(
                     rule_instance.rule_id,
                     self.context,
@@ -129,6 +127,9 @@ class Linter:
                     rule_instance.formats,
                 ):
                     self.rules.append(rule_instance)
+                    logger.info("Rule %-30s enabled (custom: %s)", rule_instance.rule_id, path.name)
+                else:
+                    logger.info("Rule %-30s skipped (custom: %s)", rule_instance.rule_id, path.name)
 
     def _validate_config(self) -> List[RuleViolation]:
         """Check for unknown rule IDs in config"""
@@ -159,9 +160,14 @@ class Linter:
         """
         violations = self._validate_config()
 
+        logger.info("Running %d enabled rules", len(self.rules))
         for rule in self.rules:
             try:
                 rule_violations = rule.check(self.context)
+                if rule_violations:
+                    logger.info(
+                        "Rule %-30s found %d violation(s)", rule.rule_id, len(rule_violations)
+                    )
                 violations.extend(rule_violations)
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
