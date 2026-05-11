@@ -193,3 +193,61 @@ class TestContextBudgetRule:
 
         rule_under = ContextBudgetRule({"limits": {"claude-md": 999}})
         assert len(rule_under.check(context)) == 1
+
+    def test_skill_description_under_limit(self, temp_dir):
+        skill_dir = temp_dir / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Short description\n---\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContextBudgetRule()
+        desc_violations = [v for v in rule.check(context) if "description" in v.message.lower()]
+        assert len(desc_violations) == 0
+
+    def test_skill_description_over_warn(self, temp_dir):
+        skill_dir = temp_dir / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        long_desc = "x" * (201 * 4)  # ~201 tokens, exceeds default warn=200
+        (skill_dir / "SKILL.md").write_text(
+            f'---\nname: my-skill\ndescription: "{long_desc}"\n---\n'
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContextBudgetRule()
+        desc_violations = [v for v in rule.check(context) if "description" in v.message.lower()]
+        assert len(desc_violations) == 1
+        assert desc_violations[0].severity == Severity.WARNING
+
+    def test_skill_description_over_error(self, temp_dir):
+        skill_dir = temp_dir / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        long_desc = "x" * (501 * 4)  # ~501 tokens, exceeds default error=500
+        (skill_dir / "SKILL.md").write_text(
+            f'---\nname: my-skill\ndescription: "{long_desc}"\n---\n'
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContextBudgetRule()
+        desc_violations = [v for v in rule.check(context) if "description" in v.message.lower()]
+        assert len(desc_violations) == 1
+        assert desc_violations[0].severity == Severity.ERROR
+
+    def test_command_description_over_warn(self, temp_dir):
+        cmd_dir = temp_dir / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        long_desc = "x" * (201 * 4)
+        (cmd_dir / "my-cmd.md").write_text(f'---\ndescription: "{long_desc}"\n---\n')
+        context = RepositoryContext(temp_dir)
+        rule = ContextBudgetRule()
+        desc_violations = [v for v in rule.check(context) if "description" in v.message.lower()]
+        assert len(desc_violations) == 1
+        assert "command-description" in desc_violations[0].message
+
+    def test_custom_description_limits(self, temp_dir):
+        skill_dir = temp_dir / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        desc = "x" * (51 * 4)  # ~51 tokens
+        (skill_dir / "SKILL.md").write_text(f'---\nname: my-skill\ndescription: "{desc}"\n---\n')
+        context = RepositoryContext(temp_dir)
+        rule = ContextBudgetRule({"limits": {"skill-description": 50}})
+        desc_violations = [v for v in rule.check(context) if "description" in v.message.lower()]
+        assert len(desc_violations) == 1
