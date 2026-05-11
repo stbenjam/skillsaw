@@ -226,6 +226,64 @@ def test_content_blocks_returns_all_content(temp_dir):
     assert all(hasattr(b, "category") for b in blocks)
 
 
+def test_estimate_tokens_content_block(temp_dir):
+    """ContentBlock.estimate_tokens() returns len(body) // 4."""
+    from skillsaw.rules.builtin.content_analysis import FileContentBlock, InstructionBlock
+
+    f = temp_dir / "test.md"
+    f.write_text("a" * 400)
+    block = InstructionBlock(path=f)
+    assert block.estimate_tokens() == 100
+
+
+def test_estimate_tokens_container_sums_children(temp_dir):
+    """Container nodes sum their children's tokens."""
+    from skillsaw.rules.builtin.content_analysis import InstructionBlock
+
+    f1 = temp_dir / "a.md"
+    f1.write_text("x" * 200)
+    f2 = temp_dir / "b.md"
+    f2.write_text("y" * 400)
+
+    root = LintTarget(path=temp_dir)
+    root.children = [InstructionBlock(path=f1), InstructionBlock(path=f2)]
+    assert root.estimate_tokens() == 150  # 50 + 100
+
+
+def test_print_tree_shows_tokens(temp_dir):
+    """print_tree() output includes token counts."""
+    from skillsaw.rules.builtin.content_analysis import InstructionBlock
+
+    f = temp_dir / "CLAUDE.md"
+    f.write_text("x" * 80)
+
+    root = LintTarget(path=temp_dir)
+    root.children = [InstructionBlock(path=f)]
+    output = root.print_tree(root_path=temp_dir)
+    assert "tokens)" in output
+    assert "(20 tokens)" in output
+
+
+def test_print_dot_structure(temp_dir):
+    """print_dot() produces valid DOT with nodes and edges."""
+    from skillsaw.rules.builtin.content_analysis import InstructionBlock
+
+    f = temp_dir / "CLAUDE.md"
+    f.write_text("hello world")
+
+    root = LintTarget(path=temp_dir)
+    root.children = [InstructionBlock(path=f)]
+    dot = root.print_dot(root_path=temp_dir)
+
+    assert dot.startswith("digraph lint_tree {")
+    assert dot.strip().endswith("}")
+    assert "n0" in dot
+    assert "n1" in dot
+    assert "n0 -> n1" in dot
+    assert "tokens)" in dot
+    assert "fillcolor=" in dot
+
+
 def test_tree_all_rules_use_tree(temp_dir):
     """Verify no rule uses context.plugins or context.skills directly."""
     import ast

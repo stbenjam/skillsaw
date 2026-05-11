@@ -253,6 +253,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file",
     )
+    tree_parser.add_argument(
+        "--format",
+        dest="fmt",
+        default="text",
+        choices=["text", "dot"],
+        help="Output format (default: text)",
+    )
 
     # --- add ---
     subparsers.add_parser(
@@ -306,7 +313,10 @@ def _run_tree(args):
     context.apply_excludes()
 
     tree = context.lint_tree
-    print(tree.print_tree(root_path=context.root_path))
+    if args.fmt == "dot":
+        print(tree.print_dot(root_path=context.root_path))
+    else:
+        print(tree.print_tree(root_path=context.root_path))
     sys.exit(0)
 
 

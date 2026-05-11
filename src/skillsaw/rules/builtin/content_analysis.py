@@ -200,6 +200,10 @@ class ContentBlock(LintTarget):
     @abstractmethod
     def write_body(self, new_body: str) -> None: ...
 
+    def estimate_tokens(self) -> int:
+        body = self.read_body()
+        return len(body) // 4 if body else 0
+
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"
 
