@@ -28,6 +28,24 @@ class SkillFrontmatterRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing YAML frontmatter for a SKILL.md file.\n\n"
+            "The block you are editing is the raw YAML between the --- delimiters.\n"
+            "Do NOT include the --- delimiters in your output.\n\n"
+            "Rules:\n"
+            "- Must have 'name' and 'description' fields\n"
+            "- 'name' should be the skill directory name\n"
+            "- 'description' should be a concise one-line summary derived from the body content\n"
+            "- If the YAML is malformed, fix the syntax\n"
+            "- Preserve any other existing frontmatter fields"
+        )
+
+    @property
+    def llm_fix_frontmatter(self) -> bool:
+        return True
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
@@ -39,26 +57,36 @@ class SkillFrontmatterRule(Rule):
 
             block = blocks[0]
             if block.frontmatter_error:
-                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
+                violations.append(
+                    self.violation(block.frontmatter_error, file_path=block.path, block=block)
+                )
                 continue
 
             if block.frontmatter is None:
                 violations.append(
                     self.violation(
-                        "Missing frontmatter (recommended for SKILL.md)", file_path=block.path
+                        "Missing frontmatter (recommended for SKILL.md)",
+                        file_path=block.path,
+                        block=block,
                     )
                 )
                 continue
 
             if "name" not in block.frontmatter:
                 violations.append(
-                    self.violation("Missing 'name' in SKILL.md frontmatter", file_path=block.path)
+                    self.violation(
+                        "Missing 'name' in SKILL.md frontmatter",
+                        file_path=block.path,
+                        block=block,
+                    )
                 )
 
             if "description" not in block.frontmatter:
                 violations.append(
                     self.violation(
-                        "Missing 'description' in SKILL.md frontmatter", file_path=block.path
+                        "Missing 'description' in SKILL.md frontmatter",
+                        file_path=block.path,
+                        block=block,
                     )
                 )
 

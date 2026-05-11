@@ -314,7 +314,7 @@ class Linter:
         )
 
     @staticmethod
-    def _build_block_system_prompt(block, violations_list, llm_rules):
+    def _build_block_system_prompt(block, violations_list, llm_rules, *, body_context=None):
         prompts = set()
         for v in violations_list:
             prompt = llm_rules[v.rule_id].llm_fix_prompt
@@ -322,11 +322,20 @@ class Linter:
                 prompts.add(prompt)
         formatted = "\n".join(str(v) for v in violations_list)
         combined = "\n\n".join(prompts)
+
+        body_section = ""
+        if body_context:
+            body_section = (
+                f"\nFILE BODY (read-only context — do NOT include this in your edits):\n"
+                f"{body_context}\n\n"
+            )
+
         return (
             f"You are fixing lint violations in a content block from: "
             f"{block.path.name} ({block.category})\n\n"
             f"VIOLATIONS TO FIX:\n{formatted}\n\n"
             f"RULE GUIDANCE:\n{combined}\n\n"
+            f"{body_section}"
             "TOOLS:\n"
             "- read_block() — read the content block\n"
             "- replace_block_section(old_text, new_text) — surgical edit\n"
@@ -555,7 +564,8 @@ class Linter:
                 **kwargs,
             )
 
-        state = BlockState(block)
+        fm_mode = any(llm_rules[v.rule_id].llm_fix_frontmatter for v in block_violations)
+        state = BlockState(block, frontmatter_mode=fm_mode)
         original_body = state.original
         tools = [
             ReadBlockTool(state),
@@ -584,7 +594,12 @@ class Linter:
                 on_event=_on_engine_event,
             )
             result = engine.run(
-                system_prompt=self._build_block_system_prompt(block, current_violations, llm_rules),
+                system_prompt=self._build_block_system_prompt(
+                    block,
+                    current_violations,
+                    llm_rules,
+                    body_context=state.body_context,
+                ),
                 user_message="Please fix the violations in this content block.",
             )
             block_usage.prompt_tokens += result.usage.prompt_tokens
@@ -635,6 +650,7 @@ class Linter:
             "usage": block_usage,
             "diff_text": diff_text,
             "changed": changed,
+            "frontmatter_mode": fm_mode,
         }
 
     def _llm_rollback_or_keep(self, files_to_violations, originals, all_diffs, threshold):
@@ -832,7 +848,10 @@ class Linter:
             after_count = len(after_remaining)
 
             if after_count >= before_count:
-                block.write_body(original_body)
+                if br.get("frontmatter_mode"):
+                    block.write_frontmatter_text(original_body)
+                else:
+                    block.write_body(original_body)
                 violations_after += before_count
             else:
                 violations_after += after_count
@@ -853,6 +872,8 @@ class Linter:
                 if br["changed"]:
                     if not br["original_body"] and br["block"].path.exists():
                         br["block"].path.unlink()
+                    elif br.get("frontmatter_mode"):
+                        br["block"].write_frontmatter_text(br["original_body"])
                     else:
                         br["block"].write_body(br["original_body"])
 

@@ -587,6 +587,57 @@ class ParsedFrontmatterBlock(FileContentBlock):
             label += f" [desc: {desc_tokens:,} tokens]"
         return label
 
+    def read_frontmatter_text(self) -> str:
+        """Return the raw YAML text between the --- delimiters (no delimiters)."""
+        content = read_text(self.path)
+        if not content or not content.startswith("---"):
+            return ""
+        fm_text, _ = _extract_frontmatter_text(content)
+        return fm_text or ""
+
+    def write_frontmatter_text(self, new_fm_text: str) -> None:
+        """Replace just the frontmatter YAML, preserving the body.
+
+        Raises ValueError if new_fm_text is not valid YAML.
+        """
+        try:
+            data = yaml.safe_load(new_fm_text)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML: {e}") from e
+        if not isinstance(data, dict):
+            raise ValueError("Frontmatter must be a YAML mapping")
+
+        fm = new_fm_text.rstrip("\n") + "\n"
+
+        content = read_text(self.path)
+        if not content:
+            self.path.write_text(f"---\n{fm}---\n", encoding="utf-8")
+            self._fm_parsed = None
+            return
+
+        m = re.match(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", content, re.DOTALL)
+        if m:
+            body_after = content[m.end() :]
+            self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
+        elif content.startswith("---"):
+            lines = content.split("\n")
+            close_idx = None
+            for i, line in enumerate(lines[1:], 1):
+                if line.strip() == "---":
+                    close_idx = i
+                    break
+            if close_idx is not None:
+                body_after = "\n".join(lines[close_idx + 1 :])
+                if body_after and not body_after.startswith("\n"):
+                    body_after = "\n" + body_after
+                self.path.write_text(f"---\n{fm}---{body_after}", encoding="utf-8")
+            else:
+                body_after = "\n".join(lines[1:])
+                self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
+        else:
+            self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
+        self._fm_parsed = None
+
 
 @dataclass(eq=False)
 class CommandBlock(ParsedFrontmatterBlock):

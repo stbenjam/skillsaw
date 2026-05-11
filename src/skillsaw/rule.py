@@ -173,6 +173,11 @@ class Rule(ABC):
     def llm_fix_prompt(self) -> Optional[str]:
         return None
 
+    @property
+    def llm_fix_frontmatter(self) -> bool:
+        """When True, LLM fix operates on frontmatter YAML only (not the body)."""
+        return False
+
     def violation(
         self,
         message: str,

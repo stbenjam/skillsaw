@@ -224,9 +224,15 @@ class DiffTool:
 class BlockState:
     """Mutable shared state for block tools within a single LLM session."""
 
-    def __init__(self, block: "ContentBlock"):
+    def __init__(self, block: "ContentBlock", *, frontmatter_mode: bool = False):
         self.block = block
-        self.original = block.read_body(strip_code_blocks=False) or ""
+        self.frontmatter_mode = frontmatter_mode
+        if frontmatter_mode:
+            self.original = block.read_frontmatter_text()
+            self.body_context = block.body_text
+        else:
+            self.original = block.read_body(strip_code_blocks=False) or ""
+            self.body_context = None
         self.body = self.original
 
 
@@ -305,8 +311,14 @@ class LintBlockTool:
 
     def execute(self) -> str:
         block = self._state.block
-        block.body = self._state.body
-        block.write_body(self._state.body)
+        if self._state.frontmatter_mode:
+            try:
+                block.write_frontmatter_text(self._state.body)
+            except ValueError as e:
+                return f"Error: {e}"
+        else:
+            block.body = self._state.body
+            block.write_body(self._state.body)
 
         from ..context import RepositoryContext
         from ..rules.builtin import BUILTIN_RULES
