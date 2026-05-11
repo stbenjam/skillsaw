@@ -38,7 +38,7 @@ class AgentFrontmatterRule(Rule):
             "- 'name' should be the agent file stem (filename without .md)\n"
             "- 'description' should be imperative and tell the model when to invoke it, "
             "e.g. 'Use when the user asks to review a PR' — "
-            "derive it from the body content\n"
+            "derive it from the body content, keep it under 200 tokens\n"
             "- If the YAML is malformed, fix the syntax\n"
             "- Preserve any other existing frontmatter fields"
         )
