@@ -39,7 +39,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         CursorRuleBlock,
         ExtraBlock,
         GeminiMdBlock,
+        HooksBlock,
         InstructionBlock,
+        McpBlock,
+        ReadmeBlock,
         PluginRuleBlock,
         PromptBlock,
         SkillBlock,
@@ -161,6 +164,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if rules_dir.is_dir():
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add_block(plugin_node, rule_file, PluginRuleBlock)
+
+        _add_block(plugin_node, plugin_path / "hooks" / "hooks.json", HooksBlock)
+        _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
+        _add_block(plugin_node, plugin_path / "README.md", ReadmeBlock)
 
         plugin_nodes[plugin_path.resolve()] = plugin_node
         if marketplace_node is not None and plugin_path.resolve().is_relative_to(

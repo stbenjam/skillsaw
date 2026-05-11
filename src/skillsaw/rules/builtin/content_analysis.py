@@ -657,6 +657,217 @@ class ExtraBlock(FileContentBlock):
     category: str = "extra"
 
 
+@dataclass(eq=False)
+class ReadmeBlock(LintTarget):
+    """README.md in a plugin (not injected into context)."""
+
+    show_tokens = False
+
+    def tree_label(self) -> str:
+        return self.path.name
+
+
+# ---------------------------------------------------------------------------
+# JSON-based blocks: hooks and MCP
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HookHandler:
+    """A single hook handler entry."""
+
+    type: str
+    command: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    server: Optional[str] = None
+    tool: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    prompt: Optional[str] = None
+    model: Optional[str] = None
+    timeout: Optional[float] = None
+    async_: Optional[bool] = None
+    async_rewake: Optional[bool] = None
+    once: Optional[bool] = None
+    if_: Optional[str] = None
+    status_message: Optional[str] = None
+    shell: Optional[str] = None
+    allowed_env_vars: Optional[List[str]] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HookHandler":
+        return cls(
+            type=d.get("type", ""),
+            command=d.get("command"),
+            url=d.get("url"),
+            headers=d.get("headers"),
+            server=d.get("server"),
+            tool=d.get("tool"),
+            input=d.get("input"),
+            prompt=d.get("prompt"),
+            model=d.get("model"),
+            timeout=d.get("timeout"),
+            async_=d.get("async"),
+            async_rewake=d.get("asyncRewake"),
+            once=d.get("once"),
+            if_=d.get("if"),
+            status_message=d.get("statusMessage"),
+            shell=d.get("shell"),
+            allowed_env_vars=d.get("allowedEnvVars"),
+        )
+
+
+@dataclass
+class HookEventConfig:
+    """A single event config entry (matcher + handlers)."""
+
+    matcher: str = ".*"
+    handlers: List[HookHandler] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HookEventConfig":
+        handlers: List[HookHandler] = []
+        raw_hooks = d.get("hooks", [])
+        if isinstance(raw_hooks, list):
+            for h in raw_hooks:
+                if isinstance(h, dict):
+                    handlers.append(HookHandler.from_dict(h))
+        return cls(
+            matcher=d.get("matcher", ".*"),
+            handlers=handlers,
+        )
+
+
+def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
+    from .utils import read_json
+
+    data, error = read_json(path)
+    return data, error
+
+
+@dataclass(eq=False)
+class HooksBlock(FileContentBlock):
+    """hooks/hooks.json in a plugin."""
+
+    category: str = "hooks"
+    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = _parse_json_file(self.path)
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._parsed[1]
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        data = self._parsed[0]
+        return data if isinstance(data, dict) else None
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if data is None:
+            return {}
+        hooks_obj = data.get("hooks", {})
+        if not isinstance(hooks_obj, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for event_type, configs in hooks_obj.items():
+            if not isinstance(configs, list):
+                continue
+            entries: List[HookEventConfig] = []
+            for cfg in configs:
+                if isinstance(cfg, dict):
+                    entries.append(HookEventConfig.from_dict(cfg))
+            if entries:
+                result[event_type] = entries
+        return result
+
+
+@dataclass
+class McpServerConfig:
+    """A single MCP server configuration."""
+
+    name: str
+    type: str = "stdio"
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    cwd: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    headers_helper: Optional[str] = None
+    startup_timeout: Optional[float] = None
+    always_load: Optional[bool] = None
+    oauth: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def from_dict(cls, name: str, d: Dict[str, Any]) -> "McpServerConfig":
+        return cls(
+            name=name,
+            type=d.get("type", "stdio"),
+            command=d.get("command"),
+            args=d.get("args"),
+            env=d.get("env"),
+            cwd=d.get("cwd"),
+            url=d.get("url"),
+            headers=d.get("headers"),
+            headers_helper=d.get("headersHelper"),
+            startup_timeout=d.get("startupTimeout"),
+            always_load=d.get("alwaysLoad"),
+            oauth=d.get("oauth"),
+        )
+
+
+@dataclass(eq=False)
+class McpBlock(FileContentBlock):
+    """.mcp.json in a plugin."""
+
+    category: str = "mcp"
+    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = _parse_json_file(self.path)
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._parsed[1]
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        data = self._parsed[0]
+        return data if isinstance(data, dict) else None
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
+        data = self.raw_data
+        if data is None:
+            return []
+        servers_dict = data.get("mcpServers", data)
+        if not isinstance(servers_dict, dict):
+            return []
+        return [
+            McpServerConfig.from_dict(name, cfg)
+            for name, cfg in servers_dict.items()
+            if isinstance(cfg, dict)
+        ]
+
+    @property
+    def server_names(self) -> Set[str]:
+        return {s.name for s in self.servers}
+
+
 # Backward compat aliases
 ContentFile = FileContentBlock
 

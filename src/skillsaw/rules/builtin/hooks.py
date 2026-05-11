@@ -2,12 +2,11 @@
 Rules for validating hook configuration
 """
 
-from typing import List, Dict, Any
+from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import PluginNode
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.content_analysis import HooksBlock
 
 # Valid hook event types
 _VALID_HOOK_EVENTS = {
@@ -116,49 +115,39 @@ class HooksJsonValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_node in context.lint_tree.find(PluginNode):
-            plugin_path = plugin_node.path
-            hooks_dir = plugin_path / "hooks"
-            if not hooks_dir.exists():
-                continue
-
-            hooks_json = hooks_dir / "hooks.json"
-            if not hooks_json.exists():
-                continue
-
-            # Try to parse JSON
-            data, error = read_json(hooks_json)
-            if error:
-                violations.append(self.violation(f"Invalid JSON: {error}", file_path=hooks_json))
-                continue
-
-            # Validate structure
-            if not isinstance(data, dict):
+        for block in context.lint_tree.find(HooksBlock):
+            if block.parse_error:
                 violations.append(
-                    self.violation("hooks.json must be a JSON object", file_path=hooks_json)
+                    self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
+                )
+                continue
+
+            data = block.raw_data
+            if data is None or not isinstance(data, dict):
+                violations.append(
+                    self.violation("hooks.json must be a JSON object", file_path=block.path)
                 )
                 continue
 
             if "hooks" not in data:
                 violations.append(
-                    self.violation("hooks.json must contain a 'hooks' key", file_path=hooks_json)
+                    self.violation("hooks.json must contain a 'hooks' key", file_path=block.path)
                 )
                 continue
 
-            hooks = data["hooks"]
-            if not isinstance(hooks, dict):
+            raw_hooks = data["hooks"]
+            if not isinstance(raw_hooks, dict):
                 violations.append(
-                    self.violation("'hooks' must be a JSON object", file_path=hooks_json)
+                    self.violation("'hooks' must be a JSON object", file_path=block.path)
                 )
                 continue
 
-            # Validate event types
-            for event_type, hook_configs in hooks.items():
+            for event_type, hook_configs in raw_hooks.items():
                 if event_type not in _VALID_HOOK_EVENTS:
                     violations.append(
                         self.violation(
                             f"Unknown event type '{event_type}'. Valid types: {', '.join(sorted(_VALID_HOOK_EVENTS))}",
-                            file_path=hooks_json,
+                            file_path=block.path,
                         )
                     )
 
@@ -166,7 +155,7 @@ class HooksJsonValidRule(Rule):
                     violations.append(
                         self.violation(
                             f"Event '{event_type}' must have an array of hook configurations",
-                            file_path=hooks_json,
+                            file_path=block.path,
                         )
                     )
                     continue
@@ -176,17 +165,16 @@ class HooksJsonValidRule(Rule):
                         violations.append(
                             self.violation(
                                 f"Event '{event_type}[{idx}]' configuration must be an object",
-                                file_path=hooks_json,
+                                file_path=block.path,
                             )
                         )
                         continue
 
-                    # Validate hook configuration has required 'hooks' array
                     if "hooks" not in hook_config:
                         violations.append(
                             self.violation(
                                 f"Event '{event_type}[{idx}]' must have a 'hooks' array",
-                                file_path=hooks_json,
+                                file_path=block.path,
                             )
                         )
                         continue
@@ -196,18 +184,17 @@ class HooksJsonValidRule(Rule):
                         violations.append(
                             self.violation(
                                 f"Event '{event_type}[{idx}].hooks' must be an array",
-                                file_path=hooks_json,
+                                file_path=block.path,
                             )
                         )
                         continue
 
-                    # Validate each hook has a type
                     for hook_idx, hook in enumerate(hook_list):
                         if not isinstance(hook, dict):
                             violations.append(
                                 self.violation(
                                     f"Event '{event_type}[{idx}].hooks[{hook_idx}]' must be an object",
-                                    file_path=hooks_json,
+                                    file_path=block.path,
                                 )
                             )
                             continue
@@ -216,7 +203,7 @@ class HooksJsonValidRule(Rule):
                             violations.append(
                                 self.violation(
                                     f"Event '{event_type}[{idx}].hooks[{hook_idx}]' must have a 'type' field",
-                                    file_path=hooks_json,
+                                    file_path=block.path,
                                 )
                             )
                             continue
@@ -224,25 +211,23 @@ class HooksJsonValidRule(Rule):
                         hook_type = hook["type"]
                         hook_path = f"{event_type}[{idx}].hooks[{hook_idx}]"
 
-                        # Validate type value
                         if hook_type not in _VALID_HOOK_TYPES:
                             violations.append(
                                 self.violation(
                                     f"Event '{hook_path}' has invalid type '{hook_type}'. "
                                     f"Valid types: {', '.join(sorted(_VALID_HOOK_TYPES))}",
-                                    file_path=hooks_json,
+                                    file_path=block.path,
                                 )
                             )
                             continue
 
-                        # Validate type-specific required fields
                         for field, expected_type in _TYPE_REQUIRED_FIELDS[hook_type].items():
                             if field not in hook:
                                 violations.append(
                                     self.violation(
                                         f"Event '{hook_path}' of type '{hook_type}' "
                                         f"requires a '{field}' field",
-                                        file_path=hooks_json,
+                                        file_path=block.path,
                                     )
                                 )
                             elif not _check_field_type(hook[field], expected_type):
@@ -251,11 +236,10 @@ class HooksJsonValidRule(Rule):
                                     self.violation(
                                         f"Event '{hook_path}' field '{field}' "
                                         f"must be a {type_name}",
-                                        file_path=hooks_json,
+                                        file_path=block.path,
                                     )
                                 )
 
-                        # Validate type-specific field restrictions (WARNING)
                         for field in hook:
                             if field in _TYPE_SPECIFIC_FIELDS:
                                 valid_types = _TYPE_SPECIFIC_FIELDS[field]
@@ -265,12 +249,11 @@ class HooksJsonValidRule(Rule):
                                             f"Event '{hook_path}' field '{field}' "
                                             f"is only valid on types: "
                                             f"{', '.join(sorted(valid_types))}",
-                                            file_path=hooks_json,
+                                            file_path=block.path,
                                             severity=Severity.WARNING,
                                         )
                                     )
 
-                        # Validate common optional field types
                         for field, expected_type in _OPTIONAL_FIELD_TYPES.items():
                             if field not in hook:
                                 continue
@@ -280,7 +263,7 @@ class HooksJsonValidRule(Rule):
                                     self.violation(
                                         f"Event '{hook_path}' field '{field}' "
                                         f"must be a {type_name}",
-                                        file_path=hooks_json,
+                                        file_path=block.path,
                                     )
                                 )
 

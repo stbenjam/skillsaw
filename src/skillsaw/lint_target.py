@@ -60,8 +60,10 @@ class LintTarget:
         self, *, _prefix: str = "", _last: bool = True, root_path: Path | None = None
     ) -> str:
         lines: list[str] = []
-        tokens = self.estimate_tokens()
-        token_str = f" ({self._format_tokens(tokens)} tokens)"
+        token_str = ""
+        if getattr(self, "show_tokens", True):
+            tokens = self.estimate_tokens()
+            token_str = f" ({self._format_tokens(tokens)} tokens)"
         if root_path and self.path == root_path:
             label = f"{self.path.name}/{token_str}"
         else:

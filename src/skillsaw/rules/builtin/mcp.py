@@ -8,6 +8,7 @@ from pathlib import Path
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
+from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -31,44 +32,30 @@ class McpValidJsonRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_node in context.lint_tree.find(PluginNode):
-            plugin_path = plugin_node.path
-            # Check for .mcp.json at plugin root
-            mcp_json = plugin_path / ".mcp.json"
-            if mcp_json.exists():
-                violations.extend(self._validate_mcp_file(mcp_json))
+        for block in context.lint_tree.find(McpBlock):
+            if block.parse_error:
+                violations.append(
+                    self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
+                )
+                continue
 
-            # Check for mcpServers in plugin.json
-            plugin_json_path = plugin_path / ".claude-plugin" / "plugin.json"
+            data = block.raw_data
+            if data is None:
+                violations.append(
+                    self.violation("MCP configuration must be a JSON object", file_path=block.path)
+                )
+                continue
+
+            if "mcpServers" in data:
+                violations.extend(self._validate_mcp_structure(data, block.path))
+            else:
+                violations.extend(self._validate_mcp_structure({"mcpServers": data}, block.path))
+
+        # Also check mcpServers embedded in plugin.json (not a separate file node)
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_json_path = plugin_node.path / ".claude-plugin" / "plugin.json"
             if plugin_json_path.exists():
                 violations.extend(self._validate_plugin_json_mcp(plugin_json_path))
-
-        return violations
-
-    def _validate_mcp_file(self, mcp_json: Path) -> List[RuleViolation]:
-        """Validate standalone .mcp.json file.
-
-        Accepts two formats:
-        - Wrapped: {"mcpServers": {"name": {...}}}
-        - Flat: {"name": {"type": "...", ...}}  (server names as top-level keys)
-        """
-        violations = []
-
-        data, error = read_json(mcp_json)
-        if error:
-            violations.append(self.violation(f"Invalid JSON: {error}", file_path=mcp_json))
-            return violations
-
-        if not isinstance(data, dict):
-            violations.append(
-                self.violation("MCP configuration must be a JSON object", file_path=mcp_json)
-            )
-            return violations
-
-        if "mcpServers" in data:
-            violations.extend(self._validate_mcp_structure(data, mcp_json))
-        else:
-            violations.extend(self._validate_mcp_structure({"mcpServers": data}, mcp_json))
 
         return violations
 
@@ -78,13 +65,11 @@ class McpValidJsonRule(Rule):
 
         data, error = read_json(plugin_json)
         if error:
-            # If plugin.json is invalid, plugin-json-valid rule will catch it
             return violations
 
         if not isinstance(data, dict):
             return violations
 
-        # Only validate if mcpServers field exists
         if "mcpServers" not in data:
             return violations
 
@@ -119,7 +104,6 @@ class McpValidJsonRule(Rule):
             )
             return violations
 
-        # Validate each server configuration
         for server_name, server_config in mcp_servers.items():
             if not isinstance(server_config, dict):
                 violations.append(
@@ -139,10 +123,8 @@ class McpValidJsonRule(Rule):
                     )
                 )
 
-            # Get server type (defaults to stdio)
             server_type = server_config.get("type", "stdio")
 
-            # Validate type field
             if server_type not in self.VALID_MCP_TYPES:
                 violations.append(
                     self.violation(
@@ -151,7 +133,6 @@ class McpValidJsonRule(Rule):
                     )
                 )
             else:
-                # Check for required fields for the valid type
                 required_field = self.REQUIRED_FIELDS_BY_TYPE[server_type]
                 if required_field not in server_config:
                     violations.append(
@@ -161,7 +142,6 @@ class McpValidJsonRule(Rule):
                         )
                     )
 
-            # Validate optional fields
             if "args" in server_config and not isinstance(server_config["args"], list):
                 violations.append(
                     self.violation(
@@ -204,7 +184,6 @@ class McpValidJsonRule(Rule):
 
             if "startupTimeout" in server_config:
                 val = server_config["startupTimeout"]
-                # `bool` is a subclass of `int`, so we must explicitly exclude it.
                 is_valid_number = isinstance(val, (int, float)) and not isinstance(val, bool)
                 if not is_valid_number:
                     violations.append(
@@ -271,108 +250,57 @@ class McpProhibitedRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        # Get allowlist from config
         allowlist = set(self.config.get("allowlist", []))
 
-        for plugin_node in context.lint_tree.find(PluginNode):
-            plugin_path = plugin_node.path
-            # Check for .mcp.json at plugin root
-            mcp_json = plugin_path / ".mcp.json"
-            if mcp_json.exists():
-                violations.extend(self._check_mcp_file(mcp_json, allowlist))
-
-            # Check for mcpServers in plugin.json
-            plugin_json_path = plugin_path / ".claude-plugin" / "plugin.json"
-            if plugin_json_path.exists():
-                violations.extend(self._check_plugin_json(plugin_json_path, allowlist))
-
-        return violations
-
-    def _check_mcp_file(self, mcp_json: Path, allowlist: set) -> List[RuleViolation]:
-        """Check .mcp.json for non-allowlisted servers.
-
-        Accepts both wrapped (mcpServers key) and flat formats.
-        """
-        violations = []
-
-        data, error = read_json(mcp_json)
-        if error:
-            return violations
-
-        if not isinstance(data, dict):
-            return violations
-
-        servers = data.get("mcpServers", data)
-        if not isinstance(servers, dict):
-            return violations
-
-        prohibited = self._get_prohibited_servers(servers, allowlist)
-        if prohibited:
+        for block in context.lint_tree.find(McpBlock):
+            prohibited = block.server_names - allowlist if allowlist else block.server_names
+            if not prohibited:
+                continue
             if allowlist:
                 violations.append(
                     self.violation(
                         f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
-                        file_path=mcp_json,
+                        file_path=block.path,
                     )
                 )
             else:
                 violations.append(
                     self.violation(
                         "Plugin defines MCP servers in .mcp.json",
-                        file_path=mcp_json,
+                        file_path=block.path,
+                    )
+                )
+
+        # Also check mcpServers embedded in plugin.json
+        for plugin_node in context.lint_tree.find(PluginNode):
+            plugin_json_path = plugin_node.path / ".claude-plugin" / "plugin.json"
+            if not plugin_json_path.exists():
+                continue
+            data, error = read_json(plugin_json_path)
+            if error or not isinstance(data, dict):
+                continue
+            if "mcpServers" not in data:
+                continue
+            mcp_servers = data["mcpServers"]
+            if not isinstance(mcp_servers, dict):
+                continue
+            server_names = set(mcp_servers.keys())
+            prohibited = server_names - allowlist if allowlist else server_names
+            if not prohibited:
+                continue
+            if allowlist:
+                violations.append(
+                    self.violation(
+                        f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
+                        file_path=plugin_json_path,
+                    )
+                )
+            else:
+                violations.append(
+                    self.violation(
+                        "Plugin defines MCP servers in plugin.json",
+                        file_path=plugin_json_path,
                     )
                 )
 
         return violations
-
-    def _check_plugin_json(self, plugin_json: Path, allowlist: set) -> List[RuleViolation]:
-        """Check plugin.json for non-allowlisted servers"""
-        violations = []
-
-        data, error = read_json(plugin_json)
-        if error:
-            return violations
-
-        if not isinstance(data, dict):
-            return violations
-
-        if "mcpServers" in data:
-            mcp_servers = data["mcpServers"]
-            if not isinstance(mcp_servers, dict):
-                return violations
-
-            prohibited = self._get_prohibited_servers(mcp_servers, allowlist)
-            if prohibited:
-                if allowlist:
-                    violations.append(
-                        self.violation(
-                            f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
-                            file_path=plugin_json,
-                        )
-                    )
-                else:
-                    violations.append(
-                        self.violation(
-                            "Plugin defines MCP servers in plugin.json",
-                            file_path=plugin_json,
-                        )
-                    )
-
-        return violations
-
-    def _get_prohibited_servers(self, mcp_servers: dict, allowlist: set) -> set:
-        """
-        Get set of server names that are not in the allowlist
-
-        Args:
-            mcp_servers: Dict of MCP server configurations
-            allowlist: Set of allowed server names
-
-        Returns:
-            Set of prohibited server names
-        """
-        if not allowlist:
-            # If no allowlist, all servers are prohibited
-            return set(mcp_servers.keys())
-
-        return set(mcp_servers.keys()) - allowlist
