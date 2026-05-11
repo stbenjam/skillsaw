@@ -288,7 +288,7 @@ Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction 
 
 ### APM (Agent Package Manager)
 
-Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files into `.claude/`.
+Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
 
 ## Configuration
 
