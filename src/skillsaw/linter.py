@@ -358,13 +358,17 @@ class Linter:
         from .rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches(fpath)
-        self.context.rebuild_lint_tree()
+        context = RepositoryContext(self.context.root_path)
+        context.content_paths = self.config.content_paths
+        context.exclude_patterns = self.config.exclude_patterns
+        context.apply_excludes()
+
         failed_rule_ids = {v.rule_id for v in violations_list}
         failed_rules = [r for r in self.rules if r.rule_id in failed_rule_ids]
         remaining = []
         for rule in failed_rules:
             try:
-                re_violations = rule.check(self.context)
+                re_violations = rule.check(context)
                 for v in re_violations:
                     if self._SEVERITY_ORDER.get(v.severity, 99) > threshold:
                         continue

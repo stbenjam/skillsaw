@@ -37,7 +37,9 @@ class SkillFrontmatterRule(Rule):
             "Rules:\n"
             "- Must have 'name' and 'description' fields\n"
             "- 'name' should be the skill directory name\n"
-            "- 'description' should be a concise one-line summary derived from the body content\n"
+            "- 'description' should be imperative and tell the model when to invoke it, "
+            "e.g. 'Use when the user asks to deploy a service' — "
+            "derive it from the body content\n"
             "- If the YAML is malformed, fix the syntax\n"
             "- Preserve any other existing frontmatter fields"
         )
