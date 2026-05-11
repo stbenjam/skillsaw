@@ -5,9 +5,13 @@ Rule for warning when instruction/config files exceed recommended token limits.
 from typing import Any, Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
+from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.utils import read_text
-from skillsaw.rules.builtin.content_analysis import gather_all_content_files
+from skillsaw.rules.builtin.content_analysis import (
+    gather_all_content_blocks,
+    SkillBlock,
+    CommandBlock,
+)
 
 # Anthropic recommends keeping instruction files under ~5k tokens to avoid
 # attention degradation.  These defaults use 6k warn / 12k error for primary
@@ -23,6 +27,8 @@ DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "command": {"warn": 2000, "error": 4000},
     "agent": {"warn": 2000, "error": 4000},
     "rule": {"warn": 2000, "error": 4000},
+    "skill-description": {"warn": 200, "error": 500},
+    "command-description": {"warn": 200, "error": 500},
 }
 
 
@@ -51,7 +57,7 @@ def _estimate_tokens(text: str) -> int:
 class ContextBudgetRule(Rule):
     """Warn or error when files exceed recommended token limits"""
 
-    formats = ALL_INSTRUCTION_FORMATS
+    formats = None
     since = "0.7.0"
 
     config_schema = {
@@ -112,13 +118,55 @@ class ContextBudgetRule(Rule):
                 )
             )
 
+    def _check_descriptions(
+        self,
+        context: RepositoryContext,
+        limits: Dict[str, Tuple[Optional[int], Optional[int]]],
+        violations: List[RuleViolation],
+    ) -> None:
+        desc_categories = {
+            SkillBlock: "skill-description",
+            CommandBlock: "command-description",
+        }
+        for block_type, category in desc_categories.items():
+            warn_limit, error_limit = limits.get(category, (None, None))
+            if warn_limit is None and error_limit is None:
+                continue
+            for block in context.lint_tree.find(block_type):
+                fm = block.frontmatter
+                if not fm or not isinstance(fm.get("description"), str):
+                    continue
+                tokens = _estimate_tokens(fm["description"])
+                if error_limit is not None and tokens > error_limit:
+                    violations.append(
+                        self.violation(
+                            f"Frontmatter description is ~{tokens:,} tokens "
+                            f"(exceeds {category} limit of {error_limit:,})",
+                            file_path=block.path,
+                            line=block.key_line("description"),
+                            severity=Severity.ERROR,
+                        )
+                    )
+                elif warn_limit is not None and tokens > warn_limit:
+                    violations.append(
+                        self.violation(
+                            f"Frontmatter description is ~{tokens:,} tokens "
+                            f"(exceeds {category} limit of {warn_limit:,})",
+                            file_path=block.path,
+                            line=block.key_line("description"),
+                            severity=Severity.WARNING,
+                        )
+                    )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         limits = self._get_limits()
 
-        for cf in gather_all_content_files(context):
+        for cf in gather_all_content_blocks(context):
             warn_limit, error_limit = limits.get(cf.category, (None, None))
             if warn_limit is not None or error_limit is not None:
                 self._check_file(cf.path, cf.category, warn_limit, error_limit, violations)
+
+        self._check_descriptions(context, limits, violations)
 
         return violations

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.docs.models import (
@@ -19,7 +17,16 @@ from skillsaw.docs.models import (
     RuleFileDoc,
     SkillDoc,
 )
-from skillsaw.rules.builtin.utils import extract_section, parse_frontmatter
+from skillsaw.lint_target import PluginNode, SkillNode
+from skillsaw.rules.builtin.content_analysis import (
+    AgentBlock,
+    CommandBlock,
+    HooksBlock,
+    McpBlock,
+    PluginRuleBlock,
+    ReadmeBlock,
+    SkillBlock,
+)
 
 
 def extract_docs(
@@ -27,7 +34,7 @@ def extract_docs(
     title: Optional[str] = None,
 ) -> DocsOutput:
     """Extract documentation from a repository context."""
-    plugins = [_extract_plugin(context, p) for p in context.plugins]
+    plugins = [_extract_plugin(context, pn) for pn in context.lint_tree.find(PluginNode)]
 
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
@@ -41,9 +48,9 @@ def extract_docs(
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
         plugin_skill_paths = {s.dir_path.resolve() for p in plugins for s in p.skills}
-        for skill_path in context.skills:
-            if skill_path.resolve() not in plugin_skill_paths:
-                doc = _extract_skill(skill_path)
+        for skill_node in context.lint_tree.find(SkillNode):
+            if skill_node.path.resolve() not in plugin_skill_paths:
+                doc = _extract_skill(skill_node)
                 if doc:
                     standalone_skills.append(doc)
 
@@ -72,7 +79,8 @@ def _default_title(
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
 
 
-def _extract_plugin(context: RepositoryContext, plugin_path: Path) -> PluginDoc:
+def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> PluginDoc:
+    plugin_path = plugin_node.path
     meta = context.get_plugin_metadata(plugin_path) or {}
     name = context.get_plugin_name(plugin_path)
 
@@ -86,85 +94,59 @@ def _extract_plugin(context: RepositoryContext, plugin_path: Path) -> PluginDoc:
         description=meta.get("description", ""),
         version=str(v) if (v := meta.get("version")) is not None else "",
         author=author_val if isinstance(author_val, dict) else None,
-        commands=_extract_commands(plugin_path),
-        skills=_extract_skills(plugin_path),
-        agents=_extract_agents(plugin_path),
-        hooks=_extract_hooks(plugin_path),
-        mcp_servers=_extract_mcp_servers(plugin_path, meta),
-        rules=_extract_rules(plugin_path),
-        has_readme=(plugin_path / "README.md").exists(),
+        commands=_extract_commands(plugin_node),
+        skills=_extract_skills(plugin_node),
+        agents=_extract_agents(plugin_node),
+        hooks=_extract_hooks(plugin_node),
+        mcp_servers=_extract_mcp_servers(plugin_node, meta),
+        rules=_extract_rules(plugin_node),
+        has_readme=bool(plugin_node.find(ReadmeBlock)),
     )
 
 
 # -- Commands --
 
 
-def _extract_commands(plugin_path: Path) -> List[CommandDoc]:
-    commands_dir = plugin_path / "commands"
-    if not commands_dir.is_dir():
-        return []
+def _extract_commands(plugin_node: PluginNode) -> List[CommandDoc]:
     docs = []
-    for cmd_file in sorted(commands_dir.glob("*.md")):
-        doc = _parse_command(cmd_file)
-        if doc:
-            docs.append(doc)
-    return docs
-
-
-def _parse_command(cmd_file: Path) -> Optional[CommandDoc]:
-    content = _read(cmd_file)
-    if content is None:
-        return None
-    fm, body = parse_frontmatter(content)
-    description = fm.get("description", "") if fm else ""
-    name_lines = extract_section(content, "Name").strip().splitlines()
-    full_name = name_lines[0] if name_lines else ""
-    synopsis = _strip_fences(extract_section(content, "Synopsis"))
-    body_text = extract_section(content, "Description")
-    return CommandDoc(
-        name=cmd_file.stem,
-        file_path=cmd_file,
-        description=description,
-        full_name=full_name,
-        synopsis=synopsis,
-        body=body_text,
-    )
-
-
-def _strip_fences(text: str) -> str:
-    """Remove leading/trailing code fences from a block."""
-    lines = text.strip().splitlines()
-    if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return text.strip()
+    for block in plugin_node.find(CommandBlock):
+        fm = block.frontmatter or {}
+        name_lines = block.section("Name").strip().splitlines()
+        full_name = name_lines[0] if name_lines else ""
+        synopsis = _strip_fences(block.section("Synopsis"))
+        body_text = block.section("Description")
+        docs.append(
+            CommandDoc(
+                name=block.path.stem,
+                file_path=block.path,
+                description=fm.get("description", ""),
+                full_name=full_name,
+                synopsis=synopsis,
+                body=body_text,
+            )
+        )
+    return sorted(docs, key=lambda d: d.name)
 
 
 # -- Skills --
 
 
-def _extract_skills(plugin_path: Path) -> List[SkillDoc]:
-    skills_dir = plugin_path / "skills"
-    if not skills_dir.is_dir():
-        return []
+def _extract_skills(plugin_node: PluginNode) -> List[SkillDoc]:
     docs = []
-    for skill_dir in sorted(skills_dir.iterdir()):
-        if not skill_dir.is_dir() or skill_dir.name.startswith("."):
-            continue
-        doc = _extract_skill(skill_dir)
+    for skill_node in plugin_node.find(SkillNode):
+        doc = _extract_skill(skill_node)
         if doc:
             docs.append(doc)
-    return docs
+    return sorted(docs, key=lambda d: d.name)
 
 
-def _extract_skill(skill_dir: Path) -> Optional[SkillDoc]:
-    skill_md = skill_dir / "SKILL.md"
-    if not skill_md.exists():
+def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
+    blocks = skill_node.find(SkillBlock)
+    if not blocks:
         return None
-    content = _read(skill_md)
-    if content is None:
-        return None
-    fm, body = parse_frontmatter(content)
-    if not fm:
+    block = blocks[0]
+    fm = block.frontmatter
+    if fm is None:
         fm = {}
 
     allowed_tools = fm.get("allowed-tools", [])
@@ -174,103 +156,77 @@ def _extract_skill(skill_dir: Path) -> Optional[SkillDoc]:
         allowed_tools = []
 
     return SkillDoc(
-        name=fm.get("name", skill_dir.name),
-        dir_path=skill_dir,
+        name=fm.get("name", skill_node.path.name),
+        dir_path=skill_node.path,
         description=fm.get("description", ""),
         license=fm.get("license", ""),
         compatibility=fm.get("compatibility", ""),
         metadata=fm.get("metadata", {}),
         allowed_tools=allowed_tools or [],
-        body=body.strip(),
+        body=block.body_text.strip(),
     )
 
 
 # -- Agents --
 
 
-def _extract_agents(plugin_path: Path) -> List[AgentDoc]:
-    agents_dir = plugin_path / "agents"
-    if not agents_dir.is_dir():
-        return []
+def _extract_agents(plugin_node: PluginNode) -> List[AgentDoc]:
     docs = []
-    for agent_file in sorted(agents_dir.glob("*.md")):
-        doc = _parse_agent(agent_file)
-        if doc:
-            docs.append(doc)
-    return docs
-
-
-def _parse_agent(agent_file: Path) -> Optional[AgentDoc]:
-    content = _read(agent_file)
-    if content is None:
-        return None
-    fm, body = parse_frontmatter(content)
-    if not fm:
-        fm = {}
-    return AgentDoc(
-        name=fm.get("name", agent_file.stem),
-        file_path=agent_file,
-        description=fm.get("description", ""),
-        body=body.strip(),
-    )
+    for block in plugin_node.find(AgentBlock):
+        fm = block.frontmatter or {}
+        docs.append(
+            AgentDoc(
+                name=fm.get("name", block.path.stem),
+                file_path=block.path,
+                description=fm.get("description", ""),
+                body=block.body_text.strip(),
+            )
+        )
+    return sorted(docs, key=lambda d: d.name)
 
 
 # -- Hooks --
 
 
-def _extract_hooks(plugin_path: Path) -> List[HookDoc]:
-    hooks_file = plugin_path / "hooks" / "hooks.json"
-    if not hooks_file.exists():
-        return []
-    data = _read_json(hooks_file)
-    if not data or not isinstance(data, dict):
-        return []
-    hooks_obj = data.get("hooks", {})
-    if not isinstance(hooks_obj, dict):
-        return []
-
+def _extract_hooks(plugin_node: PluginNode) -> List[HookDoc]:
     docs = []
-    for event_type in sorted(hooks_obj):
-        configs = hooks_obj[event_type]
-        if not isinstance(configs, list):
-            continue
-        entries = []
-        for cfg in configs:
-            if not isinstance(cfg, dict):
-                continue
-            entries.append(
+    for block in plugin_node.find(HooksBlock):
+        for event_type in sorted(block.events):
+            configs = block.events[event_type]
+            entries = [
                 HookEntry(
-                    matcher=cfg.get("matcher", ".*"),
-                    hooks=cfg.get("hooks", []),
+                    matcher=cfg.matcher,
+                    hooks=[
+                        {k: v for k, v in h.__dict__.items() if v is not None and k != "type"}
+                        | {"type": h.type}
+                        for h in cfg.handlers
+                    ],
                 )
-            )
-        if entries:
-            docs.append(HookDoc(event_type=event_type, entries=entries))
+                for cfg in configs
+            ]
+            if entries:
+                docs.append(HookDoc(event_type=event_type, entries=entries))
     return docs
 
 
 # -- MCP Servers --
 
 
-def _extract_mcp_servers(plugin_path: Path, plugin_meta: Dict[str, Any]) -> List[McpServerDoc]:
+def _extract_mcp_servers(plugin_node: PluginNode, plugin_meta: dict) -> List[McpServerDoc]:
     servers: List[McpServerDoc] = []
     seen: set = set()
 
-    mcp_json_path = plugin_path / ".mcp.json"
-    if mcp_json_path.exists():
-        data = _read_json(mcp_json_path)
-        if data and isinstance(data, dict) and isinstance(data.get("mcpServers"), dict):
-            for name, cfg in data["mcpServers"].items():
-                if isinstance(cfg, dict):
-                    servers.append(
-                        McpServerDoc(
-                            name=name,
-                            server_type=cfg.get("type", "stdio"),
-                            config=cfg,
-                            source_file=".mcp.json",
-                        )
-                    )
-                    seen.add(name)
+    for block in plugin_node.find(McpBlock):
+        for srv in block.servers:
+            servers.append(
+                McpServerDoc(
+                    name=srv.name,
+                    server_type=srv.type,
+                    config={k: v for k, v in srv.__dict__.items() if v is not None and k != "name"},
+                    source_file=".mcp.json",
+                )
+            )
+            seen.add(srv.name)
 
     mcp_in_plugin = plugin_meta.get("mcpServers", {})
     if isinstance(mcp_in_plugin, dict):
@@ -288,57 +244,35 @@ def _extract_mcp_servers(plugin_path: Path, plugin_meta: Dict[str, Any]) -> List
     return servers
 
 
-# -- Rules (DOT_CLAUDE) --
+# -- Rules --
 
 
-def _extract_rules(plugin_path: Path) -> List[RuleFileDoc]:
-    rules_dir = plugin_path / "rules"
-    if not rules_dir.is_dir():
-        return []
+def _extract_rules(plugin_node: PluginNode) -> List[RuleFileDoc]:
     docs = []
-    for rule_file in sorted(rules_dir.rglob("*.md")):
-        doc = _parse_rule_file(rule_file)
-        if doc:
-            docs.append(doc)
-    return docs
-
-
-def _parse_rule_file(rule_file: Path) -> Optional[RuleFileDoc]:
-    content = _read(rule_file)
-    if content is None:
-        return None
-    fm, body = parse_frontmatter(content)
-    globs: List[str] = []
-    description = ""
-    if fm:
+    for block in plugin_node.find(PluginRuleBlock):
+        fm = block.frontmatter or {}
+        globs: List[str] = []
         paths = fm.get("paths", [])
         if isinstance(paths, list):
             globs = [str(p) for p in paths]
-        description = fm.get("description", "")
-    return RuleFileDoc(
-        name=rule_file.stem,
-        file_path=rule_file,
-        description=description,
-        globs=globs,
-        body=body.strip(),
-    )
+        docs.append(
+            RuleFileDoc(
+                name=block.path.stem,
+                file_path=block.path,
+                description=fm.get("description", ""),
+                globs=globs,
+                body=block.body_text.strip(),
+            )
+        )
+    return sorted(docs, key=lambda d: d.name)
 
 
 # -- Helpers --
 
 
-def _read(path: Path) -> Optional[str]:
-    try:
-        return path.read_text(encoding="utf-8")
-    except (IOError, UnicodeDecodeError):
-        return None
-
-
-def _read_json(path: Path) -> Optional[Any]:
-    content = _read(path)
-    if content is None:
-        return None
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return None
+def _strip_fences(text: str) -> str:
+    """Remove leading/trailing code fences from a block."""
+    lines = text.strip().splitlines()
+    if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
+        return "\n".join(lines[1:-1]).strip()
+    return text.strip()

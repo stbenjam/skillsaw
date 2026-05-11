@@ -1,6 +1,6 @@
 ---
 name: {{AGENT_NAME}}
-description: TODO: Add description
+description: "TODO: Add description"
 subagent_type: {{AGENT_ID}}
 ---
 

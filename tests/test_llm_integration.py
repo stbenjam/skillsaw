@@ -47,7 +47,50 @@ def _make_dot_claude_repo(tmp_path, claude_md_content):
 
 
 def _fake_fix_provider(fixed_content, path="CLAUDE.md"):
-    """Build a FakeProvider that reads, writes fixed content, lints, and stops."""
+    """Build a FakeProvider that reads, writes fixed content, lints, and stops.
+
+    Uses block tools (read_block, write_block, lint_block) since content
+    violations now carry a ContentBlock reference and go through the
+    block-based fix pipeline.
+    """
+    return FakeProvider(
+        [
+            CompletionResult(
+                content=None,
+                tool_calls=[ToolCall(id="1", name="read_block", arguments={})],
+                usage=TokenUsage(100, 20),
+            ),
+            CompletionResult(
+                content=None,
+                tool_calls=[
+                    ToolCall(
+                        id="2",
+                        name="write_block",
+                        arguments={"content": fixed_content},
+                    )
+                ],
+                usage=TokenUsage(100, 50),
+            ),
+            CompletionResult(
+                content=None,
+                tool_calls=[ToolCall(id="3", name="lint_block", arguments={})],
+                usage=TokenUsage(100, 20),
+            ),
+            CompletionResult(
+                content="Fixed.",
+                tool_calls=[],
+                usage=TokenUsage(100, 20),
+            ),
+        ]
+    )
+
+
+def _fake_file_fix_provider(fixed_content, path="CLAUDE.md"):
+    """Build a FakeProvider using file-level tools (read_file, write_file, lint).
+
+    For violations without a ContentBlock (e.g. missing-file structural
+    violations) that go through the file-based fix pipeline.
+    """
     return FakeProvider(
         [
             CompletionResult(
@@ -511,7 +554,7 @@ class TestLLMFixNonExistentFile:
         assert len(readme_violations) >= 1, "Expected plugin-readme violation"
 
         readme_content = "# test-plugin\n\nA test plugin.\n"
-        provider = _fake_fix_provider(readme_content, path="README.md")
+        provider = _fake_fix_provider(readme_content)
 
         result = linter.llm_fix(provider)
         assert result.violations_before > 0
@@ -533,7 +576,7 @@ class TestLLMFixNonExistentFile:
         linter = Linter(context, config)
 
         readme_content = "# test-plugin\n\nA test plugin.\n"
-        provider = _fake_fix_provider(readme_content, path="README.md")
+        provider = _fake_fix_provider(readme_content)
 
         result = linter.llm_fix(provider, dry_run=True)
         # The file should NOT exist on disk after dry-run

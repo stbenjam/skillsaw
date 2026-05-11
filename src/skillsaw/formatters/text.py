@@ -35,7 +35,7 @@ def format_text(
         rel = relative_path(v.file_path, context.root_path)
         location = ""
         if rel:
-            location = f" [{rel}:{v.line}]" if v.line else f" [{rel}]"
+            location = f" [{rel}:{v.file_line}]" if v.file_line else f" [{rel}]"
         return f"{icon} {v.severity.value.upper()}{location}: {v.message}"
 
     output = []

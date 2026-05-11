@@ -1,5 +1,7 @@
 """Tests for .coderabbit.yaml linting rules."""
 
+from pathlib import Path
+
 import yaml
 
 from skillsaw.config import LinterConfig
@@ -10,9 +12,9 @@ from skillsaw.rules.builtin.coderabbit import (
 )
 from skillsaw.rules.builtin.content_analysis import (
     _extract_instructions,
-    _extract_coderabbit_instructions_body,
     gather_all_content_files,
-    _get_body,
+    _get_body_from_cf,
+    ContentFile,
 )
 from skillsaw.rules.builtin.content_rules import (
     ContentWeakLanguageRule,
@@ -172,60 +174,86 @@ class TestContentRulesOnCoderabbit:
 
 
 # ---------------------------------------------------------------------------
-# _get_body for .coderabbit.yaml
+# Per-instruction ContentFile for .coderabbit.yaml
 # ---------------------------------------------------------------------------
 
 
 class TestGetBodyCoderabbit:
-    """Verify _get_body extracts instruction text from .coderabbit.yaml."""
+    """Verify _get_body_from_cf returns pre-populated body for coderabbit ContentFiles."""
 
-    def test_extracts_review_instructions(self, temp_dir):
-        cr = temp_dir / ".coderabbit.yaml"
-        cr.write_text("reviews:\n  instructions: 'Do stuff.'\n")
-        body = _get_body(cr)
-        assert body is not None
-        assert "Do stuff." in body
+    def test_returns_body_from_cf(self):
+        cf = ContentFile(path=Path(".coderabbit.yaml"), category="coderabbit", body="Do stuff.")
+        body = _get_body_from_cf(cf)
+        assert body == "Do stuff."
 
-    def test_extracts_multiple_instruction_fields(self, temp_dir):
-        cr = temp_dir / ".coderabbit.yaml"
-        cr.write_text(
+    def test_returns_none_for_no_body_missing_file(self, temp_dir):
+        cf = ContentFile(path=temp_dir / "nonexistent.yaml", category="coderabbit")
+        body = _get_body_from_cf(cf)
+        assert body is None
+
+
+# ---------------------------------------------------------------------------
+# gather_all_content_files yields per-instruction ContentFiles
+# ---------------------------------------------------------------------------
+
+
+class TestGatherContentFilesCoderabbit:
+    def test_yields_one_per_instruction(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
             "reviews:\n"
             "  instructions: 'Review stuff.'\n"
             "chat:\n"
             "  instructions: 'Chat stuff.'\n"
         )
-        body = _get_body(cr)
-        assert body is not None
-        assert "Review stuff." in body
-        assert "Chat stuff." in body
-
-    def test_returns_empty_for_no_instructions(self, temp_dir):
-        cr = temp_dir / ".coderabbit.yaml"
-        cr.write_text("language: en-US\n")
-        body = _get_body(cr)
-        assert body == ""
-
-    def test_returns_empty_for_invalid_yaml(self, temp_dir):
-        cr = temp_dir / ".coderabbit.yaml"
-        cr.write_text(":\n  bad: [unterminated\n")
-        body = _get_body(cr)
-        assert body == ""
-
-
-# ---------------------------------------------------------------------------
-# gather_all_content_files includes .coderabbit.yaml
-# ---------------------------------------------------------------------------
-
-
-class TestGatherContentFilesCoderabbit:
-    def test_includes_coderabbit_yaml(self, temp_dir):
-        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  instructions: 'Do stuff.'\n")
         context = RepositoryContext(temp_dir)
         files = gather_all_content_files(context)
-        paths = [cf.path for cf in files]
-        assert temp_dir / ".coderabbit.yaml" in paths
-        categories = {cf.category for cf in files if cf.path == temp_dir / ".coderabbit.yaml"}
-        assert "coderabbit" in categories
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 2
+        bodies = [cf.body for cf in cr_files]
+        assert "Review stuff." in bodies
+        assert "Chat stuff." in bodies
+
+    def test_line_offsets_are_correct(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"  # 1
+            "  instructions: 'Review stuff.'\n"  # 2
+            "chat:\n"  # 3
+            "  instructions: 'Chat stuff.'\n"  # 4
+        )
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 2
+        # file_line(1) should map body line 1 to the YAML line of the instructions key
+        assert cr_files[0].file_line(1) == 2  # instructions key on line 2
+        assert cr_files[1].file_line(1) == 4  # instructions key on line 4
+
+    def test_line_offsets_block_scalar(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"  # 1
+            "  instructions: |\n"  # 2
+            "    Block review text.\n"  # 3
+        )
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+        # Body line 1 should map to file line 3 (one past the key line)
+        assert cr_files[0].file_line(1) == 3
+
+    def test_no_instructions_yields_nothing(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 0
+
+    def test_invalid_yaml_yields_nothing(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(":\n  bad: [unterminated\n")
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 0
 
     def test_not_included_when_absent(self, temp_dir):
         context = RepositoryContext(temp_dir)
@@ -429,3 +457,49 @@ class TestCoderabbitConfig:
     def test_yaml_valid_default_severity_error(self):
         config = LinterConfig.default()
         assert config.get_rule_config("coderabbit-yaml-valid").get("severity") == "error"
+
+
+class TestCoderabbitWriterRoundTrip:
+    """Verify write_body preserves YAML structure for coderabbit blocks."""
+
+    def test_write_body_updates_instruction(self, temp_dir):
+        yaml_content = (
+            "reviews:\n"
+            "  instructions: 'Original review instructions.'\n"
+            "chat:\n"
+            "  instructions: 'Original chat instructions.'\n"
+        )
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text(yaml_content)
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 2
+
+        review_block = [cf for cf in cr_files if cf.body == "Original review instructions."][0]
+        review_block.write_body("Updated review instructions.")
+
+        updated = cr_path.read_text(encoding="utf-8")
+        assert "Updated review instructions." in updated
+        assert "Original chat instructions." in updated
+
+    def test_write_body_preserves_yaml_keys(self, temp_dir):
+        yaml_content = (
+            "language: en-US\n"
+            "reviews:\n"
+            "  instructions: 'Do review stuff.'\n"
+            "  high_level_summary: true\n"
+        )
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text(yaml_content)
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+
+        cr_files[0].write_body("Better review stuff.")
+
+        updated = cr_path.read_text(encoding="utf-8")
+        assert "Better review stuff." in updated
+        assert "language: en-US" in updated
+        assert "high_level_summary: true" in updated

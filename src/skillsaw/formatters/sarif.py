@@ -65,8 +65,9 @@ def format_sarif(
                     },
                 },
             }
-            if v.line is not None and v.line >= 1:
-                location["physicalLocation"]["region"] = {"startLine": v.line}
+            fl = v.file_line
+            if fl is not None and fl >= 1:
+                location["physicalLocation"]["region"] = {"startLine": fl}
             result["locations"] = [location]
         results.append(result)
 

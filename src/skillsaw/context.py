@@ -7,10 +7,13 @@ from __future__ import annotations
 import fnmatch
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any, Set, TYPE_CHECKING
 import json
 import logging
 import os
+
+if TYPE_CHECKING:
+    from .lint_target import LintTarget
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,9 @@ class RepositoryContext:
         self.root_path = root_path.resolve()
         self.has_apm = self._detect_apm()
         self.repo_types: Set[RepositoryType] = self._detect_types()
+        logger.info(
+            "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
+        )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
             {}
@@ -89,6 +95,18 @@ class RepositoryContext:
         self.detected_formats: Set[str] = self._detect_formats()
         self.content_paths: List[str] = []
         self.exclude_patterns: List[str] = []
+        self._lint_tree: Optional["LintTarget"] = None
+
+    @property
+    def lint_tree(self) -> "LintTarget":
+        if self._lint_tree is None:
+            from .lint_tree import build_lint_tree
+
+            self._lint_tree = build_lint_tree(self)
+        return self._lint_tree
+
+    def rebuild_lint_tree(self) -> None:
+        self._lint_tree = None
 
     @property
     def repo_type(self) -> RepositoryType:

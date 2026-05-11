@@ -2,28 +2,12 @@
 Rules for validating openclaw metadata in SKILL.md frontmatter
 """
 
-from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rules.builtin.agentskills import _parse_skill_md
-from skillsaw.rules.builtin.utils import read_text, yaml_line_map, _extract_frontmatter_text
-
-
-def _build_frontmatter_line_map(skill_md: Path) -> Dict[str, int]:
-    """Map YAML key names to their line numbers in SKILL.md frontmatter.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    """
-    content = read_text(skill_md)
-    if content is None:
-        return {}
-    fm_text, offset = _extract_frontmatter_text(content)
-    if fm_text is None:
-        return {}
-    return yaml_line_map(fm_text, line_offset=offset)
-
+from skillsaw.lint_target import SkillNode
+from skillsaw.rules.builtin.content_analysis import SkillBlock
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
@@ -54,14 +38,15 @@ class OpenclawMetadataRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_path in context.skills:
-            skill_md = skill_path / "SKILL.md"
-            frontmatter, error = _parse_skill_md(skill_path)
-
-            if error or not frontmatter:
+        for skill_node in context.lint_tree.find(SkillNode):
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
+                continue
+            block = blocks[0]
+            if block.frontmatter_error or block.frontmatter is None:
                 continue
 
-            metadata = frontmatter.get("metadata")
+            metadata = block.frontmatter.get("metadata")
             if not isinstance(metadata, dict):
                 continue
 
@@ -69,21 +54,21 @@ class OpenclawMetadataRule(Rule):
             if openclaw is None:
                 continue
 
-            line_map = _build_frontmatter_line_map(skill_md)
+            line_map = block.line_map()
 
             if not isinstance(openclaw, dict):
                 violations.append(
                     self.violation(
                         "'metadata.openclaw' must be a mapping",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=line_map.get("openclaw"),
                     )
                 )
                 continue
 
-            self._check_top_level(openclaw, skill_md, line_map, violations)
-            self._check_requires(openclaw, skill_md, line_map, violations)
-            self._check_install(openclaw, skill_md, line_map, violations)
+            self._check_top_level(openclaw, block.path, line_map, violations)
+            self._check_requires(openclaw, block.path, line_map, violations)
+            self._check_install(openclaw, block.path, line_map, violations)
 
         return violations
 

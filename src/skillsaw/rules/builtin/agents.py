@@ -9,6 +9,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.content_analysis import AgentBlock
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -26,48 +27,55 @@ class AgentFrontmatterRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing YAML frontmatter for an agent markdown file.\n\n"
+            "The block you are editing is the raw YAML between the --- delimiters.\n"
+            "Do NOT include the --- delimiters in your output.\n\n"
+            "Rules:\n"
+            "- Must have 'name' and 'description' fields\n"
+            "- 'name' should be the agent file stem (filename without .md)\n"
+            "- 'description' should be imperative and tell the model when to invoke it, "
+            "e.g. 'Use when the user asks to review a PR' — "
+            "derive it from the body content, keep it under 200 tokens\n"
+            "- If the YAML is malformed, fix the syntax\n"
+            "- Preserve any other existing frontmatter fields"
+        )
+
+    @property
+    def llm_fix_frontmatter(self) -> bool:
+        return True
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
-            agents_dir = plugin_path / "agents"
-            if not agents_dir.exists():
+        for block in context.lint_tree.find(AgentBlock):
+            if block.frontmatter_error:
+                violations.append(
+                    self.violation(block.frontmatter_error, file_path=block.path, block=block)
+                )
                 continue
 
-            # Check all .md files in agents directory
-            for agent_file in agents_dir.glob("*.md"):
-                content = read_text(agent_file)
-                if content is None:
-                    violations.append(
-                        self.violation(f"Failed to read file: {agent_file}", file_path=agent_file)
+            if block.frontmatter is None:
+                violations.append(
+                    self.violation("Missing frontmatter", file_path=block.path, block=block)
+                )
+                continue
+
+            if "name" not in block.frontmatter:
+                violations.append(
+                    self.violation(
+                        "Missing 'name' in frontmatter", file_path=block.path, block=block
                     )
-                    continue
+                )
 
-                # Check for frontmatter
-                if not content.startswith("---"):
-                    violations.append(self.violation("Missing frontmatter", file_path=agent_file))
-                    continue
-
-                # Parse frontmatter
-                frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
-                if not frontmatter_match:
-                    violations.append(
-                        self.violation("Invalid frontmatter format", file_path=agent_file)
+            if "description" not in block.frontmatter:
+                violations.append(
+                    self.violation(
+                        "Missing 'description' in frontmatter", file_path=block.path, block=block
                     )
-                    continue
-
-                frontmatter = frontmatter_match.group(1)
-
-                # Check for required fields
-                if "name:" not in frontmatter:
-                    violations.append(
-                        self.violation("Missing 'name' in frontmatter", file_path=agent_file)
-                    )
-
-                if "description:" not in frontmatter:
-                    violations.append(
-                        self.violation("Missing 'description' in frontmatter", file_path=agent_file)
-                    )
+                )
 
         return violations
 

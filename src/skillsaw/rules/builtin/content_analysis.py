@@ -6,18 +6,29 @@ in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
 .cursorrules, copilot-instructions.md, .cursor/rules/*.mdc, .coderabbit.yaml).
 """
 
+from __future__ import annotations
+
 import fnmatch
 import re
-from dataclasses import dataclass
+from abc import abstractmethod
+from dataclasses import dataclass, field
+from io import StringIO
 from pathlib import Path
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import yaml
 
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import LintTarget
+from ruamel.yaml import YAML as _RuamelYAML
+
 from skillsaw.rules.builtin.utils import (
     read_text,
     parse_frontmatter,
+    extract_section,
+    frontmatter_key_line as _frontmatter_key_line,
+    _extract_frontmatter_text,
+    yaml_line_map as _yaml_line_map,
     yaml_key_line as _yaml_key_line_util,
     yaml_key_line_after as _yaml_key_line_after_util,
     yaml_key_lines as _yaml_key_lines_util,
@@ -30,13 +41,7 @@ _CLOSING_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 
 
 def _strip_fenced_code_blocks(text: str) -> str:
-    """Replace content inside fenced code blocks with blank lines to preserve line numbers.
-
-    Implements CommonMark fenced code block detection:
-    - Opening fence: 0-3 spaces indent, then 3+ backticks or tildes
-    - Closing fence: 0-3 spaces indent (independent of opening), same character,
-      length >= opening fence length, no other content on the line
-    """
+    """Replace content inside fenced code blocks with blank lines to preserve line numbers."""
     lines = text.split("\n")
     result: list[str] = []
     fence_char: str | None = None
@@ -47,7 +52,7 @@ def _strip_fenced_code_blocks(text: str) -> str:
         if not in_fence:
             m = _OPENING_FENCE_RE.match(line)
             if m:
-                fence_char = m.group(2)[0]  # '`' or '~'
+                fence_char = m.group(2)[0]
                 fence_len = len(m.group(2))
                 in_fence = True
                 result.append("")
@@ -173,350 +178,816 @@ _INSTRUCTION_FILE_CATEGORIES = {
 }
 
 
-@dataclass
-class ContentFile:
-    path: Path
-    category: str
+# ---------------------------------------------------------------------------
+# ContentBlock hierarchy
+# ---------------------------------------------------------------------------
 
 
-def gather_all_content_files(context: RepositoryContext) -> List[ContentFile]:
-    """Gather all contextual content files across all formats.
+@dataclass(eq=False)
+class ContentBlock(LintTarget):
+    """Abstract base for leaf nodes with lintable text content."""
 
-    Returns tagged ContentFile objects with category matching context_budget limit keys.
-    Deduplicates by resolved path.
+    category: str = ""
+    line_offset: int = 0
+    body: Optional[str] = None
+    _line_map: Optional[Callable[[int], int]] = field(default=None, repr=False)
 
-    When APM (.apm/) is present, content is gathered from the APM source
-    directories instead of compiled output directories (.claude/, .cursor/,
-    .gemini/, .opencode/, .agents/).
-    """
-    files: List[ContentFile] = []
-    seen: Set[Path] = set()
-    exclude = getattr(context, "exclude_patterns", [])
-    root = context.root_path.resolve()
+    def file_line(self, body_line: int) -> int:
+        """Translate a 1-based body line number to a 1-based file line number."""
+        if self._line_map is not None:
+            return self._line_map(body_line)
+        return body_line + self.line_offset
 
-    # Build set of compiled output directories to skip when APM is present
-    apm_compiled_roots: Set[Path] = set()
-    if context.has_apm:
-        from skillsaw.context import RepositoryContext as _RC
+    @abstractmethod
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]: ...
 
-        for compiled_dir_name in _RC.APM_COMPILED_DIRS:
-            compiled_path = (context.root_path / compiled_dir_name).resolve()
-            if compiled_path.is_dir():
-                apm_compiled_roots.add(compiled_path)
+    @abstractmethod
+    def write_body(self, new_body: str) -> None: ...
 
-    def _is_excluded(p: Path) -> bool:
-        if not exclude:
-            return False
+    def estimate_tokens(self) -> int:
+        body = self.read_body()
+        return len(body) // 4 if body else 0
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} ({self.category})"
+
+    def __eq__(self, other):
+        if not isinstance(other, ContentBlock):
+            return NotImplemented
+        return type(self) is type(other) and self.path.resolve() == other.path.resolve()
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve()))
+
+
+@dataclass(eq=False)
+class FileContentBlock(ContentBlock):
+    """A plain file whose entire content is lintable."""
+
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        if self.body is not None:
+            body = self.body
+        else:
+            content = read_text(self.path)
+            if content is None:
+                return None
+            body = content
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        self.path.write_text(new_body, encoding="utf-8")
+
+
+@dataclass(eq=False)
+class FrontmatterContentBlock(ContentBlock):
+    """A file with YAML frontmatter (e.g. .mdc) — frontmatter is stripped on read, preserved on write."""
+
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        if self.body is not None:
+            body = self.body
+        else:
+            content = read_text(self.path)
+            if content is None:
+                return None
+            _, body = parse_frontmatter(content)
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        content = read_text(self.path)
+        if content:
+            front, _ = parse_frontmatter(content)
+            if front:
+                self.path.write_text(front + "\n---\n" + new_body, encoding="utf-8")
+                return
+        self.path.write_text(new_body, encoding="utf-8")
+
+    @property
+    def frontmatter_line_offset(self) -> int:
+        content = read_text(self.path)
+        if not content:
+            return 0
+        front, _ = parse_frontmatter(content)
+        if not front:
+            return 0
+        return front.count("\n") + 2  # frontmatter + closing ---
+
+
+@dataclass(eq=False)
+class CodeRabbitContentBlock(ContentBlock):
+    """One instruction fragment from .coderabbit.yaml."""
+
+    yaml_path: str = ""
+
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        body = self.body if self.body is not None else ""
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        ruyaml = _RuamelYAML()
+        ruyaml.preserve_quotes = True
+        raw = self.path.read_text(encoding="utf-8")
+        data = ruyaml.load(raw)
+        if data is None:
+            return
+
+        parts = self.yaml_path.split(".")
+        node = data
+        for i, part in enumerate(parts[:-1]):
+            if "[" in part:
+                key = part[: part.index("[")]
+                node = node.get(key) if isinstance(node, dict) else None
+            else:
+                node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                return
+
+            if isinstance(node, list) and "[" in parts[i]:
+                bracket_val = parts[i][parts[i].index("[") + 1 : parts[i].index("]")]
+                for item in node:
+                    if isinstance(item, dict):
+                        name = item.get("name") or item.get("path")
+                        if str(name) == bracket_val:
+                            node = item
+                            break
+
+        last_key = parts[-1]
+        if isinstance(node, dict) and last_key in node:
+            node[last_key] = new_body
+
+        buf = StringIO()
+        ruyaml.dump(data, buf)
+        self.path.write_text(buf.getvalue(), encoding="utf-8")
+
+    def tree_label(self) -> str:
+        return f"{self.yaml_path} ({self.category})"
+
+    def __eq__(self, other):
+        if not isinstance(other, CodeRabbitContentBlock):
+            return NotImplemented
+        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve(), self.yaml_path))
+
+    # --- CodeRabbit extraction helpers (classmethods) ---
+
+    @classmethod
+    def gather(
+        cls,
+        context: RepositoryContext,
+        seen: Set[Path],
+        is_excluded: Callable[[Path], bool],
+    ) -> List["CodeRabbitContentBlock"]:
+        cr_path = context.root_path / ".coderabbit.yaml"
+        cr_resolved = cr_path.resolve()
+        if cr_resolved in seen or not cr_path.exists() or is_excluded(cr_path):
+            return []
+        seen.add(cr_resolved)
+        cr_raw = read_text(cr_path)
+        if not cr_raw:
+            return []
         try:
-            rel = str(p.resolve().relative_to(root))
-        except ValueError:
-            return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
+            cr_data = yaml.safe_load(cr_raw)
+        except yaml.YAMLError:
+            return []
+        if not cr_data:
+            return []
+        cr_lines = cr_raw.splitlines()
+        results: List[CodeRabbitContentBlock] = []
+        for label, text, line in cls._extract_instructions(cr_data, cr_raw):
+            offset = 0
+            if line:
+                key_text = cr_lines[line - 1] if line <= len(cr_lines) else ""
+                is_block_scalar = bool(re.search(r":\s*[|>]", key_text))
+                offset = line if is_block_scalar else (line - 1)
+            results.append(
+                CodeRabbitContentBlock(
+                    path=cr_path,
+                    category="coderabbit",
+                    line_offset=offset,
+                    body=text,
+                    yaml_path=label,
+                )
+            )
+        return results
 
-    def _is_in_compiled_dir(p: Path) -> bool:
-        """Check if a path is inside an APM compiled output directory."""
-        if not apm_compiled_roots:
-            return False
-        resolved = p.resolve()
-        return any(resolved == excl or resolved.is_relative_to(excl) for excl in apm_compiled_roots)
+    @staticmethod
+    def _find_yaml_key_line(raw: str, key: str) -> Optional[int]:
+        all_lines = _yaml_key_lines_util(raw, key)
+        return all_lines[-1] if all_lines else None
 
-    def _add(p: Path, category: str) -> None:
-        resolved = p.resolve()
-        if resolved not in seen and p.exists() and not _is_excluded(p):
-            seen.add(resolved)
-            files.append(ContentFile(path=p, category=category))
+    @staticmethod
+    def _find_yaml_key_line_after(raw: str, key: str, after_line: int) -> Optional[int]:
+        return _yaml_key_line_after_util(raw, key, after_line)
 
-    # --- Root-level instruction files (not compiled output) ---
-    for f in context.instruction_files:
-        cat = _INSTRUCTION_FILE_CATEGORIES.get(f.name, "instruction")
-        _add(f, cat)
+    @staticmethod
+    def _find_nth_key_line(raw: str, key: str, n: int) -> Optional[int]:
+        return _yaml_nth_key_line_util(raw, key, n)
 
-    _add(context.root_path / ".github" / "copilot-instructions.md", "instruction")
-    _add(context.root_path / ".cursorrules", "instruction")
+    @staticmethod
+    def _find_nth_list_item_key_line(
+        raw: str, key: str, n: int, after_line: int = 0
+    ) -> Optional[int]:
+        return _yaml_nth_list_item_key_line_util(raw, key, n, after_line=after_line)
 
-    # Skip compiled output directories when APM is present
-    cursor_rules_dir = context.root_path / ".cursor" / "rules"
-    if cursor_rules_dir.is_dir() and not _is_in_compiled_dir(cursor_rules_dir):
-        for mdc in sorted(cursor_rules_dir.glob("*.mdc")):
-            _add(mdc, "instruction")
+    @classmethod
+    def _extract_instructions(cls, data: Any, raw: str) -> List[Tuple[str, str, Optional[int]]]:
+        results: List[Tuple[str, str, Optional[int]]] = []
+        if not isinstance(data, dict):
+            return results
 
-    kiro_steering = context.root_path / ".kiro" / "steering"
-    if kiro_steering.is_dir():
-        for md in sorted(kiro_steering.glob("*.md")):
-            _add(md, "instruction")
+        reviews = data.get("reviews")
+        if isinstance(reviews, dict):
+            instr = reviews.get("instructions")
+            if isinstance(instr, str) and instr.strip():
+                reviews_line = cls._find_yaml_key_line(raw, "reviews")
+                line = None
+                if reviews_line is not None:
+                    line = cls._find_yaml_key_line_after(raw, "instructions", reviews_line)
+                if line is None:
+                    line = cls._find_yaml_key_line(raw, "instructions")
+                results.append(("reviews.instructions", instr, line))
 
-    _add(context.root_path / ".windsurfrules", "instruction")
+            path_instructions = reviews.get("path_instructions")
+            if isinstance(path_instructions, list):
+                for idx, entry in enumerate(path_instructions):
+                    if not isinstance(entry, dict):
+                        continue
+                    pi = entry.get("instructions")
+                    if isinstance(pi, str) and pi.strip():
+                        path_val = entry.get("path", f"[{idx}]")
+                        line = cls._find_nth_key_line(raw, "instructions", len(results))
+                        results.append(
+                            (f"reviews.path_instructions[{path_val}].instructions", pi, line)
+                        )
 
-    clinerules = context.root_path / ".clinerules"
-    if clinerules.is_file():
-        _add(clinerules, "instruction")
-    elif clinerules.is_dir():
-        for md in sorted(clinerules.glob("*.md")):
-            _add(md, "instruction")
+            tools = reviews.get("tools")
+            if isinstance(tools, dict):
+                for tool_name, tool_cfg in tools.items():
+                    if not isinstance(tool_cfg, dict):
+                        continue
+                    ti = tool_cfg.get("instructions")
+                    if isinstance(ti, str) and ti.strip():
+                        tool_line = cls._find_yaml_key_line(raw, tool_name)
+                        line = None
+                        if tool_line is not None:
+                            line = cls._find_yaml_key_line_after(raw, "instructions", tool_line)
+                        results.append((f"reviews.tools.{tool_name}.instructions", ti, line))
 
-    # --- Skills ---
-    for skill_path in context.skills:
-        _add(skill_path / "SKILL.md", "skill")
-        refs_dir = skill_path / "references"
-        if refs_dir.is_dir():
-            for ref_file in sorted(refs_dir.glob("*.md")):
-                _add(ref_file, "skill-ref")
+            pre_merge = reviews.get("pre_merge_checks")
+            if isinstance(pre_merge, dict):
+                custom_checks = pre_merge.get("custom_checks")
+                if isinstance(custom_checks, list):
+                    custom_checks_line = cls._find_yaml_key_line(raw, "custom_checks") or 0
+                    for idx, check in enumerate(custom_checks):
+                        if not isinstance(check, dict):
+                            continue
+                        ci = check.get("instructions")
+                        if isinstance(ci, str) and ci.strip():
+                            check_name = check.get("name", f"[{idx}]")
+                            name_line = cls._find_nth_list_item_key_line(
+                                raw, "name", idx, after_line=custom_checks_line
+                            )
+                            line = None
+                            if name_line is not None:
+                                line = cls._find_yaml_key_line_after(raw, "instructions", name_line)
+                            results.append(
+                                (
+                                    f"reviews.pre_merge_checks.custom_checks[{check_name}].instructions",
+                                    ci,
+                                    line,
+                                )
+                            )
 
-    # --- Plugin content (skip compiled dirs when APM present) ---
-    for plugin_path in context.plugins:
-        if _is_in_compiled_dir(plugin_path):
-            continue
+        chat = data.get("chat")
+        if isinstance(chat, dict):
+            ci = chat.get("instructions")
+            if isinstance(ci, str) and ci.strip():
+                chat_line = cls._find_yaml_key_line(raw, "chat")
+                line = None
+                if chat_line is not None:
+                    line = cls._find_yaml_key_line_after(raw, "instructions", chat_line)
+                if line is None:
+                    line = cls._find_yaml_key_line(raw, "instructions")
+                results.append(("chat.instructions", ci, line))
 
-        commands_dir = plugin_path / "commands"
-        if commands_dir.is_dir():
-            for cmd_file in sorted(commands_dir.glob("*.md")):
-                _add(cmd_file, "command")
-
-        agents_dir = plugin_path / "agents"
-        if agents_dir.is_dir():
-            for agent_file in sorted(agents_dir.glob("*.md")):
-                _add(agent_file, "agent")
-
-        rules_dir = plugin_path / "rules"
-        if rules_dir.is_dir():
-            for rule_file in sorted(rules_dir.rglob("*.md")):
-                _add(rule_file, "rule")
-
-    _add(context.root_path / ".coderabbit.yaml", "coderabbit")
-
-    # --- APM source directories ---
-    if context.has_apm:
-        apm_dir = context.root_path / ".apm"
-
-        # .apm/instructions/*.instructions.md
-        apm_instructions = apm_dir / "instructions"
-        if apm_instructions.is_dir():
-            for md in sorted(apm_instructions.glob("*.instructions.md")):
-                _add(md, "instruction")
-
-        # .apm/agents/*.agent.md
-        apm_agents = apm_dir / "agents"
-        if apm_agents.is_dir():
-            for md in sorted(apm_agents.glob("*.agent.md")):
-                _add(md, "agent")
-
-        # .apm/prompts/*.md
-        apm_prompts = apm_dir / "prompts"
-        if apm_prompts.is_dir():
-            for md in sorted(apm_prompts.glob("*.md")):
-                _add(md, "prompt")
-
-        # .apm/chatmodes/*.md
-        apm_chatmodes = apm_dir / "chatmodes"
-        if apm_chatmodes.is_dir():
-            for md in sorted(apm_chatmodes.glob("*.md")):
-                _add(md, "chatmode")
-
-        # .apm/context/*.md
-        apm_context = apm_dir / "context"
-        if apm_context.is_dir():
-            for md in sorted(apm_context.glob("*.md")):
-                _add(md, "context")
-
-    # --- Extra content paths from config ---
-    for glob_pattern in getattr(context, "content_paths", []):
-        for extra in sorted(context.root_path.glob(glob_pattern)):
-            if extra.is_file():
-                _add(extra, "extra")
-
-    return files
-
-
-def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
-    """Gather all contextual content files across all formats.
-
-    Thin wrapper around gather_all_content_files for backward compatibility.
-    """
-    return [cf.path for cf in gather_all_content_files(context)]
-
-
-def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
-    """Read file and return the instruction body text.
-
-    Handles special file types:
-    - ``.mdc``: strips YAML frontmatter.
-    - ``.coderabbit.yaml``: extracts and concatenates all ``instructions``
-      field values so content analyzers see only instruction text.
-    """
-    content = read_text(path)
-    if content is None:
-        return None
-    if path.name == ".coderabbit.yaml":
-        body = _extract_coderabbit_instructions_body(content)
-    elif path.suffix == ".mdc":
-        _, body = parse_frontmatter(content)
-    else:
-        body = content
-    if strip_code_blocks:
-        body = _strip_fenced_code_blocks(body)
-    return body
+        return results
 
 
 # ---------------------------------------------------------------------------
-# CodeRabbit instruction extraction helpers
+# Typed content blocks — each hardcodes its category as a class default.
+# Rules discover blocks via ``find(BlockType)``; ``category`` is kept for
+# backward compat (context_budget limits key on it).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(eq=False)
+class InstructionBlock(FileContentBlock):
+    """Generic instruction files: .cursorrules, .windsurfrules, copilot-instructions, etc."""
+
+    category: str = "instruction"
+
+
+@dataclass(eq=False)
+class ClaudeMdBlock(InstructionBlock):
+    """CLAUDE.md instruction file."""
+
+    category: str = "claude-md"
+
+
+@dataclass(eq=False)
+class AgentsMdBlock(InstructionBlock):
+    """AGENTS.md instruction file."""
+
+    category: str = "agents-md"
+
+
+@dataclass(eq=False)
+class GeminiMdBlock(InstructionBlock):
+    """GEMINI.md instruction file."""
+
+    category: str = "gemini-md"
+
+
+@dataclass(eq=False)
+class CursorRuleBlock(FrontmatterContentBlock):
+    """.cursor/rules/*.mdc files."""
+
+    category: str = "instruction"
+
+
+def _parse_file_frontmatter(
+    path: Path,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
+    """Parse YAML frontmatter from a markdown file.
+
+    Returns (frontmatter_dict, error_string, body_after_frontmatter).
+    """
+    content = read_text(path)
+    if content is None:
+        return None, f"Failed to read file: {path}", ""
+    if not content.startswith("---"):
+        return None, None, content
+    fm, body = parse_frontmatter(content)
+    if fm is None:
+        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", body
+    return fm, None, body
+
+
+@dataclass(eq=False)
+class ParsedFrontmatterBlock(FileContentBlock):
+    """File content block with lazy-parsed YAML frontmatter."""
+
+    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], str]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._fm_parsed is None:
+            self._fm_parsed = _parse_file_frontmatter(self.path)
+
+    @property
+    def frontmatter(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        return self._fm_parsed[0]
+
+    @property
+    def frontmatter_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._fm_parsed[1]
+
+    @property
+    def body_text(self) -> str:
+        self._ensure_parsed()
+        return self._fm_parsed[2]
+
+    def key_line(self, key: str) -> Optional[int]:
+        return _frontmatter_key_line(self.path, key)
+
+    def line_map(self) -> Dict[str, int]:
+        content = read_text(self.path)
+        if content is None:
+            return {}
+        fm_text, offset = _extract_frontmatter_text(content)
+        if fm_text is None:
+            return {}
+        return _yaml_line_map(fm_text, line_offset=offset)
+
+    def tree_label(self) -> str:
+        label = super().tree_label()
+        fm = self.frontmatter
+        if fm and isinstance(fm.get("description"), str):
+            desc_tokens = len(fm["description"]) // 4
+            label += f" [desc: {desc_tokens:,} tokens]"
+        return label
+
+    def read_frontmatter_text(self) -> str:
+        """Return the raw YAML text between the --- delimiters (no delimiters)."""
+        content = read_text(self.path)
+        if not content or not content.startswith("---"):
+            return ""
+        fm_text, _ = _extract_frontmatter_text(content)
+        return fm_text or ""
+
+    def write_frontmatter_text(self, new_fm_text: str) -> None:
+        """Replace just the frontmatter YAML, preserving the body.
+
+        Raises ValueError if new_fm_text is not valid YAML.
+        """
+        try:
+            data = yaml.safe_load(new_fm_text)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML: {e}") from e
+        if not isinstance(data, dict):
+            raise ValueError("Frontmatter must be a YAML mapping")
+
+        fm = new_fm_text.rstrip("\n") + "\n"
+
+        content = read_text(self.path)
+        if not content:
+            self.path.write_text(f"---\n{fm}---\n", encoding="utf-8")
+            self._fm_parsed = None
+            return
+
+        m = re.match(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", content, re.DOTALL)
+        if m:
+            body_after = content[m.end() :]
+            self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
+        elif content.startswith("---"):
+            lines = content.split("\n")
+            close_idx = None
+            for i, line in enumerate(lines[1:], 1):
+                if line.strip() == "---":
+                    close_idx = i
+                    break
+            if close_idx is not None:
+                body_after = "\n".join(lines[close_idx + 1 :])
+                if body_after and not body_after.startswith("\n"):
+                    body_after = "\n" + body_after
+                self.path.write_text(f"---\n{fm}---{body_after}", encoding="utf-8")
+            else:
+                body_after = "\n".join(lines[1:])
+                self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
+        else:
+            self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
+        self._fm_parsed = None
+
+
+@dataclass(eq=False)
+class CommandBlock(ParsedFrontmatterBlock):
+    """commands/*.md in plugins."""
+
+    category: str = "command"
+
+    def section(self, heading: str, level: int = 2) -> str:
+        content = read_text(self.path)
+        if content is None:
+            return ""
+        return extract_section(content, heading, level)
+
+
+@dataclass(eq=False)
+class AgentBlock(ParsedFrontmatterBlock):
+    """agents/*.md in plugins or APM agent files."""
+
+    category: str = "agent"
+
+
+@dataclass(eq=False)
+class SkillBlock(ParsedFrontmatterBlock):
+    """SKILL.md in skills."""
+
+    category: str = "skill"
+
+
+@dataclass(eq=False)
+class SkillRefBlock(FileContentBlock):
+    """references/*.md in skills."""
+
+    category: str = "skill-ref"
+
+
+@dataclass(eq=False)
+class PluginRuleBlock(ParsedFrontmatterBlock):
+    """rules/*.md in plugins."""
+
+    category: str = "rule"
+
+
+@dataclass(eq=False)
+class PromptBlock(FileContentBlock):
+    """APM prompt files."""
+
+    category: str = "prompt"
+
+
+@dataclass(eq=False)
+class ChatmodeBlock(FileContentBlock):
+    """APM chatmode files."""
+
+    category: str = "chatmode"
+
+
+@dataclass(eq=False)
+class ContextFileBlock(FileContentBlock):
+    """APM context files."""
+
+    category: str = "context"
+
+
+@dataclass(eq=False)
+class ExtraBlock(FileContentBlock):
+    """Extra content paths from config."""
+
+    category: str = "extra"
+
+
+@dataclass(eq=False)
+class ReadmeBlock(LintTarget):
+    """README.md in a plugin (not injected into context)."""
+
+    show_tokens = False
+
+    def tree_label(self) -> str:
+        return self.path.name
+
+
+# ---------------------------------------------------------------------------
+# JSON-based blocks: hooks and MCP
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HookHandler:
+    """A single hook handler entry."""
+
+    type: str
+    command: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    server: Optional[str] = None
+    tool: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    prompt: Optional[str] = None
+    model: Optional[str] = None
+    timeout: Optional[float] = None
+    async_: Optional[bool] = None
+    async_rewake: Optional[bool] = None
+    once: Optional[bool] = None
+    if_: Optional[str] = None
+    status_message: Optional[str] = None
+    shell: Optional[str] = None
+    allowed_env_vars: Optional[List[str]] = None
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HookHandler":
+        return cls(
+            type=d.get("type", ""),
+            command=d.get("command"),
+            url=d.get("url"),
+            headers=d.get("headers"),
+            server=d.get("server"),
+            tool=d.get("tool"),
+            input=d.get("input"),
+            prompt=d.get("prompt"),
+            model=d.get("model"),
+            timeout=d.get("timeout"),
+            async_=d.get("async"),
+            async_rewake=d.get("asyncRewake"),
+            once=d.get("once"),
+            if_=d.get("if"),
+            status_message=d.get("statusMessage"),
+            shell=d.get("shell"),
+            allowed_env_vars=d.get("allowedEnvVars"),
+        )
+
+
+@dataclass
+class HookEventConfig:
+    """A single event config entry (matcher + handlers)."""
+
+    matcher: str = ".*"
+    handlers: List[HookHandler] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HookEventConfig":
+        handlers: List[HookHandler] = []
+        raw_hooks = d.get("hooks", [])
+        if isinstance(raw_hooks, list):
+            for h in raw_hooks:
+                if isinstance(h, dict):
+                    handlers.append(HookHandler.from_dict(h))
+        return cls(
+            matcher=d.get("matcher", ".*"),
+            handlers=handlers,
+        )
+
+
+def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
+    from .utils import read_json
+
+    data, error = read_json(path)
+    return data, error
+
+
+@dataclass(eq=False)
+class HooksBlock(FileContentBlock):
+    """hooks/hooks.json in a plugin."""
+
+    category: str = "hooks"
+    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = _parse_json_file(self.path)
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._parsed[1]
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        data = self._parsed[0]
+        return data if isinstance(data, dict) else None
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if data is None:
+            return {}
+        hooks_obj = data.get("hooks", {})
+        if not isinstance(hooks_obj, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for event_type, configs in hooks_obj.items():
+            if not isinstance(configs, list):
+                continue
+            entries: List[HookEventConfig] = []
+            for cfg in configs:
+                if isinstance(cfg, dict):
+                    entries.append(HookEventConfig.from_dict(cfg))
+            if entries:
+                result[event_type] = entries
+        return result
+
+
+@dataclass
+class McpServerConfig:
+    """A single MCP server configuration."""
+
+    name: str
+    type: str = "stdio"
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    cwd: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    headers_helper: Optional[str] = None
+    startup_timeout: Optional[float] = None
+    always_load: Optional[bool] = None
+    oauth: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def from_dict(cls, name: str, d: Dict[str, Any]) -> "McpServerConfig":
+        return cls(
+            name=name,
+            type=d.get("type", "stdio"),
+            command=d.get("command"),
+            args=d.get("args"),
+            env=d.get("env"),
+            cwd=d.get("cwd"),
+            url=d.get("url"),
+            headers=d.get("headers"),
+            headers_helper=d.get("headersHelper"),
+            startup_timeout=d.get("startupTimeout"),
+            always_load=d.get("alwaysLoad"),
+            oauth=d.get("oauth"),
+        )
+
+
+@dataclass(eq=False)
+class McpBlock(FileContentBlock):
+    """.mcp.json in a plugin."""
+
+    category: str = "mcp"
+    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = _parse_json_file(self.path)
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._parsed[1]
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        data = self._parsed[0]
+        return data if isinstance(data, dict) else None
+
+    @property
+    def servers(self) -> List[McpServerConfig]:
+        data = self.raw_data
+        if data is None:
+            return []
+        servers_dict = data.get("mcpServers", data)
+        if not isinstance(servers_dict, dict):
+            return []
+        return [
+            McpServerConfig.from_dict(name, cfg)
+            for name, cfg in servers_dict.items()
+            if isinstance(cfg, dict)
+        ]
+
+    @property
+    def server_names(self) -> Set[str]:
+        return {s.name for s in self.servers}
+
+
+# Backward compat aliases
+ContentFile = FileContentBlock
+
+
+# ---------------------------------------------------------------------------
+# Gather helpers (delegated to by the lint tree builder)
+# ---------------------------------------------------------------------------
+
+
+def gather_all_content_blocks(context: RepositoryContext) -> List[ContentBlock]:
+    """Gather all content blocks via the lint tree."""
+    return context.lint_tree.content_blocks()
+
+
+gather_all_content_files = gather_all_content_blocks
+
+
+def gather_all_instruction_files(context: RepositoryContext) -> List[Path]:
+    """Thin wrapper for backward compatibility."""
+    return [block.path for block in gather_all_content_blocks(context)]
+
+
+def _get_body(path: Path, *, strip_code_blocks: bool = True) -> Optional[str]:
+    """Prefer ``ContentBlock.read_body()`` for new code."""
+    return FileContentBlock(path=path, category="file").read_body(
+        strip_code_blocks=strip_code_blocks
+    )
+
+
+def _get_body_from_cf(cf: ContentBlock, *, strip_code_blocks: bool = True) -> Optional[str]:
+    """Backward-compat wrapper around ``ContentBlock.read_body()``."""
+    return cf.read_body(strip_code_blocks=strip_code_blocks)
+
+
+# ---------------------------------------------------------------------------
+# CodeRabbit instruction extraction helpers (kept for backward compat)
 # ---------------------------------------------------------------------------
 
 _CODERABBIT_FILENAME = ".coderabbit.yaml"
 
 
 def _find_yaml_key_line(raw: str, key: str) -> Optional[int]:
-    """Find the line number of a YAML key in raw text.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    Returns the 1-based line number of the *last* occurrence so that nested keys
-    such as ``instructions`` resolve to the most specific location when
-    the caller is walking a particular branch of the tree.  For
-    top-level unique keys the result is the same either way.
-    """
-    all_lines = _yaml_key_lines_util(raw, key)
-    return all_lines[-1] if all_lines else None
+    return CodeRabbitContentBlock._find_yaml_key_line(raw, key)
 
 
 def _find_yaml_key_line_after(raw: str, key: str, after_line: int) -> Optional[int]:
-    """Find the line number of a YAML key occurring after a given line.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    """
-    return _yaml_key_line_after_util(raw, key, after_line)
+    return CodeRabbitContentBlock._find_yaml_key_line_after(raw, key, after_line)
 
 
 def _find_nth_key_line(raw: str, key: str, n: int) -> Optional[int]:
-    """Find the line number of the *n*-th (0-based) occurrence of *key*.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    """
-    return _yaml_nth_key_line_util(raw, key, n)
+    return CodeRabbitContentBlock._find_nth_key_line(raw, key, n)
 
 
 def _find_nth_list_item_key_line(raw: str, key: str, n: int, after_line: int = 0) -> Optional[int]:
-    """Find the *n*-th (0-based) YAML list-item key (``- key:``) after *after_line*.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    In YAML sequences the first key of each item is prefixed with ``- ``,
-    e.g. ``  - name: value``.
-    """
-    return _yaml_nth_list_item_key_line_util(raw, key, n, after_line=after_line)
+    return CodeRabbitContentBlock._find_nth_list_item_key_line(raw, key, n, after_line)
 
 
 def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[int]]]:
-    """Extract all instruction text fields from a parsed CodeRabbit config.
-
-    Returns a list of ``(location_label, text, line_number)`` tuples.
-    """
-    results: List[Tuple[str, str, Optional[int]]] = []
-    if not isinstance(data, dict):
-        return results
-
-    # reviews.instructions
-    reviews = data.get("reviews")
-    if isinstance(reviews, dict):
-        instr = reviews.get("instructions")
-        if isinstance(instr, str) and instr.strip():
-            # Find the "instructions" key that appears after "reviews"
-            reviews_line = _find_yaml_key_line(raw, "reviews")
-            line = None
-            if reviews_line is not None:
-                line = _find_yaml_key_line_after(raw, "instructions", reviews_line)
-            if line is None:
-                line = _find_yaml_key_line(raw, "instructions")
-            results.append(("reviews.instructions", instr, line))
-
-        # reviews.path_instructions[].instructions
-        path_instructions = reviews.get("path_instructions")
-        if isinstance(path_instructions, list):
-            for idx, entry in enumerate(path_instructions):
-                if not isinstance(entry, dict):
-                    continue
-                pi = entry.get("instructions")
-                if isinstance(pi, str) and pi.strip():
-                    path_val = entry.get("path", f"[{idx}]")
-                    line = _find_nth_key_line(raw, "instructions", len(results))
-                    results.append(
-                        (f"reviews.path_instructions[{path_val}].instructions", pi, line)
-                    )
-
-        # reviews.tools.<tool>.instructions
-        tools = reviews.get("tools")
-        if isinstance(tools, dict):
-            for tool_name, tool_cfg in tools.items():
-                if not isinstance(tool_cfg, dict):
-                    continue
-                ti = tool_cfg.get("instructions")
-                if isinstance(ti, str) and ti.strip():
-                    tool_line = _find_yaml_key_line(raw, tool_name)
-                    line = None
-                    if tool_line is not None:
-                        line = _find_yaml_key_line_after(raw, "instructions", tool_line)
-                    results.append((f"reviews.tools.{tool_name}.instructions", ti, line))
-
-        # reviews.pre_merge_checks.custom_checks[].instructions
-        pre_merge = reviews.get("pre_merge_checks")
-        if isinstance(pre_merge, dict):
-            custom_checks = pre_merge.get("custom_checks")
-            if isinstance(custom_checks, list):
-                # Find the "custom_checks" key so we only look within it.
-                custom_checks_line = _find_yaml_key_line(raw, "custom_checks") or 0
-                for idx, check in enumerate(custom_checks):
-                    if not isinstance(check, dict):
-                        continue
-                    ci = check.get("instructions")
-                    if isinstance(ci, str) and ci.strip():
-                        check_name = check.get("name", f"[{idx}]")
-                        # Find the nth list-item "- name:" after custom_checks,
-                        # then the "instructions" key following it.
-                        name_line = _find_nth_list_item_key_line(
-                            raw, "name", idx, after_line=custom_checks_line
-                        )
-                        line = None
-                        if name_line is not None:
-                            line = _find_yaml_key_line_after(raw, "instructions", name_line)
-                        results.append(
-                            (
-                                f"reviews.pre_merge_checks.custom_checks[{check_name}].instructions",
-                                ci,
-                                line,
-                            )
-                        )
-
-    # chat.instructions
-    chat = data.get("chat")
-    if isinstance(chat, dict):
-        ci = chat.get("instructions")
-        if isinstance(ci, str) and ci.strip():
-            chat_line = _find_yaml_key_line(raw, "chat")
-            line = None
-            if chat_line is not None:
-                line = _find_yaml_key_line_after(raw, "instructions", chat_line)
-            if line is None:
-                line = _find_yaml_key_line(raw, "instructions")
-            results.append(("chat.instructions", ci, line))
-
-    return results
+    return CodeRabbitContentBlock._extract_instructions(data, raw)
 
 
-def _extract_coderabbit_instructions_body(raw: str) -> str:
-    """Extract instruction text from raw .coderabbit.yaml content.
-
-    Parses the YAML and concatenates all ``instructions`` field values
-    separated by double newlines so content analyzers see only plain text.
-    Returns an empty string on parse failure or when no instructions exist.
-    """
-    try:
-        data = yaml.safe_load(raw)
-    except yaml.YAMLError:
-        return ""
-    instructions = _extract_instructions(data, raw)
-    return "\n\n".join(text for _, text, _ in instructions)
+# ---------------------------------------------------------------------------
+# Detectors — all line numbers are body-relative (1-based)
+# ---------------------------------------------------------------------------
 
 
 class WeakLanguageDetector:
-    def analyze(self, path: Path) -> List[WeakLanguageMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentBlock) -> List[WeakLanguageMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[WeakLanguageMatch] = []
@@ -534,8 +1005,8 @@ class WeakLanguageDetector:
 
 
 class TautologicalDetector:
-    def analyze(self, path: Path) -> List[TautologicalMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentBlock) -> List[TautologicalMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[TautologicalMatch] = []
@@ -551,8 +1022,8 @@ class CriticalPositionAnalyzer:
     def __init__(self, min_lines: int = 50):
         self._min_lines = min_lines
 
-    def analyze(self, path: Path) -> List[PositionIssue]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentBlock) -> List[PositionIssue]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         lines = content.splitlines()
@@ -586,8 +1057,8 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
 
-    def analyze(self, path: Path, root: Path) -> List[RedundancyMatch]:
-        content = _get_body(path)
+    def analyze(self, cf: ContentBlock, root: Path) -> List[RedundancyMatch]:
+        content = _get_body_from_cf(cf)
         if not content:
             return []
         results: List[RedundancyMatch] = []
@@ -675,8 +1146,8 @@ class InstructionBudgetAnalyzer:
     )
     BUDGET = 150
 
-    def analyze_file(self, path: Path) -> InstructionBudget:
-        content = _get_body(path)
+    def analyze_file(self, cf: ContentBlock) -> InstructionBudget:
+        content = _get_body_from_cf(cf)
         if not content:
             return InstructionBudget(
                 total_count=0,
@@ -691,7 +1162,7 @@ class InstructionBudgetAnalyzer:
         remaining = self.BUDGET - total
         return InstructionBudget(
             total_count=total,
-            files_counted=[path],
+            files_counted=[cf.path],
             budget_remaining=max(0, remaining),
             over_budget=total > self.BUDGET,
         )

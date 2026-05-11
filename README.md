@@ -60,6 +60,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Initialize a Marketplace](#initialize-a-marketplace)
   - [Add Components](#add-components)
   - [Context Detection](#context-detection)
+- [Lint Tree](#lint-tree)
 - [Documentation Generation](#documentation-generation)
 - [Exit Codes](#exit-codes)
 - [Example Output](#example-output)
@@ -99,6 +100,9 @@ skillsaw init
 
 # List all rules with fix support info
 skillsaw list-rules
+
+# View the lint tree (what skillsaw sees)
+skillsaw tree
 
 # Generate plugin/skill documentation
 skillsaw docs
@@ -378,8 +382,8 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 
 ### MCP (Model Context Protocol)
@@ -430,7 +434,7 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}}` |
+| `limits` | Token limits per file category (int for warn-only, or {warn, error} dict) | `{"agents-md": {"warn": 6000, "error": 12000}, "claude-md": {"warn": 6000, "error": 12000}, "gemini-md": {"warn": 6000, "error": 12000}, "instruction": {"warn": 4000, "error": 8000}, "skill": {"warn": 3000, "error": 6000}, "command": {"warn": 2000, "error": 4000}, "agent": {"warn": 2000, "error": 4000}, "rule": {"warn": 2000, "error": 4000}, "skill-description": {"warn": 200, "error": 500}, "command-description": {"warn": 200, "error": 500}}` |
 
 ### Content Intelligence
 
@@ -634,6 +638,33 @@ skillsaw automatically detects your repo type and places files in the right loca
 - **`.claude/` repo** — components go under `.claude/`
 
 In a marketplace with multiple plugins, specify `--plugin <name>` or skillsaw will prompt interactively.
+
+## Lint Tree
+
+`skillsaw tree` visualizes the typed lint tree — the internal data structure that all rules operate on. Every lintable entity (plugins, skills, commands, agents, instruction files, config files) is a typed node in the tree.
+
+```bash
+# View the lint tree
+skillsaw tree
+
+# View a specific path
+skillsaw tree /path/to/repo
+```
+
+Example output:
+
+```
+my-marketplace/
+    ├── AGENTS.md (agents-md)
+    ├── marketplace.json
+    ├── plugins/ [marketplace]
+    │   └── my-plugin/ [plugin]
+    │       ├── hello.md (command)
+    │       └── my-skill/ [skill]
+    │           └── SKILL.md (skill)
+    └── .coderabbit.yaml
+        └── reviews.instructions (coderabbit)
+```
 
 ## Documentation Generation
 

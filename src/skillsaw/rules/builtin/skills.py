@@ -9,6 +9,8 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import SkillNode
+from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -26,58 +28,69 @@ class SkillFrontmatterRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
+    @property
+    def llm_fix_prompt(self):
+        return (
+            "You are fixing YAML frontmatter for a SKILL.md file.\n\n"
+            "The block you are editing is the raw YAML between the --- delimiters.\n"
+            "Do NOT include the --- delimiters in your output.\n\n"
+            "Rules:\n"
+            "- Must have 'name' and 'description' fields\n"
+            "- 'name' should be the skill directory name\n"
+            "- 'description' should be imperative and tell the model when to invoke it, "
+            "e.g. 'Use when the user asks to deploy a service' — "
+            "derive it from the body content, keep it under 200 tokens\n"
+            "- If the YAML is malformed, fix the syntax\n"
+            "- Preserve any other existing frontmatter fields"
+        )
+
+    @property
+    def llm_fix_frontmatter(self) -> bool:
+        return True
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for plugin_path in context.plugins:
-            skills_dir = plugin_path / "skills"
-            if not skills_dir.exists():
+        for skill_node in context.lint_tree.find(SkillNode):
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
+                violations.append(self.violation("Missing SKILL.md", file_path=skill_node.path))
                 continue
 
-            for skill_dir in skills_dir.iterdir():
-                if not skill_dir.is_dir():
-                    continue
+            block = blocks[0]
+            if block.frontmatter_error:
+                violations.append(
+                    self.violation(block.frontmatter_error, file_path=block.path, block=block)
+                )
+                continue
 
-                skill_md = skill_dir / "SKILL.md"
-                if not skill_md.exists():
-                    violations.append(self.violation("Missing SKILL.md", file_path=skill_dir))
-                    continue
-
-                content = read_text(skill_md)
-                if content is None:
-                    violations.append(
-                        self.violation(f"Failed to read file: {skill_md}", file_path=skill_md)
+            if block.frontmatter is None:
+                violations.append(
+                    self.violation(
+                        "Missing frontmatter (recommended for SKILL.md)",
+                        file_path=block.path,
+                        block=block,
                     )
-                    continue
+                )
+                continue
 
-                # Check for frontmatter
-                if not content.startswith("---"):
-                    violations.append(
-                        self.violation(
-                            "Missing frontmatter (recommended for SKILL.md)", file_path=skill_md
-                        )
+            if "name" not in block.frontmatter:
+                violations.append(
+                    self.violation(
+                        "Missing 'name' in SKILL.md frontmatter",
+                        file_path=block.path,
+                        block=block,
                     )
-                    continue
+                )
 
-                # Parse frontmatter
-                frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
-                if not frontmatter_match:
-                    continue
-
-                frontmatter = frontmatter_match.group(1)
-
-                # Check for recommended fields
-                if "name:" not in frontmatter:
-                    violations.append(
-                        self.violation("Missing 'name' in SKILL.md frontmatter", file_path=skill_md)
+            if "description" not in block.frontmatter:
+                violations.append(
+                    self.violation(
+                        "Missing 'description' in SKILL.md frontmatter",
+                        file_path=block.path,
+                        block=block,
                     )
-
-                if "description:" not in frontmatter:
-                    violations.append(
-                        self.violation(
-                            "Missing 'description' in SKILL.md frontmatter", file_path=skill_md
-                        )
-                    )
+                )
 
         return violations
 
@@ -144,7 +157,7 @@ class SkillFrontmatterRule(Rule):
             missing_name = any("Missing 'name'" in m for m in messages)
             missing_desc = any("Missing 'description'" in m for m in messages)
             if (missing_name or missing_desc) and original.startswith("---"):
-                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
+                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", original, re.DOTALL)
                 if fm_match:
                     fm_text = fm_match.group(1)
                     additions = []

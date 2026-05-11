@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+    from .rules.builtin.content_analysis import ContentBlock, FileContentBlock
 
 
 class Severity(Enum):
@@ -35,16 +36,33 @@ class RuleViolation:
     message: str
     file_path: Optional[Path] = None
     line: Optional[int] = None
+    block: Optional["ContentBlock"] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.block is None and self.file_path is not None:
+            from .rules.builtin.content_analysis import FileContentBlock
+
+            self.block = FileContentBlock(path=self.file_path, category="file")
+        if self.file_path is None and self.block is not None:
+            self.file_path = self.block.path
+
+    @property
+    def file_line(self) -> Optional[int]:
+        """File line number, translated through block offset if available."""
+        if self.block is not None and self.line is not None:
+            return self.block.file_line(self.line)
+        return self.line
 
     def __str__(self):
         """Format violation for display"""
         icon = {Severity.ERROR: "✗", Severity.WARNING: "⚠", Severity.INFO: "ℹ"}[self.severity]
 
         location = ""
+        display_line = self.file_line
         if self.file_path:
             location = f" [{self.file_path}]"
-            if self.line:
-                location = f" [{self.file_path}:{self.line}]"
+            if display_line:
+                location = f" [{self.file_path}:{display_line}]"
 
         return f"{icon} {self.severity.value.upper()}{location}: {self.message}"
 
@@ -137,13 +155,13 @@ class Rule(ABC):
         self,
         context: "RepositoryContext",
         violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
-        """
-        Attempt to fix violations found by check().
+        """Attempt to fix violations.
 
-        Override in subclasses to provide autofix capability.
-        Rules without a fix() override continue to work — this default
-        returns an empty list.
+        Override in subclasses.  ``provider`` is an optional
+        ``CompletionProvider`` for LLM-assisted fixes.
         """
         return []
 
@@ -155,24 +173,23 @@ class Rule(ABC):
     def llm_fix_prompt(self) -> Optional[str]:
         return None
 
+    @property
+    def llm_fix_frontmatter(self) -> bool:
+        """When True, LLM fix operates on frontmatter YAML only (not the body)."""
+        return False
+
     def violation(
         self,
         message: str,
         file_path: Path = None,
         line: int = None,
         severity: Severity = None,
+        block: "ContentBlock" = None,
     ) -> RuleViolation:
-        """
-        Create a violation for this rule
+        """Create a violation for this rule.
 
-        Args:
-            message: Violation message
-            file_path: Optional file path where violation occurred
-            line: Optional line number
-            severity: Override severity (defaults to rule's configured severity)
-
-        Returns:
-            RuleViolation instance
+        Pass ``block`` for content-based violations.  ``file_path`` is
+        accepted for backward compatibility and auto-wraps into a block.
         """
         return RuleViolation(
             rule_id=self.rule_id,
@@ -180,4 +197,5 @@ class Rule(ABC):
             message=message,
             file_path=file_path,
             line=line,
+            block=block,
         )

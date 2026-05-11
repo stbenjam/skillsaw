@@ -19,6 +19,10 @@ from skillsaw.rules.builtin.content_analysis import (
 from skillsaw.context import RepositoryContext
 
 
+def _cf(path: Path, category: str = "instruction") -> ContentFile:
+    return ContentFile(path=path, category=category)
+
+
 @pytest.fixture
 def temp_dir():
     tmp = tempfile.mkdtemp()
@@ -132,7 +136,7 @@ class TestWeakLanguageDetector:
     def test_detects_hedging(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Try to use consistent naming.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert results[0].category == "hedging"
         assert "try to" in results[0].phrase.lower()
@@ -140,14 +144,14 @@ class TestWeakLanguageDetector:
     def test_detects_vagueness(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Handle errors gracefully.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert results[0].category == "vagueness"
 
     def test_detects_non_actionable(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Be aware of the rate limits.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert results[0].category == "non-actionable"
 
@@ -156,73 +160,73 @@ class TestWeakLanguageDetector:
             "Use 4-space indentation.\nRun tests before committing.\n"
         )
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) == 0
 
     def test_reports_correct_line_numbers(self, temp_dir):
         content = "Line one.\nLine two.\nTry to be careful here.\nLine four.\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert any(r.line == 3 for r in results)
 
     def test_multiple_matches_per_line(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Try to handle errors gracefully if possible.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 3
 
     def test_case_insensitive(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("TRY TO use PROPERLY.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 2
 
     def test_skips_fenced_code_blocks(self, temp_dir):
         content = "Real instruction.\n```\nTry to handle errors gracefully.\n```\nMore text.\n"
         (temp_dir / "code_block.md").write_text(content)
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "code_block.md")
+        results = detector.analyze(_cf(temp_dir / "code_block.md"))
         assert len(results) == 0
 
     def test_skips_indented_fenced_code_blocks(self, temp_dir):
         content = "Real instruction.\n- Example:\n  ```\n  Try to handle errors gracefully.\n  ```\nMore text.\n"
         (temp_dir / "indented.md").write_text(content)
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "indented.md")
+        results = detector.analyze(_cf(temp_dir / "indented.md"))
         assert len(results) == 0
 
     def test_consider_requires_action_verb(self, temp_dir):
         (temp_dir / "consider_fp.md").write_text("Consider this example:\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "consider_fp.md")
+        results = detector.analyze(_cf(temp_dir / "consider_fp.md"))
         assert len(results) == 0
 
     def test_consider_using_flagged(self, temp_dir):
         (temp_dir / "consider_tp.md").write_text("Consider using TypeScript.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "consider_tp.md")
+        results = detector.analyze(_cf(temp_dir / "consider_tp.md"))
         assert len(results) >= 1
         assert results[0].category == "hedging"
 
     def test_detects_you_might_want_to(self, temp_dir):
         (temp_dir / "might.md").write_text("You might want to add error handling.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "might.md")
+        results = detector.analyze(_cf(temp_dir / "might.md"))
         assert len(results) >= 1
         assert results[0].category == "hedging"
 
     def test_detects_perhaps(self, temp_dir):
         (temp_dir / "perhaps.md").write_text("Perhaps use a different approach.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "perhaps.md")
+        results = detector.analyze(_cf(temp_dir / "perhaps.md"))
         assert len(results) >= 1
         assert results[0].category == "hedging"
 
     def test_detects_you_should_probably(self, temp_dir):
         (temp_dir / "probably.md").write_text("You should probably refactor this.\n")
         detector = WeakLanguageDetector()
-        results = detector.analyze(temp_dir / "probably.md")
+        results = detector.analyze(_cf(temp_dir / "probably.md"))
         assert len(results) >= 1
         assert results[0].category == "hedging"
 
@@ -231,20 +235,20 @@ class TestTautologicalDetector:
     def test_detects_write_clean_code(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Always write clean code.\n")
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert "clean code" in results[0].phrase.lower()
 
     def test_detects_follow_best_practices(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Follow best practices.\n")
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
 
     def test_detects_be_helpful(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Be helpful to the user.\n")
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
 
     def test_specific_instructions_pass(self, temp_dir):
@@ -252,20 +256,20 @@ class TestTautologicalDetector:
             "Use 4-space indentation for Python files.\nReturn 404 for missing resources.\n"
         )
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) == 0
 
     def test_reports_reason(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use common sense.\n")
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert results[0].reason
 
     def test_case_insensitive(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("WRITE CLEAN CODE.\n")
         detector = TautologicalDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md")
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
 
 
@@ -278,26 +282,26 @@ class TestCriticalPositionAnalyzer:
     def test_critical_in_middle_flagged(self, temp_dir):
         self._make_file(temp_dir, 50, 25)
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 1
         assert results[0].position_score == 0.5
 
     def test_critical_at_top_not_flagged(self, temp_dir):
         self._make_file(temp_dir, 50, 3)
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) == 0
 
     def test_critical_at_bottom_not_flagged(self, temp_dir):
         self._make_file(temp_dir, 50, 48)
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) == 0
 
     def test_short_file_skipped(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("IMPORTANT: do this.\nNEVER do that.\n")
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) == 0
 
     def test_multiple_keywords(self, temp_dir):
@@ -306,13 +310,13 @@ class TestCriticalPositionAnalyzer:
         lines[26] = "NEVER skip that step."
         (temp_dir / "CLAUDE.md").write_text("\n".join(lines) + "\n")
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert len(results) >= 2
 
     def test_reports_keyword(self, temp_dir):
         self._make_file(temp_dir, 50, 25)
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "CLAUDE.md")
+        results = analyzer.analyze(_cf(temp_dir / "CLAUDE.md"))
         assert results[0].keyword == "IMPORTANT"
 
     def test_lowercase_must_not_flagged(self, temp_dir):
@@ -320,7 +324,7 @@ class TestCriticalPositionAnalyzer:
         lines[24] = "This function must return a value."
         (temp_dir / "crit_lower.md").write_text("\n".join(lines) + "\n")
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "crit_lower.md")
+        results = analyzer.analyze(_cf(temp_dir / "crit_lower.md"))
         assert len(results) == 0
 
     def test_lowercase_required_not_flagged(self, temp_dir):
@@ -328,7 +332,7 @@ class TestCriticalPositionAnalyzer:
         lines[24] = "The required fields are: name, email."
         (temp_dir / "crit_req.md").write_text("\n".join(lines) + "\n")
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "crit_req.md")
+        results = analyzer.analyze(_cf(temp_dir / "crit_req.md"))
         assert len(results) == 0
 
     def test_allcaps_must_flagged(self, temp_dir):
@@ -336,7 +340,7 @@ class TestCriticalPositionAnalyzer:
         lines[24] = "You MUST always run tests."
         (temp_dir / "crit_caps.md").write_text("\n".join(lines) + "\n")
         analyzer = CriticalPositionAnalyzer()
-        results = analyzer.analyze(temp_dir / "crit_caps.md")
+        results = analyzer.analyze(_cf(temp_dir / "crit_caps.md"))
         assert len(results) >= 1
         assert results[0].keyword == "MUST"
 
@@ -346,28 +350,28 @@ class TestRedundancyDetector:
         (temp_dir / ".editorconfig").write_text("[*]\nindent_size = 4\n")
         (temp_dir / "CLAUDE.md").write_text("Use 4 spaces for indentation.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) >= 1
         assert ".editorconfig" in results[0].existing_config_file
 
     def test_no_editorconfig_no_match(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Use 4 spaces for indentation.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) == 0
 
     def test_detects_style_with_prettier(self, temp_dir):
         (temp_dir / ".prettierrc").write_text('{"singleQuote": true}')
         (temp_dir / "CLAUDE.md").write_text("Use single quotes for strings.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) >= 1
 
     def test_detects_tsconfig_strict(self, temp_dir):
         (temp_dir / "tsconfig.json").write_text('{"compilerOptions": {"strict": true}}')
         (temp_dir / "CLAUDE.md").write_text("Use strict TypeScript mode.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) >= 1
         assert "tsconfig.json" in results[0].existing_config_file
 
@@ -375,14 +379,14 @@ class TestRedundancyDetector:
         (temp_dir / ".editorconfig").write_text("[*]\nindent_size = 4\n")
         (temp_dir / "CLAUDE.md").write_text("Focus on user experience.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) == 0
 
     def test_detects_tabs_with_editorconfig(self, temp_dir):
         (temp_dir / ".editorconfig").write_text("[*]\nindent_style = tab\n")
         (temp_dir / "CLAUDE.md").write_text("Use tabs for indentation.\n")
         detector = RedundancyDetector()
-        results = detector.analyze(temp_dir / "CLAUDE.md", temp_dir)
+        results = detector.analyze(_cf(temp_dir / "CLAUDE.md"), temp_dir)
         assert len(results) >= 1
 
 
@@ -391,7 +395,7 @@ class TestInstructionBudgetAnalyzer:
         content = "- Use 4-space indentation\n- Run tests before commits\n- Check for errors\nSome description.\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        budget = analyzer.analyze_file(_cf(temp_dir / "CLAUDE.md"))
         assert budget.total_count == 3
         assert not budget.over_budget
 
@@ -399,21 +403,21 @@ class TestInstructionBudgetAnalyzer:
         lines = [f"- Use tool_{i}" for i in range(160)]
         (temp_dir / "CLAUDE.md").write_text("\n".join(lines) + "\n")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        budget = analyzer.analyze_file(_cf(temp_dir / "CLAUDE.md"))
         assert budget.over_budget
         assert budget.budget_remaining == 0
 
     def test_empty_file(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        budget = analyzer.analyze_file(_cf(temp_dir / "CLAUDE.md"))
         assert budget.total_count == 0
         assert not budget.over_budget
 
     def test_single_file_counted(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("- Use X\n- Run Y\n")
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        budget = analyzer.analyze_file(_cf(temp_dir / "CLAUDE.md"))
         assert budget.total_count == 2
         assert len(budget.files_counted) == 1
 
@@ -421,7 +425,7 @@ class TestInstructionBudgetAnalyzer:
         content = "# Instructions\n\nThis project is a web app.\nIt was built in 2024.\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         analyzer = InstructionBudgetAnalyzer()
-        budget = analyzer.analyze_file(temp_dir / "CLAUDE.md")
+        budget = analyzer.analyze_file(_cf(temp_dir / "CLAUDE.md"))
         assert budget.total_count == 0
 
 
@@ -748,3 +752,57 @@ class TestGatherAllContentFiles:
         context = RepositoryContext(temp_dir)
         cfs = gather_all_content_files(context)
         assert any(cf.path.name == "CLAUDE.md" for cf in cfs)
+
+
+class TestContentBlockReadWrite:
+    def test_read_body_from_file(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("# Heading\n\nBody text\n")
+        block = ContentFile(path=f, category="instruction")
+        body = block.read_body(strip_code_blocks=False)
+        assert body == "# Heading\n\nBody text\n"
+
+    def test_read_body_from_preloaded(self, temp_dir):
+        block = ContentFile(
+            path=temp_dir / "nonexistent.md",
+            category="instruction",
+            body="preloaded content",
+        )
+        body = block.read_body(strip_code_blocks=False)
+        assert body == "preloaded content"
+
+    def test_read_body_strips_code_blocks(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("Before\n```python\nprint('hi')\n```\nAfter\n")
+        block = ContentFile(path=f, category="instruction")
+        body = block.read_body(strip_code_blocks=True)
+        assert "print" not in body
+        assert "Before" in body
+        assert "After" in body
+
+    def test_write_body_default(self, temp_dir):
+        f = temp_dir / "test.md"
+        f.write_text("original")
+        block = ContentFile(path=f, category="instruction")
+        block.write_body("new content")
+        assert f.read_text(encoding="utf-8") == "new content"
+
+    def test_file_line_with_offset(self):
+        block = ContentFile(
+            path=Path("/tmp/test.md"),
+            category="instruction",
+            line_offset=10,
+        )
+        assert block.file_line(5) == 15
+
+    def test_file_line_with_line_map(self):
+        block = ContentFile(
+            path=Path("/tmp/test.md"),
+            category="instruction",
+            _line_map=lambda body_line: body_line * 2,
+        )
+        assert block.file_line(5) == 10
+
+    def test_read_body_nonexistent_no_body(self, temp_dir):
+        block = ContentFile(path=temp_dir / "missing.md", category="instruction")
+        assert block.read_body() is None
