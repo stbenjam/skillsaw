@@ -14,7 +14,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -25,6 +25,10 @@ from ruamel.yaml import YAML as _RuamelYAML
 from skillsaw.rules.builtin.utils import (
     read_text,
     parse_frontmatter,
+    extract_section,
+    frontmatter_key_line as _frontmatter_key_line,
+    _extract_frontmatter_text,
+    yaml_line_map as _yaml_line_map,
     yaml_key_line as _yaml_key_line_util,
     yaml_key_line_after as _yaml_key_line_after_util,
     yaml_key_lines as _yaml_key_lines_util,
@@ -518,22 +522,86 @@ class CursorRuleBlock(FrontmatterContentBlock):
     category: str = "instruction"
 
 
+def _parse_file_frontmatter(
+    path: Path,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
+    """Parse YAML frontmatter from a markdown file.
+
+    Returns (frontmatter_dict, error_string, body_after_frontmatter).
+    """
+    content = read_text(path)
+    if content is None:
+        return None, f"Failed to read file: {path}", ""
+    if not content.startswith("---"):
+        return None, None, content
+    fm, body = parse_frontmatter(content)
+    if fm is None:
+        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", body
+    return fm, None, body
+
+
 @dataclass(eq=False)
-class CommandBlock(FileContentBlock):
+class ParsedFrontmatterBlock(FileContentBlock):
+    """File content block with lazy-parsed YAML frontmatter."""
+
+    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], str]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._fm_parsed is None:
+            self._fm_parsed = _parse_file_frontmatter(self.path)
+
+    @property
+    def frontmatter(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        return self._fm_parsed[0]
+
+    @property
+    def frontmatter_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._fm_parsed[1]
+
+    @property
+    def body_text(self) -> str:
+        self._ensure_parsed()
+        return self._fm_parsed[2]
+
+    def key_line(self, key: str) -> Optional[int]:
+        return _frontmatter_key_line(self.path, key)
+
+    def line_map(self) -> Dict[str, int]:
+        content = read_text(self.path)
+        if content is None:
+            return {}
+        fm_text, offset = _extract_frontmatter_text(content)
+        if fm_text is None:
+            return {}
+        return _yaml_line_map(fm_text, line_offset=offset)
+
+
+@dataclass(eq=False)
+class CommandBlock(ParsedFrontmatterBlock):
     """commands/*.md in plugins."""
 
     category: str = "command"
 
+    def section(self, heading: str, level: int = 2) -> str:
+        content = read_text(self.path)
+        if content is None:
+            return ""
+        return extract_section(content, heading, level)
+
 
 @dataclass(eq=False)
-class AgentBlock(FileContentBlock):
+class AgentBlock(ParsedFrontmatterBlock):
     """agents/*.md in plugins or APM agent files."""
 
     category: str = "agent"
 
 
 @dataclass(eq=False)
-class SkillBlock(FileContentBlock):
+class SkillBlock(ParsedFrontmatterBlock):
     """SKILL.md in skills."""
 
     category: str = "skill"
@@ -547,7 +615,7 @@ class SkillRefBlock(FileContentBlock):
 
 
 @dataclass(eq=False)
-class PluginRuleBlock(FileContentBlock):
+class PluginRuleBlock(ParsedFrontmatterBlock):
     """rules/*.md in plugins."""
 
     category: str = "rule"

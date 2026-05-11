@@ -10,6 +10,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
+from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -31,42 +32,33 @@ class SkillFrontmatterRule(Rule):
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
-            skill_md = skill_node.path / "SKILL.md"
-            if not skill_md.exists():
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
                 violations.append(self.violation("Missing SKILL.md", file_path=skill_node.path))
                 continue
 
-            content = read_text(skill_md)
-            if content is None:
-                violations.append(
-                    self.violation(f"Failed to read file: {skill_md}", file_path=skill_md)
-                )
+            block = blocks[0]
+            if block.frontmatter_error:
+                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
                 continue
 
-            if not content.startswith("---"):
+            if block.frontmatter is None:
                 violations.append(
                     self.violation(
-                        "Missing frontmatter (recommended for SKILL.md)", file_path=skill_md
+                        "Missing frontmatter (recommended for SKILL.md)", file_path=block.path
                     )
                 )
                 continue
 
-            frontmatter_match = re.match(r"^---\r?\n(.*?)\r?\n---", content, re.DOTALL)
-            if not frontmatter_match:
-                violations.append(self.violation("Invalid frontmatter format", file_path=skill_md))
-                continue
-
-            frontmatter = frontmatter_match.group(1)
-
-            if "name:" not in frontmatter:
+            if "name" not in block.frontmatter:
                 violations.append(
-                    self.violation("Missing 'name' in SKILL.md frontmatter", file_path=skill_md)
+                    self.violation("Missing 'name' in SKILL.md frontmatter", file_path=block.path)
                 )
 
-            if "description:" not in frontmatter:
+            if "description" not in block.frontmatter:
                 violations.append(
                     self.violation(
-                        "Missing 'description' in SKILL.md frontmatter", file_path=skill_md
+                        "Missing 'description' in SKILL.md frontmatter", file_path=block.path
                     )
                 )
 

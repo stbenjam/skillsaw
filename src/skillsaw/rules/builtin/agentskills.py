@@ -4,15 +4,13 @@ Rules for validating agentskills.io skill format
 
 import json
 import re
-from functools import lru_cache
-from typing import List, Optional, Tuple, Dict
-
-import yaml
+from typing import List, Optional
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
-from skillsaw.rules.builtin.utils import read_text, read_json, frontmatter_key_line, register_cache
+from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.utils import read_json
 
 # agentskills.io spec constraints
 NAME_MAX_LENGTH = 64
@@ -28,46 +26,6 @@ def _to_kebab(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", s.lower())
     s = re.sub(r"-+", "-", s).strip("-")
     return s
-
-
-@register_cache
-@lru_cache(maxsize=512)
-def _parse_skill_md(skill_path) -> Tuple[Optional[Dict], Optional[str]]:
-    """
-    Parse SKILL.md frontmatter from a skill directory.
-
-    Returns (frontmatter_dict, error_string). If error_string is set,
-    frontmatter_dict is None. Results are cached per path.
-    """
-    skill_md = skill_path / "SKILL.md"
-    if not skill_md.exists():
-        return None, "SKILL.md not found"
-
-    content = read_text(skill_md)
-    if content is None:
-        return None, f"Failed to read SKILL.md: {skill_md}"
-
-    if not content.startswith("---"):
-        return None, "Missing YAML frontmatter (must start with ---)"
-
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", content, re.DOTALL)
-    if not match:
-        return None, "Invalid frontmatter (missing closing ---)"
-
-    try:
-        frontmatter = yaml.safe_load(match.group(1))
-    except yaml.YAMLError as e:
-        return None, f"Invalid YAML in frontmatter: {e}"
-
-    if not isinstance(frontmatter, dict):
-        return None, "Frontmatter must be a YAML mapping"
-
-    return frontmatter, None
-
-
-def _frontmatter_key_line(skill_path, key: str) -> Optional[int]:
-    """Find the line number of a top-level key in SKILL.md frontmatter."""
-    return frontmatter_key_line(skill_path / "SKILL.md", key)
 
 
 class AgentSkillValidRule(Rule):
@@ -138,71 +96,90 @@ class AgentSkillValidRule(Rule):
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
-            skill_path = skill_node.path
-            skill_md = skill_path / "SKILL.md"
-            frontmatter, error = _parse_skill_md(skill_path)
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
+                violations.append(
+                    self.violation(
+                        "SKILL.md not found",
+                        file_path=skill_node.path / "SKILL.md",
+                    )
+                )
+                continue
 
-            if error:
-                violations.append(self.violation(error, file_path=skill_md))
+            block = blocks[0]
+            if block.frontmatter_error:
+                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
+                continue
+
+            frontmatter = block.frontmatter
+            if frontmatter is None:
+                violations.append(
+                    self.violation(
+                        "Missing YAML frontmatter (must start with ---)",
+                        file_path=block.path,
+                    )
+                )
                 continue
 
             name = frontmatter.get("name")
             if not name:
                 violations.append(
-                    self.violation("Missing required 'name' field", file_path=skill_md)
+                    self.violation("Missing required 'name' field", file_path=block.path)
                 )
             elif not isinstance(name, str):
                 violations.append(
                     self.violation(
                         "'name' must be a string",
-                        file_path=skill_md,
-                        line=_frontmatter_key_line(skill_path, "name"),
+                        file_path=block.path,
+                        line=block.key_line("name"),
                     )
                 )
             elif len(name) > NAME_MAX_LENGTH:
                 violations.append(
                     self.violation(
                         f"'name' exceeds {NAME_MAX_LENGTH} characters ({len(name)})",
-                        file_path=skill_md,
-                        line=_frontmatter_key_line(skill_path, "name"),
+                        file_path=block.path,
+                        line=block.key_line("name"),
                     )
                 )
 
             desc = frontmatter.get("description")
             if not desc:
                 violations.append(
-                    self.violation("Missing required 'description' field", file_path=skill_md)
+                    self.violation("Missing required 'description' field", file_path=block.path)
                 )
             elif not isinstance(desc, str):
                 violations.append(
                     self.violation(
                         "'description' must be a string",
-                        file_path=skill_md,
-                        line=_frontmatter_key_line(skill_path, "description"),
+                        file_path=block.path,
+                        line=block.key_line("description"),
                     )
                 )
 
             if "license" in frontmatter and not isinstance(frontmatter["license"], str):
-                violations.append(self.violation("'license' must be a string", file_path=skill_md))
+                violations.append(
+                    self.violation("'license' must be a string", file_path=block.path)
+                )
 
             if "compatibility" in frontmatter:
                 compat = frontmatter["compatibility"]
                 if not isinstance(compat, str):
                     violations.append(
-                        self.violation("'compatibility' must be a string", file_path=skill_md)
+                        self.violation("'compatibility' must be a string", file_path=block.path)
                     )
                 elif not compat.strip():
                     violations.append(
                         self.violation(
                             "'compatibility' must not be empty if provided",
-                            file_path=skill_md,
+                            file_path=block.path,
                         )
                     )
                 elif len(compat) > COMPATIBILITY_MAX_LENGTH:
                     violations.append(
                         self.violation(
                             f"'compatibility' exceeds {COMPATIBILITY_MAX_LENGTH} characters ({len(compat)})",
-                            file_path=skill_md,
+                            file_path=block.path,
                         )
                     )
 
@@ -210,7 +187,7 @@ class AgentSkillValidRule(Rule):
                 meta = frontmatter["metadata"]
                 if not isinstance(meta, dict):
                     violations.append(
-                        self.violation("'metadata' must be a mapping", file_path=skill_md)
+                        self.violation("'metadata' must be a mapping", file_path=block.path)
                     )
                 else:
                     for k, v in meta.items():
@@ -218,7 +195,7 @@ class AgentSkillValidRule(Rule):
                             violations.append(
                                 self.violation(
                                     f"'metadata' key {k!r} must be a string",
-                                    file_path=skill_md,
+                                    file_path=block.path,
                                 )
                             )
 
@@ -229,14 +206,14 @@ class AgentSkillValidRule(Rule):
                         violations.append(
                             self.violation(
                                 "'allowed-tools' list items must all be strings",
-                                file_path=skill_md,
+                                file_path=block.path,
                             )
                         )
                 elif not isinstance(at, str):
                     violations.append(
                         self.violation(
                             "'allowed-tools' must be a string or list of strings",
-                            file_path=skill_md,
+                            file_path=block.path,
                         )
                     )
 
@@ -268,24 +245,24 @@ class AgentSkillNameRule(Rule):
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
-            skill_path = skill_node.path
-            skill_md = skill_path / "SKILL.md"
-            frontmatter, error = _parse_skill_md(skill_path)
-
-            if error or not frontmatter:
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
+                continue
+            block = blocks[0]
+            if block.frontmatter_error or block.frontmatter is None:
                 continue
 
-            name = frontmatter.get("name")
+            name = block.frontmatter.get("name")
             if not name or not isinstance(name, str):
                 continue
 
-            name_line = _frontmatter_key_line(skill_path, "name")
+            name_line = block.key_line("name")
 
             if not NAME_PATTERN.match(name):
                 violations.append(
                     self.violation(
                         f"Name '{name}' must contain only lowercase letters, numbers, and hyphens",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=name_line,
                     )
                 )
@@ -295,7 +272,7 @@ class AgentSkillNameRule(Rule):
                 violations.append(
                     self.violation(
                         f"Name '{name}' must not end with a hyphen",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=name_line,
                     )
                 )
@@ -304,16 +281,16 @@ class AgentSkillNameRule(Rule):
                 violations.append(
                     self.violation(
                         f"Name '{name}' must not contain consecutive hyphens",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=name_line,
                     )
                 )
 
-            if skill_path != context.root_path and name != skill_path.name:
+            if skill_node.path != context.root_path and name != skill_node.path.name:
                 violations.append(
                     self.violation(
-                        f"Name '{name}' does not match directory name '{skill_path.name}'",
-                        file_path=skill_md,
+                        f"Name '{name}' does not match directory name '{skill_node.path.name}'",
+                        file_path=block.path,
                         line=name_line,
                     )
                 )
@@ -378,24 +355,24 @@ class AgentSkillDescriptionRule(Rule):
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
-            skill_path = skill_node.path
-            skill_md = skill_path / "SKILL.md"
-            frontmatter, error = _parse_skill_md(skill_path)
-
-            if error or not frontmatter:
+            blocks = skill_node.find(SkillBlock)
+            if not blocks:
+                continue
+            block = blocks[0]
+            if block.frontmatter_error or block.frontmatter is None:
                 continue
 
-            desc = frontmatter.get("description")
+            desc = block.frontmatter.get("description")
             if not desc or not isinstance(desc, str):
                 continue
 
-            desc_line = _frontmatter_key_line(skill_path, "description")
+            desc_line = block.key_line("description")
             stripped = desc.strip()
             if not stripped:
                 violations.append(
                     self.violation(
                         "Description is empty or whitespace-only",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=desc_line,
                     )
                 )
@@ -405,7 +382,7 @@ class AgentSkillDescriptionRule(Rule):
                 violations.append(
                     self.violation(
                         f"Description exceeds {DESCRIPTION_MAX_LENGTH} characters ({len(stripped)})",
-                        file_path=skill_md,
+                        file_path=block.path,
                         line=desc_line,
                     )
                 )
@@ -565,12 +542,13 @@ class AgentSkillEvalsRule(Rule):
                     self.violation("'skill_name' must be a string", file_path=evals_json)
                 )
             elif isinstance(skill_name, str):
-                frontmatter, _ = _parse_skill_md(skill_path)
-                if frontmatter and frontmatter.get("name") != skill_name:
+                skill_blocks = skill_node.find(SkillBlock)
+                fm = skill_blocks[0].frontmatter if skill_blocks else None
+                if fm and fm.get("name") != skill_name:
                     violations.append(
                         self.violation(
                             f"'skill_name' ({skill_name!r}) does not match "
-                            f"SKILL.md name ({frontmatter.get('name')!r})",
+                            f"SKILL.md name ({fm.get('name')!r})",
                             file_path=evals_json,
                         )
                     )

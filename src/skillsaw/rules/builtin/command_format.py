@@ -109,29 +109,18 @@ class CommandFrontmatterRule(Rule):
 
         violations = []
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
-            cmd_file = cmd_block.path
-            content = read_text(cmd_file)
-            if content is None:
+        for block in context.lint_tree.find(CommandBlock):
+            if block.frontmatter_error:
+                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
+                continue
+
+            if block.frontmatter is None:
+                violations.append(self.violation("Missing frontmatter", file_path=block.path))
+                continue
+
+            if "description" not in block.frontmatter:
                 violations.append(
-                    self.violation(f"Failed to read file: {cmd_file}", file_path=cmd_file)
-                )
-                continue
-
-            if not content.startswith("---"):
-                violations.append(self.violation("Missing frontmatter", file_path=cmd_file))
-                continue
-
-            frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
-            if not frontmatter_match:
-                violations.append(self.violation("Invalid frontmatter format", file_path=cmd_file))
-                continue
-
-            frontmatter = frontmatter_match.group(1)
-
-            if "description:" not in frontmatter:
-                violations.append(
-                    self.violation("Missing 'description' in frontmatter", file_path=cmd_file)
+                    self.violation("Missing 'description' in frontmatter", file_path=block.path)
                 )
 
         return violations
