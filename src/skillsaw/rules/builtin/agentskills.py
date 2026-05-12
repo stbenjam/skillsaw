@@ -165,20 +165,30 @@ class AgentSkillValidRule(Rule):
 
             if "license" in frontmatter and not isinstance(frontmatter["license"], str):
                 violations.append(
-                    self.violation("'license' must be a string", file_path=block.path)
+                    self.violation(
+                        "'license' must be a string",
+                        file_path=block.path,
+                        line=block.key_line("license"),
+                    )
                 )
 
             if "compatibility" in frontmatter:
                 compat = frontmatter["compatibility"]
+                compat_line = block.key_line("compatibility")
                 if not isinstance(compat, str):
                     violations.append(
-                        self.violation("'compatibility' must be a string", file_path=block.path)
+                        self.violation(
+                            "'compatibility' must be a string",
+                            file_path=block.path,
+                            line=compat_line,
+                        )
                     )
                 elif not compat.strip():
                     violations.append(
                         self.violation(
                             "'compatibility' must not be empty if provided",
                             file_path=block.path,
+                            line=compat_line,
                         )
                     )
                 elif len(compat) > COMPATIBILITY_MAX_LENGTH:
@@ -186,14 +196,20 @@ class AgentSkillValidRule(Rule):
                         self.violation(
                             f"'compatibility' exceeds {COMPATIBILITY_MAX_LENGTH} characters ({len(compat)})",
                             file_path=block.path,
+                            line=compat_line,
                         )
                     )
 
             if "metadata" in frontmatter:
                 meta = frontmatter["metadata"]
+                meta_line = block.key_line("metadata")
                 if not isinstance(meta, dict):
                     violations.append(
-                        self.violation("'metadata' must be a mapping", file_path=block.path)
+                        self.violation(
+                            "'metadata' must be a mapping",
+                            file_path=block.path,
+                            line=meta_line,
+                        )
                     )
                 else:
                     for k, v in meta.items():
@@ -202,17 +218,20 @@ class AgentSkillValidRule(Rule):
                                 self.violation(
                                     f"'metadata' key {k!r} must be a string",
                                     file_path=block.path,
+                                    line=meta_line,
                                 )
                             )
 
             if "allowed-tools" in frontmatter:
                 at = frontmatter["allowed-tools"]
+                at_line = block.key_line("allowed-tools")
                 if isinstance(at, list):
                     if not all(isinstance(item, str) for item in at):
                         violations.append(
                             self.violation(
                                 "'allowed-tools' list items must all be strings",
                                 file_path=block.path,
+                                line=at_line,
                             )
                         )
                 elif not isinstance(at, str):
@@ -220,6 +239,7 @@ class AgentSkillValidRule(Rule):
                         self.violation(
                             "'allowed-tools' must be a string or list of strings",
                             file_path=block.path,
+                            line=at_line,
                         )
                     )
 
