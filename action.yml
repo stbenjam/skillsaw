@@ -99,7 +99,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Upload report artifact
-      if: github.event_name == 'pull_request' && always()
+      if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:
         name: skillsaw-report
@@ -107,13 +107,13 @@ runs:
         retention-days: 1
 
     - name: Save PR metadata
-      if: github.event_name == 'pull_request' && always()
+      if: github.event_name == 'pull_request'
       shell: bash
       run: |
         echo '${{ github.event.pull_request.number }}' > /tmp/skillsaw-pr-number
         echo '${{ github.event.pull_request.head.sha }}' > /tmp/skillsaw-head-sha
     - name: Upload PR metadata
-      if: github.event_name == 'pull_request' && always()
+      if: github.event_name == 'pull_request'
       uses: actions/upload-artifact@v4
       with:
         name: skillsaw-pr-metadata
