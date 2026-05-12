@@ -544,8 +544,8 @@ def _parse_file_frontmatter(
 class ParsedFrontmatterBlock(FileContentBlock):
     """File content block with lazy-parsed YAML frontmatter."""
 
-    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]] = field(
-        default=None, init=False, repr=False
+    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]] = (
+        field(default=None, init=False, repr=False)
     )
 
     def _ensure_parsed(self) -> None:
