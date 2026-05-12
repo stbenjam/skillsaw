@@ -38,8 +38,14 @@ runs:
       shell: bash
       run: |
         REPORT_FILE=$(find /tmp/skillsaw-review -name '*.json' | head -1)
-        PR_NUMBER=$(cat /tmp/skillsaw-review/skillsaw-pr-number)
-        HEAD_SHA=$(cat /tmp/skillsaw-review/skillsaw-head-sha)
+        PR_NUMBER=""
+        HEAD_SHA=""
+        if [ -f /tmp/skillsaw-review/skillsaw-pr-number ]; then
+          PR_NUMBER=$(cat /tmp/skillsaw-review/skillsaw-pr-number)
+        fi
+        if [ -f /tmp/skillsaw-review/skillsaw-head-sha ]; then
+          HEAD_SHA=$(cat /tmp/skillsaw-review/skillsaw-head-sha)
+        fi
         if [ -z "$REPORT_FILE" ] || [ -z "$PR_NUMBER" ] || [ -z "$HEAD_SHA" ]; then
           echo "Missing report or PR metadata, skipping review."
           exit 0
