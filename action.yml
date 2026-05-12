@@ -32,9 +32,9 @@ outputs:
   warnings:
     description: 'Number of warnings found'
     value: ${{ steps.lint.outputs.warnings }}
-  report:
-    description: 'Full JSON report'
-    value: ${{ steps.lint.outputs.report }}
+  report-file:
+    description: 'Path to JSON report file'
+    value: ${{ steps.lint.outputs.report-file }}
 
 runs:
   using: 'composite'
@@ -87,12 +87,6 @@ runs:
         echo "errors=${ERRORS}" >> "$GITHUB_OUTPUT"
         echo "warnings=${WARNINGS}" >> "$GITHUB_OUTPUT"
 
-        DELIM="SKILLSAW_EOF_$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
-        {
-          echo "report<<${DELIM}"
-          cat "$REPORT_FILE"
-          echo "${DELIM}"
-        } >> "$GITHUB_OUTPUT"
 
     - name: Upload report artifact
       if: github.event_name == 'pull_request'
