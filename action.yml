@@ -91,10 +91,11 @@ runs:
         echo "errors=${ERRORS}" >> "$GITHUB_OUTPUT"
         echo "warnings=${WARNINGS}" >> "$GITHUB_OUTPUT"
 
+        DELIM="SKILLSAW_EOF_$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
         {
-          echo "report<<SKILLSAW_EOF"
+          echo "report<<${DELIM}"
           cat "$REPORT_FILE"
-          echo "SKILLSAW_EOF"
+          echo "${DELIM}"
         } >> "$GITHUB_OUTPUT"
 
     - name: Upload report artifact
