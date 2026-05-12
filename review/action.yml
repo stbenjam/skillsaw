@@ -1,0 +1,59 @@
+name: 'skillsaw-review'
+description: 'Post skillsaw lint results as PR review comments (use from workflow_run)'
+branding:
+  icon: 'message-circle'
+  color: 'green'
+
+inputs:
+  token:
+    description: 'GitHub token with pull-requests: write permission'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download report artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: skillsaw-report
+        path: /tmp/skillsaw-review
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ inputs.token }}
+
+    - name: Download PR metadata
+      uses: actions/download-artifact@v4
+      with:
+        name: skillsaw-pr-metadata
+        path: /tmp/skillsaw-review
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ inputs.token }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Post PR review
+      shell: bash
+      run: |
+        REPORT_FILE=$(find /tmp/skillsaw-review -name '*.json' | head -1)
+        PR_NUMBER=""
+        HEAD_SHA=""
+        if [ -f /tmp/skillsaw-review/skillsaw-pr-number ]; then
+          PR_NUMBER=$(cat /tmp/skillsaw-review/skillsaw-pr-number)
+        fi
+        if [ -f /tmp/skillsaw-review/skillsaw-head-sha ]; then
+          HEAD_SHA=$(cat /tmp/skillsaw-review/skillsaw-head-sha)
+        fi
+        if [ -z "$REPORT_FILE" ] || [ -z "$PR_NUMBER" ] || [ -z "$HEAD_SHA" ]; then
+          echo "Missing report or PR metadata, skipping review."
+          exit 0
+        fi
+        export SKILLSAW_REPORT_FILE="$REPORT_FILE"
+        export PR_NUMBER
+        export HEAD_SHA
+        python3 "${{ github.action_path }}/../action/review.py"
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
