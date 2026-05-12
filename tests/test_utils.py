@@ -10,6 +10,7 @@ from skillsaw.rules.builtin.utils import (
     read_json,
     frontmatter_key_line,
     heading_line,
+    parse_frontmatter,
     yaml_key_line,
     yaml_key_lines,
     yaml_line_map,
@@ -354,3 +355,27 @@ def test_yaml_key_line_flow_mapping():
     text = "metadata: {version: '1.0', author: test}\nname: foo\n"
     assert yaml_key_line(text, "name", top_level=True) == 2
     assert yaml_key_line(text, "metadata", top_level=True) == 1
+
+
+def test_parse_frontmatter_valid():
+    content = "---\nname: test\ndescription: hello\n---\n# Body\n"
+    fm, body, error_line = parse_frontmatter(content)
+    assert fm == {"name": "test", "description": "hello"}
+    assert "# Body" in body
+    assert error_line is None
+
+
+def test_parse_frontmatter_malformed_yaml_reports_error_line():
+    content = "---\nname: test\nversion: 1.0\nbad_yaml: [unclosed\n---\n"
+    fm, body, error_line = parse_frontmatter(content)
+    assert fm is None
+    assert error_line is not None
+    assert error_line == 5  # --- closing line where parser fails
+
+
+def test_parse_frontmatter_no_frontmatter():
+    content = "# Just a heading\nSome text\n"
+    fm, body, error_line = parse_frontmatter(content)
+    assert fm is None
+    assert error_line is None
+    assert body == content
