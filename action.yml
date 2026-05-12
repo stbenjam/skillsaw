@@ -21,10 +21,6 @@ inputs:
     description: 'Include info-level violations'
     required: false
     default: 'false'
-  token:
-    description: 'GitHub token for posting PR review comments'
-    required: false
-    default: ${{ github.token }}
 
 outputs:
   exit-code:
@@ -121,17 +117,6 @@ runs:
           /tmp/skillsaw-pr-number
           /tmp/skillsaw-head-sha
         retention-days: 1
-
-    - name: Post PR review
-      if: github.event.pull_request != null && github.event_name != 'pull_request'
-      shell: bash
-      run: python3 "${{ github.action_path }}/action/review.py"
-      env:
-        GITHUB_TOKEN: ${{ inputs.token }}
-        SKILLSAW_REPORT_FILE: ${{ steps.lint.outputs.report-file }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     - name: Exit with skillsaw result
       shell: bash
