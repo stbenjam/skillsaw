@@ -71,7 +71,7 @@ runs:
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
       run: |
         set +e
-        ARGS="--format json"
+        ARGS=""
         if [ "$SKILLSAW_STRICT" = "true" ]; then
           ARGS="$ARGS --strict"
         fi
@@ -79,28 +79,50 @@ runs:
           ARGS="$ARGS -v"
         fi
 
-        OUTPUT=$(skillsaw $ARGS "$SKILLSAW_PATH")
+        REPORT_FILE=$(mktemp --suffix=.json)
+        skillsaw $ARGS --format text --output "$REPORT_FILE" "$SKILLSAW_PATH"
         EXIT_CODE=$?
 
         echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
 
-        ERRORS=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['summary']['errors'])" 2>/dev/null || echo "0")
-        WARNINGS=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['summary']['warnings'])" 2>/dev/null || echo "0")
+        ERRORS=$(python3 -c "import json; print(json.load(open('$REPORT_FILE'))['summary']['errors'])" 2>/dev/null || echo "0")
+        WARNINGS=$(python3 -c "import json; print(json.load(open('$REPORT_FILE'))['summary']['warnings'])" 2>/dev/null || echo "0")
         echo "errors=${ERRORS}" >> "$GITHUB_OUTPUT"
         echo "warnings=${WARNINGS}" >> "$GITHUB_OUTPUT"
 
-        REPORT_FILE=$(mktemp)
-        echo "$OUTPUT" > "$REPORT_FILE"
-        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
-
         {
           echo "report<<SKILLSAW_EOF"
-          echo "$OUTPUT"
+          cat "$REPORT_FILE"
           echo "SKILLSAW_EOF"
         } >> "$GITHUB_OUTPUT"
 
+    - name: Upload report artifact
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: skillsaw-report
+        path: ${{ steps.lint.outputs.report-file }}
+        retention-days: 1
+
+    - name: Save PR metadata
+      if: github.event_name == 'pull_request' && always()
+      shell: bash
+      run: |
+        echo '${{ github.event.pull_request.number }}' > /tmp/skillsaw-pr-number
+        echo '${{ github.event.pull_request.head.sha }}' > /tmp/skillsaw-head-sha
+    - name: Upload PR metadata
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: skillsaw-pr-metadata
+        path: |
+          /tmp/skillsaw-pr-number
+          /tmp/skillsaw-head-sha
+        retention-days: 1
+
     - name: Post PR review
-      if: github.event_name == 'pull_request'
+      if: github.event_name != 'pull_request' && github.event_name != 'push'
       shell: bash
       run: python3 "${{ github.action_path }}/action/review.py"
       env:
