@@ -60,7 +60,7 @@ class SkillFrontmatterRule(Rule):
             block = blocks[0]
             if block.frontmatter_error:
                 violations.append(
-                    self.violation(block.frontmatter_error, file_path=block.path, block=block)
+                    self.violation(block.frontmatter_error, file_path=block.path, line=block.frontmatter_error_line, block=block)
                 )
                 continue
 

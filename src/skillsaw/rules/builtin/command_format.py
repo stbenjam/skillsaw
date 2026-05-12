@@ -111,7 +111,7 @@ class CommandFrontmatterRule(Rule):
 
         for block in context.lint_tree.find(CommandBlock):
             if block.frontmatter_error:
-                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
+                violations.append(self.violation(block.frontmatter_error, file_path=block.path, line=block.frontmatter_error_line))
                 continue
 
             if block.frontmatter is None:

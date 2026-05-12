@@ -251,7 +251,7 @@ class FrontmatterContentBlock(ContentBlock):
             content = read_text(self.path)
             if content is None:
                 return None
-            _, body = parse_frontmatter(content)
+            _, body, _ = parse_frontmatter(content)
         if strip_code_blocks:
             body = _strip_fenced_code_blocks(body)
         return body
@@ -259,7 +259,7 @@ class FrontmatterContentBlock(ContentBlock):
     def write_body(self, new_body: str) -> None:
         content = read_text(self.path)
         if content:
-            front, _ = parse_frontmatter(content)
+            front, _, _ = parse_frontmatter(content)
             if front:
                 self.path.write_text(front + "\n---\n" + new_body, encoding="utf-8")
                 return
@@ -270,7 +270,7 @@ class FrontmatterContentBlock(ContentBlock):
         content = read_text(self.path)
         if not content:
             return 0
-        front, _ = parse_frontmatter(content)
+        front, _, _ = parse_frontmatter(content)
         if not front:
             return 0
         return front.count("\n") + 2  # frontmatter + closing ---
@@ -524,27 +524,27 @@ class CursorRuleBlock(FrontmatterContentBlock):
 
 def _parse_file_frontmatter(
     path: Path,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]:
     """Parse YAML frontmatter from a markdown file.
 
-    Returns (frontmatter_dict, error_string, body_after_frontmatter).
+    Returns (frontmatter_dict, error_string, error_line, body_after_frontmatter).
     """
     content = read_text(path)
     if content is None:
-        return None, f"Failed to read file: {path}", ""
+        return None, f"Failed to read file: {path}", None, ""
     if not content.startswith("---"):
-        return None, None, content
-    fm, body = parse_frontmatter(content)
+        return None, None, None, content
+    fm, body, error_line = parse_frontmatter(content)
     if fm is None:
-        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", body
-    return fm, None, body
+        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", error_line, body
+    return fm, None, None, body
 
 
 @dataclass(eq=False)
 class ParsedFrontmatterBlock(FileContentBlock):
     """File content block with lazy-parsed YAML frontmatter."""
 
-    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], str]] = field(
+    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]] = field(
         default=None, init=False, repr=False
     )
 
@@ -563,9 +563,14 @@ class ParsedFrontmatterBlock(FileContentBlock):
         return self._fm_parsed[1]
 
     @property
-    def body_text(self) -> str:
+    def frontmatter_error_line(self) -> Optional[int]:
         self._ensure_parsed()
         return self._fm_parsed[2]
+
+    @property
+    def body_text(self) -> str:
+        self._ensure_parsed()
+        return self._fm_parsed[3]
 
     def key_line(self, key: str) -> Optional[int]:
         return _frontmatter_key_line(self.path, key)
