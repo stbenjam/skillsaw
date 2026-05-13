@@ -350,7 +350,7 @@ class LinterConfig:
                 for param_name, param_info in schema.items():
                     if param_name not in rule_config:
                         default = param_info.get("default")
-                        yaml_val = self._yaml_value(default)
+                        yaml_val = self._yaml_value(default, indent=2)
                         if yaml_val.startswith("\n"):
                             # Multi-line value: comment out each line
                             lines = yaml_val.lstrip("\n").split("\n")

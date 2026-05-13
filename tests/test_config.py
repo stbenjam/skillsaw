@@ -813,7 +813,10 @@ def test_save_no_schema_comments_for_rules_without_schema(tmp_path):
     # but NOT a commented-out config_schema parameter
     for j in range(plugin_naming_idx + 1, len(lines)):
         line = lines[j].strip()
-        if not line or line.startswith("# ") or not line.startswith("#"):
+        if not line or not line.startswith("#"):
+            break
+        # A comment without ":" is a description comment, not a config key
+        if line.startswith("# ") and ":" not in line:
             break
         # Should not reach a commented-out param like "# some-key: value"
         assert False, f"Unexpected commented-out config option for plugin-naming: {line}"
