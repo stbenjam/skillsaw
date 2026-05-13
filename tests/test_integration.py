@@ -563,3 +563,100 @@ class TestAssertDirectives:
                 f"Assert directive mismatches in {fixture_name}:\n{detail}"
                 f"\n\nActual violations:\n{actual_summary}"
             )
+
+
+# ── Rule Coverage ───────────────────────────────────────────────
+
+
+BROKEN_FIXTURES = [
+    "single-plugin/broken",
+    "single-plugin/with-secrets",
+    "single-plugin/content-violations",
+    "single-plugin/mcp-broken",
+    "single-plugin/context-budget",
+    "marketplace/broken",
+    "agentskills/broken",
+    "dot-claude/broken",
+    "coderabbit/broken",
+    "apm/broken",
+]
+
+CLEAN_FIXTURES = [
+    "single-plugin/clean",
+    "marketplace/clean",
+    "agentskills/clean",
+    "dot-claude/clean",
+    "coderabbit/clean",
+    "apm/clean",
+]
+
+OPT_IN_RULES = {
+    "command-sections",
+    "command-name-format",
+    "mcp-prohibited",
+    "agentskill-structure",
+    "agentskill-evals-required",
+}
+
+
+@pytest.mark.integration
+class TestRuleCoverage:
+    """Regression guard: every rule must produce a violation in at least one fixture."""
+
+    def test_every_rule_fires_somewhere(self, tmp_path):
+        """Every rule must produce a violation in at least one fixture."""
+        from skillsaw.config import LinterConfig
+
+        all_rule_ids = set(LinterConfig.default().rules.keys())
+        fired: Set[str] = set()
+
+        for fixture_name in BROKEN_FIXTURES:
+            repo = copy_fixture(fixture_name, tmp_path / fixture_name.replace("/", "_"))
+            r = run_lint(repo)
+            fired |= rule_ids(r)
+
+        # Opt-in rules need explicit config
+        repo = copy_fixture("config/opt-in-rules", tmp_path / "config_opt-in-rules")
+        config = repo / ".skillsaw.yaml"
+        r = run_lint(repo, config=config)
+        fired |= rule_ids(r)
+
+        missing = all_rule_ids - fired
+        assert not missing, (
+            f"Rules without test coverage ({len(missing)}): {sorted(missing)}\n"
+            "Add broken fixtures that trigger these rules."
+        )
+
+    def test_all_clean_fixtures_pass(self, tmp_path):
+        """Every clean fixture must exit 0 with no errors or warnings."""
+        for fixture_name in CLEAN_FIXTURES:
+            repo = copy_fixture(fixture_name, tmp_path / fixture_name.replace("/", "_"))
+            r = run_lint(repo)
+            s = summary(r)
+            assert r["rc"] == 0, f"{fixture_name}: expected exit 0, got {r['rc']}"
+            assert s["errors"] == 0, f"{fixture_name}: unexpected errors"
+            assert s["warnings"] == 0, f"{fixture_name}: unexpected warnings"
+
+
+# ── Opt-In Rules ────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestOptInRules:
+    """Verify that opt-in rules fire only when explicitly enabled."""
+
+    def test_opt_in_rules_fire_when_enabled(self, tmp_path):
+        repo = copy_fixture("config/opt-in-rules", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        r = run_lint(repo, config=config)
+        ids = rule_ids(r)
+        for rule in OPT_IN_RULES:
+            assert rule in ids, f"Opt-in rule '{rule}' did not fire with enabled: true"
+
+    def test_opt_in_rules_silent_by_default(self, tmp_path):
+        repo = copy_fixture("config/opt-in-rules", tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        ids = rule_ids(r)
+        for rule in OPT_IN_RULES:
+            assert rule not in ids, f"Opt-in rule '{rule}' fired without being enabled"
