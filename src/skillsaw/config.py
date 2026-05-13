@@ -108,7 +108,7 @@ class LinterConfig:
             )
 
         if raw_exclude is None:
-            exclude_patterns = []
+            exclude_patterns = list(_DEFAULT_EXCLUDE_PATTERNS)
         elif isinstance(raw_exclude, list):
             exclude_patterns = raw_exclude
         else:
@@ -370,7 +370,9 @@ class LinterConfig:
             f.write("\n# Load custom rules from these files\n")
             self._write_field(f, "custom-rules", self.custom_rules)
             f.write("\n# Exclude patterns (glob format)\n")
-            self._write_field(f, "exclude", self.exclude_patterns)
+            f.write("# Default: **/template/**, **/templates/**, **/_template/**\n")
+            user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]
+            self._write_field(f, "exclude", user_excludes)
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
             self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
