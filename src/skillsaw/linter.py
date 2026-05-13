@@ -190,13 +190,36 @@ class Linter:
 
     def _filter_violations(self, violations: List[RuleViolation]) -> List[RuleViolation]:
         """Filter violations by global excludes, per-rule excludes, and inline suppression."""
-        return [
-            v
-            for v in violations
-            if not self._is_excluded(v)
-            and not self._is_rule_excluded(v.rule_id, v.file_path)
-            and not self._is_inline_suppressed(v)
-        ]
+        kept: List[RuleViolation] = []
+        for v in violations:
+            if self._is_excluded(v):
+                logger.info(
+                    "Suppressed %-30s %s (global exclude)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
+            elif self._is_rule_excluded(v.rule_id, v.file_path):
+                logger.info(
+                    "Suppressed %-30s %s (per-rule exclude)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
+            elif self._is_inline_suppressed(v):
+                logger.info(
+                    "Suppressed %-30s %s:%s (inline directive)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                    v.file_line or "?",
+                )
+            else:
+                kept.append(v)
+        if len(kept) < len(violations):
+            logger.info(
+                "Filtered %d of %d violations via excludes/suppression",
+                len(violations) - len(kept),
+                len(violations),
+            )
+        return kept
 
     def run(self) -> List[RuleViolation]:
         """

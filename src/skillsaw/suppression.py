@@ -123,7 +123,7 @@ class SuppressionMap:
     # Maps file line number -> set of suppressed rule IDs
     _suppressed_lines: Dict[int, FrozenSet[str]] = field(default_factory=dict)
     # Set of lines where ALL rules are suppressed (empty rule list in disable)
-    _fully_suppressed_lines: Set[int] = field(default_factory=set)
+    _fully_suppressed_lines: FrozenSet[int] = field(default_factory=frozenset)
 
     def is_suppressed(self, rule_id: str, file_line: int) -> bool:
         """Check if a rule is suppressed at a given file line number."""
@@ -146,7 +146,6 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
     Returns:
         SuppressionMap that can check if a rule is suppressed at a given line.
     """
-    total_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
     if content.endswith("\n"):
         total_lines = content.count("\n")
     else:
