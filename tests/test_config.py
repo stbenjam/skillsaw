@@ -734,3 +734,122 @@ def test_severity_override_on_auto_rule_still_fires_when_matching(marketplace_re
         config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
         is True
     )
+
+
+# --- Generated config documentation tests ---
+
+
+def test_save_includes_description_comments(tmp_path):
+    """Test that save() writes description comments for each rule"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # Check a few known rule descriptions appear as comments
+    assert "# Plugin must have .claude-plugin/plugin.json" in content
+    assert "# SKILL.md files should have frontmatter with name and description" in content
+    assert "# Detect potential API keys, tokens, and passwords in instruction files" in content
+
+
+def test_save_includes_config_schema_as_comments(tmp_path):
+    """Test that save() writes config_schema options as commented-out lines"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # content-banned-references has config_schema with 'banned' and 'skip-builtins'
+    # These should appear as commented-out options since they are not in the default config
+    assert "    # banned: []\n" in content
+    assert "    # skip-builtins: false\n" in content
+
+    # mcp-prohibited has 'allowlist' in config_schema
+    assert "    # allowlist: []\n" in content
+
+
+def test_save_does_not_duplicate_existing_config_keys(tmp_path):
+    """Config keys already in the rule config should not also appear as comments"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # content-critical-position already has min-lines: 50 in its default config.
+    # It should NOT also appear as a commented-out option.
+    assert "    min-lines: 50\n" in content
+    assert "    # min-lines:" not in content
+
+    # plugin-json-valid already has recommended-fields in its default config
+    assert "    # recommended-fields:" not in content
+
+
+def test_save_no_schema_comments_for_rules_without_schema(tmp_path):
+    """Rules without config_schema should only get a description comment"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+    lines = content.split("\n")
+
+    # Find the plugin-naming rule block (has no config_schema)
+    plugin_naming_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == "plugin-naming:":
+            plugin_naming_idx = i
+            break
+
+    assert plugin_naming_idx is not None, "plugin-naming rule not found in output"
+
+    # The line before should be a description comment
+    assert lines[plugin_naming_idx - 1].strip().startswith("# Plugin names should")
+
+    # The lines after should be the config keys (enabled, severity) and then
+    # either a blank line, another description comment, or the next rule --
+    # but NOT a commented-out config_schema parameter
+    for j in range(plugin_naming_idx + 1, len(lines)):
+        line = lines[j].strip()
+        if not line or not line.startswith("#"):
+            break
+        # A comment without ":" is a description comment, not a config key
+        if line.startswith("# ") and ":" not in line:
+            break
+        # Should not reach a commented-out param like "# some-key: value"
+        assert False, f"Unexpected commented-out config option for plugin-naming: {line}"
+
+
+def test_save_with_config_schema_is_valid_yaml(tmp_path):
+    """The generated config with schema comments must still be valid YAML"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+    parsed = yaml.safe_load(content)
+    assert parsed is not None
+    assert "rules" in parsed
+
+    # Commented-out lines should not affect YAML parsing
+    assert "content-banned-references" in parsed["rules"]
+    assert "mcp-prohibited" in parsed["rules"]
+
+
+def test_save_multiline_schema_defaults_commented(tmp_path):
+    """Config schema options with complex defaults should have each line commented"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # context-budget has a 'limits' config_schema with a complex dict default.
+    # Each line of the multi-line value should be commented out.
+    assert "    # limits:\n" in content
+
+    # The file should still be valid YAML (multi-line comments don't break parsing)
+    parsed = yaml.safe_load(content)
+    assert parsed is not None
