@@ -10,7 +10,7 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path, PurePath
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
@@ -1171,7 +1171,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     continue
         return paths
 
-    def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> str | None:
+    def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> Optional[str]:
         """Find a similar file path in the repo using fuzzy matching."""
         repo_paths = self._collect_repo_paths(root)
         target_name = Path(target_path).name
