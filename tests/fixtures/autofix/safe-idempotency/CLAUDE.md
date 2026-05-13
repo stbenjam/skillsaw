@@ -71,14 +71,14 @@ configuration, and finally src/cache.py for validation.
 
 Shared library modules used across the codebase:
 
-- Run lib/constants.py to execute the related task
-- Run lib/exceptions.py to execute the related task
-- Run lib/helpers.py to execute the related task
-- Run lib/plugins.py to execute the related task
-- Run lib/types.py to execute the related task
+- Run pylib/constants.py to execute the related task
+- Run pylib/exceptions.py to execute the related task
+- Run pylib/helpers.py to execute the related task
+- Run pylib/plugins.py to execute the related task
+- Run pylib/types.py to execute the related task
 
-Start with lib/constants.py for initial setup, then use lib/exceptions.py for
-configuration, and finally lib/helpers.py for validation.
+Start with pylib/constants.py for initial setup, then use pylib/exceptions.py for
+configuration, and finally pylib/helpers.py for validation.
 
 ## Configuration
 
@@ -122,5 +122,5 @@ Files that are already properly linked (should not be touched):
 - See [docs/performance.md](docs/performance.md) for details
 - See [docs/security.md](docs/security.md) for details
 - See [docs/testing.md](docs/testing.md) for details
-- See [lib/constants.py](lib/constants.py) for details
-- See [lib/exceptions.py](lib/exceptions.py) for details
+- See [pylib/constants.py](pylib/constants.py) for details
+- See [pylib/exceptions.py](pylib/exceptions.py) for details
