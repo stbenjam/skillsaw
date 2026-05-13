@@ -174,11 +174,11 @@ class TestInstructionImportsValidRule:
             "# Instructions\n"
             "\n"
             "```python\n"
-            "from ship_help_bot.shared.tool_info import Toolset as ToolsetBase, tool\n"
+            "import functools\n"
             "\n"
-            "class Toolset(ToolsetBase):\n"
-            '    @tool(name="My Tool", description="Does something useful")\n'
-            "    async def my_tool(self, args: str) -> dict:\n"
+            "class MyService:\n"
+            "    @functools.lru_cache(maxsize=128)\n"
+            "    def fetch_data(self, key: str) -> dict:\n"
             "        ...\n"
             "```\n"
         )
