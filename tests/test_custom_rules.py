@@ -330,11 +330,13 @@ class FileRule(Rule):
 
     file_rule_violations = [v for v in violations if v.rule_id == "file-rule"]
     assert file_rule_violations, "Expected at least one file-rule violation"
-    assert any(Path(v.file_path).name == "docs.md" for v in file_rule_violations), \
-        "Non-excluded markdown file should still be reported"
+    assert any(
+        Path(v.file_path).name == "docs.md" for v in file_rule_violations
+    ), "Non-excluded markdown file should still be reported"
     # TEMPLATE.md in templates/ should be excluded
-    assert all("templates" not in Path(v.file_path).parts for v in file_rule_violations), \
-        "Excluded file was not filtered"
+    assert all(
+        "templates" not in Path(v.file_path).parts for v in file_rule_violations
+    ), "Excluded file was not filtered"
 
 
 def test_custom_rule_respects_disabled_config(valid_plugin, temp_dir):
