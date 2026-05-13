@@ -43,9 +43,8 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Open PRs from claude bot only
-          PRS=$(gh pr list --state open --json number,title,author \
-            | jq '[.[] | select(.author.login == "app/claude")]')
+          # Open PRs with pr-for-agent label
+          PRS=$(gh pr list --state open --label pr-for-agent --json number,title,author)
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
             echo "No open PRs from claude"
