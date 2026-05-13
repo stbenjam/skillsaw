@@ -52,6 +52,8 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - [Configuration](#configuration)
   - [Version Pinning](#version-pinning)
   - [Exclude Patterns](#exclude-patterns)
+  - [Per-Rule Excludes](#per-rule-excludes)
+  - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
@@ -366,6 +368,65 @@ exclude:
   - "generated/**"
   - "node_modules/**"
 ```
+
+### Per-Rule Excludes
+
+Exclude specific files from a single rule using the `excludes` key in the
+rule's config:
+
+```yaml
+rules:
+  content-weak-language:
+    enabled: true
+    excludes:
+      - "docs/legacy/**"
+      - "CHANGELOG.md"
+```
+
+This is useful when a rule produces false positives on specific files but
+you still want it enabled globally. Per-rule excludes use the same glob
+syntax as global `exclude` patterns.
+
+### Inline Suppression
+
+Suppress specific rules on specific lines using HTML comment directives
+directly in your markdown files:
+
+```markdown
+<!-- skillsaw-disable content-weak-language -->
+This section intentionally uses informal language.
+<!-- skillsaw-enable content-weak-language -->
+```
+
+Suppress a single line:
+
+```markdown
+<!-- skillsaw-disable-next-line content-tautological -->
+Follow best practices for error handling.
+```
+
+Suppress multiple rules at once:
+
+```markdown
+<!-- skillsaw-disable content-weak-language, content-tautological -->
+```
+
+Re-enable all suppressed rules:
+
+```markdown
+<!-- skillsaw-enable -->
+```
+
+Multi-line HTML comments are also supported:
+
+```markdown
+<!--
+    skillsaw-disable content-weak-language
+-->
+```
+
+Inline suppression only affects rules that are already enabled. It cannot
+be used to enable a normally disabled rule.
 
 ### Content Paths
 
