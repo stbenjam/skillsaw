@@ -526,8 +526,8 @@ nonexistent endpoint or asking the user to fill in information that should
 already be present.
 
 This is standard software engineering hygiene applied to a new file type.
-`TODO` and `FIXME` markers have been tracked by linters (ESLint's `no-warning-
-comments`, SonarQube's "Track uses of 'TODO' tags") for decades because they
+`TODO` and `FIXME` markers have been tracked by linters (ESLint's `no-warning-comments`,
+SonarQube's "Track uses of 'TODO' tags") for decades because they
 indicate incomplete implementation. The same principle applies to instruction
 files: if the content isn't ready, it shouldn't be in the agent's context.
 
