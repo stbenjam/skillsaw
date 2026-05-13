@@ -449,7 +449,7 @@ class ContentSectionLengthRule(Rule):
                 continue
             lines = body.splitlines()
             sections: List[tuple] = []
-            current_heading_line = 0
+            current_heading_line = 1
             current_heading_text = "(top of file)"
             section_start = 0
 
@@ -477,7 +477,7 @@ class ContentSectionLengthRule(Rule):
                         self.violation(
                             f"Section '{heading}' is ~{token_count} tokens (max recommended: {max_tokens})",
                             block=cf,
-                            line=heading_line if heading_line > 0 else 1,
+                            line=heading_line if heading_line > 0 else None,
                         )
                     )
         return violations
