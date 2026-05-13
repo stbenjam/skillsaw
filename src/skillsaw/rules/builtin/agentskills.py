@@ -31,6 +31,7 @@ def _to_kebab(name: str) -> str:
 class AgentSkillValidRule(Rule):
     """Validate SKILL.md exists with required frontmatter fields"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -303,6 +304,7 @@ class AgentSkillValidRule(Rule):
 class AgentSkillNameRule(Rule):
     """Validate skill name format per agentskills.io spec"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,

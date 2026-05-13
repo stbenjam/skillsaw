@@ -857,10 +857,7 @@ def _discover_safe_autofix_rule_ids() -> Set[str]:
     safe_ids: Set[str] = set()
     for rule_class in BUILTIN_RULES:
         instance = rule_class()
-        if not instance.supports_autofix:
-            continue
-        source = __import__("inspect").getsource(rule_class.fix)
-        if "AutofixConfidence.SAFE" in source:
+        if instance.autofix_confidence == AutofixConfidence.SAFE:
             safe_ids.add(instance.rule_id)
     return safe_ids
 

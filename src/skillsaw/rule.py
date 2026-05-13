@@ -86,6 +86,7 @@ class Rule(ABC):
     formats = None
     config_schema = {}
     since = "0.1.0"
+    autofix_confidence: Optional["AutofixConfidence"] = None
 
     def __init__(self, config: Dict[str, Any] = None):
         """
