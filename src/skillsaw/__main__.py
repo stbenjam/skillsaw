@@ -402,17 +402,12 @@ def _run_lint(args):
         import warnings
 
         fix_cmd = "skillsaw fix --llm" if args.use_llm else "skillsaw fix"
-        warnings.warn(
+        msg = (
             f"`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
-            f"Use `{fix_cmd}` instead.",
-            DeprecationWarning,
-            stacklevel=1,
+            f"Use `{fix_cmd}` instead."
         )
-        print(
-            f"Warning: `skillsaw lint --fix` is deprecated and will be removed in 1.0. "
-            f"Use `{fix_cmd}` instead.",
-            file=sys.stderr,
-        )
+        warnings.warn(msg, DeprecationWarning, stacklevel=1)
+        print(f"Warning: {msg}", file=sys.stderr)
         violations, fixes = linter.fix()
         applied = linter.apply_fixes(fixes)
         if applied and args.fmt == "text":
