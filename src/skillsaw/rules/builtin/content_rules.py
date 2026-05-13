@@ -16,6 +16,7 @@ from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     ContentBlock,
+    SkillRefBlock,
     WeakLanguageDetector,
     TautologicalDetector,
     CriticalPositionAnalyzer,
@@ -60,14 +61,13 @@ class ContentWeakLanguageRule(Rule):
             "- Preserve markdown formatting"
         )
 
-    # Categories where hedging language is acceptable (supplementary material)
-    _REFERENCE_CATEGORIES = frozenset({"skill-ref"})
+    _REFERENCE_BLOCK_TYPES = (SkillRefBlock,)
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = WeakLanguageDetector()
         for cf in gather_all_content_blocks(context):
-            is_reference = cf.category in self._REFERENCE_CATEGORIES
+            is_reference = isinstance(cf, self._REFERENCE_BLOCK_TYPES)
             for match in detector.analyze(cf):
                 violations.append(
                     self.violation(
