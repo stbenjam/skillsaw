@@ -262,28 +262,33 @@ class AgentSkillValidRule(Rule):
             for field_name in extra_required:
                 if field_name in self.BUILTIN_REQUIRED:
                     continue
-                if field_name not in frontmatter:
+                if not frontmatter.get(field_name):
+                    line = block.key_line(field_name) if field_name in frontmatter else None
                     violations.append(
                         self.violation(
                             f"Missing required field '{field_name}'",
                             file_path=block.path,
+                            line=line,
                         )
                     )
 
             required_meta = self.config.get("required-metadata", [])
             if required_meta:
                 meta = frontmatter.get("metadata")
+                meta_line = block.key_line("metadata")
                 if meta is None:
-                    violations.append(
-                        self.violation(
-                            "Missing required 'metadata' (needed for required-metadata check)",
-                            file_path=block.path,
+                    if "metadata" not in extra_required:
+                        violations.append(
+                            self.violation(
+                                "Missing required 'metadata' (needed for required-metadata check)",
+                                file_path=block.path,
+                                line=meta_line,
+                            )
                         )
-                    )
                 elif isinstance(meta, dict):
-                    meta_line = block.key_line("metadata")
                     for key in required_meta:
-                        if key not in meta:
+                        val = meta.get(key)
+                        if val is None or (isinstance(val, str) and not val.strip()):
                             violations.append(
                                 self.violation(
                                     f"Missing required metadata key '{key}'",
