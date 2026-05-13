@@ -830,3 +830,63 @@ class TestCommandRenameFix:
         assert len(applied) == 1
         assert applied[0].rule_id == "b"
         assert good_target.read_text() == "fixed"
+
+
+class TestSkillRenameRefsEndToEnd:
+    """End-to-end: rename a skill name, verify manifest, then fix stale refs."""
+
+    def test_rename_then_fix_refs(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        skill = repo / "eat-potato"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: Eat-Potato\ndescription: A skill\n---\n" "This is the Eat-Potato skill.\n"
+        )
+        refs = skill / "references"
+        refs.mkdir()
+        (refs / "guide.md").write_text("Use Eat-Potato to peel potatoes.\n")
+        evals_dir = skill / "evals"
+        evals_dir.mkdir()
+        (evals_dir / "evals.json").write_text(json.dumps({"skill_name": "Eat-Potato", "evals": []}))
+
+        # Phase 1: fix the name (SAFE confidence)
+        context = RepositoryContext(repo)
+        config = LinterConfig.default()
+        linter = Linter(context, config)
+        violations, fixes = linter.fix()
+        applied = Linter.apply_fixes(fixes)
+
+        name_fixes = [f for f in applied if f.rule_id == "agentskill-name"]
+        assert len(name_fixes) == 1
+
+        from skillsaw.rules.builtin.agentskills import RENAMES_MANIFEST
+
+        manifest_path = repo / RENAMES_MANIFEST
+        assert manifest_path.exists()
+        data = json.loads(manifest_path.read_text())
+        assert data["renames"][0]["old"] == "Eat-Potato"
+
+        # Phase 2: fix stale references (SUGGEST confidence)
+        context2 = RepositoryContext(repo)
+        linter2 = Linter(context2, config)
+        violations2, fixes2 = linter2.fix()
+        applied2 = Linter.apply_fixes(fixes2, confidence=AutofixConfidence.SUGGEST)
+
+        ref_fixes = [f for f in applied2 if f.rule_id == "agentskill-rename-refs"]
+        assert len(ref_fixes) >= 1
+
+        assert "eat-potato" in (refs / "guide.md").read_text()
+        assert "Eat-Potato" not in (refs / "guide.md").read_text()
+
+        evals_content = json.loads((evals_dir / "evals.json").read_text())
+        assert evals_content["skill_name"] == "eat-potato"
+
+        # Phase 3: re-lint to verify manifest is cleaned up
+        # (check() removes entries with no remaining stale references)
+        context3 = RepositoryContext(repo)
+        linter3 = Linter(context3, config)
+        violations3 = linter3.run()
+        rename_violations = [v for v in violations3 if v.rule_id == "agentskill-rename-refs"]
+        assert len(rename_violations) == 0
+        assert not manifest_path.exists()

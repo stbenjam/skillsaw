@@ -651,9 +651,14 @@ Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
 skillsaw fix                     # Apply safe structural fixes
+skillsaw fix --suggest           # Also apply suggested fixes (e.g. stale references)
+skillsaw fix --converge          # Re-run up to 5 times until no more fixes apply
+skillsaw fix --suggest --converge 3  # Both, with custom max passes
 ```
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
+
+Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence. Use `--suggest` to apply them, and `--converge` to handle multi-pass convergence in one command.
 
 ### LLM-Powered Fixes
 

@@ -13,7 +13,7 @@ from importlib.metadata import version, PackageNotFoundError
 from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
-from .rule import Severity
+from .rule import AutofixConfidence, AutofixResult, Severity
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
@@ -187,6 +187,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         dest="dry_run",
         help="Preview fixes without writing changes",
+    )
+    fix_parser.add_argument(
+        "--suggest",
+        action="store_true",
+        help="Also apply suggested fixes (not just safe ones)",
+    )
+    fix_parser.add_argument(
+        "--converge",
+        type=int,
+        nargs="?",
+        const=5,
+        default=None,
+        metavar="N",
+        help="Re-run fix up to N times until no more fixes apply (default: 5)",
     )
 
     # --- init ---
@@ -599,10 +613,31 @@ def _run_fix(args):
     linter = Linter(context, config)
 
     if not args.use_llm:
-        applied, suggested = linter.fix_and_apply()
-        if applied:
-            print(f"Fixed {len(applied)} issue(s):")
-            for fix in applied:
+        confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
+        max_passes = args.converge if args.converge is not None else 1
+        total_applied: list[AutofixResult] = []
+
+        for pass_num in range(1, max_passes + 1):
+            if pass_num > 1:
+                context = RepositoryContext(args.path)
+                linter = Linter(context, config)
+
+            violations, fixes = linter.fix()
+            applied = linter.apply_fixes(fixes, confidence=confidence)
+            total_applied.extend(applied)
+
+            if not applied:
+                break
+
+            if args.converge is not None and pass_num < max_passes:
+                print(f"Pass {pass_num}: fixed {len(applied)} issue(s)")
+
+        if total_applied:
+            if args.converge is not None:
+                print(f"\nFixed {len(total_applied)} issue(s) in {pass_num} pass(es):")
+            else:
+                print(f"Fixed {len(total_applied)} issue(s):")
+            for fix in total_applied:
                 print(f"  ✓ [{fix.file_path}] {fix.description}")
         else:
             print("No auto-fixable violations found.")
@@ -610,6 +645,17 @@ def _run_fix(args):
             print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
             for fix in suggested:
                 print(f"  ? [{fix.file_path}] {fix.description}")
+
+        has_renames = any(f.rule_id == "agentskill-name" for f in total_applied)
+        has_rename_refs = any(f.rule_id == "agentskill-rename-refs" for f in suggested)
+        if has_renames and has_rename_refs:
+            print(
+                "\nHint: skill names were renamed — stale references were found in"
+                " other files.\nRun `skillsaw fix --suggest --converge` to fix"
+                " references automatically.",
+                file=sys.stderr,
+            )
+
         sys.exit(0)
 
     if args.model:
