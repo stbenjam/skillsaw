@@ -9,9 +9,10 @@ import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
+from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -23,6 +24,7 @@ from skillsaw.rules.builtin.content_analysis import (
     InstructionBudgetAnalyzer,
     _HEADING_RE,
     _TAUTOLOGICAL_PHRASES,
+    _strip_fenced_code_blocks,
 )
 
 
@@ -1064,4 +1066,186 @@ class ContentInconsistentTerminologyRule(Rule):
                 for fpath in sorted(minority_files):
                     violations.append(self.violation(msg, file_path=fpath))
 
+        return violations
+
+
+class ContentBrokenInternalReferenceRule(Rule):
+    """Detect markdown links pointing to nonexistent files"""
+
+    formats = None
+    since = "0.8.3"
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
+
+    _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+    _TEMPLATE_DIR_NAMES = {"template", "templates", "_template"}
+
+    @property
+    def rule_id(self) -> str:
+        return "content-broken-internal-reference"
+
+    @property
+    def description(self) -> str:
+        return "Detect markdown links where the target file does not exist"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def _is_in_template_dir(self, file_path: Path) -> bool:
+        """Check if the file is inside a template directory."""
+        for part in file_path.parts:
+            if part in self._TEMPLATE_DIR_NAMES:
+                return True
+        return False
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            if self._is_in_template_dir(cf.path):
+                continue
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                for match in self._LINK_RE.finditer(line):
+                    target = match.group(2).strip()
+                    # Skip URLs, anchors, and mailto
+                    if target.startswith(("http://", "https://", "#", "mailto:")):
+                        continue
+                    # Strip anchor from path (e.g., "file.md#section")
+                    target_path = target.split("#")[0]
+                    if not target_path:
+                        continue
+                    # Resolve relative to the file containing the link
+                    resolved = (cf.path.parent / target_path).resolve()
+                    if not resolved.exists():
+                        violations.append(
+                            self.violation(
+                                f"Broken internal link: [{match.group(1)}]({target}) — target does not exist",
+                                block=cf,
+                                line=line_num,
+                            )
+                        )
+        return violations
+
+
+class ContentUnlinkedInternalReferenceRule(Rule):
+    """Detect bare path-like strings that are not wrapped in markdown link syntax"""
+
+    formats = None
+    since = "0.8.3"
+
+    config_schema = {
+        "patterns": {
+            "type": "list",
+            "default": ["./**/*.*", "references/**/*.md"],
+            "description": "Glob patterns for path-like strings to flag when unlinked",
+        },
+    }
+
+    # Match path-like strings: contain / and a file extension, or start with ./
+    _PATH_LIKE_RE = re.compile(
+        r"(?<!\()"  # not preceded by ( (would be inside link syntax)
+        r"(?:"
+        r"\./[\w./_-]+"  # starts with ./
+        r"|"
+        r"[\w._-]+(?:/[\w._-]+)+\.[\w]{1,10}"  # contains / and has extension
+        r")"
+        r"(?!\))"  # not followed by ) (would be inside link syntax)
+    )
+
+    # Detect if a match is inside a markdown link [text](path)
+    _LINK_SYNTAX_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
+
+    @property
+    def rule_id(self) -> str:
+        return "content-unlinked-internal-reference"
+
+    @property
+    def description(self) -> str:
+        return "Detect bare path-like strings not wrapped in markdown link syntax"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def _is_inside_link(self, line: str, match_start: int, match_end: int) -> bool:
+        """Check if a match position falls inside markdown link syntax."""
+        for link_match in self._LINK_SYNTAX_RE.finditer(line):
+            if link_match.start() <= match_start and match_end <= link_match.end():
+                return True
+        return False
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                # Skip empty lines (from stripped code blocks)
+                if not line.strip():
+                    continue
+                for match in self._PATH_LIKE_RE.finditer(line):
+                    path_str = match.group(0)
+                    if self._is_inside_link(line, match.start(), match.end()):
+                        continue
+                    violations.append(
+                        self.violation(
+                            f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [text]({path_str})",
+                            block=cf,
+                            line=line_num,
+                        )
+                    )
+        return violations
+
+
+class ContentPlaceholderTextRule(Rule):
+    """Detect TODO markers, bracket placeholders, and unfilled template text"""
+
+    formats = None
+    since = "0.8.3"
+
+    _PLACEHOLDER_PATTERNS = [
+        (re.compile(r"\bTODO\b"), "TODO marker"),
+        (re.compile(r"\bFIXME\b"), "FIXME marker"),
+        (re.compile(r"\bXXX\b"), "XXX marker"),
+        (re.compile(r"\[link\s+here\]", re.IGNORECASE), "Placeholder link"),
+        (re.compile(r"\[Insert\s+[^\]]+\]", re.IGNORECASE), "Insert placeholder"),
+        (re.compile(r"\[If\s+[^\]]+\]", re.IGNORECASE), "Conditional placeholder"),
+        (re.compile(r"\*[^*]*will be added[^*]*\*", re.IGNORECASE), "Unfilled template text"),
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-placeholder-text"
+
+    @property
+    def description(self) -> str:
+        return "Detect TODO markers, bracket placeholders, and unfilled template text"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                if not line.strip():
+                    continue
+                for pattern, desc in self._PLACEHOLDER_PATTERNS:
+                    match = pattern.search(line)
+                    if match:
+                        violations.append(
+                            self.violation(
+                                f"Placeholder text ({desc}): '{match.group()}'",
+                                block=cf,
+                                line=line_num,
+                            )
+                        )
         return violations

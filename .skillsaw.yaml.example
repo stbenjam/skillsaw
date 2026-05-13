@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.8.2"
+version: "0.8.3"
 
 rules:
 
@@ -209,6 +209,21 @@ rules:
   content-inconsistent-terminology:
     enabled: auto
     severity: info
+
+  # Detect markdown links where the target file does not exist
+  content-broken-internal-reference:
+    enabled: auto
+    severity: warning
+
+  # Detect bare path-like strings not wrapped in markdown link syntax
+  content-unlinked-internal-reference:
+    enabled: auto
+    severity: info
+
+  # Detect TODO markers, bracket placeholders, and unfilled template text
+  content-placeholder-text:
+    enabled: auto
+    severity: warning
 
   # .coderabbit.yaml must be valid YAML
   coderabbit-yaml-valid:
