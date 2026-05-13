@@ -145,7 +145,7 @@ def test_per_rule_excludes_skips_matching_file(temp_dir):
     config.rules["content-weak-language"] = {
         "enabled": True,
         "severity": "warning",
-        "excludes": ["skills/legacy/**"],
+        "exclude": ["skills/legacy/**"],
     }
 
     linter = Linter(context, config)
@@ -170,7 +170,7 @@ def test_per_rule_excludes_still_fires_for_non_matching(temp_dir):
     config.rules["content-weak-language"] = {
         "enabled": True,
         "severity": "warning",
-        "excludes": ["skills/legacy/**"],
+        "exclude": ["skills/legacy/**"],
     }
 
     linter = Linter(context, config)

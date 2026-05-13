@@ -158,14 +158,14 @@ class Linter:
         if file_path is None:
             return False
         rule_config = self.config.get_rule_config(rule_id)
-        excludes = rule_config.get("excludes")
-        if not excludes:
+        exclude = rule_config.get("exclude")
+        if not exclude:
             return False
         try:
             rel = str(file_path.resolve().relative_to(self.context.root_path))
         except ValueError:
             return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in excludes)
+        return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
 
     def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
         """Get or build a suppression map for a file, with caching."""

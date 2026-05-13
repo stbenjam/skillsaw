@@ -371,14 +371,14 @@ exclude:
 
 ### Per-Rule Excludes
 
-Exclude specific files from a single rule using the `excludes` key in the
+Exclude specific files from a single rule using the `exclude` key in the
 rule's config:
 
 ```yaml
 rules:
   content-weak-language:
     enabled: true
-    excludes:
+    exclude:
       - "docs/legacy/**"
       - "CHANGELOG.md"
 ```
