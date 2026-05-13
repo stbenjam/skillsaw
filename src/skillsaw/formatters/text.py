@@ -36,7 +36,7 @@ def format_text(
         location = ""
         if rel:
             location = f" [{rel}:{v.file_line}]" if v.file_line else f" [{rel}]"
-        return f"{icon} {v.severity.value.upper()}{location}: {v.message}"
+        return f"{icon} {v.severity.value.upper()} ({v.rule_id}){location}: {v.message}"
 
     output = []
 
