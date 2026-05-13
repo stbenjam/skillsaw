@@ -12,6 +12,12 @@ An item is complete when **all** of the following are true:
 3. **PR is open** — pushed and PR created via `gh pr create`
 4. **CodeRabbit feedback addressed** — monitor the PR, review CodeRabbit comments through potentially several rounds, and resolve all feedback before marking done
 
+## How to Work on This
+
+Each `##` section below is **one subagent, one branch, one PR**. All items
+under a heading are implemented together. Sections are independent and can be
+worked on in parallel.
+
 ## Rule Improvements
 
 - [ ] **Fix `content-negative-only` scope boundary false positives** — Skip patterns like "don't use (this) when:" headings that are scoping instructions, not purely negative content. Fix in `content_rules.py`.
