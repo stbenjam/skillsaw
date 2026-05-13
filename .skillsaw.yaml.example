@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.8.2"
+version: "0.8.3"
 
 rules:
 
@@ -229,7 +229,10 @@ rules:
 custom-rules: []
 
 # Exclude patterns (glob format)
-exclude: []
+exclude:
+    - "**/template/**"
+    - "**/templates/**"
+    - "**/_template/**"
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []

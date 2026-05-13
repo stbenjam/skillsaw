@@ -25,6 +25,40 @@ def test_default_config():
     assert config.rules["plugin-json-required"]["severity"] == "error"
 
 
+def test_default_exclude_patterns():
+    """Test that default config includes sensible exclude patterns for templates"""
+    config = LinterConfig.default()
+    assert "**/template/**" in config.exclude_patterns
+    assert "**/templates/**" in config.exclude_patterns
+    assert "**/_template/**" in config.exclude_patterns
+
+
+def test_default_exclude_patterns_not_empty():
+    """Test that default exclude patterns list is non-empty"""
+    config = LinterConfig.default()
+    assert len(config.exclude_patterns) >= 3
+
+
+def test_user_exclude_overrides_defaults(temp_dir):
+    """User-specified exclude patterns in config file override the defaults"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_data = {
+        "exclude": ["my-custom-exclude/**"],
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    config = LinterConfig.from_file(config_file)
+    assert config.exclude_patterns == ["my-custom-exclude/**"]
+    assert "**/template/**" not in config.exclude_patterns
+
+
+def test_for_init_includes_default_excludes():
+    """for_init() should also include the default exclude patterns"""
+    config = LinterConfig.for_init()
+    assert "**/template/**" in config.exclude_patterns
+    assert "**/templates/**" in config.exclude_patterns
+
+
 def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
     config_file = temp_dir / ".skillsaw.yaml"
