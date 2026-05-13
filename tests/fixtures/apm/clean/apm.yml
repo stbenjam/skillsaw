@@ -1,0 +1,7 @@
+name: platform-tools
+version: 1.0.0
+description: Shared tooling for the platform engineering team
+targets:
+  - claude
+  - cursor
+dependencies: {}

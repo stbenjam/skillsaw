@@ -460,7 +460,7 @@ class ContentSectionLengthRule(Rule):
                 continue
             lines = body.splitlines()
             sections: List[tuple] = []
-            current_heading_line = 0
+            current_heading_line = 1
             current_heading_text = "(top of file)"
             section_start = 0
 
@@ -1311,6 +1311,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 continue
             for line_num, line in enumerate(body.splitlines(), 1):
                 if not line.strip():
+                    continue
+                if re.match(r"^\s*@\S", line):
                     continue
                 for match in self._PATH_LIKE_RE.finditer(line):
                     path_str = match.group(0)

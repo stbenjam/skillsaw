@@ -1,0 +1,3 @@
+version: "99.0.0"
+content-paths:
+  - "docs/*.md"

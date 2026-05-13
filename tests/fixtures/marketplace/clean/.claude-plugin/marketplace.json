@@ -1,0 +1,9 @@
+{
+  "name": "acme-tools",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {"name": "widget-maker", "source": "./plugins/widget-maker", "description": "Build and manage widgets"},
+    {"name": "data-fetcher", "source": "./plugins/data-fetcher", "description": "Fetch data from external APIs"},
+    {"name": "log-analyzer", "source": "./plugins/log-analyzer", "description": "Analyze application logs"}
+  ]
+}

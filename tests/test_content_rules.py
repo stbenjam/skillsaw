@@ -384,6 +384,17 @@ class TestContentSectionLengthRule:
         violations = ContentSectionLengthRule().check(context)
         assert len(violations) == 0
 
+    def test_top_of_file_section_reports_line_1(self, temp_dir):
+        """Top-of-file sections must report line=1, not None (regression)."""
+        content = "\n".join(
+            [f"Long instruction number {i} for top of file section." for i in range(200)]
+        )
+        (temp_dir / "CLAUDE.md").write_text(content + "\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentSectionLengthRule().check(context)
+        assert len(violations) >= 1
+        assert violations[0].line == 1
+
 
 class TestContentContradictionRule:
     def test_rule_metadata(self):
@@ -883,6 +894,13 @@ class TestContentUnlinkedInternalReferenceRule:
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) >= 1
         assert violations[0].line == 3
+
+    def test_at_import_lines_not_flagged(self, temp_dir):
+        """@import lines should not trigger unlinked-internal-reference (regression)."""
+        (temp_dir / "CLAUDE.md").write_text("@nonexistent/missing-package.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
 
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)

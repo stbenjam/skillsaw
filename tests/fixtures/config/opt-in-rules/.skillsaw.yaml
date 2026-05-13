@@ -1,0 +1,12 @@
+version: "99.0.0"
+rules:
+  command-sections:
+    enabled: true
+  command-name-format:
+    enabled: true
+  mcp-prohibited:
+    enabled: true
+  agentskill-structure:
+    enabled: true
+  agentskill-evals-required:
+    enabled: true

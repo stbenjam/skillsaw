@@ -1,0 +1,6 @@
+{
+  "name": "data-fetcher",
+  "description": "Fetch data from external REST and GraphQL APIs",
+  "version": "1.0.3",
+  "author": {"name": "Data Team"}
+}
