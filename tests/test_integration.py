@@ -869,7 +869,11 @@ def _run_fix(path, *extra_args):
     args = [sys.executable, "-m", "skillsaw", "fix"]
     args.extend(extra_args)
     args.append(str(path))
-    return subprocess.run(args, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+    assert (
+        result.returncode == 0
+    ), f"skillsaw fix failed with rc={result.returncode}: {result.stderr}"
+    return result
 
 
 def _snapshot_line_counts(repo: Path) -> Dict[str, int]:
@@ -947,7 +951,8 @@ class TestSafeAutofixIdempotency:
         _run_fix(repo)
         after_second = _snapshot_contents(repo)
 
-        changed = {f for f in after_first if after_first.get(f) != after_second.get(f)}
+        all_files = set(after_first.keys()) | set(after_second.keys())
+        changed = {f for f in all_files if after_first.get(f) != after_second.get(f)}
         assert not changed, f"Files changed on second fix (not idempotent): {sorted(changed)}"
 
     def test_line_preserving_fixes_keep_line_counts(self, tmp_path):
