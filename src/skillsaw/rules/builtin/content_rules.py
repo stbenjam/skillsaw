@@ -477,7 +477,7 @@ class ContentSectionLengthRule(Rule):
                         self.violation(
                             f"Section '{heading}' is ~{token_count} tokens (max recommended: {max_tokens})",
                             block=cf,
-                            line=heading_line if heading_line > 0 else None,
+                            line=heading_line if heading_line > 0 else 1,
                         )
                     )
         return violations
@@ -1300,6 +1300,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 continue
             for line_num, line in enumerate(body.splitlines(), 1):
                 if not line.strip():
+                    continue
+                if re.match(r"^\s*@\S", line):
                     continue
                 for match in self._PATH_LIKE_RE.finditer(line):
                     path_str = match.group(0)

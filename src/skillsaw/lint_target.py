@@ -43,9 +43,9 @@ class LintTarget:
             child.set_parents()
 
     def content_blocks(self) -> list:
-        from .rules.builtin.content_analysis import ContentBlock
+        from .rules.builtin.content_analysis import ContentBlock, McpBlock
 
-        return self.find(ContentBlock)
+        return [n for n in self.find(ContentBlock) if not isinstance(n, McpBlock)]
 
     def tree_label(self) -> str:
         return self.path.name
