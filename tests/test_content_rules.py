@@ -1042,6 +1042,24 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 0
 
+    def test_autofix_duplicate_paths_no_double_wrap(self, temp_dir):
+        """When the same path appears multiple times, each should be wrapped independently."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use the `scripts/test.py` script to do a review\n\n"
+            "Re-run script `scripts/test.py` again for some reason\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 2
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert fixed.count("[scripts/test.py](scripts/test.py)") == 2
+        assert "[[scripts/test.py]" not in fixed
+
     def test_supports_autofix_property(self):
         rule = ContentUnlinkedInternalReferenceRule()
         assert rule.supports_autofix

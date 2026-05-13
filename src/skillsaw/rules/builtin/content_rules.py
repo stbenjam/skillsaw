@@ -1354,7 +1354,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
             fixed = content
             violations_fixed = []
             for path_str, v in replacements:
-                fixed = fixed.replace(path_str, f"[{path_str}]({path_str})", 1)
+                pattern = rf"(?<!\[)(?<!\]\(){re.escape(path_str)}"
+                fixed = re.sub(pattern, f"[{path_str}]({path_str})", fixed, count=1)
                 violations_fixed.append(v)
             if fixed != content:
                 results.append(
