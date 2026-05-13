@@ -4,6 +4,7 @@ Main linter orchestration
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import logging
 import sys
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from .context import RepositoryContext
 from .config import LinterConfig
+from .suppression import build_suppression_map_for_file, SuppressionMap
 
 if TYPE_CHECKING:
     from .llm._litellm import CompletionProvider, TokenUsage
@@ -151,6 +153,74 @@ class Linter:
             return False
         return self.context.is_path_excluded(violation.file_path)
 
+    def _is_rule_excluded(self, rule_id: str, file_path: Optional[Path]) -> bool:
+        """Check if a file path matches a rule's per-rule excludes patterns."""
+        if file_path is None:
+            return False
+        rule_config = self.config.get_rule_config(rule_id)
+        excludes = rule_config.get("excludes")
+        if not excludes:
+            return False
+        try:
+            rel = str(file_path.resolve().relative_to(self.context.root_path))
+        except ValueError:
+            return False
+        return any(fnmatch.fnmatch(rel, pat) for pat in excludes)
+
+    def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
+        """Get or build a suppression map for a file, with caching."""
+        resolved = file_path.resolve()
+        if not hasattr(self, "_suppression_cache"):
+            self._suppression_cache: Dict[Path, Optional[SuppressionMap]] = {}
+        if resolved not in self._suppression_cache:
+            self._suppression_cache[resolved] = build_suppression_map_for_file(resolved)
+        return self._suppression_cache[resolved]
+
+    def _is_inline_suppressed(self, violation: RuleViolation) -> bool:
+        """Check if a violation is suppressed by an inline directive."""
+        if violation.file_path is None:
+            return False
+        file_line = violation.file_line
+        if file_line is None:
+            return False
+        smap = self._get_suppression_map(violation.file_path)
+        if smap is None:
+            return False
+        return smap.is_suppressed(violation.rule_id, file_line)
+
+    def _filter_violations(self, violations: List[RuleViolation]) -> List[RuleViolation]:
+        """Filter violations by global excludes, per-rule excludes, and inline suppression."""
+        kept: List[RuleViolation] = []
+        for v in violations:
+            if self._is_excluded(v):
+                logger.info(
+                    "Suppressed %-30s %s (global exclude)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
+            elif self._is_rule_excluded(v.rule_id, v.file_path):
+                logger.info(
+                    "Suppressed %-30s %s (per-rule exclude)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
+            elif self._is_inline_suppressed(v):
+                logger.info(
+                    "Suppressed %-30s %s:%s (inline directive)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                    v.file_line or "?",
+                )
+            else:
+                kept.append(v)
+        if len(kept) < len(violations):
+            logger.info(
+                "Filtered %d of %d violations via excludes/suppression",
+                len(violations) - len(kept),
+                len(violations),
+            )
+        return kept
+
     def run(self) -> List[RuleViolation]:
         """
         Run all enabled rules
@@ -172,7 +242,7 @@ class Linter:
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
-        return [v for v in violations if not self._is_excluded(v)]
+        return self._filter_violations(violations)
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -191,7 +261,7 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 continue
 
-            visible = [v for v in rule_violations if not self._is_excluded(v)]
+            visible = self._filter_violations(rule_violations)
 
             if visible and rule.supports_autofix:
                 try:
