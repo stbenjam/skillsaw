@@ -1073,12 +1073,8 @@ class ContentBrokenInternalReferenceRule(Rule):
     """Detect markdown links pointing to nonexistent files"""
 
     formats = None
-    since = "0.8.3"
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-    }
+    since = "0.9.0"
+    repo_types = None
 
     _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
     _TEMPLATE_DIR_NAMES = {"template", "templates", "_template"}
@@ -1113,6 +1109,9 @@ class ContentBrokenInternalReferenceRule(Rule):
             for line_num, line in enumerate(body.splitlines(), 1):
                 for match in self._LINK_RE.finditer(line):
                     target = match.group(2).strip()
+                    # Strip optional title text: [text](path "title")
+                    if " " in target:
+                        target = target.split(" ")[0]
                     # Skip URLs, anchors, and mailto
                     if target.startswith(("http://", "https://", "#", "mailto:")):
                         continue
@@ -1149,12 +1148,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     """Detect bare path-like strings that are not wrapped in markdown link syntax"""
 
     formats = None
-    since = "0.8.3"
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-    }
+    since = "0.9.0"
+    repo_types = None
 
     config_schema = {
         "patterns": {
@@ -1240,12 +1235,8 @@ class ContentPlaceholderTextRule(Rule):
     """Detect TODO markers, bracket placeholders, and unfilled template text"""
 
     formats = None
-    since = "0.8.3"
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-    }
+    since = "0.9.0"
+    repo_types = None
 
     _PLACEHOLDER_PATTERNS = [
         (re.compile(r"\bTODO\b"), "TODO marker"),
@@ -1256,7 +1247,7 @@ class ContentPlaceholderTextRule(Rule):
         (re.compile(r"\[If\s+[^\]]+\]", re.IGNORECASE), "Conditional placeholder"),
         (
             re.compile(
-                r"\*(?:TBD|to be added|details to be added|content to be added|will be added as you use)[^*]*\*",
+                r"\*(?:TBD|to be added|details to be added|content to be added)\*",
                 re.IGNORECASE,
             ),
             "Unfilled template text",

@@ -692,6 +692,16 @@ class TestContentBrokenInternalReferenceRule:
         assert len(violations) == 1
         assert "outside repository" in violations[0].message
 
+    def test_link_with_title_text(self, temp_dir):
+        """Links with optional title text should resolve correctly."""
+        (temp_dir / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            'See [the guide](guide.md "Intro guide") for details.\n'
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
         violations = ContentBrokenInternalReferenceRule().check(context)
@@ -741,6 +751,33 @@ class TestContentUnlinkedInternalReferenceRule:
         )
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0, f"URL path fragment should not be flagged, got: {violations}"
+
+    def test_custom_patterns_config(self, temp_dir):
+        """Test that custom patterns config filters which paths are flagged."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "See docs/guide.md for info.\nAlso check src/config/settings.yaml.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        # With default patterns, both should be flagged
+        rule_default = ContentUnlinkedInternalReferenceRule()
+        violations = rule_default.check(context)
+        assert len(violations) == 2
+
+        # With restricted patterns, only .yaml paths should match
+        rule_custom = ContentUnlinkedInternalReferenceRule()
+        rule_custom.config = {"patterns": ["*.yaml"]}
+        violations = rule_custom.check(context)
+        assert len(violations) == 1
+        assert "settings.yaml" in violations[0].message
+
+    def test_empty_patterns_config_no_violations(self, temp_dir):
+        """Test that empty patterns list results in no violations."""
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        rule.config = {"patterns": []}
+        violations = rule.check(context)
         assert len(violations) == 0
 
     def test_reports_line_number(self, temp_dir):
@@ -826,6 +863,13 @@ class TestContentPlaceholderTextRule:
         context = RepositoryContext(temp_dir)
         violations = ContentPlaceholderTextRule().check(context)
         # The tightened regex should not flag general "will be added" text
+        assert len(violations) == 0
+
+    def test_will_be_added_as_you_use_not_flagged(self, temp_dir):
+        """'will be added as you use' is normal prose, not placeholder text."""
+        (temp_dir / "CLAUDE.md").write_text("Memories *will be added as you use* the tool.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
         assert len(violations) == 0
 
     def test_clean_content_no_violations(self, temp_dir):
