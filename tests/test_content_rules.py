@@ -352,6 +352,41 @@ class TestContentContradictionRule:
         violations = ContentContradictionRule().check(context)
         assert len(violations) >= 1
 
+    def test_negation_prefix_non_exhaustive(self, temp_dir):
+        """non-exhaustive should not match as exhaustive (issue #148)"""
+        content = "Provide a minimal, non-exhaustive overview.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentContradictionRule().check(context)
+        assert len(violations) == 0
+
+    def test_negation_prefix_not_exhaustive(self, temp_dir):
+        """'not exhaustive' should not match as exhaustive"""
+        content = "The list is minimal and not exhaustive.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentContradictionRule().check(context)
+        assert len(violations) == 0
+
+    def test_real_contradiction_still_detected(self, temp_dir):
+        """Real contradictions (without negation) are still detected"""
+        content = "Be minimal in your approach.\nProvide exhaustive documentation.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentContradictionRule().check(context)
+        assert len(violations) >= 1
+
+    def test_mixed_negated_and_non_negated_still_flags(self, temp_dir):
+        """A negated occurrence should not suppress a real non-negated one"""
+        content = (
+            "Provide a minimal, non-exhaustive overview first.\n"
+            "Also include exhaustive implementation notes.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentContradictionRule().check(context)
+        assert len(violations) >= 1
+
 
 class TestContentHookCandidateRule:
     def test_rule_metadata(self):
