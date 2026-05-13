@@ -802,10 +802,12 @@ class ContentEmbeddedSecretsRule(Rule):
         r"|(?:PLACEHOLDER)"
     )
 
-    _WELL_KNOWN_EXAMPLE_KEYS = {
-        "AKIAIOSFODNN7EXAMPLE",
-        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    }
+    _WELL_KNOWN_EXAMPLE_KEYS = frozenset(
+        {
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        }
+    )
 
     _PATTERNS = [
         (re.compile(p), desc)
@@ -879,9 +881,9 @@ class ContentEmbeddedSecretsRule(Rule):
             content = _strip_fenced_code_blocks(content)
             lines = content.splitlines()
             for line_num, line in enumerate(lines, 1):
+                line_flagged = False
                 for pattern, desc in self._PATTERNS:
-                    m = pattern.search(line)
-                    if m:
+                    for m in pattern.finditer(line):
                         matched_text = m.group(0)
                         # Skip well-known example keys
                         if matched_text in self._WELL_KNOWN_EXAMPLE_KEYS:
@@ -905,6 +907,9 @@ class ContentEmbeddedSecretsRule(Rule):
                                 line=line_num,
                             )
                         )
+                        line_flagged = True
+                        break
+                    if line_flagged:
                         break
         return violations
 

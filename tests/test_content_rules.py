@@ -604,6 +604,17 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
 
+    def test_placeholder_then_real_secret_same_line(self, temp_dir):
+        """A placeholder match followed by a real secret on the same line still flags."""
+        content = (
+            "Set api_key='your_api_key_here_replace_me' and "
+            "real='sk-abcdefghijklmnopqrstuvwxyz1234'\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+
 
 class TestContentBannedReferencesRule:
     def test_rule_metadata(self):
