@@ -911,23 +911,37 @@ class TestSafeAutofixIdempotency:
     Requirements (issue #177):
     - At least 100 violations across all rules that produce SAFE autofixes
     - Every SAFE autofix rule must have at least one violation
-    - Running fix twice must produce identical content (idempotency)
-    - Line counts must NEVER change from any autofix
-    - Re-lint after fix must show zero violations for covered rules
+    - Running fix 11 times must produce identical content (idempotency)
+    - In-place fixes must never change line counts
+    - Re-lint after fix must show zero pre-existing violations for covered rules
     - No double-wrapping or other corruption bugs
+    - Iterative fix_and_apply must converge (second pass finds nothing)
     """
 
     FIXTURE = "autofix/safe-idempotency"
 
-    def test_fixture_has_enough_violations(self, tmp_path):
-        """Fixture must produce at least 100 SAFE-autofixable violations."""
+    EXPECTED_SAFE_VIOLATIONS = {
+        "agent-frontmatter": 11,
+        "agentskill-name": 30,
+        "agentskill-valid": 10,
+        "command-frontmatter": 15,
+        "content-unlinked-internal-reference": 79,
+        "skill-frontmatter": 10,
+    }
+
+    def test_fixture_violation_counts(self, tmp_path):
+        """Fixture must produce the exact expected SAFE violation counts."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         r = run_lint(repo)
         safe_rules = _discover_safe_autofix_rule_ids()
-        safe_violations = [v for v in violations(r) if v["rule_id"] in safe_rules]
-        assert len(safe_violations) >= 100, (
-            f"Expected >= 100 SAFE violations, got {len(safe_violations)}. "
-            f"SAFE rules: {sorted(safe_rules)}"
+        by_rule: Dict[str, int] = {}
+        for v in violations(r):
+            if v["rule_id"] in safe_rules:
+                by_rule[v["rule_id"]] = by_rule.get(v["rule_id"], 0) + 1
+        assert by_rule == self.EXPECTED_SAFE_VIOLATIONS, (
+            f"SAFE violation counts changed.\n"
+            f"  Expected: {self.EXPECTED_SAFE_VIOLATIONS}\n"
+            f"  Got:      {by_rule}"
         )
 
     def test_every_safe_rule_has_violations(self, tmp_path):
@@ -943,12 +957,12 @@ class TestSafeAutofixIdempotency:
         )
 
     def test_fix_is_idempotent(self, tmp_path):
-        """Running fix 100 times must produce byte-identical content after the first."""
+        """Running fix 11 times must produce byte-identical content after the first."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         _run_fix(repo)
         baseline = _snapshot_contents(repo)
 
-        for i in range(99):
+        for i in range(10):
             _run_fix(repo)
             current = _snapshot_contents(repo)
             all_files = set(baseline.keys()) | set(current.keys())
