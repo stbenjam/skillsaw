@@ -602,6 +602,8 @@ OPT_IN_RULES = {
     "mcp-prohibited",
     "agentskill-structure",
     "agentskill-evals-required",
+    "promptfoo-assertions",
+    "promptfoo-metadata",
 }
 
 

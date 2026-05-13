@@ -10,3 +10,13 @@ rules:
     enabled: true
   agentskill-evals-required:
     enabled: true
+  promptfoo-assertions:
+    enabled: true
+    required-types:
+      - cost
+      - latency
+  promptfoo-metadata:
+    enabled: true
+    required-keys:
+      - token-usage
+      - tier

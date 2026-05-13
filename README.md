@@ -630,6 +630,29 @@ Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fiel
 |---------|-------------|------------------|---------|
 | `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
 
+### Promptfoo Evals
+
+Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs found in `evals/` directories of plugins and skills. `promptfoo-valid` auto-enables when eval files are detected; `promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `promptfoo-valid` | Validate promptfoo eval YAML configs in evals/ directories | error (auto) | - |
+| `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
+| `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
+
+**`promptfoo-assertions` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-types` | Assertion types that every test must include (via test-level or defaultTest assertions) | `[]` |
+| `threshold-constraints` | Per-assertion-type threshold bounds, e.g. {cost: {max: 2.0}, latency: {max: 30000}} | `{}` |
+
+**`promptfoo-metadata` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-keys` | Metadata keys required on every test case | `[]` |
+
 ### APM (Agent Package Manager)
 
 Validates repositories using the [APM](https://github.com/microsoft/apm) directory layout (`.apm/`). Auto-enables when `.apm/` is detected.

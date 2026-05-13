@@ -214,6 +214,10 @@ class LinterConfig:
                 "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
                 "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
                 "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
+                # Promptfoo eval validation
+                "promptfoo-valid": {"enabled": "auto", "severity": "error"},
+                "promptfoo-assertions": {"enabled": False, "severity": "warning"},
+                "promptfoo-metadata": {"enabled": False, "severity": "warning"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
                 # APM (Agent Package Manager) rules
