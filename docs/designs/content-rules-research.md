@@ -25,6 +25,9 @@ This document explains **why each rule exists**, and what research supports it.
 - [content-embedded-secrets](#content-embedded-secrets)
 - [content-banned-references](#content-banned-references)
 - [content-inconsistent-terminology](#content-inconsistent-terminology)
+- [content-broken-internal-reference](#content-broken-internal-reference)
+- [content-unlinked-internal-reference](#content-unlinked-internal-reference)
+- [content-placeholder-text](#content-placeholder-text)
 - [Instruction Budget vs. Context Budget](#instruction-budget-vs-context-budget)
 - [Key Papers (Cross-Cutting)](#key-papers-cross-cutting)
 
@@ -445,6 +448,105 @@ two different terms refer to the same concept from broader context.
 
 ---
 
+## content-broken-internal-reference
+
+**Detects markdown links pointing to files that do not exist** (e.g.,
+`[setup guide](docs/setup.md)` when `docs/setup.md` has been deleted or
+renamed).
+
+Broken internal links are a standard software engineering defect — dead
+references that mislead both human readers and AI agents. When an LLM
+encounters a broken link in an instruction file, it cannot follow the reference
+to gather the intended context. Worse, the LLM may hallucinate the contents of
+the missing file based on the link text, producing confidently wrong output
+grounded in a nonexistent source.
+
+This is the same class of defect that link checkers catch in documentation
+sites and wikis. The difference is that instruction files for AI agents are
+*executable context* — a broken link doesn't just frustrate a reader, it
+removes a dependency from the agent's decision-making chain.
+
+The rule constrains resolved paths to the repository root to avoid
+environment-dependent results from `../` traversal, and skips files inside
+template directories where placeholder links are expected.
+
+**References:**
+
+- [W3C: Link Checking](https://www.w3.org/QA/Tools/) — Broken links are a
+  recognized web quality defect; the same principle applies to interlinked
+  instruction files
+- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
+  — "Don't force readers to backtrack because a link doesn't work"
+- [Anthropic: Effective Context
+  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  — Context that references missing information degrades agent performance
+
+---
+
+## content-unlinked-internal-reference
+
+**Detects bare path-like strings that are not wrapped in markdown link syntax**
+(e.g., `src/config.yaml` mentioned in prose but not linked as
+`[src/config.yaml](src/config.yaml)`).
+
+Bare path references are a maintenance hazard. When a path is mentioned in
+prose without link syntax, there is no tooling (including
+`content-broken-internal-reference`) that can verify the referenced file still
+exists. The path silently rots as the repository evolves.
+
+Wrapping paths in link syntax provides two benefits: (1) link checkers and
+linters can detect when the target is renamed or deleted, and (2) in rendered
+markdown environments (GitHub, IDEs), the reference becomes navigable. Both
+benefits improve the reliability of instruction files as executable context.
+
+The rule is configurable via `patterns` — a list of glob patterns that control
+which path-like strings are flagged. This avoids false positives on paths that
+are illustrative examples rather than real file references.
+
+**References:**
+
+- [Google Technical Writing: Links](https://developers.google.com/tech-writing/two/links)
+  — "Use meaningful link text" — paths mentioned without links are
+  un-navigable and un-verifiable
+- [Microsoft Writing Style Guide: Links](https://learn.microsoft.com/en-us/style-guide/urls-web-addresses)
+  — Bare URLs and paths should be formatted as actionable links
+
+---
+
+## content-placeholder-text
+
+**Detects TODO markers, bracket placeholders, and unfilled template text** in
+instruction files (e.g., `TODO`, `FIXME`, `[Insert API key here]`, `*TBD*`).
+
+Placeholder text in committed instruction files is unfinished work that the
+agent treats as real context. An LLM cannot distinguish between a deliberate
+instruction and an unfilled template — it processes `[Insert your API endpoint
+here]` as a literal instruction, potentially generating code that references a
+nonexistent endpoint or asking the user to fill in information that should
+already be present.
+
+This is standard software engineering hygiene applied to a new file type.
+`TODO` and `FIXME` markers have been tracked by linters (ESLint's `no-warning-
+comments`, SonarQube's "Track uses of 'TODO' tags") for decades because they
+indicate incomplete implementation. The same principle applies to instruction
+files: if the content isn't ready, it shouldn't be in the agent's context.
+
+**References:**
+
+- [ESLint: no-warning-comments](https://eslint.org/docs/latest/rules/no-warning-comments)
+  — Tracks TODO/FIXME as code quality signals; the same pattern applies to
+  instruction files
+- [SonarSource: Track uses of "TODO"
+  tags](https://rules.sonarsource.com/python/RSPEC-1135/) — "TODO tags are
+  commonly used to mark places where some more code is required, but which the
+  developer wants to implement later"
+- [Anthropic: Effective Context
+  Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  — "Keep your context informative, yet tight" — placeholder text is
+  uninformative noise that consumes context budget
+
+---
+
 ## Instruction Budget vs. Context Budget
 
 skillsaw has two separate budget rules that measure different things:
@@ -522,5 +624,5 @@ These papers justify multiple rules simultaneously:
 | [Suppressing Pink Elephants](https://arxiv.org/abs/2402.07896) | arXiv 2024 | negative-only |
 | Chroma, [Context Rot](https://research.trychroma.com/context-rot) | 2025 | critical-position, instruction-budget, section-length |
 | [When Prompts Go Wrong](https://arxiv.org/abs/2507.20439) | arXiv 2025 | contradiction |
-| [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget |
+| [Anthropic: Effective Context Engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2025 | tautological, redundant-with-tooling, instruction-budget, broken-internal-reference, placeholder-text |
 | Wang et al., [LLMs Meet Library Evolution](https://yebof.github.io/assets/pdf/wang2025icse.pdf) | ICSE 2025 | banned-references |
