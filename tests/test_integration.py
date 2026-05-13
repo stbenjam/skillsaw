@@ -5,17 +5,31 @@ Each test copies a static fixture from tests/fixtures/ into a temp
 directory, invokes ``python -m skillsaw lint --format json -v`` via
 subprocess, and asserts on the parsed JSON output: rule IDs, severities,
 violation counts, line numbers, exit codes, and stats.
+
+Fixtures may contain ``<!-- skillsaw-assert rule-id -->`` directives.
+Each directive declares that the NEXT non-directive, non-blank line must
+trigger a violation with the given rule-id.  The parametrized
+``test_assert_directives`` test collects these expectations and verifies
+them against the actual linter output.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Set
 
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+_ASSERT_RE = re.compile(
+    r"<!--\s*skillsaw-assert\s+([\w,\s-]+)\s*-->",
+    re.IGNORECASE,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -51,7 +65,7 @@ def violations(r):
 
 
 def by_rule(r):
-    grouped = {}
+    grouped: Dict[str, list] = {}
     for v in violations(r):
         grouped.setdefault(v["rule_id"], []).append(v)
     return grouped
@@ -70,6 +84,83 @@ def copy_fixture(name, tmp_path):
     dst = tmp_path / name.replace("/", "_")
     shutil.copytree(src, dst)
     return dst
+
+
+# ── Assert-directive infrastructure ──────────────────────────────
+
+
+@dataclass
+class ExpectedViolation:
+    file_path: str
+    line: int
+    rule_ids: Set[str]
+
+
+def collect_assertions(fixture_dir: Path) -> List[ExpectedViolation]:
+    """Walk *fixture_dir* for ``<!-- skillsaw-assert rule-id -->`` directives.
+
+    Returns one ``ExpectedViolation`` per directive, pointing at the first
+    non-blank, non-directive line that follows the comment.
+    """
+    expectations: List[ExpectedViolation] = []
+    for md_file in sorted(fixture_dir.rglob("*.md")):
+        lines = md_file.read_text().splitlines()
+        pending_rule_ids: Set[str] = set()
+        for lineno_0, raw in enumerate(lines):
+            m = _ASSERT_RE.search(raw)
+            if m:
+                for rid in m.group(1).split(","):
+                    rid = rid.strip()
+                    if rid:
+                        pending_rule_ids.add(rid)
+                continue
+            if pending_rule_ids and raw.strip():
+                rel = str(md_file.relative_to(fixture_dir))
+                expectations.append(
+                    ExpectedViolation(
+                        file_path=rel,
+                        line=lineno_0 + 1,
+                        rule_ids=set(pending_rule_ids),
+                    )
+                )
+                pending_rule_ids = set()
+    return expectations
+
+
+def verify_assertions(result, assertions: List[ExpectedViolation]) -> List[str]:
+    """Return a list of failure messages for unmatched assertions."""
+    actual = violations(result)
+    failures: List[str] = []
+    for exp in assertions:
+        for rid in exp.rule_ids:
+            matched = any(
+                v["rule_id"] == rid and v["file_path"] == exp.file_path and v["line"] == exp.line
+                for v in actual
+            )
+            if not matched:
+                failures.append(
+                    f"Expected {rid} at {exp.file_path}:{exp.line} — not found in output"
+                )
+    return failures
+
+
+def _fixture_dirs_with_assertions():
+    """Yield (fixture_name, fixture_path) for fixtures containing assert directives."""
+    for md_file in sorted(FIXTURES.rglob("*.md")):
+        if _ASSERT_RE.search(md_file.read_text()):
+            rel = md_file.relative_to(FIXTURES)
+            top_fixture = FIXTURES / rel.parts[0] / rel.parts[1]
+            yield str(top_fixture.relative_to(FIXTURES)), top_fixture
+
+
+def _deduplicated_fixture_dirs():
+    seen: Set[str] = set()
+    result = []
+    for name, path in _fixture_dirs_with_assertions():
+        if name not in seen:
+            seen.add(name)
+            result.append(pytest.param(name, id=name))
+    return result
 
 
 # ── Single Plugin ────────────────────────────────────────────────
@@ -153,7 +244,7 @@ class TestMarketplace:
         r = run_lint(repo)
         stats = r["out"]["stats"]
         assert "marketplace" in stats["repo_types"]
-        assert len(stats["plugins"]) == 2
+        assert len(stats["plugins"]) == 3
 
 
 # ── Agentskills ──────────────────────────────────────────────────
@@ -185,7 +276,7 @@ class TestAgentskills:
         r = run_lint(repo)
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
-        assert len(stats["skills"]) == 2
+        assert len(stats["skills"]) == 4
 
 
 # ── Dot-Claude ───────────────────────────────────────────────────
@@ -440,3 +531,35 @@ class TestOutputFormats:
         assert sarif["version"] == "2.1.0"
         assert "$schema" in sarif
         assert len(sarif["runs"]) == 1
+
+
+# ── Assert Directives (data-driven) ─────────────────────────────
+
+
+@pytest.mark.integration
+class TestAssertDirectives:
+    """Verify ``<!-- skillsaw-assert rule-id -->`` directives in fixtures.
+
+    Each fixture containing assert directives is discovered automatically.
+    The test runs the linter against the fixture and checks that every
+    asserted rule fires on the expected line.
+    """
+
+    @pytest.mark.parametrize("fixture_name", _deduplicated_fixture_dirs())
+    def test_assert_directives(self, fixture_name, tmp_path):
+        repo = copy_fixture(fixture_name, tmp_path)
+        assertions = collect_assertions(repo)
+        assert assertions, f"No assert directives found in {fixture_name}"
+
+        r = run_lint(repo)
+        failures = verify_assertions(r, assertions)
+        if failures:
+            actual = violations(r)
+            detail = "\n".join(f"  - {f}" for f in failures)
+            actual_summary = "\n".join(
+                f"  {v['rule_id']} @ {v['file_path']}:{v['line']}" for v in actual
+            )
+            pytest.fail(
+                f"Assert directive mismatches in {fixture_name}:\n{detail}"
+                f"\n\nActual violations:\n{actual_summary}"
+            )

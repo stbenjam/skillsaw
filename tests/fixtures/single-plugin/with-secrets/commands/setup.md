@@ -21,6 +21,7 @@ and environment variables.
 4. Run database migrations with `npm run migrate`
 
 Use the following API key for the staging environment:
+<!-- skillsaw-assert content-embedded-secrets -->
 ANTHROPIC_API_KEY=sk-ant-api03-reallyLongFakeKeyThatLooksLikeARealOne1234567890abcdefghijklmnop
 
 Always use this key when running integration tests against staging.

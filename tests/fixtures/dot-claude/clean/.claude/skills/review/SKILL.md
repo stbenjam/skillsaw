@@ -5,8 +5,8 @@ description: Review the current branch for merge readiness
 
 # Review
 
-Check the current branch for merge readiness by verifying tests pass,
-lint is clean, and documentation is updated.
+Check the current branch for merge readiness by running tests, verifying
+lint passes, and confirming documentation is updated.
 
 ## When to Use
 
@@ -17,12 +17,37 @@ is ready to merge.
 
 ### Step 1: Run Tests
 
-Execute the test suite and verify all tests pass.
+Execute the full test suite:
+```bash
+pytest tests/ -v --tb=short
+```
+All tests must pass. If any fail, report the failures and stop.
 
 ### Step 2: Check Lint
 
-Run the linter and confirm no new violations.
+Run the linter and confirm no new violations:
+```bash
+flake8 src/ tests/
+mypy src/
+```
 
-### Step 3: Verify Docs
+### Step 3: Check Formatting
 
-Check that any public API changes have corresponding documentation updates.
+Verify code is formatted:
+```bash
+black --check src/ tests/
+isort --check-only src/ tests/
+```
+
+### Step 4: Verify Docs
+
+If any public API signatures changed, check that the corresponding
+docstrings and `docs/` files are updated.
+
+### Step 5: Summary
+
+Report a markdown checklist:
+- [ ] Tests pass
+- [ ] Lint clean
+- [ ] Formatting clean
+- [ ] Docs updated (if applicable)

@@ -1,6 +1,6 @@
 {
   "name": "deployment-tools",
-  "description": "Tools for managing application deployments",
+  "description": "Tools for managing application deployments across staging and production",
   "version": "1.2.0",
-  "author": {"name": "Platform Team"}
+  "author": {"name": "Platform Team", "url": "https://platform.example.com"}
 }

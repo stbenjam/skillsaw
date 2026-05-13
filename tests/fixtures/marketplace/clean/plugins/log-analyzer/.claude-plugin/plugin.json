@@ -1,0 +1,6 @@
+{
+  "name": "log-analyzer",
+  "description": "Analyze application logs for errors, anomalies, and performance issues",
+  "version": "0.9.0",
+  "author": {"name": "Observability Team"}
+}

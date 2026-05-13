@@ -10,4 +10,5 @@ Handles production deployments of microservices.
 
 1. Build the container image
 2. Push to registry
-3. Update the deployment manifest
+<!-- skillsaw-assert content-weak-language -->
+3. Try to update the deployment manifest if possible
