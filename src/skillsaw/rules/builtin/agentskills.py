@@ -98,7 +98,7 @@ class AgentSkillValidRule(Rule):
                     AutofixResult(
                         rule_id=self.rule_id,
                         file_path=v.file_path,
-                        confidence=AutofixConfidence.SAFE,
+                        confidence=AutofixConfidence.SUGGEST,
                         original_content=original,
                         fixed_content=fixed,
                         description=f"Added name '{kebab_name}' from directory name",

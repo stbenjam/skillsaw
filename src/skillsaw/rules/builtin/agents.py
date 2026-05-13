@@ -114,7 +114,7 @@ class AgentFrontmatterRule(Rule):
                     AutofixResult(
                         rule_id=self.rule_id,
                         file_path=file_path,
-                        confidence=AutofixConfidence.SAFE,
+                        confidence=AutofixConfidence.SUGGEST,
                         original_content=original,
                         fixed_content=fixed,
                         description="Added missing frontmatter to agent file",
@@ -144,7 +144,7 @@ class AgentFrontmatterRule(Rule):
                             AutofixResult(
                                 rule_id=self.rule_id,
                                 file_path=file_path,
-                                confidence=AutofixConfidence.SAFE,
+                                confidence=AutofixConfidence.SUGGEST,
                                 original_content=original,
                                 fixed_content=fixed,
                                 description="Added missing fields to agent frontmatter",

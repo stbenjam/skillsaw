@@ -844,3 +844,187 @@ class TestUnlinkedInternalReferenceAutofix:
         fixed_line_count = len(fixed.splitlines())
 
         assert fixed_line_count == original_line_count
+
+
+# ── SAFE Autofix Idempotency Suite ──────────────────────────────
+
+
+def _discover_safe_autofix_rule_ids() -> Set[str]:
+    """Auto-discover all rules that produce SAFE-confidence autofixes."""
+    from skillsaw.rules.builtin import BUILTIN_RULES
+    from skillsaw.rule import AutofixConfidence
+
+    safe_ids: Set[str] = set()
+    for rule_class in BUILTIN_RULES:
+        instance = rule_class()
+        if not instance.supports_autofix:
+            continue
+        source = __import__("inspect").getsource(rule_class.fix)
+        if "AutofixConfidence.SAFE" in source:
+            safe_ids.add(instance.rule_id)
+    return safe_ids
+
+
+def _run_fix(path, *extra_args):
+    args = [sys.executable, "-m", "skillsaw", "fix"]
+    args.extend(extra_args)
+    args.append(str(path))
+    return subprocess.run(args, capture_output=True, text=True, timeout=120)
+
+
+def _snapshot_line_counts(repo: Path) -> Dict[str, int]:
+    """Record line counts for every file in the repo."""
+    counts: Dict[str, int] = {}
+    for f in sorted(repo.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = str(f.relative_to(repo))
+        try:
+            counts[rel] = len(f.read_text(encoding="utf-8").splitlines())
+        except (UnicodeDecodeError, OSError):
+            pass
+    return counts
+
+
+def _snapshot_contents(repo: Path) -> Dict[str, str]:
+    """Record full content of every text file in the repo."""
+    contents: Dict[str, str] = {}
+    for f in sorted(repo.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = str(f.relative_to(repo))
+        try:
+            contents[rel] = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            pass
+    return contents
+
+
+@pytest.mark.integration
+class TestSafeAutofixIdempotency:
+    """Comprehensive idempotency and correctness suite for all SAFE autofixes.
+
+    Requirements (issue #177):
+    - At least 100 violations across all rules that produce SAFE autofixes
+    - Every SAFE autofix rule must have at least one violation
+    - Running fix twice must produce identical content (idempotency)
+    - Line counts must NEVER change from any autofix
+    - Re-lint after fix must show zero violations for covered rules
+    - No double-wrapping or other corruption bugs
+    """
+
+    FIXTURE = "autofix/safe-idempotency"
+
+    def test_fixture_has_enough_violations(self, tmp_path):
+        """Fixture must produce at least 100 SAFE-autofixable violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        safe_rules = _discover_safe_autofix_rule_ids()
+        safe_violations = [v for v in violations(r) if v["rule_id"] in safe_rules]
+        assert len(safe_violations) >= 100, (
+            f"Expected >= 100 SAFE violations, got {len(safe_violations)}. "
+            f"SAFE rules: {sorted(safe_rules)}"
+        )
+
+    def test_every_safe_rule_has_violations(self, tmp_path):
+        """Every rule that produces SAFE autofixes must fire in the fixture."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        safe_rules = _discover_safe_autofix_rule_ids()
+        fired = {v["rule_id"] for v in violations(r)} & safe_rules
+        missing = safe_rules - fired
+        assert not missing, (
+            f"SAFE autofix rules without violations in fixture: {sorted(missing)}\n"
+            f"Add fixture content to trigger these rules."
+        )
+
+    def test_fix_is_idempotent(self, tmp_path):
+        """Running fix twice must produce byte-identical content."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        after_first = _snapshot_contents(repo)
+
+        _run_fix(repo)
+        after_second = _snapshot_contents(repo)
+
+        changed = {f for f in after_first if after_first.get(f) != after_second.get(f)}
+        assert not changed, f"Files changed on second fix (not idempotent): {sorted(changed)}"
+
+    def test_line_counts_never_change(self, tmp_path):
+        """SAFE autofix must NEVER change line counts — line position is sacrosanct."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_line_counts(repo)
+
+        _run_fix(repo)
+        after = _snapshot_line_counts(repo)
+
+        changed: List[str] = []
+        for f in sorted(set(before) | set(after)):
+            b = before.get(f)
+            a = after.get(f)
+            if b != a:
+                changed.append(f"{f}: {b} -> {a}")
+
+        assert not changed, f"Line counts changed after SAFE autofix:\n" + "\n".join(
+            f"  {c}" for c in changed
+        )
+
+    def test_relint_shows_zero_safe_violations(self, tmp_path):
+        """After fix, re-linting must show zero violations for SAFE-autofix rules."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        safe_rules = _discover_safe_autofix_rule_ids()
+
+        _run_fix(repo)
+
+        r = run_lint(repo)
+        remaining = [v for v in violations(r) if v["rule_id"] in safe_rules]
+        assert not remaining, f"Violations remain after fix ({len(remaining)}):\n" + "\n".join(
+            f"  {v['rule_id']} @ {v['file_path']}:{v.get('line','?')}: " f"{v['message'][:80]}"
+            for v in remaining[:10]
+        )
+
+    def test_no_double_wrapping(self, tmp_path):
+        """Fix must not double-wrap already-linked paths (regression for #173)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+
+        for md_file in repo.rglob("*.md"):
+            content = md_file.read_text(encoding="utf-8")
+            rel = str(md_file.relative_to(repo))
+            assert "[[" not in content or content.count("[[") == content.count(
+                "]]"
+            ), f"Possible double-wrapping in {rel}"
+            assert "](/" not in content.replace(
+                "](http", "SKIP"
+            ), f"Unexpected absolute path in link in {rel}"
+
+    def test_fix_content_is_reasonable(self, tmp_path):
+        """Spot-check that fixes produce well-formed markdown."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+
+        claude_md = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "]()" not in claude_md, "Empty link target found"
+
+        for skill_dir in (repo / "skills").iterdir():
+            if not skill_dir.is_dir():
+                continue
+            skill_md = skill_dir / "SKILL.md"
+            if not skill_md.exists():
+                continue
+            content = skill_md.read_text(encoding="utf-8")
+            assert content.startswith(
+                "---\n"
+            ), f"SKILL.md in {skill_dir.name} missing frontmatter delimiter"
+            assert (
+                "\n---\n" in content[4:]
+            ), f"SKILL.md in {skill_dir.name} missing closing frontmatter delimiter"
+            lines = content.splitlines()
+            name_lines = [l for l in lines if l.startswith("name:")]
+            assert (
+                len(name_lines) == 1
+            ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"
+            name_val = name_lines[0].split(":", 1)[1].strip()
+            assert (
+                name_val == skill_dir.name
+            ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
