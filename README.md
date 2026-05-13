@@ -367,6 +367,22 @@ exclude:
   - "node_modules/**"
 ```
 
+#### Per-Rule Excludes
+
+Exclude specific files from a single rule using the `exclude` key in the
+rule's config:
+
+```yaml
+rules:
+  content-weak-language:
+    enabled: true
+    exclude:
+      - "docs/legacy/**"
+      - "CHANGELOG.md"
+```
+
+Per-rule excludes use the same glob semantics as the top-level `exclude`.
+
 ### Content Paths
 
 By default, content intelligence rules only analyze recognized instruction

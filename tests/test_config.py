@@ -734,3 +734,82 @@ def test_severity_override_on_auto_rule_still_fires_when_matching(marketplace_re
         config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
         is True
     )
+
+
+# --- Per-rule exclude tests ---
+
+
+def test_per_rule_exclude_parsed(tmp_path):
+    """Per-rule exclude list is accepted and retrievable"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text(
+        "rules:\n"
+        "  content-weak-language:\n"
+        "    enabled: true\n"
+        "    exclude:\n"
+        "      - 'docs/legacy/**'\n"
+        "      - 'CHANGELOG.md'\n"
+    )
+    config = LinterConfig.from_file(config_file)
+    assert config.get_rule_excludes("content-weak-language") == [
+        "docs/legacy/**",
+        "CHANGELOG.md",
+    ]
+
+
+def test_per_rule_exclude_null(tmp_path):
+    """Per-rule exclude: null should behave like no excludes"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("rules:\n" "  content-weak-language:\n" "    exclude:\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.get_rule_excludes("content-weak-language") == []
+
+
+def test_per_rule_exclude_wrong_type_raises(tmp_path):
+    """Per-rule exclude as a string should raise ValueError"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("rules:\n" "  content-weak-language:\n" '    exclude: "*.md"\n')
+
+    import pytest
+
+    with pytest.raises(ValueError, match="'rules.content-weak-language.exclude' must be a list"):
+        LinterConfig.from_file(config_file)
+
+
+def test_per_rule_exclude_missing_returns_empty():
+    """get_rule_excludes returns [] when no exclude key is present"""
+    config = LinterConfig(rules={"content-weak-language": {"enabled": True}})
+    assert config.get_rule_excludes("content-weak-language") == []
+
+
+def test_per_rule_exclude_unknown_rule_returns_empty():
+    """get_rule_excludes returns [] for a rule that isn't configured"""
+    config = LinterConfig(rules={})
+    assert config.get_rule_excludes("nonexistent-rule") == []
+
+
+def test_per_rule_exclude_filters_violations(tmp_path):
+    """Per-rule exclude should suppress violations for matched paths only"""
+    from skillsaw.linter import Linter
+
+    (tmp_path / "CLAUDE.md").write_text("# Instructions\n\nYou should try to do something.\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "legacy.md").write_text("# Legacy\n\nYou should try to do something.\n")
+    config = LinterConfig(
+        version="999.0.0",
+        rules={
+            "content-weak-language": {
+                "enabled": True,
+                "exclude": ["docs/**"],
+            },
+        },
+        content_paths=["docs/**"],
+    )
+    context = RepositoryContext(tmp_path)
+    linter = Linter(context, config)
+    violations = linter.run()
+    weak_violations = [v for v in violations if v.rule_id == "content-weak-language"]
+    paths = [str(v.file_path) for v in weak_violations]
+    assert not any(
+        "docs" in p for p in paths
+    ), f"Per-rule exclude should suppress docs violations, got: {paths}"

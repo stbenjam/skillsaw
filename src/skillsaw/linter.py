@@ -151,6 +151,15 @@ class Linter:
             return False
         return self.context.is_path_excluded(violation.file_path)
 
+    def _is_rule_excluded(self, violation: RuleViolation) -> bool:
+        """Check if a violation's file matches its rule's per-rule exclude patterns."""
+        if violation.file_path is None:
+            return False
+        patterns = self.config.get_rule_excludes(violation.rule_id)
+        if not patterns:
+            return False
+        return self.context.is_path_excluded_by(violation.file_path, patterns)
+
     def run(self) -> List[RuleViolation]:
         """
         Run all enabled rules
@@ -172,7 +181,7 @@ class Linter:
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
 
-        return [v for v in violations if not self._is_excluded(v)]
+        return [v for v in violations if not self._is_excluded(v) and not self._is_rule_excluded(v)]
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -191,7 +200,11 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 continue
 
-            visible = [v for v in rule_violations if not self._is_excluded(v)]
+            visible = [
+                v
+                for v in rule_violations
+                if not self._is_excluded(v) and not self._is_rule_excluded(v)
+            ]
 
             if visible and rule.supports_autofix:
                 try:

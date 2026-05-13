@@ -91,6 +91,13 @@ class LinterConfig:
                     f"'rules.{rule_id}' must be a mapping or null, "
                     f"got {type(rule_config).__name__}"
                 )
+            else:
+                raw_rule_exclude = rule_config.get("exclude")
+                if raw_rule_exclude is not None and not isinstance(raw_rule_exclude, list):
+                    raise ValueError(
+                        f"'rules.{rule_id}.exclude' must be a list, "
+                        f"got {type(raw_rule_exclude).__name__}"
+                    )
 
         if raw_custom_rules is None:
             custom_rules = []
@@ -220,6 +227,16 @@ class LinterConfig:
         config = cls.default()
         config.version = __version__
         return config
+
+    def get_rule_excludes(self, rule_id: str) -> List[str]:
+        """Return the per-rule exclude glob patterns for *rule_id*."""
+        overrides = self.rules.get(rule_id)
+        if not overrides:
+            return []
+        exclude = overrides.get("exclude")
+        if not exclude:
+            return []
+        return list(exclude)
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """

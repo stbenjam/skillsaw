@@ -118,13 +118,17 @@ class RepositoryContext:
 
     def is_path_excluded(self, path: Path) -> bool:
         """Check if a path matches any exclude pattern."""
-        if not self.exclude_patterns:
+        return self.is_path_excluded_by(path, self.exclude_patterns)
+
+    def is_path_excluded_by(self, path: Path, patterns: list) -> bool:
+        """Check if *path* matches any of the given glob *patterns*."""
+        if not patterns:
             return False
         try:
             rel = str(path.resolve().relative_to(self.root_path))
         except ValueError:
             return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in self.exclude_patterns)
+        return any(fnmatch.fnmatch(rel, pat) for pat in patterns)
 
     def apply_excludes(self) -> None:
         """Filter plugins, skills, and instruction_files by exclude_patterns.
