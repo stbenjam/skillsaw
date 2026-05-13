@@ -1351,12 +1351,30 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 content = fpath.read_text(encoding="utf-8")
             except OSError:
                 continue
-            fixed = content
+            lines = content.splitlines(True)
             violations_fixed = []
             for path_str, v in replacements:
-                pattern = rf"(?<!\[)(?<!\]\(){re.escape(path_str)}"
-                fixed = re.sub(pattern, f"[{path_str}]({path_str})", fixed, count=1)
-                violations_fixed.append(v)
+                fl = v.file_line
+                if fl is None:
+                    continue
+                idx = fl - 1
+                if idx < 0 or idx >= len(lines):
+                    continue
+                line = lines[idx]
+                pos = 0
+                while pos < len(line):
+                    loc = line.find(path_str, pos)
+                    if loc == -1:
+                        break
+                    end = loc + len(path_str)
+                    if not self._is_inside_link(line, loc, end) and not self._is_inside_url(
+                        line, loc, end
+                    ):
+                        lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
+                        violations_fixed.append(v)
+                        break
+                    pos = end
+            fixed = "".join(lines)
             if fixed != content:
                 results.append(
                     AutofixResult(

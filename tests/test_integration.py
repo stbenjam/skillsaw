@@ -740,24 +740,9 @@ class TestUnlinkedInternalReferenceAutofix:
         args.append(str(path))
         return subprocess.run(args, capture_output=True, text=True, timeout=60)
 
-    def _make_repo(self, tmp_path, claude_md_content, files):
-        """Create a minimal repo with a CLAUDE.md and specified files."""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        for rel_path, content in files.items():
-            p = repo / rel_path
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content)
-        (repo / "CLAUDE.md").write_text(claude_md_content)
-        return repo
-
     def test_fix_duplicate_paths_via_cli(self, tmp_path):
         """CLI fix wraps duplicate bare paths without double-wrapping."""
-        repo = self._make_repo(
-            tmp_path,
-            "Run scripts/test.py first\n\nThen re-run scripts/test.py\n",
-            {"scripts/test.py": "# test\n"},
-        )
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
         r = run_lint(repo)
         unlinked = [
             v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
@@ -779,15 +764,7 @@ class TestUnlinkedInternalReferenceAutofix:
 
     def test_fix_multiple_different_paths_via_cli(self, tmp_path):
         """CLI fix wraps multiple different bare paths correctly."""
-        repo = self._make_repo(
-            tmp_path,
-            "See docs/guide.md for setup\n\nRun scripts/run.sh to build\n\nEdit src/app.py for logic\n",
-            {
-                "docs/guide.md": "# Guide\n",
-                "scripts/run.sh": "#!/bin/bash\n",
-                "src/app.py": "# app\n",
-            },
-        )
+        repo = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
         r = run_lint(repo)
         unlinked = [
             v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
@@ -811,19 +788,7 @@ class TestUnlinkedInternalReferenceAutofix:
 
     def test_fix_mixed_duplicates_and_unique_paths_via_cli(self, tmp_path):
         """CLI fix handles a mix of duplicate and unique paths."""
-        repo = self._make_repo(
-            tmp_path,
-            (
-                "Start with src/main.py\n\n"
-                "Read docs/api.md for reference\n\n"
-                "Re-run src/main.py after changes\n\n"
-                "Check docs/api.md for updates\n"
-            ),
-            {
-                "src/main.py": "# main\n",
-                "docs/api.md": "# API\n",
-            },
-        )
+        repo = copy_fixture("autofix/unlinked-ref-mixed", tmp_path)
         r = run_lint(repo)
         unlinked = [
             v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
@@ -848,11 +813,7 @@ class TestUnlinkedInternalReferenceAutofix:
 
     def test_fix_is_idempotent_via_cli(self, tmp_path):
         """Running fix twice produces no further changes."""
-        repo = self._make_repo(
-            tmp_path,
-            "Run src/main.py first\n\nThen check src/main.py again\n",
-            {"src/main.py": "# main\n"},
-        )
+        repo = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
         self._run_fix(repo)
         content_after_first = (repo / "CLAUDE.md").read_text()
 
@@ -860,21 +821,26 @@ class TestUnlinkedInternalReferenceAutofix:
         content_after_second = (repo / "CLAUDE.md").read_text()
 
         assert content_after_first == content_after_second
-        assert content_after_second.count("[src/main.py](src/main.py)") == 2
+        assert content_after_second.count("[scripts/test.py](scripts/test.py)") == 2
 
     def test_fix_leaves_already_linked_paths_alone(self, tmp_path):
         """Paths already in link syntax are not touched by fix."""
-        repo = self._make_repo(
-            tmp_path,
-            (
-                "See [docs/guide.md](docs/guide.md) for setup\n\n"
-                "Also check docs/guide.md for more info\n"
-            ),
-            {"docs/guide.md": "# Guide\n"},
-        )
+        repo = copy_fixture("autofix/unlinked-ref-already-linked", tmp_path)
         result = self._run_fix(repo)
         assert result.returncode == 0
 
         fixed = (repo / "CLAUDE.md").read_text()
         assert fixed.count("[docs/guide.md](docs/guide.md)") == 2
         assert "[[docs/guide.md]" not in fixed
+
+    def test_fix_preserves_line_count(self, tmp_path):
+        """Autofix must not add or remove lines — line numbers stay stable."""
+        repo = copy_fixture("autofix/unlinked-ref-mixed", tmp_path)
+        original = (repo / "CLAUDE.md").read_text()
+        original_line_count = len(original.splitlines())
+
+        self._run_fix(repo)
+        fixed = (repo / "CLAUDE.md").read_text()
+        fixed_line_count = len(fixed.splitlines())
+
+        assert fixed_line_count == original_line_count
