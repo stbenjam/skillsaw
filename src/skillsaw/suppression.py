@@ -13,30 +13,34 @@ suppression of specific rules at specific lines:
 
     <!-- skillsaw-disable rule-a, rule-b -->
     <!-- skillsaw-enable -->  (re-enables all)
+
+Multi-line HTML comments are fully supported::
+
+    <!--
+        skillsaw-disable rule-id
+    -->
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Optional, Set
 
-# Matches <!-- skillsaw-disable rule-a, rule-b --> or <!-- skillsaw-disable -->
-_DISABLE_RE = re.compile(
-    r"<!--\s*skillsaw-disable\s*([\w,\s-]*?)\s*-->",
+# Directive patterns applied to the *text inside* an HTML comment.
+# These match the full comment body, allowing arbitrary whitespace/newlines.
+_DISABLE_NEXT_LINE_DIR = re.compile(
+    r"skillsaw-disable-next-line\s+([\w,\s-]+)",
     re.IGNORECASE,
 )
-
-# Matches <!-- skillsaw-disable-next-line rule-a, rule-b -->
-_DISABLE_NEXT_LINE_RE = re.compile(
-    r"<!--\s*skillsaw-disable-next-line\s+([\w,\s-]+?)\s*-->",
+_DISABLE_DIR = re.compile(
+    r"skillsaw-disable(?!-next-line)\s*([\w,\s-]*)",
     re.IGNORECASE,
 )
-
-# Matches <!-- skillsaw-enable rule-a, rule-b --> or <!-- skillsaw-enable -->
-_ENABLE_RE = re.compile(
-    r"<!--\s*skillsaw-enable\s*([\w,\s-]*?)\s*-->",
+_ENABLE_DIR = re.compile(
+    r"skillsaw-enable\s*([\w,\s-]*)",
     re.IGNORECASE,
 )
 
@@ -44,6 +48,72 @@ _ENABLE_RE = re.compile(
 def _parse_rule_ids(raw: str) -> List[str]:
     """Parse comma-separated rule IDs from a directive."""
     return [rid.strip() for rid in raw.split(",") if rid.strip()]
+
+
+# ------------------------------------------------------------------
+# Directive extraction via HTMLParser
+# ------------------------------------------------------------------
+
+
+@dataclass
+class _Directive:
+    """A parsed suppression directive with its location."""
+
+    kind: str  # "disable", "enable", or "disable-next-line"
+    rule_ids: List[str]  # empty list means "all rules"
+    line: int  # 1-based line number where the comment starts (``<!--``)
+
+
+class _CommentParser(HTMLParser):
+    """HTMLParser subclass that extracts skillsaw directives from HTML comments.
+
+    Using HTMLParser instead of hand-rolled regex gives us correct handling of
+    multi-line comments, comments with extra whitespace, and other edge cases.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.directives: List[_Directive] = []
+
+    def handle_comment(self, data: str) -> None:
+        line, _col = self.getpos()
+        # Normalise the comment text: collapse whitespace so that multi-line
+        # comments like ``<!--\n  skillsaw-enable\n  some-rule -->`` become a
+        # single logical string we can match against.
+        text = " ".join(data.split())
+
+        m = _DISABLE_NEXT_LINE_DIR.search(text)
+        if m:
+            self.directives.append(
+                _Directive("disable-next-line", _parse_rule_ids(m.group(1)), line)
+            )
+            return
+
+        m = _DISABLE_DIR.search(text)
+        if m:
+            self.directives.append(_Directive("disable", _parse_rule_ids(m.group(1).strip()), line))
+            return
+
+        m = _ENABLE_DIR.search(text)
+        if m:
+            self.directives.append(_Directive("enable", _parse_rule_ids(m.group(1).strip()), line))
+            return
+
+
+def _extract_directives(content: str) -> List[_Directive]:
+    """Extract all skillsaw directives from *content* using HTMLParser.
+
+    HTMLParser.getpos() returns the line where the parser currently sits, which
+    for comments corresponds to the line of the opening ``<!--``.
+    """
+    parser = _CommentParser()
+    parser.feed(content)
+    return parser.directives
+
+
+# ------------------------------------------------------------------
+# SuppressionMap
+# ------------------------------------------------------------------
 
 
 @dataclass
@@ -76,63 +146,70 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
     Returns:
         SuppressionMap that can check if a rule is suppressed at a given line.
     """
-    lines = content.splitlines()
+    total_lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    if content.endswith("\n"):
+        total_lines = content.count("\n")
+    else:
+        total_lines = content.count("\n") + 1
 
-    # Track currently disabled rule IDs
+    # --- Step 1: extract directives (handles multi-line comments) ----------
+    directives = _extract_directives(content)
+
+    # Build a map of line -> list of directives that start on that line.
+    # ``_Directive.line`` is 1-based from HTMLParser.getpos().
+    directive_at: Dict[int, List[_Directive]] = {}
+    for d in directives:
+        directive_at.setdefault(d.line, []).append(d)
+
+    # Build a set of lines that are part of directive comments (so we don't
+    # apply suppressions to the directive lines themselves for disable/enable).
+    # For ``disable-next-line`` the directive line should be skipped and the
+    # suppression applied to the *next non-directive* line.
+    # We need the raw comment spans to know which lines are directive lines.
+    directive_comment_lines: Set[int] = set()
+    for d in directives:
+        # Walk the content to find the closing ``-->`` for this comment.
+        # We know ``d.line`` is where ``<!--`` starts.
+        _mark_comment_lines(content, d.line, directive_comment_lines)
+
+    # --- Step 2: walk lines and apply suppressions -------------------------
     disabled: Set[str] = set()
-    # Whether "disable all" is currently active (bare <!-- skillsaw-disable -->)
     disable_all_active: bool = False
 
-    # Per-line suppression data
     suppressed_lines: Dict[int, Set[str]] = {}
     fully_suppressed_lines: Set[int] = set()
 
-    # Lines where disable-next-line applies
     next_line_rules: Optional[List[str]] = None
 
-    for line_num_0, line in enumerate(lines):
-        file_line = line_num_0 + 1 + line_offset  # 1-based, adjusted for offset
+    for line_num_0 in range(total_lines):
+        content_line = line_num_0 + 1  # 1-based within the content
+        file_line = content_line + line_offset
 
-        # Check for disable-next-line first (takes precedence)
-        m_next = _DISABLE_NEXT_LINE_RE.search(line)
-        if m_next:
-            next_line_rules = _parse_rule_ids(m_next.group(1))
+        # Process directives that start on this content line
+        line_directives = directive_at.get(content_line, [])
+        for d in line_directives:
+            if d.kind == "disable-next-line":
+                next_line_rules = d.rule_ids
+            elif d.kind == "disable":
+                if d.rule_ids:
+                    disabled.update(d.rule_ids)
+                else:
+                    disable_all_active = True
+            elif d.kind == "enable":
+                if d.rule_ids:
+                    for rid in d.rule_ids:
+                        disabled.discard(rid)
+                else:
+                    disabled.clear()
+                    disable_all_active = False
+
+        # Skip directive comment lines — don't apply suppression to them
+        if content_line in directive_comment_lines:
+            # But if next_line_rules was set by a *previous* directive and
+            # this line is itself a directive, carry it forward.
             continue
 
-        # Check for enable directive
-        m_enable = _ENABLE_RE.search(line)
-        if m_enable:
-            rule_ids_str = m_enable.group(1).strip()
-            if rule_ids_str:
-                # Re-enable specific rules
-                for rid in _parse_rule_ids(rule_ids_str):
-                    disabled.discard(rid)
-            else:
-                # Re-enable all
-                disabled.clear()
-                disable_all_active = False
-            # Process any next-line suppression from previous line
-            if next_line_rules is not None:
-                suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
-                next_line_rules = None
-            continue
-
-        # Check for disable directive
-        m_disable = _DISABLE_RE.search(line)
-        if m_disable:
-            rule_ids = _parse_rule_ids(m_disable.group(1))
-            if rule_ids:
-                disabled.update(rule_ids)
-            else:
-                # Bare <!-- skillsaw-disable --> suppresses all rules
-                disable_all_active = True
-            # Process any next-line suppression from previous line
-            if next_line_rules is not None:
-                suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
-                next_line_rules = None
-            continue
-
-        # Apply next-line suppression from previous iteration
+        # Apply next-line suppression
         if next_line_rules is not None:
             suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
             next_line_rules = None
@@ -154,6 +231,27 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
         _suppressed_lines=frozen,
         _fully_suppressed_lines=frozenset(fully_suppressed_lines),
     )
+
+
+def _mark_comment_lines(content: str, start_line: int, out: Set[int]) -> None:
+    """Add all line numbers spanned by an HTML comment starting at *start_line*.
+
+    We scan from the beginning of *start_line* forward until we find ``-->``.
+    """
+    lines = content.splitlines()
+    for i in range(start_line - 1, len(lines)):
+        out.add(i + 1)  # 1-based
+        if "-->" in lines[i]:
+            # Check that the ``-->`` comes after the ``<!--`` on the same line,
+            # or is simply present on a subsequent line.
+            if i == start_line - 1:
+                # Same line: only count if ``-->`` comes after ``<!--``
+                idx_open = lines[i].find("<!--")
+                idx_close = lines[i].find("-->", idx_open + 4 if idx_open >= 0 else 0)
+                if idx_close >= 0:
+                    break
+            else:
+                break
 
 
 def build_suppression_map_for_file(file_path: Path) -> Optional[SuppressionMap]:

@@ -183,6 +183,108 @@ class TestBuildSuppressionMap:
         assert smap.is_suppressed("content-weak-language", 6)
         assert not smap.is_suppressed("any-rule", 6)
 
+    def test_multiline_disable_enable(self):
+        """Multi-line HTML comments should be parsed correctly."""
+        content = (
+            "Line one\n"
+            "<!--\n"
+            "    skillsaw-disable\n"
+            "                       content-weak-language\n"
+            "-->\n"
+            "Try to handle errors.\n"
+            "<!--\n"
+            "    skillsaw-enable\n"
+            "                       content-weak-language\n"
+            "-->\n"
+            "Try to handle errors again.\n"
+        )
+        smap = build_suppression_map(content)
+        # Line 6 should be suppressed (between disable and enable)
+        assert smap.is_suppressed("content-weak-language", 6)
+        # Line 11 should NOT be suppressed (after enable)
+        assert not smap.is_suppressed("content-weak-language", 11)
+        # Other rules should not be suppressed
+        assert not smap.is_suppressed("content-tautological", 6)
+
+    def test_multiline_disable_next_line(self):
+        """Multi-line disable-next-line should work."""
+        content = (
+            "Line one\n"
+            "<!--\n"
+            "    skillsaw-disable-next-line content-weak-language\n"
+            "-->\n"
+            "Try to handle errors.\n"
+            "Try to handle errors again.\n"
+        )
+        smap = build_suppression_map(content)
+        # Line 5 (the line after the closing -->) should be suppressed
+        assert smap.is_suppressed("content-weak-language", 5)
+        # Line 6 should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 6)
+
+    def test_multiline_enable_all(self):
+        """Multi-line enable-all should re-enable everything."""
+        content = (
+            "<!-- skillsaw-disable content-weak-language -->\n"
+            "Suppressed line.\n"
+            "<!--\n"
+            "    skillsaw-enable\n"
+            "-->\n"
+            "Not suppressed.\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("content-weak-language", 2)
+        assert not smap.is_suppressed("content-weak-language", 6)
+
+    def test_multiline_comment_with_extra_whitespace(self):
+        """Multi-line comment with lots of whitespace should still parse."""
+        content = (
+            "Line one\n"
+            "<!--\n"
+            "    skillsaw-enable\n"
+            "                       some-other-rule-->\n"
+        )
+        smap = build_suppression_map(content)
+        # This is the exact example from the reviewer's comment.
+        # The enable directive should parse correctly (it just enables a rule
+        # that wasn't disabled, so it's a no-op, but it shouldn't crash).
+        assert not smap.is_suppressed("some-other-rule", 1)
+
+    def test_multiline_disable_multiple_rules(self):
+        """Multi-line disable with multiple comma-separated rules."""
+        content = (
+            "<!--\n"
+            "    skillsaw-disable\n"
+            "        content-weak-language, content-tautological\n"
+            "-->\n"
+            "Suppressed for both rules.\n"
+            "<!-- skillsaw-enable -->\n"
+            "Not suppressed.\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("content-weak-language", 5)
+        assert smap.is_suppressed("content-tautological", 5)
+        assert not smap.is_suppressed("content-weak-language", 7)
+        assert not smap.is_suppressed("content-tautological", 7)
+
+    def test_multiline_bare_disable(self):
+        """Multi-line bare disable (suppress all rules)."""
+        content = (
+            "Line one\n"
+            "<!--\n"
+            "    skillsaw-disable\n"
+            "-->\n"
+            "All suppressed.\n"
+            "<!--\n"
+            "    skillsaw-enable\n"
+            "-->\n"
+            "Not suppressed.\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("any-rule", 5)
+        assert smap.is_suppressed("content-weak-language", 5)
+        assert not smap.is_suppressed("any-rule", 9)
+
     def test_line_offset(self):
         """line_offset should shift all line numbers."""
         content = (
