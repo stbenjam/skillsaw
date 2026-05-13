@@ -91,6 +91,7 @@ class LintTarget:
             "ApmConfigNode": "#fff3cd",
             "ApmNode": "#e2d9f3",
             "CodeRabbitNode": "#fde2e4",
+            "PromptfooConfigNode": "#dff0d8",
             "ContentBlock": "#d1ecf1",
         }
 
@@ -193,3 +194,14 @@ class CodeRabbitNode(LintTarget):
 
     def tree_label(self) -> str:
         return ".coderabbit.yaml"
+
+
+@dataclass
+class PromptfooConfigNode(LintTarget):
+    """A promptfoo eval config or test fragment file."""
+
+    is_fragment: bool = False
+
+    def tree_label(self) -> str:
+        suffix = " [fragment]" if self.is_fragment else ""
+        return f"{self.path.name}{suffix}"

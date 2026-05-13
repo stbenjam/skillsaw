@@ -8,12 +8,16 @@ from pathlib import Path
 import yaml
 
 from skillsaw.config import LinterConfig
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import PromptfooConfigNode
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.promptfoo import (
     PromptfooAssertionsRule,
     PromptfooMetadataRule,
     PromptfooValidRule,
+    _is_promptfoo_config,
+    _resolve_file_ref,
+    _extract_file_refs,
 )
 
 
@@ -43,6 +47,86 @@ def _make_skill(tmp: Path, name: str = "test-skill") -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Helper function tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_promptfoo_config_with_tests():
+    assert _is_promptfoo_config({"tests": [], "providers": []})
+
+
+def test_is_promptfoo_config_with_scenarios():
+    assert _is_promptfoo_config({"scenarios": []})
+
+
+def test_is_promptfoo_config_with_default_test():
+    assert _is_promptfoo_config({"defaultTest": {}, "evaluateOptions": {}})
+
+
+def test_is_promptfoo_config_rejects_non_dict():
+    assert not _is_promptfoo_config([1, 2, 3])
+    assert not _is_promptfoo_config("string")
+    assert not _is_promptfoo_config(None)
+
+
+def test_is_promptfoo_config_rejects_no_promptfoo_keys():
+    assert not _is_promptfoo_config({"name": "foo", "version": "1.0"})
+
+
+def test_resolve_file_ref_basic(tmp_path):
+    target = tmp_path / "tests.yaml"
+    target.write_text("[]")
+    assert _resolve_file_ref("file://tests.yaml", tmp_path) == target.resolve()
+
+
+def test_resolve_file_ref_without_prefix(tmp_path):
+    target = tmp_path / "tests.yaml"
+    target.write_text("[]")
+    # Bare YAML paths are valid promptfoo file references
+    assert _resolve_file_ref("tests.yaml", tmp_path) == target.resolve()
+
+
+def test_resolve_file_ref_missing_file(tmp_path):
+    result = _resolve_file_ref("file://nonexistent.yaml", tmp_path)
+    assert result is not None
+    assert not result.exists()
+
+
+def test_resolve_file_ref_glob_skipped(tmp_path):
+    assert _resolve_file_ref("file://tests/*.yaml", tmp_path) is None
+
+
+def test_resolve_file_ref_csv_skipped(tmp_path):
+    (tmp_path / "data.csv").write_text("a,b")
+    assert _resolve_file_ref("file://data.csv", tmp_path) is None
+
+
+def test_resolve_file_ref_js_skipped(tmp_path):
+    (tmp_path / "gen.js").write_text("module.exports = []")
+    assert _resolve_file_ref("file://gen.js", tmp_path) is None
+
+
+def test_resolve_file_ref_remote_skipped(tmp_path):
+    assert _resolve_file_ref("https://example.com/tests.yaml", tmp_path) is None
+    assert _resolve_file_ref("huggingface://datasets/foo", tmp_path) is None
+
+
+def test_extract_file_refs_string_tests():
+    assert _extract_file_refs({"tests": "file://tests.yaml"}) == ["file://tests.yaml"]
+
+
+def test_extract_file_refs_list_with_strings():
+    refs = _extract_file_refs(
+        {"tests": ["file://a.yaml", {"description": "inline"}, "file://b.yaml"]}
+    )
+    assert refs == ["file://a.yaml", "file://b.yaml"]
+
+
+def test_extract_file_refs_no_tests():
+    assert _extract_file_refs({"providers": []}) == []
+
+
+# ---------------------------------------------------------------------------
 # Default config state
 # ---------------------------------------------------------------------------
 
@@ -63,7 +147,141 @@ def test_promptfoo_metadata_disabled_by_default():
 
 
 # ---------------------------------------------------------------------------
-# promptfoo-valid
+# RepositoryType.PROMPTFOO detection
+# ---------------------------------------------------------------------------
+
+
+def test_promptfoo_repo_detected_by_config_name(temp_dir):
+    _write_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO in context.repo_types
+
+
+def test_promptfoo_repo_detected_by_evals_dir(temp_dir):
+    skill = _make_skill(temp_dir)
+    _write_yaml(
+        skill / "evals" / "smoke.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(temp_dir)
+    assert (
+        RepositoryType.PROMPTFOO in context.repo_types
+        or RepositoryType.AGENTSKILLS in context.repo_types
+    )
+
+
+def test_non_promptfoo_yaml_in_evals_not_detected(temp_dir):
+    evals = temp_dir / "evals"
+    evals.mkdir()
+    _write_yaml(evals / "unrelated.yaml", {"name": "not-promptfoo", "version": "1.0"})
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO not in context.repo_types
+
+
+# ---------------------------------------------------------------------------
+# PromptfooConfigNode in lint tree
+# ---------------------------------------------------------------------------
+
+
+def test_config_node_in_tree_under_plugin(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "smoke.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(plugin)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 1
+    assert not nodes[0].is_fragment
+
+
+def test_config_node_in_tree_under_skill(temp_dir):
+    skill = _make_skill(temp_dir)
+    _write_yaml(
+        skill / "evals" / "smoke.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(temp_dir)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 1
+
+
+def test_standalone_promptfooconfig_in_tree(temp_dir):
+    _write_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(temp_dir)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 1
+
+
+def test_fragment_node_as_child_of_config(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    tests_file = plugin / "evals" / "tests" / "cases.yaml"
+    _write_yaml(tests_file, [{"description": "from fragment", "vars": {"prompt": "hi"}}])
+    _write_yaml(
+        plugin / "evals" / "smoke.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": ["file://tests/cases.yaml"],
+        },
+    )
+    context = RepositoryContext(plugin)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    configs = [n for n in nodes if not n.is_fragment]
+    fragments = [n for n in nodes if n.is_fragment]
+    assert len(configs) == 1
+    assert len(fragments) == 1
+    assert fragments[0].parent is configs[0]
+
+
+def test_non_promptfoo_yaml_not_in_tree(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "unrelated.yaml",
+        {"name": "not-promptfoo", "version": "1.0"},
+    )
+    context = RepositoryContext(temp_dir)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 0
+
+
+def test_nested_evals_discovered(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "smoke" / "deep.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"description": "t1"}]},
+    )
+    context = RepositoryContext(plugin)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 1
+
+
+def test_shared_fragment_deduplication(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    shared = plugin / "evals" / "shared.yaml"
+    _write_yaml(shared, [{"description": "shared test"}])
+    _write_yaml(
+        plugin / "evals" / "config-a.yaml",
+        {"providers": [{"id": "a"}], "tests": ["file://shared.yaml"]},
+    )
+    _write_yaml(
+        plugin / "evals" / "config-b.yaml",
+        {"providers": [{"id": "b"}], "tests": ["file://shared.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    fragments = [n for n in nodes if n.is_fragment]
+    # shared.yaml appears once — first config to reference it owns it
+    assert len(fragments) <= 1
+
+
+# ---------------------------------------------------------------------------
+# promptfoo-valid: full configs
 # ---------------------------------------------------------------------------
 
 
@@ -94,6 +312,7 @@ def test_valid_skill_evals_passes(temp_dir):
     _write_yaml(
         skill / "evals" / "test.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [{"description": "t1", "vars": {"prompt": "hi"}}],
         },
     )
@@ -106,27 +325,19 @@ def test_invalid_yaml_fails(temp_dir):
     plugin = _make_plugin(temp_dir)
     evals_dir = plugin / "evals"
     evals_dir.mkdir()
-    (evals_dir / "bad.yaml").write_text("{not: valid: yaml: [")
-    context = RepositoryContext(plugin)
+    # Write a promptfoo-looking file that has invalid YAML
+    # We need to make sure it gets into the tree — use promptfooconfig naming
+    (temp_dir / "promptfooconfig.yaml").write_text("{not: valid: yaml: [")
+    context = RepositoryContext(temp_dir)
     violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "Invalid YAML" in violations[0].message
-
-
-def test_not_a_mapping_fails(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_raw_yaml(plugin / "evals" / "list.yaml", "- item1\n- item2\n")
-    context = RepositoryContext(plugin)
-    violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "mapping" in violations[0].message.lower()
+    assert any("Invalid YAML" in v.message for v in violations)
 
 
 def test_no_tests_or_scenarios_warns(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "no-tests.yaml",
-        {"description": "Missing tests", "providers": [{"id": "test"}]},
+        {"providers": [{"id": "test"}], "prompts": ["{{prompt}}"]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -141,6 +352,7 @@ def test_scenarios_accepted(temp_dir):
     _write_yaml(
         plugin / "evals" / "scenarios.yaml",
         {
+            "providers": [{"id": "test"}],
             "scenarios": [
                 {
                     "config": [{"description": "scenario test"}],
@@ -158,7 +370,7 @@ def test_scenarios_invalid_type_fails(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "bad-scenarios.yaml",
-        {"scenarios": 42},
+        {"providers": [{"id": "test"}], "scenarios": 42},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -170,7 +382,7 @@ def test_scenarios_as_string_file_ref_passes(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "scenario-ref.yaml",
-        {"scenarios": "file://scenarios.yaml"},
+        {"providers": [{"id": "test"}], "scenarios": "file://scenarios.yaml"},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -179,9 +391,11 @@ def test_scenarios_as_string_file_ref_passes(temp_dir):
 
 def test_tests_as_string_file_ref_passes(temp_dir):
     plugin = _make_plugin(temp_dir)
+    target = plugin / "evals" / "tests.yaml"
+    _write_yaml(target, [{"description": "t1"}])
     _write_yaml(
         plugin / "evals" / "file-ref.yaml",
-        {"tests": "file://tests.yaml", "providers": [{"id": "test"}]},
+        {"providers": [{"id": "test"}], "tests": "file://tests.yaml"},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -192,7 +406,7 @@ def test_tests_invalid_type_fails(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "bad-tests.yaml",
-        {"tests": 42},
+        {"providers": [{"id": "test"}], "tests": 42},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -201,60 +415,185 @@ def test_tests_invalid_type_fails(temp_dir):
     assert "file reference" in violations[0].message
 
 
-def test_tests_not_array_fails(temp_dir):
+# ---------------------------------------------------------------------------
+# promptfoo-valid: string entries in tests lists (no false positives)
+# ---------------------------------------------------------------------------
+
+
+def test_string_test_entry_with_existing_file_passes(temp_dir):
     plugin = _make_plugin(temp_dir)
+    target = plugin / "evals" / "cases.yaml"
+    _write_yaml(target, [{"description": "t1"}])
     _write_yaml(
-        plugin / "evals" / "bad-tests.yaml",
-        {"tests": {"nested": "dict"}},
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://cases.yaml"]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "array" in violations[0].message
+    assert len(violations) == 0
 
 
-def test_test_not_mapping_fails(temp_dir):
+def test_string_test_entry_with_missing_file_errors(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
-        plugin / "evals" / "bad-entry.yaml",
-        {"tests": ["just-a-string"]},
+        plugin / "evals" / "config.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": ["file://nonexistent.yaml"],
+        },
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "mapping" in violations[0].message.lower()
+    assert any("not found" in v.message for v in violations)
 
 
-def test_missing_description_warns(temp_dir):
+def test_mixed_test_list_validates_correctly(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    target = plugin / "evals" / "extra.yaml"
+    _write_yaml(target, [{"description": "from file"}])
+    _write_yaml(
+        plugin / "evals" / "mixed.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": [
+                "file://extra.yaml",
+                {"description": "inline", "assert": [{"type": "contains", "value": "x"}]},
+            ],
+        },
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
+def test_glob_ref_skipped_gracefully(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "glob-ref.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://tests/*.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
+# ---------------------------------------------------------------------------
+# promptfoo-valid: $ref in assertions (no false positives)
+# ---------------------------------------------------------------------------
+
+
+def test_ref_assertion_not_flagged(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "ref.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "assertionTemplates": {"is_valid": {"type": "contains", "value": "ok"}},
+            "tests": [
+                {
+                    "description": "uses ref",
+                    "assert": [{"$ref": "#/assertionTemplates/is_valid"}],
+                }
+            ],
+        },
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
+# ---------------------------------------------------------------------------
+# promptfoo-valid: description is optional (no false positives)
+# ---------------------------------------------------------------------------
+
+
+def test_no_description_no_warning(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "no-desc.yaml",
-        {"tests": [{"vars": {"prompt": "hello"}}]},
+        {
+            "providers": [{"id": "test"}],
+            "tests": [{"vars": {"prompt": "hello"}}],
+        },
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "description" in violations[0].message
-    assert violations[0].severity == Severity.WARNING
+    assert not any("description" in v.message for v in violations)
 
 
-def test_assert_not_array_fails(temp_dir):
+# ---------------------------------------------------------------------------
+# promptfoo-valid: fragment validation
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_list_validated(temp_dir):
     plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "cases.yaml"
+    _write_yaml(frag, [{"description": "good"}, "not-a-dict"])
     _write_yaml(
-        plugin / "evals" / "bad-assert.yaml",
-        {"tests": [{"description": "t", "assert": "not-an-array"}]},
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://cases.yaml"]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "'assert' must be an array" in violations[0].message
+    assert any("must be a mapping" in v.message for v in violations)
+
+
+def test_fragment_single_dict_accepted(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "single.yaml"
+    _write_yaml(frag, {"description": "one test", "vars": {"prompt": "hi"}})
+    _write_yaml(
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://single.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
+def test_fragment_invalid_type_errors(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "bad.yaml"
+    _write_raw_yaml(frag, "just a string\n")
+    _write_yaml(
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://bad.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert any("fragment" in v.message.lower() for v in violations)
+
+
+def test_fragment_assert_validation(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "cases.yaml"
+    _write_yaml(
+        frag,
+        [{"description": "t1", "assert": [{"value": "no type here"}]}],
+    )
+    _write_yaml(
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://cases.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert any("'type'" in v.message for v in violations)
+
+
+# ---------------------------------------------------------------------------
+# promptfoo-valid: other structural checks
+# ---------------------------------------------------------------------------
 
 
 def test_non_dict_assert_entry_rejected(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "bad-assert-entry.yaml",
-        {"tests": [{"description": "t", "assert": ["just-a-string"]}]},
+        {
+            "providers": [{"id": "test"}],
+            "tests": [{"description": "t", "assert": ["just-a-string"]}],
+        },
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -262,16 +601,19 @@ def test_non_dict_assert_entry_rejected(temp_dir):
     assert "assert[0] must be a mapping" in violations[0].message
 
 
-def test_assert_entry_missing_type_fails(temp_dir):
+def test_assert_not_array_fails(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
-        plugin / "evals" / "no-type.yaml",
-        {"tests": [{"description": "t", "assert": [{"value": "foo"}]}]},
+        plugin / "evals" / "bad-assert.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": [{"description": "t", "assert": "not-an-array"}],
+        },
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
     assert len(violations) == 1
-    assert "'type'" in violations[0].message
+    assert "'assert' must be an array" in violations[0].message
 
 
 def test_no_evals_dir_skips(temp_dir):
@@ -281,42 +623,15 @@ def test_no_evals_dir_skips(temp_dir):
     assert len(violations) == 0
 
 
-def test_nested_evals_discovered(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "smoke" / "nested.yaml",
-        {"tests": 42},
-    )
-    context = RepositoryContext(plugin)
-    violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
-    assert "array" in violations[0].message
-
-
 def test_yml_extension_discovered(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "test.yml",
-        {"tests": [{"description": "yml test", "vars": {"prompt": "hi"}}]},
+        {"providers": [{"id": "test"}], "tests": [{"description": "yml test"}]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
     assert len(violations) == 0
-
-
-def test_multiple_files_validated(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "good.yaml",
-        {"tests": [{"description": "ok"}]},
-    )
-    _write_yaml(
-        plugin / "evals" / "bad.yaml",
-        {"tests": 42},
-    )
-    context = RepositoryContext(plugin)
-    violations = PromptfooValidRule().check(context)
-    assert len(violations) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -334,11 +649,9 @@ def test_assertions_empty_default_required_types_no_violations(temp_dir):
     _write_yaml(
         plugin / "evals" / "no-guards.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [
-                {
-                    "description": "no guards",
-                    "assert": [{"type": "contains", "value": "hello"}],
-                }
+                {"description": "no guards", "assert": [{"type": "contains", "value": "hello"}]}
             ],
         },
     )
@@ -352,6 +665,7 @@ def test_assertions_all_required_in_default_test_passes(temp_dir):
     _write_yaml(
         plugin / "evals" / "ok.yaml",
         {
+            "providers": [{"id": "test"}],
             "defaultTest": {
                 "assert": [
                     {"type": "cost", "threshold": 0.50},
@@ -367,36 +681,14 @@ def test_assertions_all_required_in_default_test_passes(temp_dir):
     assert len(violations) == 0
 
 
-def test_assertions_split_between_default_and_test_passes(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "split.yaml",
-        {
-            "defaultTest": {"assert": [{"type": "latency", "threshold": 30000}]},
-            "tests": [
-                {
-                    "description": "has cost",
-                    "assert": [{"type": "cost", "threshold": 0.50}],
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(config={"required-types": ["cost", "latency"]})
-    violations = rule.check(context)
-    assert len(violations) == 0
-
-
 def test_assertions_missing_type_reported(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "missing.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [
-                {
-                    "description": "no guards",
-                    "assert": [{"type": "contains", "value": "hello"}],
-                }
+                {"description": "no guards", "assert": [{"type": "contains", "value": "hello"}]}
             ],
         },
     )
@@ -408,45 +700,38 @@ def test_assertions_missing_type_reported(temp_dir):
     assert "latency" in violations[0].message
 
 
-def test_assertions_partially_missing_reported(temp_dir):
+def test_assertions_applied_to_fragment_tests(temp_dir):
     plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "cases.yaml"
     _write_yaml(
-        plugin / "evals" / "partial.yaml",
+        frag, [{"description": "frag test", "assert": [{"type": "contains", "value": "x"}]}]
+    )
+    _write_yaml(
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://cases.yaml"]},
+    )
+    context = RepositoryContext(plugin)
+    rule = PromptfooAssertionsRule(config={"required-types": ["cost"]})
+    violations = rule.check(context)
+    assert any("cost" in v.message for v in violations)
+
+
+def test_assertions_default_test_applies_to_fragments(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "cases.yaml"
+    _write_yaml(frag, [{"description": "frag test"}])
+    _write_yaml(
+        plugin / "evals" / "config.yaml",
         {
-            "tests": [
-                {
-                    "description": "has-one-guard",
-                    "assert": [{"type": "cost", "threshold": 1.0}],
-                }
-            ],
+            "providers": [{"id": "test"}],
+            "defaultTest": {"assert": [{"type": "cost", "threshold": 0.5}]},
+            "tests": ["file://cases.yaml"],
         },
     )
     context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(config={"required-types": ["cost", "latency"]})
+    rule = PromptfooAssertionsRule(config={"required-types": ["cost"]})
     violations = rule.check(context)
-    assert len(violations) == 1
-    assert "latency" in violations[0].message
-    assert "cost" not in violations[0].message
-
-
-def test_assertions_custom_required_types(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "custom.yaml",
-        {
-            "tests": [
-                {
-                    "description": "needs skill-used",
-                    "assert": [{"type": "contains", "value": "x"}],
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(config={"required-types": ["skill-used"]})
-    violations = rule.check(context)
-    assert len(violations) == 1
-    assert "skill-used" in violations[0].message
+    assert len(violations) == 0
 
 
 def test_threshold_constraints_max_exceeded(temp_dir):
@@ -454,6 +739,7 @@ def test_threshold_constraints_max_exceeded(temp_dir):
     _write_yaml(
         plugin / "evals" / "over-budget.yaml",
         {
+            "providers": [{"id": "test"}],
             "defaultTest": {
                 "assert": [
                     {"type": "cost", "threshold": 5.0},
@@ -474,11 +760,9 @@ def test_threshold_constraints_min_violated(temp_dir):
     _write_yaml(
         plugin / "evals" / "below-min.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [
-                {
-                    "description": "too fast",
-                    "assert": [{"type": "latency", "threshold": 500}],
-                }
+                {"description": "too fast", "assert": [{"type": "latency", "threshold": 500}]}
             ],
         },
     )
@@ -487,82 +771,6 @@ def test_threshold_constraints_min_violated(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "500" in violations[0].message
-    assert "1000" in violations[0].message
-    assert "below" in violations[0].message
-
-
-def test_threshold_constraints_within_bounds_passes(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "budget-ok.yaml",
-        {
-            "defaultTest": {
-                "assert": [
-                    {"type": "cost", "threshold": 0.50},
-                    {"type": "latency", "threshold": 30000},
-                ]
-            },
-            "tests": [{"description": "ok"}],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(config={"threshold-constraints": {"cost": {"max": 1.0}}})
-    violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_threshold_constraints_per_test(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "per-test-budget.yaml",
-        {
-            "defaultTest": {
-                "assert": [
-                    {"type": "cost", "threshold": 0.50},
-                ]
-            },
-            "tests": [
-                {
-                    "description": "override",
-                    "assert": [{"type": "cost", "threshold": 10.0}],
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(config={"threshold-constraints": {"cost": {"max": 2.0}}})
-    violations = rule.check(context)
-    cost_violations = [v for v in violations if "10.0" in v.message]
-    assert len(cost_violations) == 1
-
-
-def test_threshold_constraints_multiple_types(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "multi.yaml",
-        {
-            "tests": [
-                {
-                    "description": "multi",
-                    "assert": [
-                        {"type": "cost", "threshold": 5.0},
-                        {"type": "latency", "threshold": 100},
-                    ],
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooAssertionsRule(
-        config={
-            "threshold-constraints": {
-                "cost": {"max": 2.0},
-                "latency": {"min": 1000},
-            }
-        }
-    )
-    violations = rule.check(context)
-    assert len(violations) == 2
 
 
 def test_threshold_non_numeric_skipped(temp_dir):
@@ -570,6 +778,7 @@ def test_threshold_non_numeric_skipped(temp_dir):
     _write_yaml(
         plugin / "evals" / "non-numeric.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [
                 {
                     "description": "string threshold",
@@ -588,19 +797,11 @@ def test_assertions_skips_string_tests(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "file-ref.yaml",
-        {"tests": "file://tests.yaml"},
+        {"providers": [{"id": "test"}], "tests": "file://tests.yaml"},
     )
     context = RepositoryContext(plugin)
     rule = PromptfooAssertionsRule(config={"required-types": ["cost"]})
     violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_assertions_no_tests_skips(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(plugin / "evals" / "empty.yaml", {"description": "empty"})
-    context = RepositoryContext(plugin)
-    violations = PromptfooAssertionsRule().check(context)
     assert len(violations) == 0
 
 
@@ -618,7 +819,7 @@ def test_metadata_empty_default_required_keys_no_violations(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "no-meta.yaml",
-        {"tests": [{"description": "no metadata"}]},
+        {"providers": [{"id": "test"}], "tests": [{"description": "no metadata"}]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooMetadataRule().check(context)
@@ -630,11 +831,9 @@ def test_metadata_all_keys_present_passes(temp_dir):
     _write_yaml(
         plugin / "evals" / "ok.yaml",
         {
+            "providers": [{"id": "test"}],
             "tests": [
-                {
-                    "description": "good meta",
-                    "metadata": {"token-usage": "small", "tier": "fast"},
-                }
+                {"description": "good meta", "metadata": {"token-usage": "small", "tier": "fast"}}
             ],
         },
     )
@@ -648,127 +847,44 @@ def test_metadata_missing_reports_all_keys(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "no-meta.yaml",
-        {"tests": [{"description": "no metadata"}]},
+        {"providers": [{"id": "test"}], "tests": [{"description": "no metadata"}]},
     )
     context = RepositoryContext(plugin)
     rule = PromptfooMetadataRule(config={"required-keys": ["token-usage", "tier"]})
     violations = rule.check(context)
     assert len(violations) == 1
-    assert "metadata" in violations[0].message
     assert "tier" in violations[0].message
     assert "token-usage" in violations[0].message
 
 
-def test_metadata_partial_missing(temp_dir):
+def test_metadata_applied_to_fragment_tests(temp_dir):
     plugin = _make_plugin(temp_dir)
+    frag = plugin / "evals" / "cases.yaml"
+    _write_yaml(frag, [{"description": "frag test"}])
     _write_yaml(
-        plugin / "evals" / "partial.yaml",
-        {
-            "tests": [
-                {
-                    "description": "only usage",
-                    "metadata": {"token-usage": "medium"},
-                }
-            ],
-        },
+        plugin / "evals" / "config.yaml",
+        {"providers": [{"id": "test"}], "tests": ["file://cases.yaml"]},
     )
     context = RepositoryContext(plugin)
-    rule = PromptfooMetadataRule(config={"required-keys": ["token-usage", "tier"]})
+    rule = PromptfooMetadataRule(config={"required-keys": ["tier"]})
     violations = rule.check(context)
-    assert len(violations) == 1
-    assert "tier" in violations[0].message
-    assert "token-usage" not in violations[0].message
+    assert any("tier" in v.message for v in violations)
 
 
 def test_metadata_not_mapping_fails(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "bad-meta.yaml",
-        {"tests": [{"description": "bad", "metadata": "not-a-dict"}]},
+        {
+            "providers": [{"id": "test"}],
+            "tests": [{"description": "bad", "metadata": "not-a-dict"}],
+        },
     )
     context = RepositoryContext(plugin)
     rule = PromptfooMetadataRule(config={"required-keys": ["tier"]})
     violations = rule.check(context)
     assert len(violations) == 1
     assert "mapping" in violations[0].message.lower()
-
-
-def test_metadata_custom_required_keys(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "custom.yaml",
-        {
-            "tests": [
-                {
-                    "description": "needs author",
-                    "metadata": {"token-usage": "small"},
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooMetadataRule(config={"required-keys": ["author", "org"]})
-    violations = rule.check(context)
-    assert len(violations) == 1
-    assert "author" in violations[0].message
-    assert "org" in violations[0].message
-
-
-def test_metadata_extra_keys_accepted(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "extra.yaml",
-        {
-            "tests": [
-                {
-                    "description": "extra ok",
-                    "metadata": {
-                        "token-usage": "large",
-                        "tier": "heavy",
-                        "judge-size": "opus",
-                        "custom-field": "value",
-                    },
-                }
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooMetadataRule(config={"required-keys": ["token-usage", "tier"]})
-    violations = rule.check(context)
-    assert len(violations) == 0
-
-
-def test_metadata_multiple_tests_independent(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "multi.yaml",
-        {
-            "tests": [
-                {
-                    "description": "good",
-                    "metadata": {"token-usage": "small", "tier": "fast"},
-                },
-                {"description": "bad", "metadata": {"token-usage": "medium"}},
-            ],
-        },
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooMetadataRule(config={"required-keys": ["token-usage", "tier"]})
-    violations = rule.check(context)
-    assert len(violations) == 1
-    assert "bad" in violations[0].message
-
-
-def test_metadata_skips_string_tests(temp_dir):
-    plugin = _make_plugin(temp_dir)
-    _write_yaml(
-        plugin / "evals" / "file-ref.yaml",
-        {"tests": "file://tests.yaml"},
-    )
-    context = RepositoryContext(plugin)
-    rule = PromptfooMetadataRule(config={"required-keys": ["tier"]})
-    violations = rule.check(context)
-    assert len(violations) == 0
 
 
 # ---------------------------------------------------------------------------

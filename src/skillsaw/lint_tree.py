@@ -18,6 +18,7 @@ from .lint_target import (
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
+    PromptfooConfigNode,
     SkillNode,
     CodeRabbitNode,
 )
@@ -206,6 +207,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         cr_container.children.extend(cr_blocks)
         root.children.append(cr_container)
 
+    # --- Promptfoo eval configs ---
+    _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
+
     # --- APM ---
     if context.has_apm:
         apm_yml = context.root_path / "apm.yml"
@@ -264,3 +268,75 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))
     return root
+
+
+def _build_promptfoo_nodes(
+    context: "RepositoryContext",
+    root: LintTarget,
+    plugin_nodes: dict,
+    seen: Set[Path],
+    _is_excluded,
+) -> None:
+    """Discover promptfoo config files and build PromptfooConfigNode nodes.
+
+    Pass 1: find confirmed configs (promptfooconfig* naming or evals/ with promptfoo keys).
+    Pass 2: resolve file:// refs from confirmed configs and add fragments as children.
+    """
+    from .rules.builtin.promptfoo import (
+        _is_promptfoo_config,
+        _extract_file_refs,
+        _resolve_file_ref,
+    )
+    from .rules.builtin.utils import read_yaml
+
+    config_nodes: list[PromptfooConfigNode] = []
+
+    def _try_add_config(yaml_file: Path, parent: LintTarget, *, require_keys: bool = True) -> None:
+        resolved = yaml_file.resolve()
+        if resolved in seen or not yaml_file.exists() or _is_excluded(yaml_file):
+            return
+        if require_keys:
+            data, error = read_yaml(yaml_file)
+            if error or not _is_promptfoo_config(data):
+                return
+        seen.add(resolved)
+        node = PromptfooConfigNode(path=yaml_file)
+        parent.children.append(node)
+        config_nodes.append(node)
+
+    def _scan_evals_dir(evals_dir: Path, parent: LintTarget) -> None:
+        if not evals_dir.is_dir():
+            return
+        for pattern in ("*.yaml", "*.yml"):
+            for yaml_file in sorted(evals_dir.rglob(pattern)):
+                _try_add_config(yaml_file, parent, require_keys=True)
+
+    # Pass 1a: promptfooconfig* at repo root (promptfoo naming → no key check)
+    for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
+        for yaml_file in sorted(context.root_path.glob(pattern)):
+            _try_add_config(yaml_file, root, require_keys=False)
+
+    # Pass 1b: evals/ at repo root
+    _scan_evals_dir(context.root_path / "evals", root)
+
+    # Pass 1c: evals/ inside plugins and skills
+    for node in list(root.walk()):
+        if not isinstance(node, (PluginNode, SkillNode)):
+            continue
+        _scan_evals_dir(node.path / "evals", node)
+
+    # Pass 2: resolve file:// refs from confirmed configs → fragment children
+    for config_node in config_nodes:
+        data, error = read_yaml(config_node.path)
+        if error or not isinstance(data, dict):
+            continue
+        config_dir = config_node.path.parent
+        for ref in _extract_file_refs(data):
+            resolved = _resolve_file_ref(ref, config_dir)
+            if resolved is None or resolved in seen:
+                continue
+            if not resolved.exists():
+                continue
+            seen.add(resolved)
+            frag = PromptfooConfigNode(path=Path(resolved), is_fragment=True)
+            config_node.children.append(frag)
