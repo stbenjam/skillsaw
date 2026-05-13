@@ -535,6 +535,29 @@ These rules validate skills against the [agentskills.io specification](https://a
 |---------|-------------|------------------|---------|
 | `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
 
+### Promptfoo Evals
+
+Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs in `evals/` directories. `promptfoo-valid` auto-enables for skill/plugin repos; `promptfoo-assertions` and `promptfoo-metadata` are opt-in and enforce required assertion types (cost, latency) and metadata keys (token-usage, tier).
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `promptfoo-valid` | Validate promptfoo eval YAML configs in evals/ directories | error (auto) | - |
+| `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
+| `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
+
+**`promptfoo-assertions` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-types` | Assertion types that every test must include (via test-level or defaultTest assertions) | `["cost", "latency"]` |
+| `max-cost-threshold` | Maximum allowed value for cost assertion thresholds (budget cap) | `null` |
+
+**`promptfoo-metadata` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-keys` | Metadata keys required on every test case | `["token-usage", "tier"]` |
+
 ### Openclaw
 
 Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires when `metadata.openclaw` is present.

@@ -62,6 +62,15 @@ RULE_GROUPS = [
         None,
     ),
     (
+        "Promptfoo Evals",
+        ["promptfoo-valid", "promptfoo-assertions", "promptfoo-metadata"],
+        "Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs "
+        "in `evals/` directories. `promptfoo-valid` auto-enables for skill/plugin "
+        "repos; `promptfoo-assertions` and `promptfoo-metadata` are opt-in and "
+        "enforce required assertion types (cost, latency) and metadata keys "
+        "(token-usage, tier).",
+    ),
+    (
         "Openclaw",
         ["openclaw-metadata"],
         "Validates `metadata.openclaw` in SKILL.md frontmatter against the "

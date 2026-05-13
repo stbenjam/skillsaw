@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.9.1"
+version: "0.9.2"
 
 rules:
 
@@ -124,6 +124,28 @@ rules:
   agentskill-evals:
     enabled: auto
     severity: warning
+
+  # Validate promptfoo eval YAML configs in evals/ directories
+  promptfoo-valid:
+    enabled: auto
+    severity: error
+
+  # Require specific assertion types in all promptfoo eval tests
+  promptfoo-assertions:
+    enabled: false
+    severity: warning
+    # required-types:
+    #   - cost
+    #   - latency
+    # max-cost-threshold: None
+
+  # Require specific metadata keys on all promptfoo eval tests
+  promptfoo-metadata:
+    enabled: false
+    severity: warning
+    # required-keys:
+    #   - token-usage
+    #   - tier
 
   # Validate metadata.openclaw fields against the openclaw spec
   openclaw-metadata:

@@ -1,0 +1,4 @@
+tests:
+  - description: no assertion guards or metadata
+    vars:
+      prompt: hello world

@@ -185,6 +185,10 @@ class LinterConfig:
                 "agentskill-structure": {"enabled": False, "severity": "warning"},
                 "agentskill-evals-required": {"enabled": False, "severity": "warning"},
                 "agentskill-evals": {"enabled": "auto", "severity": "warning"},
+                # Promptfoo eval validation
+                "promptfoo-valid": {"enabled": "auto", "severity": "error"},
+                "promptfoo-assertions": {"enabled": False, "severity": "warning"},
+                "promptfoo-metadata": {"enabled": False, "severity": "warning"},
                 # Openclaw metadata
                 "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
                 # Instruction file validation (auto-enabled when instruction files detected)

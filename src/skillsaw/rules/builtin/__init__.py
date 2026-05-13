@@ -51,6 +51,12 @@ from .agentskills import (
     AgentSkillEvalsRule,
 )
 
+from .promptfoo import (
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
+)
+
 from .openclaw import (
     OpenclawMetadataRule,
 )
@@ -126,6 +132,10 @@ BUILTIN_RULES = [
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
     AgentSkillEvalsRule,
+    # Promptfoo evals
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
     # Openclaw
     OpenclawMetadataRule,
     # Instruction files
@@ -184,6 +194,9 @@ __all__ = [
     "AgentSkillStructureRule",
     "AgentSkillEvalsRequiredRule",
     "AgentSkillEvalsRule",
+    "PromptfooValidRule",
+    "PromptfooAssertionsRule",
+    "PromptfooMetadataRule",
     "OpenclawMetadataRule",
     "InstructionFileValidRule",
     "InstructionImportsValidRule",

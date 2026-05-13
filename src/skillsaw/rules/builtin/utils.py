@@ -160,6 +160,18 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
 
 
 @_file_cache.cached
+def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
+    """Cached YAML file read. Returns (data, error)."""
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}"
+    try:
+        return yaml.safe_load(content), None
+    except yaml.YAMLError as e:
+        return None, str(e)
+
+
+@_file_cache.cached
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     """Find the 1-based line number of a top-level key in YAML frontmatter.
 

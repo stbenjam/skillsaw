@@ -10,3 +10,7 @@ rules:
     enabled: true
   agentskill-evals-required:
     enabled: true
+  promptfoo-assertions:
+    enabled: true
+  promptfoo-metadata:
+    enabled: true
