@@ -678,6 +678,7 @@ class TestRequiredFieldsConfig:
     def test_complete_skill_passes(self, tmp_path):
         repo = copy_fixture("config/required-fields", tmp_path)
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         vs = [
             v
             for v in violations(r)
@@ -688,6 +689,7 @@ class TestRequiredFieldsConfig:
     def test_missing_required_fields_reported(self, tmp_path):
         repo = copy_fixture("config/required-fields", tmp_path)
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         vs = [
             v
             for v in violations(r)
@@ -696,10 +698,13 @@ class TestRequiredFieldsConfig:
         messages = [v["message"] for v in vs]
         assert any("Missing required field 'license'" in m for m in messages)
         assert any("metadata" in m.lower() for m in messages)
+        license_v = next(v for v in vs if "Missing required field 'license'" in v["message"])
+        assert license_v.get("line") is None
 
     def test_missing_metadata_key_reported(self, tmp_path):
         repo = copy_fixture("config/required-fields", tmp_path)
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         vs = [
             v
             for v in violations(r)
@@ -708,12 +713,15 @@ class TestRequiredFieldsConfig:
         messages = [v["message"] for v in vs]
         assert any("Missing required metadata key 'org'" in m for m in messages)
         assert not any("Missing required metadata key 'author'" in m for m in messages)
+        org_v = next(v for v in vs if "Missing required metadata key 'org'" in v["message"])
+        assert org_v.get("line") is not None
 
     def test_no_extra_violations_without_config(self, tmp_path):
         """Without required-fields config, no extra violations are raised."""
         repo = copy_fixture("config/required-fields", tmp_path)
         (repo / ".skillsaw.yaml").unlink()
         r = run_lint(repo)
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         vs = [
             v
             for v in violations(r)
