@@ -269,8 +269,11 @@ rules:
 custom-rules: []
 
 # Exclude patterns (glob format)
-# Default: **/template/**, **/templates/**, **/_template/**
-exclude: []
+# Use exclude: [] to disable all excludes including defaults
+exclude:
+    # - "**/template/**"
+    # - "**/templates/**"
+    # - "**/_template/**"
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []

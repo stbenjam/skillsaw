@@ -370,9 +370,14 @@ class LinterConfig:
             f.write("\n# Load custom rules from these files\n")
             self._write_field(f, "custom-rules", self.custom_rules)
             f.write("\n# Exclude patterns (glob format)\n")
-            f.write("# Default: **/template/**, **/templates/**, **/_template/**\n")
+            f.write("# Use exclude: [] to disable all excludes including defaults\n")
             user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]
-            self._write_field(f, "exclude", user_excludes)
+            if user_excludes:
+                self._write_field(f, "exclude", user_excludes)
+            else:
+                f.write("exclude:\n")
+                for pat in _DEFAULT_EXCLUDE_PATTERNS:
+                    f.write(f'    # - "{pat}"\n')
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
             self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
