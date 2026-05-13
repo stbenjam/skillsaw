@@ -154,6 +154,29 @@ def test_scenarios_accepted(temp_dir):
     assert len(violations) == 0
 
 
+def test_scenarios_invalid_type_fails(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "bad-scenarios.yaml",
+        {"scenarios": 42},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert "'scenarios' must be an array" in violations[0].message
+
+
+def test_scenarios_as_string_file_ref_passes(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "scenario-ref.yaml",
+        {"scenarios": "file://scenarios.yaml"},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
 def test_tests_as_string_file_ref_passes(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
@@ -256,6 +279,18 @@ def test_no_evals_dir_skips(temp_dir):
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
     assert len(violations) == 0
+
+
+def test_nested_evals_discovered(temp_dir):
+    plugin = _make_plugin(temp_dir)
+    _write_yaml(
+        plugin / "evals" / "smoke" / "nested.yaml",
+        {"tests": 42},
+    )
+    context = RepositoryContext(plugin)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert "array" in violations[0].message
 
 
 def test_yml_extension_discovered(temp_dir):

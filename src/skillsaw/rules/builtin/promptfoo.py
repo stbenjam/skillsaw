@@ -31,7 +31,7 @@ def _find_promptfoo_configs(context: RepositoryContext) -> List[Path]:
         if not evals_dir.is_dir():
             continue
         for pattern in ("*.yaml", "*.yml"):
-            for yaml_file in sorted(evals_dir.glob(pattern)):
+            for yaml_file in sorted(evals_dir.rglob(pattern)):
                 resolved = yaml_file.resolve()
                 if resolved not in seen:
                     seen.add(resolved)
@@ -95,6 +95,14 @@ class PromptfooValidRule(Rule):
                     )
                 )
                 continue
+
+            if scenarios is not None and not isinstance(scenarios, (list, str)):
+                violations.append(
+                    self.violation(
+                        "'scenarios' must be an array or a string file reference",
+                        file_path=config_path,
+                    )
+                )
 
             if tests is not None:
                 if isinstance(tests, str):
