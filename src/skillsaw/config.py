@@ -351,25 +351,21 @@ class LinterConfig:
                         f.write(f"    {key}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
-            cr_val = self._yaml_value(self.custom_rules)
-            if cr_val.startswith("\n"):
-                f.write(f"custom-rules:{cr_val}\n")
-            else:
-                f.write(f"custom-rules: {cr_val}\n")
+            self._write_field(f, "custom-rules", self.custom_rules)
             f.write("\n# Exclude patterns (glob format)\n")
-            ex_val = self._yaml_value(self.exclude_patterns)
-            if ex_val.startswith("\n"):
-                f.write(f"exclude:{ex_val}\n")
-            else:
-                f.write(f"exclude: {ex_val}\n")
+            self._write_field(f, "exclude", self.exclude_patterns)
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
-            cp_val = self._yaml_value(self.content_paths)
-            if cp_val.startswith("\n"):
-                f.write(f"content-paths:{cp_val}\n")
-            else:
-                f.write(f"content-paths: {cp_val}\n")
+            self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
+
+    def _write_field(self, f, key: str, value: Any):
+        """Helper to write a YAML field to the file."""
+        val = self._yaml_value(value)
+        if val.startswith("\n"):
+            f.write(f"{key}:{val}\n")
+        else:
+            f.write(f"{key}: {val}\n")
 
     @staticmethod
     def _needs_quoting(s: str) -> bool:
@@ -378,7 +374,7 @@ class LinterConfig:
             return True
         # Characters that are special in YAML and need quoting
         yaml_special = set("*&!|>{[%@`")
-        return s[0] in yaml_special or any(c in s for c in yaml_special)
+        return any(c in yaml_special for c in s)
 
     @staticmethod
     def _yaml_value(value, indent=4):
