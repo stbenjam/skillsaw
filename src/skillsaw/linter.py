@@ -293,11 +293,13 @@ class Linter:
         independent: List[AutofixResult] = []
         has_conflicts = False
         for fix in fixes:
-            resolved = fix.file_path.resolve()
-            if resolved in seen:
+            targets = {fix.file_path.resolve()}
+            if fix.rename_from is not None:
+                targets.add(fix.rename_from.resolve())
+            if any(t in seen for t in targets):
                 has_conflicts = True
             else:
-                seen.add(resolved)
+                seen.update(targets)
                 independent.append(fix)
         return independent, has_conflicts
 

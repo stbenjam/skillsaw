@@ -1239,11 +1239,21 @@ class ContentBrokenInternalReferenceRule(Rule):
                 content = fpath.read_text(encoding="utf-8")
             except OSError:
                 continue
-            fixed = content
+            lines = content.splitlines(True)
             violations_fixed = []
             for old_target, suggestion, v in replacements:
-                fixed = fixed.replace(f"]({old_target})", f"]({suggestion})")
-                violations_fixed.append(v)
+                fl = v.file_line
+                if fl is None:
+                    continue
+                idx = fl - 1
+                if idx < 0 or idx >= len(lines):
+                    continue
+                old_frag = f"]({old_target})"
+                new_frag = f"]({suggestion})"
+                if old_frag in lines[idx]:
+                    lines[idx] = lines[idx].replace(old_frag, new_frag, 1)
+                    violations_fixed.append(v)
+            fixed = "".join(lines)
             if fixed != content:
                 results.append(
                     AutofixResult(
