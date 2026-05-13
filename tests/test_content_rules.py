@@ -373,6 +373,17 @@ class TestContentContradictionRule:
         violations = ContentContradictionRule().check(context)
         assert len(violations) >= 1
 
+    def test_mixed_negated_and_non_negated_still_flags(self, temp_dir):
+        """A negated occurrence should not suppress a real non-negated one"""
+        content = (
+            "Provide a minimal, non-exhaustive overview first.\n"
+            "Also include exhaustive implementation notes.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentContradictionRule().check(context)
+        assert len(violations) >= 1
+
 
 class TestContentHookCandidateRule:
     def test_rule_metadata(self):

@@ -553,13 +553,13 @@ class ContentContradictionRule(Rule):
                 continue
             body_lower = body.lower()
             for pat_a, pat_b, desc in self._CONTRADICTION_PAIRS:
-                match_a = re.search(pat_a, body_lower)
-                match_b = re.search(pat_b, body_lower)
-                if match_a and match_b:
-                    if self._is_negated(body_lower, match_a) or self._is_negated(
-                        body_lower, match_b
-                    ):
-                        continue
+                has_a = any(
+                    not self._is_negated(body_lower, m) for m in re.finditer(pat_a, body_lower)
+                )
+                has_b = any(
+                    not self._is_negated(body_lower, m) for m in re.finditer(pat_b, body_lower)
+                )
+                if has_a and has_b:
                     violations.append(
                         self.violation(
                             f"Possible contradiction: {desc}",
