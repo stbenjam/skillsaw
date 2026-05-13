@@ -20,9 +20,9 @@ body:
     attributes:
       label: Rule ID
       description: >
-        Which rule is involved? (e.g. `missing-description`, `trigger-too-broad`).
+        Which rule is involved? (e.g. `content-weak-language`, `agentskill-description`).
         Leave blank if not rule-specific.
-      placeholder: e.g. missing-description
+      placeholder: e.g. content-weak-language
 
   - type: input
     id: version
@@ -64,7 +64,8 @@ body:
       label: Actual behavior
       description: >
         What actually happened. Include the full skillsaw output
-        (with `--verbose` if possible).
+        (with `--verbose` if possible). Please redact secrets, tokens,
+        and private paths before posting.
     validations:
       required: true
 
@@ -74,7 +75,8 @@ body:
       label: Configuration
       description: >
         Paste your `.skillsaw.yaml` / `.claudelint.yaml` if you have one,
-        or note if you're using default settings.
+        or note if you're using default settings. Redact any secrets
+        or sensitive values first.
       render: yaml
 
   - type: textarea
