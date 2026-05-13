@@ -1042,6 +1042,136 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 0
 
+    def test_autofix_duplicate_paths_no_double_wrap(self, temp_dir):
+        """When the same path appears multiple times, each should be wrapped independently."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use the `scripts/test.py` script to do a review\n\n"
+            "Re-run script `scripts/test.py` again for some reason\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 2
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert fixed.count("[scripts/test.py](scripts/test.py)") == 2
+        assert "[[scripts/test.py]" not in fixed
+
+    def test_autofix_triple_duplicate_no_double_wrap(self, temp_dir):
+        """Three occurrences of the same path should each be wrapped exactly once."""
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "main.py").write_text("# main\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run src/main.py first\n\n"
+            "Then check src/main.py for errors\n\n"
+            "Finally re-run src/main.py\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 3
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert fixed.count("[src/main.py](src/main.py)") == 3
+        assert "[[src/main.py]" not in fixed
+        assert "](src/main.py)](src/main.py)" not in fixed
+
+    def test_autofix_multiple_different_paths(self, temp_dir):
+        """Multiple different bare paths should each be wrapped independently."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "run.sh").write_text("#!/bin/bash\n")
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "app.py").write_text("# app\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Read docs/guide.md for setup\n\n"
+            "Run scripts/run.sh to build\n\n"
+            "Edit src/app.py for logic\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 3
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "[docs/guide.md](docs/guide.md)" in fixed
+        assert "[scripts/run.sh](scripts/run.sh)" in fixed
+        assert "[src/app.py](src/app.py)" in fixed
+        assert fixed.count("[[") == 0
+
+    def test_autofix_mixed_autofixable_and_nonexistent(self, temp_dir):
+        """Only existing paths should be fixed; nonexistent paths left alone."""
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "real.py").write_text("# real\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "See src/real.py for implementation\n\n" "See src/fake.py for nothing\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 2
+        autofixable = [v for v in violations if "autofixable" in v.message]
+        assert len(autofixable) == 1
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "[src/real.py](src/real.py)" in fixed
+        assert "src/fake.py" in fixed
+        assert "[src/fake.py]" not in fixed
+
+    def test_autofix_mixed_duplicates_and_different_paths(self, temp_dir):
+        """Mix of duplicate and unique paths: all wrapped, none double-wrapped."""
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "main.py").write_text("# main\n")
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "api.md").write_text("# API\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Start with src/main.py\n\n"
+            "Read docs/api.md for reference\n\n"
+            "Re-run src/main.py after changes\n\n"
+            "Check docs/api.md for updates\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 4
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert fixed.count("[src/main.py](src/main.py)") == 2
+        assert fixed.count("[docs/api.md](docs/api.md)") == 2
+        assert "[[" not in fixed
+        assert "](src/main.py)](src/main.py)" not in fixed
+        assert "](docs/api.md)](docs/api.md)" not in fixed
+
+    def test_autofix_idempotent(self, temp_dir):
+        """Applying fix twice produces identical content — no double-wrapping."""
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "main.py").write_text("# main\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run src/main.py first\n\nThen check src/main.py again\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        first_fixed = fixes[0].fixed_content
+        assert first_fixed.count("[src/main.py](src/main.py)") == 2
+        assert "[[" not in first_fixed
+        fixes[0].file_path.write_text(first_fixed, encoding="utf-8")
+        context2 = RepositoryContext(temp_dir)
+        violations2 = rule.check(context2)
+        fixes2 = rule.fix(context2, violations2)
+        if fixes2:
+            assert fixes2[0].fixed_content == first_fixed
+
     def test_supports_autofix_property(self):
         rule = ContentUnlinkedInternalReferenceRule()
         assert rule.supports_autofix
