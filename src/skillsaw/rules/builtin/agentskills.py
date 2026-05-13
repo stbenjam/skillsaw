@@ -38,6 +38,21 @@ class AgentSkillValidRule(Rule):
         RepositoryType.DOT_CLAUDE,
     }
 
+    BUILTIN_REQUIRED = {"name", "description"}
+
+    config_schema = {
+        "required-fields": {
+            "type": "list",
+            "default": [],
+            "description": "Additional frontmatter fields to require (name and description are always required)",
+        },
+        "required-metadata": {
+            "type": "list",
+            "default": [],
+            "description": "Keys that must be present inside the metadata mapping",
+        },
+    }
+
     @property
     def rule_id(self) -> str:
         return "agentskill-valid"
@@ -242,6 +257,40 @@ class AgentSkillValidRule(Rule):
                             line=at_line,
                         )
                     )
+
+            extra_required = self.config.get("required-fields", [])
+            for field_name in extra_required:
+                if field_name in self.BUILTIN_REQUIRED:
+                    continue
+                if field_name not in frontmatter:
+                    violations.append(
+                        self.violation(
+                            f"Missing required field '{field_name}'",
+                            file_path=block.path,
+                        )
+                    )
+
+            required_meta = self.config.get("required-metadata", [])
+            if required_meta:
+                meta = frontmatter.get("metadata")
+                if meta is None:
+                    violations.append(
+                        self.violation(
+                            "Missing required 'metadata' (needed for required-metadata check)",
+                            file_path=block.path,
+                        )
+                    )
+                elif isinstance(meta, dict):
+                    meta_line = block.key_line("metadata")
+                    for key in required_meta:
+                        if key not in meta:
+                            violations.append(
+                                self.violation(
+                                    f"Missing required metadata key '{key}'",
+                                    file_path=block.path,
+                                    line=meta_line,
+                                )
+                            )
 
         return violations
 

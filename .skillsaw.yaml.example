@@ -94,6 +94,8 @@ rules:
   agentskill-valid:
     enabled: auto
     severity: error
+    # required-fields: []
+    # required-metadata: []
 
   # Skill name must be lowercase with hyphens and match directory name
   agentskill-name:
