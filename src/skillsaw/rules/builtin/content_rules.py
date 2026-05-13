@@ -7,7 +7,7 @@ instruction file formats equally.
 
 import re
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Dict, List, Set, Tuple
 from urllib.parse import urlparse
 
@@ -1102,6 +1102,7 @@ class ContentBrokenInternalReferenceRule(Rule):
         return False
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        root = context.root_path.resolve()
         violations = []
         for cf in gather_all_content_blocks(context):
             if self._is_in_template_dir(cf.path):
@@ -1121,6 +1122,18 @@ class ContentBrokenInternalReferenceRule(Rule):
                         continue
                     # Resolve relative to the file containing the link
                     resolved = (cf.path.parent / target_path).resolve()
+                    # Ensure the resolved path is within the repo root
+                    try:
+                        resolved.relative_to(root)
+                    except ValueError:
+                        violations.append(
+                            self.violation(
+                                f"Broken internal link: [{match.group(1)}]({target}) — target is outside repository",
+                                block=cf,
+                                line=line_num,
+                            )
+                        )
+                        continue
                     if not resolved.exists():
                         violations.append(
                             self.violation(
@@ -1137,6 +1150,11 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
     formats = None
     since = "0.8.3"
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
 
     config_schema = {
         "patterns": {
@@ -1160,6 +1178,9 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     # Detect if a match is inside a markdown link [text](path)
     _LINK_SYNTAX_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
 
+    # Detect URLs so we can skip path-like fragments inside them
+    _URL_RE = re.compile(r"https?://[^\s)]+")
+
     @property
     def rule_id(self) -> str:
         return "content-unlinked-internal-reference"
@@ -1178,7 +1199,15 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 return True
         return False
 
+    def _is_inside_url(self, line: str, match_start: int, match_end: int) -> bool:
+        """Check if a match position falls inside a URL."""
+        for url_match in self._URL_RE.finditer(line):
+            if url_match.start() <= match_start and match_end <= url_match.end():
+                return True
+        return False
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
         violations = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=True)
@@ -1191,6 +1220,11 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 for match in self._PATH_LIKE_RE.finditer(line):
                     path_str = match.group(0)
                     if self._is_inside_link(line, match.start(), match.end()):
+                        continue
+                    if self._is_inside_url(line, match.start(), match.end()):
+                        continue
+                    # Check if path matches any configured glob pattern
+                    if not any(PurePath(path_str).match(p) for p in patterns):
                         continue
                     violations.append(
                         self.violation(
@@ -1207,6 +1241,11 @@ class ContentPlaceholderTextRule(Rule):
 
     formats = None
     since = "0.8.3"
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+    }
 
     _PLACEHOLDER_PATTERNS = [
         (re.compile(r"\bTODO\b"), "TODO marker"),
@@ -1215,7 +1254,13 @@ class ContentPlaceholderTextRule(Rule):
         (re.compile(r"\[link\s+here\]", re.IGNORECASE), "Placeholder link"),
         (re.compile(r"\[Insert\s+[^\]]+\]", re.IGNORECASE), "Insert placeholder"),
         (re.compile(r"\[If\s+[^\]]+\]", re.IGNORECASE), "Conditional placeholder"),
-        (re.compile(r"\*[^*]*will be added[^*]*\*", re.IGNORECASE), "Unfilled template text"),
+        (
+            re.compile(
+                r"\*(?:TBD|to be added|details to be added|content to be added|will be added as you use)[^*]*\*",
+                re.IGNORECASE,
+            ),
+            "Unfilled template text",
+        ),
     ]
 
     @property

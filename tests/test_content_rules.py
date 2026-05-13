@@ -685,6 +685,13 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 3
 
+    def test_path_traversal_outside_repo(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("See [escape](../../etc/passwd) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "outside repository" in violations[0].message
+
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
         violations = ContentBrokenInternalReferenceRule().check(context)
@@ -734,9 +741,7 @@ class TestContentUnlinkedInternalReferenceRule:
         )
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
-        # Should not flag the URL itself as an unlinked path
-        for v in violations:
-            assert "https://" not in v.message
+        assert len(violations) == 0
 
     def test_reports_line_number(self, temp_dir):
         content = "Line 1\nLine 2\nSee docs/guide.md for info.\nLine 4\n"
@@ -803,11 +808,25 @@ class TestContentPlaceholderTextRule:
         assert "Conditional placeholder" in violations[0].message
 
     def test_detects_will_be_added(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("More details *will be added later*.\n")
+        (temp_dir / "CLAUDE.md").write_text("More details *to be added*.\n")
         context = RepositoryContext(temp_dir)
         violations = ContentPlaceholderTextRule().check(context)
         assert len(violations) == 1
         assert "Unfilled template" in violations[0].message
+
+    def test_detects_tbd(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Configuration *TBD*.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Unfilled template" in violations[0].message
+
+    def test_will_be_added_in_changelog_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Feature X *will be added in v2.0*.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        # The tightened regex should not flag general "will be added" text
+        assert len(violations) == 0
 
     def test_clean_content_no_violations(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
