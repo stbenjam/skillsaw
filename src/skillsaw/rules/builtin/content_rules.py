@@ -500,6 +500,15 @@ class ContentContradictionRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _NEGATION_PREFIX_RE = re.compile(r"(?:non[-\s]|not\s+|un|in|im)$", re.IGNORECASE)
+
+    @staticmethod
+    def _is_negated(text: str, match: re.Match) -> bool:
+        """Check if a regex match is preceded by a negation prefix."""
+        start = match.start()
+        prefix = text[max(0, start - 4) : start]
+        return bool(ContentContradictionRule._NEGATION_PREFIX_RE.search(prefix))
+
     _CONTRADICTION_PAIRS = [
         (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
         (
@@ -547,6 +556,10 @@ class ContentContradictionRule(Rule):
                 match_a = re.search(pat_a, body_lower)
                 match_b = re.search(pat_b, body_lower)
                 if match_a and match_b:
+                    if self._is_negated(body_lower, match_a) or self._is_negated(
+                        body_lower, match_b
+                    ):
+                        continue
                     violations.append(
                         self.violation(
                             f"Possible contradiction: {desc}",
