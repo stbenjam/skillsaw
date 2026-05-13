@@ -6,7 +6,7 @@ import tempfile
 import shutil
 
 from skillsaw.context import RepositoryContext
-from skillsaw.rule import Severity
+from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin.content_rules import (
     ContentWeakLanguageRule,
     ContentTautologicalRule,
@@ -934,3 +934,87 @@ class TestContentPlaceholderTextRule:
         context = RepositoryContext(temp_dir)
         violations = ContentPlaceholderTextRule().check(context)
         assert len(violations) == 0
+
+
+class TestContentUnlinkedInternalReferenceAutofix:
+    def test_autofix_wraps_existing_path(self, temp_dir):
+        """Bare paths to existing files should be autofixed with SAFE confidence."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "autofixable" in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SAFE
+        assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_content
+
+    def test_no_autofix_for_nonexistent_path(self, temp_dir):
+        """Bare paths to nonexistent files should not be autofixed."""
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "autofixable" not in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 0
+
+    def test_supports_autofix_property(self):
+        rule = ContentUnlinkedInternalReferenceRule()
+        assert rule.supports_autofix
+
+
+class TestContentBrokenInternalReferenceAutofix:
+    def test_suggests_similar_filename(self, temp_dir):
+        """Broken link should suggest a similar existing file."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/setpu.md) for setup.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" in violations[0].message
+
+    def test_suggests_moved_file(self, temp_dir):
+        """Broken link should suggest exact name match in different directory."""
+        (temp_dir / "reference").mkdir()
+        (temp_dir / "reference" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/guide.md) for help.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" in violations[0].message
+
+    def test_fix_applies_suggestion(self, temp_dir):
+        """Fix should replace broken link target with the suggestion."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/setpu.md) for setup.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
+        assert "docs/setpu.md" not in fixes[0].fixed_content
+
+    def test_supports_autofix_property(self):
+        rule = ContentBrokenInternalReferenceRule()
+        assert rule.supports_autofix
+
+    def test_no_suggestion_when_no_similar_file(self, temp_dir):
+        """No suggestion when no similar file exists."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "See [guide](totally/unique/nonexistent.xyz) for info.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" not in violations[0].message
