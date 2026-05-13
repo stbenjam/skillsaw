@@ -122,6 +122,14 @@ RULE_GROUPS = [
         "when `.coderabbit.yaml` is detected.",
     ),
     (
+        "Promptfoo Evals",
+        ["promptfoo-valid", "promptfoo-assertions", "promptfoo-metadata"],
+        "Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs "
+        "found in `evals/` directories of plugins and skills. "
+        "`promptfoo-valid` auto-enables when eval files are detected; "
+        "`promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.",
+    ),
+    (
         "APM (Agent Package Manager)",
         ["apm-yaml-valid", "apm-structure-valid"],
         "Validates repositories using the [APM](https://github.com/microsoft/apm) "

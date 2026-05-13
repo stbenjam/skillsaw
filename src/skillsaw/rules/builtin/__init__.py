@@ -88,6 +88,12 @@ from .coderabbit import (
     CoderabbitYamlValidRule,
 )
 
+from .promptfoo import (
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
+)
+
 from .apm import (
     ApmYamlValidRule,
     ApmStructureValidRule,
@@ -153,6 +159,10 @@ BUILTIN_RULES = [
     ContentPlaceholderTextRule,
     # CodeRabbit
     CoderabbitYamlValidRule,
+    # Promptfoo eval validation
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
     # APM (Agent Package Manager)
     ApmYamlValidRule,
     ApmStructureValidRule,
@@ -206,6 +216,9 @@ __all__ = [
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",
     "CoderabbitYamlValidRule",
+    "PromptfooValidRule",
+    "PromptfooAssertionsRule",
+    "PromptfooMetadataRule",
     "ApmYamlValidRule",
     "ApmStructureValidRule",
 ]
