@@ -666,3 +666,66 @@ class TestOptInRules:
         ids = rule_ids(r)
         for rule in OPT_IN_RULES:
             assert rule not in ids, f"Opt-in rule '{rule}' fired without being enabled"
+
+
+# ── Required Fields / Required Metadata ────────────────────────
+
+
+@pytest.mark.integration
+class TestRequiredFieldsConfig:
+    """Verify that required-fields and required-metadata config options work end-to-end."""
+
+    def test_complete_skill_passes(self, tmp_path):
+        repo = copy_fixture("config/required-fields", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = [
+            v
+            for v in violations(r)
+            if "complete-skill" in v["file_path"] and v["rule_id"] == "agentskill-valid"
+        ]
+        assert len(vs) == 0, f"Complete skill should have no agentskill-valid violations: {vs}"
+
+    def test_missing_required_fields_reported(self, tmp_path):
+        repo = copy_fixture("config/required-fields", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = [
+            v
+            for v in violations(r)
+            if "missing-fields-skill" in v["file_path"] and v["rule_id"] == "agentskill-valid"
+        ]
+        messages = [v["message"] for v in vs]
+        assert any("Missing required field 'license'" in m for m in messages)
+        assert any("metadata" in m.lower() for m in messages)
+        license_v = next(v for v in vs if "Missing required field 'license'" in v["message"])
+        assert license_v.get("line") is None
+
+    def test_missing_metadata_key_reported(self, tmp_path):
+        repo = copy_fixture("config/required-fields", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = [
+            v
+            for v in violations(r)
+            if "missing-metadata-key" in v["file_path"] and v["rule_id"] == "agentskill-valid"
+        ]
+        messages = [v["message"] for v in vs]
+        assert any("Missing required metadata key 'org'" in m for m in messages)
+        assert not any("Missing required metadata key 'author'" in m for m in messages)
+        org_v = next(v for v in vs if "Missing required metadata key 'org'" in v["message"])
+        assert org_v.get("line") is not None
+
+    def test_no_extra_violations_without_config(self, tmp_path):
+        """Without required-fields config, no extra violations are raised."""
+        repo = copy_fixture("config/required-fields", tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = [
+            v
+            for v in violations(r)
+            if "Missing required field" in v["message"]
+            or "Missing required metadata key" in v["message"]
+        ]
+        assert len(vs) == 0, f"Should have no required-field violations without config: {vs}"

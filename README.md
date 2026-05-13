@@ -471,6 +471,13 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
 
+**`agentskill-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-fields` | Additional frontmatter fields to require (name and description are always required) | `[]` |
+| `required-metadata` | Keys that must be present inside the metadata mapping | `[]` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |

@@ -1,0 +1,10 @@
+version: "99.0.0"
+rules:
+  agentskill-valid:
+    enabled: true
+    required-fields:
+      - license
+      - metadata
+    required-metadata:
+      - author
+      - org

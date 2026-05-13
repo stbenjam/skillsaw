@@ -828,3 +828,229 @@ def test_allowed_tools_invalid_type_fails(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillValidRule().check(context)
     assert any("allowed-tools" in v.message for v in violations)
+
+
+# --- required-fields config ---
+
+
+def test_required_fields_missing_triggers_error(temp_dir):
+    skill = temp_dir / "no-license"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: no-license\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": ["license"]})
+    violations = rule.check(context)
+    assert any("Missing required field 'license'" in v.message for v in violations)
+
+
+def test_required_fields_present_passes(temp_dir):
+    skill = temp_dir / "has-license"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: has-license\ndescription: A skill\nlicense: MIT\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": ["license"]})
+    violations = rule.check(context)
+    assert not any("Missing required field" in v.message for v in violations)
+
+
+def test_required_fields_builtin_not_duplicated(temp_dir):
+    """Listing 'name' in required-fields should not produce duplicate violations."""
+    skill = temp_dir / "builtin-dup"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: builtin-dup\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": ["name", "description"]})
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_required_fields_multiple_missing(temp_dir):
+    skill = temp_dir / "bare"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: bare\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": ["license", "compatibility"]})
+    violations = rule.check(context)
+    missing = [v for v in violations if "Missing required field" in v.message]
+    assert len(missing) == 2
+    messages = {v.message for v in missing}
+    assert "Missing required field 'license'" in messages
+    assert "Missing required field 'compatibility'" in messages
+
+
+def test_required_fields_empty_config_no_extra_checks(temp_dir):
+    skill = temp_dir / "default"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: default\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": []})
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+# --- required-metadata config ---
+
+
+def test_required_metadata_missing_metadata_triggers_error(temp_dir):
+    skill = temp_dir / "no-meta"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: no-meta\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author"]})
+    violations = rule.check(context)
+    assert any("Missing required 'metadata'" in v.message for v in violations)
+
+
+def test_required_metadata_missing_key_triggers_error(temp_dir):
+    skill = temp_dir / "meta-no-author"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: meta-no-author\ndescription: A skill\nmetadata:\n  version: '1.0'\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author"]})
+    violations = rule.check(context)
+    assert any("Missing required metadata key 'author'" in v.message for v in violations)
+    v = [v for v in violations if "metadata key" in v.message][0]
+    assert v.line is not None
+
+
+def test_required_metadata_present_passes(temp_dir):
+    skill = temp_dir / "meta-ok"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: meta-ok\ndescription: A skill\nmetadata:\n  author: test\n  org: acme\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author", "org"]})
+    violations = rule.check(context)
+    assert not any(
+        "metadata" in v.message.lower() and "missing" in v.message.lower() for v in violations
+    )
+
+
+def test_required_metadata_multiple_missing(temp_dir):
+    skill = temp_dir / "meta-sparse"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: meta-sparse\ndescription: A skill\nmetadata:\n  version: '1.0'\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author", "org"]})
+    violations = rule.check(context)
+    meta_violations = [v for v in violations if "metadata key" in v.message]
+    assert len(meta_violations) == 2
+
+
+def test_required_metadata_empty_config_no_extra_checks(temp_dir):
+    skill = temp_dir / "meta-default"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: meta-default\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": []})
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_required_fields_and_metadata_combined(temp_dir):
+    """Both options work together."""
+    skill = temp_dir / "combined"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: combined\ndescription: A skill\nlicense: MIT\n"
+        "metadata:\n  author: test\n  org: acme\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(
+        config={
+            "required-fields": ["license", "metadata"],
+            "required-metadata": ["author", "org"],
+        }
+    )
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_required_metadata_skipped_when_metadata_not_dict(temp_dir):
+    """required-metadata check is skipped when metadata is not a mapping (already caught by type check)."""
+    skill = temp_dir / "meta-bad-type"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: meta-bad-type\ndescription: A skill\nmetadata: not-a-map\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author"]})
+    violations = rule.check(context)
+    assert any("mapping" in v.message for v in violations)
+    assert not any("metadata key" in v.message for v in violations)
+
+
+def test_required_fields_null_value_triggers_error(temp_dir):
+    skill = temp_dir / "null-license"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: null-license\ndescription: A skill\nlicense:\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-fields": ["license"]})
+    violations = rule.check(context)
+    assert any("Missing required field 'license'" in v.message for v in violations)
+    v = next(v for v in violations if "Missing required field 'license'" in v.message)
+    assert v.line is not None
+
+
+def test_required_metadata_null_value_triggers_error(temp_dir):
+    skill = temp_dir / "null-author"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: null-author\ndescription: A skill\nmetadata:\n  author:\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author"]})
+    violations = rule.check(context)
+    assert any("Missing required metadata key 'author'" in v.message for v in violations)
+
+
+def test_required_metadata_empty_string_triggers_error(temp_dir):
+    skill = temp_dir / "empty-author"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: empty-author\ndescription: A skill\nmetadata:\n  author: '  '\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(config={"required-metadata": ["author"]})
+    violations = rule.check(context)
+    assert any("Missing required metadata key 'author'" in v.message for v in violations)
+
+
+def test_required_metadata_no_duplicate_when_metadata_in_required_fields(temp_dir):
+    """When metadata is in required-fields and also missing, don't emit a second violation from required-metadata."""
+    skill = temp_dir / "no-dup"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: no-dup\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule(
+        config={"required-fields": ["metadata"], "required-metadata": ["author"]}
+    )
+    violations = rule.check(context)
+    meta_violations = [v for v in violations if "metadata" in v.message.lower()]
+    assert len(meta_violations) == 1
+    assert "Missing required field 'metadata'" in meta_violations[0].message
