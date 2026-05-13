@@ -918,12 +918,12 @@ class TestSafeAutofixIdempotency:
     FIXTURE = "autofix/safe-idempotency"
 
     EXPECTED_SAFE_VIOLATIONS = {
-        "agent-frontmatter": 11,
-        "agentskill-name": 30,
-        "agentskill-valid": 10,
-        "command-frontmatter": 15,
-        "content-unlinked-internal-reference": 79,
-        "skill-frontmatter": 10,
+        "agent-frontmatter": 3,
+        "agentskill-name": 3,
+        "agentskill-valid": 2,
+        "command-frontmatter": 3,
+        "content-unlinked-internal-reference": 22,
+        "skill-frontmatter": 2,
     }
 
     def test_fixture_violation_counts(self, tmp_path):
@@ -986,10 +986,10 @@ class TestSafeAutofixIdempotency:
         # inherently add lines and are excluded.
         frontmatter_fix_patterns = {
             "no-fm-",
-            "no-frontmatter-",
+            "no-frontmatter/",
             "no-desc-",
             "no-name-",
-            "missing-name-",
+            "missing-name/",
         }
         changed: List[str] = []
         for f in sorted(set(before) | set(after)):

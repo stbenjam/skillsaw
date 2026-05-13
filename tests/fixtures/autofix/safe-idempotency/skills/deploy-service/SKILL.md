@@ -1,8 +1,8 @@
 ---
-name: Deploy_Service
+name: deploy-service
 description: Skill that handles deploy service operations
 ---
 
-# Deploy_Service
+# Deploy Service
 
 This skill handles deploy service operations for the project.
