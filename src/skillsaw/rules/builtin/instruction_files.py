@@ -12,6 +12,7 @@ from skillsaw.rules.builtin.content_analysis import (
     ClaudeMdBlock,
     GeminiMdBlock,
     InstructionBlock,
+    _strip_fenced_code_blocks,
 )
 from skillsaw.rules.builtin.utils import read_text
 
@@ -88,6 +89,8 @@ class InstructionImportsValidRule(Rule):
             content = read_text(file_path)
             if content is None:
                 continue
+
+            content = _strip_fenced_code_blocks(content)
 
             for line_num, line in enumerate(content.splitlines(), 1):
                 match = _IMPORT_RE.match(line)

@@ -169,6 +169,49 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
 
+    def test_at_in_fenced_code_block_not_matched(self, temp_dir):
+        content = (
+            "# Instructions\n"
+            "\n"
+            "```python\n"
+            "from ship_help_bot.shared.tool_info import Toolset as ToolsetBase, tool\n"
+            "\n"
+            "class Toolset(ToolsetBase):\n"
+            '    @tool(name="My Tool", description="Does something useful")\n'
+            "    async def my_tool(self, args: str) -> dict:\n"
+            "        ...\n"
+            "```\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_at_import_in_fenced_code_block_not_matched(self, temp_dir):
+        content = (
+            "# Instructions\n"
+            "\n"
+            "Example import syntax:\n"
+            "\n"
+            "```\n"
+            "@docs/setup.md\n"
+            "```\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_at_import_outside_fenced_block_still_checked(self, temp_dir):
+        content = (
+            "# Instructions\n" "\n" "```python\n" "@decorator\n" "```\n" "\n" "@nonexistent.md\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].line == 7
+
     def test_import_to_existing_directory(self, temp_dir):
         docs_dir = temp_dir / "docs"
         docs_dir.mkdir()
