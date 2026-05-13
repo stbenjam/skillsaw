@@ -278,25 +278,58 @@ class Linter:
 
         return all_violations, all_fixes
 
+    @staticmethod
+    def _first_per_file(
+        fixes: List[AutofixResult],
+    ) -> tuple[List[AutofixResult], bool]:
+        """Snapshot-isolation filter: first-committer-wins per file.
+
+        Returns the independent subset (at most one fix per file) and
+        whether any fixes were deferred due to file-level conflicts.
+        Deferred fixes are not applied — the next pass will re-derive
+        them against the committed file state.
+        """
+        seen: set[Path] = set()
+        independent: List[AutofixResult] = []
+        has_conflicts = False
+        for fix in fixes:
+            resolved = fix.file_path.resolve()
+            if resolved in seen:
+                has_conflicts = True
+            else:
+                seen.add(resolved)
+                independent.append(fix)
+        return independent, has_conflicts
+
     def fix_and_apply(
         self,
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
-        """Apply fixes iteratively, re-linting dirty files between passes.
+        """Fixed-point iteration over autofix passes with snapshot isolation.
 
-        When a fix changes a file's line count, subsequent fixes targeting
-        that file may hold stale line numbers.  This method detects such
-        "dirty" files, rebuilds the lint tree, and re-runs check+fix so
-        that the next round of fixes sees correct line numbers.
+        Each fix is a pre-computed transformation against a file snapshot.
+        When two fixes target the same file, the second holds a stale
+        snapshot — a classic write-write conflict.
+
+        This method resolves conflicts via first-committer-wins: each pass
+        applies at most one fix per file (the independent set of the
+        conflict graph).  Conflicting fixes are never applied with stale
+        data — they are discarded and re-derived on the next pass against
+        the committed file state.
+
+        Converges when a pass produces no file-level conflicts, or when
+        no new fixes are found (the fixed point).
 
         Args:
             confidence: Minimum confidence level to apply.
-            max_passes: Safety cap on re-lint iterations.
+            max_passes: Safety cap on iterations.
 
         Returns:
             Tuple of (applied fixes, suggested-but-not-applied fixes).
         """
+        from .rules.builtin.utils import invalidate_read_caches
+
         all_applied: List[AutofixResult] = []
         all_suggested: List[AutofixResult] = []
 
@@ -305,22 +338,15 @@ class Linter:
             if not fixes:
                 break
 
-            applied = self.apply_fixes(fixes, confidence)
-            suggested = [f for f in fixes if f not in applied]
+            independent, has_conflicts = self._first_per_file(fixes)
+
+            applied = self.apply_fixes(independent, confidence)
+            suggested = [f for f in independent if f not in applied]
             all_applied.extend(applied)
             all_suggested.extend(suggested)
 
-            if not applied:
+            if not applied or not has_conflicts:
                 break
-
-            dirty = any(
-                len(f.original_content.splitlines()) != len(f.fixed_content.splitlines())
-                for f in applied
-            )
-            if not dirty:
-                break
-
-            from .rules.builtin.utils import invalidate_read_caches
 
             invalidate_read_caches()
             self.context.rebuild_lint_tree()
