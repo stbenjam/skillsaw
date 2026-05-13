@@ -300,8 +300,8 @@ class RepositoryContext:
             from .rules.builtin.promptfoo import _is_promptfoo_config
             from .rules.builtin.utils import read_yaml
 
-            for pattern in ("**/*.yaml", "**/*.yml"):
-                for yaml_file in evals_dir.rglob(pattern.lstrip("**/")):
+            for pattern in ("*.yaml", "*.yml"):
+                for yaml_file in evals_dir.rglob(pattern):
                     data, error = read_yaml(yaml_file)
                     if not error and _is_promptfoo_config(data):
                         return True
