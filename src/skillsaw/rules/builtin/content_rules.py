@@ -320,7 +320,7 @@ class ContentNegativeOnlyRule(Rule):
         re.IGNORECASE,
     )
     _SCOPE_BOUNDARY_RE = re.compile(
-        r"don'?t\s+use\b.*\bwhen\s*[:*]",
+        r"(?:don[''’]?t|do\s+not)\s+use\b.*\bwhen\s*[:*]",
         re.IGNORECASE,
     )
 

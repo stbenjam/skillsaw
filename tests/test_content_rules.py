@@ -338,7 +338,7 @@ class TestContentNegativeOnlyRule:
     def test_scope_boundary_do_not_use_when_skipped(self, temp_dir):
         """'Do not use X when:' without apostrophe should also be skipped."""
         (temp_dir / "CLAUDE.md").write_text(
-            "Dont use this tool when:\n" "- There's no internet connection\n"
+            "Do not use this tool when:\n" "- There's no internet connection\n"
         )
         context = RepositoryContext(temp_dir)
         violations = ContentNegativeOnlyRule().check(context)
