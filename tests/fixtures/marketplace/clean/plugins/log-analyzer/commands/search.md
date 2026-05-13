@@ -7,7 +7,7 @@ argument-hint: "<service> [--since 1h] [--level error]"
 log-analyzer:search
 
 ## Synopsis
-```
+```text
 /log-analyzer:search api-gateway --since 1h --level error
 ```
 

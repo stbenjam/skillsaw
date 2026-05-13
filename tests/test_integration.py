@@ -48,10 +48,7 @@ def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
     result = subprocess.run(args, capture_output=True, text=True, timeout=60)
     output = None
     if fmt == "json" and result.stdout.strip():
-        try:
-            output = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            pass
+        output = json.loads(result.stdout)
     return {
         "rc": result.returncode,
         "out": output,
@@ -374,12 +371,15 @@ class TestSuppression:
         """Content between disable/enable directives should be suppressed."""
         repo = copy_fixture("suppression/single-rule", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert r["out"] is not None
         assert "content-weak-language" not in rule_ids(r)
 
     def test_blanket_suppression(self, tmp_path):
         """Disable without rule IDs suppresses all rules in that range."""
         repo = copy_fixture("suppression/all-rules", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
         content_violations = [
             v
             for v in violations(r)
@@ -391,6 +391,7 @@ class TestSuppression:
         """disable-next-line suppresses only the immediately following line."""
         repo = copy_fixture("suppression/next-line", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
         weak = by_rule(r).get("content-weak-language", [])
         assert len(weak) >= 1
         assert all(v["line"] != 18 for v in weak)
@@ -399,6 +400,8 @@ class TestSuppression:
         """Comma-separated rule IDs suppress all listed rules."""
         repo = copy_fixture("suppression/multi-rule", tmp_path)
         r = run_lint(repo)
+        assert r["rc"] == 0
+        assert r["out"] is not None
         ids = rule_ids(r)
         assert "content-weak-language" not in ids
         assert "content-tautological" not in ids
@@ -413,6 +416,7 @@ class TestConfigFeatures:
     def test_global_exclude_suppresses_file(self, tmp_path):
         repo = copy_fixture("config/exclude-test", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
         violated_files = {v["file_path"] for v in violations(r)}
         assert not any("generated.md" in f for f in violated_files)
 
@@ -420,6 +424,7 @@ class TestConfigFeatures:
         """Per-rule exclude suppresses one file but not another."""
         repo = copy_fixture("config/per-rule-exclude", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
         frontmatter = by_rule(r).get("command-frontmatter", [])
         files = {v["file_path"] for v in frontmatter}
         assert any("real-cmd.md" in f for f in files)
@@ -428,6 +433,7 @@ class TestConfigFeatures:
     def test_disable_rule_via_config(self, tmp_path):
         repo = copy_fixture("config/disable-rules", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
         assert "command-frontmatter" not in rule_ids(r)
         rules_run = r["out"]["stats"]["rules_run"]
         assert "command-frontmatter" not in rules_run

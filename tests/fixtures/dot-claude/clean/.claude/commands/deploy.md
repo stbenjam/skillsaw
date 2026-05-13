@@ -7,7 +7,7 @@ argument-hint: "<environment>"
 deploy
 
 ## Synopsis
-```
+```text
 /deploy staging
 /deploy production
 ```

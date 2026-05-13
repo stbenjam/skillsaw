@@ -6,7 +6,7 @@ description: Command with negative-only instructions
 content-test:negative
 
 ## Synopsis
-```
+```text
 /content-test:negative
 ```
 

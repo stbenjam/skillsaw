@@ -6,7 +6,7 @@ description: Show deployment status for all environments
 deployment-tools:status
 
 ## Synopsis
-```
+```text
 /deployment-tools:status
 ```
 

@@ -6,7 +6,7 @@ description: Example command with multi-rule suppression
 suppression-multi:example
 
 ## Synopsis
-```
+```text
 /suppression-multi:example
 ```
 

@@ -6,7 +6,7 @@ description: A valid command
 content-paths-test:test
 
 ## Synopsis
-```
+```text
 /content-paths-test:test
 ```
 

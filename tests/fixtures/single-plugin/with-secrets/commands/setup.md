@@ -6,7 +6,7 @@ description: Set up the development environment
 secrets-test:setup
 
 ## Synopsis
-```
+```text
 /secrets-test:setup
 ```
 

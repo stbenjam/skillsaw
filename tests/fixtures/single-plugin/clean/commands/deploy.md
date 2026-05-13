@@ -7,7 +7,7 @@ argument-hint: "[environment] [--dry-run]"
 deployment-tools:deploy
 
 ## Synopsis
-```
+```text
 /deployment-tools:deploy staging --dry-run
 ```
 

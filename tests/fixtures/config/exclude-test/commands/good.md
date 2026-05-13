@@ -6,7 +6,7 @@ description: A well-formed command
 exclude-test:good
 
 ## Synopsis
-```
+```text
 /exclude-test:good
 ```
 

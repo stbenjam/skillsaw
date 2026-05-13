@@ -42,7 +42,7 @@ For each changed file, check for:
 ### Step 3: Produce Review
 
 Format findings as a structured review:
-```
+```text
 ## file.py:42 — Error: Unchecked return value
 The return value of `db.execute()` is ignored. If the query fails,
 the function continues with stale data.

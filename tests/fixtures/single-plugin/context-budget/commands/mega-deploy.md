@@ -6,7 +6,7 @@ description: An oversized deployment command
 context-budget:mega-deploy
 
 ## Synopsis
-```
+```text
 /context-budget:mega-deploy
 ```
 

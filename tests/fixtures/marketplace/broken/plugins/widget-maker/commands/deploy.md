@@ -6,7 +6,7 @@ description: Deploy a built widget to the CDN
 widget-maker:deploy
 
 ## Synopsis
-```
+```text
 /widget-maker:deploy
 ```
 

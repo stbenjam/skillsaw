@@ -6,7 +6,7 @@ description: Run the project test suite with optional coverage
 test
 
 ## Synopsis
-```
+```text
 /test [--coverage] [path]
 ```
 

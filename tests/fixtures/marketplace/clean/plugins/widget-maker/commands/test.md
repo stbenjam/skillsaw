@@ -7,7 +7,7 @@ argument-hint: "[widget-name] [--coverage]"
 widget-maker:test
 
 ## Synopsis
-```
+```text
 /widget-maker:test my-widget --coverage
 ```
 

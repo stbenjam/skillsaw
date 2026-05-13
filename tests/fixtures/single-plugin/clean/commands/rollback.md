@@ -7,7 +7,7 @@ argument-hint: "[environment]"
 deployment-tools:rollback
 
 ## Synopsis
-```
+```text
 /deployment-tools:rollback production
 ```
 

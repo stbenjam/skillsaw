@@ -6,7 +6,7 @@ description: Greet the user
 no-json:greet
 
 ## Synopsis
-```
+```text
 /no-json:greet
 ```
 

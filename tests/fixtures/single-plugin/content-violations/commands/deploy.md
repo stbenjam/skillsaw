@@ -6,7 +6,7 @@ description: Deploy the application to a target environment
 content-test:deploy
 
 ## Synopsis
-```
+```text
 /content-test:deploy
 ```
 

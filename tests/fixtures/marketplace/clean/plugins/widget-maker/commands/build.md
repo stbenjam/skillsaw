@@ -7,7 +7,7 @@ argument-hint: "[widget-name] [--watch]"
 widget-maker:build
 
 ## Synopsis
-```
+```text
 /widget-maker:build my-widget --watch
 ```
 

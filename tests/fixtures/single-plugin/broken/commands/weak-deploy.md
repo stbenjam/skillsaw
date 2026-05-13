@@ -6,7 +6,7 @@ description: Deploy with weak instructions
 Bad_Plugin:weak-deploy
 
 ## Synopsis
-```
+```text
 /Bad_Plugin:weak-deploy
 ```
 

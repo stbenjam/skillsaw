@@ -6,7 +6,7 @@ description: A command missing the Implementation section
 wrong-plugin-name:incomplete
 
 ## Synopsis
-```
+```text
 /opt-in-test:incomplete
 ```
 

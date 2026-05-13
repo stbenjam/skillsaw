@@ -6,7 +6,7 @@ description: Example command with blanket suppression
 suppression-all:example
 
 ## Synopsis
-```
+```text
 /suppression-all:example
 ```
 

@@ -6,7 +6,7 @@ description: Run the project linter and report findings
 lint
 
 ## Synopsis
-```
+```text
 /lint [--fix]
 ```
 

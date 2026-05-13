@@ -6,7 +6,7 @@ description: Example command with suppressed weak language
 suppression-single:example
 
 ## Synopsis
-```
+```text
 /suppression-single:example
 ```
 

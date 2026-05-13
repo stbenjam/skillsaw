@@ -6,7 +6,7 @@ description: Example command with next-line suppression
 suppression-next-line:example
 
 ## Synopsis
-```
+```text
 /suppression-next-line:example
 ```
 

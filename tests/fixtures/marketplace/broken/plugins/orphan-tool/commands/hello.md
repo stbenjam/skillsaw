@@ -6,7 +6,7 @@ description: Say hello
 orphan-tool:hello
 
 ## Synopsis
-```
+```text
 /orphan-tool:hello
 ```
 

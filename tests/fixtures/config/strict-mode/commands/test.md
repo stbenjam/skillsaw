@@ -6,7 +6,7 @@ description: A valid command
 strict-mode-test:test
 
 ## Synopsis
-```
+```text
 /strict-mode-test:test
 ```
 

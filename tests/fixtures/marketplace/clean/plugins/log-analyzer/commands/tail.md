@@ -7,7 +7,7 @@ argument-hint: "<service> [--level info]"
 log-analyzer:tail
 
 ## Synopsis
-```
+```text
 /log-analyzer:tail api-gateway --level info
 ```
 

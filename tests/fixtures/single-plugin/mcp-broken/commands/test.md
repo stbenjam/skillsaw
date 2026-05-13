@@ -6,7 +6,7 @@ description: Test command
 mcp-broken:test
 
 ## Synopsis
-```
+```text
 /mcp-broken:test
 ```
 

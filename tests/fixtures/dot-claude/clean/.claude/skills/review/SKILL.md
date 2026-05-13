@@ -20,7 +20,7 @@ is ready to merge.
 Execute the full test suite:
 ```bash
 pytest tests/ -v --tb=short
-```
+```text
 All tests must pass. If any fail, report the failures and stop.
 
 ### Step 2: Check Lint

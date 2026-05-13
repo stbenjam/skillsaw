@@ -6,7 +6,7 @@ description: Build a widget
 widget-maker:build
 
 ## Synopsis
-```
+```text
 /widget-maker:build
 ```
 

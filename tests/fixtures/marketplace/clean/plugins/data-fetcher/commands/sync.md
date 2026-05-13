@@ -7,7 +7,7 @@ argument-hint: "<source> <destination> [--dry-run]"
 data-fetcher:sync
 
 ## Synopsis
-```
+```text
 /data-fetcher:sync users-api local-db --dry-run
 ```
 

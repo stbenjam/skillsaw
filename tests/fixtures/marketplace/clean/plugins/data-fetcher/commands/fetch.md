@@ -7,7 +7,7 @@ argument-hint: "<endpoint-name> [--format json|csv]"
 data-fetcher:fetch
 
 ## Synopsis
-```
+```text
 /data-fetcher:fetch users --format json
 ```
 
