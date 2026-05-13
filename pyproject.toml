@@ -79,6 +79,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
+markers = [
+    "integration: end-to-end CLI integration tests",
+]
 
 [tool.black]
 line-length = 100

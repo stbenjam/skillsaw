@@ -1,0 +1,6 @@
+{
+  "name": "widget-maker",
+  "description": "Build and manage widgets for the ACME platform",
+  "version": "2.1.0",
+  "author": {"name": "Widget Team"}
+}

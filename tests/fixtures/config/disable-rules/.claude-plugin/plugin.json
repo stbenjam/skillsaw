@@ -1,0 +1,6 @@
+{
+  "name": "disable-rules-test",
+  "description": "Test disabling rules via config",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

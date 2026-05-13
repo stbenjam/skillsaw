@@ -1,0 +1,7 @@
+{
+  "name": "broken-marketplace",
+  "owner": {},
+  "plugins": [
+    {"name": "widget-maker", "source": "./plugins/widget-maker"}
+  ]
+}

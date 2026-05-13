@@ -1,0 +1,5 @@
+version: "99.0.0"
+rules:
+  command-frontmatter:
+    exclude:
+      - "commands/vendor-cmd.md"
