@@ -6,7 +6,7 @@ import tempfile
 import shutil
 
 from skillsaw.context import RepositoryContext
-from skillsaw.rule import Severity
+from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin.content_rules import (
     ContentWeakLanguageRule,
     ContentTautologicalRule,
@@ -22,6 +22,9 @@ from skillsaw.rules.builtin.content_rules import (
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentBrokenInternalReferenceRule,
+    ContentUnlinkedInternalReferenceRule,
+    ContentPlaceholderTextRule,
 )
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
@@ -709,3 +712,370 @@ class TestContentInconsistentTerminologyRule:
         context = RepositoryContext(temp_dir)
         violations = ContentInconsistentTerminologyRule().check(context)
         assert len(violations) == 0
+
+
+class TestContentBrokenInternalReferenceRule:
+    def test_rule_metadata(self):
+        rule = ContentBrokenInternalReferenceRule()
+        assert rule.rule_id == "content-broken-internal-reference"
+        assert rule.default_severity() == Severity.WARNING
+
+    def test_existing_file_no_violation(self, temp_dir):
+        (temp_dir / "guide.md").write_text("# Guide\nContent here.\n")
+        (temp_dir / "CLAUDE.md").write_text("See [the guide](guide.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_missing_file_violation(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("See [the guide](missing-guide.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "missing-guide.md" in violations[0].message
+        assert violations[0].line == 1
+
+    def test_url_links_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "See [docs](https://example.com/docs) and [other](http://example.com).\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_anchor_links_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("See [section](#overview) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_template_dir_skipped(self, temp_dir):
+        tmpl_dir = temp_dir / "templates"
+        tmpl_dir.mkdir()
+        (tmpl_dir / "CLAUDE.md").write_text("See [placeholder](nonexistent.md) for details.\n")
+        # Need a SKILL.md to make it an agentskills repo so the rule applies
+        (temp_dir / "SKILL.md").write_text("---\nname: test\n---\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_reports_line_number(self, temp_dir):
+        content = "Line 1\nLine 2\nSee [broken](no-such-file.md).\nLine 4\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+
+    def test_link_with_anchor_existing_file(self, temp_dir):
+        (temp_dir / "guide.md").write_text("# Guide\n## Section\n")
+        (temp_dir / "CLAUDE.md").write_text("See [section](guide.md#section).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_multiple_broken_links(self, temp_dir):
+        content = "See [a](missing-a.md) and [b](missing-b.md).\n" "Also [c](missing-c.md).\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 3
+
+    def test_path_traversal_outside_repo(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("See [escape](../../etc/passwd) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "outside repository" in violations[0].message
+
+    def test_link_with_title_text(self, temp_dir):
+        """Links with optional title text should resolve correctly."""
+        (temp_dir / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            'See [the guide](guide.md "Intro guide") for details.\n'
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_files_no_violations(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+
+class TestContentUnlinkedInternalReferenceRule:
+    def test_rule_metadata(self):
+        rule = ContentUnlinkedInternalReferenceRule()
+        assert rule.rule_id == "content-unlinked-internal-reference"
+        assert rule.default_severity() == Severity.INFO
+
+    def test_bare_path_violation(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Check the file at src/config/settings.yaml for defaults.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "src/config/settings.yaml" in violations[0].message
+
+    def test_path_in_link_syntax_no_violation(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Check the [settings](src/config/settings.yaml) for defaults.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_dot_slash_path(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Run ./scripts/build.sh to build.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "./scripts/build.sh" in violations[0].message
+
+    def test_code_blocks_skipped(self, temp_dir):
+        content = "# Rules\n```\nsrc/config/settings.yaml\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_url_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Visit https://example.com/path/to/file.html for more.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0, f"URL path fragment should not be flagged, got: {violations}"
+
+    def test_custom_patterns_config(self, temp_dir):
+        """Test that custom patterns config filters which paths are flagged."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "See docs/guide.md for info.\nAlso check src/config/settings.yaml.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        # With default patterns, both should be flagged
+        rule_default = ContentUnlinkedInternalReferenceRule()
+        violations = rule_default.check(context)
+        assert len(violations) == 2
+
+        # With restricted patterns, only .yaml paths should match
+        rule_custom = ContentUnlinkedInternalReferenceRule()
+        rule_custom.config = {"patterns": ["*.yaml"]}
+        violations = rule_custom.check(context)
+        assert len(violations) == 1
+        assert "settings.yaml" in violations[0].message
+
+    def test_empty_patterns_config_no_violations(self, temp_dir):
+        """Test that empty patterns list results in no violations."""
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        rule.config = {"patterns": []}
+        violations = rule.check(context)
+        assert len(violations) == 0
+
+    def test_reports_line_number(self, temp_dir):
+        content = "Line 1\nLine 2\nSee docs/guide.md for info.\nLine 4\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) >= 1
+        assert violations[0].line == 3
+
+    def test_no_files_no_violations(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+
+class TestContentPlaceholderTextRule:
+    def test_rule_metadata(self):
+        rule = ContentPlaceholderTextRule()
+        assert rule.rule_id == "content-placeholder-text"
+        assert rule.default_severity() == Severity.WARNING
+
+    def test_detects_todo(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("TODO: add error handling.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "TODO" in violations[0].message
+
+    def test_detects_fixme(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("FIXME: broken logic here.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "FIXME" in violations[0].message
+
+    def test_detects_xxx(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("XXX: needs review.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "XXX" in violations[0].message
+
+    def test_detects_link_here(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("See [link here] for more info.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Placeholder link" in violations[0].message
+
+    def test_detects_insert_placeholder(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Add your [Insert API key] to the config.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Insert placeholder" in violations[0].message
+
+    def test_detects_if_placeholder(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "[If using Docker, add Docker setup instructions here]\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Conditional placeholder" in violations[0].message
+
+    def test_detects_will_be_added(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("More details *to be added*.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Unfilled template" in violations[0].message
+
+    def test_detects_tbd(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Configuration *TBD*.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert "Unfilled template" in violations[0].message
+
+    def test_will_be_added_in_changelog_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Feature X *will be added in v2.0*.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        # The tightened regex should not flag general "will be added" text
+        assert len(violations) == 0
+
+    def test_will_be_added_as_you_use_not_flagged(self, temp_dir):
+        """'will be added as you use' is normal prose, not placeholder text."""
+        (temp_dir / "CLAUDE.md").write_text("Memories *will be added as you use* the tool.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 0
+
+    def test_clean_content_no_violations(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\nUse 4-space indentation.\nReturn 404 for missing resources.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 0
+
+    def test_reports_line_number(self, temp_dir):
+        content = "Line 1\nLine 2\nTODO: fix this\nLine 4\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+
+    def test_code_blocks_skipped(self, temp_dir):
+        content = "# Rules\n```\nTODO: fix this\nFIXME: broken\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_files_no_violations(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        violations = ContentPlaceholderTextRule().check(context)
+        assert len(violations) == 0
+
+
+class TestContentUnlinkedInternalReferenceAutofix:
+    def test_autofix_wraps_existing_path(self, temp_dir):
+        """Bare paths to existing files should be autofixed with SAFE confidence."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "autofixable" in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SAFE
+        assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_content
+
+    def test_no_autofix_for_nonexistent_path(self, temp_dir):
+        """Bare paths to nonexistent files should not be autofixed."""
+        (temp_dir / "CLAUDE.md").write_text("See docs/guide.md for info.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "autofixable" not in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 0
+
+    def test_supports_autofix_property(self):
+        rule = ContentUnlinkedInternalReferenceRule()
+        assert rule.supports_autofix
+
+
+class TestContentBrokenInternalReferenceAutofix:
+    def test_suggests_similar_filename(self, temp_dir):
+        """Broken link should suggest a similar existing file."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/setpu.md) for setup.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" in violations[0].message
+
+    def test_suggests_moved_file(self, temp_dir):
+        """Broken link should suggest exact name match in different directory."""
+        (temp_dir / "reference").mkdir()
+        (temp_dir / "reference" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/guide.md) for help.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" in violations[0].message
+
+    def test_fix_applies_suggestion(self, temp_dir):
+        """Fix should replace broken link target with the suggestion."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Setup\n")
+        (temp_dir / "CLAUDE.md").write_text("See [guide](docs/setpu.md) for setup.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
+        assert "docs/setpu.md" not in fixes[0].fixed_content
+
+    def test_supports_autofix_property(self):
+        rule = ContentBrokenInternalReferenceRule()
+        assert rule.supports_autofix
+
+    def test_no_suggestion_when_no_similar_file(self, temp_dir):
+        """No suggestion when no similar file exists."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "See [guide](totally/unique/nonexistent.xyz) for info.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" not in violations[0].message
