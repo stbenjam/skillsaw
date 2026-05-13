@@ -367,6 +367,14 @@ exclude:
   - "node_modules/**"
 ```
 
+By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
+`**/_template/**` directories. These defaults are replaced when you specify
+your own `exclude` list.
+
+Exclude patterns apply to **all** rules, including custom rules loaded via
+`custom-rules`. Any violation whose file path matches an exclude pattern is
+filtered out before results are reported.
+
 ### Content Paths
 
 By default, content intelligence rules only analyze recognized instruction
