@@ -329,9 +329,12 @@ class FileRule(Rule):
     violations = linter.run()
 
     file_rule_violations = [v for v in violations if v.rule_id == "file-rule"]
+    assert file_rule_violations, "Expected at least one file-rule violation"
+    assert any(Path(v.file_path).name == "docs.md" for v in file_rule_violations), \
+        "Non-excluded markdown file should still be reported"
     # TEMPLATE.md in templates/ should be excluded
-    for v in file_rule_violations:
-        assert "templates" not in str(v.file_path), f"Excluded file was not filtered: {v.file_path}"
+    assert all("templates" not in Path(v.file_path).parts for v in file_rule_violations), \
+        "Excluded file was not filtered"
 
 
 def test_custom_rule_respects_disabled_config(valid_plugin, temp_dir):

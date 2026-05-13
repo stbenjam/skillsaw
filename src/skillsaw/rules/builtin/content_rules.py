@@ -61,7 +61,7 @@ class ContentWeakLanguageRule(Rule):
         )
 
     # Categories where hedging language is acceptable (supplementary material)
-    _REFERENCE_CATEGORIES = {"skill-ref"}
+    _REFERENCE_CATEGORIES = frozenset({"skill-ref"})
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
