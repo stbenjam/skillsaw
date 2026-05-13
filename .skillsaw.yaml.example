@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.8.2"
+version: "0.8.3"
 
 rules:
 
@@ -83,6 +83,7 @@ rules:
   mcp-prohibited:
     enabled: false
     severity: error
+    # allowlist: []
 
   # .claude/rules/ files must be markdown with valid optional paths frontmatter
   rules-valid:
@@ -108,6 +109,11 @@ rules:
   agentskill-structure:
     enabled: false
     severity: warning
+    # allowed_dirs:
+    #     - assets
+    #     - evals
+    #     - references
+    #     - scripts
 
   # Require evals/evals.json for each skill (opt-in)
   agentskill-evals-required:
@@ -138,6 +144,37 @@ rules:
   context-budget:
     enabled: auto
     severity: warning
+    # limits:
+    #     agents-md:
+    #       warn: 6000
+    #       error: 12000
+    #     claude-md:
+    #       warn: 6000
+    #       error: 12000
+    #     gemini-md:
+    #       warn: 6000
+    #       error: 12000
+    #     instruction:
+    #       warn: 4000
+    #       error: 8000
+    #     skill:
+    #       warn: 3000
+    #       error: 6000
+    #     command:
+    #       warn: 2000
+    #       error: 4000
+    #     agent:
+    #       warn: 2000
+    #       error: 4000
+    #     rule:
+    #       warn: 2000
+    #       error: 4000
+    #     skill-description:
+    #       warn: 200
+    #       error: 500
+    #     command-description:
+    #       warn: 200
+    #       error: 500
 
   # Detect hedging, vague, and non-actionable language in instruction files
   content-weak-language:
@@ -174,6 +211,7 @@ rules:
   content-section-length:
     enabled: auto
     severity: info
+    # max-tokens: 500
 
   # Detect likely contradictions within instruction files using keyword-pair heuristics
   content-contradiction:
@@ -204,6 +242,8 @@ rules:
   content-banned-references:
     enabled: auto
     severity: warning
+    # banned: []
+    # skip-builtins: false
 
   # Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')
   content-inconsistent-terminology:

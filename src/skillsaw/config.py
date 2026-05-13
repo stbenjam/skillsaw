@@ -317,13 +317,16 @@ class LinterConfig:
         return d
 
     def save(self, config_path: Path):
-        """Save configuration to file with rule descriptions as comments"""
+        """Save configuration to file with rule descriptions and config options as comments"""
         from .rules.builtin import BUILTIN_RULES
 
         descriptions = {}
+        schemas = {}
         for rule_class in BUILTIN_RULES:
             rule = rule_class()
             descriptions[rule.rule_id] = rule.description
+            if rule.config_schema:
+                schemas[rule.rule_id] = rule.config_schema
 
         with open(config_path, "w") as f:
             f.write("# skillsaw configuration\n")
@@ -342,6 +345,20 @@ class LinterConfig:
                         f.write(f"    {key}:{yaml_val}\n")
                     else:
                         f.write(f"    {key}: {yaml_val}\n")
+                # Write commented-out config_schema options not already in config
+                schema = schemas.get(rule_id, {})
+                for param_name, param_info in schema.items():
+                    if param_name not in rule_config:
+                        default = param_info.get("default")
+                        yaml_val = self._yaml_value(default)
+                        if yaml_val.startswith("\n"):
+                            # Multi-line value: comment out each line
+                            lines = yaml_val.lstrip("\n").split("\n")
+                            f.write(f"    # {param_name}:\n")
+                            for line in lines:
+                                f.write(f"    # {line}\n")
+                        else:
+                            f.write(f"    # {param_name}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
             f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
