@@ -131,6 +131,74 @@ class TestBuildSuppressionMap:
         assert not smap.is_suppressed("content-weak-language", 3)
         assert not smap.is_suppressed("content-tautological", 3)
 
+    def test_disable_all(self):
+        """Bare <!-- skillsaw-disable --> should suppress all rules."""
+        content = (
+            "Line one\n"
+            "<!-- skillsaw-disable -->\n"
+            "Try to handle errors.\n"
+            "This line is also suppressed.\n"
+            "<!-- skillsaw-enable -->\n"
+            "This line is not suppressed.\n"
+        )
+        smap = build_suppression_map(content)
+        # Lines 3 and 4 should be suppressed for ANY rule
+        assert smap.is_suppressed("content-weak-language", 3)
+        assert smap.is_suppressed("content-tautological", 3)
+        assert smap.is_suppressed("some-other-rule", 3)
+        assert smap.is_suppressed("content-weak-language", 4)
+        assert smap.is_suppressed("some-other-rule", 4)
+        # Line 6 (after enable) should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 6)
+        assert not smap.is_suppressed("some-other-rule", 6)
+        # Line 1 (before disable) should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 1)
+
+    def test_disable_all_unclosed(self):
+        """Bare <!-- skillsaw-disable --> without enable suppresses rest of file."""
+        content = "Line one\n" "<!-- skillsaw-disable -->\n" "Line three.\n" "Line four.\n"
+        smap = build_suppression_map(content)
+        assert not smap.is_suppressed("any-rule", 1)
+        assert smap.is_suppressed("any-rule", 3)
+        assert smap.is_suppressed("any-rule", 4)
+
+    def test_disable_all_with_specific_rules(self):
+        """Bare disable-all combined with specific disable/enable."""
+        content = (
+            "<!-- skillsaw-disable -->\n"
+            "All suppressed.\n"
+            "<!-- skillsaw-enable -->\n"
+            "Not suppressed.\n"
+            "<!-- skillsaw-disable content-weak-language -->\n"
+            "Only weak-language suppressed.\n"
+        )
+        smap = build_suppression_map(content)
+        # Line 2: all suppressed
+        assert smap.is_suppressed("content-weak-language", 2)
+        assert smap.is_suppressed("any-rule", 2)
+        # Line 4: nothing suppressed
+        assert not smap.is_suppressed("content-weak-language", 4)
+        assert not smap.is_suppressed("any-rule", 4)
+        # Line 6: only content-weak-language suppressed
+        assert smap.is_suppressed("content-weak-language", 6)
+        assert not smap.is_suppressed("any-rule", 6)
+
+    def test_line_offset(self):
+        """line_offset should shift all line numbers."""
+        content = (
+            "<!-- skillsaw-disable content-weak-language -->\n"
+            "Try to handle errors.\n"
+            "<!-- skillsaw-enable content-weak-language -->\n"
+        )
+        # With offset=5, the content lines become file lines 6, 7, 8
+        smap = build_suppression_map(content, line_offset=5)
+        # Line 7 (content line 2 + offset 5) should be suppressed
+        assert smap.is_suppressed("content-weak-language", 7)
+        # Line 2 (without offset) should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 2)
+        # Line 9 (after enable) should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 9)
+
     def test_nested_disable_enable(self):
         content = (
             "<!-- skillsaw-disable content-weak-language -->\n"

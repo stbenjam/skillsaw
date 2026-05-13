@@ -20,11 +20,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set
 
-# Matches <!-- skillsaw-disable rule-a, rule-b -->
+# Matches <!-- skillsaw-disable rule-a, rule-b --> or <!-- skillsaw-disable -->
 _DISABLE_RE = re.compile(
-    r"<!--\s*skillsaw-disable\s+([\w,\s-]+?)\s*-->",
+    r"<!--\s*skillsaw-disable\s*([\w,\s-]*?)\s*-->",
     re.IGNORECASE,
 )
 
@@ -77,10 +77,11 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
         SuppressionMap that can check if a rule is suppressed at a given line.
     """
     lines = content.splitlines()
-    total_lines = len(lines)
 
     # Track currently disabled rule IDs
     disabled: Set[str] = set()
+    # Whether "disable all" is currently active (bare <!-- skillsaw-disable -->)
+    disable_all_active: bool = False
 
     # Per-line suppression data
     suppressed_lines: Dict[int, Set[str]] = {}
@@ -90,7 +91,7 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
     next_line_rules: Optional[List[str]] = None
 
     for line_num_0, line in enumerate(lines):
-        file_line = line_num_0 + 1  # 1-based
+        file_line = line_num_0 + 1 + line_offset  # 1-based, adjusted for offset
 
         # Check for disable-next-line first (takes precedence)
         m_next = _DISABLE_NEXT_LINE_RE.search(line)
@@ -109,6 +110,7 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
             else:
                 # Re-enable all
                 disabled.clear()
+                disable_all_active = False
             # Process any next-line suppression from previous line
             if next_line_rules is not None:
                 suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
@@ -119,7 +121,11 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
         m_disable = _DISABLE_RE.search(line)
         if m_disable:
             rule_ids = _parse_rule_ids(m_disable.group(1))
-            disabled.update(rule_ids)
+            if rule_ids:
+                disabled.update(rule_ids)
+            else:
+                # Bare <!-- skillsaw-disable --> suppresses all rules
+                disable_all_active = True
             # Process any next-line suppression from previous line
             if next_line_rules is not None:
                 suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
@@ -130,6 +136,10 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
         if next_line_rules is not None:
             suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
             next_line_rules = None
+
+        # Apply "disable all" to this line
+        if disable_all_active:
+            fully_suppressed_lines.add(file_line)
 
         # Apply current disabled rules to this line
         if disabled:
