@@ -260,8 +260,8 @@ rules:
     enabled: auto
     severity: info
     # patterns:
-    #   - ./**/*.*
-    #   - references/**/*.md
+    #   - "./**/*.*"
+    #   - "references/**/*.md"
 
   # Detect TODO markers, bracket placeholders, and unfilled template text
   content-placeholder-text:
