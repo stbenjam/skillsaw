@@ -854,7 +854,7 @@ class TestSkillRenameRefsEndToEnd:
         context = RepositoryContext(repo)
         config = LinterConfig.default()
         linter = Linter(context, config)
-        violations, fixes = linter.fix()
+        _violations, fixes = linter.fix()
         applied = Linter.apply_fixes(fixes)
 
         name_fixes = [f for f in applied if f.rule_id == "agentskill-name"]
@@ -870,7 +870,7 @@ class TestSkillRenameRefsEndToEnd:
         # Phase 2: fix stale references (SUGGEST confidence)
         context2 = RepositoryContext(repo)
         linter2 = Linter(context2, config)
-        violations2, fixes2 = linter2.fix()
+        _violations2, fixes2 = linter2.fix()
         applied2 = Linter.apply_fixes(fixes2, confidence=AutofixConfidence.SUGGEST)
 
         ref_fixes = [f for f in applied2 if f.rule_id == "agentskill-rename-refs"]
