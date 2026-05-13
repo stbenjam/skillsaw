@@ -260,8 +260,8 @@ rules:
     enabled: auto
     severity: info
     # patterns:
-    #   - ./**/*.*
-    #   - references/**/*.md
+    #   - "./**/*.*"
+    #   - "references/**/*.md"
 
   # Detect TODO markers, bracket placeholders, and unfilled template text
   content-placeholder-text:
@@ -287,7 +287,11 @@ rules:
 custom-rules: []
 
 # Exclude patterns (glob format)
-exclude: []
+# Use exclude: [] to disable all excludes including defaults
+exclude:
+    # - "**/template/**"
+    # - "**/templates/**"
+    # - "**/_template/**"
 
 # Additional markdown files to run content rules on (glob format)
 content-paths: []

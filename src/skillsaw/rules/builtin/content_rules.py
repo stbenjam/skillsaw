@@ -19,6 +19,7 @@ from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     ContentBlock,
+    SkillRefBlock,
     WeakLanguageDetector,
     TautologicalDetector,
     CriticalPositionAnalyzer,
@@ -64,16 +65,20 @@ class ContentWeakLanguageRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _REFERENCE_BLOCK_TYPES = (SkillRefBlock,)
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = WeakLanguageDetector()
         for cf in gather_all_content_blocks(context):
+            is_reference = isinstance(cf, self._REFERENCE_BLOCK_TYPES)
             for match in detector.analyze(cf):
                 violations.append(
                     self.violation(
                         f"Weak language ({match.category}): '{match.phrase}' — {match.suggested_fix}",
                         block=cf,
                         line=match.line,
+                        severity=Severity.INFO if is_reference else None,
                     )
                 )
         return violations
@@ -318,6 +323,10 @@ class ContentNegativeOnlyRule(Rule):
         r")",
         re.IGNORECASE,
     )
+    _SCOPE_BOUNDARY_RE = re.compile(
+        r"(?:don[''’]?t|do\s+not)\s+use\b.*\bwhen\s*[:*]",
+        re.IGNORECASE,
+    )
 
     @property
     def rule_id(self) -> str:
@@ -381,6 +390,8 @@ class ContentNegativeOnlyRule(Rule):
                 if stripped.startswith("#"):
                     continue
                 if not self._NEGATIVE_RE.search(line):
+                    continue
+                if self._SCOPE_BOUNDARY_RE.search(line):
                     continue
                 if not self._has_positive_alternative(line, lines, i):
                     violations.append(

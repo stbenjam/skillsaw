@@ -284,6 +284,61 @@ class ViolationRule(Rule):
     assert any("This is a test violation" in v.message for v in violations)
 
 
+def test_custom_rule_respects_exclude_patterns(valid_plugin, temp_dir):
+    """Test that exclude patterns filter violations from custom rules"""
+    custom_rule_file = temp_dir / "file_rule.py"
+    custom_rule_file.write_text("""
+from pathlib import Path
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class FileRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "file-rule"
+
+    @property
+    def description(self) -> str:
+        return "Reports a violation for every markdown file"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for f in context.root_path.rglob("*.md"):
+            violations.append(self.violation("Found file", file_path=f))
+        return violations
+""")
+
+    # Create files in both excluded and non-excluded directories
+    sub_dir = valid_plugin / "sub"
+    sub_dir.mkdir()
+    tmpl_dir = sub_dir / "templates"
+    tmpl_dir.mkdir()
+    (tmpl_dir / "TEMPLATE.md").write_text("# Template\n")
+    (valid_plugin / "docs.md").write_text("# Docs\n")
+
+    # Use default exclude patterns (which include **/templates/**)
+    config = LinterConfig(
+        custom_rules=[str(custom_rule_file)],
+        exclude_patterns=["**/templates/**"],
+    )
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    file_rule_violations = [v for v in violations if v.rule_id == "file-rule"]
+    assert file_rule_violations, "Expected at least one file-rule violation"
+    assert any(
+        Path(v.file_path).name == "docs.md" for v in file_rule_violations
+    ), "Non-excluded markdown file should still be reported"
+    # TEMPLATE.md in templates/ should be excluded
+    assert all(
+        "templates" not in Path(v.file_path).parts for v in file_rule_violations
+    ), "Excluded file was not filtered"
+
+
 def test_custom_rule_respects_disabled_config(valid_plugin, temp_dir):
     """Test that custom rules respect the enabled/disabled config"""
     # Create a custom rule

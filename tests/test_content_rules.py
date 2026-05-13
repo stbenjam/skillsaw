@@ -89,6 +89,33 @@ class TestContentWeakLanguageRule:
         violations = ContentWeakLanguageRule().check(context)
         assert len(violations) >= 1
 
+    def test_reference_files_get_info_severity(self, temp_dir):
+        """skill-ref content blocks should get INFO severity instead of WARNING."""
+        # Set up a skill repo with a references directory
+        (temp_dir / "SKILL.md").write_text(
+            "---\nname: test-skill\ndescription: A test skill\n---\nHello\n"
+        )
+        refs_dir = temp_dir / "references"
+        refs_dir.mkdir()
+        (refs_dir / "guide.md").write_text("Handle errors properly and correctly.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        # Should have violations from the reference file
+        ref_violations = [v for v in violations if "references" in str(v.file_path)]
+        assert len(ref_violations) >= 1
+        # All reference file violations should be INFO severity
+        for v in ref_violations:
+            assert v.severity == Severity.INFO
+
+    def test_non_reference_files_keep_warning_severity(self, temp_dir):
+        """Non-reference content blocks should keep WARNING severity."""
+        (temp_dir / "CLAUDE.md").write_text("Handle errors properly and correctly.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentWeakLanguageRule().check(context)
+        assert len(violations) >= 1
+        for v in violations:
+            assert v.severity == Severity.WARNING
+
 
 class TestContentTautologicalRule:
     def test_rule_metadata(self):
@@ -292,6 +319,40 @@ class TestContentNegativeOnlyRule:
         context = RepositoryContext(temp_dir)
         violations = ContentNegativeOnlyRule().check(context)
         assert len(violations) == 0
+
+    def test_scope_boundary_dont_use_when_skipped(self, temp_dir):
+        """'Don't use this when:' is a scope boundary, not a prohibition."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Don't use this when:\n" "- The file is auto-generated\n" "- The output is temporary\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_scope_boundary_dont_use_when_with_star(self, temp_dir):
+        """'Don't use this when*' (star variant) is also a scope boundary."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Don't use this skill when*\n" "- The input is invalid\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_scope_boundary_do_not_use_when_skipped(self, temp_dir):
+        """'Do not use X when:' without apostrophe should also be skipped."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Do not use this tool when:\n" "- There's no internet connection\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 0
+
+    def test_plain_dont_use_still_flagged(self, temp_dir):
+        """Plain 'Don't use X' without 'when:' should still be flagged."""
+        (temp_dir / "CLAUDE.md").write_text("Don't use eval in production code.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentNegativeOnlyRule().check(context)
+        assert len(violations) == 1
 
 
 class TestContentSectionLengthRule:
