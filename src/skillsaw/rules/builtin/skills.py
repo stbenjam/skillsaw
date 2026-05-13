@@ -124,7 +124,7 @@ class SkillFrontmatterRule(Rule):
                     AutofixResult(
                         rule_id=self.rule_id,
                         file_path=skill_md,
-                        confidence=AutofixConfidence.SUGGEST,
+                        confidence=AutofixConfidence.SAFE,
                         original_content="",
                         fixed_content=fixed,
                         description=f"Created SKILL.md with frontmatter for {name}",
@@ -148,7 +148,7 @@ class SkillFrontmatterRule(Rule):
                     AutofixResult(
                         rule_id=self.rule_id,
                         file_path=file_path,
-                        confidence=AutofixConfidence.SUGGEST,
+                        confidence=AutofixConfidence.SAFE,
                         original_content=original,
                         fixed_content=fixed,
                         description="Added missing frontmatter to SKILL.md",
@@ -178,7 +178,7 @@ class SkillFrontmatterRule(Rule):
                             AutofixResult(
                                 rule_id=self.rule_id,
                                 file_path=file_path,
-                                confidence=AutofixConfidence.SUGGEST,
+                                confidence=AutofixConfidence.SAFE,
                                 original_content=original,
                                 fixed_content=fixed,
                                 description="Added missing fields to SKILL.md frontmatter",

@@ -278,6 +278,57 @@ class Linter:
 
         return all_violations, all_fixes
 
+    def fix_and_apply(
+        self,
+        confidence: AutofixConfidence = AutofixConfidence.SAFE,
+        max_passes: int = 10,
+    ) -> tuple[List[AutofixResult], List[AutofixResult]]:
+        """Apply fixes iteratively, re-linting dirty files between passes.
+
+        When a fix changes a file's line count, subsequent fixes targeting
+        that file may hold stale line numbers.  This method detects such
+        "dirty" files, rebuilds the lint tree, and re-runs check+fix so
+        that the next round of fixes sees correct line numbers.
+
+        Args:
+            confidence: Minimum confidence level to apply.
+            max_passes: Safety cap on re-lint iterations.
+
+        Returns:
+            Tuple of (applied fixes, suggested-but-not-applied fixes).
+        """
+        all_applied: List[AutofixResult] = []
+        all_suggested: List[AutofixResult] = []
+
+        for _ in range(max_passes):
+            _violations, fixes = self.fix()
+            if not fixes:
+                break
+
+            applied = self.apply_fixes(fixes, confidence)
+            suggested = [f for f in fixes if f not in applied]
+            all_applied.extend(applied)
+            all_suggested.extend(suggested)
+
+            if not applied:
+                break
+
+            dirty = any(
+                len(f.original_content.splitlines()) != len(f.fixed_content.splitlines())
+                for f in applied
+            )
+            if not dirty:
+                break
+
+            from .rules.builtin.utils import invalidate_read_caches
+
+            invalidate_read_caches()
+            self.context.rebuild_lint_tree()
+            if hasattr(self, "_suppression_cache"):
+                self._suppression_cache.clear()
+
+        return all_applied, all_suggested
+
     @staticmethod
     def apply_fixes(
         fixes: List[AutofixResult],
