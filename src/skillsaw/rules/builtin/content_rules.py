@@ -23,6 +23,7 @@ from skillsaw.rules.builtin.content_analysis import (
     InstructionBudgetAnalyzer,
     _HEADING_RE,
     _TAUTOLOGICAL_PHRASES,
+    _strip_fenced_code_blocks,
 )
 
 
@@ -788,6 +789,24 @@ class ContentEmbeddedSecretsRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _PLACEHOLDER_RE = re.compile(
+        r"(?i)"
+        r"(?:your[-_]?\w*(?:[-_]?key|[-_]?token|[-_]?secret|[-_]?here))"
+        r"|(?:EXAMPLE\w*)"
+        r"|(?:REPLACE[-_]?ME)"
+        r"|(?:xxx+)"
+        r"|(?:<\.\.\.>)"
+        r"|(?:\.\.\.)"
+        r"|(?:INSERT[-_]?HERE)"
+        r"|(?:CHANGE[-_]?ME)"
+        r"|(?:PLACEHOLDER)"
+    )
+
+    _WELL_KNOWN_EXAMPLE_KEYS = {
+        "AKIAIOSFODNN7EXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    }
+
     _PATTERNS = [
         (re.compile(p), desc)
         for p, desc in [
@@ -857,9 +876,28 @@ class ContentEmbeddedSecretsRule(Rule):
             content = read_text(cf.path)
             if not content:
                 continue
-            for line_num, line in enumerate(content.splitlines(), 1):
+            content = _strip_fenced_code_blocks(content)
+            lines = content.splitlines()
+            for line_num, line in enumerate(lines, 1):
                 for pattern, desc in self._PATTERNS:
-                    if pattern.search(line):
+                    m = pattern.search(line)
+                    if m:
+                        matched_text = m.group(0)
+                        # Skip well-known example keys
+                        if matched_text in self._WELL_KNOWN_EXAMPLE_KEYS:
+                            continue
+                        # Skip placeholder values
+                        if self._PLACEHOLDER_RE.search(matched_text):
+                            continue
+                        # For PEM headers, check if surrounding content
+                        # is just a placeholder (e.g. "...\n")
+                        if desc == "Private key":
+                            nearby = line
+                            for offset in range(1, 3):
+                                if line_num - 1 + offset < len(lines):
+                                    nearby += " " + lines[line_num - 1 + offset]
+                            if "..." in nearby and "END" in nearby:
+                                continue
                         violations.append(
                             self.violation(
                                 f"Potential secret detected: {desc}",

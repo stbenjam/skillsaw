@@ -462,7 +462,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) >= 1
 
     def test_detects_aws_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7REALKEYX\n")
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -488,7 +488,7 @@ class TestContentEmbeddedSecretsRule:
         [
             ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),
             ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),
-            ("ASIAIOSFODNN7EXAMPLE", "AWS temporary access key"),
+            ("ASIAIOSFODNN7REALKEYX", "AWS temporary access key"),
             ("xoxa-123456789012-abcdefghij", "Slack app token"),
             ("xoxr-123456789012-abcdefghij", "Slack refresh token"),
             (_STRIPE_SK, "Stripe secret key"),
@@ -553,6 +553,56 @@ class TestContentEmbeddedSecretsRule:
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) == 0
+
+    def test_no_false_positive_in_fenced_code_block(self, temp_dir):
+        """Credentials inside fenced code blocks are skipped (issue #147)"""
+        content = (
+            "# Security Review\n"
+            "### Always Flag (Secrets)\n"
+            "```python\n"
+            'password = "hardcoded_secret_password"\n'
+            'api_key = "sk-abcdefghijklmnopqrstuvwxyz1234"\n'
+            "```\n"
+            "Never hardcode secrets.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_false_positive_on_placeholder_api_key(self, temp_dir):
+        """Placeholder API keys like 'your_api_key_here' are skipped (issue #147)"""
+        content = "Set api_key = 'your_api_key_here_replace_me'\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_false_positive_on_well_known_example_key(self, temp_dir):
+        """AWS's official example key AKIAIOSFODNN7EXAMPLE is skipped (issue #147)"""
+        content = "Example: AKIAIOSFODNN7EXAMPLE\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    def test_no_false_positive_on_pem_template(self, temp_dir):
+        """PEM headers with placeholder content are skipped (issue #147)"""
+        content = (
+            '"private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"\n'
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    def test_real_secret_outside_code_block_still_detected(self, temp_dir):
+        """Real secrets outside code blocks are still detected"""
+        content = "Set API key: sk-abcdefghijklmnopqrstuvwxyz1234\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
 
 
 class TestContentBannedReferencesRule:
