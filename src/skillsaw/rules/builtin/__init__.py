@@ -79,6 +79,9 @@ from .content_rules import (
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentBrokenInternalReferenceRule,
+    ContentUnlinkedInternalReferenceRule,
+    ContentPlaceholderTextRule,
 )
 
 from .coderabbit import (
@@ -145,6 +148,9 @@ BUILTIN_RULES = [
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentBrokenInternalReferenceRule,
+    ContentUnlinkedInternalReferenceRule,
+    ContentPlaceholderTextRule,
     # CodeRabbit
     CoderabbitYamlValidRule,
     # APM (Agent Package Manager)
@@ -196,6 +202,9 @@ __all__ = [
     "ContentEmbeddedSecretsRule",
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
+    "ContentBrokenInternalReferenceRule",
+    "ContentUnlinkedInternalReferenceRule",
+    "ContentPlaceholderTextRule",
     "CoderabbitYamlValidRule",
     "ApmYamlValidRule",
     "ApmStructureValidRule",

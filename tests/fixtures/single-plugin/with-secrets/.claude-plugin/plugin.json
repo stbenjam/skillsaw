@@ -1,0 +1,6 @@
+{
+  "name": "secrets-test",
+  "description": "Plugin used to test embedded secrets detection",
+  "version": "1.0.0",
+  "author": {"name": "Test Author"}
+}

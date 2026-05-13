@@ -5,17 +5,21 @@ These rules use shared analyzers from content_analysis.py and apply to ALL
 instruction file formats equally.
 """
 
+import difflib
+import os
 import re
 from collections import defaultdict
-from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from pathlib import Path, PurePath
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
-from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     ContentBlock,
+    SkillRefBlock,
     WeakLanguageDetector,
     TautologicalDetector,
     CriticalPositionAnalyzer,
@@ -61,16 +65,20 @@ class ContentWeakLanguageRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _REFERENCE_BLOCK_TYPES = (SkillRefBlock,)
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         detector = WeakLanguageDetector()
         for cf in gather_all_content_blocks(context):
+            is_reference = isinstance(cf, self._REFERENCE_BLOCK_TYPES)
             for match in detector.analyze(cf):
                 violations.append(
                     self.violation(
                         f"Weak language ({match.category}): '{match.phrase}' — {match.suggested_fix}",
                         block=cf,
                         line=match.line,
+                        severity=Severity.INFO if is_reference else None,
                     )
                 )
         return violations
@@ -315,6 +323,10 @@ class ContentNegativeOnlyRule(Rule):
         r")",
         re.IGNORECASE,
     )
+    _SCOPE_BOUNDARY_RE = re.compile(
+        r"(?:don[''’]?t|do\s+not)\s+use\b.*\bwhen\s*[:*]",
+        re.IGNORECASE,
+    )
 
     @property
     def rule_id(self) -> str:
@@ -378,6 +390,8 @@ class ContentNegativeOnlyRule(Rule):
                 if stripped.startswith("#"):
                     continue
                 if not self._NEGATIVE_RE.search(line):
+                    continue
+                if self._SCOPE_BOUNDARY_RE.search(line):
                     continue
                 if not self._has_positive_alternative(line, lines, i):
                     violations.append(
@@ -446,7 +460,7 @@ class ContentSectionLengthRule(Rule):
                 continue
             lines = body.splitlines()
             sections: List[tuple] = []
-            current_heading_line = 0
+            current_heading_line = 1
             current_heading_text = "(top of file)"
             section_start = 0
 
@@ -501,6 +515,15 @@ class ContentContradictionRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _NEGATION_PREFIX_RE = re.compile(r"(?:non[-\s]|not\s+|un|in|im)$", re.IGNORECASE)
+
+    @staticmethod
+    def _is_negated(text: str, match: re.Match) -> bool:
+        """Check if a regex match is preceded by a negation prefix."""
+        start = match.start()
+        prefix = text[max(0, start - 4) : start]
+        return bool(ContentContradictionRule._NEGATION_PREFIX_RE.search(prefix))
+
     _CONTRADICTION_PAIRS = [
         (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
         (
@@ -545,9 +568,13 @@ class ContentContradictionRule(Rule):
                 continue
             body_lower = body.lower()
             for pat_a, pat_b, desc in self._CONTRADICTION_PAIRS:
-                match_a = re.search(pat_a, body_lower)
-                match_b = re.search(pat_b, body_lower)
-                if match_a and match_b:
+                has_a = any(
+                    not self._is_negated(body_lower, m) for m in re.finditer(pat_a, body_lower)
+                )
+                has_b = any(
+                    not self._is_negated(body_lower, m) for m in re.finditer(pat_b, body_lower)
+                )
+                if has_a and has_b:
                     violations.append(
                         self.violation(
                             f"Possible contradiction: {desc}",
@@ -1107,4 +1134,336 @@ class ContentInconsistentTerminologyRule(Rule):
                 for fpath in sorted(minority_files):
                     violations.append(self.violation(msg, file_path=fpath))
 
+        return violations
+
+
+class ContentBrokenInternalReferenceRule(Rule):
+    """Detect markdown links pointing to nonexistent files"""
+
+    formats = None
+    since = "0.9.0"
+    repo_types = None
+
+    _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+    _TEMPLATE_DIR_NAMES = {"template", "templates", "_template"}
+
+    @property
+    def rule_id(self) -> str:
+        return "content-broken-internal-reference"
+
+    @property
+    def description(self) -> str:
+        return "Detect markdown links where the target file does not exist"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def _is_in_template_dir(self, file_path: Path) -> bool:
+        """Check if the file is inside a template directory."""
+        for part in file_path.parts:
+            if part in self._TEMPLATE_DIR_NAMES:
+                return True
+        return False
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        root = context.root_path.resolve()
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            if self._is_in_template_dir(cf.path):
+                continue
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                for match in self._LINK_RE.finditer(line):
+                    target = match.group(2).strip()
+                    # Strip optional title text: [text](path "title")
+                    if " " in target:
+                        target = target.split(" ")[0]
+                    # Skip URLs, anchors, and mailto
+                    if target.startswith(("http://", "https://", "#", "mailto:")):
+                        continue
+                    # Strip anchor from path (e.g., "file.md#section")
+                    target_path = target.split("#")[0]
+                    if not target_path:
+                        continue
+                    # Resolve relative to the file containing the link
+                    resolved = (cf.path.parent / target_path).resolve()
+                    # Ensure the resolved path is within the repo root
+                    try:
+                        resolved.relative_to(root)
+                    except ValueError:
+                        violations.append(
+                            self.violation(
+                                f"Broken internal link: [{match.group(1)}]({target}) — target is outside repository",
+                                block=cf,
+                                line=line_num,
+                            )
+                        )
+                        continue
+                    if not resolved.exists():
+                        suggestion = self._find_similar(root, cf.path.parent, target_path)
+                        msg = f"Broken internal link: [{match.group(1)}]({target}) — target does not exist"
+                        if suggestion:
+                            msg += f" (did you mean '{suggestion}'?)"
+                        violations.append(self.violation(msg, block=cf, line=line_num))
+        return violations
+
+    def _collect_repo_paths(self, root: Path) -> List[str]:
+        """Collect all file paths in the repo, relative to root."""
+        paths = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [
+                d for d in dirnames if d not in {".git", "node_modules", "__pycache__", ".venv"}
+            ]
+            for f in filenames:
+                full = Path(dirpath) / f
+                try:
+                    paths.append(str(full.relative_to(root)))
+                except ValueError:
+                    continue
+        return paths
+
+    def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> Optional[str]:
+        """Find a similar file path in the repo using fuzzy matching."""
+        repo_paths = self._collect_repo_paths(root)
+        target_name = Path(target_path).name
+        candidates = [p for p in repo_paths if Path(p).name == target_name]
+        if len(candidates) == 1:
+            try:
+                return str(Path(candidates[0]).relative_to(link_dir.relative_to(root)))
+            except ValueError:
+                rel = os.path.relpath(root / candidates[0], link_dir)
+                return rel
+        if not candidates:
+            candidate_names = [Path(p).name for p in repo_paths]
+            close = difflib.get_close_matches(target_name, candidate_names, n=1, cutoff=0.6)
+            if close:
+                candidates = [p for p in repo_paths if Path(p).name == close[0]]
+        if candidates:
+            try:
+                rel = os.path.relpath(root / candidates[0], link_dir)
+                return rel
+            except ValueError:
+                return candidates[0]
+        return None
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
+    ) -> List[AutofixResult]:
+        root = context.root_path.resolve()
+        fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
+        for v in violations:
+            if not v.file_path or "did you mean" not in v.message:
+                continue
+            suggestion = v.message.split("did you mean '")[1].rstrip("'?)")
+            old_target = v.message.split("](")[1].split(")")[0]
+            fixes_by_file[v.file_path].append((old_target, suggestion, v))
+
+        results: List[AutofixResult] = []
+        for fpath, replacements in fixes_by_file.items():
+            try:
+                content = fpath.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fixed = content
+            violations_fixed = []
+            for old_target, suggestion, v in replacements:
+                fixed = fixed.replace(f"]({old_target})", f"]({suggestion})")
+                violations_fixed.append(v)
+            if fixed != content:
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=fpath,
+                        confidence=AutofixConfidence.SUGGEST,
+                        original_content=content,
+                        fixed_content=fixed,
+                        description=f"Fix {len(violations_fixed)} broken link(s) with likely matches",
+                        violations_fixed=violations_fixed,
+                    )
+                )
+        return results
+
+
+class ContentUnlinkedInternalReferenceRule(Rule):
+    """Detect bare path-like strings that are not wrapped in markdown link syntax"""
+
+    formats = None
+    since = "0.9.0"
+    repo_types = None
+
+    config_schema = {
+        "patterns": {
+            "type": "list",
+            "default": ["./**/*.*", "references/**/*.md"],
+            "description": "Glob patterns for path-like strings to flag when unlinked",
+        },
+    }
+
+    # Match path-like strings: contain / and a file extension, or start with ./
+    _PATH_LIKE_RE = re.compile(
+        r"(?<!\()"  # not preceded by ( (would be inside link syntax)
+        r"(?:"
+        r"\./[\w./_-]+"  # starts with ./
+        r"|"
+        r"[\w._-]+(?:/[\w._-]+)+\.[\w]{1,10}"  # contains / and has extension
+        r")"
+        r"(?!\))"  # not followed by ) (would be inside link syntax)
+    )
+
+    # Detect if a match is inside a markdown link [text](path)
+    _LINK_SYNTAX_RE = re.compile(r"\[[^\]]*\]\([^)]*\)")
+
+    # Detect URLs so we can skip path-like fragments inside them
+    _URL_RE = re.compile(r"https?://[^\s)]+")
+
+    @property
+    def rule_id(self) -> str:
+        return "content-unlinked-internal-reference"
+
+    @property
+    def description(self) -> str:
+        return "Detect bare path-like strings not wrapped in markdown link syntax"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def _is_inside_link(self, line: str, match_start: int, match_end: int) -> bool:
+        """Check if a match position falls inside markdown link syntax."""
+        for link_match in self._LINK_SYNTAX_RE.finditer(line):
+            if link_match.start() <= match_start and match_end <= link_match.end():
+                return True
+        return False
+
+    def _is_inside_url(self, line: str, match_start: int, match_end: int) -> bool:
+        """Check if a match position falls inside a URL."""
+        for url_match in self._URL_RE.finditer(line):
+            if url_match.start() <= match_start and match_end <= url_match.end():
+                return True
+        return False
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        root = context.root_path.resolve()
+        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                if not line.strip():
+                    continue
+                if re.match(r"^\s*@\S", line):
+                    continue
+                for match in self._PATH_LIKE_RE.finditer(line):
+                    path_str = match.group(0)
+                    if self._is_inside_link(line, match.start(), match.end()):
+                        continue
+                    if self._is_inside_url(line, match.start(), match.end()):
+                        continue
+                    if not any(PurePath(path_str).match(p) for p in patterns):
+                        continue
+                    resolved = (cf.path.parent / path_str).resolve()
+                    file_exists = False
+                    try:
+                        resolved.relative_to(root)
+                        file_exists = resolved.exists()
+                    except ValueError:
+                        pass
+                    msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
+                    if file_exists:
+                        msg += " (file exists, autofixable)"
+                    violations.append(self.violation(msg, block=cf, line=line_num))
+        return violations
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
+    ) -> List[AutofixResult]:
+        fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
+        for v in violations:
+            if not v.file_path or "autofixable" not in v.message:
+                continue
+            path_str = v.message.split("'")[1]
+            fixes_by_file[v.file_path].append((path_str, v))
+
+        results: List[AutofixResult] = []
+        for fpath, replacements in fixes_by_file.items():
+            try:
+                content = fpath.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            fixed = content
+            violations_fixed = []
+            for path_str, v in replacements:
+                fixed = fixed.replace(path_str, f"[{path_str}]({path_str})", 1)
+                violations_fixed.append(v)
+            if fixed != content:
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=fpath,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=content,
+                        fixed_content=fixed,
+                        description=f"Wrap {len(violations_fixed)} bare path(s) in markdown link syntax",
+                        violations_fixed=violations_fixed,
+                    )
+                )
+        return results
+
+
+class ContentPlaceholderTextRule(Rule):
+    """Detect TODO markers, bracket placeholders, and unfilled template text"""
+
+    formats = None
+    since = "0.9.0"
+    repo_types = None
+
+    _PLACEHOLDER_PATTERNS = [
+        (re.compile(r"\bTODO\b"), "TODO marker"),
+        (re.compile(r"\bFIXME\b"), "FIXME marker"),
+        (re.compile(r"\bXXX\b"), "XXX marker"),
+        (re.compile(r"\[link\s+here\]", re.IGNORECASE), "Placeholder link"),
+        (re.compile(r"\[Insert\s+[^\]]+\]", re.IGNORECASE), "Insert placeholder"),
+        (re.compile(r"\[If\s+[^\]]+\]", re.IGNORECASE), "Conditional placeholder"),
+        (
+            re.compile(
+                r"\*(?:TBD|to be added|details to be added|content to be added)\*",
+                re.IGNORECASE,
+            ),
+            "Unfilled template text",
+        ),
+    ]
+
+    @property
+    def rule_id(self) -> str:
+        return "content-placeholder-text"
+
+    @property
+    def description(self) -> str:
+        return "Detect TODO markers, bracket placeholders, and unfilled template text"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations = []
+        for cf in gather_all_content_blocks(context):
+            body = cf.read_body(strip_code_blocks=True)
+            if not body:
+                continue
+            for line_num, line in enumerate(body.splitlines(), 1):
+                if not line.strip():
+                    continue
+                for pattern, desc in self._PLACEHOLDER_PATTERNS:
+                    match = pattern.search(line)
+                    if match:
+                        violations.append(
+                            self.violation(
+                                f"Placeholder text ({desc}): '{match.group()}'",
+                                block=cf,
+                                line=line_num,
+                            )
+                        )
         return violations

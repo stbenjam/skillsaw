@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 
 _DEFAULT_VERSION = "0.6.0"
 
+_DEFAULT_EXCLUDE_PATTERNS = [
+    "**/template/**",
+    "**/templates/**",
+    "**/_template/**",
+]
+
 
 def _parse_version(v: str) -> Tuple[int, ...]:
     return tuple(int(x) for x in v.split("."))
@@ -102,7 +108,7 @@ class LinterConfig:
             )
 
         if raw_exclude is None:
-            exclude_patterns = []
+            exclude_patterns = list(_DEFAULT_EXCLUDE_PATTERNS)
         elif isinstance(raw_exclude, list):
             exclude_patterns = raw_exclude
         else:
@@ -141,6 +147,7 @@ class LinterConfig:
 
         return cls(
             version=__version__,
+            exclude_patterns=list(_DEFAULT_EXCLUDE_PATTERNS),
             rules={
                 # Plugin structure rules (auto-enabled for plugin/marketplace repos)
                 "plugin-json-required": {"enabled": "auto", "severity": "error"},
@@ -204,6 +211,9 @@ class LinterConfig:
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
                 "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
+                "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
+                "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
+                "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
                 # APM (Agent Package Manager) rules
@@ -361,13 +371,37 @@ class LinterConfig:
                             f.write(f"    # {param_name}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
-            f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
+            self._write_field(f, "custom-rules", self.custom_rules)
             f.write("\n# Exclude patterns (glob format)\n")
-            f.write(f"exclude: {self._yaml_value(self.exclude_patterns)}\n")
+            f.write("# Use exclude: [] to disable all excludes including defaults\n")
+            user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]
+            if user_excludes:
+                self._write_field(f, "exclude", user_excludes)
+            else:
+                f.write("exclude:\n")
+                for pat in _DEFAULT_EXCLUDE_PATTERNS:
+                    f.write(f'    # - "{pat}"\n')
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
-            f.write(f"content-paths: {self._yaml_value(self.content_paths)}\n")
+            self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
+
+    def _write_field(self, f, key: str, value: Any):
+        """Helper to write a YAML field to the file."""
+        val = self._yaml_value(value)
+        if val.startswith("\n"):
+            f.write(f"{key}:{val}\n")
+        else:
+            f.write(f"{key}: {val}\n")
+
+    @staticmethod
+    def _needs_quoting(s: str) -> bool:
+        """Check if a string value needs quoting for valid YAML output."""
+        if not s:
+            return True
+        # Characters that are special in YAML and need quoting
+        yaml_special = set("*&!|>{[%@`")
+        return any(c in yaml_special for c in s)
 
     @staticmethod
     def _yaml_value(value, indent=4):
@@ -377,7 +411,11 @@ class LinterConfig:
             if not value:
                 return "[]"
             pad = " " * indent
-            return "\n" + "\n".join(f"{pad}- {item}" for item in value)
+            items = []
+            for item in value:
+                rendered = LinterConfig._yaml_value(item, indent + 2)
+                items.append(f"{pad}- {rendered}")
+            return "\n" + "\n".join(items)
         if isinstance(value, dict):
             if not value:
                 return "{}"
@@ -391,6 +429,9 @@ class LinterConfig:
                     lines.append(f"{pad}{k}: {rendered}")
             return "\n" + "\n".join(lines)
         if isinstance(value, str):
+            if LinterConfig._needs_quoting(value):
+                escaped = value.replace('"', '\\"')
+                return f'"{escaped}"'
             return value
         return str(value)
 

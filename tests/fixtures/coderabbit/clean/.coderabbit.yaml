@@ -1,0 +1,40 @@
+language: en-US
+tone_instructions: >
+  Be direct and specific. Focus on correctness and security.
+  Skip praise for obvious things.
+early_access: true
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+    drafts: false
+  path_filters:
+    - "!dist/**"
+    - "!**/*.lock"
+    - "!**/*.min.js"
+    - "!vendor/**"
+  path_instructions:
+    - path: "src/api/**"
+      instructions: >
+        Check for proper error handling, input validation, and
+        authentication/authorization enforcement on all endpoints.
+    - path: "src/db/**"
+      instructions: >
+        Verify SQL queries are parameterized. Check for N+1 query
+        patterns and missing index usage.
+    - path: "tests/**"
+      instructions: >
+        Verify assertions are specific, not just checking for no
+        exceptions. Each test should have a clear arrange-act-assert
+        structure.
+chat:
+  auto_reply: true

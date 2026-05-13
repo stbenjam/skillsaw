@@ -1,0 +1,6 @@
+{
+  "name": "strict-mode-test",
+  "description": "Test strict mode exit codes",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

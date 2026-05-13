@@ -1,0 +1,6 @@
+{
+  "name": "suppression-next-line",
+  "description": "Test disable-next-line suppression",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

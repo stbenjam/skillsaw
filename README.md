@@ -21,7 +21,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 ## Features
 
 - 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw lint --fix --llm` — parallel processing, scoped re-lint, per-file rollback
+- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
 - 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
 - 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
 - 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
@@ -52,12 +52,14 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - [Configuration](#configuration)
   - [Version Pinning](#version-pinning)
   - [Exclude Patterns](#exclude-patterns)
+  - [Per-Rule Excludes](#per-rule-excludes)
+  - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
-  - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
-  - [LLM-Powered Fixes (`--fix --llm`)](#llm-powered-fixes---fix---llm)
-  - [Standalone Fix Command (`skillsaw fix`)](#standalone-fix-command-skillsaw-fix)
+  - [Deterministic Fixes](#deterministic-fixes)
+  - [LLM-Powered Fixes](#llm-powered-fixes)
+  - [LLM Setup](#llm-setup)
 - [Custom Rules](#custom-rules)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
@@ -84,13 +86,13 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 uvx skillsaw
 
 # Fix structural issues automatically
-skillsaw lint --fix
+skillsaw fix
 
 # Fix content quality issues with an LLM
-skillsaw lint --fix --llm
+skillsaw fix --llm
 
 # Preview LLM fixes without writing
-skillsaw lint --fix --llm --dry-run
+skillsaw fix --llm --dry-run
 
 # Verbose output (includes info-level findings)
 skillsaw -v
@@ -367,6 +369,73 @@ exclude:
   - "node_modules/**"
 ```
 
+By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
+`**/_template/**` directories. These defaults are replaced when you specify
+your own `exclude` list.
+
+Exclude patterns apply to **all** rules, including custom rules loaded via
+`custom-rules`. Any violation whose file path matches an exclude pattern is
+filtered out before results are reported.
+
+### Per-Rule Excludes
+
+Exclude specific files from a single rule using the `exclude` key in the
+rule's config:
+
+```yaml
+rules:
+  content-weak-language:
+    enabled: true
+    exclude:
+      - "docs/legacy/**"
+      - "CHANGELOG.md"
+```
+
+This is useful when a rule produces false positives on specific files but
+you still want it enabled globally. Per-rule excludes use the same glob
+syntax as global `exclude` patterns.
+
+### Inline Suppression
+
+Suppress specific rules on specific lines using HTML comment directives
+directly in your markdown files:
+
+```markdown
+<!-- skillsaw-disable content-weak-language -->
+This section intentionally uses informal language.
+<!-- skillsaw-enable content-weak-language -->
+```
+
+Suppress a single line:
+
+```markdown
+<!-- skillsaw-disable-next-line content-tautological -->
+Follow best practices for error handling.
+```
+
+Suppress multiple rules at once:
+
+```markdown
+<!-- skillsaw-disable content-weak-language, content-tautological -->
+```
+
+Re-enable all suppressed rules:
+
+```markdown
+<!-- skillsaw-enable -->
+```
+
+Multi-line HTML comments are also supported:
+
+```markdown
+<!--
+    skillsaw-disable content-weak-language
+-->
+```
+
+Inline suppression only affects rules that are already enabled. It cannot
+be used to enable a normally disabled rule.
+
 ### Content Paths
 
 By default, content intelligence rules only analyze recognized instruction
@@ -499,7 +568,7 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 ### Content Intelligence
 
-Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. Most support LLM-powered fixes via `skillsaw fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -517,6 +586,9 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
 | `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+| `content-broken-internal-reference` | Detect markdown links where the target file does not exist | warning (auto) | auto |
+| `content-unlinked-internal-reference` | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
+| `content-placeholder-text` | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
 
 **`content-critical-position` parameters:**
 
@@ -536,6 +608,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |-----------|-------------|---------|
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
+
+**`content-unlinked-internal-reference` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `patterns` | Glob patterns for path-like strings to flag when unlinked | `["./**/*.*", "references/**/*.md"]` |
 
 ### CodeRabbit
 
@@ -560,30 +638,29 @@ Validates repositories using the [APM](https://github.com/microsoft/apm) directo
 
 skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Rules declare which fix type they support (see the **Autofix** column in the rules tables above).
 
-### Deterministic Fixes (`--fix`)
+### Deterministic Fixes
 
 Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
-skillsaw lint --fix              # Apply safe structural fixes
+skillsaw fix                     # Apply safe structural fixes
 ```
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
-### LLM-Powered Fixes (`--fix --llm`)
+### LLM-Powered Fixes
 
-All content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
+Most content intelligence rules support LLM-powered fixes (see the **Autofix** column above). The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
 
 ```bash
-# Fix content violations with an LLM (any LiteLLM-compatible model)
-skillsaw lint --fix --llm
-
-# Preview what would change without writing to disk
-skillsaw lint --fix --llm --dry-run
-
-# Use a specific model (OpenAI, Anthropic, Vertex AI, local, etc.)
-skillsaw lint --fix --llm --model vertex_ai/claude-sonnet-4-6
-skillsaw lint --fix --llm --model openrouter/minimax/minimax-m1
+skillsaw fix --llm                          # Fix with default model
+skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw fix --llm --model openrouter/minimax/minimax-m1
+skillsaw fix --llm --all                    # Include info-level violations
+skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
+skillsaw fix --llm --max-iterations 10      # Max iterations per file
+skillsaw fix --llm --dry-run                # Preview changes without writing
+skillsaw fix --llm -y                       # Auto-apply without confirmation
 ```
 
 **How it works:**
@@ -598,20 +675,35 @@ The LLM never has access to arbitrary shell commands — it can only read, edit,
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
-### Standalone Fix Command (`skillsaw fix`)
+> **Note:** `skillsaw lint --fix` is deprecated and will be removed in 1.0. Use `skillsaw fix` instead.
 
-For more control over LLM fixes, use the standalone `fix` subcommand:
+### LLM Setup
+
+skillsaw uses [LiteLLM](https://docs.litellm.ai/docs/providers) under the hood, so any LiteLLM-compatible model works. Install the extras for your provider:
 
 ```bash
-skillsaw fix --llm                          # Fix with default model
-skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-skillsaw fix --llm --all                    # Include info-level violations
-skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
-skillsaw fix --llm --max-iterations 10      # Max iterations per file
-skillsaw fix --llm --dry-run                # Preview changes
+# pip
+pip install 'skillsaw[llm]'       # Any LiteLLM-compatible model
+pip install 'skillsaw[vertexai]'  # Vertex AI (includes google-cloud-aiplatform)
+pip install 'skillsaw[bedrock]'   # AWS Bedrock (includes boto3)
+
+# uvx (no install required)
+uvx --with 'skillsaw[llm]' skillsaw fix --llm
+uvx --with 'skillsaw[vertexai]' skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
 ```
 
-This provides a richer terminal UI with progress bars, per-file ETA, and detailed tool call logging. Use `skillsaw fix --llm` for interactive development; use `skillsaw lint --fix --llm` for CI or scripted workflows.
+Set the environment variables for your provider:
+
+| Provider | Environment Variables |
+|----------|----------------------|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Vertex AI | `VERTEXAI_PROJECT`, `VERTEXAI_LOCATION` (+ `gcloud auth application-default login`) |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME` |
+
+You can also set `SKILLSAW_MODEL` to override the default model via environment variable, or `llm.model` in your `.skillsaw.yaml` config.
+
+See the [LiteLLM provider documentation](https://docs.litellm.ai/docs/providers) for the full list of supported providers and their required environment variables.
 
 ## Custom Rules
 

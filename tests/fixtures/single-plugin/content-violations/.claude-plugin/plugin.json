@@ -1,0 +1,6 @@
+{
+  "name": "content-test",
+  "description": "Plugin for testing content intelligence rules",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

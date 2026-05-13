@@ -1,0 +1,6 @@
+{
+  "name": "suppression-all",
+  "description": "Test blanket inline suppression",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}
