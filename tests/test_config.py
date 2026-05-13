@@ -69,6 +69,14 @@ def test_from_file_applies_default_excludes(temp_dir):
     assert "**/_template/**" in config.exclude_patterns
 
 
+def test_empty_exclude_disables_all_defaults(temp_dir):
+    """exclude: [] should disable all excludes including defaults"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("exclude: []\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.exclude_patterns == []
+
+
 def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
     config_file = temp_dir / ".skillsaw.yaml"
