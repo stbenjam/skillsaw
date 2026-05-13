@@ -943,17 +943,19 @@ class TestSafeAutofixIdempotency:
         )
 
     def test_fix_is_idempotent(self, tmp_path):
-        """Running fix twice must produce byte-identical content."""
+        """Running fix 100 times must produce byte-identical content after the first."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         _run_fix(repo)
-        after_first = _snapshot_contents(repo)
+        baseline = _snapshot_contents(repo)
 
-        _run_fix(repo)
-        after_second = _snapshot_contents(repo)
-
-        all_files = set(after_first.keys()) | set(after_second.keys())
-        changed = {f for f in all_files if after_first.get(f) != after_second.get(f)}
-        assert not changed, f"Files changed on second fix (not idempotent): {sorted(changed)}"
+        for i in range(99):
+            _run_fix(repo)
+            current = _snapshot_contents(repo)
+            all_files = set(baseline.keys()) | set(current.keys())
+            changed = {f for f in all_files if baseline.get(f) != current.get(f)}
+            assert (
+                not changed
+            ), f"Files changed on fix iteration {i + 2} (not idempotent): {sorted(changed)}"
 
     def test_line_preserving_fixes_keep_line_counts(self, tmp_path):
         """In-place fixes (name renames, link wrapping) must not change line counts.
