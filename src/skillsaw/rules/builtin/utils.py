@@ -178,23 +178,27 @@ def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
 _FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", re.DOTALL)
 
 
-def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str]:
+def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:
     """Parse YAML frontmatter from markdown content.
 
-    Returns (frontmatter_dict, body_after_frontmatter).
-    If no valid frontmatter is found, returns (None, original_content).
+    Returns (frontmatter_dict, body_after_frontmatter, error_line).
+    ``error_line`` is set (1-indexed, relative to file) only on YAML parse errors.
+    If no valid frontmatter is found, returns (None, original_content, error_line).
     """
     m = _FRONTMATTER_RE.match(content)
     if not m:
-        return None, content
+        return None, content, None
     try:
         data = yaml.safe_load(m.group(1))
-    except yaml.YAMLError:
-        return None, content
+    except yaml.YAMLError as e:
+        error_line = None
+        if hasattr(e, "problem_mark") and e.problem_mark is not None:
+            error_line = e.problem_mark.line + 2  # +1 for 0-indexed, +1 for opening ---
+        return None, content, error_line
     if not isinstance(data, dict):
-        return None, content
+        return None, content, None
     body = content[m.end() :]
-    return data, body
+    return data, body, None
 
 
 def extract_section(content: str, heading: str, level: int = 2) -> str:
