@@ -578,6 +578,9 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
 | `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+| `content-broken-internal-reference` | Detect markdown links where the target file does not exist | warning (auto) | auto |
+| `content-unlinked-internal-reference` | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
+| `content-placeholder-text` | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
 
 **`content-critical-position` parameters:**
 
@@ -597,6 +600,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |-----------|-------------|---------|
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
+
+**`content-unlinked-internal-reference` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `patterns` | Glob patterns for path-like strings to flag when unlinked | `["./**/*.*", "references/**/*.md"]` |
 
 ### CodeRabbit
 

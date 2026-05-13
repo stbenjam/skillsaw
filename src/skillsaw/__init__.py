@@ -2,7 +2,7 @@
 skillsaw - A configurable linter for agent skills, plugins, and AI coding assistant context
 """
 
-__version__ = "0.8.3"
+__version__ = "0.9.0"
 
 from .rule import Rule, RuleViolation, Severity, AutofixConfidence, AutofixResult
 from .context import RepositoryContext

@@ -204,6 +204,9 @@ class LinterConfig:
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
                 "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
+                "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
+                "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
+                "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
                 # APM (Agent Package Manager) rules

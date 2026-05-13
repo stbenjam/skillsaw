@@ -99,6 +99,9 @@ RULE_GROUPS = [
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
+            "content-broken-internal-reference",
+            "content-unlinked-internal-reference",
+            "content-placeholder-text",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
