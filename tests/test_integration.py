@@ -1000,7 +1000,7 @@ class TestSafeAutofixIdempotency:
             if b != a:
                 changed.append(f"{f}: {b} -> {a}")
 
-        assert not changed, f"Line-preserving fixes changed line counts:\n" + "\n".join(
+        assert not changed, "Line-preserving fixes changed line counts:\n" + "\n".join(
             f"  {c}" for c in changed
         )
 
@@ -1096,7 +1096,7 @@ class TestSafeAutofixIdempotency:
                 "\n---\n" in content[4:]
             ), f"SKILL.md in {skill_dir.name} missing closing frontmatter delimiter"
             lines = content.splitlines()
-            name_lines = [l for l in lines if l.startswith("name:")]
+            name_lines = [line for line in lines if line.startswith("name:")]
             assert (
                 len(name_lines) == 1
             ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"

@@ -333,17 +333,28 @@ class Linter:
         all_applied: List[AutofixResult] = []
         all_suggested: List[AutofixResult] = []
 
+        allowed = {AutofixConfidence.SAFE}
+        if confidence == AutofixConfidence.SUGGEST:
+            allowed.add(AutofixConfidence.SUGGEST)
+        elif confidence == AutofixConfidence.LLM:
+            allowed.update({AutofixConfidence.SUGGEST, AutofixConfidence.LLM})
+
         for _ in range(max_passes):
             _violations, fixes = self.fix()
             if not fixes:
                 break
 
-            independent, has_conflicts = self._first_per_file(fixes)
+            applicable = [f for f in fixes if f.confidence in allowed]
+            suggested = [f for f in fixes if f.confidence not in allowed]
+            all_suggested.extend(suggested)
+
+            if not applicable:
+                break
+
+            independent, has_conflicts = self._first_per_file(applicable)
 
             applied = self.apply_fixes(independent, confidence)
-            suggested = [f for f in independent if f not in applied]
             all_applied.extend(applied)
-            all_suggested.extend(suggested)
 
             if not applied or not has_conflicts:
                 break
