@@ -129,6 +129,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Override auto-detected repository type (repeatable). "
         "Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit.",
     )
+    lint_parser.add_argument(
+        "--rule",
+        dest="rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+    )
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -192,6 +200,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "--suggest",
         action="store_true",
         help="Also apply suggested fixes (not just safe ones)",
+    )
+    fix_parser.add_argument(
+        "--rule",
+        dest="rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
     )
 
     # --- init ---
@@ -401,7 +417,8 @@ def _run_lint(args):
     if args.strict:
         config.strict = True
 
-    linter = Linter(context, config)
+    rule_ids = set(args.rule_ids) if args.rule_ids else None
+    linter = Linter(context, config, rule_ids=rule_ids)
 
     if args.fix:
         import warnings
@@ -601,7 +618,8 @@ def _run_fix(args):
     else:
         config = LinterConfig.default()
 
-    linter = Linter(context, config)
+    rule_ids = set(args.rule_ids) if args.rule_ids else None
+    linter = Linter(context, config, rule_ids=rule_ids)
 
     if not args.use_llm:
         confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
@@ -609,7 +627,7 @@ def _run_fix(args):
 
         if any(f.rule_id == "agentskill-name" for f in applied):
             context = RepositoryContext(args.path)
-            linter = Linter(context, config)
+            linter = Linter(context, config, rule_ids=rule_ids)
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)
             applied.extend(rename_applied)
             suggested.extend(rename_suggested)
