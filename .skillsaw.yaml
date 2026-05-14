@@ -1,12 +1,18 @@
 # skillsaw self-lint config
-version: "99.0.0"
+version: "99.0.0" # high version so all new rules get triggered
 
 exclude:
+  # Agentic artifiacts come from .apm, don't int twice
+  - "AGENTS.md"
+  - "GEMINI.md"
+  - "CLAUDE.md"
   - ".claude/*"
   - ".cursor/*"
   - ".gemini/*"
   - ".opencode/*"
   - ".agents/*"
-  - ".github/instructions/*"
+  - ".github/instructions/*"  
+  # Templates
   - "src/skillsaw/marketplace/templates/*"
+  # Testing fixtures with intentional errors
   - "tests/fixtures/*"
