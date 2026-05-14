@@ -374,3 +374,30 @@ class DisabledRule(Rule):
     # Custom rule should not be loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
     assert "disabled-rule" not in rule_ids
+
+
+def test_promptfoo_budget_example_fixture():
+    """Test that the promptfoo-budget custom rule example works against its fixture."""
+    fixture_dir = Path(__file__).parent.parent / "examples" / "custom-rules" / "promptfoo" / "fixture"
+    rule_file = fixture_dir.parent / "promptfoo_budget_rule.py"
+    assert fixture_dir.is_dir(), f"Fixture dir missing: {fixture_dir}"
+    assert rule_file.is_file(), f"Rule file missing: {rule_file}"
+
+    config = LinterConfig(
+        custom_rules=[str(rule_file)],
+        rules={"promptfoo-budget": {"enabled": True, "severity": "error"}},
+    )
+    context = RepositoryContext(fixture_dir)
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    budget_violations = [v for v in violations if v.rule_id == "promptfoo-budget"]
+    errors = [v for v in budget_violations if v.severity.name == "ERROR"]
+    warnings = [v for v in budget_violations if v.severity.name == "WARNING"]
+
+    assert len(errors) == 2, f"Expected 2 errors, got {len(errors)}: {errors}"
+    assert len(warnings) == 1, f"Expected 1 warning, got {len(warnings)}: {warnings}"
+
+    assert any("judge-size" in v.message for v in errors)
+    assert any("exceeds budget" in v.message for v in errors)
+    assert any("over-classified" in v.message for v in warnings)

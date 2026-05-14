@@ -1,0 +1,33 @@
+# Budget policy for the fixture.
+
+orderings:
+  token-usage: [small, medium, large]
+  judge-size: [none, sonnet, opus]
+  tier: [fast, medium, heavy]
+
+token-usage:
+  small:
+    max-cost: 0.50
+    max-latency: 30000
+  medium:
+    max-cost: 0.50
+    max-latency: 60000
+  large:
+    max-cost: 1.20
+    max-latency: 180000
+
+tiers:
+  fast:
+    max-token-usage: medium
+    max-judge-size: none
+  medium:
+    max-token-usage: medium
+    max-judge-size: opus
+  heavy:
+    max-token-usage: large
+    max-judge-size: opus
+
+budgets:
+  hello-world:
+    allowed: 1.00
+    current: 1.50

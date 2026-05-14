@@ -40,8 +40,6 @@ _SKILL_REPO_TYPES = {
     RepositoryType.PROMPTFOO,
 }
 
-_NON_YAML_EXTENSIONS = frozenset({".csv", ".xlsx", ".xls", ".js", ".ts", ".py", ".json", ".jsonl"})
-
 
 def _is_promptfoo_config(data: object) -> bool:
     """True if data is a mapping with at least one promptfoo-specific key."""
@@ -67,8 +65,6 @@ def _resolve_file_ref(ref: str, config_dir: Path) -> Optional[Path]:
         return None
 
     suffix = Path(raw).suffix.lower()
-    if suffix in _NON_YAML_EXTENSIONS:
-        return None
     if suffix not in (".yaml", ".yml"):
         return None
 

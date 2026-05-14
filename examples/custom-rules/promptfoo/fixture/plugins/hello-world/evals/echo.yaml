@@ -1,0 +1,51 @@
+description: "hello-world echo evals"
+
+providers:
+  - id: openai:gpt-4
+
+prompts:
+  - "{{prompt}}"
+
+defaultTest:
+  assert:
+    - type: latency
+      threshold: 30000
+    - type: cost
+      threshold: 0.50
+
+tests:
+  # Valid: small token-usage, no judge, fast tier — all correct
+  - description: "greeting-default"
+    metadata:
+      token-usage: small
+      judge-size: none
+      tier: fast
+    vars:
+      prompt: "Run /hello-world:echo"
+    assert:
+      - type: contains
+        value: "Hello world"
+
+  # Over-classified: token-usage is 'medium' but thresholds fit 'small'
+  - description: "greeting-named"
+    metadata:
+      token-usage: medium
+      judge-size: none
+      tier: fast
+    vars:
+      prompt: "Run /hello-world:echo Alice"
+    assert:
+      - type: contains
+        value: "Hello Alice"
+
+  # Wrong judge-size: has llm-rubric but judge-size is 'none'
+  - description: "greeting-quality"
+    metadata:
+      token-usage: small
+      judge-size: none
+      tier: fast
+    vars:
+      prompt: "Run /hello-world:echo Bob"
+    assert:
+      - type: llm-rubric
+        value: "Response greets Bob by name"
