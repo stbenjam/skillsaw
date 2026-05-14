@@ -19,7 +19,7 @@ CRITICAL: You MUST always run these steps before pushing changes.
 
 Before opening a pull request, you must:
 
-- Evaluate where documentation is up to date for the changes on this branch. 
+- Evaluate whether documentation is up to date for the changes on this branch.
     - Example: you added a new feature, flag, or lint type
       Action: You update README.md to include this
     - Example: you encountered a problem during development that would be important to remember later

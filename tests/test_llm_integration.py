@@ -645,8 +645,6 @@ class TestLLMFixScopedLinting:
 
 def _make_promptfoo_repo(tmp_path, prompt_content):
     """Create a minimal promptfoo repo with a single prompt string."""
-    claude_dir = tmp_path / ".claude"
-    claude_dir.mkdir()
     yaml_content = (
         "description: test eval\n"
         "\n"
@@ -668,8 +666,6 @@ def _make_promptfoo_repo(tmp_path, prompt_content):
 
 def _make_coderabbit_repo(tmp_path, instructions_content):
     """Create a minimal repo with a .coderabbit.yaml containing instructions."""
-    claude_dir = tmp_path / ".claude"
-    claude_dir.mkdir()
     yaml_content = (
         "language: en-US\n"
         "reviews:\n"
@@ -760,6 +756,8 @@ class TestYAMLContentBlockLLMFix:
         provider = _fake_fix_provider(case.fixed_content)
         result = linter.llm_fix(provider, min_severity=case.min_severity)
         assert result.violations_before > 0
+        assert result.violations_after < result.violations_before
+        assert result.success
 
     @pytest.mark.parametrize("case", YAML_FIX_CASES, ids=[c.name for c in YAML_FIX_CASES])
     def test_yaml_roundtrip_valid(self, tmp_path, case):
@@ -785,6 +783,7 @@ class TestYAMLContentBlockLLMFix:
             assert "prompts" in data, "promptfoo config must still have prompts key"
             assert isinstance(data["prompts"], list)
             assert len(data["prompts"]) >= 1
+            assert (data["prompts"][0] or "").strip() == case.fixed_content.strip()
             assert "providers" in data
             assert "tests" in data
         else:
@@ -792,4 +791,4 @@ class TestYAMLContentBlockLLMFix:
             pi = data["reviews"]["path_instructions"]
             assert isinstance(pi, list)
             assert len(pi) >= 1
-            assert "instructions" in pi[0]
+            assert (pi[0].get("instructions") or "").strip() == case.fixed_content.strip()
