@@ -69,9 +69,7 @@ class Linter:
             unknown = self._rule_ids - self._known_rule_ids
             if unknown:
                 formatted = ", ".join(sorted(unknown))
-                raise ValueError(
-                    f"Unknown rule(s): {formatted}"
-                )
+                raise ValueError(f"Unknown rule(s): {formatted}")
 
     def _load_rules(self):
         """Load all enabled rules"""
