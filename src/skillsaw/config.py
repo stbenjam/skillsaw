@@ -98,17 +98,13 @@ class LinterConfig:
                     f"got {type(rule_config).__name__}"
                 )
             else:
-                enabled = rule_config.get("enabled")
-                if (
-                    enabled is not None
-                    and enabled is not True
-                    and enabled is not False
-                    and enabled != "auto"
-                ):
-                    raise ValueError(
-                        f"'rules.{rule_id}.enabled' must be true, false, "
-                        f'or "auto", got {enabled!r}'
-                    )
+                if "enabled" in rule_config:
+                    enabled = rule_config["enabled"]
+                    if enabled is not True and enabled is not False and enabled != "auto":
+                        raise ValueError(
+                            f"'rules.{rule_id}.enabled' must be true, false, "
+                            f'or "auto", got {enabled!r}'
+                        )
 
         if raw_custom_rules is None:
             custom_rules = []

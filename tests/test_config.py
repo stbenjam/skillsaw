@@ -681,7 +681,7 @@ def test_enabled_typo_raises_error(temp_dir):
     import pytest
 
     with pytest.raises(
-        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -694,7 +694,7 @@ def test_enabled_string_false_raises_error(temp_dir):
     import pytest
 
     with pytest.raises(
-        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -707,7 +707,7 @@ def test_enabled_string_true_raises_error(temp_dir):
     import pytest
 
     with pytest.raises(
-        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -724,6 +724,20 @@ def test_enabled_valid_values_accepted(temp_dir):
 
     config_file.write_text("rules:\n  plugin-json-required:\n    enabled: auto\n")
     LinterConfig.from_file(config_file)
+
+
+def test_enabled_null_raises_error(temp_dir):
+    """enabled: null should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: null\n")
+
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=r"'rules\.plugin-json-required\.enabled' must be true, false",
+    ):
+        LinterConfig.from_file(config_file)
 
 
 # --- Non-enabled config overrides tests ---
