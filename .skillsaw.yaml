@@ -2,7 +2,7 @@
 version: "99.0.0" # high version so all new rules get triggered
 
 exclude:
-  # Agentic artifiacts come from .apm, don't lint twice
+  # Agentic artifacts come from .apm, don't lint twice
   - "AGENTS.md"
   - "GEMINI.md"
   - "CLAUDE.md"
