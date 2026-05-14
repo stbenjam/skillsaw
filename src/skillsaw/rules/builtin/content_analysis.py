@@ -480,6 +480,85 @@ class CodeRabbitContentBlock(ContentBlock):
         return results
 
 
+@dataclass(eq=False)
+class PromptfooPromptBlock(ContentBlock):
+    """A prompt string extracted from a promptfoo eval config."""
+
+    yaml_path: str = ""
+    category: str = "promptfoo-prompt"
+
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        body = self.body if self.body is not None else ""
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        ruyaml = _RuamelYAML()
+        ruyaml.preserve_quotes = True
+        raw = self.path.read_text(encoding="utf-8")
+        data = ruyaml.load(raw)
+        if data is None or not isinstance(data, dict):
+            return
+        prompts = data.get("prompts")
+        if not isinstance(prompts, list):
+            return
+        idx_str = self.yaml_path.replace("prompts[", "").rstrip("]")
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            return
+        if 0 <= idx < len(prompts):
+            prompts[idx] = new_body
+        buf = StringIO()
+        ruyaml.dump(data, buf)
+        self.path.write_text(buf.getvalue(), encoding="utf-8")
+
+    def tree_label(self) -> str:
+        return f"{self.yaml_path} ({self.category})"
+
+    def __eq__(self, other):
+        if not isinstance(other, PromptfooPromptBlock):
+            return NotImplemented
+        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve(), self.yaml_path))
+
+    _TEMPLATE_ONLY_RE = re.compile(r"^\s*\{\{.*\}\}\s*$")
+
+    @classmethod
+    def gather_from_tree(cls, root: LintTarget) -> List["PromptfooPromptBlock"]:
+        from skillsaw.lint_target import PromptfooConfigNode
+        from skillsaw.rules.builtin.utils import read_yaml_commented, commented_item_line
+
+        blocks: List[PromptfooPromptBlock] = []
+        for node in root.find(PromptfooConfigNode):
+            if node.is_fragment:
+                continue
+            data, error, _ = read_yaml_commented(node.path)
+            if error or not isinstance(data, dict):
+                continue
+            prompts = data.get("prompts")
+            if not isinstance(prompts, list):
+                continue
+            for i, prompt in enumerate(prompts):
+                if not isinstance(prompt, str) or not prompt.strip():
+                    continue
+                if cls._TEMPLATE_ONLY_RE.match(prompt):
+                    continue
+                line = commented_item_line(prompts, i) or 0
+                blocks.append(
+                    cls(
+                        path=node.path,
+                        body=prompt,
+                        line_offset=line,
+                        yaml_path=f"prompts[{i}]",
+                    )
+                )
+        return blocks
+
+
 # ---------------------------------------------------------------------------
 # Typed content blocks — each hardcodes its category as a class default.
 # Rules discover blocks via ``find(BlockType)``; ``category`` is kept for

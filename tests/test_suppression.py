@@ -322,6 +322,91 @@ class TestBuildSuppressionMap:
         assert not smap.is_suppressed("content-weak-language", 8)
         assert not smap.is_suppressed("content-tautological", 8)
 
+    # -- YAML hash-comment directives ----------------------------------------
+
+    def test_yaml_disable_enable_pair(self):
+        content = (
+            "providers:\n"
+            "# skillsaw-disable promptfoo-valid\n"
+            "tests: 42\n"
+            "# skillsaw-enable promptfoo-valid\n"
+            "prompts:\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 3)
+        assert not smap.is_suppressed("promptfoo-valid", 5)
+        assert not smap.is_suppressed("other-rule", 3)
+
+    def test_yaml_disable_next_line(self):
+        content = (
+            "providers:\n"
+            "# skillsaw-disable-next-line promptfoo-valid\n"
+            "tests: 42\n"
+            "scenarios: also-bad\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 3)
+        assert not smap.is_suppressed("promptfoo-valid", 4)
+
+    def test_yaml_disable_all(self):
+        content = "# skillsaw-disable\n" "tests: 42\n" "# skillsaw-enable\n" "tests: 42\n"
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("any-rule", 2)
+        assert not smap.is_suppressed("any-rule", 4)
+
+    def test_yaml_indented_comment(self):
+        content = (
+            "providers:\n"
+            "  # skillsaw-disable-next-line promptfoo-valid\n"
+            "  tests: 42\n"
+            "  tests: also-bad\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 3)
+        assert not smap.is_suppressed("promptfoo-valid", 4)
+
+    def test_yaml_inline_comment_not_matched(self):
+        content = "tests: 42  # skillsaw-disable promptfoo-valid\n" "scenarios: bad\n"
+        smap = build_suppression_map(content)
+        assert not smap.is_suppressed("promptfoo-valid", 1)
+        assert not smap.is_suppressed("promptfoo-valid", 2)
+
+    def test_mixed_html_and_yaml_directives(self):
+        content = (
+            "<!-- skillsaw-disable content-weak-language -->\n"
+            "Try to handle errors.\n"
+            "<!-- skillsaw-enable content-weak-language -->\n"
+            "# skillsaw-disable-next-line promptfoo-valid\n"
+            "tests: 42\n"
+            "other: content\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("content-weak-language", 2)
+        assert not smap.is_suppressed("content-weak-language", 5)
+        assert smap.is_suppressed("promptfoo-valid", 5)
+        assert not smap.is_suppressed("promptfoo-valid", 6)
+
+    def test_yaml_multiple_rules(self):
+        content = (
+            "# skillsaw-disable promptfoo-valid, promptfoo-assertions\n"
+            "tests: 42\n"
+            "# skillsaw-enable\n"
+            "tests: ok\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 2)
+        assert smap.is_suppressed("promptfoo-assertions", 2)
+        assert not smap.is_suppressed("promptfoo-valid", 4)
+        assert not smap.is_suppressed("promptfoo-assertions", 4)
+
+    def test_yaml_unclosed_disable_suppresses_rest(self):
+        content = (
+            "providers:\n" "# skillsaw-disable promptfoo-valid\n" "tests: 42\n" "scenarios: bad\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 3)
+        assert smap.is_suppressed("promptfoo-valid", 4)
+
 
 class TestBuildSuppressionMapForFile:
     def test_reads_file(self, temp_dir):
@@ -441,3 +526,24 @@ class TestInlineSuppressionIntegration:
         taut = [v for v in violations if v.rule_id == "content-tautological"]
         # At least some violations from line 4
         assert len(weak) >= 1 or len(taut) >= 1
+
+    def test_yaml_suppress_promptfoo_violation(self, temp_dir):
+        """YAML # comments should suppress promptfoo rule violations via file-level map"""
+        config_path = temp_dir / "promptfooconfig.yaml"
+        config_path.write_text(
+            "# skillsaw-disable promptfoo-valid\n"
+            "providers:\n"
+            "  - openai:gpt-4\n"
+            "tests:\n"
+            "  - description: t1\n"
+            "    assert:\n"
+            "      - value: missing-type\n"
+        )
+        context = RepositoryContext(temp_dir)
+        config = LinterConfig.default()
+        config.rules["promptfoo-valid"] = {"enabled": True, "severity": "error"}
+        linter = Linter(context, config)
+        violations = linter.run()
+
+        pf = [v for v in violations if v.rule_id == "promptfoo-valid"]
+        assert len(pf) == 0

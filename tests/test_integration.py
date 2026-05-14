@@ -362,6 +362,25 @@ class TestApm:
         assert any("description" in v["message"].lower() for v in apm_violations)
 
 
+# ── Promptfoo ────────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestPromptfoo:
+
+    def test_nested_promptfoo_config_detected(self, tmp_path):
+        repo = copy_fixture("promptfoo/nested-config", tmp_path)
+        r = run_lint(repo)
+        stats = r["out"]["stats"]
+        assert "promptfoo" in stats["repo_types"]
+
+    def test_nested_promptfoo_config_validates(self, tmp_path):
+        repo = copy_fixture("promptfoo/nested-config", tmp_path)
+        r = run_lint(repo)
+        promptfoo_violations = [v for v in violations(r) if v["rule_id"].startswith("promptfoo-")]
+        assert len(promptfoo_violations) == 0
+
+
 # ── Inline Suppression ───────────────────────────────────────────
 
 
@@ -603,6 +622,8 @@ OPT_IN_RULES = {
     "mcp-prohibited",
     "agentskill-structure",
     "agentskill-evals-required",
+    "promptfoo-assertions",
+    "promptfoo-metadata",
 }
 
 
