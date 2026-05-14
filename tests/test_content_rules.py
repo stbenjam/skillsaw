@@ -814,6 +814,28 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
 
+    def test_inline_code_spans_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use `([Prow]({prow_url}) | [Intervals]({sippy_url}))` for links.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_double_backtick_code_spans_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Use ``[broken](nonexistent.md)`` in your template.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_multiline_code_span_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use `some code\n[broken](nonexistent.md)\nmore code` in your template.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
 
 class TestContentUnlinkedInternalReferenceRule:
     def test_rule_metadata(self):
