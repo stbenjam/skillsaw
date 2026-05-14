@@ -15,7 +15,8 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_yaml
 
 _PROMPTFOO_KEYS = frozenset(
-    {"providers", "prompts", "tests", "scenarios", "defaultTest", "evaluateOptions"}
+    {"providers", "prompts", "tests", "scenarios", "defaultTest", "evaluateOptions",
+     "redteam", "targets"}
 )
 
 _SKILL_REPO_TYPES = {
@@ -157,16 +158,25 @@ class PromptfooValidRule(Rule):
 
         tests = data.get("tests")
         scenarios = data.get("scenarios")
+        redteam = data.get("redteam")
 
-        if tests is None and scenarios is None:
+        if tests is None and scenarios is None and redteam is None:
             violations.append(
                 self.violation(
-                    "No 'tests' or 'scenarios' found",
+                    "No 'tests', 'scenarios', or 'redteam' found",
                     file_path=config_path,
                     severity=Severity.WARNING,
                 )
             )
             return
+
+        if redteam is not None and not isinstance(redteam, dict):
+            violations.append(
+                self.violation(
+                    "'redteam' must be a mapping",
+                    file_path=config_path,
+                )
+            )
 
         if scenarios is not None and not isinstance(scenarios, (list, str)):
             violations.append(
@@ -181,6 +191,8 @@ class PromptfooValidRule(Rule):
                 self._check_file_ref_exists(tests, config_path, violations)
             elif isinstance(tests, list):
                 self._validate_test_list(tests, config_path, violations)
+            elif isinstance(tests, dict):
+                pass
             else:
                 violations.append(
                     self.violation(

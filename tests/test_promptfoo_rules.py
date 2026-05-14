@@ -69,6 +69,10 @@ def test_is_promptfoo_config_rejects_non_dict():
     assert not _is_promptfoo_config(None)
 
 
+def test_is_promptfoo_config_with_redteam():
+    assert _is_promptfoo_config({"redteam": {"plugins": ["harmful"]}, "targets": [{"id": "openai:gpt-4"}]})
+
+
 def test_is_promptfoo_config_rejects_no_promptfoo_keys():
     assert not _is_promptfoo_config({"name": "foo", "version": "1.0"})
 
@@ -382,6 +386,49 @@ def test_invalid_yaml_fails(temp_dir):
     assert any("Invalid YAML" in v.message for v in violations)
 
 
+def test_redteam_config_passes(temp_dir):
+    _write_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        {
+            "targets": [{"id": "openai:gpt-4"}],
+            "redteam": {
+                "purpose": "Test travel assistant",
+                "plugins": ["harmful:self-harm", "politics"],
+                "strategies": ["jailbreak", "prompt-injection"],
+            },
+        },
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
+def test_redteam_invalid_type_fails(temp_dir):
+    _write_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        {"targets": [{"id": "openai:gpt-4"}], "redteam": "not-a-dict"},
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert any("'redteam' must be a mapping" in v.message for v in violations)
+
+
+def test_tests_as_dict_dataset_provider_passes(temp_dir):
+    _write_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        {
+            "providers": [{"id": "openai:gpt-4"}],
+            "tests": {
+                "path": "file://dataset_loader.ts:generate_tests",
+                "config": {"dataset": "EleutherAI/truthful_qa_mc"},
+            },
+        },
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
 def test_no_tests_or_scenarios_warns(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
@@ -393,6 +440,7 @@ def test_no_tests_or_scenarios_warns(temp_dir):
     assert len(violations) == 1
     assert "tests" in violations[0].message
     assert "scenarios" in violations[0].message
+    assert "redteam" in violations[0].message
     assert violations[0].severity == Severity.WARNING
 
 
