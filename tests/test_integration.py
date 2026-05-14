@@ -1138,6 +1138,20 @@ class TestRuleFilter:
         assert len(vs) > 0
         assert all(v["rule_id"] == "agentskill-evals-required" for v in vs)
 
+    def test_rule_flag_unknown_rule_errors(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--rule", "no-such-rule")
+        assert r["rc"] != 0
+        assert "Unknown rule" in r["stderr"]
+        assert "no-such-rule" in r["stderr"]
+
+    def test_rule_flag_unknown_rule_errors_fix(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        args = [sys.executable, "-m", "skillsaw", "fix", "--rule", "no-such-rule", str(repo)]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        assert result.returncode != 0
+        assert "Unknown rule" in result.stderr
+
     def test_rule_flag_works_with_fix(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         result = _run_fix(repo, "--rule", "agentskill-name")

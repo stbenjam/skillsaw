@@ -65,6 +65,14 @@ class Linter:
         self.rules: List[Rule] = []
         self._load_rules()
 
+        if self._rule_ids:
+            unknown = self._rule_ids - self._known_rule_ids
+            if unknown:
+                formatted = ", ".join(sorted(unknown))
+                raise ValueError(
+                    f"Unknown rule(s): {formatted}"
+                )
+
     def _load_rules(self):
         """Load all enabled rules"""
         self._known_rule_ids: set = set()

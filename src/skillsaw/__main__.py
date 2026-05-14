@@ -418,7 +418,11 @@ def _run_lint(args):
         config.strict = True
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
-    linter = Linter(context, config, rule_ids=rule_ids)
+    try:
+        linter = Linter(context, config, rule_ids=rule_ids)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.fix:
         import warnings
@@ -619,7 +623,11 @@ def _run_fix(args):
         config = LinterConfig.default()
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
-    linter = Linter(context, config, rule_ids=rule_ids)
+    try:
+        linter = Linter(context, config, rule_ids=rule_ids)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if not args.use_llm:
         confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
