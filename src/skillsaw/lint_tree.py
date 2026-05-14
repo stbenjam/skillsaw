@@ -345,7 +345,7 @@ def _build_promptfoo_nodes(
             resolved = _resolve_file_ref(ref, config_dir)
             if resolved is None or resolved in seen:
                 continue
-            if not resolved.exists():
+            if not resolved.exists() or _is_excluded(Path(resolved)):
                 continue
             seen.add(resolved)
             frag = PromptfooConfigNode(path=Path(resolved), is_fragment=True)

@@ -529,14 +529,25 @@ class PromptfooMetadataRule(Rule):
             if node.is_fragment:
                 continue
 
+            data, error, _ = read_yaml_commented(node.path)
+            if error or not isinstance(data, dict):
+                continue
+
+            default_test = data.get("defaultTest")
+            default_metadata: Dict[str, Any] = {}
+            if isinstance(default_test, dict):
+                dm = default_test.get("metadata")
+                if isinstance(dm, dict):
+                    default_metadata = dm
+
             all_tests = _collect_tests(node, context)
 
             for i, info in enumerate(all_tests):
                 test = info.test
-                metadata = test.get("metadata")
+                test_metadata = test.get("metadata")
                 desc = test.get("description", f"tests[{i}]")
 
-                if metadata is None:
+                if test_metadata is None and not default_metadata:
                     if required_keys:
                         violations.append(
                             self.violation(
@@ -548,7 +559,7 @@ class PromptfooMetadataRule(Rule):
                         )
                     continue
 
-                if not isinstance(metadata, dict):
+                if test_metadata is not None and not isinstance(test_metadata, dict):
                     violations.append(
                         self.violation(
                             f"Test '{desc}' 'metadata' must be a mapping",
@@ -558,8 +569,10 @@ class PromptfooMetadataRule(Rule):
                     )
                     continue
 
+                combined_metadata = {**default_metadata, **(test_metadata or {})}
+
                 if required_keys:
-                    missing = required_keys - set(metadata.keys())
+                    missing = required_keys - set(combined_metadata.keys())
                     if missing:
                         violations.append(
                             self.violation(

@@ -64,7 +64,7 @@ class PromptfooConfigNode(LintTarget):
 
 Tree placement depends on context:
 
-```
+```text
 root
 ├── PluginNode (my-plugin/)
 │   ├── CommandBlock (commands/foo.md)
@@ -151,7 +151,7 @@ Structural validation of promptfoo YAML. Discovers nodes via
 - Each test entry validated same as inline: dict shape, assert arrays, assert
   entry dicts with `type` (skipping `$ref`)
 
-### `promptfoo-assertions` (warning, `enabled: auto`)
+### `promptfoo-assertions` (warning, `enabled: false`)
 
 Policy rule — enforces that tests include specific assertion types and that
 thresholds stay within bounds. Configurable via:
@@ -176,7 +176,7 @@ For each full config node:
   any missing required types
 - Check threshold values against configured min/max bounds
 
-### `promptfoo-metadata` (warning, `enabled: auto`)
+### `promptfoo-metadata` (warning, `enabled: false`)
 
 Policy rule — enforces that test entries include specific metadata keys.
 Configurable via:
