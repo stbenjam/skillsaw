@@ -636,7 +636,7 @@ Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs found in `ev
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `promptfoo-valid` | Validate promptfoo eval YAML configs in evals/ directories | error (auto) | - |
+| `promptfoo-valid` | Validate promptfoo eval YAML config structure and file references | error (auto) | - |
 | `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
 | `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
 

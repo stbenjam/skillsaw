@@ -377,9 +377,7 @@ class TestPromptfoo:
     def test_nested_promptfoo_config_validates(self, tmp_path):
         repo = copy_fixture("promptfoo/nested-config", tmp_path)
         r = run_lint(repo)
-        promptfoo_violations = [
-            v for v in violations(r) if v["rule_id"].startswith("promptfoo-")
-        ]
+        promptfoo_violations = [v for v in violations(r) if v["rule_id"].startswith("promptfoo-")]
         assert len(promptfoo_violations) == 0
 
 

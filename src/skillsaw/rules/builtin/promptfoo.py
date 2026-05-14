@@ -15,8 +15,16 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import read_yaml
 
 _PROMPTFOO_KEYS = frozenset(
-    {"providers", "prompts", "tests", "scenarios", "defaultTest", "evaluateOptions",
-     "redteam", "targets"}
+    {
+        "providers",
+        "prompts",
+        "tests",
+        "scenarios",
+        "defaultTest",
+        "evaluateOptions",
+        "redteam",
+        "targets",
+    }
 )
 
 _SKILL_REPO_TYPES = {
@@ -159,11 +167,12 @@ class PromptfooValidRule(Rule):
         tests = data.get("tests")
         scenarios = data.get("scenarios")
         redteam = data.get("redteam")
+        prompts = data.get("prompts")
 
-        if tests is None and scenarios is None and redteam is None:
+        if tests is None and scenarios is None and redteam is None and prompts is None:
             violations.append(
                 self.violation(
-                    "No 'tests', 'scenarios', or 'redteam' found",
+                    "No 'tests', 'scenarios', 'redteam', or 'prompts' found",
                     file_path=config_path,
                     severity=Severity.WARNING,
                 )

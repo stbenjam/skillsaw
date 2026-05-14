@@ -70,7 +70,9 @@ def test_is_promptfoo_config_rejects_non_dict():
 
 
 def test_is_promptfoo_config_with_redteam():
-    assert _is_promptfoo_config({"redteam": {"plugins": ["harmful"]}, "targets": [{"id": "openai:gpt-4"}]})
+    assert _is_promptfoo_config(
+        {"redteam": {"plugins": ["harmful"]}, "targets": [{"id": "openai:gpt-4"}]}
+    )
 
 
 def test_is_promptfoo_config_rejects_no_promptfoo_keys():
@@ -210,9 +212,7 @@ def test_nested_promptfoo_config_validates_clean(temp_dir):
         {
             "providers": [{"id": "test"}],
             "prompts": ["{{prompt}}"],
-            "defaultTest": {
-                "assert": [{"type": "llm-rubric", "value": "helpful response"}]
-            },
+            "defaultTest": {"assert": [{"type": "llm-rubric", "value": "helpful response"}]},
             "tests": [
                 {
                     "vars": {"prompt": "hello"},
@@ -433,7 +433,7 @@ def test_no_tests_or_scenarios_warns(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
         plugin / "evals" / "no-tests.yaml",
-        {"providers": [{"id": "test"}], "prompts": ["{{prompt}}"]},
+        {"providers": [{"id": "test"}]},
     )
     context = RepositoryContext(plugin)
     violations = PromptfooValidRule().check(context)
@@ -441,6 +441,7 @@ def test_no_tests_or_scenarios_warns(temp_dir):
     assert "tests" in violations[0].message
     assert "scenarios" in violations[0].message
     assert "redteam" in violations[0].message
+    assert "prompts" in violations[0].message
     assert violations[0].severity == Severity.WARNING
 
 
