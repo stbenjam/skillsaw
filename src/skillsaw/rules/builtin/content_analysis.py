@@ -278,7 +278,7 @@ class ContentBlock(LintTarget):
     line_offset: int = 0
     body: Optional[str] = None
     _line_map: Optional[Callable[[int], int]] = field(default=None, repr=False)
-    _stripped_cache: Optional[str] = field(default=None, repr=False, init=False)
+    _stripped_cache: Optional[Tuple[int, str]] = field(default=None, repr=False, init=False)
     _resolved_path: Optional[Path] = field(default=None, repr=False, init=False)
 
     @property
@@ -294,9 +294,12 @@ class ContentBlock(LintTarget):
         return body_line + self.line_offset
 
     def _cached_strip(self, body: str) -> str:
-        if self._stripped_cache is None:
-            self._stripped_cache = _strip_fenced_code_blocks(body)
-        return self._stripped_cache
+        body_id = id(body)
+        if self._stripped_cache is not None and self._stripped_cache[0] == body_id:
+            return self._stripped_cache[1]
+        result = _strip_fenced_code_blocks(body)
+        self._stripped_cache = (body_id, result)
+        return result
 
     def _invalidate_strip_cache(self) -> None:
         self._stripped_cache = None

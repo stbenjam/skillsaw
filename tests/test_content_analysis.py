@@ -831,18 +831,16 @@ class TestReadBodyCache:
 
     def test_write_body_invalidates_cache(self, temp_dir):
         f = temp_dir / "CLAUDE.md"
-        f.write_text("Line 1\n```\nold code\n```\nLine 5\n", encoding="utf-8")
+        f.write_text("Old Content\n```\ncode\n```\n", encoding="utf-8")
         block = ContentFile(path=f, category="instruction")
         block.body = None
         first = block.read_body(strip_code_blocks=True)
-        assert "old code" not in first
-        block.write_body("Line 1\n```\nnew code\n```\nLine 5\n")
+        block.write_body("New Content\n```\ncode\n```\n")
         from skillsaw.rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches(f)
         second = block.read_body(strip_code_blocks=True)
-        assert "new code" not in second
-        assert first != second or first == second
+        assert first != second
 
     def test_body_field_used_when_set(self, temp_dir):
         f = temp_dir / "CLAUDE.md"
