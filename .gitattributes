@@ -1,3 +1,6 @@
+AGENTS.md linguist-generated=true
+CLAUDE.md linguist-generated=true
+GEMINI.md linguist-generated=true
 .claude/** linguist-generated=true
 .cursor/** linguist-generated=true
 .gemini/** linguist-generated=true
