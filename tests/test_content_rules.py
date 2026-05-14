@@ -1,5 +1,6 @@
 """Tests for content intelligence rules."""
 
+import json
 import pytest
 from pathlib import Path
 import tempfile
@@ -545,6 +546,48 @@ class TestContentCognitiveChunksRule:
 
     def test_short_file_skipped(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Short.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentCognitiveChunksRule().check(context)
+        assert len(violations) == 0
+
+    def test_hooks_json_skipped(self, temp_dir):
+        """hooks.json should not trigger cognitive-chunks (structured data, not markdown)"""
+        plugin_dir = temp_dir / "hooks"
+        plugin_dir.mkdir(parents=True)
+        hooks_content = {
+            "description": "Auto-format Go files with gofmt after write/edit",
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Write",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "if": "Write(**/*.go)",
+                                "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gofmt.sh",
+                                "timeout": 10,
+                            }
+                        ],
+                    },
+                    {
+                        "matcher": "Edit",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "if": "Edit(**/*.go)",
+                                "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/gofmt.sh",
+                                "timeout": 10,
+                            }
+                        ],
+                    },
+                ]
+            },
+        }
+        (plugin_dir / "hooks.json").write_text(json.dumps(hooks_content, indent=2))
+        # Also add a plugin.json so the tree builder recognizes this as a plugin
+        (temp_dir / "plugin.json").write_text(
+            json.dumps({"name": "test-plugin", "description": "Test"})
+        )
         context = RepositoryContext(temp_dir)
         violations = ContentCognitiveChunksRule().check(context)
         assert len(violations) == 0
