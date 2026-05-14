@@ -15,6 +15,19 @@ CRITICAL: You MUST always run these steps before pushing changes.
 5. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure
    exit 0.
 
+## Pre-PR Checklist
+
+Before opening a pull request, you must:
+
+- Evaluate where documentation is up to date for the changes on this branch. 
+    - Example: you added a new feature, flag, or lint type
+      Action: You update README.md to include this
+    - Example: you encountered a problem during development that would be important to remember later
+      Action: You update .apm/instructions and run make update
+- Evaluate whether test coverage on a new feature, flag, lint type or bug fix is complete
+    - Bug fixes need regression protection
+    - New features, linters, rules need integration test coverage WITH fixtures (see testing rules)
+ 
 ## Post-PR Checklist
 
 After opening a PR, continue monitoring for feedback from CodeRabbit, Gemini,
@@ -23,7 +36,6 @@ valid feedback that comes in.
 
 ## New Linter Rules
 
-- **EVERYTHING MUST BE PART OF THE PARSE TREE**
 - **Rules should be configurable, when there are tuneable settings**
 - **Never break existing rules for users of skillsaw**
 - **New rules default to `enabled: auto` or `enabled: false`**: never force-enable
@@ -38,6 +50,7 @@ valid feedback that comes in.
 - **Never fabricate line numbers** — if a field is missing, omit the line.
 - **Declare `repo_types`** to control when `enabled: auto` fires.
 - **Declare `config_schema`** when the rule accepts parameters.
+- **EVERYTHING MUST BE PART OF THE PARSE TREE**
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.
