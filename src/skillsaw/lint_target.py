@@ -203,5 +203,5 @@ class PromptfooConfigNode(LintTarget):
     is_fragment: bool = False
 
     def tree_label(self) -> str:
-        suffix = " [fragment]" if self.is_fragment else ""
-        return f"{self.path.name}{suffix}"
+        tag = "promptfoo-fragment" if self.is_fragment else "promptfoo-config"
+        return f"{self.path.name} [{tag}]"

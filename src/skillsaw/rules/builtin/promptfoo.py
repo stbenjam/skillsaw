@@ -32,11 +32,7 @@ _PROMPTFOO_KEYS = frozenset(
     }
 )
 
-_SKILL_REPO_TYPES = {
-    RepositoryType.SINGLE_PLUGIN,
-    RepositoryType.MARKETPLACE,
-    RepositoryType.AGENTSKILLS,
-    RepositoryType.DOT_CLAUDE,
+_PROMPTFOO_REPO_TYPES = {
     RepositoryType.PROMPTFOO,
 }
 
@@ -149,7 +145,7 @@ def _collect_tests(node: PromptfooConfigNode, context: RepositoryContext) -> Lis
 class PromptfooValidRule(Rule):
     """Validate promptfoo eval YAML structure"""
 
-    repo_types = _SKILL_REPO_TYPES
+    repo_types = _PROMPTFOO_REPO_TYPES
 
     @property
     def rule_id(self) -> str:
@@ -360,7 +356,7 @@ class PromptfooValidRule(Rule):
 class PromptfooAssertionsRule(Rule):
     """Require specific assertion types in promptfoo eval tests"""
 
-    repo_types = _SKILL_REPO_TYPES
+    repo_types = _PROMPTFOO_REPO_TYPES
 
     config_schema = {
         "required-types": {
@@ -499,7 +495,7 @@ class PromptfooAssertionsRule(Rule):
 class PromptfooMetadataRule(Rule):
     """Require specific metadata keys on promptfoo eval tests"""
 
-    repo_types = _SKILL_REPO_TYPES
+    repo_types = _PROMPTFOO_REPO_TYPES
 
     config_schema = {
         "required-keys": {
