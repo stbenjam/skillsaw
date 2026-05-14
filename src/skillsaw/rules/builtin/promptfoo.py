@@ -6,13 +6,18 @@ test fragment files referenced via file://, validates their structure, and
 optionally enforces assertion-type and metadata policies.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import PromptfooConfigNode
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.utils import read_yaml
+from skillsaw.rules.builtin.utils import (
+    commented_item_line,
+    commented_key_line,
+    read_yaml_commented,
+)
 
 _PROMPTFOO_KEYS = frozenset(
     {
@@ -93,29 +98,54 @@ def _get_assertion_types(assert_list: Any) -> Set[str]:
     return types
 
 
-def _collect_tests(node: PromptfooConfigNode, context: RepositoryContext) -> List[dict]:
+@dataclass
+class _TestInfo:
+    """A test dict with its source file and line number."""
+
+    test: dict
+    file_path: Path
+    line: Optional[int] = None
+
+
+def _collect_tests(node: PromptfooConfigNode, context: RepositoryContext) -> List[_TestInfo]:
     """Collect all test dicts reachable from a full config node, including fragments."""
-    data, error = read_yaml(node.path)
+    data, error, _ = read_yaml_commented(node.path)
     if error or not isinstance(data, dict):
         return []
 
-    tests: List[dict] = []
+    tests: List[_TestInfo] = []
     raw_tests = data.get("tests")
     if isinstance(raw_tests, list):
-        tests.extend(t for t in raw_tests if isinstance(t, dict))
+        for i, t in enumerate(raw_tests):
+            if isinstance(t, dict):
+                tests.append(
+                    _TestInfo(
+                        test=t,
+                        file_path=node.path,
+                        line=commented_item_line(raw_tests, i),
+                    )
+                )
 
     for child in node.find(PromptfooConfigNode):
         if child is node:
             continue
         if not child.is_fragment:
             continue
-        frag_data, frag_err = read_yaml(child.path)
+        frag_data, frag_err, _ = read_yaml_commented(child.path)
         if frag_err:
             continue
         if isinstance(frag_data, list):
-            tests.extend(t for t in frag_data if isinstance(t, dict))
+            for i, t in enumerate(frag_data):
+                if isinstance(t, dict):
+                    tests.append(
+                        _TestInfo(
+                            test=t,
+                            file_path=child.path,
+                            line=commented_item_line(frag_data, i),
+                        )
+                    )
         elif isinstance(frag_data, dict):
-            tests.append(frag_data)
+            tests.append(_TestInfo(test=frag_data, file_path=child.path, line=1))
 
     return tests
 
@@ -140,9 +170,11 @@ class PromptfooValidRule(Rule):
         violations: List[RuleViolation] = []
 
         for node in context.lint_tree.find(PromptfooConfigNode):
-            data, error = read_yaml(node.path)
+            data, error, error_line = read_yaml_commented(node.path)
             if error:
-                violations.append(self.violation(f"Invalid YAML: {error}", file_path=node.path))
+                violations.append(
+                    self.violation(f"Invalid YAML: {error}", file_path=node.path, line=error_line)
+                )
                 continue
 
             if node.is_fragment:
@@ -184,6 +216,7 @@ class PromptfooValidRule(Rule):
                 self.violation(
                     "'redteam' must be a mapping",
                     file_path=config_path,
+                    line=commented_key_line(data, "redteam"),
                 )
             )
 
@@ -192,12 +225,18 @@ class PromptfooValidRule(Rule):
                 self.violation(
                     "'scenarios' must be an array or a string file reference",
                     file_path=config_path,
+                    line=commented_key_line(data, "scenarios"),
                 )
             )
 
         if tests is not None:
             if isinstance(tests, str):
-                self._check_file_ref_exists(tests, config_path, violations)
+                self._check_file_ref_exists(
+                    tests,
+                    config_path,
+                    violations,
+                    line=commented_key_line(data, "tests"),
+                )
             elif isinstance(tests, list):
                 self._validate_test_list(tests, config_path, violations)
             elif isinstance(tests, dict):
@@ -207,6 +246,7 @@ class PromptfooValidRule(Rule):
                     self.violation(
                         "'tests' must be an array or a string file reference",
                         file_path=config_path,
+                        line=commented_key_line(data, "tests"),
                     )
                 )
 
@@ -217,7 +257,11 @@ class PromptfooValidRule(Rule):
             for i, test in enumerate(data):
                 if not isinstance(test, dict):
                     violations.append(
-                        self.violation(f"tests[{i}] must be a mapping", file_path=frag_path)
+                        self.violation(
+                            f"tests[{i}] must be a mapping",
+                            file_path=frag_path,
+                            line=commented_item_line(data, i),
+                        )
                     )
                     continue
                 self._validate_test_assertions(test, i, frag_path, violations)
@@ -239,13 +283,19 @@ class PromptfooValidRule(Rule):
     ) -> None:
         for i, test in enumerate(tests):
             if isinstance(test, str):
-                self._check_file_ref_exists(test, config_path, violations)
+                self._check_file_ref_exists(
+                    test,
+                    config_path,
+                    violations,
+                    line=commented_item_line(tests, i),
+                )
                 continue
             if not isinstance(test, dict):
                 violations.append(
                     self.violation(
                         f"tests[{i}] must be a mapping or a string file reference",
                         file_path=config_path,
+                        line=commented_item_line(tests, i),
                     )
                 )
                 continue
@@ -266,6 +316,7 @@ class PromptfooValidRule(Rule):
                 self.violation(
                     f"tests[{index}] 'assert' must be an array",
                     file_path=file_path,
+                    line=commented_key_line(test, "assert"),
                 )
             )
             return
@@ -275,6 +326,7 @@ class PromptfooValidRule(Rule):
                     self.violation(
                         f"tests[{index}].assert[{j}] must be a mapping",
                         file_path=file_path,
+                        line=commented_item_line(asserts, j),
                     )
                 )
                 continue
@@ -285,11 +337,16 @@ class PromptfooValidRule(Rule):
                     self.violation(
                         f"tests[{index}].assert[{j}] missing required 'type'",
                         file_path=file_path,
+                        line=commented_item_line(asserts, j),
                     )
                 )
 
     def _check_file_ref_exists(
-        self, ref: str, config_path: Path, violations: List[RuleViolation]
+        self,
+        ref: str,
+        config_path: Path,
+        violations: List[RuleViolation],
+        line: Optional[int] = None,
     ) -> None:
         resolved = _resolve_file_ref(ref, config_path.parent)
         if resolved is None:
@@ -299,6 +356,7 @@ class PromptfooValidRule(Rule):
                 self.violation(
                     f"File reference '{ref}' not found",
                     file_path=config_path,
+                    line=line,
                 )
             )
 
@@ -349,7 +407,7 @@ class PromptfooAssertionsRule(Rule):
             if node.is_fragment:
                 continue
 
-            data, error = read_yaml(node.path)
+            data, error, _ = read_yaml_commented(node.path)
             if error or not isinstance(data, dict):
                 continue
 
@@ -369,7 +427,8 @@ class PromptfooAssertionsRule(Rule):
 
             all_tests = _collect_tests(node, context)
 
-            for i, test in enumerate(all_tests):
+            for i, info in enumerate(all_tests):
+                test = info.test
                 test_types = _get_assertion_types(test.get("assert", []))
                 desc = test.get("description", f"tests[{i}]")
 
@@ -381,7 +440,8 @@ class PromptfooAssertionsRule(Rule):
                             self.violation(
                                 f"Test '{desc}' missing required assertion type(s): "
                                 f"{', '.join(sorted(missing))}",
-                                file_path=node.path,
+                                file_path=info.file_path,
+                                line=info.line,
                             )
                         )
 
@@ -390,7 +450,7 @@ class PromptfooAssertionsRule(Rule):
                         test.get("assert", []),
                         desc,
                         constraints,
-                        node.path,
+                        info.file_path,
                         violations,
                     )
 
@@ -406,7 +466,7 @@ class PromptfooAssertionsRule(Rule):
     ) -> None:
         if not isinstance(assert_list, list):
             return
-        for a in assert_list:
+        for j, a in enumerate(assert_list):
             if not isinstance(a, dict):
                 continue
             a_type = a.get("type")
@@ -418,6 +478,7 @@ class PromptfooAssertionsRule(Rule):
             bounds = constraints[a_type]
             if not isinstance(bounds, dict):
                 continue
+            a_line = commented_item_line(assert_list, j)
             max_val = bounds.get("max")
             if isinstance(max_val, (int, float)) and threshold > max_val:
                 violations.append(
@@ -425,6 +486,7 @@ class PromptfooAssertionsRule(Rule):
                         f"'{label}' {a_type} threshold {threshold} exceeds "
                         f"max allowed {max_val}",
                         file_path=config_path,
+                        line=a_line,
                     )
                 )
             min_val = bounds.get("min")
@@ -433,6 +495,7 @@ class PromptfooAssertionsRule(Rule):
                     self.violation(
                         f"'{label}' {a_type} threshold {threshold} below " f"min allowed {min_val}",
                         file_path=config_path,
+                        line=a_line,
                     )
                 )
 
@@ -476,7 +539,8 @@ class PromptfooMetadataRule(Rule):
 
             all_tests = _collect_tests(node, context)
 
-            for i, test in enumerate(all_tests):
+            for i, info in enumerate(all_tests):
+                test = info.test
                 metadata = test.get("metadata")
                 desc = test.get("description", f"tests[{i}]")
 
@@ -486,7 +550,8 @@ class PromptfooMetadataRule(Rule):
                             self.violation(
                                 f"Test '{desc}' missing 'metadata' "
                                 f"(required keys: {', '.join(sorted(required_keys))})",
-                                file_path=node.path,
+                                file_path=info.file_path,
+                                line=info.line,
                             )
                         )
                     continue
@@ -495,7 +560,8 @@ class PromptfooMetadataRule(Rule):
                     violations.append(
                         self.violation(
                             f"Test '{desc}' 'metadata' must be a mapping",
-                            file_path=node.path,
+                            file_path=info.file_path,
+                            line=commented_key_line(test, "metadata") or info.line,
                         )
                     )
                     continue
@@ -507,7 +573,8 @@ class PromptfooMetadataRule(Rule):
                             self.violation(
                                 f"Test '{desc}' missing required metadata key(s): "
                                 f"{', '.join(sorted(missing))}",
-                                file_path=node.path,
+                                file_path=info.file_path,
+                                line=commented_key_line(test, "metadata") or info.line,
                             )
                         )
 

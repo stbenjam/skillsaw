@@ -172,6 +172,45 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
 
 
 @_file_cache.cached
+def read_yaml_commented(
+    file_path: Path,
+) -> Tuple[Any, Optional[str], Optional[int]]:
+    """Cached YAML read preserving line-number info via ruamel.yaml.
+
+    Returns ``(data, error_msg, error_line)`` where *data* is a
+    ``CommentedMap`` / ``CommentedSeq`` supporting ``.lc.key()`` and
+    ``.lc.item()`` for line-number lookups.
+    """
+    content = read_text(file_path)
+    if content is None:
+        return None, f"Failed to read {file_path.name}", None
+    ry = _RuamelYAML()
+    ry.preserve_quotes = True
+    try:
+        data = ry.load(content)
+        return data, None, None
+    except _RuamelYAMLError as e:
+        line = None
+        if hasattr(e, "problem_mark") and e.problem_mark is not None:
+            line = e.problem_mark.line + 1
+        return None, str(e), line
+
+
+def commented_key_line(node: Any, key: str) -> Optional[int]:
+    """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
+    if isinstance(node, CommentedMap) and key in node:
+        return node.lc.key(key)[0] + 1
+    return None
+
+
+def commented_item_line(node: Any, index: int) -> Optional[int]:
+    """Get the 1-based line number of item *index* in a ruamel ``CommentedSeq``."""
+    if isinstance(node, CommentedSeq) and index < len(node):
+        return node.lc.item(index)[0] + 1
+    return None
+
+
+@_file_cache.cached
 def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     """Find the 1-based line number of a top-level key in YAML frontmatter.
 

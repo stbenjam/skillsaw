@@ -20,6 +20,17 @@ inline PR comments on the exact line.
 
 When in doubt, report the line. An approximate line is better than no line.
 
+## Architecture
+
+Rules discover files through the lint tree (`context.lint_tree.find(NodeType)`),
+never by scanning the filesystem directly. For YAML files, use
+`read_yaml_commented()` from `utils.py` — it returns ruamel.yaml
+`CommentedMap`/`CommentedSeq` objects that preserve line numbers via `.lc`.
+Never use `yaml.safe_load()` or `read_yaml()` in rules that need line numbers.
+
+Use the `commented_key_line(node, key)` and `commented_item_line(node, index)`
+helpers to extract 1-based line numbers from ruamel data structures.
+
 ## Rule Design
 
 Rules declare `repo_types` to control when `enabled: auto` fires:

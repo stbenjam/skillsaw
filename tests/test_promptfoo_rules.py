@@ -986,6 +986,148 @@ def test_metadata_not_mapping_fails(temp_dir):
 
 
 # ---------------------------------------------------------------------------
+# Line number reporting
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_yaml_reports_error_line(temp_dir):
+    (temp_dir / "promptfooconfig.yaml").write_text(
+        "providers:\n"
+        "  - openai:gpt-4\n"
+        "tests:\n"
+        "  - description: t1\n"
+        "    assert: [bad yaml: [\n"
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line is not None
+
+
+def test_missing_type_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - description: t1
+            assert:
+              - value: no type here
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 6
+
+
+def test_redteam_invalid_type_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        targets:
+          - id: openai:gpt-4
+        redteam: not-a-dict
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 3
+
+
+def test_assert_not_array_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - description: t1
+            assert: not-an-array
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 5
+
+
+def test_file_ref_not_found_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - file://nonexistent.yaml
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 4
+
+
+def test_assertions_missing_type_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - description: needs cost
+            assert:
+              - type: contains
+                value: hello
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    rule = PromptfooAssertionsRule(config={"required-types": ["cost"]})
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 4
+
+
+def test_metadata_missing_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - description: needs metadata
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    rule = PromptfooMetadataRule(config={"required-keys": ["tier"]})
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 4
+
+
+def test_threshold_exceeded_reports_line(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - description: expensive
+            assert:
+              - type: cost
+                threshold: 5.0
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    rule = PromptfooAssertionsRule(config={"threshold-constraints": {"cost": {"max": 2.0}}})
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].line == 6
+
+
+# ---------------------------------------------------------------------------
 # Integration: rule coverage guard
 # ---------------------------------------------------------------------------
 

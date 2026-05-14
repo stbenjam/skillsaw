@@ -1,8 +1,10 @@
 """
 Inline suppression directives for skillsaw.
 
-Parses HTML comment directives in markdown content to allow surgical
-suppression of specific rules at specific lines:
+Parses HTML comment directives in markdown and YAML hash-comment directives
+to allow surgical suppression of specific rules at specific lines.
+
+Markdown / HTML::
 
     <!-- skillsaw-disable rule-id -->
     ...suppressed content...
@@ -13,6 +15,15 @@ suppression of specific rules at specific lines:
 
     <!-- skillsaw-disable rule-a, rule-b -->
     <!-- skillsaw-enable -->  (re-enables all)
+
+YAML::
+
+    # skillsaw-disable rule-id
+    ...suppressed content...
+    # skillsaw-enable rule-id
+
+    # skillsaw-disable-next-line rule-id
+    this-line: is suppressed
 
 Multi-line HTML comments are fully supported::
 
@@ -61,7 +72,8 @@ class _Directive:
 
     kind: str  # "disable", "enable", or "disable-next-line"
     rule_ids: List[str]  # empty list means "all rules"
-    line: int  # 1-based line number where the comment starts (``<!--``)
+    line: int  # 1-based line number where the comment starts (``<!--`` or ``#``)
+    is_yaml: bool = False  # True for ``#`` comments (always single-line)
 
 
 class _CommentParser(HTMLParser):
@@ -100,15 +112,64 @@ class _CommentParser(HTMLParser):
             return
 
 
-def _extract_directives(content: str) -> List[_Directive]:
-    """Extract all skillsaw directives from *content* using HTMLParser.
+_YAML_COMMENT_RE = re.compile(r"^\s*#\s*(.*)", re.MULTILINE)
 
-    HTMLParser.getpos() returns the line where the parser currently sits, which
-    for comments corresponds to the line of the opening ``<!--``.
-    """
+
+def _extract_html_directives(content: str) -> List[_Directive]:
+    """Extract skillsaw directives from HTML ``<!-- -->`` comments."""
     parser = _CommentParser()
     parser.feed(content)
     return parser.directives
+
+
+def _extract_yaml_directives(content: str) -> List[_Directive]:
+    """Extract skillsaw directives from YAML ``#`` comments.
+
+    Only full-line comments are matched (``#`` must be the first non-whitespace
+    character).  Inline comments like ``key: value # skillsaw-disable`` are
+    ignored to avoid ambiguity.
+    """
+    directives: List[_Directive] = []
+    for lineno_0, raw_line in enumerate(content.splitlines()):
+        m = _YAML_COMMENT_RE.match(raw_line)
+        if not m:
+            continue
+        text = m.group(1).strip()
+        line = lineno_0 + 1  # 1-based
+
+        m2 = _DISABLE_NEXT_LINE_DIR.search(text)
+        if m2:
+            directives.append(
+                _Directive("disable-next-line", _parse_rule_ids(m2.group(1)), line, is_yaml=True)
+            )
+            continue
+
+        m2 = _DISABLE_DIR.search(text)
+        if m2:
+            directives.append(
+                _Directive("disable", _parse_rule_ids(m2.group(1).strip()), line, is_yaml=True)
+            )
+            continue
+
+        m2 = _ENABLE_DIR.search(text)
+        if m2:
+            directives.append(
+                _Directive("enable", _parse_rule_ids(m2.group(1).strip()), line, is_yaml=True)
+            )
+            continue
+
+    return directives
+
+
+def _extract_directives(content: str) -> List[_Directive]:
+    """Extract all skillsaw directives from *content*.
+
+    Scans both HTML ``<!-- -->`` comments and YAML ``#`` comments.  The two
+    syntaxes don't overlap so results are simply merged by line number.
+    """
+    html = _extract_html_directives(content)
+    yaml = _extract_yaml_directives(content)
+    return sorted(html + yaml, key=lambda d: d.line)
 
 
 # ------------------------------------------------------------------
@@ -167,9 +228,10 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
     # We need the raw comment spans to know which lines are directive lines.
     directive_comment_lines: Set[int] = set()
     for d in directives:
-        # Walk the content to find the closing ``-->`` for this comment.
-        # We know ``d.line`` is where ``<!--`` starts.
-        _mark_comment_lines(content, d.line, directive_comment_lines)
+        if d.is_yaml:
+            directive_comment_lines.add(d.line)
+        else:
+            _mark_comment_lines(content, d.line, directive_comment_lines)
 
     # --- Step 2: walk lines and apply suppressions -------------------------
     disabled: Set[str] = set()
