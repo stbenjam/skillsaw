@@ -326,6 +326,23 @@ class TestDotClaude:
         stats = r["out"]["stats"]
         assert "dot-claude" in stats["repo_types"]
 
+    def test_agents_md_broken_import_detected(self, tmp_path):
+        repo = copy_fixture("dot-claude/agents-imports-broken", tmp_path)
+        r = run_lint(repo)
+        assert "instruction-imports-valid" in rule_ids(r)
+        viol = by_rule(r)["instruction-imports-valid"]
+        assert len(viol) == 1
+        assert "AGENTS.md" in viol[0]["file_path"]
+        assert "missing-guide.md" in viol[0]["message"]
+        assert viol[0]["line"] == 6
+
+    def test_agents_md_clean_imports_pass(self, tmp_path):
+        repo = copy_fixture("dot-claude/agents-imports-clean", tmp_path)
+        r = run_lint(repo)
+        assert "instruction-imports-valid" not in rule_ids(r)
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+
 
 # ── CodeRabbit ───────────────────────────────────────────────────
 
@@ -617,6 +634,7 @@ BROKEN_FIXTURES = [
     "marketplace/broken",
     "agentskills/broken",
     "dot-claude/broken",
+    "dot-claude/agents-imports-broken",
     "coderabbit/broken",
     "apm/broken",
 ]
@@ -626,6 +644,7 @@ CLEAN_FIXTURES = [
     "marketplace/clean",
     "agentskills/clean",
     "dot-claude/clean",
+    "dot-claude/agents-imports-clean",
     "coderabbit/clean",
     "apm/clean",
 ]
