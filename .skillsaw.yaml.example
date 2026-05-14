@@ -275,7 +275,7 @@ rules:
     enabled: auto
     severity: warning
 
-  # Validate promptfoo eval YAML configs in evals/ directories
+  # Validate promptfoo eval YAML config structure and file references
   promptfoo-valid:
     enabled: auto
     severity: error

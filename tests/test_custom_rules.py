@@ -378,7 +378,9 @@ class DisabledRule(Rule):
 
 def test_promptfoo_budget_example_fixture():
     """Test that the promptfoo-budget custom rule example works against its fixture."""
-    fixture_dir = Path(__file__).parent.parent / "examples" / "custom-rules" / "promptfoo" / "fixture"
+    fixture_dir = (
+        Path(__file__).parent.parent / "examples" / "custom-rules" / "promptfoo" / "fixture"
+    )
     rule_file = fixture_dir.parent / "promptfoo_budget_rule.py"
     assert fixture_dir.is_dir(), f"Fixture dir missing: {fixture_dir}"
     assert rule_file.is_file(), f"Rule file missing: {rule_file}"
