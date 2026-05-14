@@ -227,6 +227,8 @@ class TestHooksJson:
     def test_hooks_json_no_cognitive_chunks(self, tmp_path):
         repo = copy_fixture("hooks-json-only", tmp_path)
         r = run_lint(repo)
+        assert r["out"] is not None
+        assert r["rc"] == 0
         assert "content-cognitive-chunks" not in rule_ids(r)
 
 
