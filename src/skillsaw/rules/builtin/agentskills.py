@@ -31,6 +31,7 @@ def _to_kebab(name: str) -> str:
 class AgentSkillValidRule(Rule):
     """Validate SKILL.md exists with required frontmatter fields"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -93,7 +94,7 @@ class AgentSkillValidRule(Rule):
             if match:
                 fm_text = match.group(1)
                 new_fm = f"name: {kebab_name}\n{fm_text}"
-                fixed = original.replace(match.group(0), f"---\n{new_fm}\n---", 1)
+                fixed = f"---\n{new_fm}\n---" + original[match.end() :]
                 results.append(
                     AutofixResult(
                         rule_id=self.rule_id,
@@ -303,6 +304,7 @@ class AgentSkillValidRule(Rule):
 class AgentSkillNameRule(Rule):
     """Validate skill name format per agentskills.io spec"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -395,7 +397,7 @@ class AgentSkillNameRule(Rule):
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed = original.replace(f"name: {old_name}", f"name: {new_name}", 1)
+            fixed = original[: match.start()] + f"name: {new_name}" + original[match.end() :]
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
