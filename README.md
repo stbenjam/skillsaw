@@ -48,6 +48,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
   - [`.claude/` Directory](#claude-directory)
   - [CodeRabbit](#coderabbit)
+  - [Promptfoo](#promptfoo)
   - [APM (Agent Package Manager)](#apm-agent-package-manager)
 - [Configuration](#configuration)
   - [Version Pinning](#version-pinning)
@@ -334,6 +335,10 @@ Repositories with a `.claude/` directory containing commands, skills, hooks, age
 
 Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction fragments within the config.
 
+### Promptfoo
+
+Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
+
 ### APM (Agent Package Manager)
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
@@ -397,8 +402,11 @@ syntax as global `exclude` patterns.
 
 ### Inline Suppression
 
-Suppress specific rules on specific lines using HTML comment directives
-directly in your markdown files:
+Suppress specific rules on specific lines using comment directives directly
+in your files. Both HTML comments (for markdown) and hash comments (for YAML)
+are supported.
+
+#### Markdown (HTML comments)
 
 ```markdown
 <!-- skillsaw-disable content-weak-language -->
@@ -432,6 +440,27 @@ Multi-line HTML comments are also supported:
     skillsaw-disable content-weak-language
 -->
 ```
+
+#### YAML (hash comments)
+
+For YAML files (`.coderabbit.yaml`, `promptfooconfig.yaml`, etc.), use `#` comments:
+
+```yaml
+# skillsaw-disable promptfoo-valid
+prompts:
+  - "{{prompt}}"
+# skillsaw-enable promptfoo-valid
+```
+
+```yaml
+# skillsaw-disable-next-line coderabbit-yaml-valid
+instructions: missing-value
+```
+
+Only full-line `#` comments are recognized — inline comments like
+`key: value # skillsaw-disable` are ignored.
+
+#### Notes
 
 Inline suppression only affects rules that are already enabled. It cannot
 be used to enable a normally disabled rule.
@@ -787,6 +816,8 @@ rules:
     enabled: true
     severity: warning
 ```
+
+For a more complete example — including config schemas, promptfoo eval validation, and test fixtures — see the [`examples/custom-rules/`](examples/custom-rules/) directory.
 
 ## Scaffolding
 

@@ -638,3 +638,157 @@ class TestLLMFixScopedLinting:
         tool = LintTool(tmp_path, config)
         result = tool.execute(path="CLAUDE.md")
         assert "No violations" not in result
+
+
+# ── YAML-embedded content block LLM fix tests ─────────────────
+
+
+def _make_promptfoo_repo(tmp_path, prompt_content):
+    """Create a minimal promptfoo repo with a single prompt string."""
+    yaml_content = (
+        "description: test eval\n"
+        "\n"
+        "providers:\n"
+        "  - id: http\n"
+        "    config:\n"
+        "      url: http://localhost:8005/v3/agent/question\n"
+        "\n"
+        "prompts:\n"
+        f"  - |\n"
+    )
+    for line in prompt_content.splitlines():
+        yaml_content += f"    {line}\n"
+    yaml_content += "\n" "tests:\n" "  - vars:\n" "      prompt: test\n"
+    config_file = tmp_path / "promptfooconfig.yaml"
+    config_file.write_text(yaml_content, encoding="utf-8")
+    return tmp_path
+
+
+def _make_coderabbit_repo(tmp_path, instructions_content):
+    """Create a minimal repo with a .coderabbit.yaml containing instructions."""
+    yaml_content = (
+        "language: en-US\n"
+        "reviews:\n"
+        "  profile: assertive\n"
+        "  path_instructions:\n"
+        '    - path: "src/**"\n'
+        "      instructions: |\n"
+    )
+    for line in instructions_content.splitlines():
+        yaml_content += f"        {line}\n"
+    cr_file = tmp_path / ".coderabbit.yaml"
+    cr_file.write_text(yaml_content, encoding="utf-8")
+    return tmp_path
+
+
+@dataclass
+class YAMLFixCase:
+    name: str
+    rule_id: str
+    content: str
+    fixed_content: str
+    setup: Callable
+    yaml_file: str
+    min_severity: Severity = Severity.WARNING
+
+
+YAML_FIX_CASES = [
+    YAMLFixCase(
+        name="promptfoo-weak-language",
+        rule_id="content-weak-language",
+        content="Try to respond helpfully.\nMaybe consider the user's intent.\n",
+        fixed_content="Respond helpfully.\nConsider the user's intent.\n",
+        setup=_make_promptfoo_repo,
+        yaml_file="promptfooconfig.yaml",
+    ),
+    YAMLFixCase(
+        name="promptfoo-tautological",
+        rule_id="content-tautological",
+        content="Write clean code.\nFollow best practices.\nBe thorough.\n",
+        fixed_content="",
+        setup=_make_promptfoo_repo,
+        yaml_file="promptfooconfig.yaml",
+    ),
+    YAMLFixCase(
+        name="promptfoo-banned-refs",
+        rule_id="content-banned-references",
+        content="Use claude-2 for summarization tasks.\nUse gpt-3.5 for classification.\n",
+        fixed_content="Use a current Claude model for summarization tasks.\nUse a current model for classification.\n",
+        setup=_make_promptfoo_repo,
+        yaml_file="promptfooconfig.yaml",
+    ),
+    YAMLFixCase(
+        name="coderabbit-weak-language",
+        rule_id="content-weak-language",
+        content="Try to check for proper error handling.\nMaybe verify input validation.\n",
+        fixed_content="Check for proper error handling.\nVerify input validation.\n",
+        setup=_make_coderabbit_repo,
+        yaml_file=".coderabbit.yaml",
+    ),
+    YAMLFixCase(
+        name="coderabbit-tautological",
+        rule_id="content-tautological",
+        content="Write clean code.\nFollow best practices.\nBe thorough.\n",
+        fixed_content="",
+        setup=_make_coderabbit_repo,
+        yaml_file=".coderabbit.yaml",
+    ),
+]
+
+
+class TestYAMLContentBlockLLMFix:
+    """Test that LLM fixes round-trip correctly through YAML-embedded content blocks."""
+
+    @pytest.mark.parametrize("case", YAML_FIX_CASES, ids=[c.name for c in YAML_FIX_CASES])
+    def test_mock_fix(self, tmp_path, case):
+        """Violations are detected and the FakeProvider fix pipeline runs."""
+        case.setup(tmp_path, case.content)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        violations = linter.run()
+        rule_violations = [v for v in violations if v.rule_id == case.rule_id]
+        assert len(rule_violations) >= 1, f"Expected violation for {case.rule_id}"
+
+        provider = _fake_fix_provider(case.fixed_content)
+        result = linter.llm_fix(provider, min_severity=case.min_severity)
+        assert result.violations_before > 0
+        assert result.violations_after < result.violations_before
+        assert result.success
+
+    @pytest.mark.parametrize("case", YAML_FIX_CASES, ids=[c.name for c in YAML_FIX_CASES])
+    def test_yaml_roundtrip_valid(self, tmp_path, case):
+        """After fix, the YAML file is still valid and contains the fixed content."""
+        import yaml
+
+        case.setup(tmp_path, case.content)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        provider = _fake_fix_provider(case.fixed_content)
+        linter.llm_fix(provider, min_severity=case.min_severity)
+
+        yaml_path = tmp_path / case.yaml_file
+        raw = yaml_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw)
+        assert data is not None, "YAML file should be parseable after fix"
+
+        if case.yaml_file == "promptfooconfig.yaml":
+            assert "prompts" in data, "promptfoo config must still have prompts key"
+            assert isinstance(data["prompts"], list)
+            assert len(data["prompts"]) >= 1
+            assert (data["prompts"][0] or "").strip() == case.fixed_content.strip()
+            assert "providers" in data
+            assert "tests" in data
+        else:
+            assert "reviews" in data, "coderabbit config must still have reviews key"
+            pi = data["reviews"]["path_instructions"]
+            assert isinstance(pi, list)
+            assert len(pi) >= 1
+            assert (pi[0].get("instructions") or "").strip() == case.fixed_content.strip()
