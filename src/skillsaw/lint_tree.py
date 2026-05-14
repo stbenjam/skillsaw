@@ -311,9 +311,9 @@ def _build_promptfoo_nodes(
             for yaml_file in sorted(evals_dir.rglob(pattern)):
                 _try_add_config(yaml_file, parent, require_keys=True)
 
-    # Pass 1a: promptfooconfig* at repo root (promptfoo naming → no key check)
+    # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key check)
     for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
-        for yaml_file in sorted(context.root_path.glob(pattern)):
+        for yaml_file in sorted(context.root_path.rglob(pattern)):
             _try_add_config(yaml_file, root, require_keys=False)
 
     # Pass 1b: evals/ at repo root

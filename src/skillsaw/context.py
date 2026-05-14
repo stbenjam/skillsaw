@@ -293,7 +293,7 @@ class RepositoryContext:
     def _is_promptfoo_repo(self) -> bool:
         """Check if this repository contains promptfoo eval configs."""
         for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
-            if any(self.root_path.glob(pattern)):
+            if any(self.root_path.rglob(pattern)):
                 return True
         evals_dir = self.root_path / "evals"
         if evals_dir.is_dir():

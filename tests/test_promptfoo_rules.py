@@ -173,6 +173,55 @@ def test_promptfoo_repo_detected_by_evals_dir(temp_dir):
     )
 
 
+def test_promptfoo_repo_detected_by_nested_config(temp_dir):
+    nested = temp_dir / "ai" / "evals" / "promptfoo"
+    nested.mkdir(parents=True)
+    _write_yaml(
+        nested / "promptfooconfig.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"vars": {"prompt": "hi"}}]},
+    )
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO in context.repo_types
+
+
+def test_nested_promptfoo_config_in_tree(temp_dir):
+    nested = temp_dir / "ai" / "evals" / "promptfoo"
+    nested.mkdir(parents=True)
+    _write_yaml(
+        nested / "promptfooconfig.yaml",
+        {"providers": [{"id": "test"}], "tests": [{"vars": {"prompt": "hi"}}]},
+    )
+    context = RepositoryContext(temp_dir)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len(nodes) == 1
+    assert nodes[0].path.name == "promptfooconfig.yaml"
+    assert not nodes[0].is_fragment
+
+
+def test_nested_promptfoo_config_validates_clean(temp_dir):
+    nested = temp_dir / "ai" / "evals" / "promptfoo"
+    nested.mkdir(parents=True)
+    _write_yaml(
+        nested / "promptfooconfig.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "prompts": ["{{prompt}}"],
+            "defaultTest": {
+                "assert": [{"type": "llm-rubric", "value": "helpful response"}]
+            },
+            "tests": [
+                {
+                    "vars": {"prompt": "hello"},
+                    "assert": [{"type": "contains", "value": "world"}],
+                }
+            ],
+        },
+    )
+    context = RepositoryContext(temp_dir)
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 0
+
+
 def test_non_promptfoo_yaml_in_evals_not_detected(temp_dir):
     evals = temp_dir / "evals"
     evals.mkdir()

@@ -122,7 +122,7 @@ class PromptfooValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Validate promptfoo eval YAML configs in evals/ directories"
+        return "Validate promptfoo eval YAML config structure and file references"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
