@@ -673,6 +673,59 @@ def test_rule_config_non_mapping_raises_error(temp_dir):
         LinterConfig.from_file(config_file)
 
 
+def test_enabled_typo_raises_error(temp_dir):
+    """enabled: falsie (typo) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: falsie\n")
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_string_false_raises_error(temp_dir):
+    """enabled: "false" (string, not bool) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "false"\n')
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_string_true_raises_error(temp_dir):
+    """enabled: "true" (string, not bool) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "true"\n')
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match="'rules.plugin-json-required.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_valid_values_accepted(temp_dir):
+    """enabled: true, false, and auto should all load without error"""
+    config_file = temp_dir / ".skillsaw.yaml"
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: true\n")
+    LinterConfig.from_file(config_file)
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: false\n")
+    LinterConfig.from_file(config_file)
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: auto\n")
+    LinterConfig.from_file(config_file)
+
+
 # --- Non-enabled config overrides tests ---
 
 
