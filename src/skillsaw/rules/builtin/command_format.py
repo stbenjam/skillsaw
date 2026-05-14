@@ -15,6 +15,8 @@ from skillsaw.rules.builtin.utils import read_text, heading_line
 class CommandNamingRule(Rule):
     """Check that command files use kebab-case naming"""
 
+    autofix_confidence = AutofixConfidence.SUGGEST
+
     @property
     def rule_id(self) -> str:
         return "command-naming"
@@ -92,6 +94,8 @@ class CommandNamingRule(Rule):
 
 class CommandFrontmatterRule(Rule):
     """Check that command files have valid frontmatter"""
+
+    autofix_confidence = AutofixConfidence.SAFE
 
     @property
     def rule_id(self) -> str:

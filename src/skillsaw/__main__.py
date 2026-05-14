@@ -599,15 +599,13 @@ def _run_fix(args):
     linter = Linter(context, config)
 
     if not args.use_llm:
-        violations, fixes = linter.fix()
-        applied = linter.apply_fixes(fixes)
+        applied, suggested = linter.fix_and_apply()
         if applied:
             print(f"Fixed {len(applied)} issue(s):")
             for fix in applied:
                 print(f"  ✓ [{fix.file_path}] {fix.description}")
         else:
             print("No auto-fixable violations found.")
-        suggested = [f for f in fixes if f not in applied]
         if suggested:
             print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
             for fix in suggested:

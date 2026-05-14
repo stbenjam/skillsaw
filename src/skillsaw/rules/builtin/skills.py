@@ -17,6 +17,8 @@ from skillsaw.rules.builtin.utils import read_text
 class SkillFrontmatterRule(Rule):
     """Check that SKILL.md files have frontmatter"""
 
+    autofix_confidence = AutofixConfidence.SAFE
+
     @property
     def rule_id(self) -> str:
         return "skill-frontmatter"

@@ -279,6 +279,96 @@ class Linter:
         return all_violations, all_fixes
 
     @staticmethod
+    def _first_per_file(
+        fixes: List[AutofixResult],
+    ) -> tuple[List[AutofixResult], bool]:
+        """Snapshot-isolation filter: first-committer-wins per file.
+
+        Returns the independent subset (at most one fix per file) and
+        whether any fixes were deferred due to file-level conflicts.
+        Deferred fixes are not applied — the next pass will re-derive
+        them against the committed file state.
+        """
+        seen: set[Path] = set()
+        independent: List[AutofixResult] = []
+        has_conflicts = False
+        for fix in fixes:
+            targets = {fix.file_path.resolve()}
+            if fix.rename_from is not None:
+                targets.add(fix.rename_from.resolve())
+            if any(t in seen for t in targets):
+                has_conflicts = True
+            else:
+                seen.update(targets)
+                independent.append(fix)
+        return independent, has_conflicts
+
+    def fix_and_apply(
+        self,
+        confidence: AutofixConfidence = AutofixConfidence.SAFE,
+        max_passes: int = 10,
+    ) -> tuple[List[AutofixResult], List[AutofixResult]]:
+        """Fixed-point iteration over autofix passes with snapshot isolation.
+
+        Each fix is a pre-computed transformation against a file snapshot.
+        When two fixes target the same file, the second holds a stale
+        snapshot — a classic write-write conflict.
+
+        This method resolves conflicts via first-committer-wins: each pass
+        applies at most one fix per file (the independent set of the
+        conflict graph).  Conflicting fixes are never applied with stale
+        data — they are discarded and re-derived on the next pass against
+        the committed file state.
+
+        Converges when a pass produces no file-level conflicts, or when
+        no new fixes are found (the fixed point).
+
+        Args:
+            confidence: Minimum confidence level to apply.
+            max_passes: Safety cap on iterations.
+
+        Returns:
+            Tuple of (applied fixes, suggested-but-not-applied fixes).
+        """
+        from .rules.builtin.utils import invalidate_read_caches
+
+        all_applied: List[AutofixResult] = []
+        all_suggested: List[AutofixResult] = []
+
+        allowed = {AutofixConfidence.SAFE}
+        if confidence == AutofixConfidence.SUGGEST:
+            allowed.add(AutofixConfidence.SUGGEST)
+        elif confidence == AutofixConfidence.LLM:
+            allowed.update({AutofixConfidence.SUGGEST, AutofixConfidence.LLM})
+
+        for _ in range(max_passes):
+            _violations, fixes = self.fix()
+            if not fixes:
+                break
+
+            applicable = [f for f in fixes if f.confidence in allowed]
+            suggested = [f for f in fixes if f.confidence not in allowed]
+            all_suggested.extend(suggested)
+
+            if not applicable:
+                break
+
+            independent, has_conflicts = self._first_per_file(applicable)
+
+            applied = self.apply_fixes(independent, confidence)
+            all_applied.extend(applied)
+
+            if not applied or not has_conflicts:
+                break
+
+            invalidate_read_caches()
+            self.context.rebuild_lint_tree()
+            if hasattr(self, "_suppression_cache"):
+                self._suppression_cache.clear()
+
+        return all_applied, all_suggested
+
+    @staticmethod
     def apply_fixes(
         fixes: List[AutofixResult],
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
