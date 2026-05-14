@@ -1118,6 +1118,7 @@ class ContentBrokenInternalReferenceRule(Rule):
     repo_types = None
 
     _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+    _INLINE_CODE_RE = re.compile(r"(`+).+?\1", re.DOTALL)
     _TEMPLATE_DIR_NAMES = {"template", "templates", "_template"}
 
     @property
@@ -1147,6 +1148,7 @@ class ContentBrokenInternalReferenceRule(Rule):
             body = cf.read_body(strip_code_blocks=True)
             if not body:
                 continue
+            body = self._INLINE_CODE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), body)
             for line_num, line in enumerate(body.splitlines(), 1):
                 for match in self._LINK_RE.finditer(line):
                     target = match.group(2).strip()
