@@ -210,6 +210,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # --- Promptfoo eval configs ---
     _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
 
+    # --- Promptfoo prompt content blocks ---
+    from .rules.builtin.content_analysis import PromptfooPromptBlock
+
+    for block in PromptfooPromptBlock.gather_from_tree(root):
+        block_resolved = block.path.resolve()
+        for node in root.find(PromptfooConfigNode):
+            if node.path.resolve() == block_resolved:
+                node.children.append(block)
+                break
+
     # --- APM ---
     if context.has_apm:
         apm_yml = context.root_path / "apm.yml"
