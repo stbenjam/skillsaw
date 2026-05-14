@@ -144,8 +144,18 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 1
 
-    def test_agents_md_imports_not_checked(self, temp_dir):
+    def test_agents_md_missing_import_fails(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text("@some-reference.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "non-existent" in violations[0].message.lower()
+
+    def test_agents_md_valid_import_passes(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "setup.md").write_text("# Setup\n")
+        (temp_dir / "AGENTS.md").write_text("# Instructions\n\n@docs/setup.md\n")
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
