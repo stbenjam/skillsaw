@@ -181,6 +181,7 @@ class LinterConfig:
                 # Agentskills rules (auto-enabled for agentskills repos)
                 "agentskill-valid": {"enabled": "auto", "severity": "error"},
                 "agentskill-name": {"enabled": "auto", "severity": "error"},
+                "agentskill-rename-refs": {"enabled": "auto", "severity": "warning"},
                 "agentskill-description": {"enabled": "auto", "severity": "warning"},
                 "agentskill-structure": {"enabled": False, "severity": "warning"},
                 "agentskill-evals-required": {"enabled": False, "severity": "warning"},

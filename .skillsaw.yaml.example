@@ -102,6 +102,11 @@ rules:
     enabled: auto
     severity: error
 
+  # Update stale skill name references after a rename
+  agentskill-rename-refs:
+    enabled: auto
+    severity: warning
+
   # Skill description should be meaningful and within length limits
   agentskill-description:
     enabled: auto
