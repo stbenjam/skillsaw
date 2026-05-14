@@ -34,6 +34,7 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -87,6 +88,7 @@ class ContentWeakLanguageRule(Rule):
 class ContentTautologicalRule(Rule):
     """Detect tautological instructions that waste instruction budget"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -134,6 +136,7 @@ class ContentTautologicalRule(Rule):
 class ContentCriticalPositionRule(Rule):
     """Detect critical instructions buried in the attention dead zone"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -193,6 +196,7 @@ class ContentCriticalPositionRule(Rule):
 class ContentRedundantWithToolingRule(Rule):
     """Detect instructions that duplicate existing tooling configuration"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -239,6 +243,7 @@ class ContentRedundantWithToolingRule(Rule):
 class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -295,6 +300,7 @@ class ContentInstructionBudgetRule(Rule):
 class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -407,6 +413,7 @@ class ContentNegativeOnlyRule(Rule):
 class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -497,6 +504,7 @@ class ContentSectionLengthRule(Rule):
 class ContentContradictionRule(Rule):
     """Detect likely contradictions within instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -587,6 +595,7 @@ class ContentContradictionRule(Rule):
 class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -664,6 +673,7 @@ class ContentHookCandidateRule(Rule):
 class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -738,6 +748,7 @@ class ContentActionabilityScoreRule(Rule):
 class ContentCognitiveChunksRule(Rule):
     """Check section organization for cognitive chunking"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -798,6 +809,7 @@ class ContentCognitiveChunksRule(Rule):
 class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -902,6 +914,7 @@ class ContentEmbeddedSecretsRule(Rule):
 class ContentBannedReferencesRule(Rule):
     """Detect banned or deprecated references in instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -1001,6 +1014,7 @@ class ContentBannedReferencesRule(Rule):
 class ContentInconsistentTerminologyRule(Rule):
     """Detect inconsistent terminology across instruction files"""
 
+    autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
 
@@ -1098,6 +1112,7 @@ class ContentInconsistentTerminologyRule(Rule):
 class ContentBrokenInternalReferenceRule(Rule):
     """Detect markdown links pointing to nonexistent files"""
 
+    autofix_confidence = AutofixConfidence.SUGGEST
     formats = None
     since = "0.9.0"
     repo_types = None
@@ -1224,11 +1239,21 @@ class ContentBrokenInternalReferenceRule(Rule):
                 content = fpath.read_text(encoding="utf-8")
             except OSError:
                 continue
-            fixed = content
+            lines = content.splitlines(True)
             violations_fixed = []
             for old_target, suggestion, v in replacements:
-                fixed = fixed.replace(f"]({old_target})", f"]({suggestion})")
-                violations_fixed.append(v)
+                fl = v.file_line
+                if fl is None:
+                    continue
+                idx = fl - 1
+                if idx < 0 or idx >= len(lines):
+                    continue
+                old_frag = f"]({old_target})"
+                new_frag = f"]({suggestion})"
+                if old_frag in lines[idx]:
+                    lines[idx] = lines[idx].replace(old_frag, new_frag, 1)
+                    violations_fixed.append(v)
+            fixed = "".join(lines)
             if fixed != content:
                 results.append(
                     AutofixResult(
@@ -1247,6 +1272,7 @@ class ContentBrokenInternalReferenceRule(Rule):
 class ContentUnlinkedInternalReferenceRule(Rule):
     """Detect bare path-like strings that are not wrapped in markdown link syntax"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     formats = None
     since = "0.9.0"
     repo_types = None

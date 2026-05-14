@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity, AutofixConfidence
 from skillsaw.rules.builtin.utils import read_json
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import PluginNode
@@ -186,6 +186,7 @@ class PluginNamingRule(Rule):
 class PluginReadmeRule(Rule):
     """Check that plugin has a README.md"""
 
+    autofix_confidence = AutofixConfidence.LLM
     repo_types = PLUGIN_REPO_TYPES
 
     @property
