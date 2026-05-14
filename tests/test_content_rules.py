@@ -823,9 +823,7 @@ class TestContentBrokenInternalReferenceRule:
         assert len(violations) == 0
 
     def test_double_backtick_code_spans_skipped(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text(
-            "Use ``[broken](nonexistent.md)`` in your template.\n"
-        )
+        (temp_dir / "CLAUDE.md").write_text("Use ``[broken](nonexistent.md)`` in your template.\n")
         context = RepositoryContext(temp_dir)
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
