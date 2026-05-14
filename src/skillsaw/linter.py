@@ -10,7 +10,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -42,21 +42,34 @@ class Linter:
     Main linter that orchestrates rule checking
     """
 
-    def __init__(self, context: RepositoryContext, config: LinterConfig = None):
+    def __init__(
+        self,
+        context: RepositoryContext,
+        config: LinterConfig = None,
+        rule_ids: Optional[Set[str]] = None,
+    ):
         """
         Initialize linter
 
         Args:
             context: Repository context
             config: Linter configuration (uses default if None)
+            rule_ids: If set, only load rules with these IDs
         """
         self.context = context
         self.config = config or LinterConfig.default()
+        self._rule_ids = rule_ids
         self.context.content_paths = self.config.content_paths
         self.context.exclude_patterns = self.config.exclude_patterns
         self.context.apply_excludes()
         self.rules: List[Rule] = []
         self._load_rules()
+
+        if self._rule_ids:
+            unknown = self._rule_ids - self._known_rule_ids
+            if unknown:
+                formatted = ", ".join(sorted(unknown))
+                raise ValueError(f"Unknown rule(s): {formatted}")
 
     def _load_rules(self):
         """Load all enabled rules"""
@@ -76,11 +89,13 @@ class Linter:
         for rule_class in BUILTIN_RULES:
             rule_instance = rule_class()
             self._known_rule_ids.add(rule_instance.rule_id)
+            if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
+                continue
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
                 rule_instance = rule_class(config)
 
-            if self.config.is_rule_enabled(
+            if self._rule_ids or self.config.is_rule_enabled(
                 rule_instance.rule_id,
                 self.context,
                 rule_instance.repo_types,
@@ -118,11 +133,13 @@ class Linter:
             if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
                 rule_instance = obj()
                 self._known_rule_ids.add(rule_instance.rule_id)
+                if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
+                    continue
                 config = self.config.get_rule_config(rule_instance.rule_id)
                 if config:
                     rule_instance = obj(config)
 
-                if self.config.is_rule_enabled(
+                if self._rule_ids or self.config.is_rule_enabled(
                     rule_instance.rule_id,
                     self.context,
                     rule_instance.repo_types,
@@ -307,6 +324,7 @@ class Linter:
         self,
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
+        dry_run: bool = False,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -354,6 +372,10 @@ class Linter:
                 break
 
             independent, has_conflicts = self._first_per_file(applicable)
+
+            if dry_run:
+                all_applied.extend(independent)
+                break
 
             applied = self.apply_fixes(independent, confidence)
             all_applied.extend(applied)

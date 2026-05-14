@@ -8,8 +8,10 @@ from pathlib import Path
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.agentskills import (
+    RENAMES_MANIFEST,
     AgentSkillValidRule,
     AgentSkillNameRule,
+    AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
@@ -1054,3 +1056,223 @@ def test_required_metadata_no_duplicate_when_metadata_in_required_fields(temp_di
     meta_violations = [v for v in violations if "metadata" in v.message.lower()]
     assert len(meta_violations) == 1
     assert "Missing required field 'metadata'" in meta_violations[0].message
+
+
+# --- agentskill-rename-refs ---
+
+
+def test_rename_refs_no_manifest(temp_dir):
+    """No .skillsaw-renames.json means no violations"""
+    skill = temp_dir / "my-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: my-skill\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillRenameRefsRule().check(context)
+    assert len(violations) == 0
+
+
+def test_rename_refs_finds_stale_refs(temp_dir):
+    """Manifest + stale reference in a markdown file -> violation with line number"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: eat-potato\ndescription: A skill\n---\n" "Use Eat-Potato to do things.\n"
+    )
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "guide.md").write_text("See the Eat-Potato skill for help.\n")
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    violations = AgentSkillRenameRefsRule().check(context)
+    assert len(violations) >= 1
+    ref_v = [v for v in violations if v.file_path and v.file_path.name == "guide.md"]
+    assert len(ref_v) == 1
+    assert ref_v[0].line is not None
+
+
+def test_rename_refs_skips_fixed_frontmatter(temp_dir):
+    """SKILL.md with already-fixed name: field should not trigger for frontmatter"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    violations = AgentSkillRenameRefsRule().check(context)
+    skill_violations = [v for v in violations if v.file_path and v.file_path.name == "SKILL.md"]
+    assert len(skill_violations) == 0
+
+
+def test_rename_refs_catches_stale_body_in_fixed_skill(temp_dir):
+    """SKILL.md with fixed name: but stale reference in body text"""
+    skill = temp_dir / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: eat-potato\ndescription: A skill\n---\n"
+        "This skill was formerly known as Eat-Potato.\n"
+    )
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (temp_dir / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(temp_dir)
+    violations = AgentSkillRenameRefsRule().check(context)
+    assert len(violations) == 1
+
+
+def test_rename_refs_evals_json(temp_dir):
+    """Manifest + stale skill_name in evals.json -> violation"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+    evals = skill / "evals"
+    evals.mkdir()
+    (evals / "evals.json").write_text(json.dumps({"skill_name": "Eat-Potato", "evals": []}))
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    violations = AgentSkillRenameRefsRule().check(context)
+    evals_v = [v for v in violations if v.file_path and v.file_path.name == "evals.json"]
+    assert len(evals_v) == 1
+    assert "skill_name" in evals_v[0].message
+
+
+def test_rename_refs_autofix_markdown(temp_dir):
+    """Fix produces SUGGEST result replacing old name in markdown"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "guide.md").write_text("See the Eat-Potato skill for help.\n")
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+    fixes = rule.fix(context, violations)
+
+    ref_fixes = [f for f in fixes if f.file_path.name == "guide.md"]
+    assert len(ref_fixes) == 1
+    from skillsaw.rule import AutofixConfidence
+
+    assert ref_fixes[0].confidence == AutofixConfidence.SUGGEST
+    assert "eat-potato" in ref_fixes[0].fixed_content
+    assert "Eat-Potato" not in ref_fixes[0].fixed_content
+
+
+def test_rename_refs_autofix_evals(temp_dir):
+    """Fix produces SUGGEST result replacing old skill_name in evals.json"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+    evals = skill / "evals"
+    evals.mkdir()
+    (evals / "evals.json").write_text(json.dumps({"skill_name": "Eat-Potato", "evals": []}))
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+    fixes = rule.fix(context, violations)
+
+    evals_fixes = [f for f in fixes if f.file_path.name == "evals.json"]
+    assert len(evals_fixes) == 1
+    assert "eat-potato" in evals_fixes[0].fixed_content
+    assert "Eat-Potato" not in evals_fixes[0].fixed_content
+
+
+def test_rename_refs_cleanup_on_no_stale_refs(temp_dir):
+    """Manifest entries with no stale references are removed during check()"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+
+    manifest = {"renames": [{"old": "Eat-Potato", "new": "eat-potato"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+
+    assert len(violations) == 0
+    assert not (repo / RENAMES_MANIFEST).exists()
+
+
+def test_rename_refs_cleanup_keeps_active_entries(temp_dir):
+    """Manifest entries with remaining stale refs are preserved"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: eat-potato\ndescription: A skill\n---\n")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "guide.md").write_text("See the Eat-Potato skill for help.\n")
+
+    manifest = {
+        "renames": [
+            {"old": "Eat-Potato", "new": "eat-potato"},
+            {"old": "Old-Gone", "new": "old-gone"},
+        ]
+    }
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+
+    assert len(violations) >= 1
+    manifest_path = repo / RENAMES_MANIFEST
+    assert manifest_path.exists()
+    data = json.loads(manifest_path.read_text())
+    assert len(data["renames"]) == 1
+    assert data["renames"][0]["old"] == "Eat-Potato"
+
+
+def test_name_fix_writes_manifest(temp_dir):
+    """AgentSkillNameRule.fix() writes .skillsaw-renames.json"""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "eat-potato"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: Eat-Potato\ndescription: A skill\n---\n")
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillNameRule()
+    violations = rule.check(context)
+    assert len(violations) >= 1
+
+    fixes = rule.fix(context, violations)
+    assert len(fixes) >= 1
+
+    manifest_path = repo / RENAMES_MANIFEST
+    assert manifest_path.exists()
+    data = json.loads(manifest_path.read_text())
+    assert len(data["renames"]) == 1
+    assert data["renames"][0]["old"] == "Eat-Potato"
+    assert data["renames"][0]["new"] == "eat-potato"

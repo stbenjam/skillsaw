@@ -1,5 +1,5 @@
 ---
-name: BAD_NAME
+name: Bad-Name-Gamma
 description: Skill that handles database backup operations
 ---
 

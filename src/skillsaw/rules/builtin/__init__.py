@@ -45,6 +45,7 @@ from .rules_dir import (
 from .agentskills import (
     AgentSkillValidRule,
     AgentSkillNameRule,
+    AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
@@ -122,6 +123,7 @@ BUILTIN_RULES = [
     # Agentskills
     AgentSkillValidRule,
     AgentSkillNameRule,
+    AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
@@ -180,6 +182,7 @@ __all__ = [
     "RulesValidRule",
     "AgentSkillValidRule",
     "AgentSkillNameRule",
+    "AgentSkillRenameRefsRule",
     "AgentSkillDescriptionRule",
     "AgentSkillStructureRule",
     "AgentSkillEvalsRequiredRule",
