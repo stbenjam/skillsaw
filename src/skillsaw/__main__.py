@@ -193,15 +193,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Also apply suggested fixes (not just safe ones)",
     )
-    fix_parser.add_argument(
-        "--converge",
-        type=int,
-        nargs="?",
-        const=5,
-        default=None,
-        metavar="N",
-        help="Re-run fix up to N times until no more fixes apply (default: 5)",
-    )
 
     # --- init ---
     init_parser = subparsers.add_parser(
@@ -614,30 +605,18 @@ def _run_fix(args):
 
     if not args.use_llm:
         confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
-        max_passes = args.converge if args.converge is not None else 1
-        total_applied: list[AutofixResult] = []
+        applied, suggested = linter.fix_and_apply(confidence)
 
-        for pass_num in range(1, max_passes + 1):
-            if pass_num > 1:
-                context = RepositoryContext(args.path)
-                linter = Linter(context, config)
+        if any(f.rule_id == "agentskill-name" for f in applied):
+            context = RepositoryContext(args.path)
+            linter = Linter(context, config)
+            rename_applied, rename_suggested = linter.fix_and_apply(confidence)
+            applied.extend(rename_applied)
+            suggested.extend(rename_suggested)
 
-            violations, fixes = linter.fix()
-            applied = linter.apply_fixes(fixes, confidence=confidence)
-            total_applied.extend(applied)
-
-            if not applied:
-                break
-
-            if args.converge is not None and pass_num < max_passes:
-                print(f"Pass {pass_num}: fixed {len(applied)} issue(s)")
-
-        if total_applied:
-            if args.converge is not None:
-                print(f"\nFixed {len(total_applied)} issue(s) in {pass_num} pass(es):")
-            else:
-                print(f"Fixed {len(total_applied)} issue(s):")
-            for fix in total_applied:
+        if applied:
+            print(f"Fixed {len(applied)} issue(s):")
+            for fix in applied:
                 print(f"  ✓ [{fix.file_path}] {fix.description}")
         else:
             print("No auto-fixable violations found.")
@@ -645,16 +624,7 @@ def _run_fix(args):
             print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
             for fix in suggested:
                 print(f"  ? [{fix.file_path}] {fix.description}")
-
-        has_renames = any(f.rule_id == "agentskill-name" for f in total_applied)
-        has_rename_refs = any(f.rule_id == "agentskill-rename-refs" for f in suggested)
-        if has_renames and has_rename_refs:
-            print(
-                "\nHint: skill names were renamed — stale references were found in"
-                " other files.\nRun `skillsaw fix --suggest --converge` to fix"
-                " references automatically.",
-                file=sys.stderr,
-            )
+            print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
 
         sys.exit(0)
 

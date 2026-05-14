@@ -990,6 +990,7 @@ class TestSafeAutofixIdempotency:
             "no-desc-",
             "no-name-",
             "missing-name/",
+            ".skillsaw-renames.json",
         }
         changed: List[str] = []
         for f in sorted(set(before) | set(after)):
