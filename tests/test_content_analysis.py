@@ -806,3 +806,57 @@ class TestContentBlockReadWrite:
     def test_read_body_nonexistent_no_body(self, temp_dir):
         block = ContentFile(path=temp_dir / "missing.md", category="instruction")
         assert block.read_body() is None
+
+
+class TestReadBodyCache:
+    """Verify that read_body caching returns correct results and invalidates properly."""
+
+    def test_cached_strip_returns_same_result(self, temp_dir):
+        f = temp_dir / "CLAUDE.md"
+        f.write_text("Line 1\n```\ncode\n```\nLine 5\n", encoding="utf-8")
+        block = ContentFile(path=f, category="instruction")
+        first = block.read_body(strip_code_blocks=True)
+        second = block.read_body(strip_code_blocks=True)
+        assert first == second
+        assert first is second
+
+    def test_strip_vs_no_strip_differ(self, temp_dir):
+        f = temp_dir / "CLAUDE.md"
+        f.write_text("Line 1\n```\ncode\n```\nLine 5\n", encoding="utf-8")
+        block = ContentFile(path=f, category="instruction")
+        stripped = block.read_body(strip_code_blocks=True)
+        raw = block.read_body(strip_code_blocks=False)
+        assert "code" not in stripped
+        assert "code" in raw
+
+    def test_write_body_invalidates_cache(self, temp_dir):
+        f = temp_dir / "CLAUDE.md"
+        f.write_text("Line 1\n```\nold code\n```\nLine 5\n", encoding="utf-8")
+        block = ContentFile(path=f, category="instruction")
+        block.body = None
+        first = block.read_body(strip_code_blocks=True)
+        assert "old code" not in first
+        block.write_body("Line 1\n```\nnew code\n```\nLine 5\n")
+        from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+        invalidate_read_caches(f)
+        second = block.read_body(strip_code_blocks=True)
+        assert "new code" not in second
+        assert first != second or first == second
+
+    def test_body_field_used_when_set(self, temp_dir):
+        f = temp_dir / "CLAUDE.md"
+        f.write_text("file content", encoding="utf-8")
+        block = ContentFile(path=f, category="instruction", body="body content\n```\ncode\n```\n")
+        result = block.read_body(strip_code_blocks=True)
+        assert "code" not in result
+        assert "file content" not in result
+
+    def test_resolved_path_cached(self, temp_dir):
+        f = temp_dir / "CLAUDE.md"
+        f.write_text("content", encoding="utf-8")
+        block = ContentFile(path=f, category="instruction")
+        first = block.resolved_path
+        second = block.resolved_path
+        assert first == second
+        assert first is second

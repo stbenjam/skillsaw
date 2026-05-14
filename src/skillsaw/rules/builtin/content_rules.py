@@ -533,26 +533,30 @@ class ContentContradictionRule(Rule):
         return bool(ContentContradictionRule._NEGATION_PREFIX_RE.search(prefix))
 
     _CONTRADICTION_PAIRS = [
-        (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
         (
-            r"\bkeep it simple\b",
-            r"\bhandle all edge cases\b",
+            re.compile(r"\bmove fast\b"),
+            re.compile(r"\bcomprehensive tests?\b"),
+            "'move fast' vs 'comprehensive tests'",
+        ),
+        (
+            re.compile(r"\bkeep it simple\b"),
+            re.compile(r"\bhandle all edge cases\b"),
             "'keep it simple' vs 'handle all edge cases'",
         ),
         (
-            r"\bdon'?t over-?engineer\b",
-            r"\bdetailed architecture\b",
+            re.compile(r"\bdon'?t over-?engineer\b"),
+            re.compile(r"\bdetailed architecture\b"),
             "'don't over-engineer' vs 'detailed architecture'",
         ),
-        (r"\bminimal\b", r"\bexhaustive\b", "'minimal' vs 'exhaustive'"),
+        (re.compile(r"\bminimal\b"), re.compile(r"\bexhaustive\b"), "'minimal' vs 'exhaustive'"),
         (
-            r"\bdon'?t add comments\b",
-            r"\bdocument\s+(everything|all|every)\b",
+            re.compile(r"\bdon'?t add comments\b"),
+            re.compile(r"\bdocument\s+(everything|all|every)\b"),
             "'don't add comments' vs 'document everything'",
         ),
         (
-            r"\bavoid abstractions?\b",
-            r"\bcreate\s+(abstractions?|interfaces?|base\s+class)\b",
+            re.compile(r"\bavoid abstractions?\b"),
+            re.compile(r"\bcreate\s+(abstractions?|interfaces?|base\s+class)\b"),
             "'avoid abstractions' vs 'create abstractions'",
         ),
     ]
@@ -576,12 +580,10 @@ class ContentContradictionRule(Rule):
                 continue
             body_lower = body.lower()
             for pat_a, pat_b, desc in self._CONTRADICTION_PAIRS:
-                has_a = any(
-                    not self._is_negated(body_lower, m) for m in re.finditer(pat_a, body_lower)
-                )
-                has_b = any(
-                    not self._is_negated(body_lower, m) for m in re.finditer(pat_b, body_lower)
-                )
+                has_a = any(not self._is_negated(body_lower, m) for m in pat_a.finditer(body_lower))
+                if not has_a:
+                    continue
+                has_b = any(not self._is_negated(body_lower, m) for m in pat_b.finditer(body_lower))
                 if has_a and has_b:
                     violations.append(
                         self.violation(
@@ -717,6 +719,9 @@ class ContentActionabilityScoreRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
+        verb_re = self._VERB_RE
+        cmd_re = self._COMMAND_RE
+        path_re = self._PATH_RE
         for cf in gather_all_content_blocks(context):
             body = cf.read_body()
             if not body:
@@ -725,9 +730,16 @@ class ContentActionabilityScoreRule(Rule):
             if len(lines) < 5:
                 continue
             total = len(lines)
-            verb_lines = sum(1 for l in lines if self._VERB_RE.search(l))
-            cmd_lines = sum(1 for l in lines if self._COMMAND_RE.search(l))
-            path_lines = sum(1 for l in lines if self._PATH_RE.search(l))
+            verb_lines = 0
+            cmd_lines = 0
+            path_lines = 0
+            for l in lines:
+                if verb_re.search(l):
+                    verb_lines += 1
+                if cmd_re.search(l):
+                    cmd_lines += 1
+                if path_re.search(l):
+                    path_lines += 1
 
             verb_ratio = verb_lines / total
             cmd_ratio = cmd_lines / total
@@ -828,52 +840,54 @@ class ContentEmbeddedSecretsRule(Rule):
             "- Preserve markdown formatting"
         )
 
-    _PATTERNS = [
-        (re.compile(p), desc)
-        for p, desc in [
-            # OpenAI / Anthropic
-            (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
-            (r"\bsk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key"),
-            # GitHub
-            (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
-            (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
-            (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
-            (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
-            (r"\bghr_[a-zA-Z0-9]{36,}", "GitHub refresh token"),
-            # GitLab
-            (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
-            # AWS
-            (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
-            (r"\bASIA[0-9A-Z]{16}", "AWS temporary access key ID"),
-            # Slack
-            (r"\bxoxb-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack bot token"),
-            (r"\bxoxp-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack user token"),
-            (r"\bxoxa-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack app token"),
-            (r"\bxoxr-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack refresh token"),
-            # Stripe
-            (r"\bsk_live_[a-zA-Z0-9]{24,}", "Stripe secret key"),
-            (r"\brk_live_[a-zA-Z0-9]{24,}", "Stripe restricted key"),
-            # Google
-            (r"\bAIza[0-9A-Za-z_\-]{35}", "Google API key"),
-            # Twilio
-            (r"\bSK[0-9a-fA-F]{32}", "Twilio API key"),
-            # SendGrid
-            (r"\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}", "SendGrid API key"),
-            # npm
-            (r"\bnpm_[a-zA-Z0-9]{36}", "npm access token"),
-            # PyPI
-            (r"\bpypi-[a-zA-Z0-9]{16,}", "PyPI API token"),
-            # JWT (base64.base64.base64)
-            (r"\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*\.[a-zA-Z0-9_\-]+", "JSON Web Token"),
-            # Private keys
-            (r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private key"),
-            # Generic patterns
-            (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", "Hardcoded password"),
-            (r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded API key"),
-            (r"(?i)\bsecret[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded secret key"),
-            (r"(?i)\baccess[_-]?token\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded access token"),
-        ]
+    _PATTERN_DEFS = [
+        # OpenAI / Anthropic
+        (r"\bsk-[a-zA-Z0-9]{20,}", "OpenAI/Anthropic API key"),
+        (r"\bsk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key"),
+        # GitHub
+        (r"\bghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
+        (r"\bghs_[a-zA-Z0-9]{36,}", "GitHub server token"),
+        (r"\bgho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
+        (r"\bghu_[a-zA-Z0-9]{36,}", "GitHub user token"),
+        (r"\bghr_[a-zA-Z0-9]{36,}", "GitHub refresh token"),
+        # GitLab
+        (r"\bglpat-[a-zA-Z0-9\-_]{20,}", "GitLab personal access token"),
+        # AWS
+        (r"\bAKIA[0-9A-Z]{16}", "AWS access key ID"),
+        (r"\bASIA[0-9A-Z]{16}", "AWS temporary access key ID"),
+        # Slack
+        (r"\bxoxb-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack bot token"),
+        (r"\bxoxp-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack user token"),
+        (r"\bxoxa-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack app token"),
+        (r"\bxoxr-[0-9]{10,}-[0-9a-zA-Z\-]+", "Slack refresh token"),
+        # Stripe
+        (r"\bsk_live_[a-zA-Z0-9]{24,}", "Stripe secret key"),
+        (r"\brk_live_[a-zA-Z0-9]{24,}", "Stripe restricted key"),
+        # Google
+        (r"\bAIza[0-9A-Za-z_\-]{35}", "Google API key"),
+        # Twilio
+        (r"\bSK[0-9a-fA-F]{32}", "Twilio API key"),
+        # SendGrid
+        (r"\bSG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}", "SendGrid API key"),
+        # npm
+        (r"\bnpm_[a-zA-Z0-9]{36}", "npm access token"),
+        # PyPI
+        (r"\bpypi-[a-zA-Z0-9]{16,}", "PyPI API token"),
+        # JWT (base64.base64.base64)
+        (r"\beyJ[a-zA-Z0-9_\-]*\.eyJ[a-zA-Z0-9_\-]*\.[a-zA-Z0-9_\-]+", "JSON Web Token"),
+        # Private keys
+        (r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private key"),
+        # Generic patterns
+        (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", "Hardcoded password"),
+        (r"(?i)\bapi[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded API key"),
+        (r"(?i)\bsecret[_-]?key\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded secret key"),
+        (r"(?i)\baccess[_-]?token\s*[=:]\s*['\"][^'\"]{16,}['\"]", "Hardcoded access token"),
     ]
+    _PATTERNS = [(re.compile(p), desc) for p, desc in _PATTERN_DEFS]
+    _COMBINED_RE = re.compile(
+        "|".join(f"(?:{p.replace('(?i)', '')})" for p, _ in _PATTERN_DEFS),
+        re.IGNORECASE,
+    )
 
     @property
     def rule_id(self) -> str:
@@ -889,8 +903,9 @@ class ContentEmbeddedSecretsRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         seen_paths: Set[Path] = set()
+        combined = self._COMBINED_RE
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
+            resolved = cf.resolved_path
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
@@ -898,6 +913,8 @@ class ContentEmbeddedSecretsRule(Rule):
             if not content:
                 continue
             for line_num, line in enumerate(content.splitlines(), 1):
+                if not combined.search(line):
+                    continue
                 for pattern, desc in self._PATTERNS:
                     if pattern.search(line):
                         violations.append(
@@ -970,28 +987,37 @@ class ContentBannedReferencesRule(Rule):
             "- Preserve markdown formatting"
         )
 
-    def _get_patterns(self) -> List[Tuple[re.Pattern, str]]:
+    def _get_patterns(self) -> Tuple[List[Tuple[re.Pattern, str]], Optional[re.Pattern]]:
         patterns: List[Tuple[re.Pattern, str]] = []
+        raw_patterns: List[str] = []
         if not self.config.get("skip-builtins", False):
             for regex_str, msg in self._BUILTIN_PATTERNS:
                 patterns.append((re.compile(regex_str, re.IGNORECASE), msg))
+                raw_patterns.append(regex_str)
         for entry in self.config.get("banned", []):
             if isinstance(entry, dict) and "pattern" in entry:
                 msg = entry.get("message", f"Banned reference: matches '{entry['pattern']}'")
                 try:
-                    patterns.append((re.compile(entry["pattern"], re.IGNORECASE), msg))
+                    compiled = re.compile(entry["pattern"], re.IGNORECASE)
+                    patterns.append((compiled, msg))
+                    raw_patterns.append(entry["pattern"])
                 except re.error:
                     pass
-        return patterns
+        combined = (
+            re.compile("|".join(f"(?:{p})" for p in raw_patterns), re.IGNORECASE)
+            if raw_patterns
+            else None
+        )
+        return patterns, combined
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        patterns = self._get_patterns()
+        patterns, combined = self._get_patterns()
         if not patterns:
             return []
         violations = []
         seen_paths: Set[Path] = set()
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
+            resolved = cf.resolved_path
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
@@ -999,6 +1025,8 @@ class ContentBannedReferencesRule(Rule):
             if not content:
                 continue
             for line_num, line in enumerate(content.splitlines(), 1):
+                if combined and not combined.search(line):
+                    continue
                 for pattern, msg in patterns:
                     if pattern.search(line):
                         violations.append(

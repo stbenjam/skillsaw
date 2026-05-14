@@ -111,57 +111,144 @@ class InstructionBudget:
 # --- Patterns ---
 
 _HEDGING = [
-    (r"\btry to\b", "Remove 'try to' — state the action directly"),
+    (re.compile(r"\btry to\b", re.IGNORECASE), "Remove 'try to' — state the action directly"),
     (
-        r"\bconsider\s+(?:using|adding|implementing|creating|moving|switching|enabling)\b",
+        re.compile(
+            r"\bconsider\s+(?:using|adding|implementing|creating|moving|switching|enabling)\b",
+            re.IGNORECASE,
+        ),
         "Replace 'consider X' with 'do X' or remove",
     ),
-    (r"\bif possible\b", "Remove 'if possible' — state conditions explicitly"),
-    (r"\bideally\b", "Remove 'ideally' — state the requirement or drop it"),
-    (r"\bwhere possible\b", "Remove 'where possible' — be specific about when"),
-    (r"\bwhen appropriate\b", "Replace 'when appropriate' with specific conditions"),
-    (r"\bas needed\b", "Replace 'as needed' with specific triggers"),
-    (r"\byou might want to\b", "Remove 'you might want to' — state the action directly"),
-    (r"\byou should probably\b", "Remove 'you should probably' — state the requirement"),
-    (r"\bit would be good to\b", "Remove 'it would be good to' — state the action directly"),
-    (r"\byou may want to\b", "Remove 'you may want to' — state the action directly"),
-    (r"\bperhaps\b", "Remove 'perhaps' — state the recommendation or drop it"),
+    (
+        re.compile(r"\bif possible\b", re.IGNORECASE),
+        "Remove 'if possible' — state conditions explicitly",
+    ),
+    (
+        re.compile(r"\bideally\b", re.IGNORECASE),
+        "Remove 'ideally' — state the requirement or drop it",
+    ),
+    (
+        re.compile(r"\bwhere possible\b", re.IGNORECASE),
+        "Remove 'where possible' — be specific about when",
+    ),
+    (
+        re.compile(r"\bwhen appropriate\b", re.IGNORECASE),
+        "Replace 'when appropriate' with specific conditions",
+    ),
+    (re.compile(r"\bas needed\b", re.IGNORECASE), "Replace 'as needed' with specific triggers"),
+    (
+        re.compile(r"\byou might want to\b", re.IGNORECASE),
+        "Remove 'you might want to' — state the action directly",
+    ),
+    (
+        re.compile(r"\byou should probably\b", re.IGNORECASE),
+        "Remove 'you should probably' — state the requirement",
+    ),
+    (
+        re.compile(r"\bit would be good to\b", re.IGNORECASE),
+        "Remove 'it would be good to' — state the action directly",
+    ),
+    (
+        re.compile(r"\byou may want to\b", re.IGNORECASE),
+        "Remove 'you may want to' — state the action directly",
+    ),
+    (
+        re.compile(r"\bperhaps\b", re.IGNORECASE),
+        "Remove 'perhaps' — state the recommendation or drop it",
+    ),
 ]
 
 _VAGUENESS = [
-    (r"\bbe careful\b", "Replace 'be careful' with specific checks to perform"),
-    (r"\bgracefully\b", "Replace 'gracefully' with specific error handling behavior"),
-    (r"\bproperly\b", "Remove 'properly' — describe what correct behavior looks like"),
-    (r"\bcorrectly\b", "Remove 'correctly' — describe what correct behavior looks like"),
-    (r"\bappropriately\b", "Remove 'appropriately' — be specific about what to do"),
+    (
+        re.compile(r"\bbe careful\b", re.IGNORECASE),
+        "Replace 'be careful' with specific checks to perform",
+    ),
+    (
+        re.compile(r"\bgracefully\b", re.IGNORECASE),
+        "Replace 'gracefully' with specific error handling behavior",
+    ),
+    (
+        re.compile(r"\bproperly\b", re.IGNORECASE),
+        "Remove 'properly' — describe what correct behavior looks like",
+    ),
+    (
+        re.compile(r"\bcorrectly\b", re.IGNORECASE),
+        "Remove 'correctly' — describe what correct behavior looks like",
+    ),
+    (
+        re.compile(r"\bappropriately\b", re.IGNORECASE),
+        "Remove 'appropriately' — be specific about what to do",
+    ),
 ]
 
 _TAUTOLOGICAL_PHRASES = [
-    (r"\bwrite clean code\b", "Models already aim for clean code — this wastes instruction budget"),
-    (r"\bwrite readable code\b", "Models already aim for readable code"),
-    (r"\bwrite maintainable code\b", "Models already aim for maintainable code"),
     (
-        r"\bfollow the project conventions\b",
+        re.compile(r"\bwrite clean code\b", re.IGNORECASE),
+        "Models already aim for clean code — this wastes instruction budget",
+    ),
+    (re.compile(r"\bwrite readable code\b", re.IGNORECASE), "Models already aim for readable code"),
+    (
+        re.compile(r"\bwrite maintainable code\b", re.IGNORECASE),
+        "Models already aim for maintainable code",
+    ),
+    (
+        re.compile(r"\bfollow the project conventions\b", re.IGNORECASE),
         "Agents read existing code and follow conventions automatically",
     ),
-    (r"\buse descriptive variable names\b", "Models already use descriptive names by default"),
-    (r"\badd appropriate error handling\b", "Too vague — specify which errors to handle and how"),
-    (r"\bwrite comprehensive tests\b", "Too vague — specify what coverage is expected"),
-    (r"\bdocument your changes\b", "Too vague — specify what documentation is required"),
-    (r"\bbe helpful\b", "Models are helpful by default — this has no effect"),
-    (r"\bbe thorough\b", "Too vague — specify what thoroughness looks like"),
-    (r"\bbe accurate\b", "Models aim for accuracy by default — this has no effect"),
-    (r"\bfollow best practices\b", "Too vague — name the specific practices"),
-    (r"\bwrite good tests\b", "Too vague — specify test expectations"),
-    (r"\bkeep it simple\b", "Too vague — specify complexity constraints"),
-    (r"\buse common sense\b", "Models cannot apply 'common sense' — be explicit"),
+    (
+        re.compile(r"\buse descriptive variable names\b", re.IGNORECASE),
+        "Models already use descriptive names by default",
+    ),
+    (
+        re.compile(r"\badd appropriate error handling\b", re.IGNORECASE),
+        "Too vague — specify which errors to handle and how",
+    ),
+    (
+        re.compile(r"\bwrite comprehensive tests\b", re.IGNORECASE),
+        "Too vague — specify what coverage is expected",
+    ),
+    (
+        re.compile(r"\bdocument your changes\b", re.IGNORECASE),
+        "Too vague — specify what documentation is required",
+    ),
+    (
+        re.compile(r"\bbe helpful\b", re.IGNORECASE),
+        "Models are helpful by default — this has no effect",
+    ),
+    (
+        re.compile(r"\bbe thorough\b", re.IGNORECASE),
+        "Too vague — specify what thoroughness looks like",
+    ),
+    (
+        re.compile(r"\bbe accurate\b", re.IGNORECASE),
+        "Models aim for accuracy by default — this has no effect",
+    ),
+    (
+        re.compile(r"\bfollow best practices\b", re.IGNORECASE),
+        "Too vague — name the specific practices",
+    ),
+    (re.compile(r"\bwrite good tests\b", re.IGNORECASE), "Too vague — specify test expectations"),
+    (
+        re.compile(r"\bkeep it simple\b", re.IGNORECASE),
+        "Too vague — specify complexity constraints",
+    ),
+    (
+        re.compile(r"\buse common sense\b", re.IGNORECASE),
+        "Models cannot apply 'common sense' — be explicit",
+    ),
 ]
 
 _NON_ACTIONABLE = [
-    (r"\bbe aware\b", "Replace 'be aware' with an actionable instruction"),
-    (r"\bkeep in mind\b", "Replace 'keep in mind' with a concrete action"),
-    (r"\bnote that\b", "Restructure — state the constraint directly"),
-    (r"\bremember to\b", "Replace 'remember to X' with just 'X'"),
+    (
+        re.compile(r"\bbe aware\b", re.IGNORECASE),
+        "Replace 'be aware' with an actionable instruction",
+    ),
+    (
+        re.compile(r"\bkeep in mind\b", re.IGNORECASE),
+        "Replace 'keep in mind' with a concrete action",
+    ),
+    (re.compile(r"\bnote that\b", re.IGNORECASE), "Restructure — state the constraint directly"),
+    (re.compile(r"\bremember to\b", re.IGNORECASE), "Replace 'remember to X' with just 'X'"),
 ]
 
 _CRITICAL_KEYWORDS = re.compile(
@@ -191,12 +278,28 @@ class ContentBlock(LintTarget):
     line_offset: int = 0
     body: Optional[str] = None
     _line_map: Optional[Callable[[int], int]] = field(default=None, repr=False)
+    _stripped_cache: Optional[str] = field(default=None, repr=False, init=False)
+    _resolved_path: Optional[Path] = field(default=None, repr=False, init=False)
+
+    @property
+    def resolved_path(self) -> Path:
+        if self._resolved_path is None:
+            self._resolved_path = self.path.resolve()
+        return self._resolved_path
 
     def file_line(self, body_line: int) -> int:
         """Translate a 1-based body line number to a 1-based file line number."""
         if self._line_map is not None:
             return self._line_map(body_line)
         return body_line + self.line_offset
+
+    def _cached_strip(self, body: str) -> str:
+        if self._stripped_cache is None:
+            self._stripped_cache = _strip_fenced_code_blocks(body)
+        return self._stripped_cache
+
+    def _invalidate_strip_cache(self) -> None:
+        self._stripped_cache = None
 
     @abstractmethod
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]: ...
@@ -214,10 +317,10 @@ class ContentBlock(LintTarget):
     def __eq__(self, other):
         if not isinstance(other, ContentBlock):
             return NotImplemented
-        return type(self) is type(other) and self.path.resolve() == other.path.resolve()
+        return type(self) is type(other) and self.resolved_path == other.resolved_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve()))
+        return hash((type(self), self.resolved_path))
 
 
 @dataclass(eq=False)
@@ -233,10 +336,11 @@ class FileContentBlock(ContentBlock):
                 return None
             body = content
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
+            body = self._cached_strip(body)
         return body
 
     def write_body(self, new_body: str) -> None:
+        self._invalidate_strip_cache()
         self.path.write_text(new_body, encoding="utf-8")
 
 
@@ -253,10 +357,11 @@ class FrontmatterContentBlock(ContentBlock):
                 return None
             _, body, _ = parse_frontmatter(content)
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
+            body = self._cached_strip(body)
         return body
 
     def write_body(self, new_body: str) -> None:
+        self._invalidate_strip_cache()
         content = read_text(self.path)
         if content:
             front, _, _ = parse_frontmatter(content)
@@ -285,10 +390,11 @@ class CodeRabbitContentBlock(ContentBlock):
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
         body = self.body if self.body is not None else ""
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
+            body = self._cached_strip(body)
         return body
 
     def write_body(self, new_body: str) -> None:
+        self._invalidate_strip_cache()
         ruyaml = _RuamelYAML()
         ruyaml.preserve_quotes = True
         raw = self.path.read_text(encoding="utf-8")
@@ -330,10 +436,10 @@ class CodeRabbitContentBlock(ContentBlock):
     def __eq__(self, other):
         if not isinstance(other, CodeRabbitContentBlock):
             return NotImplemented
-        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+        return self.resolved_path == other.resolved_path and self.yaml_path == other.yaml_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve(), self.yaml_path))
+        return hash((type(self), self.resolved_path, self.yaml_path))
 
     # --- CodeRabbit extraction helpers (classmethods) ---
 
@@ -490,10 +596,11 @@ class PromptfooPromptBlock(ContentBlock):
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
         body = self.body if self.body is not None else ""
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
+            body = self._cached_strip(body)
         return body
 
     def write_body(self, new_body: str) -> None:
+        self._invalidate_strip_cache()
         ruyaml = _RuamelYAML()
         ruyaml.preserve_quotes = True
         raw = self.path.read_text(encoding="utf-8")
@@ -520,10 +627,10 @@ class PromptfooPromptBlock(ContentBlock):
     def __eq__(self, other):
         if not isinstance(other, PromptfooPromptBlock):
             return NotImplemented
-        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+        return self.resolved_path == other.resolved_path and self.yaml_path == other.yaml_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve(), self.yaml_path))
+        return hash((type(self), self.resolved_path, self.yaml_path))
 
     _TEMPLATE_ONLY_RE = re.compile(r"^\s*\{\{.*\}\}\s*$")
 
@@ -1076,14 +1183,14 @@ class WeakLanguageDetector:
             return []
         results: List[WeakLanguageMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, fix in _HEDGING:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
+            for compiled, fix in _HEDGING:
+                for m in compiled.finditer(line):
                     results.append(WeakLanguageMatch(line_num, m.group(), "hedging", fix))
-            for pattern, fix in _VAGUENESS:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
+            for compiled, fix in _VAGUENESS:
+                for m in compiled.finditer(line):
                     results.append(WeakLanguageMatch(line_num, m.group(), "vagueness", fix))
-            for pattern, fix in _NON_ACTIONABLE:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
+            for compiled, fix in _NON_ACTIONABLE:
+                for m in compiled.finditer(line):
                     results.append(WeakLanguageMatch(line_num, m.group(), "non-actionable", fix))
         return results
 
@@ -1095,8 +1202,8 @@ class TautologicalDetector:
             return []
         results: List[TautologicalMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, reason in _TAUTOLOGICAL_PHRASES:
-                m = re.search(pattern, line, re.IGNORECASE)
+            for compiled, reason in _TAUTOLOGICAL_PHRASES:
+                m = compiled.search(line)
                 if m:
                     results.append(TautologicalMatch(line_num, m.group(), reason))
         return results
