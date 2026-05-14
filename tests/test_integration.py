@@ -1105,3 +1105,41 @@ class TestSafeAutofixIdempotency:
             assert (
                 name_val == skill_dir.name
             ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
+
+
+@pytest.mark.integration
+class TestRuleFilter:
+    """Tests for --rule flag filtering."""
+
+    FIXTURE = "autofix/safe-idempotency"
+
+    def test_rule_flag_limits_to_specified_rules(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--rule", "agentskill-name")
+        vs = violations(r)
+        rule_ids = {v["rule_id"] for v in vs}
+        assert rule_ids == {"agentskill-name"}
+
+    def test_rule_flag_multiple_rules(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--rule", "agentskill-name", "--rule", "agentskill-valid")
+        vs = violations(r)
+        rule_ids = {v["rule_id"] for v in vs}
+        assert rule_ids == {"agentskill-name", "agentskill-valid"}
+
+    def test_rule_flag_enables_disabled_rule(self, tmp_path):
+        """--rule overrides enabled: false in config."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r_without = run_lint(repo)
+        assert not any(v["rule_id"] == "agentskill-evals-required" for v in violations(r_without))
+
+        r_with = run_lint(repo, "--rule", "agentskill-evals-required")
+        vs = violations(r_with)
+        assert len(vs) > 0
+        assert all(v["rule_id"] == "agentskill-evals-required" for v in vs)
+
+    def test_rule_flag_works_with_fix(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = _run_fix(repo, "--rule", "agentskill-name")
+        assert "agentskill-name" not in result.stdout or "Fixed" in result.stdout
+        assert result.returncode == 0

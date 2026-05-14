@@ -89,7 +89,7 @@ class Linter:
             if config:
                 rule_instance = rule_class(config)
 
-            if self.config.is_rule_enabled(
+            if self._rule_ids or self.config.is_rule_enabled(
                 rule_instance.rule_id,
                 self.context,
                 rule_instance.repo_types,
@@ -133,7 +133,7 @@ class Linter:
                 if config:
                     rule_instance = obj(config)
 
-                if self.config.is_rule_enabled(
+                if self._rule_ids or self.config.is_rule_enabled(
                     rule_instance.rule_id,
                     self.context,
                     rule_instance.repo_types,
