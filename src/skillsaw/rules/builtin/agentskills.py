@@ -42,7 +42,13 @@ def _read_renames_manifest(root: Path) -> list[dict]:
         data = json.loads(path.read_text(encoding="utf-8"))
         renames = data.get("renames", [])
         if isinstance(renames, list):
-            return [r for r in renames if isinstance(r, dict) and "old" in r and "new" in r]
+            return [
+                r
+                for r in renames
+                if isinstance(r, dict)
+                and isinstance(r.get("old"), str)
+                and isinstance(r.get("new"), str)
+            ]
     except (json.JSONDecodeError, OSError):
         pass
     return []
@@ -539,9 +545,10 @@ class AgentSkillRenameRefsRule(Rule):
                 referenced_olds.add(skill_name)
 
         # Clean up manifest entries that have no remaining stale references
-        still_active = [r for r in renames if r["old"] in referenced_olds]
-        if len(still_active) < len(renames):
-            with _RENAMES_LOCK:
+        with _RENAMES_LOCK:
+            current = _read_renames_manifest(context.root_path)
+            still_active = [r for r in current if r["old"] in referenced_olds]
+            if len(still_active) < len(current):
                 _write_renames_manifest(context.root_path, still_active)
 
         return violations
@@ -565,10 +572,31 @@ class AgentSkillRenameRefsRule(Rule):
             except OSError:
                 continue
 
-            fixed = original
-            for old, new in rename_map.items():
-                if old in fixed:
-                    fixed = fixed.replace(old, new)
+            if v.file_path.name == "evals.json":
+                try:
+                    data = json.loads(original)
+                    sk = data.get("skill_name", "")
+                    if sk in rename_map:
+                        data["skill_name"] = rename_map[sk]
+                        fixed = json.dumps(data, indent=2) + "\n"
+                    else:
+                        continue
+                except (json.JSONDecodeError, KeyError):
+                    continue
+            elif v.line:
+                lines = original.splitlines(keepends=True)
+                idx = v.line - 1
+                if idx < 0 or idx >= len(lines):
+                    continue
+                line = lines[idx]
+                for old, new in rename_map.items():
+                    line = line.replace(old, new)
+                if line == lines[idx]:
+                    continue
+                lines[idx] = line
+                fixed = "".join(lines)
+            else:
+                continue
 
             if fixed == original:
                 continue
