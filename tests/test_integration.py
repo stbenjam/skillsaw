@@ -14,6 +14,7 @@ them against the actual linter output.
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1151,6 +1152,33 @@ class TestRuleFilter:
         result = subprocess.run(args, capture_output=True, text=True, timeout=60)
         assert result.returncode != 0
         assert "Unknown rule" in result.stderr
+
+    def test_dry_run_shows_diff_without_modifying(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        skip = {".skillsaw-renames.json"}
+        before = {
+            p: p.read_text()
+            for p in repo.rglob("*")
+            if p.is_file() and p.name not in skip
+        }
+        args = [
+            sys.executable, "-m", "skillsaw", "fix", "--dry-run",
+            "--rule", "agentskill-name", str(repo),
+        ]
+        result = subprocess.run(
+            args, capture_output=True, text=True, timeout=60,
+            env={**os.environ, "NO_COLOR": "1"},
+        )
+        assert result.returncode == 0
+        assert "Would fix" in result.stdout
+        assert "dry-run" in result.stdout
+        assert "@@" in result.stdout
+        after = {
+            p: p.read_text()
+            for p in repo.rglob("*")
+            if p.is_file() and p.name not in skip
+        }
+        assert before == after
 
     def test_rule_flag_works_with_fix(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

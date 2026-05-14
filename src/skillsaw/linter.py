@@ -326,6 +326,7 @@ class Linter:
         self,
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
+        dry_run: bool = False,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -373,6 +374,10 @@ class Linter:
                 break
 
             independent, has_conflicts = self._first_per_file(applicable)
+
+            if dry_run:
+                all_applied.extend(independent)
+                break
 
             applied = self.apply_fixes(independent, confidence)
             all_applied.extend(applied)
