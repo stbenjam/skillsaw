@@ -345,6 +345,7 @@ class FileContentBlock(ContentBlock):
     def write_body(self, new_body: str) -> None:
         self._invalidate_strip_cache()
         self.path.write_text(new_body, encoding="utf-8")
+        self.body = new_body
 
 
 @dataclass(eq=False)
@@ -370,8 +371,10 @@ class FrontmatterContentBlock(ContentBlock):
             front, _, _ = parse_frontmatter(content)
             if front:
                 self.path.write_text(front + "\n---\n" + new_body, encoding="utf-8")
+                self.body = new_body
                 return
         self.path.write_text(new_body, encoding="utf-8")
+        self.body = new_body
 
     @property
     def frontmatter_line_offset(self) -> int:
@@ -432,6 +435,7 @@ class CodeRabbitContentBlock(ContentBlock):
         buf = StringIO()
         ruyaml.dump(data, buf)
         self.path.write_text(buf.getvalue(), encoding="utf-8")
+        self.body = new_body
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
@@ -623,6 +627,7 @@ class PromptfooPromptBlock(ContentBlock):
         buf = StringIO()
         ruyaml.dump(data, buf)
         self.path.write_text(buf.getvalue(), encoding="utf-8")
+        self.body = new_body
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
