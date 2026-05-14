@@ -29,3 +29,24 @@ Claude Code plugins, and plugin marketplaces.
 3. Bump version via `scripts/bump-version.sh`.
 4. `make update` — regenerate all generated files (must come after version bump).
 5. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure exit 0.
+
+## Writing Linter Rules
+
+Rules MUST:
+
+1. **Use the lint tree for file discovery** — call
+   `context.lint_tree.find(NodeType)`, never `glob`, `rglob`, or `os.walk`.
+2. **Report line numbers** on every violation traceable to a specific line.
+   An approximate line is better than no line.
+3. **Use `read_yaml_commented()`** (from `utils.py`) for YAML — never
+   `yaml.safe_load()` or `read_yaml()`. It returns ruamel.yaml objects that
+   preserve line numbers.
+4. **Use `commented_key_line(node, key)` / `commented_item_line(node, index)`**
+   to extract 1-based line numbers from ruamel data structures.
+5. **Never fabricate line numbers** — if a field is missing, omit the line.
+   Never hardcode `line=1`.
+6. **Declare `repo_types`** to control when `enabled: auto` fires.
+7. **Declare `config_schema`** when the rule accepts parameters.
+
+JSON files are exempt from line number requirements — the `json` module does
+not preserve them. File-level reporting is acceptable for JSON rules.
