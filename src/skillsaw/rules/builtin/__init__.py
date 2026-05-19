@@ -45,6 +45,7 @@ from .rules_dir import (
 from .agentskills import (
     AgentSkillValidRule,
     AgentSkillNameRule,
+    AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
@@ -79,10 +80,19 @@ from .content_rules import (
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentBrokenInternalReferenceRule,
+    ContentUnlinkedInternalReferenceRule,
+    ContentPlaceholderTextRule,
 )
 
 from .coderabbit import (
     CoderabbitYamlValidRule,
+)
+
+from .promptfoo import (
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
 )
 
 from .apm import (
@@ -119,6 +129,7 @@ BUILTIN_RULES = [
     # Agentskills
     AgentSkillValidRule,
     AgentSkillNameRule,
+    AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
@@ -145,8 +156,15 @@ BUILTIN_RULES = [
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentBrokenInternalReferenceRule,
+    ContentUnlinkedInternalReferenceRule,
+    ContentPlaceholderTextRule,
     # CodeRabbit
     CoderabbitYamlValidRule,
+    # Promptfoo eval validation
+    PromptfooValidRule,
+    PromptfooAssertionsRule,
+    PromptfooMetadataRule,
     # APM (Agent Package Manager)
     ApmYamlValidRule,
     ApmStructureValidRule,
@@ -174,6 +192,7 @@ __all__ = [
     "RulesValidRule",
     "AgentSkillValidRule",
     "AgentSkillNameRule",
+    "AgentSkillRenameRefsRule",
     "AgentSkillDescriptionRule",
     "AgentSkillStructureRule",
     "AgentSkillEvalsRequiredRule",
@@ -196,7 +215,13 @@ __all__ = [
     "ContentEmbeddedSecretsRule",
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
+    "ContentBrokenInternalReferenceRule",
+    "ContentUnlinkedInternalReferenceRule",
+    "ContentPlaceholderTextRule",
     "CoderabbitYamlValidRule",
+    "PromptfooValidRule",
+    "PromptfooAssertionsRule",
+    "PromptfooMetadataRule",
     "ApmYamlValidRule",
     "ApmStructureValidRule",
 ]

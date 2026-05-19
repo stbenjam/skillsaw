@@ -116,6 +116,7 @@ class MarketplaceJsonValidRule(Rule):
 class MarketplaceRegistrationRule(Rule):
     """Check that plugins are registered in marketplace.json"""
 
+    autofix_confidence = AutofixConfidence.SUGGEST
     repo_types = {RepositoryType.MARKETPLACE}
 
     @property

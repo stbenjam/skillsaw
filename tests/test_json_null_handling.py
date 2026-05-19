@@ -122,7 +122,7 @@ def test_plugin_json_null_mcp_servers_mcp_valid_rule(temp_dir):
 
 
 def test_plugin_json_list_mcp_servers_mcp_valid_rule(temp_dir):
-    """McpValidJsonRule must not crash when plugin.json has mcpServers: []."""
+    """McpValidJsonRule accepts list mcpServers in plugin.json (issue #146)."""
     plugin_dir = _create_single_plugin(
         temp_dir, json.dumps({"name": "list-mcp-valid", "mcpServers": []})
     )
@@ -130,8 +130,7 @@ def test_plugin_json_list_mcp_servers_mcp_valid_rule(temp_dir):
     rule = McpValidJsonRule()
     violations = rule.check(context)
     assert isinstance(violations, list)
-    msgs = [v.message for v in violations]
-    assert any("JSON object" in m for m in msgs)
+    assert len(violations) == 0
 
 
 # -- mcp.py: McpProhibitedRule ._check_mcp_file & ._check_plugin_json -------

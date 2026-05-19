@@ -73,7 +73,15 @@ class McpValidJsonRule(Rule):
         if "mcpServers" not in data:
             return violations
 
-        mcp_config = {"mcpServers": data["mcpServers"]}
+        mcp_servers_value = data["mcpServers"]
+
+        # mcpServers can be a string (file path reference) or array per the
+        # Claude Code plugin spec — accept those forms without further
+        # structural validation.
+        if isinstance(mcp_servers_value, (str, list)):
+            return violations
+
+        mcp_config = {"mcpServers": mcp_servers_value}
         violations.extend(self._validate_mcp_structure(mcp_config, plugin_json))
 
         return violations

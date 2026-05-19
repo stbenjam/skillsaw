@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a false positive, false negative, crash, or other bug
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of issue
+      options:
+        - False positive (flagged something that should be allowed)
+        - False negative (missed something that should be flagged)
+        - Crash / traceback
+        - Incorrect line number or message
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID
+      description: >
+        Which rule is involved? (e.g. `content-weak-language`, `agentskill-description`).
+        Leave blank if not rule-specific.
+      placeholder: e.g. content-weak-language
+
+  - type: input
+    id: version
+    attributes:
+      label: skillsaw version
+      description: Output of `skillsaw --version`
+      placeholder: e.g. 0.9.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Reproducer
+      description: >
+        Minimal skill file or repo layout that triggers the bug.
+        Wrap file contents in a fenced code block.
+      placeholder: |
+        ```yaml
+        # agentskills.yaml
+        skills:
+          - name: my-skill
+            ...
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: >
+        What actually happened. Include the full skillsaw output
+        (with `--verbose` if possible). Please redact secrets, tokens,
+        and private paths before posting.
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: >
+        Paste your `.skillsaw.yaml` / `.claudelint.yaml` if you have one,
+        or note if you're using default settings. Redact any secrets
+        or sensitive values first.
+      render: yaml
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help (OS, Python version, CI environment, etc.)

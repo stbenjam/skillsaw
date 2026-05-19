@@ -1,0 +1,6 @@
+description: "Broken eval — tests is not an array"
+providers:
+  - id: test-provider
+prompts:
+  - "{{prompt}}"
+tests: 42

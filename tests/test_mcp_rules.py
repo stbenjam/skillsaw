@@ -753,3 +753,63 @@ def test_invalid_oauth_type(temp_dir):
     violations = rule.check(context)
     assert len(violations) == 1
     assert "'oauth' must be an object" in violations[0].message
+
+
+# Tests for string/array mcpServers in plugin.json (issue #146)
+
+
+def test_string_path_mcp_servers_in_plugin_json(temp_dir):
+    """Test that string-path mcpServers in plugin.json is accepted (issue #146)"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    plugin_data = {
+        "name": "test-plugin",
+        "description": "Test plugin",
+        "version": "1.0.0",
+        "author": {"name": "Test"},
+        "mcpServers": "./.mcp.json",
+    }
+    (claude_dir / "plugin.json").write_text(json.dumps(plugin_data, indent=2))
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_array_mcp_servers_in_plugin_json(temp_dir):
+    """Test that array mcpServers in plugin.json is accepted"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    plugin_data = {
+        "name": "test-plugin",
+        "description": "Test plugin",
+        "version": "1.0.0",
+        "author": {"name": "Test"},
+        "mcpServers": ["./.mcp.json", "./extra-mcp.json"],
+    }
+    (claude_dir / "plugin.json").write_text(json.dumps(plugin_data, indent=2))
+    context = RepositoryContext(plugin_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_mcp_prohibited_skips_string_path(temp_dir):
+    """Test that mcp-prohibited skips string-path mcpServers in plugin.json"""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    plugin_data = {
+        "name": "test-plugin",
+        "mcpServers": "./.mcp.json",
+    }
+    (claude_dir / "plugin.json").write_text(json.dumps(plugin_data, indent=2))
+    context = RepositoryContext(plugin_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert len(violations) == 0

@@ -1,0 +1,6 @@
+{
+  "name": "content-paths-test",
+  "description": "Test content-paths config option",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

@@ -183,6 +183,16 @@ def test_text_shows_violations(valid_plugin):
     assert "kebab-case" in output
 
 
+def test_text_includes_rule_id(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "(plugin-json-required)" in output
+    assert "(command-naming)" in output
+    assert "(plugin-json-valid)" in output
+
+
 def test_text_verbose_shows_info(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()

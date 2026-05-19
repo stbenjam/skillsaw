@@ -1,0 +1,12 @@
+description: "Eval missing cost/latency assertions and metadata"
+providers:
+  - id: test-provider
+prompts:
+  - "{{prompt}}"
+tests:
+  - description: "no guards or metadata"
+    vars:
+      prompt: "hello"
+    assert:
+      - type: contains
+        value: "world"

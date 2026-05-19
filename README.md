@@ -21,7 +21,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 ## Features
 
 - 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw lint --fix --llm` — parallel processing, scoped re-lint, per-file rollback
+- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
 - 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
 - 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
 - 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
@@ -46,15 +46,21 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [agentskills.io Skills](#agentskillsio-skills)
   - [Single Plugin](#single-plugin)
   - [Marketplace (Multiple Plugins)](#marketplace-multiple-plugins)
+  - [`.claude/` Directory](#claude-directory)
+  - [CodeRabbit](#coderabbit)
+  - [Promptfoo](#promptfoo)
+  - [APM (Agent Package Manager)](#apm-agent-package-manager)
 - [Configuration](#configuration)
   - [Version Pinning](#version-pinning)
   - [Exclude Patterns](#exclude-patterns)
+  - [Per-Rule Excludes](#per-rule-excludes)
+  - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
-  - [Deterministic Fixes (`--fix`)](#deterministic-fixes---fix)
-  - [LLM-Powered Fixes (`--fix --llm`)](#llm-powered-fixes---fix---llm)
-  - [Standalone Fix Command (`skillsaw fix`)](#standalone-fix-command-skillsaw-fix)
+  - [Deterministic Fixes](#deterministic-fixes)
+  - [LLM-Powered Fixes](#llm-powered-fixes)
+  - [LLM Setup](#llm-setup)
 - [Custom Rules](#custom-rules)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
@@ -81,13 +87,13 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 uvx skillsaw
 
 # Fix structural issues automatically
-skillsaw lint --fix
+skillsaw fix
 
 # Fix content quality issues with an LLM
-skillsaw lint --fix --llm
+skillsaw fix --llm
 
 # Preview LLM fixes without writing
-skillsaw lint --fix --llm --dry-run
+skillsaw fix --llm --dry-run
 
 # Verbose output (includes info-level findings)
 skillsaw -v
@@ -145,9 +151,11 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 
 ### GitHub Action
 
-The built-in GitHub Action installs skillsaw, runs it, and posts violations as
-inline PR comments with automatic deduplication. Fixed violations have their
-comment threads resolved.
+The GitHub Action installs skillsaw, runs it, and prints violations in the CI
+log. A separate review action posts violations as inline PR comments with
+automatic deduplication and thread resolution.
+
+#### Basic usage (lint only)
 
 ```yaml
 name: Lint
@@ -156,7 +164,6 @@ on: [pull_request]
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   skillsaw:
@@ -168,6 +175,55 @@ jobs:
           strict: true
 ```
 
+#### With PR review comments
+
+To post inline comments on PRs (including fork PRs), use the two-workflow
+pattern. The lint workflow runs with read-only permissions and uploads the
+report as an artifact. A second workflow triggers on completion and posts
+comments with write permissions — without ever checking out untrusted code.
+
+```yaml
+# .github/workflows/lint.yml
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  skillsaw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: stbenjam/skillsaw@v0
+        with:
+          strict: true
+```
+
+```yaml
+# .github/workflows/lint-review.yml
+name: Lint Review
+
+on:
+  workflow_run:
+    workflows: ["Lint"]
+    types: [completed]
+
+jobs:
+  review:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: stbenjam/skillsaw/review@v0
+```
+
 #### Inputs
 
 | Input | Description | Default |
@@ -176,7 +232,6 @@ jobs:
 | `version` | Specific skillsaw version to install | latest |
 | `strict` | Treat warnings as errors | `false` |
 | `verbose` | Include info-level violations | `false` |
-| `token` | GitHub token for posting PR comments | `${{ github.token }}` |
 
 #### Outputs
 
@@ -185,7 +240,7 @@ jobs:
 | `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
 | `errors` | Number of errors found |
 | `warnings` | Number of warnings found |
-| `report` | Full JSON report |
+| `report-file` | Path to JSON report file |
 
 #### PR comment behavior
 
@@ -194,12 +249,9 @@ jobs:
 - When a violation is fixed, its comment thread is automatically resolved
 - Comments with human replies are preserved
 
-> **Permissions:** `contents: read` is required for checkout.
-> `pull-requests: write` is required for posting comments.
-
 ## Repository Types
 
-skillsaw automatically detects your repository structure:
+skillsaw automatically detects your repository structure. A repository can match multiple types simultaneously (e.g. an agentskills repo that also has `.coderabbit.yaml`).
 
 ### agentskills.io Skills
 
@@ -275,6 +327,22 @@ marketplace/
 
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
 
+### `.claude/` Directory
+
+Repositories with a `.claude/` directory containing commands, skills, hooks, agents, or rules. When APM is present, `.claude/` is treated as compiled output and this type is not detected.
+
+### CodeRabbit
+
+Repositories with a `.coderabbit.yaml` file. skillsaw validates the instruction fragments within the config.
+
+### Promptfoo
+
+Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files in `evals/` directories). Prompt strings in the config are treated as content blocks, so all `content-*` rules apply to them automatically. Dedicated `promptfoo-*` rules validate config structure, assertion coverage, and metadata.
+
+### APM (Agent Package Manager)
+
+Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
+
 ## Configuration
 
 Generate a default `.skillsaw.yaml` in your repository root:
@@ -305,6 +373,97 @@ exclude:
   - "generated/**"
   - "node_modules/**"
 ```
+
+By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
+`**/_template/**` directories. These defaults are replaced when you specify
+your own `exclude` list.
+
+Exclude patterns apply to **all** rules, including custom rules loaded via
+`custom-rules`. Any violation whose file path matches an exclude pattern is
+filtered out before results are reported.
+
+### Per-Rule Excludes
+
+Exclude specific files from a single rule using the `exclude` key in the
+rule's config:
+
+```yaml
+rules:
+  content-weak-language:
+    enabled: true
+    exclude:
+      - "docs/legacy/**"
+      - "CHANGELOG.md"
+```
+
+This is useful when a rule produces false positives on specific files but
+you still want it enabled globally. Per-rule excludes use the same glob
+syntax as global `exclude` patterns.
+
+### Inline Suppression
+
+Suppress specific rules on specific lines using comment directives directly
+in your files. Both HTML comments (for markdown) and hash comments (for YAML)
+are supported.
+
+#### Markdown (HTML comments)
+
+```markdown
+<!-- skillsaw-disable content-weak-language -->
+This section intentionally uses informal language.
+<!-- skillsaw-enable content-weak-language -->
+```
+
+Suppress a single line:
+
+```markdown
+<!-- skillsaw-disable-next-line content-tautological -->
+Follow best practices for error handling.
+```
+
+Suppress multiple rules at once:
+
+```markdown
+<!-- skillsaw-disable content-weak-language, content-tautological -->
+```
+
+Re-enable all suppressed rules:
+
+```markdown
+<!-- skillsaw-enable -->
+```
+
+Multi-line HTML comments are also supported:
+
+```markdown
+<!--
+    skillsaw-disable content-weak-language
+-->
+```
+
+#### YAML (hash comments)
+
+For YAML files (`.coderabbit.yaml`, `promptfooconfig.yaml`, etc.), use `#` comments:
+
+```yaml
+# skillsaw-disable promptfoo-valid
+prompts:
+  - "{{prompt}}"
+# skillsaw-enable promptfoo-valid
+```
+
+```yaml
+# skillsaw-disable-next-line coderabbit-yaml-valid
+instructions: missing-value
+```
+
+Only full-line `#` comments are recognized — inline comments like
+`key: value # skillsaw-disable` are ignored.
+
+#### Notes
+
+Inline suppression only affects rules that are already enabled. It cannot
+be used to enable a normally disabled rule.
 
 ### Content Paths
 
@@ -340,6 +499,13 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
+
+**`agentskill-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-fields` | Additional frontmatter fields to require (name and description are always required) | `[]` |
+| `required-metadata` | Keys that must be present inside the metadata mapping | `[]` |
 
 **`agentskill-structure` parameters:**
 
@@ -420,7 +586,7 @@ Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, GEMINI.md
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - |
-| `instruction-imports-valid` | Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files | warning (auto) | - |
+| `instruction-imports-valid` | Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files | warning (auto) | - |
 
 ### Context Budget
 
@@ -438,7 +604,7 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 ### Content Intelligence
 
-Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. All support LLM-powered fixes via `--fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. Most support LLM-powered fixes via `skillsaw fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -456,6 +622,9 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
 | `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
 | `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+| `content-broken-internal-reference` | Detect markdown links where the target file does not exist | warning (auto) | auto |
+| `content-unlinked-internal-reference` | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
+| `content-placeholder-text` | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
 
 **`content-critical-position` parameters:**
 
@@ -476,6 +645,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 
+**`content-unlinked-internal-reference` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `patterns` | Glob patterns for path-like strings to flag when unlinked | `["./**/*.*", "references/**/*.md"]` |
+
 ### CodeRabbit
 
 Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) are automatically checked by the content-* rules above. Auto-enabled when `.coderabbit.yaml` is detected.
@@ -483,6 +658,29 @@ Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fiel
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
+
+### Promptfoo Evals
+
+Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs found in `evals/` directories of plugins and skills. `promptfoo-valid` auto-enables when eval files are detected; `promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `promptfoo-valid` | Validate promptfoo eval YAML config structure and file references | error (auto) | - |
+| `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
+| `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
+
+**`promptfoo-assertions` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-types` | Assertion types that every test must include (via test-level or defaultTest assertions) | `[]` |
+| `threshold-constraints` | Per-assertion-type threshold bounds, e.g. {cost: {max: 2.0}, latency: {max: 30000}} | `{}` |
+
+**`promptfoo-metadata` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `required-keys` | Metadata keys required on every test case | `[]` |
 
 ### APM (Agent Package Manager)
 
@@ -499,30 +697,34 @@ Validates repositories using the [APM](https://github.com/microsoft/apm) directo
 
 skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Rules declare which fix type they support (see the **Autofix** column in the rules tables above).
 
-### Deterministic Fixes (`--fix`)
+### Deterministic Fixes
 
 Safe, pattern-based fixes that run instantly without any external dependencies:
 
 ```bash
-skillsaw lint --fix              # Apply safe structural fixes
+skillsaw fix                     # Apply safe structural fixes
+skillsaw fix --suggest           # Also apply suggested fixes (e.g. stale references)
+skillsaw fix --dry-run           # Preview safe fixes as colored diffs without writing
+skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
 ```
 
 Examples: adding missing frontmatter, renaming files to kebab-case, registering unregistered plugins in marketplace.json, fixing skill names to match directory names. These are marked **SAFE** confidence and applied automatically.
 
-### LLM-Powered Fixes (`--fix --llm`)
+Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence because simple name matching may replace occurrences that aren't actually skill name references. Use `--suggest --dry-run` to review these changes before applying them.
 
-All content intelligence rules support LLM-powered fixes. The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
+### LLM-Powered Fixes
+
+Most content intelligence rules support LLM-powered fixes (see the **Autofix** column above). The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
 
 ```bash
-# Fix content violations with an LLM (any LiteLLM-compatible model)
-skillsaw lint --fix --llm
-
-# Preview what would change without writing to disk
-skillsaw lint --fix --llm --dry-run
-
-# Use a specific model (OpenAI, Anthropic, Vertex AI, local, etc.)
-skillsaw lint --fix --llm --model vertex_ai/claude-sonnet-4-6
-skillsaw lint --fix --llm --model openrouter/minimax/minimax-m1
+skillsaw fix --llm                          # Fix with default model
+skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
+skillsaw fix --llm --model openrouter/minimax/minimax-m1
+skillsaw fix --llm --all                    # Include info-level violations
+skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
+skillsaw fix --llm --max-iterations 10      # Max iterations per file
+skillsaw fix --llm --dry-run                # Preview changes without writing
+skillsaw fix --llm -y                       # Auto-apply without confirmation
 ```
 
 **How it works:**
@@ -537,20 +739,35 @@ The LLM never has access to arbitrary shell commands — it can only read, edit,
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
-### Standalone Fix Command (`skillsaw fix`)
+> **Note:** `skillsaw lint --fix` is deprecated and will be removed in 1.0. Use `skillsaw fix` instead.
 
-For more control over LLM fixes, use the standalone `fix` subcommand:
+### LLM Setup
+
+skillsaw uses [LiteLLM](https://docs.litellm.ai/docs/providers) under the hood, so any LiteLLM-compatible model works. Install the extras for your provider:
 
 ```bash
-skillsaw fix --llm                          # Fix with default model
-skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-skillsaw fix --llm --all                    # Include info-level violations
-skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
-skillsaw fix --llm --max-iterations 10      # Max iterations per file
-skillsaw fix --llm --dry-run                # Preview changes
+# pip
+pip install 'skillsaw[llm]'       # Any LiteLLM-compatible model
+pip install 'skillsaw[vertexai]'  # Vertex AI (includes google-cloud-aiplatform)
+pip install 'skillsaw[bedrock]'   # AWS Bedrock (includes boto3)
+
+# uvx (no install required)
+uvx --with 'skillsaw[llm]' skillsaw fix --llm
+uvx --with 'skillsaw[vertexai]' skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
 ```
 
-This provides a richer terminal UI with progress bars, per-file ETA, and detailed tool call logging. Use `skillsaw fix --llm` for interactive development; use `skillsaw lint --fix --llm` for CI or scripted workflows.
+Set the environment variables for your provider:
+
+| Provider | Environment Variables |
+|----------|----------------------|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Vertex AI | `VERTEXAI_PROJECT`, `VERTEXAI_LOCATION` (+ `gcloud auth application-default login`) |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME` |
+
+You can also set `SKILLSAW_MODEL` to override the default model via environment variable, or `llm.model` in your `.skillsaw.yaml` config.
+
+See the [LiteLLM provider documentation](https://docs.litellm.ai/docs/providers) for the full list of supported providers and their required environment variables.
 
 ## Custom Rules
 
@@ -599,6 +816,8 @@ rules:
     enabled: true
     severity: warning
 ```
+
+For a more complete example — including config schemas, promptfoo eval validation, and test fixtures — see the [`examples/custom-rules/`](examples/custom-rules/) directory.
 
 ## Scaffolding
 

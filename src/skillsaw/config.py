@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 
 _DEFAULT_VERSION = "0.6.0"
 
+_DEFAULT_EXCLUDE_PATTERNS = [
+    "**/template/**",
+    "**/templates/**",
+    "**/_template/**",
+]
+
 
 def _parse_version(v: str) -> Tuple[int, ...]:
     return tuple(int(x) for x in v.split("."))
@@ -92,6 +98,14 @@ class LinterConfig:
                     f"'rules.{rule_id}' must be a mapping or null, "
                     f"got {type(rule_config).__name__}"
                 )
+            else:
+                if "enabled" in rule_config:
+                    enabled = rule_config["enabled"]
+                    if enabled is not True and enabled is not False and enabled != "auto":
+                        raise ValueError(
+                            f"'rules.{rule_id}.enabled' must be true, false, "
+                            f'or "auto", got {enabled!r}'
+                        )
 
         if raw_custom_rules is None:
             custom_rules = []
@@ -103,7 +117,7 @@ class LinterConfig:
             )
 
         if raw_exclude is None:
-            exclude_patterns = []
+            exclude_patterns = list(_DEFAULT_EXCLUDE_PATTERNS)
         elif isinstance(raw_exclude, list):
             exclude_patterns = raw_exclude
         else:
@@ -143,6 +157,7 @@ class LinterConfig:
 
         return cls(
             version=__version__,
+            exclude_patterns=list(_DEFAULT_EXCLUDE_PATTERNS),
             rules={
                 # Plugin structure rules (auto-enabled for plugin/marketplace repos)
                 "plugin-json-required": {"enabled": "auto", "severity": "error"},
@@ -176,6 +191,7 @@ class LinterConfig:
                 # Agentskills rules (auto-enabled for agentskills repos)
                 "agentskill-valid": {"enabled": "auto", "severity": "error"},
                 "agentskill-name": {"enabled": "auto", "severity": "error"},
+                "agentskill-rename-refs": {"enabled": "auto", "severity": "warning"},
                 "agentskill-description": {"enabled": "auto", "severity": "warning"},
                 "agentskill-structure": {"enabled": False, "severity": "warning"},
                 "agentskill-evals-required": {"enabled": False, "severity": "warning"},
@@ -206,6 +222,13 @@ class LinterConfig:
                 "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
                 "content-banned-references": {"enabled": "auto", "severity": "warning"},
                 "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
+                "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
+                "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
+                "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
+                # Promptfoo eval validation
+                "promptfoo-valid": {"enabled": "auto", "severity": "error"},
+                "promptfoo-assertions": {"enabled": False, "severity": "warning"},
+                "promptfoo-metadata": {"enabled": False, "severity": "warning"},
                 # CodeRabbit config
                 "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
                 # APM (Agent Package Manager) rules
@@ -319,13 +342,16 @@ class LinterConfig:
         return d
 
     def save(self, config_path: Path):
-        """Save configuration to file with rule descriptions as comments"""
+        """Save configuration to file with rule descriptions and config options as comments"""
         from .rules.builtin import BUILTIN_RULES
 
         descriptions = {}
+        schemas = {}
         for rule_class in BUILTIN_RULES:
             rule = rule_class()
             descriptions[rule.rule_id] = rule.description
+            if rule.config_schema:
+                schemas[rule.rule_id] = rule.config_schema
 
         with open(config_path, "w") as f:
             f.write("# skillsaw configuration\n")
@@ -344,15 +370,53 @@ class LinterConfig:
                         f.write(f"    {key}:{yaml_val}\n")
                     else:
                         f.write(f"    {key}: {yaml_val}\n")
+                # Write commented-out config_schema options not already in config
+                schema = schemas.get(rule_id, {})
+                for param_name, param_info in schema.items():
+                    if param_name not in rule_config:
+                        default = param_info.get("default")
+                        yaml_val = self._yaml_value(default, indent=2)
+                        if yaml_val.startswith("\n"):
+                            # Multi-line value: comment out each line
+                            lines = yaml_val.lstrip("\n").split("\n")
+                            f.write(f"    # {param_name}:\n")
+                            for line in lines:
+                                f.write(f"    # {line}\n")
+                        else:
+                            f.write(f"    # {param_name}: {yaml_val}\n")
 
             f.write("\n# Load custom rules from these files\n")
-            f.write(f"custom-rules: {self._yaml_value(self.custom_rules)}\n")
+            self._write_field(f, "custom-rules", self.custom_rules)
             f.write("\n# Exclude patterns (glob format)\n")
-            f.write(f"exclude: {self._yaml_value(self.exclude_patterns)}\n")
+            f.write("# Use exclude: [] to disable all excludes including defaults\n")
+            user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]
+            if user_excludes:
+                self._write_field(f, "exclude", user_excludes)
+            else:
+                f.write("exclude:\n")
+                for pat in _DEFAULT_EXCLUDE_PATTERNS:
+                    f.write(f'    # - "{pat}"\n')
             f.write("\n# Additional markdown files to run content rules on (glob format)\n")
-            f.write(f"content-paths: {self._yaml_value(self.content_paths)}\n")
+            self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
+
+    def _write_field(self, f, key: str, value: Any):
+        """Helper to write a YAML field to the file."""
+        val = self._yaml_value(value)
+        if val.startswith("\n"):
+            f.write(f"{key}:{val}\n")
+        else:
+            f.write(f"{key}: {val}\n")
+
+    @staticmethod
+    def _needs_quoting(s: str) -> bool:
+        """Check if a string value needs quoting for valid YAML output."""
+        if not s:
+            return True
+        # Characters that are special in YAML and need quoting
+        yaml_special = set("*&!|>{[%@`")
+        return any(c in yaml_special for c in s)
 
     @staticmethod
     def _yaml_value(value, indent=4):
@@ -362,7 +426,11 @@ class LinterConfig:
             if not value:
                 return "[]"
             pad = " " * indent
-            return "\n" + "\n".join(f"{pad}- {item}" for item in value)
+            items = []
+            for item in value:
+                rendered = LinterConfig._yaml_value(item, indent + 2)
+                items.append(f"{pad}- {rendered}")
+            return "\n" + "\n".join(items)
         if isinstance(value, dict):
             if not value:
                 return "{}"
@@ -376,6 +444,9 @@ class LinterConfig:
                     lines.append(f"{pad}{k}: {rendered}")
             return "\n" + "\n".join(lines)
         if isinstance(value, str):
+            if LinterConfig._needs_quoting(value):
+                escaped = value.replace('"', '\\"')
+                return f'"{escaped}"'
             return value
         return str(value)
 

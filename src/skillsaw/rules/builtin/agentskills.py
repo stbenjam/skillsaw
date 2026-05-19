@@ -4,12 +4,14 @@ Rules for validating agentskills.io skill format
 
 import json
 import re
+import threading
+from pathlib import Path
 from typing import List, Optional
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
-from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.content_analysis import SkillBlock, gather_all_content_blocks
 from skillsaw.rules.builtin.utils import read_json
 
 # agentskills.io spec constraints
@@ -21,6 +23,10 @@ CONSECUTIVE_HYPHENS = re.compile(r"--")
 DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 
+RENAMES_MANIFEST = ".skillsaw-renames.json"
+_RENAMES_LOCK = threading.Lock()
+
+
 def _to_kebab(name: str) -> str:
     s = re.sub(r"([a-z])([A-Z])", r"\1-\2", name)
     s = re.sub(r"[^a-z0-9]+", "-", s.lower())
@@ -28,14 +34,70 @@ def _to_kebab(name: str) -> str:
     return s
 
 
+def _read_renames_manifest(root: Path) -> list[dict]:
+    path = root / RENAMES_MANIFEST
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        renames = data.get("renames", [])
+        if isinstance(renames, list):
+            return [
+                r
+                for r in renames
+                if isinstance(r, dict)
+                and isinstance(r.get("old"), str)
+                and isinstance(r.get("new"), str)
+            ]
+    except (json.JSONDecodeError, OSError):
+        pass
+    return []
+
+
+def _write_renames_manifest(root: Path, renames: list[dict]) -> None:
+    path = root / RENAMES_MANIFEST
+    if not renames:
+        if path.exists():
+            path.unlink()
+        return
+    path.write_text(
+        json.dumps({"renames": renames}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _add_rename(root: Path, old: str, new: str) -> None:
+    with _RENAMES_LOCK:
+        renames = _read_renames_manifest(root)
+        renames = [r for r in renames if r["old"] != old]
+        renames.append({"old": old, "new": new})
+        _write_renames_manifest(root, renames)
+
+
 class AgentSkillValidRule(Rule):
     """Validate SKILL.md exists with required frontmatter fields"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
         RepositoryType.DOT_CLAUDE,
+    }
+
+    BUILTIN_REQUIRED = {"name", "description"}
+
+    config_schema = {
+        "required-fields": {
+            "type": "list",
+            "default": [],
+            "description": "Additional frontmatter fields to require (name and description are always required)",
+        },
+        "required-metadata": {
+            "type": "list",
+            "default": [],
+            "description": "Keys that must be present inside the metadata mapping",
+        },
     }
 
     @property
@@ -78,7 +140,7 @@ class AgentSkillValidRule(Rule):
             if match:
                 fm_text = match.group(1)
                 new_fm = f"name: {kebab_name}\n{fm_text}"
-                fixed = original.replace(match.group(0), f"---\n{new_fm}\n---", 1)
+                fixed = f"---\n{new_fm}\n---" + original[match.end() :]
                 results.append(
                     AutofixResult(
                         rule_id=self.rule_id,
@@ -108,7 +170,13 @@ class AgentSkillValidRule(Rule):
 
             block = blocks[0]
             if block.frontmatter_error:
-                violations.append(self.violation(block.frontmatter_error, file_path=block.path))
+                violations.append(
+                    self.violation(
+                        block.frontmatter_error,
+                        file_path=block.path,
+                        line=block.frontmatter_error_line,
+                    )
+                )
                 continue
 
             frontmatter = block.frontmatter
@@ -159,20 +227,30 @@ class AgentSkillValidRule(Rule):
 
             if "license" in frontmatter and not isinstance(frontmatter["license"], str):
                 violations.append(
-                    self.violation("'license' must be a string", file_path=block.path)
+                    self.violation(
+                        "'license' must be a string",
+                        file_path=block.path,
+                        line=block.key_line("license"),
+                    )
                 )
 
             if "compatibility" in frontmatter:
                 compat = frontmatter["compatibility"]
+                compat_line = block.key_line("compatibility")
                 if not isinstance(compat, str):
                     violations.append(
-                        self.violation("'compatibility' must be a string", file_path=block.path)
+                        self.violation(
+                            "'compatibility' must be a string",
+                            file_path=block.path,
+                            line=compat_line,
+                        )
                     )
                 elif not compat.strip():
                     violations.append(
                         self.violation(
                             "'compatibility' must not be empty if provided",
                             file_path=block.path,
+                            line=compat_line,
                         )
                     )
                 elif len(compat) > COMPATIBILITY_MAX_LENGTH:
@@ -180,14 +258,20 @@ class AgentSkillValidRule(Rule):
                         self.violation(
                             f"'compatibility' exceeds {COMPATIBILITY_MAX_LENGTH} characters ({len(compat)})",
                             file_path=block.path,
+                            line=compat_line,
                         )
                     )
 
             if "metadata" in frontmatter:
                 meta = frontmatter["metadata"]
+                meta_line = block.key_line("metadata")
                 if not isinstance(meta, dict):
                     violations.append(
-                        self.violation("'metadata' must be a mapping", file_path=block.path)
+                        self.violation(
+                            "'metadata' must be a mapping",
+                            file_path=block.path,
+                            line=meta_line,
+                        )
                     )
                 else:
                     for k, v in meta.items():
@@ -196,17 +280,20 @@ class AgentSkillValidRule(Rule):
                                 self.violation(
                                     f"'metadata' key {k!r} must be a string",
                                     file_path=block.path,
+                                    line=meta_line,
                                 )
                             )
 
             if "allowed-tools" in frontmatter:
                 at = frontmatter["allowed-tools"]
+                at_line = block.key_line("allowed-tools")
                 if isinstance(at, list):
                     if not all(isinstance(item, str) for item in at):
                         violations.append(
                             self.violation(
                                 "'allowed-tools' list items must all be strings",
                                 file_path=block.path,
+                                line=at_line,
                             )
                         )
                 elif not isinstance(at, str):
@@ -214,8 +301,48 @@ class AgentSkillValidRule(Rule):
                         self.violation(
                             "'allowed-tools' must be a string or list of strings",
                             file_path=block.path,
+                            line=at_line,
                         )
                     )
+
+            extra_required = self.config.get("required-fields", [])
+            for field_name in extra_required:
+                if field_name in self.BUILTIN_REQUIRED:
+                    continue
+                if not frontmatter.get(field_name):
+                    line = block.key_line(field_name) if field_name in frontmatter else None
+                    violations.append(
+                        self.violation(
+                            f"Missing required field '{field_name}'",
+                            file_path=block.path,
+                            line=line,
+                        )
+                    )
+
+            required_meta = self.config.get("required-metadata", [])
+            if required_meta:
+                meta = frontmatter.get("metadata")
+                meta_line = block.key_line("metadata")
+                if meta is None:
+                    if "metadata" not in extra_required:
+                        violations.append(
+                            self.violation(
+                                "Missing required 'metadata' (needed for required-metadata check)",
+                                file_path=block.path,
+                                line=meta_line,
+                            )
+                        )
+                elif isinstance(meta, dict):
+                    for key in required_meta:
+                        val = meta.get(key)
+                        if val is None or (isinstance(val, str) and not val.strip()):
+                            violations.append(
+                                self.violation(
+                                    f"Missing required metadata key '{key}'",
+                                    file_path=block.path,
+                                    line=meta_line,
+                                )
+                            )
 
         return violations
 
@@ -223,6 +350,7 @@ class AgentSkillValidRule(Rule):
 class AgentSkillNameRule(Rule):
     """Validate skill name format per agentskills.io spec"""
 
+    autofix_confidence = AutofixConfidence.SAFE
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -315,7 +443,7 @@ class AgentSkillNameRule(Rule):
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed = original.replace(f"name: {old_name}", f"name: {new_name}", 1)
+            fixed = original[: match.start()] + f"name: {new_name}" + original[match.end() :]
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
@@ -327,6 +455,164 @@ class AgentSkillNameRule(Rule):
                     violations_fixed=[v],
                 )
             )
+            _add_rename(context.root_path, old_name, new_name)
+        return results
+
+
+class AgentSkillRenameRefsRule(Rule):
+    """Update stale skill name references after a rename"""
+
+    repo_types = {
+        RepositoryType.AGENTSKILLS,
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "agentskill-rename-refs"
+
+    @property
+    def description(self) -> str:
+        return "Update stale skill name references after a rename"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def _find_line(self, content: str, old_name: str) -> Optional[int]:
+        for i, line in enumerate(content.splitlines(), 1):
+            if old_name in line:
+                return i
+        return None
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        renames = _read_renames_manifest(context.root_path)
+        if not renames:
+            return []
+
+        violations = []
+        old_names = {r["old"] for r in renames}
+        referenced_olds: set[str] = set()
+
+        for block in gather_all_content_blocks(context):
+            try:
+                content = block.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for rename in renames:
+                old, new = rename["old"], rename["new"]
+                if old not in content:
+                    continue
+                # Skip the SKILL.md whose frontmatter name: was already fixed
+                if block.path.name == "SKILL.md":
+                    fm_match = re.search(r"^name:\s*(.+)$", content, re.MULTILINE)
+                    if fm_match and fm_match.group(1).strip() == new:
+                        body_after_fm = content[fm_match.end() :]
+                        if old not in body_after_fm:
+                            continue
+                line = self._find_line(content, old)
+                violations.append(
+                    self.violation(
+                        f"Stale reference to renamed skill '{old}' " f"(renamed to '{new}')",
+                        file_path=block.path,
+                        line=line,
+                    )
+                )
+                referenced_olds.add(old)
+
+        for skill_node in context.lint_tree.find(SkillNode):
+            evals_json = skill_node.path / "evals" / "evals.json"
+            if not evals_json.exists():
+                continue
+            try:
+                raw = evals_json.read_text(encoding="utf-8")
+                data = json.loads(raw)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            skill_name = data.get("skill_name")
+            if isinstance(skill_name, str) and skill_name in old_names:
+                rename = next(r for r in renames if r["old"] == skill_name)
+                violations.append(
+                    self.violation(
+                        f"evals.json 'skill_name' ({skill_name!r}) references "
+                        f"renamed skill (now '{rename['new']}')",
+                        file_path=evals_json,
+                    )
+                )
+                referenced_olds.add(skill_name)
+
+        # Clean up manifest entries that have no remaining stale references
+        with _RENAMES_LOCK:
+            current = _read_renames_manifest(context.root_path)
+            still_active = [r for r in current if r["old"] in referenced_olds]
+            if len(still_active) < len(current):
+                _write_renames_manifest(context.root_path, still_active)
+
+        return violations
+
+    def fix(
+        self, context: RepositoryContext, violations: List[RuleViolation]
+    ) -> List[AutofixResult]:
+        renames = _read_renames_manifest(context.root_path)
+        if not renames:
+            return []
+
+        rename_map = {r["old"]: r["new"] for r in renames}
+        results: List[AutofixResult] = []
+
+        for v in violations:
+            if not v.file_path or not v.file_path.exists():
+                continue
+
+            try:
+                original = v.file_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+            if v.file_path.name == "evals.json":
+                try:
+                    data = json.loads(original)
+                    sk = data.get("skill_name", "")
+                    if sk in rename_map:
+                        data["skill_name"] = rename_map[sk]
+                        fixed = json.dumps(data, indent=2) + "\n"
+                    else:
+                        continue
+                except (json.JSONDecodeError, KeyError):
+                    continue
+            elif v.line:
+                lines = original.splitlines(keepends=True)
+                idx = v.line - 1
+                if idx < 0 or idx >= len(lines):
+                    continue
+                line = lines[idx]
+                for old, new in rename_map.items():
+                    line = line.replace(old, new)
+                if line == lines[idx]:
+                    continue
+                lines[idx] = line
+                fixed = "".join(lines)
+            else:
+                continue
+
+            if fixed == original:
+                continue
+
+            results.append(
+                AutofixResult(
+                    rule_id=self.rule_id,
+                    file_path=v.file_path,
+                    confidence=AutofixConfidence.SUGGEST,
+                    original_content=original,
+                    fixed_content=fixed,
+                    description=f"Updated skill name references in {v.file_path.name}",
+                    violations_fixed=[v],
+                )
+            )
+
         return results
 
 

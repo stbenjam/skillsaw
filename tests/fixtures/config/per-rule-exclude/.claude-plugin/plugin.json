@@ -1,0 +1,6 @@
+{
+  "name": "per-rule-exclude-test",
+  "description": "Test per-rule exclude patterns",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

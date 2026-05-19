@@ -99,13 +99,16 @@ RULE_GROUPS = [
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
+            "content-broken-internal-reference",
+            "content-unlinked-internal-reference",
+            "content-placeholder-text",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
         "([lost-in-the-middle](https://arxiv.org/abs/2307.03172), "
         "[instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) "
-        "and prompt engineering best practices. All support LLM-powered fixes via "
-        "`--fix --llm`. See "
+        "and prompt engineering best practices. Most support LLM-powered fixes via "
+        "`skillsaw fix --llm`. See "
         "[docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) "
         "for the full research basis behind each rule.",
     ),
@@ -117,6 +120,14 @@ RULE_GROUPS = [
         "instructions, per-tool instructions, `chat.instructions`) are "
         "automatically checked by the content-* rules above. Auto-enabled "
         "when `.coderabbit.yaml` is detected.",
+    ),
+    (
+        "Promptfoo Evals",
+        ["promptfoo-valid", "promptfoo-assertions", "promptfoo-metadata"],
+        "Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs "
+        "found in `evals/` directories of plugins and skills. "
+        "`promptfoo-valid` auto-enables when eval files are detected; "
+        "`promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.",
     ),
     (
         "APM (Agent Package Manager)",

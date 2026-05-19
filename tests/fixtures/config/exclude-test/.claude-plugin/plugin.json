@@ -1,0 +1,6 @@
+{
+  "name": "exclude-test",
+  "description": "Test global exclude patterns",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

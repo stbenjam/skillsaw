@@ -65,6 +65,7 @@ clean:
 
 apm:
 	uvx --from apm-cli@$(APM_VERSION) apm install
+	uvx --from apm-cli@$(APM_VERSION) apm compile
 
 verify-apm: apm
 	@echo "APM install and compile succeeded."

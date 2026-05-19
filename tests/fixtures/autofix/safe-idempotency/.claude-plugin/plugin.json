@@ -1,0 +1,6 @@
+{
+  "name": "autofix-test-plugin",
+  "description": "Plugin fixture for testing SAFE autofix idempotency",
+  "version": "1.0.0",
+  "author": {"name": "Test Author"}
+}

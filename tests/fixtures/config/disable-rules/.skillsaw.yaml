@@ -1,0 +1,4 @@
+version: "99.0.0"
+rules:
+  command-frontmatter:
+    enabled: false

@@ -1,0 +1,8 @@
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: [invalid yaml
+  poem: false
+chat:
+  auto_reply: true

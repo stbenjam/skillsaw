@@ -16,6 +16,8 @@ from skillsaw.rules.builtin.utils import read_text
 class AgentFrontmatterRule(Rule):
     """Check that agent .md files have valid frontmatter"""
 
+    autofix_confidence = AutofixConfidence.SAFE
+
     @property
     def rule_id(self) -> str:
         return "agent-frontmatter"
@@ -53,7 +55,12 @@ class AgentFrontmatterRule(Rule):
         for block in context.lint_tree.find(AgentBlock):
             if block.frontmatter_error:
                 violations.append(
-                    self.violation(block.frontmatter_error, file_path=block.path, block=block)
+                    self.violation(
+                        block.frontmatter_error,
+                        file_path=block.path,
+                        line=block.frontmatter_error_line,
+                        block=block,
+                    )
                 )
                 continue
 

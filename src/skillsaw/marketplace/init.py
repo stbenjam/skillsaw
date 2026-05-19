@@ -152,7 +152,11 @@ def _create_structure(
 
     _write(root / ".github" / "workflows" / "lint.yml", read_template("lint.yml", t))
 
-    LinterConfig.default().save(root / ".skillsaw.yaml")
+    scaffold_config = LinterConfig.default()
+    # Scaffolded templates intentionally use TODO/FIXME placeholders;
+    # disable the rule so the fresh scaffold lints clean.
+    scaffold_config.rules["content-placeholder-text"] = {"enabled": False, "severity": "warning"}
+    scaffold_config.save(root / ".skillsaw.yaml")
 
     _write(root / ".gitignore", read_template("gitignore", t))
 

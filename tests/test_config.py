@@ -25,6 +25,58 @@ def test_default_config():
     assert config.rules["plugin-json-required"]["severity"] == "error"
 
 
+def test_default_exclude_patterns():
+    """Test that default config includes sensible exclude patterns for templates"""
+    config = LinterConfig.default()
+    assert "**/template/**" in config.exclude_patterns
+    assert "**/templates/**" in config.exclude_patterns
+    assert "**/_template/**" in config.exclude_patterns
+
+
+def test_default_exclude_patterns_not_empty():
+    """Test that default exclude patterns list is non-empty"""
+    config = LinterConfig.default()
+    assert len(config.exclude_patterns) >= 3
+
+
+def test_user_exclude_overrides_defaults(temp_dir):
+    """User-specified exclude patterns in config file override the defaults"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_data = {
+        "exclude": ["my-custom-exclude/**"],
+    }
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+    config = LinterConfig.from_file(config_file)
+    assert config.exclude_patterns == ["my-custom-exclude/**"]
+    assert "**/template/**" not in config.exclude_patterns
+
+
+def test_for_init_includes_default_excludes():
+    """for_init() should also include the default exclude patterns"""
+    config = LinterConfig.for_init()
+    assert "**/template/**" in config.exclude_patterns
+    assert "**/templates/**" in config.exclude_patterns
+
+
+def test_from_file_applies_default_excludes(temp_dir):
+    """Omitting 'exclude' from config file should apply default patterns"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules: {}\n")
+    config = LinterConfig.from_file(config_file)
+    assert "**/template/**" in config.exclude_patterns
+    assert "**/templates/**" in config.exclude_patterns
+    assert "**/_template/**" in config.exclude_patterns
+
+
+def test_empty_exclude_disables_all_defaults(temp_dir):
+    """exclude: [] should disable all excludes including defaults"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("exclude: []\n")
+    config = LinterConfig.from_file(config_file)
+    assert config.exclude_patterns == []
+
+
 def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
     config_file = temp_dir / ".skillsaw.yaml"
@@ -480,12 +532,12 @@ def test_null_custom_rules_does_not_crash(temp_dir):
 
 
 def test_null_exclude_does_not_crash(temp_dir):
-    """exclude: null should not crash, should behave like empty list"""
+    """exclude: null should not crash, should apply defaults"""
     config_file = temp_dir / ".skillsaw.yaml"
     config_file.write_text("exclude:\n")
 
     config = LinterConfig.from_file(config_file)
-    assert config.exclude_patterns == []
+    assert "**/template/**" in config.exclude_patterns
 
 
 def test_null_strict_does_not_crash(temp_dir):
@@ -559,7 +611,7 @@ def test_all_fields_null_does_not_crash(temp_dir):
     config = LinterConfig.from_file(config_file)
     assert config.rules == {}
     assert config.custom_rules == []
-    assert config.exclude_patterns == []
+    assert "**/template/**" in config.exclude_patterns
     assert config.strict is False
 
 
@@ -618,6 +670,73 @@ def test_rule_config_non_mapping_raises_error(temp_dir):
     import pytest
 
     with pytest.raises(ValueError, match="'rules.plugin-json-required' must be a mapping or null"):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_typo_raises_error(temp_dir):
+    """enabled: falsie (typo) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: falsie\n")
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_string_false_raises_error(temp_dir):
+    """enabled: "false" (string, not bool) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "false"\n')
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_string_true_raises_error(temp_dir):
+    """enabled: "true" (string, not bool) should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "true"\n')
+
+    import pytest
+
+    with pytest.raises(
+        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+    ):
+        LinterConfig.from_file(config_file)
+
+
+def test_enabled_valid_values_accepted(temp_dir):
+    """enabled: true, false, and auto should all load without error"""
+    config_file = temp_dir / ".skillsaw.yaml"
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: true\n")
+    LinterConfig.from_file(config_file)
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: false\n")
+    LinterConfig.from_file(config_file)
+
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: auto\n")
+    LinterConfig.from_file(config_file)
+
+
+def test_enabled_null_raises_error(temp_dir):
+    """enabled: null should raise ValueError"""
+    config_file = temp_dir / ".skillsaw.yaml"
+    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: null\n")
+
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=r"'rules\.plugin-json-required\.enabled' must be true, false",
+    ):
         LinterConfig.from_file(config_file)
 
 
@@ -734,3 +853,122 @@ def test_severity_override_on_auto_rule_still_fires_when_matching(marketplace_re
         config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
         is True
     )
+
+
+# --- Generated config documentation tests ---
+
+
+def test_save_includes_description_comments(tmp_path):
+    """Test that save() writes description comments for each rule"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # Check a few known rule descriptions appear as comments
+    assert "# Plugin must have .claude-plugin/plugin.json" in content
+    assert "# SKILL.md files should have frontmatter with name and description" in content
+    assert "# Detect potential API keys, tokens, and passwords in instruction files" in content
+
+
+def test_save_includes_config_schema_as_comments(tmp_path):
+    """Test that save() writes config_schema options as commented-out lines"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # content-banned-references has config_schema with 'banned' and 'skip-builtins'
+    # These should appear as commented-out options since they are not in the default config
+    assert "    # banned: []\n" in content
+    assert "    # skip-builtins: false\n" in content
+
+    # mcp-prohibited has 'allowlist' in config_schema
+    assert "    # allowlist: []\n" in content
+
+
+def test_save_does_not_duplicate_existing_config_keys(tmp_path):
+    """Config keys already in the rule config should not also appear as comments"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # content-critical-position already has min-lines: 50 in its default config.
+    # It should NOT also appear as a commented-out option.
+    assert "    min-lines: 50\n" in content
+    assert "    # min-lines:" not in content
+
+    # plugin-json-valid already has recommended-fields in its default config
+    assert "    # recommended-fields:" not in content
+
+
+def test_save_no_schema_comments_for_rules_without_schema(tmp_path):
+    """Rules without config_schema should only get a description comment"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+    lines = content.split("\n")
+
+    # Find the plugin-naming rule block (has no config_schema)
+    plugin_naming_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == "plugin-naming:":
+            plugin_naming_idx = i
+            break
+
+    assert plugin_naming_idx is not None, "plugin-naming rule not found in output"
+
+    # The line before should be a description comment
+    assert lines[plugin_naming_idx - 1].strip().startswith("# Plugin names should")
+
+    # The lines after should be the config keys (enabled, severity) and then
+    # either a blank line, another description comment, or the next rule --
+    # but NOT a commented-out config_schema parameter
+    for j in range(plugin_naming_idx + 1, len(lines)):
+        line = lines[j].strip()
+        if not line or not line.startswith("#"):
+            break
+        # A comment without ":" is a description comment, not a config key
+        if line.startswith("# ") and ":" not in line:
+            break
+        # Should not reach a commented-out param like "# some-key: value"
+        assert False, f"Unexpected commented-out config option for plugin-naming: {line}"
+
+
+def test_save_with_config_schema_is_valid_yaml(tmp_path):
+    """The generated config with schema comments must still be valid YAML"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+    parsed = yaml.safe_load(content)
+    assert parsed is not None
+    assert "rules" in parsed
+
+    # Commented-out lines should not affect YAML parsing
+    assert "content-banned-references" in parsed["rules"]
+    assert "mcp-prohibited" in parsed["rules"]
+
+
+def test_save_multiline_schema_defaults_commented(tmp_path):
+    """Config schema options with complex defaults should have each line commented"""
+    config = LinterConfig.for_init()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    content = config_path.read_text()
+
+    # context-budget has a 'limits' config_schema with a complex dict default.
+    # Each line of the multi-line value should be commented out.
+    assert "    # limits:\n" in content
+
+    # The file should still be valid YAML (multi-line comments don't break parsing)
+    parsed = yaml.safe_load(content)
+    assert parsed is not None

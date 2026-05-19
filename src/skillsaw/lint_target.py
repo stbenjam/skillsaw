@@ -43,9 +43,9 @@ class LintTarget:
             child.set_parents()
 
     def content_blocks(self) -> list:
-        from .rules.builtin.content_analysis import ContentBlock
+        from .rules.builtin.content_analysis import ContentBlock, HooksBlock, McpBlock
 
-        return self.find(ContentBlock)
+        return [n for n in self.find(ContentBlock) if not isinstance(n, (McpBlock, HooksBlock))]
 
     def tree_label(self) -> str:
         return self.path.name
@@ -91,6 +91,7 @@ class LintTarget:
             "ApmConfigNode": "#fff3cd",
             "ApmNode": "#e2d9f3",
             "CodeRabbitNode": "#fde2e4",
+            "PromptfooConfigNode": "#dff0d8",
             "ContentBlock": "#d1ecf1",
         }
 
@@ -193,3 +194,14 @@ class CodeRabbitNode(LintTarget):
 
     def tree_label(self) -> str:
         return ".coderabbit.yaml"
+
+
+@dataclass
+class PromptfooConfigNode(LintTarget):
+    """A promptfoo eval config or test fragment file."""
+
+    is_fragment: bool = False
+
+    def tree_label(self) -> str:
+        tag = "promptfoo-fragment" if self.is_fragment else "promptfoo-config"
+        return f"{self.path.name} [{tag}]"

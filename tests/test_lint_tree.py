@@ -229,6 +229,24 @@ def test_content_blocks_returns_all_content(temp_dir):
     assert all(hasattr(b, "category") for b in blocks)
 
 
+def test_content_blocks_excludes_mcp_blocks(temp_dir):
+    """content_blocks() must not include McpBlock instances (regression)."""
+    import json
+    from skillsaw.rules.builtin.content_analysis import McpBlock
+
+    plugin_dir = temp_dir / ".claude-plugin"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.json").write_text(json.dumps({"name": "test"}))
+    (temp_dir / "CLAUDE.md").write_text("# Instructions\nBe helpful.\n")
+    (temp_dir / ".mcp.json").write_text(json.dumps({"mcpServers": {"s": {"command": "x"}}}))
+
+    context = RepositoryContext(temp_dir)
+    blocks = context.lint_tree.content_blocks()
+
+    assert len(blocks) >= 1
+    assert not any(isinstance(b, McpBlock) for b in blocks)
+
+
 def test_estimate_tokens_content_block(temp_dir):
     """ContentBlock.estimate_tokens() returns len(body) // 4."""
     from skillsaw.rules.builtin.content_analysis import FileContentBlock, InstructionBlock

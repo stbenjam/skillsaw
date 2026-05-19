@@ -1,0 +1,55 @@
+# Shared eval cost definitions and per-plugin budgets.
+#
+# This file is the single source of truth for:
+# - token-usage size definitions (cost/latency thresholds)
+# - judge-size ordering
+# - tier computation rules
+# - per-plugin budget allowances
+#
+# The promptfoo-budget custom rule validates that every test's metadata
+# is consistent with these definitions.
+
+orderings:
+  token-usage: [small, medium, large]
+  judge-size: [none, sonnet, opus]
+  tier: [fast, medium, heavy]
+
+# A test's token-usage is the LOWEST size where BOTH cost AND latency
+# thresholds are at or below the declared limits.
+token-usage:
+  small:
+    max-cost: 0.50
+    max-latency: 30000
+  medium:
+    max-cost: 0.50
+    max-latency: 60000
+  large:
+    max-cost: 1.20
+    max-latency: 180000
+
+# A test's tier is the LOWEST level where BOTH token-usage AND judge-size
+# fit within the max bounds.
+tiers:
+  fast:
+    max-token-usage: medium
+    max-judge-size: none
+  medium:
+    max-token-usage: medium
+    max-judge-size: opus
+  heavy:
+    max-token-usage: large
+    max-judge-size: opus
+
+# Per-plugin budgets.
+# - allowed: admin-set cap -- max total cost permitted for this plugin's evals
+# - current: sum of cost thresholds across all tests (computed from eval yamls)
+budgets:
+  hello-world:
+    allowed: 1.50
+    current: 1.50      # 3 tests x $0.50
+  code-review:
+    allowed: 8.00
+    current: 7.50      # 15 tests x $0.50
+  jira:
+    allowed: 7.00
+    current: 6.00      # 3 tests x $1.20 + 4 tests x $0.60

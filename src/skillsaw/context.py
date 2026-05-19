@@ -27,6 +27,7 @@ class RepositoryType(Enum):
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
     APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
+    PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -66,6 +67,7 @@ class RepositoryContext:
         RepositoryType.DOT_CLAUDE,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
+        RepositoryType.PROMPTFOO,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -244,6 +246,10 @@ class RepositoryContext:
         if self._is_dot_claude():
             types.add(RepositoryType.DOT_CLAUDE)
 
+        # Promptfoo
+        if self._is_promptfoo_repo():
+            types.add(RepositoryType.PROMPTFOO)
+
         if not types:
             types.add(RepositoryType.UNKNOWN)
 
@@ -283,6 +289,23 @@ class RepositoryContext:
             return False
         markers = ("commands", "skills", "hooks", "agents", "rules")
         return any((claude_dir / m).is_dir() for m in markers)
+
+    def _is_promptfoo_repo(self) -> bool:
+        """Check if this repository contains promptfoo eval configs."""
+        for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
+            if any(self.root_path.rglob(pattern)):
+                return True
+        evals_dir = self.root_path / "evals"
+        if evals_dir.is_dir():
+            from .rules.builtin.promptfoo import _is_promptfoo_config
+            from .rules.builtin.utils import read_yaml
+
+            for pattern in ("*.yaml", "*.yml"):
+                for yaml_file in evals_dir.rglob(pattern):
+                    data, error = read_yaml(yaml_file)
+                    if not error and _is_promptfoo_config(data):
+                        return True
+        return False
 
     def _has_skill_md_recursive(self, path: Path) -> bool:
         """Check if any subdirectory contains SKILL.md, recursively"""

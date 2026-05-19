@@ -9,9 +9,11 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, ALL_INSTRUCTION_FORMATS
 from skillsaw.rules.builtin.content_analysis import (
+    AgentsMdBlock,
     ClaudeMdBlock,
     GeminiMdBlock,
     InstructionBlock,
+    _strip_fenced_code_blocks,
 )
 from skillsaw.rules.builtin.utils import read_text
 
@@ -72,7 +74,7 @@ class InstructionImportsValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Import references (@path) in CLAUDE.md and GEMINI.md must point to existing files"
+        return "Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -80,14 +82,18 @@ class InstructionImportsValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        import_blocks = context.lint_tree.find(ClaudeMdBlock) + context.lint_tree.find(
-            GeminiMdBlock
+        import_blocks = (
+            context.lint_tree.find(AgentsMdBlock)
+            + context.lint_tree.find(ClaudeMdBlock)
+            + context.lint_tree.find(GeminiMdBlock)
         )
         for block in import_blocks:
             file_path = block.path
             content = read_text(file_path)
             if content is None:
                 continue
+
+            content = _strip_fenced_code_blocks(content)
 
             for line_num, line in enumerate(content.splitlines(), 1):
                 match = _IMPORT_RE.match(line)

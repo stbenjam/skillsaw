@@ -251,7 +251,7 @@ class FrontmatterContentBlock(ContentBlock):
             content = read_text(self.path)
             if content is None:
                 return None
-            _, body = parse_frontmatter(content)
+            _, body, _ = parse_frontmatter(content)
         if strip_code_blocks:
             body = _strip_fenced_code_blocks(body)
         return body
@@ -259,7 +259,7 @@ class FrontmatterContentBlock(ContentBlock):
     def write_body(self, new_body: str) -> None:
         content = read_text(self.path)
         if content:
-            front, _ = parse_frontmatter(content)
+            front, _, _ = parse_frontmatter(content)
             if front:
                 self.path.write_text(front + "\n---\n" + new_body, encoding="utf-8")
                 return
@@ -270,7 +270,7 @@ class FrontmatterContentBlock(ContentBlock):
         content = read_text(self.path)
         if not content:
             return 0
-        front, _ = parse_frontmatter(content)
+        front, _, _ = parse_frontmatter(content)
         if not front:
             return 0
         return front.count("\n") + 2  # frontmatter + closing ---
@@ -480,6 +480,85 @@ class CodeRabbitContentBlock(ContentBlock):
         return results
 
 
+@dataclass(eq=False)
+class PromptfooPromptBlock(ContentBlock):
+    """A prompt string extracted from a promptfoo eval config."""
+
+    yaml_path: str = ""
+    category: str = "promptfoo-prompt"
+
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        body = self.body if self.body is not None else ""
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        ruyaml = _RuamelYAML()
+        ruyaml.preserve_quotes = True
+        raw = self.path.read_text(encoding="utf-8")
+        data = ruyaml.load(raw)
+        if data is None or not isinstance(data, dict):
+            return
+        prompts = data.get("prompts")
+        if not isinstance(prompts, list):
+            return
+        idx_str = self.yaml_path.replace("prompts[", "").rstrip("]")
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            return
+        if 0 <= idx < len(prompts):
+            prompts[idx] = new_body
+        buf = StringIO()
+        ruyaml.dump(data, buf)
+        self.path.write_text(buf.getvalue(), encoding="utf-8")
+
+    def tree_label(self) -> str:
+        return f"{self.yaml_path} ({self.category})"
+
+    def __eq__(self, other):
+        if not isinstance(other, PromptfooPromptBlock):
+            return NotImplemented
+        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve(), self.yaml_path))
+
+    _TEMPLATE_ONLY_RE = re.compile(r"^\s*\{\{.*\}\}\s*$")
+
+    @classmethod
+    def gather_from_tree(cls, root: LintTarget) -> List["PromptfooPromptBlock"]:
+        from skillsaw.lint_target import PromptfooConfigNode
+        from skillsaw.rules.builtin.utils import read_yaml_commented, commented_item_line
+
+        blocks: List[PromptfooPromptBlock] = []
+        for node in root.find(PromptfooConfigNode):
+            if node.is_fragment:
+                continue
+            data, error, _ = read_yaml_commented(node.path)
+            if error or not isinstance(data, dict):
+                continue
+            prompts = data.get("prompts")
+            if not isinstance(prompts, list):
+                continue
+            for i, prompt in enumerate(prompts):
+                if not isinstance(prompt, str) or not prompt.strip():
+                    continue
+                if cls._TEMPLATE_ONLY_RE.match(prompt):
+                    continue
+                line = commented_item_line(prompts, i) or 0
+                blocks.append(
+                    cls(
+                        path=node.path,
+                        body=prompt,
+                        line_offset=line,
+                        yaml_path=f"prompts[{i}]",
+                    )
+                )
+        return blocks
+
+
 # ---------------------------------------------------------------------------
 # Typed content blocks — each hardcodes its category as a class default.
 # Rules discover blocks via ``find(BlockType)``; ``category`` is kept for
@@ -524,28 +603,28 @@ class CursorRuleBlock(FrontmatterContentBlock):
 
 def _parse_file_frontmatter(
     path: Path,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]:
     """Parse YAML frontmatter from a markdown file.
 
-    Returns (frontmatter_dict, error_string, body_after_frontmatter).
+    Returns (frontmatter_dict, error_string, error_line, body_after_frontmatter).
     """
     content = read_text(path)
     if content is None:
-        return None, f"Failed to read file: {path}", ""
+        return None, f"Failed to read file: {path}", None, ""
     if not content.startswith("---"):
-        return None, None, content
-    fm, body = parse_frontmatter(content)
+        return None, None, None, content
+    fm, body, error_line = parse_frontmatter(content)
     if fm is None:
-        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", body
-    return fm, None, body
+        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", error_line, body
+    return fm, None, None, body
 
 
 @dataclass(eq=False)
 class ParsedFrontmatterBlock(FileContentBlock):
     """File content block with lazy-parsed YAML frontmatter."""
 
-    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], str]] = field(
-        default=None, init=False, repr=False
+    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]] = (
+        field(default=None, init=False, repr=False)
     )
 
     def _ensure_parsed(self) -> None:
@@ -563,9 +642,14 @@ class ParsedFrontmatterBlock(FileContentBlock):
         return self._fm_parsed[1]
 
     @property
-    def body_text(self) -> str:
+    def frontmatter_error_line(self) -> Optional[int]:
         self._ensure_parsed()
         return self._fm_parsed[2]
+
+    @property
+    def body_text(self) -> str:
+        self._ensure_parsed()
+        return self._fm_parsed[3]
 
     def key_line(self, key: str) -> Optional[int]:
         return _frontmatter_key_line(self.path, key)

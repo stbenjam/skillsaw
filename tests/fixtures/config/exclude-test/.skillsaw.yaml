@@ -1,0 +1,3 @@
+version: "99.0.0"
+exclude:
+  - "commands/generated.md"
