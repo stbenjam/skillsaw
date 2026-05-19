@@ -2,12 +2,13 @@
 Tests for custom rule loading functionality
 """
 
+import json
 import pytest
 from pathlib import Path
 
 from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
-from skillsaw.config import LinterConfig
+from skillsaw.config import LinterConfig, find_config
 
 
 def test_load_valid_custom_rule(valid_plugin, temp_dir):
@@ -439,3 +440,68 @@ def test_promptfoo_budget_example_fixture():
     assert any("judge-size" in v.message for v in errors)
     assert any("exceeds budget" in v.message for v in errors)
     assert any("over-classified" in v.message for v in warnings)
+
+
+@pytest.fixture
+def repo_with_custom_rule(temp_dir):
+    """Create a repo root with a config and custom rule, plus a plugin subdirectory."""
+    # Root-level config referencing a sibling custom rule file
+    (temp_dir / ".skillsaw.yaml").write_text(
+        "custom-rules:\n  - .skillsaw-custom.py\n"
+    )
+    (temp_dir / ".skillsaw-custom.py").write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class RepoRootRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "repo-root-rule"
+
+    @property
+    def description(self) -> str:
+        return "Custom rule that lives next to the config at the repo root"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("fired from repo root rule")]
+""")
+
+    # Plugin in a subdirectory
+    plugin_dir = temp_dir / "plugins" / "my-plugin"
+    plugin_dir.mkdir(parents=True)
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "description": "d", "version": "1.0.0", "author": {"name": "a"}})
+    )
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "hello.md").write_text(
+        "---\ndescription: hello\n---\n\n# hello\n"
+    )
+
+    return temp_dir, plugin_dir
+
+
+def test_custom_rule_resolved_via_find_config(repo_with_custom_rule):
+    """Integration: find_config walks up, from_file sets config_dir, linter resolves the rule."""
+    repo_root, plugin_dir = repo_with_custom_rule
+
+    config_path = find_config(plugin_dir)
+    assert config_path is not None
+    assert config_path.parent == repo_root
+
+    config = LinterConfig.from_file(config_path)
+    assert config.config_dir == repo_root
+
+    context = RepositoryContext(plugin_dir)
+    linter = Linter(context, config)
+
+    rule_ids = [r.rule_id for r in linter.rules]
+    assert "repo-root-rule" in rule_ids
+
+    violations = linter.run()
+    assert any(v.rule_id == "repo-root-rule" for v in violations)
