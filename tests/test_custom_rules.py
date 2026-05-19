@@ -446,9 +446,7 @@ def test_promptfoo_budget_example_fixture():
 def repo_with_custom_rule(temp_dir):
     """Create a repo root with a config and custom rule, plus a plugin subdirectory."""
     # Root-level config referencing a sibling custom rule file
-    (temp_dir / ".skillsaw.yaml").write_text(
-        "custom-rules:\n  - .skillsaw-custom.py\n"
-    )
+    (temp_dir / ".skillsaw.yaml").write_text("custom-rules:\n  - .skillsaw-custom.py\n")
     (temp_dir / ".skillsaw-custom.py").write_text("""
 from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
@@ -475,13 +473,13 @@ class RepoRootRule(Rule):
     claude_dir = plugin_dir / ".claude-plugin"
     claude_dir.mkdir()
     (claude_dir / "plugin.json").write_text(
-        json.dumps({"name": "my-plugin", "description": "d", "version": "1.0.0", "author": {"name": "a"}})
+        json.dumps(
+            {"name": "my-plugin", "description": "d", "version": "1.0.0", "author": {"name": "a"}}
+        )
     )
     commands_dir = plugin_dir / "commands"
     commands_dir.mkdir()
-    (commands_dir / "hello.md").write_text(
-        "---\ndescription: hello\n---\n\n# hello\n"
-    )
+    (commands_dir / "hello.md").write_text("---\ndescription: hello\n---\n\n# hello\n")
 
     return temp_dir, plugin_dir
 
