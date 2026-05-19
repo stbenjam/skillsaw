@@ -99,7 +99,8 @@ class Linter:
         """
         path = Path(rule_path)
         if not path.is_absolute():
-            path = self.context.root_path / path
+            base = self.config.config_dir or self.context.root_path
+            path = base / path
         path = path.resolve()
 
         if not path.exists():

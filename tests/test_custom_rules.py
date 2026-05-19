@@ -178,7 +178,7 @@ class RelativePathRule(Rule):
         return []
 """)
 
-    # Use relative path (relative to repository root)
+    # Use relative path (relative to config_dir which defaults to root_path)
     config = LinterConfig(custom_rules=["./my_custom_rule.py"])
     context = RepositoryContext(valid_plugin)
 
@@ -188,6 +188,42 @@ class RelativePathRule(Rule):
     # Verify the custom rule was loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
     assert "relative-path-rule" in rule_ids
+
+
+def test_load_custom_rule_relative_to_config_dir(valid_plugin, temp_dir):
+    """Test that relative custom rule paths resolve against config_dir, not root_path"""
+    # Put the custom rule in the parent (config) directory, not the lint target
+    config_dir = temp_dir / "config_parent"
+    config_dir.mkdir()
+    custom_rule_file = config_dir / "my_custom_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class ConfigDirRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "config-dir-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule loaded relative to config dir"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+""")
+
+    # config_dir differs from the lint target (valid_plugin)
+    config = LinterConfig(custom_rules=["./my_custom_rule.py"], config_dir=config_dir)
+    context = RepositoryContext(valid_plugin)
+
+    linter = Linter(context, config)
+
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "config-dir-rule" in rule_ids
 
 
 def test_load_multiple_custom_rules(valid_plugin, temp_dir):

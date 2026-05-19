@@ -44,6 +44,7 @@ class LinterConfig:
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
     llm: LLMSettings = field(default_factory=LLMSettings)
+    config_dir: Optional[Path] = None
 
     @classmethod
     def from_file(cls, config_path: Path) -> "LinterConfig":
@@ -132,6 +133,7 @@ class LinterConfig:
             content_paths=data.get("content-paths", []),
             strict=strict,
             llm=llm_settings,
+            config_dir=config_path.resolve().parent,
         )
 
     @classmethod
