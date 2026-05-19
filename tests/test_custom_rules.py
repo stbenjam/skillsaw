@@ -3,12 +3,23 @@ Tests for custom rule loading functionality
 """
 
 import json
+import shutil
+
 import pytest
 from pathlib import Path
 
 from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig, find_config
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
 
 
 def test_load_valid_custom_rule(valid_plugin, temp_dir):
@@ -442,51 +453,10 @@ def test_promptfoo_budget_example_fixture():
     assert any("over-classified" in v.message for v in warnings)
 
 
-@pytest.fixture
-def repo_with_custom_rule(temp_dir):
-    """Create a repo root with a config and custom rule, plus a plugin subdirectory."""
-    # Root-level config referencing a sibling custom rule file
-    (temp_dir / ".skillsaw.yaml").write_text("custom-rules:\n  - .skillsaw-custom.py\n")
-    (temp_dir / ".skillsaw-custom.py").write_text("""
-from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
-from typing import List
-
-class RepoRootRule(Rule):
-    @property
-    def rule_id(self) -> str:
-        return "repo-root-rule"
-
-    @property
-    def description(self) -> str:
-        return "Custom rule that lives next to the config at the repo root"
-
-    def default_severity(self) -> Severity:
-        return Severity.INFO
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        return [self.violation("fired from repo root rule")]
-""")
-
-    # Plugin in a subdirectory
-    plugin_dir = temp_dir / "plugins" / "my-plugin"
-    plugin_dir.mkdir(parents=True)
-    claude_dir = plugin_dir / ".claude-plugin"
-    claude_dir.mkdir()
-    (claude_dir / "plugin.json").write_text(
-        json.dumps(
-            {"name": "my-plugin", "description": "d", "version": "1.0.0", "author": {"name": "a"}}
-        )
-    )
-    commands_dir = plugin_dir / "commands"
-    commands_dir.mkdir()
-    (commands_dir / "hello.md").write_text("---\ndescription: hello\n---\n\n# hello\n")
-
-    return temp_dir, plugin_dir
-
-
-def test_custom_rule_resolved_via_find_config(repo_with_custom_rule):
+def test_custom_rule_resolved_via_find_config(tmp_path):
     """Integration: find_config walks up, from_file sets config_dir, linter resolves the rule."""
-    repo_root, plugin_dir = repo_with_custom_rule
+    repo_root = copy_fixture("custom-rule-config", tmp_path)
+    plugin_dir = repo_root / "plugins" / "my-plugin"
 
     config_path = find_config(plugin_dir)
     assert config_path is not None
