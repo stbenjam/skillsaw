@@ -41,7 +41,7 @@ def _prompt_plugin_selection(path: Path) -> str:
                 val = plugins[idx].get("name")
                 if isinstance(val, str):
                     return val
-                raise TypeError(f"Expected plugin name to be a string, got {type(val).__name__}")
+                raise ValueError(f"Expected plugin name to be a string, got {type(val).__name__}")
         except ValueError:
             for p in plugins:
                 if isinstance(p, dict) and p.get("name") == choice:
