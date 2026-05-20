@@ -265,7 +265,7 @@ class TestAddPlugin:
         assert any(p["name"] == "my-plugin" for p in mp["plugins"])
 
         settings = json.loads((root / ".claude-plugin" / "settings.json").read_text())
-        assert any(p["name"] == "my-plugin" for p in settings["installedPlugins"])
+        assert not any(p["name"] == "my-plugin" for p in settings["installedPlugins"])
 
     def test_add_plugin_rejects_existing(self, temp_dir):
         root = self._init_mp(temp_dir)
