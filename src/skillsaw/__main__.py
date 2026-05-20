@@ -809,20 +809,43 @@ def _run_fix(args):
 
     start_time = time.monotonic()
 
+    _progress_state = {"completed": 0, "total": 0}
+    _active_blocks: dict[int, str] = {}
+
+    def _render_status_bar():
+        elapsed = time.monotonic() - start_time
+        elapsed_str = f"{int(elapsed)}s"
+        done = _progress_state["completed"]
+        total = _progress_state["total"]
+        eta_str = ""
+        if 0 < done < total:
+            rate = elapsed / done
+            remaining = rate * (total - done)
+            eta_str = f" ETA {int(remaining)}s"
+        bar = _progress_bar(done, total) if total else ""
+        parts = [f" {bar} {done}/{total} blocks {elapsed_str}{eta_str}"]
+        if _active_blocks:
+            names = [Path(n).name for n in _active_blocks.values()]
+            summary = ", ".join(names[:3])
+            if len(names) > 3:
+                summary += f" +{len(names) - 3}"
+            parts.append(f"{c['dim']}| {summary}{c['reset']}")
+        _update_status_bar("".join(parts))
+
     def _on_event_with_timer(event_type, **kw):
         if event_type == "progress":
-            elapsed = time.monotonic() - start_time
-            elapsed_str = f"{int(elapsed)}s"
-            eta_str = ""
-            if 0 < kw["completed"] < kw["file_count"]:
-                rate = elapsed / kw["completed"]
-                remaining = rate * (kw["file_count"] - kw["completed"])
-                eta_str = f" ETA {int(remaining)}s"
-            bar = _progress_bar(kw["completed"], kw["file_count"])
-            status = f" {kw['completed']}/{kw['file_count']} files {elapsed_str}{eta_str}"
-            _update_status_bar(f" {bar}{status}")
+            _progress_state["completed"] = kw["completed"]
+            _progress_state["total"] = kw["file_count"]
+            _render_status_bar()
             return
+
+        if event_type == "file_start":
+            _active_blocks[kw.get("file_idx", 0)] = str(kw.get("rel_path", ""))
+        elif event_type == "file_done":
+            _active_blocks.pop(kw.get("file_idx", 0), None)
+
         _on_event(event_type, **kw)
+        _render_status_bar()
 
     dry_run = getattr(args, "dry_run", False)
 
