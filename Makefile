@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs
+.PHONY: help venv format lint test typecheck clean update apm verify-apm generate-example generate-docs
 
 help:
 	@echo "Available targets:"
@@ -30,6 +30,9 @@ format: $(VENV)/bin/activate
 
 lint: $(VENV)/bin/activate
 	$(VENV)/bin/black --check src/ tests/
+
+typecheck: $(VENV)/bin/activate
+	$(VENV)/bin/mypy src/
 
 test: $(VENV)/bin/activate
 	$(VENV)/bin/pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
