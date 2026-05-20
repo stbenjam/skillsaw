@@ -61,7 +61,7 @@ class McpValidJsonRule(Rule):
 
     def _validate_plugin_json_mcp(self, plugin_json: Path) -> List[RuleViolation]:
         """Validate mcpServers field in plugin.json"""
-        violations = []
+        violations: List[RuleViolation] = []
 
         data, error = read_json(plugin_json)
         if error:

@@ -4,7 +4,7 @@ Rules for validating marketplace structure
 
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Any
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -29,7 +29,7 @@ class MarketplaceJsonValidRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
+        violations: List[RuleViolation] = []
 
         # Only check if marketplace exists
         if RepositoryType.MARKETPLACE not in context.repo_types:
@@ -131,7 +131,7 @@ class MarketplaceRegistrationRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
+        violations: List[RuleViolation] = []
 
         # Only check if marketplace exists
         if not context.has_marketplace():
@@ -157,7 +157,11 @@ class MarketplaceRegistrationRule(Rule):
         return violations
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         if not violations:

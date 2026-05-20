@@ -28,6 +28,7 @@ from skillsaw.rules.builtin.utils import (
     extract_section,
     frontmatter_key_line as _frontmatter_key_line,
     _extract_frontmatter_text,
+    _FRONTMATTER_RE,
     yaml_line_map as _yaml_line_map,
     yaml_key_line as _yaml_key_line_util,
     yaml_key_line_after as _yaml_key_line_after_util,
@@ -259,9 +260,12 @@ class FrontmatterContentBlock(ContentBlock):
     def write_body(self, new_body: str) -> None:
         content = read_text(self.path)
         if content:
-            front, _, _ = parse_frontmatter(content)
-            if front:
-                self.path.write_text(front + "\n---\n" + new_body, encoding="utf-8")
+            m = _FRONTMATTER_RE.match(content)
+            if m:
+                raw_fm = m.group(0)
+                if not raw_fm.endswith("\n"):
+                    raw_fm += "\n"
+                self.path.write_text(raw_fm + new_body, encoding="utf-8")
                 return
         self.path.write_text(new_body, encoding="utf-8")
 
@@ -270,10 +274,10 @@ class FrontmatterContentBlock(ContentBlock):
         content = read_text(self.path)
         if not content:
             return 0
-        front, _, _ = parse_frontmatter(content)
-        if not front:
+        fm_text, _ = _extract_frontmatter_text(content)
+        if not fm_text:
             return 0
-        return front.count("\n") + 2  # frontmatter + closing ---
+        return fm_text.count("\n") + 2  # frontmatter + closing ---
 
 
 @dataclass(eq=False)
@@ -634,25 +638,30 @@ class ParsedFrontmatterBlock(FileContentBlock):
     @property
     def frontmatter(self) -> Optional[Dict[str, Any]]:
         self._ensure_parsed()
+        assert self._fm_parsed is not None
         return self._fm_parsed[0]
 
     @property
     def frontmatter_error(self) -> Optional[str]:
         self._ensure_parsed()
+        assert self._fm_parsed is not None
         return self._fm_parsed[1]
 
     @property
     def frontmatter_error_line(self) -> Optional[int]:
         self._ensure_parsed()
+        assert self._fm_parsed is not None
         return self._fm_parsed[2]
 
     @property
     def body_text(self) -> str:
         self._ensure_parsed()
+        assert self._fm_parsed is not None
         return self._fm_parsed[3]
 
     def key_line(self, key: str) -> Optional[int]:
-        return _frontmatter_key_line(self.path, key)
+        res: Optional[int] = _frontmatter_key_line(self.path, key)
+        return res
 
     def line_map(self) -> Dict[str, int]:
         content = read_text(self.path)
@@ -896,11 +905,13 @@ class HooksBlock(FileContentBlock):
     @property
     def parse_error(self) -> Optional[str]:
         self._ensure_parsed()
+        assert self._parsed is not None
         return self._parsed[1]
 
     @property
     def raw_data(self) -> Optional[Dict[str, Any]]:
         self._ensure_parsed()
+        assert self._parsed is not None
         data = self._parsed[0]
         return data if isinstance(data, dict) else None
 
@@ -976,11 +987,13 @@ class McpBlock(FileContentBlock):
     @property
     def parse_error(self) -> Optional[str]:
         self._ensure_parsed()
+        assert self._parsed is not None
         return self._parsed[1]
 
     @property
     def raw_data(self) -> Optional[Dict[str, Any]]:
         self._ensure_parsed()
+        assert self._parsed is not None
         data = self._parsed[0]
         return data if isinstance(data, dict) else None
 

@@ -45,7 +45,7 @@ class LintTarget:
     def content_blocks(self) -> list:
         from .rules.builtin.content_analysis import ContentBlock, HooksBlock, McpBlock
 
-        return [n for n in self.find(ContentBlock) if not isinstance(n, (McpBlock, HooksBlock))]
+        return [n for n in self.find(ContentBlock) if not isinstance(n, (McpBlock, HooksBlock))]  # type: ignore[type-abstract]
 
     def tree_label(self) -> str:
         return self.path.name

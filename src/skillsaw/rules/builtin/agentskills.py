@@ -6,7 +6,7 @@ import json
 import re
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -125,7 +125,11 @@ class AgentSkillValidRule(Rule):
         )
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:
@@ -426,7 +430,11 @@ class AgentSkillNameRule(Rule):
         return violations
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:
@@ -554,7 +562,11 @@ class AgentSkillRenameRefsRule(Rule):
         return violations
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         renames = _read_renames_manifest(context.root_path)
         if not renames:

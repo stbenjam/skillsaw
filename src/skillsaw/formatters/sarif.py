@@ -1,7 +1,7 @@
 """SARIF v2.1.0 output formatter."""
 
 import json
-from typing import List
+from typing import List, Dict, Any
 
 from ..rule import Rule, RuleViolation, Severity
 from . import relative_path
@@ -50,14 +50,14 @@ def format_sarif(
     results = []
     filtered = violations if verbose else [v for v in violations if v.severity != Severity.INFO]
     for v in filtered:
-        result = {
+        result: Dict[str, Any] = {
             "ruleId": v.rule_id,
             "level": _SEVERITY_MAP.get(v.severity.value, "warning"),
             "message": {"text": v.message},
         }
         rel = relative_path(v.file_path, context.root_path)
         if rel is not None:
-            location = {
+            location: Dict[str, Any] = {
                 "physicalLocation": {
                     "artifactLocation": {
                         "uri": rel,

@@ -254,11 +254,11 @@ class HooksJsonValidRule(Rule):
                                         )
                                     )
 
-                        for field, expected_type in _OPTIONAL_FIELD_TYPES.items():
+                        for field, opt_expected_type in _OPTIONAL_FIELD_TYPES.items():
                             if field not in hook:
                                 continue
-                            if not _check_field_type(hook[field], expected_type):
-                                type_name = _format_type_name(expected_type)
+                            if not _check_field_type(hook[field], opt_expected_type):
+                                type_name = _format_type_name(opt_expected_type)
                                 violations.append(
                                     self.violation(
                                         f"Event '{hook_path}' field '{field}' "

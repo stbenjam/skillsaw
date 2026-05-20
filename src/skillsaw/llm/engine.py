@@ -6,11 +6,14 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
 from ._litellm import CompletionProvider, CompletionResult, ToolCall, TokenUsage
+
+if TYPE_CHECKING:
+    from .tools import LLMTool
 
 
 @dataclass
@@ -33,7 +36,7 @@ class LLMEngine:
     def __init__(
         self,
         provider: CompletionProvider,
-        tools: list,
+        tools: list[LLMTool],
         *,
         model: str = "",
         max_iterations: int = 5,
@@ -41,7 +44,7 @@ class LLMEngine:
         on_event: Optional[Any] = None,
     ):
         self._provider = provider
-        self._tools = {t.name: t for t in tools}
+        self._tools: Dict[str, LLMTool] = {t.name: t for t in tools}
         self._model = model
         self._max_iterations = max_iterations
         self._max_tokens = max_tokens

@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from .branding import COLOR_PRESETS, DEFAULT_MARKETPLACE_TYPE, MARKETPLACE_TYPES, prompt_input
 
@@ -38,7 +38,7 @@ def _prompt_plugin_selection(path: Path) -> str:
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(plugins):
-                return plugins[idx]["name"]
+                return cast(str, plugins[idx]["name"])
         except ValueError:
             for p in plugins:
                 if p["name"] == choice:

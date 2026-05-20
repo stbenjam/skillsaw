@@ -26,13 +26,13 @@ class FileCache:
 
     def __init__(self, maxsize: int = 2048):
         self._lock = threading.Lock()
-        self._stores: List[Dict[Path, Dict[tuple, Any]]] = []
+        self._stores: List[Dict[Optional[Path], Dict[tuple, Any]]] = []
         self._maxsize = maxsize
         self._total_entries = 0
 
     def cached(self, func: Callable) -> Callable:
         """Decorator -- equivalent to ``@lru_cache`` but with per-key eviction."""
-        store: Dict[Path, Dict[tuple, Any]] = {}
+        store: Dict[Optional[Path], Dict[tuple, Any]] = {}
         self._stores.append(store)
 
         def wrapper(*args, **kwargs):
@@ -199,14 +199,16 @@ def read_yaml_commented(
 def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
-        return node.lc.key(key)[0] + 1
+        line_num: int = node.lc.key(key)[0]
+        return line_num + 1
     return None
 
 
 def commented_item_line(node: Any, index: int) -> Optional[int]:
     """Get the 1-based line number of item *index* in a ruamel ``CommentedSeq``."""
     if isinstance(node, CommentedSeq) and index < len(node):
-        return node.lc.item(index)[0] + 1
+        line_num: int = node.lc.item(index)[0]
+        return line_num + 1
     return None
 
 
@@ -335,7 +337,8 @@ def yaml_key_line(
 
     if top_level:
         if isinstance(data, CommentedMap) and key in data:
-            return data.lc.key(key)[0] + 1 + line_offset
+            line_num: int = data.lc.key(key)[0]
+            return line_num + 1 + line_offset
         return None
 
     # Depth-first search for first occurrence
@@ -466,7 +469,8 @@ def _find_key_dfs(node: Any, key: str) -> Optional[int]:
     """Return the 0-based line of the first occurrence of *key* (DFS)."""
     if isinstance(node, CommentedMap):
         if key in node:
-            return node.lc.key(key)[0]
+            line_num: int = node.lc.key(key)[0]
+            return line_num
         for v in node.values():
             result = _find_key_dfs(v, key)
             if result is not None:
@@ -549,7 +553,9 @@ def _resolve_path_line(node: Any, path: str, line_offset: int) -> Optional[int]:
             current = current[part]
 
     if isinstance(last_container, CommentedMap) and isinstance(last_accessor, str):
-        return last_container.lc.key(last_accessor)[0] + 1 + line_offset
+        line_num: int = last_container.lc.key(last_accessor)[0]
+        return line_num + 1 + line_offset
     if isinstance(last_container, CommentedSeq) and isinstance(last_accessor, int):
-        return last_container.lc.item(last_accessor)[0] + 1 + line_offset
+        item_line: int = last_container.lc.item(last_accessor)[0]
+        return item_line + 1 + line_offset
     return None

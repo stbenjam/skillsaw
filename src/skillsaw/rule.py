@@ -6,10 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import List, Optional, Dict, Any, Set, TYPE_CHECKING, AbstractSet
 
 if TYPE_CHECKING:
-    from .context import RepositoryContext
+    from .context import RepositoryContext, RepositoryType
     from .rules.builtin.content_analysis import ContentBlock, FileContentBlock
 
 
@@ -82,13 +82,13 @@ class AutofixResult:
 class Rule(ABC):
     """Base class for linting rules"""
 
-    repo_types = None
-    formats = None
-    config_schema = {}
+    repo_types: Optional[Set[RepositoryType]] = None
+    formats: Optional[AbstractSet[str]] = None
+    config_schema: Dict[str, Any] = {}
     since = "0.1.0"
     autofix_confidence: Optional["AutofixConfidence"] = None
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize rule with optional configuration
 
@@ -96,7 +96,7 @@ class Rule(ABC):
             config: Rule-specific configuration from .skillsaw.yaml
         """
         self.config = config or {}
-        self._enabled = self.config.get("enabled", True)
+        self._enabled = bool(self.config.get("enabled", True))
 
         # Get severity from config or use default
         severity_str = self.config.get("severity", self.default_severity().value)
@@ -182,10 +182,10 @@ class Rule(ABC):
     def violation(
         self,
         message: str,
-        file_path: Path = None,
-        line: int = None,
-        severity: Severity = None,
-        block: "ContentBlock" = None,
+        file_path: Optional[Path] = None,
+        line: Optional[int] = None,
+        severity: Optional[Severity] = None,
+        block: Optional["ContentBlock"] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 

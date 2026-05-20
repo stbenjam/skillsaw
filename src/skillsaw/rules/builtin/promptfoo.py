@@ -384,16 +384,16 @@ class PromptfooAssertionsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        required_types = set(
-            self.config.get(
-                "required-types",
-                self.config_schema["required-types"]["default"],
-            )
+        req_val = self.config.get(
+            "required-types",
+            self.config_schema["required-types"]["default"],
         )
-        constraints = self.config.get(
+        required_types = set(req_val) if isinstance(req_val, (list, set, tuple)) else set()
+        constraints_val = self.config.get(
             "threshold-constraints",
             self.config_schema["threshold-constraints"]["default"],
         )
+        constraints: Dict[str, Any] = constraints_val if isinstance(constraints_val, dict) else {}
 
         for node in context.lint_tree.find(PromptfooConfigNode):
             if node.is_fragment:

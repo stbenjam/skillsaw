@@ -4,7 +4,7 @@ Rules for validating command file format
 
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Any
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
@@ -57,7 +57,11 @@ class CommandNamingRule(Rule):
         return s
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:
@@ -136,7 +140,11 @@ class CommandFrontmatterRule(Rule):
         return violations
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
         for v in violations:

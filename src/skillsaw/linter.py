@@ -45,7 +45,7 @@ class Linter:
     def __init__(
         self,
         context: RepositoryContext,
-        config: LinterConfig = None,
+        config: Optional[LinterConfig] = None,
         rule_ids: Optional[Set[str]] = None,
     ):
         """
@@ -87,13 +87,13 @@ class Linter:
         from .rules.builtin import BUILTIN_RULES
 
         for rule_class in BUILTIN_RULES:
-            rule_instance = rule_class()
+            rule_instance = rule_class()  # type: ignore[abstract]
             self._known_rule_ids.add(rule_instance.rule_id)
             if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
                 continue
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
-                rule_instance = rule_class(config)
+                rule_instance = rule_class(config)  # type: ignore[abstract]
 
             if self._rule_ids or self.config.is_rule_enabled(
                 rule_instance.rule_id,
@@ -125,6 +125,8 @@ class Linter:
         logger.info("Loading custom rules from %s", path)
 
         spec = importlib.util.spec_from_file_location("custom_rule", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load custom rule from {path}: spec or loader is None")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -579,7 +581,14 @@ class Linter:
         threshold,
         emit,
     ):
-        from .llm.tools import ReadFileTool, WriteFileTool, ReplaceSectionTool, LintTool, DiffTool
+        from .llm.tools import (
+            ReadFileTool,
+            WriteFileTool,
+            ReplaceSectionTool,
+            LintTool,
+            DiffTool,
+            LLMTool,
+        )
         from .llm.engine import LLMEngine
         from .llm._litellm import TokenUsage
         import difflib
@@ -607,7 +616,7 @@ class Linter:
                 **kwargs,
             )
 
-        tools = [
+        tools: list[LLMTool] = [
             ReadFileTool(self.context.root_path),
             WriteFileTool(self.context.root_path),
             ReplaceSectionTool(self.context.root_path),
@@ -722,6 +731,7 @@ class Linter:
             ReplaceBlockSectionTool,
             LintBlockTool,
             DiffBlockTool,
+            LLMTool,
         )
         from .llm.engine import LLMEngine
         from .llm._litellm import TokenUsage
@@ -753,7 +763,7 @@ class Linter:
         fm_mode = any(llm_rules[v.rule_id].llm_fix_frontmatter for v in block_violations)
         state = BlockState(block, frontmatter_mode=fm_mode)
         original_body = state.original
-        tools = [
+        tools: list[LLMTool] = [
             ReadBlockTool(state),
             WriteBlockTool(state),
             ReplaceBlockSectionTool(state),

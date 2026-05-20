@@ -6,7 +6,7 @@ import os
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING, AbstractSet
 from dataclasses import dataclass, field
 
 if TYPE_CHECKING:
@@ -267,7 +267,7 @@ class LinterConfig:
         rule_id: str,
         context: "RepositoryContext",
         repo_types=None,
-        formats: Optional[Set[str]] = None,
+        formats: Optional[AbstractSet[str]] = None,
         since_version: str = "0.1.0",
     ) -> bool:
         """
@@ -346,7 +346,7 @@ class LinterConfig:
         descriptions = {}
         schemas = {}
         for rule_class in BUILTIN_RULES:
-            rule = rule_class()
+            rule = rule_class()  # type: ignore[abstract]
             descriptions[rule.rule_id] = rule.description
             if rule.config_schema:
                 schemas[rule.rule_id] = rule.config_schema

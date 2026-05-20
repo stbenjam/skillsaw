@@ -333,7 +333,8 @@ class RepositoryContext:
 
         try:
             with open(marketplace_file, "r") as f:
-                return json.load(f)
+                data: Dict[str, Any] = json.load(f)
+                return data
         except (json.JSONDecodeError, IOError):
             return None
 
@@ -545,13 +546,14 @@ class RepositoryContext:
                 with open(plugin_json, "r") as f:
                     data = json.load(f)
                     if name := data.get("name"):
-                        return name
+                        return str(name)
             except (json.JSONDecodeError, IOError):
                 pass
 
         # Try marketplace metadata
         if resolved_path in self.plugin_metadata:
-            return self.plugin_metadata[resolved_path].get("name", plugin_path.name)
+            val = self.plugin_metadata[resolved_path].get("name", plugin_path.name)
+            return str(val)
 
         # Fall back to directory name
         return plugin_path.name

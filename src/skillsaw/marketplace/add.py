@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any, Dict, cast
 
 from .branding import (
     DEFAULT_MARKETPLACE_TYPE,
@@ -150,31 +150,31 @@ def _find_plugin_context(path: Path, plugin_name: Optional[str]) -> Tuple[Path, 
 def _owner_from_config(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return config.get("owner_name", "TODO: Add author")
+        return cast(str, config.get("owner_name", "TODO: Add author"))
     mp_path = root / ".claude-plugin" / "marketplace.json"
     if mp_path.exists():
         data = json.loads(mp_path.read_text(encoding="utf-8"))
         owner = data.get("owner", {})
         if isinstance(owner, dict):
-            return owner.get("name", "TODO: Add author")
+            return cast(str, owner.get("name", "TODO: Add author"))
     return "TODO: Add author"
 
 
 def _marketplace_name(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return config.get("marketplace_name", "")
+        return cast(str, config.get("marketplace_name", ""))
     mp_path = root / ".claude-plugin" / "marketplace.json"
     if mp_path.exists():
         data = json.loads(mp_path.read_text(encoding="utf-8"))
-        return data.get("name", "")
+        return cast(str, data.get("name", ""))
     return ""
 
 
 def _marketplace_type(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return config.get("marketplace_type", DEFAULT_MARKETPLACE_TYPE)
+        return cast(str, config.get("marketplace_type", DEFAULT_MARKETPLACE_TYPE))
     return DEFAULT_MARKETPLACE_TYPE
 
 
@@ -223,7 +223,7 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
         if not isinstance(entry, dict):
             continue
         if entry.get("name") == plugin_name:
-            source = entry.get("source", f"./plugins/{plugin_name}")
+            source = str(entry.get("source", f"./plugins/{plugin_name}"))
             resolved = (root / source).resolve()
             if not resolved.is_relative_to(root.resolve()):
                 raise ValueError(f"Plugin source {source!r} resolves outside marketplace root")

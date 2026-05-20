@@ -170,4 +170,5 @@ def load_template_config(root: Path) -> Optional[Dict[str, Any]]:
     config_path = root / ".template-config.json"
     if not config_path.exists():
         return None
-    return json.loads(config_path.read_text(encoding="utf-8"))
+    res: Dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+    return res

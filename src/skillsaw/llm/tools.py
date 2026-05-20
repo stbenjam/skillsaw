@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import difflib
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Set, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from ..config import LinterConfig
-    from ..rules.builtin.content_analysis import ContentBlock
+    from ..rules.builtin.content_analysis import ContentBlock, ParsedFrontmatterBlock
 
 
 class LLMTool(Protocol):
@@ -21,7 +21,8 @@ class LLMTool(Protocol):
     @property
     def parameters(self) -> Dict[str, Any]: ...
 
-    def execute(self, **kwargs: Any) -> str: ...
+    @property
+    def execute(self) -> Callable[..., str]: ...
 
 
 def _resolve_safe(root: Path, path: str) -> Optional[Path]:
@@ -150,7 +151,7 @@ class LintTool:
         from ..context import RepositoryContext
         from ..rules.builtin import BUILTIN_RULES
         from ..rules.builtin.utils import invalidate_read_caches
-        from ..rule import Rule
+        from ..rule import Rule, RuleViolation
 
         invalidate_read_caches(resolved)
         context = RepositoryContext(self._root)
@@ -158,14 +159,14 @@ class LintTool:
         context.exclude_patterns = self._config.exclude_patterns
         context.apply_excludes()
 
-        violations = []
+        violations: list[RuleViolation] = []
         for rule_class in BUILTIN_RULES:
-            rule = rule_class()
+            rule = rule_class()  # type: ignore[abstract]
             if self._rule_ids and rule.rule_id not in self._rule_ids:
                 continue
             config = self._config.get_rule_config(rule.rule_id)
             if config:
-                rule = rule_class(config)
+                rule = rule_class(config)  # type: ignore[abstract]
             if not self._config.is_rule_enabled(
                 rule.rule_id,
                 context,
@@ -224,12 +225,21 @@ class DiffTool:
 class BlockState:
     """Mutable shared state for block tools within a single LLM session."""
 
+    block: ContentBlock
+    frontmatter_mode: bool
+    original: str
+    body_context: Optional[str]
+    body: str
+
     def __init__(self, block: "ContentBlock", *, frontmatter_mode: bool = False):
         self.block = block
         self.frontmatter_mode = frontmatter_mode
         if frontmatter_mode:
-            self.original = block.read_frontmatter_text()
-            self.body_context = block.body_text
+            from ..rules.builtin.content_analysis import ParsedFrontmatterBlock
+
+            fm_block = cast(ParsedFrontmatterBlock, block)
+            self.original = fm_block.read_frontmatter_text()
+            self.body_context = fm_block.body_text
         else:
             self.original = block.read_body(strip_code_blocks=False) or ""
             self.body_context = None
@@ -312,8 +322,11 @@ class LintBlockTool:
     def execute(self) -> str:
         block = self._state.block
         if self._state.frontmatter_mode:
+            from ..rules.builtin.content_analysis import ParsedFrontmatterBlock
+
+            fm_block = cast(ParsedFrontmatterBlock, block)
             try:
-                block.write_frontmatter_text(self._state.body)
+                fm_block.write_frontmatter_text(self._state.body)
             except ValueError as e:
                 return f"Error: {e}"
         else:
@@ -323,6 +336,7 @@ class LintBlockTool:
         from ..context import RepositoryContext
         from ..rules.builtin import BUILTIN_RULES
         from ..rules.builtin.utils import invalidate_read_caches
+        from ..rule import RuleViolation
 
         invalidate_read_caches(block.path)
         context = RepositoryContext(self._root)
@@ -330,15 +344,15 @@ class LintBlockTool:
         context.exclude_patterns = self._config.exclude_patterns
         context.apply_excludes()
 
-        violations = []
+        violations: list[RuleViolation] = []
         target_block = self._state.block
         for rule_class in BUILTIN_RULES:
-            rule = rule_class()
+            rule = rule_class()  # type: ignore[abstract]
             if self._rule_ids and rule.rule_id not in self._rule_ids:
                 continue
             config = self._config.get_rule_config(rule.rule_id)
             if config:
-                rule = rule_class(config)
+                rule = rule_class(config)  # type: ignore[abstract]
             if not self._config.is_rule_enabled(
                 rule.rule_id,
                 context,

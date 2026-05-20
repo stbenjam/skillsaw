@@ -885,7 +885,7 @@ def _run_list_rules():
 
     print("Available builtin rules:\n")
     for rule_class in BUILTIN_RULES:
-        rule = rule_class()
+        rule = rule_class()  # type: ignore[abstract]
         fix_types = []
         if rule.supports_autofix:
             fix_types.append("auto")

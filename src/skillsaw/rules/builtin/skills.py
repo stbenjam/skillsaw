@@ -5,7 +5,7 @@ Rules for validating skill files
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import List
+from typing import List, Any
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
@@ -102,7 +102,11 @@ class SkillFrontmatterRule(Rule):
         return violations
 
     def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
+        self,
+        context: RepositoryContext,
+        violations: List[RuleViolation],
+        *,
+        provider: Any = None,
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
 
