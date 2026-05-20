@@ -179,7 +179,7 @@ def _marketplace_type(root: Path) -> str:
 
 
 def _register_plugin(root: Path, name: str, source: str, description: str) -> None:
-    """Add a plugin entry to marketplace.json and settings.json."""
+    """Add a plugin entry to marketplace.json."""
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
     data.setdefault("plugins", [])
@@ -194,22 +194,6 @@ def _register_plugin(root: Path, name: str, source: str, description: str) -> No
             }
         )
         mp_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-    settings_path = root / ".claude-plugin" / "settings.json"
-    if settings_path.exists():
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    else:
-        settings = {"installedPlugins": []}
-    settings.setdefault("installedPlugins", [])
-    if not any(p.get("name") == name for p in settings["installedPlugins"]):
-        settings["installedPlugins"].append(
-            {
-                "name": name,
-                "source": "local",
-                "enabled": True,
-            }
-        )
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
 def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
