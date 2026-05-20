@@ -37,15 +37,16 @@ def _prompt_plugin_selection(path: Path) -> str:
         choice = input("Select plugin: ").strip()
         try:
             idx = int(choice) - 1
+        except ValueError:
+            for p in plugins:
+                if isinstance(p, dict) and p.get("name") == choice:
+                    return choice
+        else:
             if 0 <= idx < len(plugins):
                 val = plugins[idx].get("name")
                 if isinstance(val, str):
                     return val
                 raise ValueError(f"Expected plugin name to be a string, got {type(val).__name__}")
-        except ValueError:
-            for p in plugins:
-                if isinstance(p, dict) and p.get("name") == choice:
-                    return choice
         print("Invalid selection. Enter a number or plugin name.")
 
 
