@@ -39,7 +39,8 @@ def _prompt_plugin_selection(path: Path) -> str:
             idx = int(choice) - 1
         except ValueError:
             for p in plugins:
-                if isinstance(p, dict) and p.get("name") == choice:
+                name = p.get("name") if isinstance(p, dict) else None
+                if isinstance(name, str) and name == choice:
                     return choice
         else:
             if 0 <= idx < len(plugins):

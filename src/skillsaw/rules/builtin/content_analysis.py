@@ -903,16 +903,18 @@ class HooksBlock(FileContentBlock):
             self._parsed = _parse_json_file(self.path)
 
     @property
-    def parse_error(self) -> Optional[str]:
+    def _parsed_data(self) -> Tuple[Optional[Any], Optional[str]]:
         self._ensure_parsed()
         assert self._parsed is not None
-        return self._parsed[1]
+        return self._parsed
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        return self._parsed_data[1]
 
     @property
     def raw_data(self) -> Optional[Dict[str, Any]]:
-        self._ensure_parsed()
-        assert self._parsed is not None
-        data = self._parsed[0]
+        data = self._parsed_data[0]
         return data if isinstance(data, dict) else None
 
     @property
@@ -985,16 +987,18 @@ class McpBlock(FileContentBlock):
             self._parsed = _parse_json_file(self.path)
 
     @property
-    def parse_error(self) -> Optional[str]:
+    def _parsed_data(self) -> Tuple[Optional[Any], Optional[str]]:
         self._ensure_parsed()
         assert self._parsed is not None
-        return self._parsed[1]
+        return self._parsed
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        return self._parsed_data[1]
 
     @property
     def raw_data(self) -> Optional[Dict[str, Any]]:
-        self._ensure_parsed()
-        assert self._parsed is not None
-        data = self._parsed[0]
+        data = self._parsed_data[0]
         return data if isinstance(data, dict) else None
 
     @property
