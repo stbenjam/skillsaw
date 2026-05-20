@@ -2,12 +2,24 @@
 Tests for custom rule loading functionality
 """
 
+import json
+import shutil
+
 import pytest
 from pathlib import Path
 
 from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
-from skillsaw.config import LinterConfig
+from skillsaw.config import LinterConfig, find_config
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
 
 
 def test_load_valid_custom_rule(valid_plugin, temp_dir):
@@ -178,7 +190,7 @@ class RelativePathRule(Rule):
         return []
 """)
 
-    # Use relative path (relative to repository root)
+    # Use relative path (relative to config_dir which defaults to root_path)
     config = LinterConfig(custom_rules=["./my_custom_rule.py"])
     context = RepositoryContext(valid_plugin)
 
@@ -188,6 +200,42 @@ class RelativePathRule(Rule):
     # Verify the custom rule was loaded
     rule_ids = [rule.rule_id for rule in linter.rules]
     assert "relative-path-rule" in rule_ids
+
+
+def test_load_custom_rule_relative_to_config_dir(valid_plugin, temp_dir):
+    """Test that relative custom rule paths resolve against config_dir, not root_path"""
+    # Put the custom rule in the parent (config) directory, not the lint target
+    config_dir = temp_dir / "config_parent"
+    config_dir.mkdir()
+    custom_rule_file = config_dir / "my_custom_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class ConfigDirRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "config-dir-rule"
+
+    @property
+    def description(self) -> str:
+        return "A rule loaded relative to config dir"
+
+    def default_severity(self) -> Severity:
+        return Severity.INFO
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+""")
+
+    # config_dir differs from the lint target (valid_plugin)
+    config = LinterConfig(custom_rules=["./my_custom_rule.py"], config_dir=config_dir)
+    context = RepositoryContext(valid_plugin)
+
+    linter = Linter(context, config)
+
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "config-dir-rule" in rule_ids
 
 
 def test_load_multiple_custom_rules(valid_plugin, temp_dir):
@@ -403,3 +451,25 @@ def test_promptfoo_budget_example_fixture():
     assert any("judge-size" in v.message for v in errors)
     assert any("exceeds budget" in v.message for v in errors)
     assert any("over-classified" in v.message for v in warnings)
+
+
+def test_custom_rule_resolved_via_find_config(tmp_path):
+    """Integration: find_config walks up, from_file sets config_dir, linter resolves the rule."""
+    repo_root = copy_fixture("custom-rule-config", tmp_path)
+    plugin_dir = repo_root / "plugins" / "my-plugin"
+
+    config_path = find_config(plugin_dir)
+    assert config_path is not None
+    assert config_path.parent == repo_root
+
+    config = LinterConfig.from_file(config_path)
+    assert config.config_dir == repo_root
+
+    context = RepositoryContext(plugin_dir)
+    linter = Linter(context, config)
+
+    rule_ids = [r.rule_id for r in linter.rules]
+    assert "repo-root-rule" in rule_ids
+
+    violations = linter.run()
+    assert any(v.rule_id == "repo-root-rule" for v in violations)
