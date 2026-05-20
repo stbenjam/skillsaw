@@ -30,7 +30,7 @@ class McpValidJsonRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
+        violations: List[RuleViolation] = []
 
         for block in context.lint_tree.find(McpBlock):
             if block.parse_error:
@@ -88,7 +88,7 @@ class McpValidJsonRule(Rule):
 
     def _validate_mcp_structure(self, data: Dict[str, Any], file_path: Path) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
-        violations = []
+        violations: List[RuleViolation] = []
 
         if not isinstance(data, dict):
             violations.append(
@@ -257,7 +257,7 @@ class McpProhibitedRule(Rule):
         return Severity.ERROR
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
+        violations: List[RuleViolation] = []
         allowlist = set(self.config.get("allowlist", []))
 
         for block in context.lint_tree.find(McpBlock):

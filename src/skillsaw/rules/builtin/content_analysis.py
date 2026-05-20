@@ -275,7 +275,7 @@ class FrontmatterContentBlock(ContentBlock):
         if not content:
             return 0
         fm_text, _ = _extract_frontmatter_text(content)
-        if not fm_text:
+        if fm_text is None:
             return 0
         return fm_text.count("\n") + 2  # frontmatter + closing ---
 

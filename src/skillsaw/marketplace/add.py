@@ -147,34 +147,39 @@ def _find_plugin_context(path: Path, plugin_name: Optional[str]) -> Tuple[Path, 
 # ---------------------------------------------------------------------------
 
 
+def _ensure_str(val: Any, default: str) -> str:
+    """Ensure that a value is returned as a string, using a fallback default if not."""
+    return val if isinstance(val, str) else default
+
+
 def _owner_from_config(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return cast(str, config.get("owner_name", "TODO: Add author"))
+        return _ensure_str(config.get("owner_name"), "TODO: Add author")
     mp_path = root / ".claude-plugin" / "marketplace.json"
     if mp_path.exists():
         data = json.loads(mp_path.read_text(encoding="utf-8"))
         owner = data.get("owner", {})
         if isinstance(owner, dict):
-            return cast(str, owner.get("name", "TODO: Add author"))
+            return _ensure_str(owner.get("name"), "TODO: Add author")
     return "TODO: Add author"
 
 
 def _marketplace_name(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return cast(str, config.get("marketplace_name", ""))
+        return _ensure_str(config.get("marketplace_name"), "")
     mp_path = root / ".claude-plugin" / "marketplace.json"
     if mp_path.exists():
         data = json.loads(mp_path.read_text(encoding="utf-8"))
-        return cast(str, data.get("name", ""))
+        return _ensure_str(data.get("name"), "")
     return ""
 
 
 def _marketplace_type(root: Path) -> str:
     config = load_template_config(root)
     if config:
-        return cast(str, config.get("marketplace_type", DEFAULT_MARKETPLACE_TYPE))
+        return _ensure_str(config.get("marketplace_type"), DEFAULT_MARKETPLACE_TYPE)
     return DEFAULT_MARKETPLACE_TYPE
 
 

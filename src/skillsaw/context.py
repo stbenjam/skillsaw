@@ -545,15 +545,18 @@ class RepositoryContext:
             try:
                 with open(plugin_json, "r") as f:
                     data = json.load(f)
-                    if name := data.get("name"):
-                        return str(name)
+                    if isinstance(data, dict):
+                        name = data.get("name")
+                        if isinstance(name, str) and name.strip():
+                            return name.strip()
             except (json.JSONDecodeError, IOError):
                 pass
 
         # Try marketplace metadata
         if resolved_path in self.plugin_metadata:
-            val = self.plugin_metadata[resolved_path].get("name", plugin_path.name)
-            return str(val)
+            val = self.plugin_metadata[resolved_path].get("name")
+            if isinstance(val, str) and val.strip():
+                return val.strip()
 
         # Fall back to directory name
         return plugin_path.name
