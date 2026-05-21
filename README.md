@@ -18,15 +18,15 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 ## Features
 
-- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **Autofix** — Deterministic fixes for structural violations (`skillsaw fix`) and LLM-powered deep fixes for content quality (`skillsaw fix --llm`) — parallel processing, scoped re-lint, per-file rollback
-- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
-- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
+- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules for weak language, tautologies, attention dead zones, secrets, and contradictions
+- 🔧 **Autofix** — Deterministic fixes (`skillsaw fix`) and LLM-powered deep fixes (`skillsaw fix --llm`)
+- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats
+- 📐 **40+ Rules** — Structure, metadata, commands, cross-file consistency, context budget, content quality
 - 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
 - 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
 - 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
-- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
+- 🤖 **CI-Ready** — GitHub Action with inline PR comments
+- ⚡ **Version-Gated** — New rules gated behind config versions
 
 <p align="center">
   <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="600">
