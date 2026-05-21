@@ -546,8 +546,8 @@ Screen {
 }
 
 #tree-left {
-    width: 2fr;
-    min-width: 30;
+    width: 3fr;
+    min-width: 40;
 }
 
 #tree-left-title {
@@ -559,7 +559,7 @@ Screen {
 }
 
 #tree-right {
-    width: 3fr;
+    width: 2fr;
     border-left: heavy rgb(80,80,80);
 }
 
@@ -574,6 +574,7 @@ Screen {
 #lint-tree {
     height: 1fr;
     scrollbar-size: 1 1;
+    overflow-x: auto;
 }
 
 #content-view {
