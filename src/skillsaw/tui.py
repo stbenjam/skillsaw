@@ -654,8 +654,7 @@ class TreeApp(App):
         ("q", "quit", "Quit"),
         ("ctrl+c", "quit", "Quit"),
         ("slash", "search", "Search"),
-        ("n", "next_match", "Next match"),
-        ("N", "prev_match", "Prev match"),
+        ("escape", "clear_search", "Clear search"),
         ("e", "expand_all", "Expand all"),
         ("c", "collapse_all", "Collapse all"),
     ]
@@ -664,9 +663,7 @@ class TreeApp(App):
         super().__init__(**kwargs)
         self._lint_tree = lint_tree
         self._root_path = root_path
-        self._search_matches: list[Any] = []
-        self._search_idx = 0
-        self._search_query = ""
+        self._filtered = False
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="tree-header"):
@@ -685,7 +682,7 @@ class TreeApp(App):
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
             yield Static(
-                "[dim]/ search  n/N next/prev  e expand  c collapse  q quit[/]",
+                "[dim]/ search  Esc clear  e expand  c collapse  q quit[/]",
                 id="tree-status-right",
             )
 
@@ -783,59 +780,75 @@ class TreeApp(App):
     def _on_search_result(self, query: str) -> None:
         if not query:
             return
-        self._search_query = query
-        tree = self.query_one("#lint-tree", TextualTree)
-        self._search_matches = []
-        self._find_matches(tree.root, query.lower(), self._search_matches)
-        if self._search_matches:
-            self._search_idx = 0
-            self._go_to_match()
-        else:
+        matching_nodes: set[int] = set()
+        self._collect_matches(self._lint_tree, query.lower(), matching_nodes)
+        count = len(matching_nodes)
+        if not count:
             try:
                 self.query_one("#tree-status-left", Static).update(
                     f"[yellow]No matches for '{_escape_markup(query)}'[/]"
                 )
             except Exception:
                 pass
-
-    def _find_matches(self, tree_node: Any, query: str, results: list) -> None:
-        label = str(tree_node.label).lower()
-        if query in label:
-            results.append(tree_node)
-        for child in tree_node.children:
-            self._find_matches(child, query, results)
-
-    def _go_to_match(self) -> None:
-        if not self._search_matches:
             return
-        idx = self._search_idx % len(self._search_matches)
-        match = self._search_matches[idx]
-        node = match.parent
-        while node is not None:
-            node.expand()
-            node = node.parent
         tree = self.query_one("#lint-tree", TextualTree)
-        tree.select_node(match)
-        tree.scroll_to_node(match)
+        tree.clear()
+        tree.root.data = self._lint_tree
+        self._populate_tree_filtered(tree.root, self._lint_tree, matching_nodes)
+        tree.root.expand_all()
+        self._filtered = True
         try:
             self.query_one("#tree-status-left", Static).update(
-                f"[bold]{idx + 1}/{len(self._search_matches)}[/]"
-                f" for '{_escape_markup(self._search_query)}'  [dim]n/N next/prev[/]"
+                f"[bold]{count}[/] match(es) for '{_escape_markup(query)}'  [dim]Escape to clear[/]"
             )
         except Exception:
             pass
 
-    def action_next_match(self) -> None:
-        if not self._search_matches:
-            return
-        self._search_idx += 1
-        self._go_to_match()
+    def _collect_matches(self, lint_node: Any, query: str, matching: set[int]) -> bool:
+        label = lint_node.tree_label().lower()
+        is_match = query in label
+        child_match = False
+        for child in lint_node.children:
+            if self._collect_matches(child, query, matching):
+                child_match = True
+        if is_match or child_match:
+            matching.add(id(lint_node))
+            return True
+        return False
 
-    def action_prev_match(self) -> None:
-        if not self._search_matches:
+    def _populate_tree_filtered(self, tree_node: Any, lint_node: Any, matching: set[int]) -> None:
+        for child in lint_node.children:
+            if id(child) not in matching:
+                continue
+            type_name = type(child).__name__
+            icon = _NODE_ICONS.get(type_name, "")
+            tokens = child.estimate_tokens()
+            token_str = f" [dim]({tokens:,} tokens)[/]" if tokens else ""
+            label = (
+                f"{icon} {_escape_markup(child.tree_label())}{token_str}"
+                if icon
+                else f"{_escape_markup(child.tree_label())}{token_str}"
+            )
+            matching_children = [c for c in child.children if id(c) in matching]
+            if matching_children:
+                branch = tree_node.add(label, data=child)
+                self._populate_tree_filtered(branch, child, matching)
+            else:
+                tree_node.add_leaf(label, data=child)
+
+    def action_clear_search(self) -> None:
+        if not self._filtered:
             return
-        self._search_idx -= 1
-        self._go_to_match()
+        tree = self.query_one("#lint-tree", TextualTree)
+        tree.clear()
+        tree.root.data = self._lint_tree
+        self._populate_tree(tree.root, self._lint_tree)
+        tree.root.expand_all()
+        self._filtered = False
+        try:
+            self.query_one("#tree-status-left", Static).update("")
+        except Exception:
+            pass
 
     def action_expand_all(self) -> None:
         self.query_one("#lint-tree", TextualTree).root.expand_all()
