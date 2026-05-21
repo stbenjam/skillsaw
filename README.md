@@ -16,12 +16,16 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 </td>
 </tr></table>
 
+<p align="center">
+  <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="600">
+</p>
+
 > Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
 ## Features
 
 - 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
+- 🔧 **Autofix** — Deterministic fixes for structural violations (`skillsaw fix`) and LLM-powered deep fixes for content quality (`skillsaw fix --llm`) — parallel processing, scoped re-lint, per-file rollback
 - 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
 - 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
 - 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
