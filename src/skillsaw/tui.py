@@ -807,6 +807,8 @@ class TreeApp(App):
     def _collect_matches(self, lint_node: Any, query: str, matching: set[int]) -> bool:
         label = lint_node.tree_label().lower()
         is_match = query in label
+        if is_match:
+            self._add_subtree(lint_node, matching)
         child_match = False
         for child in lint_node.children:
             if self._collect_matches(child, query, matching):
@@ -815,6 +817,11 @@ class TreeApp(App):
             matching.add(id(lint_node))
             return True
         return False
+
+    def _add_subtree(self, lint_node: Any, matching: set[int]) -> None:
+        matching.add(id(lint_node))
+        for child in lint_node.children:
+            self._add_subtree(child, matching)
 
     def _populate_tree_filtered(self, tree_node: Any, lint_node: Any, matching: set[int]) -> None:
         for child in lint_node.children:
@@ -829,8 +836,8 @@ class TreeApp(App):
                 if icon
                 else f"{_escape_markup(child.tree_label())}{token_str}"
             )
-            matching_children = [c for c in child.children if id(c) in matching]
-            if matching_children:
+            children_in_match = [c for c in child.children if id(c) in matching]
+            if children_in_match:
                 branch = tree_node.add(label, data=child)
                 self._populate_tree_filtered(branch, child, matching)
             else:
