@@ -755,7 +755,13 @@ class TreeApp(App):
             content.update("\n".join(parts) if parts else "*No content.*")
         elif isinstance(node, ContentBlock):
             body = node.read_body(strip_code_blocks=False)
-            content.update(body if body else "*No content.*")
+            if not body:
+                content.update("*No content.*")
+            elif node.path.suffix in (".json", ".yaml", ".yml"):
+                lang = "json" if node.path.suffix == ".json" else "yaml"
+                content.update(f"```{lang}\n{body}\n```")
+            else:
+                content.update(body)
         else:
             content.update(
                 f"**{type_name}**\n\n"
