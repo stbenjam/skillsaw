@@ -525,6 +525,7 @@ def _check_llm_connectivity(provider, model: str, c: dict) -> None:
             tools=[],
             model=model,
             max_tokens=16,
+            timeout=30,
         )
         print(f" {c['green']}ok{c['reset']}")
     except Exception as e:

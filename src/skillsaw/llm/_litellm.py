@@ -33,6 +33,7 @@ class CompletionProvider(Protocol):
         tools: List[Dict[str, Any]],
         model: str,
         max_tokens: int = 4096,
+        timeout: Optional[int] = None,
     ) -> CompletionResult: ...
 
 
@@ -54,6 +55,7 @@ class LiteLLMProvider:
         tools: List[Dict[str, Any]],
         model: str,
         max_tokens: int = 4096,
+        timeout: Optional[int] = None,
     ) -> CompletionResult:
         litellm = _get_litellm()
 
@@ -64,6 +66,8 @@ class LiteLLMProvider:
         }
         if tools:
             kwargs["tools"] = tools
+        if timeout is not None:
+            kwargs["timeout"] = timeout
 
         response = litellm.completion(**kwargs)
 
