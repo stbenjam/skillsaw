@@ -513,6 +513,27 @@ def _require_llm_provider(config):
     return LiteLLMProvider()
 
 
+def _check_llm_connectivity(provider, model: str, c: dict) -> None:
+    print(
+        f"{c['dim']}Checking LLM connectivity ({model})...{c['reset']}",
+        end="",
+        flush=True,
+    )
+    try:
+        provider.complete(
+            messages=[{"role": "user", "content": "Reply with the word OK."}],
+            tools=[],
+            model=model,
+            max_tokens=16,
+        )
+        print(f" {c['green']}ok{c['reset']}")
+    except Exception as e:
+        print(f" {c['red']}failed{c['reset']}")
+        err_msg = str(e).split("\n")[0][:200]
+        print(f"{c['red']}Error: {err_msg}{c['reset']}", file=sys.stderr)
+        sys.exit(1)
+
+
 def _print_colored_diff(diffs, c, header=None, separator=False):
     if not diffs:
         return
@@ -544,24 +565,7 @@ def _run_llm_fix_inline(args, linter, config):
     """Handle --fix --llm from the lint subcommand."""
     c = _ansi_colors()
     provider = _require_llm_provider(config)
-
-    print(
-        f"{c['dim']}Checking LLM connectivity ({config.llm.model})...{c['reset']}",
-        end="",
-        flush=True,
-    )
-    try:
-        provider.complete(
-            messages=[{"role": "user", "content": "Reply with the word OK."}],
-            tools=[],
-            model=config.llm.model,
-            max_tokens=16,
-        )
-        print(f" {c['green']}ok{c['reset']}")
-    except Exception as e:
-        print(f" {c['red']}failed{c['reset']}")
-        print(f"{c['red']}Error: LLM request failed: {e}{c['reset']}", file=sys.stderr)
-        sys.exit(1)
+    _check_llm_connectivity(provider, config.llm.model, c)
 
     dry_run = getattr(args, "dry_run", False)
 
@@ -719,24 +723,7 @@ def _run_fix(args):
 
     c = _ansi_colors()
     provider = _require_llm_provider(config)
-
-    print(
-        f"{c['dim']}Checking LLM connectivity ({config.llm.model})...{c['reset']}",
-        end="",
-        flush=True,
-    )
-    try:
-        provider.complete(
-            messages=[{"role": "user", "content": "Reply with the word OK."}],
-            tools=[],
-            model=config.llm.model,
-            max_tokens=16,
-        )
-        print(f" {c['green']}ok{c['reset']}")
-    except Exception as e:
-        print(f" {c['red']}failed{c['reset']}")
-        print(f"{c['red']}Error: LLM request failed: {e}{c['reset']}", file=sys.stderr)
-        sys.exit(1)
+    _check_llm_connectivity(provider, config.llm.model, c)
 
     is_tty = sys.stdout.isatty()
     term_size = shutil.get_terminal_size((80, 24))

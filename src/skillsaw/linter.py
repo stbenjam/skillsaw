@@ -1036,6 +1036,10 @@ class Linter:
         except KeyboardInterrupt:
             pass
         finally:
+            # Fast abort: in-flight workers may still be writing files.
+            # Rollback below only covers completed futures in all_diffs;
+            # partially-written files from cancelled workers may remain.
+            # Users can `git checkout` to recover a clean state.
             executor.shutdown(wait=False, cancel_futures=True)
 
         # Rollback file-based fixes that didn't help

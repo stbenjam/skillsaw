@@ -82,7 +82,7 @@ class TestLogoBanner:
 
     def test_banner_is_3_lines(self):
         lines = LOGO_BANNER.split("\n")
-        non_empty = [l for l in lines if l.strip()]
+        non_empty = [line for line in lines if line.strip()]
         assert len(non_empty) == 3
 
 

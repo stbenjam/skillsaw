@@ -510,11 +510,3 @@ def _truncate_to_width(s: str, width: int) -> str:
             return s[:i] + "\033[0m"
         i += 1
     return s
-
-
-def _fmt_duration(seconds: float) -> str:
-    s = int(seconds)
-    if s < 60:
-        return f"{s}s"
-    m, s = divmod(s, 60)
-    return f"{m}m{s:02d}s" if s else f"{m}m"
