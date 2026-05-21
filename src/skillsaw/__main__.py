@@ -765,146 +765,74 @@ def _run_fix(args):
         print(f"{c['green']}No fixable violations found.{c['reset']}")
         sys.exit(0)
 
-    def _progress_bar(current, total, width=20):
-        filled = int(width * current / total) if total else 0
-        bar = "█" * filled + "░" * (width - filled)
-        return f"{c['dim']}[{c['reset']}{c['cyan']}{bar}{c['reset']}{c['dim']}]{c['reset']}"
-
-    def _setup_scroll_region():
-        if not is_tty or c["no_color"]:
-            return
-        sys.stdout.write(f"\033[1;{term_rows - 1}r")
-        sys.stdout.write(f"\033[2J")
-        sys.stdout.write(f"\033[1;1H")
-        sys.stdout.flush()
-
-    def _update_status_bar(text):
-        if not is_tty or c["no_color"]:
-            return
-        padded = text[:term_width].ljust(term_width)
-        sys.stdout.write(f"\033[s\033[{term_rows};1H\033[2K{padded}\033[u")
-        sys.stdout.flush()
-
-    def _teardown_scroll_region():
-        if not is_tty or c["no_color"]:
-            return
-        sys.stdout.write(f"\033[1;{term_rows}r")
-        sys.stdout.write(f"\033[{term_rows};1H\033[2K")
-        sys.stdout.flush()
-
-    def _on_event(event_type, **kw):
-        if event_type == "file_start":
-            print(
-                f"{c['bold']}{kw['rel_path']}{c['reset']}"
-                f"  {c['dim']}{kw['num_violations']} violation(s):"
-                f" {', '.join(kw['rule_ids'])}{c['reset']}"
-            )
-        elif event_type == "iteration":
-            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
-            print(
-                f"  {tag}{c['dim']}iteration"
-                f" {kw['iteration']}/{kw['max_iterations']}{c['reset']}"
-            )
-        elif event_type == "tool_call":
-            tool_args = kw.get("arguments", {})
-            arg_summary = ""
-            if "path" in tool_args:
-                arg_summary = str(tool_args["path"])
-            elif tool_args:
-                first_key = next(iter(tool_args))
-                val = str(tool_args[first_key])
-                if len(val) > 40:
-                    val = val[:37] + "..."
-                arg_summary = val
-            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
-            print(f"  {tag}{kw['name']}({arg_summary})")
-        elif event_type == "retry":
-            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
-            print(
-                f"  {tag}{c['yellow']}{kw['remaining']} violation(s)"
-                f" remain, retrying...{c['reset']}"
-            )
-        elif event_type == "file_done":
-            remaining = kw.get("remaining", 0)
-            changed = kw.get("changed", False)
-            tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
-            if not changed:
-                print(f"  {tag}{c['yellow']}no changes{c['reset']}")
-            elif remaining == 0:
-                print(
-                    f"  {tag}{c['green']}✓ all {kw['num_violations']}"
-                    f" violation(s) fixed{c['reset']}"
-                )
-            else:
-                fixed = kw["num_violations"] - remaining
-                print(f"  {tag}{c['red']}{fixed} fixed," f" {remaining} failed{c['reset']}")
-            print()
-
     max_workers = args.workers or config.llm.max_workers
-
-    import time
-
-    start_time = time.monotonic()
-
-    _progress_state = {"completed": 0, "total": 0}
-    _active_blocks: dict[int, str] = {}
-
-    def _fmt_duration(seconds):
-        s = int(seconds)
-        if s < 60:
-            return f"{s}s"
-        m, s = divmod(s, 60)
-        return f"{m}m{s:02d}s" if s else f"{m}m"
-
-    def _render_status_bar():
-        elapsed = time.monotonic() - start_time
-        elapsed_str = _fmt_duration(elapsed)
-        done = _progress_state["completed"]
-        total = _progress_state["total"]
-        eta_str = ""
-        if 0 < done < total:
-            rate = elapsed / done
-            remaining = rate * (total - done)
-            eta_str = f" ETA {_fmt_duration(remaining)}"
-        bar = _progress_bar(done, total) if total else ""
-        pct = int(done / total * 100) if total else 0
-        parts = [f" {bar} {pct}% {elapsed_str}{eta_str} "]
-        if _active_blocks:
-            names = [Path(n).name for n in _active_blocks.values()]
-            summary = ", ".join(names[:3])
-            if len(names) > 3:
-                summary += f" +{len(names) - 3}"
-            parts.append(f"{c['dim']}| {summary}{c['reset']}")
-        _update_status_bar("".join(parts))
-
-    def _on_event_with_timer(event_type, **kw):
-        if event_type == "progress":
-            _progress_state["completed"] = kw["completed"]
-            _progress_state["total"] = kw["file_count"]
-            _render_status_bar()
-            return
-
-        if event_type == "file_start":
-            _active_blocks[kw.get("file_idx", 0)] = str(kw.get("rel_path", ""))
-        elif event_type == "file_done":
-            _active_blocks.pop(kw.get("file_idx", 0), None)
-
-        _on_event(event_type, **kw)
-        _render_status_bar()
-
     dry_run = getattr(args, "dry_run", False)
 
-    _setup_scroll_region()
+    from .tui import FixApp, FixParams
+
+    params = FixParams(
+        linter=linter,
+        provider=provider,
+        min_severity=min_severity,
+        max_workers=max_workers,
+        dry_run=dry_run,
+        model_name=config.llm.model,
+        total_violations=len(llm_violations),
+    )
+
     try:
-        result = linter.llm_fix(
-            provider,
-            callback=_on_event_with_timer,
-            min_severity=min_severity,
-            max_workers=max_workers,
-            dry_run=dry_run,
-        )
-    finally:
-        _teardown_scroll_region()
+        if is_tty and not c["no_color"]:
+            app = FixApp(params)
+            result = app.run()
+        else:
+            import time
+
+            start_time = time.monotonic()
+
+            def _on_event(event_type, **kw):
+                if event_type == "file_start":
+                    print(
+                        f"{c['bold']}{kw['rel_path']}{c['reset']}"
+                        f"  {c['dim']}{kw['num_violations']} violation(s):"
+                        f" {', '.join(kw['rule_ids'])}{c['reset']}"
+                    )
+                elif event_type == "file_done":
+                    remaining = kw.get("remaining", 0)
+                    changed = kw.get("changed", False)
+                    tag = f"{c['dim']}[{kw['rel_path']}]{c['reset']} "
+                    if not changed:
+                        print(f"  {tag}{c['yellow']}no changes{c['reset']}")
+                    elif remaining == 0:
+                        print(
+                            f"  {tag}{c['green']}✓ all {kw['num_violations']}"
+                            f" violation(s) fixed{c['reset']}"
+                        )
+                    else:
+                        fixed = kw["num_violations"] - remaining
+                        print(f"  {tag}{c['red']}{fixed} fixed, {remaining} failed{c['reset']}")
+                    print()
+                elif event_type == "progress":
+                    elapsed = time.monotonic() - start_time
+                    print(
+                        f"{c['dim']}  [{kw['completed']}/{kw['file_count']},"
+                        f" {int(elapsed)}s]{c['reset']}",
+                        file=sys.stderr,
+                    )
+
+            result = linter.llm_fix(
+                provider,
+                callback=_on_event,
+                min_severity=min_severity,
+                max_workers=max_workers,
+                dry_run=dry_run,
+            )
+    except KeyboardInterrupt:
+        print(f"\n{c['yellow']}Interrupted.{c['reset']}")
+        sys.exit(130)
+
+    if result is None:
+        print(f"\n{c['yellow']}Interrupted.{c['reset']}")
+        sys.exit(130)
 
     if not result.success:
         if dry_run:
@@ -931,7 +859,6 @@ def _run_fix(args):
         print(f"  {len(result.files_modified)} file(s) modified")
 
     _print_token_usage(result.total_usage, c, indent="  ")
-    _print_colored_diff(result.diffs, c, header="Changes", separator=True)
 
     sys.exit(0)
 

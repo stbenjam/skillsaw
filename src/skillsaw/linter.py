@@ -600,12 +600,28 @@ class Linter:
         )
 
         def _on_engine_event(event_type, **kwargs):
+            extra = {}
+            if event_type == "tool_done" and kwargs.get("name") in (
+                "write_file",
+                "replace_section",
+            ):
+                current = fpath.read_text(encoding="utf-8") if fpath.exists() else ""
+                original = originals.get(fpath) or ""
+                if current != original:
+                    diff_lines = difflib.unified_diff(
+                        original.splitlines(keepends=True),
+                        current.splitlines(keepends=True),
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}",
+                    )
+                    extra["diff_text"] = "".join(diff_lines)
             emit(
                 event_type,
                 file_idx=file_idx,
                 file_count=file_count,
                 rel_path=rel_path,
                 **kwargs,
+                **extra,
             )
 
         tools = [
@@ -743,12 +759,26 @@ class Linter:
         )
 
         def _on_engine_event(event_type, **kwargs):
+            extra = {}
+            if event_type == "tool_done" and kwargs.get("name") in (
+                "write_block",
+                "replace_block_section",
+            ):
+                if state.body != state.original:
+                    diff_lines = difflib.unified_diff(
+                        state.original.splitlines(keepends=True),
+                        state.body.splitlines(keepends=True),
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}",
+                    )
+                    extra["diff_text"] = "".join(diff_lines)
             emit(
                 event_type,
                 file_idx=block_idx,
                 file_count=block_count,
                 rel_path=rel_path,
                 **kwargs,
+                **extra,
             )
 
         fm_mode = any(llm_rules[v.rule_id].llm_fix_frontmatter for v in block_violations)
@@ -938,7 +968,8 @@ class Linter:
 
         _emit("progress", completed=0, file_count=total_units)
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
             future_to_idx = {}
             unit_idx = 0
 
@@ -1001,6 +1032,10 @@ class Linter:
                     if fpath:
                         all_diffs[fpath] = result["diff_text"]
                         files_modified.append(fpath)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         # Rollback file-based fixes that didn't help
         violations_after = 0

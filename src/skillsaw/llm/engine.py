@@ -162,6 +162,10 @@ class LLMEngine:
                 if self._on_event:
                     self._on_event("tool_call", name=tc.name, arguments=args_dict)
                 tool_result = self._dispatch_tool(tc)
+                if self._on_event:
+                    self._on_event(
+                        "tool_done", name=tc.name, arguments=args_dict, result=tool_result
+                    )
                 all_tool_calls.append(
                     ToolCallRecord(
                         name=tc.name,
