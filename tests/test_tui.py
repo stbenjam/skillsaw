@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from skillsaw.tui import (
     LOGO_BANNER,
     SLOGANS,
     FixApp,
     FixParams,
+    TreeApp,
     _escape_markup,
     _fmt_duration,
 )
@@ -67,3 +70,22 @@ class TestFixParams:
         assert p.model_name == ""
         assert p.total_violations == 0
         assert p.dry_run is False
+
+
+class TestTreeApp:
+    def test_creation(self):
+        from skillsaw.lint_target import LintTarget
+
+        root = LintTarget(path=Path("/tmp/test"))
+        app = TreeApp(root, Path("/tmp/test"))
+        assert app._lint_tree is root
+        assert app._root_path == Path("/tmp/test")
+
+    def test_with_children(self):
+        from skillsaw.lint_target import LintTarget
+
+        root = LintTarget(path=Path("/tmp/test"))
+        child = LintTarget(path=Path("/tmp/test/child.md"))
+        root.children = [child]
+        app = TreeApp(root, Path("/tmp/test"))
+        assert len(app._lint_tree.children) == 1

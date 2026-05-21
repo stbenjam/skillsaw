@@ -336,6 +336,10 @@ def _run_tree(args):
     tree = context.lint_tree
     if args.fmt == "dot":
         print(tree.print_dot(root_path=context.root_path))
+    elif sys.stdout.isatty() and "NO_COLOR" not in os.environ:
+        from .tui import TreeApp
+
+        TreeApp(tree, context.root_path).run()
     else:
         print(tree.print_tree(root_path=context.root_path))
     sys.exit(0)

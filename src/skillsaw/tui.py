@@ -1,4 +1,4 @@
-"""Split-panel TUI for the LLM fix command using textual."""
+"""TUI components for skillsaw — fix dashboard and tree explorer."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.timer import Timer
-from textual.widgets import ProgressBar, RichLog, Static
+from textual.widgets import ProgressBar, RichLog, Static, Tree as TextualTree
 
 LOGO_BANNER = (
     "[bold rgb(255,80,0)]░█▀▀░█░█░▀█▀░█░░░█░░░█▀▀░█▀█░█░█[/]\n"
@@ -496,3 +496,213 @@ class FixApp(App):
 
 def _escape_markup(text: str) -> str:
     return text.replace("[", "\\[")
+
+
+# ── Tree Explorer ──
+
+_NODE_ICONS = {
+    "MarketplaceNode": "🏪",
+    "PluginNode": "🔌",
+    "SkillNode": "⚡",
+    "ApmNode": "📦",
+    "ApmConfigNode": "⚙️",
+    "CodeRabbitNode": "🐇",
+    "PromptfooConfigNode": "🧪",
+    "MarketplaceConfigNode": "⚙️",
+}
+
+TREE_CSS = """\
+Screen {
+    layout: vertical;
+}
+
+#tree-header {
+    height: 5;
+    padding: 1 0 0 2;
+}
+
+#tree-logo {
+    width: auto;
+    min-width: 36;
+}
+
+#tree-header-right {
+    width: 1fr;
+    height: 3;
+    content-align: right middle;
+    text-align: right;
+    padding-right: 1;
+}
+
+#tree-panels {
+    height: 1fr;
+}
+
+#tree-left {
+    width: 2fr;
+    min-width: 30;
+}
+
+#tree-left-title {
+    dock: top;
+    height: 1;
+    padding: 0 1;
+    background: rgb(50,50,60);
+    text-style: bold;
+}
+
+#tree-right {
+    width: 3fr;
+    border-left: heavy rgb(80,80,80);
+}
+
+#tree-right-title {
+    dock: top;
+    height: 1;
+    padding: 0 1;
+    background: rgb(50,50,60);
+    text-style: bold;
+}
+
+#lint-tree {
+    height: 1fr;
+    scrollbar-size: 1 1;
+}
+
+#content-view {
+    height: 1fr;
+    scrollbar-size: 1 1;
+}
+
+#tree-status {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+    background: rgb(40,40,50);
+    color: rgb(160,160,160);
+}
+
+#tree-status-left {
+    width: 1fr;
+}
+
+#tree-status-right {
+    width: auto;
+    color: rgb(120,120,120);
+}
+"""
+
+
+class TreeApp(App):
+    TITLE = "skillsaw tree"
+    CSS = TREE_CSS
+    ENABLE_COMMAND_PALETTE = False
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("ctrl+c", "quit", "Quit"),
+    ]
+
+    def __init__(self, lint_tree: Any, root_path: Path, **kwargs):
+        super().__init__(**kwargs)
+        self._lint_tree = lint_tree
+        self._root_path = root_path
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="tree-header"):
+            yield Static(LOGO_BANNER, id="tree-logo")
+            yield Static(
+                f"[dim]{self._root_path}[/]",
+                id="tree-header-right",
+            )
+        with Horizontal(id="tree-panels"):
+            with Vertical(id="tree-left"):
+                yield Static(" Tree", id="tree-left-title")
+                yield TextualTree(self._lint_tree.tree_label(), id="lint-tree")
+            with Vertical(id="tree-right"):
+                yield Static(" Content", id="tree-right-title")
+                yield RichLog(markup=True, wrap=True, id="content-view")
+        with Horizontal(id="tree-status"):
+            yield Static("", id="tree-status-left")
+            yield Static("[dim]q to quit[/]", id="tree-status-right")
+
+    def on_mount(self) -> None:
+        tree = self.query_one("#lint-tree", TextualTree)
+        tree.root.data = self._lint_tree
+        self._populate_tree(tree.root, self._lint_tree)
+        tree.root.expand()
+        content = self.query_one("#content-view", RichLog)
+        content.write("[dim]Select a node to view its content.[/]")
+
+    def _populate_tree(self, tree_node: Any, lint_node: Any) -> None:
+        for child in lint_node.children:
+            type_name = type(child).__name__
+            icon = _NODE_ICONS.get(type_name, "")
+            tokens = child.estimate_tokens()
+            token_str = f" [dim]({tokens:,} tokens)[/]" if tokens else ""
+            label = (
+                f"{icon} {_escape_markup(child.tree_label())}{token_str}"
+                if icon
+                else f"{_escape_markup(child.tree_label())}{token_str}"
+            )
+            branch = tree_node.add(label, data=child)
+            if child.children:
+                self._populate_tree(branch, child)
+
+    def on_tree_node_selected(self, event: TextualTree.NodeSelected) -> None:
+        node = event.node.data
+        if node is None:
+            return
+        content = self.query_one("#content-view", RichLog)
+        content.clear()
+
+        type_name = type(node).__name__
+        path_str = str(node.path)
+        try:
+            rel = node.path.relative_to(self._root_path)
+            path_str = str(rel)
+        except ValueError:
+            pass
+
+        try:
+            self.query_one("#tree-right-title", Static).update(f" {path_str}")
+        except Exception:
+            pass
+
+        from .rules.builtin.content_analysis import ContentBlock, ParsedFrontmatterBlock
+
+        tokens = node.estimate_tokens()
+        status = f"[bold]{type_name}[/]  {path_str}  [dim]{tokens:,} tokens[/]"
+        try:
+            self.query_one("#tree-status-left", Static).update(status)
+        except Exception:
+            pass
+
+        if isinstance(node, ParsedFrontmatterBlock):
+            fm = node.frontmatter
+            if fm:
+                content.write("[bold]Frontmatter:[/]")
+                for key, val in fm.items():
+                    val_str = str(val)
+                    if len(val_str) > 100:
+                        val_str = val_str[:97] + "..."
+                    content.write(f"  [cyan]{_escape_markup(key)}[/]: {_escape_markup(val_str)}")
+                content.write("")
+            body = node.read_body(strip_code_blocks=False)
+            if body:
+                content.write("[bold]Body:[/]")
+                for line in body.splitlines():
+                    content.write(_escape_markup(line))
+            else:
+                content.write("[dim]No body content.[/]")
+        elif isinstance(node, ContentBlock):
+            body = node.read_body(strip_code_blocks=False)
+            if body:
+                for line in body.splitlines():
+                    content.write(_escape_markup(line))
+            else:
+                content.write("[dim]No content.[/]")
+        else:
+            content.write(f"[bold]{_escape_markup(type_name)}[/]")
+            content.write(f"[dim]Path:[/] {_escape_markup(path_str)}")
+            content.write(f"[dim]Children:[/] {len(node.children)}")
+            content.write(f"[dim]Tokens:[/] {tokens:,}")
