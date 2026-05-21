@@ -654,6 +654,8 @@ class TreeApp(App):
         ("q", "quit", "Quit"),
         ("ctrl+c", "quit", "Quit"),
         ("slash", "search", "Search"),
+        ("n", "next_match", "Next match"),
+        ("N", "prev_match", "Prev match"),
         ("e", "expand_all", "Expand all"),
         ("c", "collapse_all", "Collapse all"),
     ]
@@ -664,6 +666,7 @@ class TreeApp(App):
         self._root_path = root_path
         self._search_matches: list[Any] = []
         self._search_idx = 0
+        self._search_query = ""
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="tree-header"):
@@ -681,7 +684,10 @@ class TreeApp(App):
                 yield Markdown("", id="content-view")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
-            yield Static("[dim]/ search  e expand  c collapse  q quit[/]", id="tree-status-right")
+            yield Static(
+                "[dim]/ search  n/N next/prev  e expand  c collapse  q quit[/]",
+                id="tree-status-right",
+            )
 
     def on_mount(self) -> None:
         tree = self.query_one("#lint-tree", TextualTree)
@@ -777,23 +783,13 @@ class TreeApp(App):
     def _on_search_result(self, query: str) -> None:
         if not query:
             return
+        self._search_query = query
         tree = self.query_one("#lint-tree", TextualTree)
-        matches: list[Any] = []
-        self._find_matches(tree.root, query.lower(), matches)
-        if matches:
-            match = matches[0]
-            node = match.parent
-            while node is not None:
-                node.expand()
-                node = node.parent
-            tree.select_node(match)
-            tree.scroll_to_node(match)
-            try:
-                self.query_one("#tree-status-left", Static).update(
-                    f"[bold]{len(matches)}[/] match(es) for '{_escape_markup(query)}'"
-                )
-            except Exception:
-                pass
+        self._search_matches = []
+        self._find_matches(tree.root, query.lower(), self._search_matches)
+        if self._search_matches:
+            self._search_idx = 0
+            self._go_to_match()
         else:
             try:
                 self.query_one("#tree-status-left", Static).update(
@@ -808,6 +804,38 @@ class TreeApp(App):
             results.append(tree_node)
         for child in tree_node.children:
             self._find_matches(child, query, results)
+
+    def _go_to_match(self) -> None:
+        if not self._search_matches:
+            return
+        idx = self._search_idx % len(self._search_matches)
+        match = self._search_matches[idx]
+        node = match.parent
+        while node is not None:
+            node.expand()
+            node = node.parent
+        tree = self.query_one("#lint-tree", TextualTree)
+        tree.select_node(match)
+        tree.scroll_to_node(match)
+        try:
+            self.query_one("#tree-status-left", Static).update(
+                f"[bold]{idx + 1}/{len(self._search_matches)}[/]"
+                f" for '{_escape_markup(self._search_query)}'  [dim]n/N next/prev[/]"
+            )
+        except Exception:
+            pass
+
+    def action_next_match(self) -> None:
+        if not self._search_matches:
+            return
+        self._search_idx += 1
+        self._go_to_match()
+
+    def action_prev_match(self) -> None:
+        if not self._search_matches:
+            return
+        self._search_idx -= 1
+        self._go_to_match()
 
     def action_expand_all(self) -> None:
         self.query_one("#lint-tree", TextualTree).root.expand_all()
