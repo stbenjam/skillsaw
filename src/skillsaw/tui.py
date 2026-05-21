@@ -635,7 +635,7 @@ class TreeApp(App):
                 yield TextualTree(self._lint_tree.tree_label(), id="lint-tree")
             with Vertical(id="tree-right"):
                 yield Static(" Content", id="tree-right-title")
-                yield RichLog(markup=True, wrap=True, id="content-view")
+                yield RichLog(markup=True, wrap=True, auto_scroll=False, id="content-view")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
             yield Input(placeholder="Search... (Enter to find, Escape to close)", id="search-bar")
@@ -666,8 +666,13 @@ class TreeApp(App):
             else:
                 tree_node.add_leaf(label, data=child)
 
+    def on_tree_node_highlighted(self, event: TextualTree.NodeHighlighted) -> None:
+        self._show_node(event.node.data)
+
     def on_tree_node_selected(self, event: TextualTree.NodeSelected) -> None:
-        node = event.node.data
+        self._show_node(event.node.data)
+
+    def _show_node(self, node: Any) -> None:
         if node is None:
             return
         content = self.query_one("#content-view", RichLog)
@@ -724,6 +729,7 @@ class TreeApp(App):
             content.write(f"[dim]Path:[/] {_escape_markup(path_str)}")
             content.write(f"[dim]Children:[/] {len(node.children)}")
             content.write(f"[dim]Tokens:[/] {tokens:,}")
+        content.scroll_home(animate=False)
 
     def action_search(self) -> None:
         search_bar = self.query_one("#search-bar", Input)
