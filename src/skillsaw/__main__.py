@@ -544,6 +544,25 @@ def _run_llm_fix_inline(args, linter, config):
     """Handle --fix --llm from the lint subcommand."""
     c = _ansi_colors()
     provider = _require_llm_provider(config)
+
+    print(
+        f"{c['dim']}Checking LLM connectivity ({config.llm.model})...{c['reset']}",
+        end="",
+        flush=True,
+    )
+    try:
+        provider.complete(
+            messages=[{"role": "user", "content": "Reply with the word OK."}],
+            tools=[],
+            model=config.llm.model,
+            max_tokens=16,
+        )
+        print(f" {c['green']}ok{c['reset']}")
+    except Exception as e:
+        print(f" {c['red']}failed{c['reset']}")
+        print(f"{c['red']}Error: LLM request failed: {e}{c['reset']}", file=sys.stderr)
+        sys.exit(1)
+
     dry_run = getattr(args, "dry_run", False)
 
     import time
@@ -701,6 +720,24 @@ def _run_fix(args):
     c = _ansi_colors()
     provider = _require_llm_provider(config)
 
+    print(
+        f"{c['dim']}Checking LLM connectivity ({config.llm.model})...{c['reset']}",
+        end="",
+        flush=True,
+    )
+    try:
+        provider.complete(
+            messages=[{"role": "user", "content": "Reply with the word OK."}],
+            tools=[],
+            model=config.llm.model,
+            max_tokens=16,
+        )
+        print(f" {c['green']}ok{c['reset']}")
+    except Exception as e:
+        print(f" {c['red']}failed{c['reset']}")
+        print(f"{c['red']}Error: LLM request failed: {e}{c['reset']}", file=sys.stderr)
+        sys.exit(1)
+
     is_tty = sys.stdout.isatty()
     term_size = shutil.get_terminal_size((80, 24))
     term_width = term_size.columns
@@ -812,18 +849,26 @@ def _run_fix(args):
     _progress_state = {"completed": 0, "total": 0}
     _active_blocks: dict[int, str] = {}
 
+    def _fmt_duration(seconds):
+        s = int(seconds)
+        if s < 60:
+            return f"{s}s"
+        m, s = divmod(s, 60)
+        return f"{m}m{s:02d}s" if s else f"{m}m"
+
     def _render_status_bar():
         elapsed = time.monotonic() - start_time
-        elapsed_str = f"{int(elapsed)}s"
+        elapsed_str = _fmt_duration(elapsed)
         done = _progress_state["completed"]
         total = _progress_state["total"]
         eta_str = ""
         if 0 < done < total:
             rate = elapsed / done
             remaining = rate * (total - done)
-            eta_str = f" ETA {int(remaining)}s"
+            eta_str = f" ETA {_fmt_duration(remaining)}"
         bar = _progress_bar(done, total) if total else ""
-        parts = [f" {bar} {done}/{total} blocks {elapsed_str}{eta_str}"]
+        pct = int(done / total * 100) if total else 0
+        parts = [f" {bar} {pct}% {elapsed_str}{eta_str} "]
         if _active_blocks:
             names = [Path(n).name for n in _active_blocks.values()]
             summary = ", ".join(names[:3])
