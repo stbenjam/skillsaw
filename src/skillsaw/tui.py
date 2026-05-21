@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import random
-import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -17,8 +16,6 @@ from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import ProgressBar, RichLog, Static
-
-_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 LOGO_BANNER = (
     "[bold rgb(255,80,0)]░█▀▀░█░█░▀█▀░█░░░█░░░█▀▀░█▀█░█░█[/]\n"
@@ -468,8 +465,16 @@ class FixApp(App):
                 dry_run=p.dry_run,
             )
             self._result = result
-        except (KeyboardInterrupt, Exception):
+        except KeyboardInterrupt:
             pass
+        except Exception as exc:
+            try:
+                self.call_from_thread(
+                    self.query_one("#event-log", RichLog).write,
+                    f"[red]Error: {_escape_markup(str(exc))}[/]",
+                )
+            except Exception:
+                pass
         if self.is_running:
             self.call_from_thread(self._show_summary)
 
@@ -491,22 +496,3 @@ class FixApp(App):
 
 def _escape_markup(text: str) -> str:
     return text.replace("[", "\\[")
-
-
-def _visible_len(s: str) -> int:
-    return len(_ANSI_RE.sub("", s))
-
-
-def _truncate_to_width(s: str, width: int) -> str:
-    vis = 0
-    i = 0
-    while i < len(s):
-        m = _ANSI_RE.match(s, i)
-        if m:
-            i = m.end()
-            continue
-        vis += 1
-        if vis > width:
-            return s[:i] + "\033[0m"
-        i += 1
-    return s

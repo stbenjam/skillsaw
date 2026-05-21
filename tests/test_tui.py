@@ -9,48 +9,7 @@ from skillsaw.tui import (
     FixParams,
     _escape_markup,
     _fmt_duration,
-    _truncate_to_width,
-    _visible_len,
 )
-
-
-class TestVisibleLen:
-    def test_plain_text(self):
-        assert _visible_len("hello") == 5
-
-    def test_empty(self):
-        assert _visible_len("") == 0
-
-    def test_with_ansi(self):
-        assert _visible_len("\033[91mhello\033[0m") == 5
-
-    def test_multiple_codes(self):
-        assert _visible_len("\033[1m\033[92mAB\033[0m") == 2
-
-    def test_no_text_only_codes(self):
-        assert _visible_len("\033[0m") == 0
-
-
-class TestTruncateToWidth:
-    def test_short_string(self):
-        assert _truncate_to_width("abc", 10) == "abc"
-
-    def test_exact_width(self):
-        assert _truncate_to_width("abcde", 5) == "abcde"
-
-    def test_truncates_plain(self):
-        result = _truncate_to_width("abcdef", 3)
-        assert _visible_len(result) == 3
-        assert result.endswith("\033[0m")
-
-    def test_preserves_ansi_before_cut(self):
-        s = "\033[91mhello world\033[0m"
-        result = _truncate_to_width(s, 5)
-        assert _visible_len(result) == 5
-        assert "hello" in result
-
-    def test_empty(self):
-        assert _truncate_to_width("", 5) == ""
 
 
 class TestFmtDuration:

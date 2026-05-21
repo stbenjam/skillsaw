@@ -726,9 +726,6 @@ def _run_fix(args):
     _check_llm_connectivity(provider, config.llm.model, c)
 
     is_tty = sys.stdout.isatty()
-    term_size = shutil.get_terminal_size((80, 24))
-    term_width = term_size.columns
-    term_rows = term_size.lines
 
     violations = linter.run()
     llm_rules = {r.rule_id: r for r in linter.rules if r.llm_fix_prompt is not None}

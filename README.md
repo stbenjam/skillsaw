@@ -735,7 +735,7 @@ skillsaw fix --llm -y                       # Auto-apply without confirmation
 2. Each file is sent to an LLM agent with 5 scoped tools: `read_file`, `write_file`, `replace_section`, `lint` (re-runs skillsaw), and `diff`
 3. The LLM iteratively edits the file and re-lints until violations are resolved
 4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
-5. Files are processed in parallel with a live progress bar showing ETA
+5. Files are processed in parallel with a split-panel TUI showing live diffs and progress
 
 The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
 
