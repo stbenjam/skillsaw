@@ -709,13 +709,19 @@ class TreeApp(App):
     ]
 
     def __init__(
-        self, lint_tree: Any, root_path: Path, *, context: Any = None, config: Any = None, **kwargs
+        self,
+        lint_tree: Any,
+        root_path: Path,
+        *,
+        repo_context: Any = None,
+        repo_config: Any = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self._lint_tree = lint_tree
         self._root_path = root_path
-        self._context = context
-        self._config = config
+        self._repo_context = repo_context
+        self._repo_config = repo_config
         self._filtered = False
         self._violations: list[Any] = []
         self._violation_map: dict[str, list[Any]] = {}
@@ -941,7 +947,7 @@ class TreeApp(App):
         tree.root.expand()
 
     def action_lint(self) -> None:
-        if not self._context or not self._config:
+        if not self._repo_context or not self._repo_config:
             return
         self._linting_screen = LintingScreen()
         self.push_screen(self._linting_screen)
@@ -951,7 +957,7 @@ class TreeApp(App):
     def _run_lint(self) -> None:
         from .linter import Linter
 
-        linter = Linter(self._context, self._config)
+        linter = Linter(self._repo_context, self._repo_config)
         violations = linter.run()
         self._violations = violations
         self._violation_map = {}
