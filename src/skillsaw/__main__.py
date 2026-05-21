@@ -339,7 +339,7 @@ def _run_tree(args):
     elif sys.stdout.isatty() and "NO_COLOR" not in os.environ:
         from .tui import TreeApp
 
-        TreeApp(tree, context.root_path).run()
+        TreeApp(tree, context.root_path, context=context, config=config).run()
     else:
         print(tree.print_tree(root_path=context.root_path))
     sys.exit(0)

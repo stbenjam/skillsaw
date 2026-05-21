@@ -582,6 +582,29 @@ Screen {
     scrollbar-size: 1 1;
 }
 
+#violations-title {
+    height: 1;
+    padding: 0 1;
+    background: rgb(60,40,40);
+    text-style: bold;
+    display: none;
+}
+
+#violations-title.visible {
+    display: block;
+}
+
+#violations-view {
+    height: auto;
+    max-height: 50%;
+    scrollbar-size: 1 1;
+    display: none;
+}
+
+#violations-view.visible {
+    display: block;
+}
+
 #tree-status {
     dock: bottom;
     height: 1;
@@ -600,6 +623,22 @@ Screen {
 }
 
 """
+
+LINTING_CSS = """\
+LintingScreen {
+    align: center middle;
+}
+
+#linting-box {
+    width: 40;
+    height: 5;
+    border: heavy rgb(255,140,0);
+    background: rgb(30,30,40);
+    padding: 1 2;
+    content-align: center middle;
+}
+"""
+
 
 SEARCH_CSS = """\
 SearchScreen {
@@ -625,6 +664,15 @@ SearchScreen {
     width: 100%;
 }
 """
+
+
+class LintingScreen(ModalScreen[None]):
+    CSS = LINTING_CSS
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="linting-box"):
+            yield Static("[bold rgb(255,200,0)]Linting...[/]")
+            yield ProgressBar(id="linting-progress", show_percentage=True, show_eta=False)
 
 
 class SearchScreen(ModalScreen[str]):
@@ -655,15 +703,22 @@ class TreeApp(App):
         ("ctrl+c", "quit", "Quit"),
         ("slash", "search", "Search"),
         ("escape", "clear_search", "Clear search"),
+        ("l", "lint", "Lint"),
         ("e", "expand_all", "Expand all"),
         ("c", "collapse_all", "Collapse all"),
     ]
 
-    def __init__(self, lint_tree: Any, root_path: Path, **kwargs):
+    def __init__(
+        self, lint_tree: Any, root_path: Path, *, context: Any = None, config: Any = None, **kwargs
+    ):
         super().__init__(**kwargs)
         self._lint_tree = lint_tree
         self._root_path = root_path
+        self._context = context
+        self._config = config
         self._filtered = False
+        self._violations: list[Any] = []
+        self._violation_map: dict[str, list[Any]] = {}
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="tree-header"):
@@ -679,10 +734,12 @@ class TreeApp(App):
             with Vertical(id="tree-right"):
                 yield Static(" Content", id="tree-right-title")
                 yield Markdown("", id="content-view")
+                yield Static(" Violations", id="violations-title")
+                yield RichLog(markup=True, wrap=True, auto_scroll=False, id="violations-view")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
             yield Static(
-                "[dim]/ search  Esc clear  e expand  c collapse  q quit[/]",
+                "[dim]/ search  l lint  e expand  c collapse  q quit[/]",
                 id="tree-status-right",
             )
 
@@ -694,17 +751,18 @@ class TreeApp(App):
         content = self.query_one("#content-view", Markdown)
         content.update("*Select a node to view its content.*")
 
+    def _make_label(self, child: Any) -> str:
+        type_name = type(child).__name__
+        icon = _NODE_ICONS.get(type_name, "")
+        tokens = child.estimate_tokens()
+        token_str = f" [dim]({tokens:,} tokens)[/]" if tokens else ""
+        badge = self._violation_badge(child)
+        prefix = f"{icon} " if icon else ""
+        return f"{prefix}{_escape_markup(child.tree_label())}{token_str}{badge}"
+
     def _populate_tree(self, tree_node: Any, lint_node: Any) -> None:
         for child in lint_node.children:
-            type_name = type(child).__name__
-            icon = _NODE_ICONS.get(type_name, "")
-            tokens = child.estimate_tokens()
-            token_str = f" [dim]({tokens:,} tokens)[/]" if tokens else ""
-            label = (
-                f"{icon} {_escape_markup(child.tree_label())}{token_str}"
-                if icon
-                else f"{_escape_markup(child.tree_label())}{token_str}"
-            )
+            label = self._make_label(child)
             if child.children:
                 branch = tree_node.add(label, data=child)
                 self._populate_tree(branch, child)
@@ -774,6 +832,31 @@ class TreeApp(App):
                 f"- **Tokens:** {tokens:,}\n"
             )
 
+        self._show_violations_for(node)
+
+    def _show_violations_for(self, node: Any) -> None:
+        vlog = self.query_one("#violations-view", RichLog)
+        vlog.clear()
+        if not self._violations:
+            return
+        key = str(node.path.resolve())
+        node_violations = self._violation_map.get(key, [])
+        if not node_violations:
+            title = self.query_one("#violations-title", Static)
+            title.update(" Violations [dim](none)[/]")
+            return
+        title = self.query_one("#violations-title", Static)
+        title.update(f" Violations [bold]({len(node_violations)})[/]")
+        for v in node_violations:
+            sev_color = "red" if v.severity == "error" else "yellow"
+            line_str = f":{v.line}" if v.line else ""
+            vlog.write(
+                f"[{sev_color}]{v.severity.upper()}[/] "
+                f"[dim]({_escape_markup(v.rule_id)})[/] "
+                f"[bold]{_escape_markup(str(v.file_path.name))}{line_str}[/]: "
+                f"{_escape_markup(v.message)}"
+            )
+
     def action_search(self) -> None:
         self.push_screen(SearchScreen(), self._on_search_result)
 
@@ -827,15 +910,7 @@ class TreeApp(App):
         for child in lint_node.children:
             if id(child) not in matching:
                 continue
-            type_name = type(child).__name__
-            icon = _NODE_ICONS.get(type_name, "")
-            tokens = child.estimate_tokens()
-            token_str = f" [dim]({tokens:,} tokens)[/]" if tokens else ""
-            label = (
-                f"{icon} {_escape_markup(child.tree_label())}{token_str}"
-                if icon
-                else f"{_escape_markup(child.tree_label())}{token_str}"
-            )
+            label = self._make_label(child)
             children_in_match = [c for c in child.children if id(c) in matching]
             if children_in_match:
                 branch = tree_node.add(label, data=child)
@@ -864,3 +939,61 @@ class TreeApp(App):
         tree = self.query_one("#lint-tree", TextualTree)
         tree.root.collapse_all()
         tree.root.expand()
+
+    def action_lint(self) -> None:
+        if not self._context or not self._config:
+            return
+        self._linting_screen = LintingScreen()
+        self.push_screen(self._linting_screen)
+        self._run_lint()
+
+    @work(thread=True, exit_on_error=False)
+    def _run_lint(self) -> None:
+        from .linter import Linter
+
+        linter = Linter(self._context, self._config)
+        violations = linter.run()
+        self._violations = violations
+        self._violation_map = {}
+        for v in violations:
+            if v.file_path:
+                key = str(v.file_path.resolve())
+                self._violation_map.setdefault(key, []).append(v)
+        if self.is_running:
+            self.call_from_thread(self._lint_complete)
+
+    def _lint_complete(self) -> None:
+        if hasattr(self, "_linting_screen"):
+            self._linting_screen.dismiss()
+        tree_widget = self.query_one("#lint-tree", TextualTree)
+        tree_widget.clear()
+        tree_widget.root.data = self._lint_tree
+        self._populate_tree(tree_widget.root, self._lint_tree)
+        tree_widget.root.expand_all()
+        self.query_one("#violations-title", Static).add_class("visible")
+        self.query_one("#violations-view", RichLog).add_class("visible")
+        errors = sum(1 for v in self._violations if v.severity == "error")
+        warnings = sum(1 for v in self._violations if v.severity == "warning")
+        try:
+            self.query_one("#tree-status-left", Static).update(
+                f"[bold]{len(self._violations)}[/] violation(s)  "
+                f"[red]{errors} errors[/]  [yellow]{warnings} warnings[/]"
+            )
+        except Exception:
+            pass
+
+    def _node_violation_count(self, lint_node: Any) -> int:
+        count = 0
+        key = str(lint_node.path.resolve())
+        count += len(self._violation_map.get(key, []))
+        for child in lint_node.children:
+            count += self._node_violation_count(child)
+        return count
+
+    def _violation_badge(self, lint_node: Any) -> str:
+        if not self._violations:
+            return ""
+        count = self._node_violation_count(lint_node)
+        if count == 0:
+            return ""
+        return f" [red]({count})[/]"
