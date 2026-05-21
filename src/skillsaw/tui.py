@@ -546,7 +546,7 @@ Screen {
 }
 
 #tree-left {
-    width: 3fr;
+    width: 1fr;
     min-width: 40;
 }
 
@@ -559,7 +559,7 @@ Screen {
 }
 
 #tree-right {
-    width: 2fr;
+    width: 1fr;
     border-left: heavy rgb(80,80,80);
 }
 
