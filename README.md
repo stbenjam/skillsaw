@@ -16,10 +16,6 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 </td>
 </tr></table>
 
-<p align="center">
-  <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="600">
-</p>
-
 > Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
 
 ## Features
@@ -33,6 +29,10 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
 - 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
 - ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
+
+<p align="center">
+  <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="600">
+</p>
 
 ## Table of Contents
 
