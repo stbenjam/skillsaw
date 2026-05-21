@@ -752,6 +752,36 @@ def _run_fix(args):
         print(f"{c['green']}No fixable violations found.{c['reset']}")
         sys.exit(0)
 
+    import subprocess
+
+    def _is_version_controlled(path: Path) -> bool:
+        checks = [
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            ["hg", "root"],
+            ["svn", "info"],
+            ["fossil", "status"],
+        ]
+        for cmd in checks:
+            try:
+                subprocess.run(cmd, cwd=path, capture_output=True, check=True)
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        return False
+
+    if not _is_version_controlled(args.path):
+        print(
+            f"{c['yellow']}Warning: not a git repository."
+            f" LLM fixes modify files in place and cannot be easily reverted.{c['reset']}"
+        )
+        if is_tty:
+            try:
+                answer = input(f"{c['bold']}Continue anyway? [y/N] {c['reset']}").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if answer not in ("y", "yes"):
+                sys.exit(0)
+
     max_workers = args.workers or config.llm.max_workers
     dry_run = getattr(args, "dry_run", False)
 
