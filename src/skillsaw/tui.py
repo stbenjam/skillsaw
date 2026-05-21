@@ -592,13 +592,13 @@ Screen {
 }
 
 #search-bar {
-    dock: bottom;
-    height: 1;
+    width: 0;
     display: none;
 }
 
 #search-bar.visible {
     display: block;
+    width: 1fr;
 }
 """
 
@@ -611,6 +611,8 @@ class TreeApp(App):
         ("q", "quit", "Quit"),
         ("ctrl+c", "quit", "Quit"),
         ("slash", "search", "Search"),
+        ("e", "expand_all", "Expand all"),
+        ("c", "collapse_all", "Collapse all"),
     ]
 
     def __init__(self, lint_tree: Any, root_path: Path, **kwargs):
@@ -634,16 +636,16 @@ class TreeApp(App):
             with Vertical(id="tree-right"):
                 yield Static(" Content", id="tree-right-title")
                 yield RichLog(markup=True, wrap=True, id="content-view")
-        yield Input(placeholder="Search... (Enter to find, Escape to close)", id="search-bar")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
-            yield Static("[dim]/ search  q quit[/]", id="tree-status-right")
+            yield Input(placeholder="Search... (Enter to find, Escape to close)", id="search-bar")
+            yield Static("[dim]/ search  e expand  c collapse  q quit[/]", id="tree-status-right")
 
     def on_mount(self) -> None:
         tree = self.query_one("#lint-tree", TextualTree)
         tree.root.data = self._lint_tree
         self._populate_tree(tree.root, self._lint_tree)
-        tree.root.expand()
+        tree.root.expand_all()
         content = self.query_one("#content-view", RichLog)
         content.write("[dim]Select a node to view its content.[/]")
 
@@ -658,9 +660,11 @@ class TreeApp(App):
                 if icon
                 else f"{_escape_markup(child.tree_label())}{token_str}"
             )
-            branch = tree_node.add(label, data=child)
             if child.children:
+                branch = tree_node.add(label, data=child)
                 self._populate_tree(branch, child)
+            else:
+                tree_node.add_leaf(label, data=child)
 
     def on_tree_node_selected(self, event: TextualTree.NodeSelected) -> None:
         node = event.node.data
@@ -775,6 +779,14 @@ class TreeApp(App):
         search_bar = self.query_one("#search-bar", Input)
         search_bar.remove_class("visible")
         self.query_one("#lint-tree", TextualTree).focus()
+
+    def action_expand_all(self) -> None:
+        self.query_one("#lint-tree", TextualTree).root.expand_all()
+
+    def action_collapse_all(self) -> None:
+        tree = self.query_one("#lint-tree", TextualTree)
+        tree.root.collapse_all()
+        tree.root.expand()
 
     def on_key(self, event: Any) -> None:
         search_bar = self.query_one("#search-bar", Input)
