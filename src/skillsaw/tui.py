@@ -591,16 +591,51 @@ Screen {
     color: rgb(120,120,120);
 }
 
-#search-bar {
-    width: 0;
-    display: none;
+"""
+
+SEARCH_CSS = """\
+SearchScreen {
+    align: center middle;
 }
 
-#search-bar.visible {
-    display: block;
-    width: 1fr;
+#search-box {
+    width: 50;
+    height: auto;
+    border: heavy rgb(255,140,0);
+    background: rgb(30,30,40);
+    padding: 1 2;
+}
+
+#search-title {
+    text-align: center;
+    text-style: bold;
+    color: rgb(255,200,0);
+    margin-bottom: 1;
+}
+
+#search-input {
+    width: 100%;
 }
 """
+
+
+class SearchScreen(ModalScreen[str]):
+    CSS = SEARCH_CSS
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="search-box"):
+            yield Static("Search", id="search-title")
+            yield Input(placeholder="Type to search...", id="search-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#search-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
 
 
 class TreeApp(App):
@@ -638,7 +673,6 @@ class TreeApp(App):
                 yield RichLog(markup=True, wrap=True, auto_scroll=False, id="content-view")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
-            yield Input(placeholder="Search... (Enter to find, Escape to close)", id="search-bar")
             yield Static("[dim]/ search  e expand  c collapse  q quit[/]", id="tree-status-right")
 
     def on_mount(self) -> None:
@@ -710,7 +744,7 @@ class TreeApp(App):
                         val_str = val_str[:97] + "..."
                     content.write(f"  [cyan]{_escape_markup(key)}[/]: {_escape_markup(val_str)}")
                 content.write("")
-            body = node.read_body(strip_code_blocks=False)
+            body = node.body_text
             if body:
                 content.write("[bold]Body:[/]")
                 for line in body.splitlines():
@@ -732,59 +766,42 @@ class TreeApp(App):
         content.scroll_home(animate=False)
 
     def action_search(self) -> None:
-        search_bar = self.query_one("#search-bar", Input)
-        search_bar.add_class("visible")
-        search_bar.value = ""
-        search_bar.focus()
+        self.push_screen(SearchScreen(), self._on_search_result)
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        query = event.value.strip().lower()
+    def _on_search_result(self, query: str) -> None:
         if not query:
-            self._close_search()
             return
         tree = self.query_one("#lint-tree", TextualTree)
-        self._search_matches = []
-        self._find_matches(tree.root, query)
-        if self._search_matches:
-            self._search_idx = 0
-            self._go_to_match()
+        matches: list[Any] = []
+        self._find_matches(tree.root, query.lower(), matches)
+        if matches:
+            match = matches[0]
+            node = match.parent
+            while node is not None:
+                node.expand()
+                node = node.parent
+            tree.select_node(match)
+            tree.scroll_to_node(match)
             try:
                 self.query_one("#tree-status-left", Static).update(
-                    f"[bold]{len(self._search_matches)}[/] match(es) — Enter for next"
+                    f"[bold]{len(matches)}[/] match(es) for '{_escape_markup(query)}'"
                 )
             except Exception:
                 pass
         else:
             try:
-                self.query_one("#tree-status-left", Static).update("[yellow]No matches[/]")
+                self.query_one("#tree-status-left", Static).update(
+                    f"[yellow]No matches for '{_escape_markup(query)}'[/]"
+                )
             except Exception:
                 pass
 
-    def _find_matches(self, tree_node: Any, query: str) -> None:
+    def _find_matches(self, tree_node: Any, query: str, results: list) -> None:
         label = str(tree_node.label).lower()
         if query in label:
-            self._search_matches.append(tree_node)
+            results.append(tree_node)
         for child in tree_node.children:
-            self._find_matches(child, query)
-
-    def _go_to_match(self) -> None:
-        if not self._search_matches:
-            return
-        match = self._search_matches[self._search_idx % len(self._search_matches)]
-        # Expand all ancestors
-        node = match.parent
-        while node is not None:
-            node.expand()
-            node = node.parent
-        tree = self.query_one("#lint-tree", TextualTree)
-        tree.select_node(match)
-        tree.scroll_to_node(match)
-        self._search_idx += 1
-
-    def _close_search(self) -> None:
-        search_bar = self.query_one("#search-bar", Input)
-        search_bar.remove_class("visible")
-        self.query_one("#lint-tree", TextualTree).focus()
+            self._find_matches(child, query, results)
 
     def action_expand_all(self) -> None:
         self.query_one("#lint-tree", TextualTree).root.expand_all()
@@ -793,17 +810,3 @@ class TreeApp(App):
         tree = self.query_one("#lint-tree", TextualTree)
         tree.root.collapse_all()
         tree.root.expand()
-
-    def on_key(self, event: Any) -> None:
-        search_bar = self.query_one("#search-bar", Input)
-        if search_bar.has_class("visible") and event.key == "escape":
-            self._close_search()
-            event.prevent_default()
-        elif (
-            search_bar.has_class("visible")
-            and event.key == "enter"
-            and self._search_matches
-            and search_bar.value.strip()
-        ):
-            self._go_to_match()
-            event.prevent_default()
