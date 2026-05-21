@@ -29,7 +29,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - ⚡ **Version-Gated** — New rules gated behind config versions
 
 <p align="center">
-  <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="600">
+  <img src="images/llm-fix-demo.gif" alt="skillsaw fix --llm demo" width="800">
 </p>
 
 ## Table of Contents
