@@ -15,7 +15,14 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.timer import Timer
-from textual.widgets import Input, ProgressBar, RichLog, Static, Tree as TextualTree
+from textual.widgets import (
+    Input,
+    Markdown,
+    ProgressBar,
+    RichLog,
+    Static,
+    Tree as TextualTree,
+)
 
 LOGO_BANNER = (
     "[bold rgb(255,80,0)]░█▀▀░█░█░▀█▀░█░░░█░░░█▀▀░█▀█░█░█[/]\n"
@@ -670,7 +677,7 @@ class TreeApp(App):
                 yield TextualTree(self._lint_tree.tree_label(), id="lint-tree")
             with Vertical(id="tree-right"):
                 yield Static(" Content", id="tree-right-title")
-                yield RichLog(markup=True, wrap=True, auto_scroll=False, id="content-view")
+                yield Markdown("", id="content-view")
         with Horizontal(id="tree-status"):
             yield Static("", id="tree-status-left")
             yield Static("[dim]/ search  e expand  c collapse  q quit[/]", id="tree-status-right")
@@ -680,8 +687,8 @@ class TreeApp(App):
         tree.root.data = self._lint_tree
         self._populate_tree(tree.root, self._lint_tree)
         tree.root.expand_all()
-        content = self.query_one("#content-view", RichLog)
-        content.write("[dim]Select a node to view its content.[/]")
+        content = self.query_one("#content-view", Markdown)
+        content.update("*Select a node to view its content.*")
 
     def _populate_tree(self, tree_node: Any, lint_node: Any) -> None:
         for child in lint_node.children:
@@ -709,8 +716,7 @@ class TreeApp(App):
     def _show_node(self, node: Any) -> None:
         if node is None:
             return
-        content = self.query_one("#content-view", RichLog)
-        content.clear()
+        content = self.query_one("#content-view", Markdown)
 
         type_name = type(node).__name__
         path_str = str(node.path)
@@ -735,35 +741,28 @@ class TreeApp(App):
             pass
 
         if isinstance(node, ParsedFrontmatterBlock):
+            parts = []
             fm = node.frontmatter
             if fm:
-                content.write("[bold]Frontmatter:[/]")
-                for key, val in fm.items():
-                    val_str = str(val)
-                    if len(val_str) > 100:
-                        val_str = val_str[:97] + "..."
-                    content.write(f"  [cyan]{_escape_markup(key)}[/]: {_escape_markup(val_str)}")
-                content.write("")
+                fm_lines = [f"| {k} | {v} |" for k, v in fm.items()]
+                parts.append("| Field | Value |")
+                parts.append("|---|---|")
+                parts.extend(fm_lines)
+                parts.append("")
             body = node.body_text
             if body:
-                content.write("[bold]Body:[/]")
-                for line in body.splitlines():
-                    content.write(_escape_markup(line))
-            else:
-                content.write("[dim]No body content.[/]")
+                parts.append(body)
+            content.update("\n".join(parts) if parts else "*No content.*")
         elif isinstance(node, ContentBlock):
             body = node.read_body(strip_code_blocks=False)
-            if body:
-                for line in body.splitlines():
-                    content.write(_escape_markup(line))
-            else:
-                content.write("[dim]No content.[/]")
+            content.update(body if body else "*No content.*")
         else:
-            content.write(f"[bold]{_escape_markup(type_name)}[/]")
-            content.write(f"[dim]Path:[/] {_escape_markup(path_str)}")
-            content.write(f"[dim]Children:[/] {len(node.children)}")
-            content.write(f"[dim]Tokens:[/] {tokens:,}")
-        content.scroll_home(animate=False)
+            content.update(
+                f"**{type_name}**\n\n"
+                f"- **Path:** {path_str}\n"
+                f"- **Children:** {len(node.children)}\n"
+                f"- **Tokens:** {tokens:,}\n"
+            )
 
     def action_search(self) -> None:
         self.push_screen(SearchScreen(), self._on_search_result)
