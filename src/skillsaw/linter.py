@@ -1015,7 +1015,8 @@ class Linter:
                     result = future.result()
                 except Exception as e:
                     completed += 1
-                    logger.error("Error processing unit: %s", e)
+                    if "shutdown" not in str(e).lower():
+                        logger.error("Error processing unit: %s", e)
                     _emit("progress", completed=completed, file_count=total_units)
                     continue
 

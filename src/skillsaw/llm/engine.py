@@ -109,8 +109,11 @@ class LLMEngine:
                     model=self._model,
                     max_tokens=4096,
                 )
+            except KeyboardInterrupt:
+                raise
             except Exception as e:
-                print(f"LLM API error: {e}", file=sys.stderr)
+                if "shutdown" not in str(e).lower():
+                    print(f"LLM API error: {e}", file=sys.stderr)
                 return LLMResult(
                     text=None,
                     usage=self._total_usage,
