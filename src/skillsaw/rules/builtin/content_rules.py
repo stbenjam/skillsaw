@@ -159,7 +159,7 @@ class ContentCriticalPositionRule(Rule):
         return "Detect critical instructions in the middle of files where LLM attention is lowest"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.INFO
 
     @property
     def llm_fix_prompt(self):
@@ -343,7 +343,7 @@ class ContentNegativeOnlyRule(Rule):
         return "Detect prohibitions without a positive alternative (agent has no path forward)"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.INFO
 
     @property
     def llm_fix_prompt(self):
