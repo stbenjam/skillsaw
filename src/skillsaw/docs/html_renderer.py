@@ -74,7 +74,13 @@ nav.navbar {
     background-clip: text; margin: 0;
 }
 .subtitle { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
+.navbar-home { text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 0.125rem; cursor: pointer; }
+.navbar-home:hover { text-decoration: none; }
+.navbar-home:hover h1 { opacity: 0.85; }
 .navbar-stats { display: flex; gap: 1rem; align-items: center; }
+.stat-link { text-decoration: none; color: inherit; cursor: pointer; }
+.stat-link:hover { text-decoration: none; }
+.stat-link:hover .stat-value { color: var(--secondary); }
 .stat {
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.375rem 0.75rem; background: var(--bg-code);
@@ -539,10 +545,10 @@ def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) 
   <nav class="navbar">
     <div class="navbar-content">
       <div class="navbar-brand">
-        <div class="navbar-title">
+        <a class="navbar-home" onclick="goHome()">
           <h1>{_esc(title)}</h1>
           <p class="subtitle">{_esc(subtitle)}</p>
-        </div>
+        </a>
         <div class="navbar-stats" id="navbar-stats"></div>
       </div>
     </div>
@@ -591,11 +597,11 @@ def _get_js() -> str:
 (function() {
   var allPlugins = DATA.plugins;
   var standaloneSkills = DATA.standalone_skills || [];
+  var activeCategory = null;
 
   function init() {
     updateStats();
-    renderDefault();
-    handleHashChange();
+    applyHashState();
     document.getElementById('search').addEventListener('input', onSearchInput);
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeModal();
@@ -604,26 +610,94 @@ def _get_js() -> str:
         document.getElementById('search').focus();
       }
     });
+    window.addEventListener('popstate', function() { applyHashState(); });
   }
 
+  // ---- Navigation / URL state ----
+  window.goHome = function() {
+    history.pushState(null, '', window.location.pathname + window.location.search);
+    applyHashState();
+  };
+
+  window.navigateTo = function(hash) {
+    history.pushState(null, '', hash ? '#' + hash : window.location.pathname + window.location.search);
+    applyHashState();
+  };
+
+  function applyHashState() {
+    var hash = decodeURIComponent(window.location.hash.slice(1));
+    var input = document.getElementById('search');
+    var nr = document.getElementById('no-results');
+    document.getElementById('modal').classList.remove('show');
+
+    if (!hash) {
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderDefault();
+      nr.classList.remove('show');
+      return;
+    }
+
+    if (hash.indexOf('category=') === 0) {
+      var cat = hash.slice(9);
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderDefault();
+      nr.classList.remove('show');
+      applyCategoryUI(cat);
+      return;
+    }
+
+    if (hash.indexOf('q=') === 0) {
+      var q = hash.slice(2);
+      input.value = q;
+      document.getElementById('search-clear').style.display = q ? 'block' : 'none';
+      activeCategory = null;
+      doSearch(q, true);
+      return;
+    }
+
+    if (hash.indexOf('type=') === 0) {
+      var type = hash.slice(5);
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderTypeView(type);
+      return;
+    }
+
+    if (IS_MARKETPLACE) {
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderDefault();
+      nr.classList.remove('show');
+      var p = allPlugins.find(function(x) { return x.name === hash; });
+      if (p) openPluginModal(hash);
+    }
+  }
+
+  // ---- Stats ----
   function updateStats() {
     var stats = document.getElementById('navbar-stats');
     var items = [];
-    if (IS_MARKETPLACE) items.push({label: 'Plugins', value: allPlugins.length});
+    if (IS_MARKETPLACE) items.push({label: 'Plugins', value: allPlugins.length, type: 'plugins'});
     var tc = allPlugins.reduce(function(s,p){return s+p.commands.length;},0);
     var ts = allPlugins.reduce(function(s,p){return s+p.skills.length;},0) + standaloneSkills.length;
     var ta = allPlugins.reduce(function(s,p){return s+p.agents.length;},0);
     var th = allPlugins.reduce(function(s,p){return s+p.hooks.length;},0);
     var tm = allPlugins.reduce(function(s,p){return s+p.mcp_servers.length;},0);
     var tr = allPlugins.reduce(function(s,p){return s+p.rules.length;},0);
-    if (tc > 0) items.push({label: 'Commands', value: tc});
-    if (ts > 0) items.push({label: 'Skills', value: ts});
-    if (ta > 0) items.push({label: 'Agents', value: ta});
-    if (th > 0) items.push({label: 'Hooks', value: th});
-    if (tm > 0) items.push({label: 'MCP Servers', value: tm});
-    if (tr > 0) items.push({label: 'Rules', value: tr});
+    if (tc > 0) items.push({label: 'Commands', value: tc, type: 'commands'});
+    if (ts > 0) items.push({label: 'Skills', value: ts, type: 'skills'});
+    if (ta > 0) items.push({label: 'Agents', value: ta, type: 'agents'});
+    if (th > 0) items.push({label: 'Hooks', value: th, type: 'hooks'});
+    if (tm > 0) items.push({label: 'MCP Servers', value: tm, type: 'mcp_servers'});
+    if (tr > 0) items.push({label: 'Rules', value: tr, type: 'rules'});
     stats.innerHTML = items.map(function(i) {
-      return '<div class="stat"><div class="stat-value">'+i.value+'</div><div class="stat-label">'+i.label+'</div></div>';
+      return '<a href="#type='+i.type+'" class="stat stat-link" onclick="event.preventDefault();navigateTo(\\'type='+i.type+'\\')"><div class="stat-value">'+i.value+'</div><div class="stat-label">'+i.label+'</div></a>';
     }).join('');
   }
 
@@ -635,6 +709,51 @@ def _get_js() -> str:
     }
   }
 
+  // ---- Type view: show all items of a given type ----
+  function renderTypeView(type) {
+    var el = document.getElementById('content');
+    var nr = document.getElementById('no-results');
+    var html = '';
+    var typeLabels = {plugins:'Plugins',commands:'Commands',skills:'Skills',agents:'Agents',hooks:'Hooks',mcp_servers:'MCP Servers',rules:'Rules'};
+    var label = typeLabels[type] || type;
+
+    if (type === 'plugins' && IS_MARKETPLACE) {
+      html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
+      allPlugins.forEach(function(p) {
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
+        html += '<div class="search-result-content"><div class="search-result-title">'+esc(pName(p))+'</div>';
+        html += '<div class="search-result-subtitle">'+esc(p.description)+'</div></div></div>';
+      });
+    } else {
+      var items = [];
+      allPlugins.forEach(function(p) {
+        if (type === 'commands') p.commands.forEach(function(c) { items.push({plugin:p.name, name:c.full_name||c.name, desc:c.description, icon:'cmd', iconChar:'$'}); });
+        if (type === 'skills') p.skills.forEach(function(s) { items.push({plugin:p.name, name:s.name, desc:s.description, icon:'skill', iconChar:'S'}); });
+        if (type === 'agents') p.agents.forEach(function(a) { items.push({plugin:p.name, name:a.name, desc:a.description, icon:'agent', iconChar:'A'}); });
+        if (type === 'hooks') p.hooks.forEach(function(h) { items.push({plugin:p.name, name:h.event_type, desc:'Matcher: '+h.matcher, icon:'hook', iconChar:'H'}); });
+        if (type === 'mcp_servers') p.mcp_servers.forEach(function(m) { items.push({plugin:p.name, name:m.name, desc:m.type+' — '+m.endpoint, icon:'mcp', iconChar:'M'}); });
+        if (type === 'rules') p.rules.forEach(function(r) { items.push({plugin:p.name, name:r.name, desc:r.description, icon:'rule', iconChar:'R'}); });
+      });
+      if (type === 'skills') standaloneSkills.forEach(function(s) { items.push({plugin:'', name:s.name, desc:s.description, icon:'skill', iconChar:'S'}); });
+      if (items.length) {
+        html += '<div class="search-results-heading">'+label+' ('+items.length+')</div>';
+        items.forEach(function(r) {
+          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+          html += '<div class="search-result-item"'+onclick+'>';
+          html += '<div class="search-result-icon '+r.icon+'">'+r.iconChar+'</div>';
+          html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
+          html += '<div class="search-result-subtitle">'+esc(r.desc)+'</div></div>';
+          if (r.plugin) html += '<span class="search-result-plugin">'+esc(r.plugin)+'</span>';
+          html += '</div>';
+        });
+      }
+    }
+
+    if (html) { el.innerHTML = html; nr.classList.remove('show'); }
+    else { el.innerHTML = ''; nr.classList.add('show'); }
+  }
+
   // ---- Marketplace: plugin card grid ----
   function pName(p) { return p.display_name || p.name; }
 
@@ -644,14 +763,14 @@ def _get_js() -> str:
     if (plugins.length === 0) { el.innerHTML = ''; nr.classList.add('show'); return; }
     nr.classList.remove('show');
     var cats = collectCategories();
-    var filterHtml = cats.length > 1 ? renderCategoryFilter(cats) : '';
+    var filterHtml = cats.length >= 1 ? renderCategoryFilter(cats) : '';
     el.innerHTML = filterHtml + '<div class="plugins-grid" id="plugins-grid">' + plugins.map(function(p) {
       var counts = buildCountBadges(p);
       var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-      var cat = p.category ? '<span class="plugin-category">'+esc(p.category)+'</span>' : '';
+      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
       var allTags = (p.tags||[]).concat(p.keywords||[]);
-      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();filterByTag(\\''+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
-      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">' +
+      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">' +
         '<div class="plugin-header"><div><div class="plugin-name">'+esc(pName(p))+'</div>'+ver+'</div>'+cat+'</div>' +
         '<div class="plugin-description">'+(p.description_html || esc(p.description) || '<em>No description</em>')+'</div>' +
         tagsHtml +
@@ -666,18 +785,18 @@ def _get_js() -> str:
   }
 
   function renderCategoryFilter(cats) {
-    return '<div class="category-filter" id="category-filter">' +
-      '<button class="category-btn active" onclick="filterByCategory(null)">All</button>' +
-      cats.map(function(c){return '<button class="category-btn" onclick="filterByCategory(\\''+escAttr(c)+'\\')">'+esc(c)+'</button>';}).join('') +
-      '</div>';
+    var btns = '<button class="category-btn'+(activeCategory?'':' active')+'" onclick="navigateTo(\\'\\')">All</button>';
+    cats.forEach(function(c) {
+      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escAttr(c)+'\\')">'+esc(c)+'</a>';
+    });
+    return '<div class="category-filter" id="category-filter">' + btns + '</div>';
   }
 
-  var activeCategory = null;
-  window.filterByCategory = function(cat) {
+  function applyCategoryUI(cat) {
     activeCategory = cat;
     var btns = document.querySelectorAll('.category-btn');
     btns.forEach(function(b) { b.classList.remove('active'); });
-    if (!cat) { btns[0].classList.add('active'); }
+    if (!cat) { if (btns[0]) btns[0].classList.add('active'); }
     else {
       btns.forEach(function(b) { if (b.textContent === cat) b.classList.add('active'); });
     }
@@ -685,12 +804,14 @@ def _get_js() -> str:
     cards.forEach(function(c) {
       c.style.display = (!cat || c.getAttribute('data-category') === cat) ? '' : 'none';
     });
+  }
+
+  window.filterByCategory = function(cat) {
+    navigateTo(cat ? 'category=' + encodeURIComponent(cat) : '');
   };
 
   window.filterByTag = function(tag) {
-    var input = document.getElementById('search');
-    input.value = tag;
-    input.dispatchEvent(new Event('input'));
+    navigateTo('q=' + encodeURIComponent(tag));
   };
 
   function buildCountBadges(p) {
@@ -811,16 +932,13 @@ def _get_js() -> str:
   }
 
   window.clearSearch = function() {
-    var input = document.getElementById('search');
-    input.value = '';
-    document.getElementById('search-clear').style.display = 'none';
-    renderDefault();
-    document.getElementById('no-results').classList.remove('show');
+    goHome();
   };
 
-  function doSearch(query) {
+  function doSearch(query, skipHash) {
     var q = query.toLowerCase().trim();
-    if (!q) { renderDefault(); document.getElementById('no-results').classList.remove('show'); return; }
+    if (!q) { renderDefault(); document.getElementById('no-results').classList.remove('show'); if (!skipHash) history.replaceState(null,'',window.location.pathname+window.location.search); return; }
+    if (!skipHash) history.replaceState(null, '', '#q=' + encodeURIComponent(q));
 
     var results = { plugins: [], commands: [], skills: [], agents: [], hooks: [], rules: [] };
 
@@ -880,7 +998,7 @@ def _get_js() -> str:
     if (results.plugins.length && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">Plugins (' + results.plugins.length + ')</div>';
       results.plugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
         html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(pName(p),q)+'</div>';
         html += '<div class="search-result-subtitle">'+hi(p.description,q)+'</div></div></div>';
@@ -890,7 +1008,7 @@ def _get_js() -> str:
     if (results.commands.length) {
       html += '<div class="search-results-heading">Commands (' + results.commands.length + ')</div>';
       results.commands.forEach(function(r) {
-        var onclick = IS_MARKETPLACE ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon cmd">$</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.full_name || r.item.name, q)+'</div>';
@@ -903,7 +1021,7 @@ def _get_js() -> str:
     if (results.skills.length) {
       html += '<div class="search-results-heading">Skills (' + results.skills.length + ')</div>';
       results.skills.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon skill">S</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -916,7 +1034,7 @@ def _get_js() -> str:
     if (results.agents.length) {
       html += '<div class="search-results-heading">Agents (' + results.agents.length + ')</div>';
       results.agents.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon agent">A</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -929,7 +1047,7 @@ def _get_js() -> str:
     if (results.hooks.length) {
       html += '<div class="search-results-heading">Hooks (' + results.hooks.length + ')</div>';
       results.hooks.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon hook">H</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.event_type,q)+'</div>';
@@ -942,7 +1060,7 @@ def _get_js() -> str:
     if (results.rules.length) {
       html += '<div class="search-results-heading">Rules (' + results.rules.length + ')</div>';
       results.rules.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon rule">R</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -957,6 +1075,10 @@ def _get_js() -> str:
 
   // ---- Modal ----
   window.showPluginModal = function(name) {
+    navigateTo(name);
+  };
+
+  function openPluginModal(name) {
     var p = allPlugins.find(function(x){return x.name===name;});
     if (!p) return;
     var counts = buildCountBadges(p);
@@ -987,18 +1109,17 @@ def _get_js() -> str:
     document.getElementById('modal-header').innerHTML = hdr;
     document.getElementById('modal-body').innerHTML = body;
     document.getElementById('modal').classList.add('show');
-    window.location.hash = name;
     var filterInput = document.getElementById('modal-filter');
     if (filterInput) {
       filterInput.addEventListener('input', function(e) { filterModalItems(e.target.value); });
       filterInput.focus();
     }
-  };
+  }
 
   window.closeModal = function(event) {
     if (!event || event.target.id === 'modal') {
       document.getElementById('modal').classList.remove('show');
-      if (window.location.hash) history.pushState('','',window.location.pathname+window.location.search);
+      history.pushState(null,'',window.location.pathname+window.location.search);
     }
   };
 
@@ -1028,15 +1149,6 @@ def _get_js() -> str:
       title.style.display = hasVisible ? '' : 'none';
     });
   }
-
-  function handleHashChange() {
-    var hash = window.location.hash.slice(1);
-    if (hash && IS_MARKETPLACE) {
-      var p = allPlugins.find(function(x){return x.name===hash;});
-      if (p) showPluginModal(hash);
-    }
-  }
-  window.addEventListener('hashchange', handleHashChange);
 
   function esc(str) {
     if (!str) return '';
