@@ -44,6 +44,9 @@ bedrock = [
     "litellm>=1.40",
     "boto3>=1.28",
 ]
+docs = [
+    "mkdocs-material>=9.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",

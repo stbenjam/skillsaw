@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs
+.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site
 
 help:
 	@echo "Available targets:"
@@ -20,7 +20,7 @@ help:
 
 $(VENV)/bin/activate: pyproject.toml
 	test -d $(VENV) || python3 -m venv $(VENV)
-	$(PIP) install -e '.[dev,vertexai,bedrock]'
+	$(PIP) install -e '.[dev,docs,vertexai,bedrock]'
 	touch $(VENV)/bin/activate
 
 venv: $(VENV)/bin/activate
@@ -52,6 +52,15 @@ self-lint: $(VENV)/bin/activate
 	$(VENV)/bin/skillsaw lint .
 
 update: apm generate-example generate-docs generate-claude-readme format self-lint
+
+generate-site-content: $(VENV)/bin/activate
+	$(PYTHON) scripts/generate-site-content.py
+
+serve-site: generate-site-content
+	$(VENV)/bin/mkdocs serve
+
+build-site: generate-site-content
+	$(VENV)/bin/mkdocs build
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
