@@ -146,6 +146,7 @@ class Linter:
                     rule_instance.repo_types,
                     rule_instance.formats,
                 ):
+                    rule_instance._source = "custom"
                     self.rules.append(rule_instance)
                     logger.info("Rule %-30s enabled (custom: %s)", rule_instance.rule_id, path.name)
                 else:
