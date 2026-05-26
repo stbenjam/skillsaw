@@ -1,0 +1,102 @@
+site_name: "Skillsaw: Advanced Linter for Agent Context"
+site_description: A configurable linter for agent skills, plugins, and AI coding assistant context
+site_url: https://skillsaw.org
+repo_url: https://github.com/stbenjam/skillsaw
+repo_name: stbenjam/skillsaw
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: custom
+    accent: custom
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+    - navigation.path
+  logo: images/logo-only.png
+  favicon: images/logo-only.png
+  icon:
+    repo: fontawesome/brands/github
+  custom_dir: docs/overrides
+
+extra_css:
+  - stylesheets/custom.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.mark
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+exclude_docs: |
+  designs/
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Repository Types: repo-types.md
+  - Configuration: configuration.md
+  - Autofixing: autofixing.md
+  - Rules:
+    - rules/index.md
+    - AgentSkills: rules/agentskills.md
+    - Plugin Structure: rules/plugin-structure.md
+    - Command Format: rules/command-format.md
+    - Marketplace: rules/marketplace.md
+    - Skills, Agents, Hooks: rules/skills-agents-hooks.md
+    - MCP: rules/mcp.md
+    - Rules Directory: rules/rules-directory.md
+    - OpenClaw: rules/openclaw.md
+    - Instruction Files: rules/instruction-files.md
+    - Context Budget: rules/context-budget.md
+    - Content Intelligence:
+      - rules/content/index.md
+      - rules/content/weak-language.md
+      - rules/content/tautological.md
+      - rules/content/critical-position.md
+      - rules/content/redundant-with-tooling.md
+      - rules/content/instruction-budget.md
+      - rules/content/negative-only.md
+      - rules/content/section-length.md
+      - rules/content/contradiction.md
+      - rules/content/hook-candidate.md
+      - rules/content/actionability-score.md
+      - rules/content/cognitive-chunks.md
+      - rules/content/embedded-secrets.md
+      - rules/content/banned-references.md
+      - rules/content/inconsistent-terminology.md
+      - rules/content/broken-internal-reference.md
+      - rules/content/unlinked-internal-reference.md
+      - rules/content/placeholder-text.md
+    - CodeRabbit: rules/coderabbit.md
+    - Promptfoo: rules/promptfoo.md
+    - APM: rules/apm.md
+  - Guides:
+    - custom-rules.md
+    - scaffolding.md
+    - ci.md
+    - lint-tree.md
+    - CLI Reference: cli.md
+  - Research: research.md
