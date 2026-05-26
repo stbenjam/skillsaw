@@ -127,6 +127,42 @@ nav.navbar {
     background: var(--bg-code); padding: 0.25rem 0.5rem; border-radius: 4px;
 }
 .plugin-description { color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.95rem; }
+.plugin-meta-links {
+    display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+}
+.plugin-meta-links a { color: var(--text-muted); }
+.plugin-meta-links a:hover { color: var(--primary); }
+.plugin-license {
+    font-size: 0.75rem; color: var(--text-muted);
+    background: var(--bg-code); padding: 0.125rem 0.5rem; border-radius: 4px;
+}
+.plugin-category {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--secondary);
+    background: rgba(129, 140, 248, 0.12); padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+}
+.plugin-tags { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.plugin-tag {
+    font-size: 0.7rem; color: var(--text-muted);
+    background: var(--bg-code); padding: 0.125rem 0.5rem; border-radius: 4px;
+    cursor: pointer; transition: all 0.2s ease;
+}
+.plugin-tag:hover { color: var(--primary); border-color: var(--primary); }
+.category-filter {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;
+}
+.category-btn {
+    font-size: 0.8rem; padding: 0.375rem 0.75rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text-muted); cursor: pointer; transition: all 0.2s ease;
+    font-family: inherit;
+}
+.category-btn:hover { border-color: var(--primary); color: var(--text-primary); }
+.category-btn.active {
+    background: var(--primary); color: white; border-color: var(--primary);
+}
 .item-counts {
     color: var(--text-muted); font-size: 0.875rem;
     display: flex; gap: 1rem; flex-wrap: wrap; margin-top: auto;
@@ -367,6 +403,33 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
             "mcp_servers": [],
             "rules": [],
         }
+        if plugin.display_name:
+            p["display_name"] = plugin.display_name
+        if plugin.category:
+            p["category"] = plugin.category
+        if plugin.tags:
+            p["tags"] = plugin.tags
+        if plugin.keywords:
+            p["keywords"] = plugin.keywords
+        if plugin.homepage:
+            p["homepage"] = plugin.homepage
+        if plugin.repository:
+            p["repository"] = plugin.repository
+        if plugin.license:
+            p["license"] = plugin.license
+        has_marketplace_meta = any(
+            [
+                plugin.display_name,
+                plugin.category,
+                plugin.tags,
+                plugin.keywords,
+                plugin.homepage,
+                plugin.repository,
+                plugin.license,
+            ]
+        )
+        if has_marketplace_meta and plugin.author:
+            p["author"] = plugin.author
 
         for cmd in plugin.commands:
             p["commands"].append(
@@ -573,20 +636,62 @@ def _get_js() -> str:
   }
 
   // ---- Marketplace: plugin card grid ----
+  function pName(p) { return p.display_name || p.name; }
+
   function renderPluginGrid(plugins) {
     var el = document.getElementById('content');
     var nr = document.getElementById('no-results');
     if (plugins.length === 0) { el.innerHTML = ''; nr.classList.add('show'); return; }
     nr.classList.remove('show');
-    el.innerHTML = '<div class="plugins-grid">' + plugins.map(function(p) {
+    var cats = collectCategories();
+    var filterHtml = cats.length > 1 ? renderCategoryFilter(cats) : '';
+    el.innerHTML = filterHtml + '<div class="plugins-grid" id="plugins-grid">' + plugins.map(function(p) {
       var counts = buildCountBadges(p);
       var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-      return '<div class="plugin-card" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">' +
-        '<div class="plugin-header"><div><div class="plugin-name">'+esc(p.name)+'</div>'+ver+'</div></div>' +
+      var cat = p.category ? '<span class="plugin-category">'+esc(p.category)+'</span>' : '';
+      var allTags = (p.tags||[]).concat(p.keywords||[]);
+      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();filterByTag(\\''+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">' +
+        '<div class="plugin-header"><div><div class="plugin-name">'+esc(pName(p))+'</div>'+ver+'</div>'+cat+'</div>' +
         '<div class="plugin-description">'+(p.description_html || esc(p.description) || '<em>No description</em>')+'</div>' +
+        tagsHtml +
         '<div class="item-counts">'+counts+'</div></div>';
     }).join('') + '</div>';
   }
+
+  function collectCategories() {
+    var seen = {};
+    allPlugins.forEach(function(p) { if (p.category) seen[p.category] = true; });
+    return Object.keys(seen).sort();
+  }
+
+  function renderCategoryFilter(cats) {
+    return '<div class="category-filter" id="category-filter">' +
+      '<button class="category-btn active" onclick="filterByCategory(null)">All</button>' +
+      cats.map(function(c){return '<button class="category-btn" onclick="filterByCategory(\\''+escAttr(c)+'\\')">'+esc(c)+'</button>';}).join('') +
+      '</div>';
+  }
+
+  var activeCategory = null;
+  window.filterByCategory = function(cat) {
+    activeCategory = cat;
+    var btns = document.querySelectorAll('.category-btn');
+    btns.forEach(function(b) { b.classList.remove('active'); });
+    if (!cat) { btns[0].classList.add('active'); }
+    else {
+      btns.forEach(function(b) { if (b.textContent === cat) b.classList.add('active'); });
+    }
+    var cards = document.querySelectorAll('.plugin-card');
+    cards.forEach(function(c) {
+      c.style.display = (!cat || c.getAttribute('data-category') === cat) ? '' : 'none';
+    });
+  };
+
+  window.filterByTag = function(tag) {
+    var input = document.getElementById('search');
+    input.value = tag;
+    input.dispatchEvent(new Event('input'));
+  };
 
   function buildCountBadges(p) {
     var b = [];
@@ -720,7 +825,8 @@ def _get_js() -> str:
     var results = { plugins: [], commands: [], skills: [], agents: [], hooks: [], rules: [] };
 
     allPlugins.forEach(function(p) {
-      if (match(p.name, q) || match(p.description, q)) results.plugins.push(p);
+      var tagMatch = (p.tags||[]).concat(p.keywords||[]).some(function(t){return match(t,q);});
+      if (match(pName(p), q) || match(p.name, q) || match(p.description, q) || match(p.category, q) || tagMatch) results.plugins.push(p);
       p.commands.forEach(function(c) {
         if (match(c.name, q) || match(c.full_name, q) || match(c.description, q) || match(c.synopsis, q))
           results.commands.push({plugin: p.name, item: c});
@@ -775,8 +881,8 @@ def _get_js() -> str:
       html += '<div class="search-results-heading">Plugins (' + results.plugins.length + ')</div>';
       results.plugins.forEach(function(p) {
         html += '<div class="search-result-item" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">';
-        html += '<div class="search-result-icon plugin">'+esc(p.name.charAt(0).toUpperCase())+'</div>';
-        html += '<div class="search-result-content"><div class="search-result-title">'+hi(p.name,q)+'</div>';
+        html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
+        html += '<div class="search-result-content"><div class="search-result-title">'+hi(pName(p),q)+'</div>';
         html += '<div class="search-result-subtitle">'+hi(p.description,q)+'</div></div></div>';
       });
     }
@@ -855,13 +961,25 @@ def _get_js() -> str:
     if (!p) return;
     var counts = buildCountBadges(p);
     var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-    var hdr = '<div class="modal-title-section"><div class="modal-title">'+esc(p.name)+'</div>' +
-              '<div class="modal-meta">'+counts+'</div></div>' +
+    var cat = p.category ? '<span class="plugin-category">'+esc(p.category)+'</span>' : '';
+    var lic = p.license ? '<span class="plugin-license">'+esc(p.license)+'</span>' : '';
+    var hdr = '<div class="modal-title-section"><div class="modal-title">'+esc(pName(p))+'</div>' +
+              '<div class="modal-meta">'+counts+cat+lic+'</div></div>' +
               '<div style="display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end">' +
               '<div style="display:flex;gap:1rem;align-items:flex-start">'+ver+
               '<button class="close-button" onclick="closeModal()">&times;</button></div></div>';
     var totalItems = p.commands.length + p.skills.length + p.agents.length + p.hooks.length + p.mcp_servers.length + p.rules.length;
-    var body = '<div class="plugin-description" style="margin-bottom:1rem">'+(p.description_html || esc(p.description) || '')+'</div>';
+    var metaLinks = [];
+    if (p.homepage) metaLinks.push('<a href="'+esc(p.homepage)+'">Homepage</a>');
+    if (p.repository) metaLinks.push('<a href="'+esc(p.repository)+'">Repository</a>');
+    if (p.author) {
+      var authorText = typeof p.author === 'object' ? (p.author.name||'') : p.author;
+      if (authorText) metaLinks.push('Author: '+esc(authorText));
+    }
+    var metaLinksHtml = metaLinks.length ? '<div class="plugin-meta-links">'+metaLinks.join(' &middot; ')+'</div>' : '';
+    var allTags = (p.tags||[]).concat(p.keywords||[]);
+    var tagsHtml = allTags.length ? '<div class="plugin-tags" style="margin-bottom:1rem">'+allTags.map(function(t){return '<span class="plugin-tag">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+    var body = '<div class="plugin-description" style="margin-bottom:0.5rem">'+(p.description_html || esc(p.description) || '')+'</div>' + metaLinksHtml + tagsHtml;
     if (totalItems >= 5) {
       body += '<input type="text" class="modal-filter" id="modal-filter" placeholder="Filter commands, skills..." autocomplete="off">';
     }

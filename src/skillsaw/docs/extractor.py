@@ -88,12 +88,29 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
     if isinstance(author_val, str):
         author_val = {"name": author_val}
 
+    tags = meta.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t) for t in tags if t]
+
+    keywords = meta.get("keywords", [])
+    if not isinstance(keywords, list):
+        keywords = []
+    keywords = [str(k) for k in keywords if k]
+
     return PluginDoc(
         name=name,
         path=plugin_path,
         description=meta.get("description", ""),
         version=str(v) if (v := meta.get("version")) is not None else "",
         author=author_val if isinstance(author_val, dict) else None,
+        display_name=str(meta.get("displayName", "")) or "",
+        category=str(meta.get("category", "")) or "",
+        tags=tags,
+        keywords=keywords,
+        homepage=str(meta.get("homepage", "")) or "",
+        repository=str(meta.get("repository", "")) or "",
+        license=str(meta.get("license", "")) or "",
         commands=_extract_commands(plugin_node),
         skills=_extract_skills(plugin_node),
         agents=_extract_agents(plugin_node),
