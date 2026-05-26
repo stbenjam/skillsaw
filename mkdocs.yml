@@ -1,4 +1,4 @@
-site_name: skillsaw
+site_name: "Skillsaw: Advanced Linter for Agent Context"
 site_description: A configurable linter for agent skills, plugins, and AI coding assistant context
 site_url: https://skillsaw.org
 repo_url: https://github.com/stbenjam/skillsaw

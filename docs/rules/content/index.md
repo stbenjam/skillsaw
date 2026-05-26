@@ -3,27 +3,27 @@
 
 # Content Intelligence
 
-Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. Most support LLM-powered fixes via `skillsaw fix --llm`. See the [research page](../research.md) for the full research basis behind each rule.
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. Most support LLM-powered fixes via `skillsaw fix --llm`. See the [research page](../../research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`content-weak-language`](content/weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
-| [`content-tautological`](content/tautological.md) | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
-| [`content-critical-position`](content/critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (auto) | llm |
-| [`content-redundant-with-tooling`](content/redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
-| [`content-instruction-budget`](content/instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm |
-| [`content-negative-only`](content/negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | info (auto) | llm |
-| [`content-section-length`](content/section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
-| [`content-contradiction`](content/contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
-| [`content-hook-candidate`](content/hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
-| [`content-actionability-score`](content/actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
-| [`content-cognitive-chunks`](content/cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
-| [`content-embedded-secrets`](content/embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
-| [`content-banned-references`](content/banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
-| [`content-inconsistent-terminology`](content/inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
-| [`content-broken-internal-reference`](content/broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto |
-| [`content-unlinked-internal-reference`](content/unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
-| [`content-placeholder-text`](content/placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
+| [`content-weak-language`](weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
+| [`content-tautological`](tautological.md) | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
+| [`content-critical-position`](critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (auto) | llm |
+| [`content-redundant-with-tooling`](redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
+| [`content-instruction-budget`](instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm |
+| [`content-negative-only`](negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | info (auto) | llm |
+| [`content-section-length`](section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
+| [`content-contradiction`](contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
+| [`content-hook-candidate`](hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
+| [`content-actionability-score`](actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
+| [`content-cognitive-chunks`](cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
+| [`content-embedded-secrets`](embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
+| [`content-banned-references`](banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
+| [`content-inconsistent-terminology`](inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+| [`content-broken-internal-reference`](broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto |
+| [`content-unlinked-internal-reference`](unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
+| [`content-placeholder-text`](placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
 
 
 **`content-critical-position` parameters:**

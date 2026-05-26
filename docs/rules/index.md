@@ -16,7 +16,7 @@ organized into the following categories:
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (17 rules)
+- [Content Intelligence](content/index.md) (17 rules)
 - [CodeRabbit](coderabbit.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)

@@ -348,7 +348,7 @@ def parse_cli():
 # ---------------------------------------------------------------------------
 
 
-def _rule_table(rule_ids, rules_data):
+def _rule_table(rule_ids, rules_data, content_link_prefix="content/"):
     """Generate a markdown table for a list of rule IDs."""
     lines = [
         "| Rule ID | Description | Default Severity | Autofix |",
@@ -356,8 +356,11 @@ def _rule_table(rule_ids, rules_data):
     ]
     for rule_id in rule_ids:
         r = rules_data[rule_id]
-        link = f"[`{rule_id}`](content/{rule_id.replace('content-', '')}.md)" \
-            if rule_id in CONTENT_RULE_IDS else f"`{rule_id}`"
+        if rule_id in CONTENT_RULE_IDS:
+            short = rule_id.replace("content-", "")
+            link = f"[`{rule_id}`]({content_link_prefix}{short}.md)"
+        else:
+            link = f"`{rule_id}`"
         lines.append(f"| {link} | {r['description']} | {r['severity']} | {r['fix']} |")
     return "\n".join(lines)
 
@@ -385,7 +388,10 @@ def generate_rules_index(rules_data):
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         count = len(rule_ids)
         plural = "rule" if count == 1 else "rules"
-        lines.append(f"- [{group_name}]({slug}.md) ({count} {plural})")
+        if slug == "content-intelligence":
+            lines.append(f"- [{group_name}](content/index.md) ({count} {plural})")
+        else:
+            lines.append(f"- [{group_name}]({slug}.md) ({count} {plural})")
 
     lines.append("\n## All Rules\n")
     lines.append("| Rule ID | Description | Default Severity | Autofix | Category |")
@@ -407,12 +413,16 @@ def generate_rules_index(rules_data):
 
 def generate_group_page(group_name, slug, rule_ids, description, rules_data):
     """Generate a per-group rule page."""
+    is_content = slug == "content-intelligence"
     lines = [GENERATED_HEADER, f"# {group_name}\n"]
 
     if description:
+        if is_content:
+            description = description.replace("../research.md", "../../research.md")
         lines.append(f"{description}\n")
 
-    lines.append(_rule_table(rule_ids, rules_data))
+    content_prefix = "" if is_content else "content/"
+    lines.append(_rule_table(rule_ids, rules_data, content_link_prefix=content_prefix))
     lines.append("")
 
     for rule_id in rule_ids:
