@@ -57,6 +57,8 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Repository Types: repo-types.md
+  - Configuration: configuration.md
+  - Autofixing: autofixing.md
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
@@ -91,12 +93,10 @@ nav:
     - CodeRabbit: rules/coderabbit.md
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
-  - Configuration: configuration.md
-  - Autofixing: autofixing.md
-  - CLI Reference: cli.md
   - Guides:
     - custom-rules.md
     - scaffolding.md
     - ci.md
     - lint-tree.md
+    - CLI Reference: cli.md
   - Research: research.md

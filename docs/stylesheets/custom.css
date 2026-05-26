@@ -47,6 +47,15 @@
     font-weight: 600;
 }
 
+/* Indent nested nav levels */
+.md-nav--primary .md-nav__item--nested .md-nav .md-nav__item {
+    padding-left: 0.6rem;
+}
+
+.md-nav--primary .md-nav__item--nested .md-nav .md-nav__item--nested .md-nav .md-nav__item {
+    padding-left: 0.6rem;
+}
+
 /* Header bar — steel blue-gray */
 [data-md-color-scheme="slate"] .md-header {
     background-color: #263238;
