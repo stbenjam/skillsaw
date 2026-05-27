@@ -1,7 +1,7 @@
 """
 Output formatters for skillsaw lint results.
 
-Supported formats: text, json, sarif, html.
+Supported formats: text, json, sarif, html, gitlab.
 """
 
 from pathlib import Path
@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from ..rule import Rule, RuleViolation
 
-FORMATS = ("text", "json", "sarif", "html")
+FORMATS = ("text", "json", "sarif", "html", "gitlab")
 
 
 def relative_path(file_path: Optional[Path], root: Path) -> Optional[str]:
@@ -66,7 +66,7 @@ def format_report(
     Format lint results in the specified format.
 
     Args:
-        fmt: One of "text", "json", "sarif", "html"
+        fmt: One of "text", "json", "sarif", "html", "gitlab"
         violations: Violations from linter.run()
         context: RepositoryContext
         rules: List of Rule instances that were run
@@ -90,5 +90,9 @@ def format_report(
         from .html import format_html
 
         return format_html(violations, context, rules, version, verbose)
+    elif fmt == "gitlab":
+        from .gitlab import format_gitlab
+
+        return format_gitlab(violations, context, rules, version, verbose)
     else:
         raise ValueError(f"Unknown format: {fmt}. Supported: {', '.join(FORMATS)}")

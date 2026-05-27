@@ -10,6 +10,7 @@ from skillsaw.formatters.text import format_text
 from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
+from skillsaw.formatters.gitlab import format_gitlab
 from skillsaw.rule import RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
@@ -541,3 +542,119 @@ def test_html_non_verbose_hides_info(valid_plugin):
     # In non-verbose, the info violation row should not appear in the table
     # but the error and warning should
     assert "Missing plugin.json" in output_normal
+
+
+# --- GitLab Code Quality formatter ---
+
+
+def test_gitlab_valid_json_array(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    output = format_gitlab(violations, context, linter.rules, "1.0.0")
+    data = json.loads(output)
+
+    assert isinstance(data, list)
+
+
+def test_gitlab_required_fields(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    data = json.loads(output)
+
+    assert len(data) == 3
+    for entry in data:
+        assert "description" in entry
+        assert "check_name" in entry
+        assert "fingerprint" in entry
+        assert "severity" in entry
+        assert "location" in entry
+        assert "path" in entry["location"]
+        assert "lines" in entry["location"]
+        assert "begin" in entry["location"]["lines"]
+
+
+def test_gitlab_severity_mapping(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    data = json.loads(output)
+
+    severity_by_check = {e["check_name"]: e["severity"] for e in data}
+    assert severity_by_check["plugin-json-required"] == "critical"
+    assert severity_by_check["command-naming"] == "major"
+    assert severity_by_check["plugin-json-valid"] == "minor"
+
+
+def test_gitlab_fingerprints_unique(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    data = json.loads(output)
+
+    fingerprints = [e["fingerprint"] for e in data]
+    assert len(fingerprints) == len(set(fingerprints))
+
+
+def test_gitlab_fingerprint_is_md5_hex(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    data = json.loads(output)
+
+    for entry in data:
+        assert len(entry["fingerprint"]) == 32
+        int(entry["fingerprint"], 16)
+
+
+def test_gitlab_excludes_info_without_verbose(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=False)
+    data = json.loads(output)
+
+    assert len(data) == 2
+    assert all(e["severity"] != "minor" or e["check_name"] != "plugin-json-valid" for e in data)
+
+
+def test_gitlab_line_numbers(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    data = json.loads(output)
+
+    by_check = {e["check_name"]: e for e in data}
+    assert by_check["plugin-json-required"]["location"]["lines"]["begin"] == 1
+    assert by_check["command-naming"]["location"]["lines"]["begin"] == 3
+
+
+def test_gitlab_relative_paths(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_gitlab(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    for entry in data:
+        path = entry["location"]["path"]
+        assert not path.startswith("/")
+
+
+def test_gitlab_dispatched_via_format_report(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    output = format_report("gitlab", violations, context, linter.rules, "1.0.0")
+    data = json.loads(output)
+    assert isinstance(data, list)

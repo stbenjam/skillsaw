@@ -134,6 +134,13 @@ skillsaw list-rules
 # Generate plugin/skill documentation
 skillsaw docs
 
+# Output in different formats (text, json, sarif, html, gitlab)
+skillsaw --format json
+skillsaw --format gitlab   # GitLab Code Quality format
+
+# Write formatted output to a file (format inferred from extension)
+skillsaw --output report.sarif
+
 # Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
 skillsaw add plugin my-plugin
