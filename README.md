@@ -1,36 +1,31 @@
-[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/)
-[![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/skillsaw.svg)](https://pypi.org/project/skillsaw/)
-
 <table><tr>
 <td width="200" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="200"></td>
 <td valign="top">
 
 ### skillsaw
 
-Keep your skills sharp. A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces). Analyzes instruction file quality using attention research, detects weak language and contradictions, and auto-fixes violations with any LLM.
+Lint, fix, and ship better AI agent instructions. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them with any LLM.
 
-📖 **[Full documentation at skillsaw.org](https://skillsaw.org)**
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </td>
 </tr></table>
 
-> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+```bash
+$ uvx skillsaw /path/to/your/repo
 
-## Features
+Errors:
+  ✗ ERROR [CLAUDE.md:42]: Likely contradiction: "always use snake_case" vs "use camelCase for exports"
+  ✗ ERROR [skills/deploy/SKILL.md]: Missing required frontmatter field: description
 
-- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
-- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
-- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
-- 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
-- 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
-- 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action with inline PR comments; GitLab Code Quality via `--format gitlab`
-- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
+Warnings:
+  ⚠ WARNING [CLAUDE.md:87]: Weak language: "try to avoid" — use direct imperatives
+  ⚠ WARNING [AGENTS.md:12]: Tautological: "Be helpful and concise" — models do this by default
+
+Summary: 2 errors, 2 warnings (4 fixable with --llm)
+```
+
+**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports [Claude Code plugins](https://docs.claude.com/en/docs/claude-code/plugins), [agentskills.io](https://agentskills.io), CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
 ## Table of Contents
 
