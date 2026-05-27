@@ -1,0 +1,12 @@
+---
+description: Test rule for reproducing line offset bug
+globs: "*.py"
+---
+
+# Python Guidelines
+
+Use 4-space indentation for all Python files.
+
+Run tests before committing changes.
+
+You should probably try to make sure tests work correctly before pushing.

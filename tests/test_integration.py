@@ -295,6 +295,22 @@ class TestAgentskills:
 
 
 @pytest.mark.integration
+class TestCursorRules:
+
+    def test_mdc_frontmatter_line_offset(self, tmp_path):
+        """Violations in .mdc files must report file line numbers, not body-relative."""
+        repo = copy_fixture("cursor-rules/broken", tmp_path)
+        r = run_lint(repo)
+        weak = by_rule(r)["content-weak-language"]
+        assert len(weak) >= 1
+        for v in weak:
+            assert v["line"] == 12, (
+                f"expected file line 12, got {v['line']} "
+                f"(off by {12 - v['line']} due to missing frontmatter offset)"
+            )
+
+
+@pytest.mark.integration
 class TestDotClaude:
 
     def test_clean_dot_claude_passes(self, tmp_path):
