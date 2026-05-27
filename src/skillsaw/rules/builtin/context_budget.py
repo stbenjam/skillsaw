@@ -59,6 +59,7 @@ class ContextBudgetRule(Rule):
 
     formats = None
     since = "0.7.0"
+    baseline_mode = "ceiling"
 
     config_schema = {
         "limits": {
@@ -107,6 +108,7 @@ class ContextBudgetRule(Rule):
                     f"Estimated {tokens:,} tokens exceeds {category} error limit of {error_limit:,}",
                     file_path=file_path,
                     severity=Severity.ERROR,
+                    value=tokens,
                 )
             )
         elif warn_limit is not None and tokens > warn_limit:
@@ -115,6 +117,7 @@ class ContextBudgetRule(Rule):
                     f"Estimated {tokens:,} tokens exceeds {category} warn limit of {warn_limit:,}",
                     file_path=file_path,
                     severity=Severity.WARNING,
+                    value=tokens,
                 )
             )
 
@@ -145,6 +148,7 @@ class ContextBudgetRule(Rule):
                             file_path=block.path,
                             line=block.key_line("description"),
                             severity=Severity.ERROR,
+                            value=tokens,
                         )
                     )
                 elif warn_limit is not None and tokens > warn_limit:
@@ -155,6 +159,7 @@ class ContextBudgetRule(Rule):
                             file_path=block.path,
                             line=block.key_line("description"),
                             severity=Severity.WARNING,
+                            value=tokens,
                         )
                     )
 

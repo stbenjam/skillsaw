@@ -1,0 +1,8 @@
+version: "0.10.1"
+rules:
+  content-weak-language:
+    enabled: true
+    severity: warning
+  content-tautological:
+    enabled: true
+    severity: warning
