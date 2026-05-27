@@ -295,6 +295,24 @@ class TestAgentskills:
 
 
 @pytest.mark.integration
+class TestCursorRules:
+
+    @pytest.mark.xfail(
+        reason="BUG: CursorRuleBlock line_offset is 0, frontmatter not accounted for"
+    )
+    def test_mdc_frontmatter_line_offset(self, tmp_path):
+        """Line numbers in .mdc files with frontmatter are off by the frontmatter size."""
+        repo = copy_fixture("cursor-rules/broken", tmp_path)
+        r = run_lint(repo)
+        weak = by_rule(r)["content-weak-language"]
+        assert len(weak) >= 1
+        for v in weak:
+            assert v["line"] == 13, (
+                f"expected line 13 (actual file line), got {v['line']} "
+                f"(off by {13 - v['line']} due to missing frontmatter offset)"
+            )
+
+
 class TestDotClaude:
 
     def test_clean_dot_claude_passes(self, tmp_path):
