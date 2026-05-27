@@ -9,6 +9,9 @@ uvx skillsaw
 # Generate default config you can customize
 skillsaw init
 
+# Accept existing violations so only new ones fail CI
+skillsaw baseline
+
 # View the lint tree (what skillsaw sees)
 skillsaw tree
 
@@ -116,9 +119,31 @@ Summary:
 | `0` | Success (no errors, or warnings only in non-strict mode) |
 | `1` | Failure (errors found, or warnings in strict mode) |
 
+## Adopting on an Existing Project
+
+Most projects will have violations when first running skillsaw. You have
+three options — fix them, disable noisy rules for your use case, or
+use a **baseline** to get CI green immediately:
+
+```bash
+# 1. Set up config
+skillsaw init
+
+# 2. Accept current violations
+skillsaw baseline
+
+# 3. CI passes — only new violations will fail
+skillsaw lint  # exit 0
+```
+
+Over time, fix violations and re-run `skillsaw baseline` to shrink the
+accepted set. See the [Baseline guide](baseline.md) for details on how
+fingerprinting works and configuration options.
+
 ## What's Next?
 
 - Learn about [Repository Types](repo-types.md) that skillsaw detects
 - Browse the [Rules Reference](rules/index.md) to see what skillsaw checks
 - Set up [Configuration](configuration.md) for your project
+- Use a [Baseline](baseline.md) to adopt skillsaw without fixing everything first
 - Enable [LLM Autofixing](autofixing.md) for content quality

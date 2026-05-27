@@ -94,6 +94,7 @@ nav:
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
   - Guides:
+    - Baseline: baseline.md
     - custom-rules.md
     - scaffolding.md
     - ci.md

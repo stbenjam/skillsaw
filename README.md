@@ -58,6 +58,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Per-Rule Excludes](#per-rule-excludes)
   - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
+- [Baseline](#baseline)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
@@ -114,6 +115,9 @@ skillsaw tree
 
 # Generate plugin/skill documentation
 skillsaw docs
+
+# Accept existing violations (baseline), only fail on new ones
+skillsaw baseline
 
 # Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
@@ -484,6 +488,75 @@ content-paths:
 
 Matched files are analyzed by all content-\* rules and support LLM-powered
 fixes via `skillsaw fix --llm`.
+
+## Baseline
+
+When adopting skillsaw on an existing project, you may have many
+pre-existing violations. The **baseline** feature lets you snapshot
+current violations so that `skillsaw lint` only reports *new* ones —
+existing violations are accepted and won't fail CI.
+
+### Creating a baseline
+
+```bash
+# Generate .skillsaw-baseline.json from current violations
+skillsaw baseline
+
+# Write to a custom path
+skillsaw baseline -o my-baseline.json
+```
+
+### How it works
+
+Once a `.skillsaw-baseline.json` file exists (next to `.skillsaw.yaml` or
+in the repo root), `skillsaw lint` automatically loads it and subtracts
+matching violations from the output. Only new violations are reported.
+
+Violations are matched by a **content hash** — a fingerprint built from
+the rule ID, file path, and the content of the source line (not the line
+number). This means the baseline survives line drift: if you add lines
+above a baselined violation, the fingerprint still matches because the
+content hasn't changed.
+
+If you reformat or rewrite a line, the fingerprint changes and the
+violation resurfaces for a fresh look — which is the correct behavior.
+
+### Ignoring the baseline
+
+```bash
+# Run lint without baseline filtering
+skillsaw lint --no-baseline
+```
+
+### Stale entries
+
+When you fix a baselined violation, its baseline entry becomes **stale**.
+Skillsaw reports stale entries so you know the baseline can be refreshed:
+
+```
+Baseline: 3 stale entries (violations resolved since baseline was set)
+  Run `skillsaw baseline` to update.
+```
+
+Run `skillsaw baseline` again to regenerate the file without the
+resolved violations.
+
+### Configuration
+
+You can set a custom baseline path in `.skillsaw.yaml`:
+
+```yaml
+baseline: path/to/my-baseline.json
+```
+
+When omitted, skillsaw auto-discovers `.skillsaw-baseline.json` by
+walking up the directory tree (same behavior as config discovery).
+
+### Baseline and fix
+
+The `skillsaw fix` command operates on all violations regardless of the
+baseline. The baseline only affects `lint` reporting and exit codes — if
+you explicitly ask to fix, everything is eligible.
 
 ## Builtin Rules
 

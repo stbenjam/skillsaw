@@ -323,3 +323,6 @@ content-paths: []
 
 # Treat warnings as errors
 strict: false
+
+# Baseline file for accepted violations
+# baseline: .skillsaw-baseline.json

@@ -1240,3 +1240,110 @@ class TestRuleFilter:
         result = _run_fix(repo, "--rule", "agentskill-name")
         assert "agentskill-name" not in result.stdout or "Fixed" in result.stdout
         assert result.returncode == 0
+
+
+# ── Baseline ─────────────────────────────────────────────────────
+
+
+def run_baseline(path, *extra_args, config=None):
+    args = [sys.executable, "-m", "skillsaw", "baseline"]
+    if config:
+        args.extend(["-c", str(config)])
+    args.extend(extra_args)
+    args.append(str(path))
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    return {"rc": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+
+
+@pytest.mark.integration
+class TestBaseline:
+    FIXTURE = "config/baseline-test"
+
+    def test_baseline_creates_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_baseline(repo)
+        assert r["rc"] == 0
+        assert "Baselined" in r["stdout"]
+
+        baseline_path = repo / ".skillsaw-baseline.json"
+        assert baseline_path.exists()
+
+        data = json.loads(baseline_path.read_text())
+        assert data["version"] == "1"
+        assert len(data["violations"]) > 0
+
+    def test_lint_with_baseline_passes(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["warnings"] == 0
+
+    def test_lint_no_baseline_flag(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+        r = run_lint(repo, "--no-baseline")
+        assert r["rc"] == 0  # warnings don't fail without --strict
+        assert summary(r)["warnings"] > 0
+
+    def test_new_violation_reported_despite_baseline(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+
+        claude_md = repo / "CLAUDE.md"
+        content = claude_md.read_text()
+        content += "\nYou should try to avoid making mistakes.\n"
+        claude_md.write_text(content)
+
+        r = run_lint(repo)
+        weak = [v for v in violations(r) if v["rule_id"] == "content-weak-language"]
+        assert len(weak) >= 1
+        assert any("try to" in v["message"].lower() for v in weak)
+
+    def test_stale_entries_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+
+        claude_md = repo / "CLAUDE.md"
+        claude_md.write_text("# Project Guidelines\n\nUse TypeScript.\n")
+
+        r = run_lint(repo, fmt="text", verbose=False)
+        assert "stale" in r["stdout"].lower()
+        assert "skillsaw baseline" in r["stdout"]
+
+    def test_lint_strict_with_baseline_passes(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+        r = run_lint(repo, "--strict")
+        assert r["rc"] == 0
+
+    def test_corrupt_baseline_warns_and_continues(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw-baseline.json").write_text("not valid json{{{")
+        r = run_lint(repo)
+        assert "Failed to load baseline" in r["stderr"]
+        assert summary(r)["warnings"] > 0
+
+    def test_baseline_config_path(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        custom = repo / "my-baseline.json"
+        run_baseline(repo, "-o", str(custom))
+        assert custom.exists()
+        assert not (repo / ".skillsaw-baseline.json").exists()
+
+        config = repo / ".skillsaw.yaml"
+        content = config.read_text()
+        content += "\nbaseline: my-baseline.json\n"
+        config.write_text(content)
+
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["warnings"] == 0
+
+    def test_baseline_output_flag(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        custom_path = repo / "custom-baseline.json"
+        r = run_baseline(repo, "-o", str(custom_path))
+        assert r["rc"] == 0
+        assert custom_path.exists()
+        assert not (repo / ".skillsaw-baseline.json").exists()
