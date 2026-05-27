@@ -1,4 +1,4 @@
-"""GitLab Code Quality JSON output formatter."""
+"""Code Climate / GitLab Code Quality JSON output formatter."""
 
 import hashlib
 import json
@@ -14,7 +14,7 @@ _SEVERITY_MAP = {
 }
 
 
-def format_gitlab(
+def format_code_climate(
     violations: List[RuleViolation],
     context,
     rules,
@@ -26,9 +26,11 @@ def format_gitlab(
     items = []
     for v in filtered:
         rel = relative_path(v.file_path, context.root_path)
+        if rel and rel.startswith("./"):
+            rel = rel[2:]
 
         fingerprint_input = f"{v.rule_id}:{rel or ''}:{v.file_line or ''}"
-        fingerprint = hashlib.md5(fingerprint_input.encode()).hexdigest()
+        fingerprint = hashlib.sha256(fingerprint_input.encode()).hexdigest()
 
         entry = {
             "description": v.message,

@@ -134,9 +134,10 @@ skillsaw list-rules
 # Generate plugin/skill documentation
 skillsaw docs
 
-# Output in different formats (text, json, sarif, html, gitlab)
+# Output in different formats (text, json, sarif, html, code-climate)
 skillsaw --format json
-skillsaw --format gitlab   # GitLab Code Quality format
+skillsaw --format code-climate   # Code Climate / GitLab Code Quality format
+skillsaw --format gitlab          # Alias for code-climate
 
 # Write formatted output to a file (format inferred from extension)
 skillsaw --output report.sarif

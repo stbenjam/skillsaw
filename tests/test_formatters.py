@@ -10,7 +10,7 @@ from skillsaw.formatters.text import format_text
 from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
-from skillsaw.formatters.gitlab import format_gitlab
+from skillsaw.formatters.code_climate import format_code_climate
 from skillsaw.rule import RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
@@ -544,7 +544,7 @@ def test_html_non_verbose_hides_info(valid_plugin):
     assert "Missing plugin.json" in output_normal
 
 
-# --- GitLab Code Quality formatter ---
+# --- Code Climate / GitLab Code Quality formatter ---
 
 
 def test_gitlab_valid_json_array(valid_plugin):
@@ -553,7 +553,7 @@ def test_gitlab_valid_json_array(valid_plugin):
     linter = Linter(context, config)
     violations = linter.run()
 
-    output = format_gitlab(violations, context, linter.rules, "1.0.0")
+    output = format_code_climate(violations, context, linter.rules, "1.0.0")
     data = json.loads(output)
 
     assert isinstance(data, list)
@@ -563,7 +563,7 @@ def test_gitlab_required_fields(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     assert len(data) == 3
@@ -582,7 +582,7 @@ def test_gitlab_severity_mapping(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     severity_by_check = {e["check_name"]: e["severity"] for e in data}
@@ -595,22 +595,22 @@ def test_gitlab_fingerprints_unique(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     fingerprints = [e["fingerprint"] for e in data]
     assert len(fingerprints) == len(set(fingerprints))
 
 
-def test_gitlab_fingerprint_is_md5_hex(valid_plugin):
+def test_gitlab_fingerprint_is_sha256_hex(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     for entry in data:
-        assert len(entry["fingerprint"]) == 32
+        assert len(entry["fingerprint"]) == 64
         int(entry["fingerprint"], 16)
 
 
@@ -618,7 +618,7 @@ def test_gitlab_excludes_info_without_verbose(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=False)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=False)
     data = json.loads(output)
 
     assert len(data) == 2
@@ -629,7 +629,7 @@ def test_gitlab_line_numbers(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0", verbose=True)
+    output = format_code_climate(violations, context, [], "1.0.0", verbose=True)
     data = json.loads(output)
 
     by_check = {e["check_name"]: e for e in data}
@@ -637,19 +637,51 @@ def test_gitlab_line_numbers(valid_plugin):
     assert by_check["command-naming"]["location"]["lines"]["begin"] == 3
 
 
-def test_gitlab_relative_paths(valid_plugin):
+def test_code_climate_paths_relative_to_repo_root(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
 
-    output = format_gitlab(violations, context, [], "1.0.0")
+    output = format_code_climate(violations, context, [], "1.0.0")
     data = json.loads(output)
 
     for entry in data:
         path = entry["location"]["path"]
-        assert not path.startswith("/")
+        assert not path.startswith("/"), f"Path must be relative, got: {path}"
+        assert not path.startswith("./"), f"Path must not have ./ prefix, got: {path}"
 
 
-def test_gitlab_dispatched_via_format_report(valid_plugin):
+def test_code_climate_strips_dot_slash_prefix(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.WARNING,
+            message="test",
+            file_path=Path("./plugins/foo/bar.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_code_climate(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    path = data[0]["location"]["path"]
+    assert not path.startswith("./"), f"Path must not have ./ prefix, got: {path}"
+    assert not path.startswith("/"), f"Path must be relative, got: {path}"
+
+
+def test_code_climate_dispatched_via_format_report(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    output = format_report("code-climate", violations, context, linter.rules, "1.0.0")
+    data = json.loads(output)
+    assert isinstance(data, list)
+
+
+def test_gitlab_alias_dispatched_via_format_report(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
     linter = Linter(context, config)
