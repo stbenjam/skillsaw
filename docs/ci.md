@@ -80,9 +80,6 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      # Checks out the base branch (main), not the PR branch — no untrusted
-      # code is executed. The checkout is needed for the action definition only.
-      - uses: actions/checkout@v5
       # Reads the lint report artifact from the Lint workflow and posts inline
       # PR comments. Does not run skillsaw or execute any PR code.
       - uses: stbenjam/skillsaw/review@v0
