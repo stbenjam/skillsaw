@@ -90,18 +90,36 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 ## Quick Start
 
-```bash
-# Lint current directory (no install required)
-uvx skillsaw
+No install required — run with `uvx skillsaw` (or [install](#installation)
+it for repeated use).
 
-# Fix structural issues automatically
+```bash
+# 1. See what skillsaw detects in your repo
+skillsaw tree
+
+# 2. Lint it
+skillsaw
+
+# 3. Fix what you can automatically
 skillsaw fix
 
-# Fix content quality issues with an LLM
+# 4. Accept remaining violations as the baseline
+skillsaw baseline
+
+# Done — only new violations will fail from here on
+skillsaw   # exit 0
+```
+
+### More commands
+
+```bash
+# Fix content quality issues with an LLM (requires extras)
+# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
+# uvx --from "skillsaw[llm]" skillsaw fix --llm
 skillsaw fix --llm
 
-# Preview LLM fixes without writing
-skillsaw fix --llm --dry-run
+# Generate default config you can customize
+skillsaw init
 
 # Verbose output (includes info-level findings)
 skillsaw -v
@@ -109,20 +127,11 @@ skillsaw -v
 # Strict mode (warnings become errors)
 skillsaw --strict
 
-# Generate default config
-skillsaw init
-
 # List all rules with fix support info
 skillsaw list-rules
 
-# View the lint tree (what skillsaw sees)
-skillsaw tree
-
 # Generate plugin/skill documentation
 skillsaw docs
-
-# Accept existing violations (baseline), only report new ones
-skillsaw baseline
 
 # Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace

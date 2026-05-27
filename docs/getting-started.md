@@ -1,28 +1,37 @@
 # Getting Started
 
+No install required — run with `uvx skillsaw` (or [install](#installation)
+it for repeated use).
+
 ## Quick Start
 
 ```bash
-# Lint current directory (no install required)
-uvx skillsaw
+# 1. See what skillsaw detects in your repo
+skillsaw tree
+
+# 2. Lint it
+skillsaw
+
+# 3. Fix what you can automatically
+skillsaw fix
+
+# 4. Accept remaining violations as the baseline
+skillsaw baseline
+
+# Done — only new violations will fail from here on
+skillsaw   # exit 0
+```
+
+## More Commands
+
+```bash
+# Fix content quality issues with an LLM (requires extras)
+# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
+# uvx --from "skillsaw[llm]" skillsaw fix --llm
+skillsaw fix --llm
 
 # Generate default config you can customize
 skillsaw init
-
-# Accept existing violations so only new ones fail
-skillsaw baseline
-
-# View the lint tree (what skillsaw sees)
-skillsaw tree
-
-# Fix structural issues automatically
-skillsaw fix
-
-# Fix content quality issues with an LLM
-skillsaw fix --llm
-
-# Preview LLM fixes without writing
-skillsaw fix --llm --dry-run
 
 # Verbose output (includes info-level findings)
 skillsaw -v
