@@ -916,6 +916,54 @@ class TestUnlinkedInternalReferenceAutofix:
 
         assert fixed_line_count == original_line_count
 
+    def test_fix_skips_backtick_paths(self, tmp_path):
+        """Paths inside backtick spans with extra content, HTML comments, and fenced blocks must not be flagged.
+        Plain paths that happen to be in backticks should still be flagged and linked."""
+        repo = copy_fixture("autofix/unlinked-ref-backtick-paths", tmp_path)
+        r = run_lint(repo)
+        unlinked = [
+            v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
+        ]
+        assert len(unlinked) == 2
+
+        result = self._run_fix(repo)
+        assert result.returncode == 0
+
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert "`${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md`" in fixed
+        assert "[``prompts/analyze-skill.md``](prompts/analyze-skill.md)" in fixed
+        assert "<!-- This is a comment mentioning prompts/analyze-skill.md" in fixed
+        assert "[prompts/analyze-skill.md](prompts/analyze-skill.md)" in fixed
+
+        r2 = run_lint(repo)
+        remaining = [
+            v for v in violations(r2) if v["rule_id"] == "content-unlinked-internal-reference"
+        ]
+        assert len(remaining) == 0
+
+    def test_fix_backtick_paths_idempotent(self, tmp_path):
+        """Running fix twice with backtick paths produces identical content."""
+        repo = copy_fixture("autofix/unlinked-ref-backtick-paths", tmp_path)
+        self._run_fix(repo)
+        content_after_first = (repo / "CLAUDE.md").read_text()
+
+        self._run_fix(repo)
+        content_after_second = (repo / "CLAUDE.md").read_text()
+
+        assert content_after_first == content_after_second
+
+    def test_fix_backtick_paths_preserves_line_count(self, tmp_path):
+        """Autofix must not add or remove lines when backtick paths are present."""
+        repo = copy_fixture("autofix/unlinked-ref-backtick-paths", tmp_path)
+        original = (repo / "CLAUDE.md").read_text()
+        original_line_count = len(original.splitlines())
+
+        self._run_fix(repo)
+        fixed = (repo / "CLAUDE.md").read_text()
+        fixed_line_count = len(fixed.splitlines())
+
+        assert fixed_line_count == original_line_count
+
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
 

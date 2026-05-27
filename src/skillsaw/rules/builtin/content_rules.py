@@ -28,6 +28,8 @@ from skillsaw.rules.builtin.content_analysis import (
     _HEADING_RE,
     _TAUTOLOGICAL_PHRASES,
     _strip_fenced_code_blocks,
+    is_inside_inline_code,
+    inline_code_span_bounds,
 )
 
 
@@ -1355,6 +1357,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                         continue
                     if self._is_inside_url(line, match.start(), match.end()):
                         continue
+                    if is_inside_inline_code(line, match.start(), match.end()):
+                        continue
                     if not any(PurePath(path_str).match(p) for p in patterns):
                         continue
                     resolved = (cf.path.parent / path_str).resolve()
@@ -1402,10 +1406,18 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                     if loc == -1:
                         break
                     end = loc + len(path_str)
-                    if not self._is_inside_link(line, loc, end) and not self._is_inside_url(
-                        line, loc, end
+                    if (
+                        not self._is_inside_link(line, loc, end)
+                        and not self._is_inside_url(line, loc, end)
+                        and not is_inside_inline_code(line, loc, end)
                     ):
-                        lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
+                        bounds = inline_code_span_bounds(line, loc, end)
+                        if bounds:
+                            bt = line[bounds[0] : loc]
+                            replacement = f"[{bt}{path_str}{bt}]({path_str})"
+                            lines[idx] = line[: bounds[0]] + replacement + line[bounds[1] :]
+                        else:
+                            lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
                         violations_fixed.append(v)
                         break
                     pos = end
