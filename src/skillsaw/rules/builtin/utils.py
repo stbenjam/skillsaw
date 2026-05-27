@@ -553,3 +553,30 @@ def _resolve_path_line(node: Any, path: str, line_offset: int) -> Optional[int]:
     if isinstance(last_container, CommentedSeq) and isinstance(last_accessor, int):
         return last_container.lc.item(last_accessor)[0] + 1 + line_offset
     return None
+
+
+def validate_glob_patterns(patterns: Any, field_name: str = "globs") -> List[str]:
+    """Validate a list of glob patterns, returning error messages.
+
+    Accepts a string (single pattern) or list of strings.
+    """
+    if isinstance(patterns, str):
+        patterns = [patterns]
+
+    if not isinstance(patterns, list):
+        return [f"'{field_name}' must be a string or list of strings"]
+
+    errors: List[str] = []
+    for i, pattern in enumerate(patterns):
+        if not isinstance(pattern, str):
+            errors.append(f"{field_name}[{i}]: must be a string, got {type(pattern).__name__}")
+            continue
+        if not pattern.strip():
+            errors.append(f"{field_name}[{i}]: empty glob pattern")
+            continue
+        if pattern.startswith("/") or pattern.startswith("\\"):
+            errors.append(f"{field_name}[{i}]: '{pattern}' must be a relative path, not absolute")
+        normalized = pattern.replace("\\", "/")
+        if ".." in normalized.split("/"):
+            errors.append(f"{field_name}[{i}]: '{pattern}' must not contain '..' segments")
+    return errors

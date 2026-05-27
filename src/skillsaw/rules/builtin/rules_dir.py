@@ -10,7 +10,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rules.builtin.utils import read_text, frontmatter_key_line
+from skillsaw.rules.builtin.utils import read_text, frontmatter_key_line, validate_glob_patterns
 
 
 def _parse_frontmatter(content: str):
@@ -128,45 +128,7 @@ class RulesValidRule(Rule):
                 )
                 continue
 
-            for i, pattern in enumerate(paths):
-                if not isinstance(pattern, str):
-                    violations.append(
-                        self.violation(
-                            f"paths[{i}]: must be a string, got {type(pattern).__name__}",
-                            file_path=file_path,
-                            line=paths_line,
-                        )
-                    )
-                    continue
-
-                if not pattern.strip():
-                    violations.append(
-                        self.violation(
-                            f"paths[{i}]: empty glob pattern",
-                            file_path=file_path,
-                            line=paths_line,
-                        )
-                    )
-                    continue
-
-                if pattern.startswith("/") or pattern.startswith("\\"):
-                    violations.append(
-                        self.violation(
-                            f"paths[{i}]: '{pattern}' must be a relative path, not absolute",
-                            file_path=file_path,
-                            line=paths_line,
-                        )
-                    )
-
-                normalized = pattern.replace("\\", "/")
-                segments = normalized.split("/")
-                if ".." in segments:
-                    violations.append(
-                        self.violation(
-                            f"paths[{i}]: '{pattern}' must not contain '..' segments",
-                            file_path=file_path,
-                            line=paths_line,
-                        )
-                    )
+            for error in validate_glob_patterns(paths, field_name="paths"):
+                violations.append(self.violation(error, file_path=file_path, line=paths_line))
 
         return violations

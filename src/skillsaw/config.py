@@ -188,6 +188,8 @@ class LinterConfig:
                 "mcp-prohibited": {"enabled": False, "severity": "error"},
                 # Rules directory
                 "rules-valid": {"enabled": "auto", "severity": "error"},
+                # Cursor rules
+                "cursor-rule-frontmatter": {"enabled": "auto", "severity": "warning"},
                 # Agentskills rules (auto-enabled for agentskills repos)
                 "agentskill-valid": {"enabled": "auto", "severity": "error"},
                 "agentskill-name": {"enabled": "auto", "severity": "error"},

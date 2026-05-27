@@ -1,0 +1,11 @@
+---
+description: Python development guidelines
+globs: "src/**/*.py"
+alwaysApply: false
+---
+
+# Python Development
+
+Use 4-space indentation for all Python files.
+
+Follow PEP 8 naming conventions for functions and variables.

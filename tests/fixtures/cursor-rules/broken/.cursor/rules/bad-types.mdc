@@ -1,0 +1,9 @@
+---
+description: ""
+alwaysApply: "yes"
+unknownField: test
+---
+
+# Bad Types Rule
+
+This rule has wrong types and unknown keys.

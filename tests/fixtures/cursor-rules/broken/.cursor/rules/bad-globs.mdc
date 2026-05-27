@@ -1,0 +1,8 @@
+---
+description: Rule with invalid globs
+globs: /absolute/path/*.py
+---
+
+# Bad Globs Rule
+
+This rule has an absolute path in its globs.

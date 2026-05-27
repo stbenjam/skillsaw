@@ -25,6 +25,7 @@ class RepositoryType(Enum):
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
+    DOT_CURSOR = "dot-cursor"  # .cursor/rules/ directory with .mdc rule files
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
     APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
@@ -245,6 +246,10 @@ class RepositoryContext:
         if self._is_dot_claude():
             types.add(RepositoryType.DOT_CLAUDE)
 
+        # DOT_CURSOR (skip if APM — .cursor/ is a compiled output)
+        if not self.has_apm and self._is_dot_cursor():
+            types.add(RepositoryType.DOT_CURSOR)
+
         # Promptfoo
         if self._is_promptfoo_repo():
             types.add(RepositoryType.PROMPTFOO)
@@ -288,6 +293,13 @@ class RepositoryContext:
             return False
         markers = ("commands", "skills", "hooks", "agents", "rules")
         return any((claude_dir / m).is_dir() for m in markers)
+
+    def _is_dot_cursor(self) -> bool:
+        """Check if .cursor/rules/ exists with .mdc files."""
+        rules_dir = self.root_path / ".cursor" / "rules"
+        if not rules_dir.is_dir():
+            return False
+        return any(rules_dir.glob("*.mdc"))
 
     def _is_promptfoo_repo(self) -> bool:
         """Check if this repository contains promptfoo eval configs."""

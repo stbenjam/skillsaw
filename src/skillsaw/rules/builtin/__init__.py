@@ -42,6 +42,10 @@ from .rules_dir import (
     RulesValidRule,
 )
 
+from .cursor_rules import (
+    CursorRuleFrontmatterRule,
+)
+
 from .agentskills import (
     AgentSkillValidRule,
     AgentSkillNameRule,
@@ -126,6 +130,8 @@ BUILTIN_RULES = [
     McpProhibitedRule,
     # Rules directory
     RulesValidRule,
+    # Cursor rules
+    CursorRuleFrontmatterRule,
     # Agentskills
     AgentSkillValidRule,
     AgentSkillNameRule,
@@ -190,6 +196,7 @@ __all__ = [
     "McpValidJsonRule",
     "McpProhibitedRule",
     "RulesValidRule",
+    "CursorRuleFrontmatterRule",
     "AgentSkillValidRule",
     "AgentSkillNameRule",
     "AgentSkillRenameRefsRule",

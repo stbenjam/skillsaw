@@ -309,6 +309,24 @@ class TestCursorRules:
                 f"(off by {12 - v['line']} due to missing frontmatter offset)"
             )
 
+    def test_clean_cursor_rules_pass(self, tmp_path):
+        repo = copy_fixture("cursor-rules/clean", tmp_path)
+        r = run_lint(repo)
+        assert "cursor-rule-frontmatter" not in rule_ids(r)
+
+    def test_broken_cursor_rules_detected(self, tmp_path):
+        repo = copy_fixture("cursor-rules/broken", tmp_path)
+        r = run_lint(repo)
+        ids = rule_ids(r)
+        assert "cursor-rule-frontmatter" in ids
+
+        fm_violations = by_rule(r)["cursor-rule-frontmatter"]
+        messages = [v["message"] for v in fm_violations]
+        assert any("absolute" in m for m in messages)
+        assert any("alwaysApply" in m and "boolean" in m for m in messages)
+        assert any("Unknown frontmatter key" in m for m in messages)
+        assert any("description" in m and "non-empty" in m for m in messages)
+
 
 @pytest.mark.integration
 class TestDotClaude:
@@ -653,6 +671,7 @@ BROKEN_FIXTURES = [
     "dot-claude/agents-imports-broken",
     "coderabbit/broken",
     "apm/broken",
+    "cursor-rules/broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -663,6 +682,7 @@ CLEAN_FIXTURES = [
     "dot-claude/agents-imports-clean",
     "coderabbit/clean",
     "apm/clean",
+    "cursor-rules/clean",
 ]
 
 OPT_IN_RULES = {
