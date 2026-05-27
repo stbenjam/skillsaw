@@ -4,26 +4,14 @@
 
 ### skillsaw
 
-Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues in AI agent instructions — then auto-fix them with any LLM.
+Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
 
 [![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </td>
 </tr></table>
 
-```bash
-$ uvx skillsaw /path/to/your/repo
-
-Errors:
-  ✗ ERROR [CLAUDE.md:42]: Likely contradiction: "always use snake_case" vs "use camelCase for exports"
-  ✗ ERROR [skills/deploy/SKILL.md]: Missing required frontmatter field: description
-
-Warnings:
-  ⚠ WARNING [CLAUDE.md:87]: Weak language: "try to avoid" — use direct imperatives
-  ⚠ WARNING [AGENTS.md:12]: Tautological: "Be helpful and concise" — models do this by default
-
-Summary: 2 errors, 2 warnings (4 fixable with --llm)
-```
+<img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif" alt="skillsaw demo" width="800">
 
 **[Full documentation at skillsaw.org](https://skillsaw.org)** — supports [Claude Code plugins](https://docs.claude.com/en/docs/claude-code/plugins), [agentskills.io](https://agentskills.io), CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
