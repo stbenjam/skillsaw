@@ -42,6 +42,8 @@ on:
   push:
     branches: [main]
 
+# SECURITY: This workflow runs on untrusted PR code, so it has read-only
+# permissions. It cannot post comments — that's handled by lint-review.yml.
 permissions:
   contents: read
 
@@ -59,6 +61,12 @@ jobs:
 # .github/workflows/lint-review.yml
 name: Lint Review
 
+# SECURITY: workflow_run triggers run in the context of the BASE branch (main),
+# not the PR branch. This workflow never checks out or executes untrusted PR
+# code — it only downloads the lint report artifact produced by the Lint
+# workflow and posts review comments. This is GitHub's recommended pattern for
+# safely granting write permissions to PR feedback workflows.
+# See: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_run
 on:
   workflow_run:
     workflows: ["Lint"]
@@ -66,12 +74,17 @@ on:
 
 jobs:
   review:
+    # Only run for pull requests, not push events.
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     steps:
+      # Checks out the base branch (main), not the PR branch — no untrusted
+      # code is executed. The checkout is needed for the action definition only.
       - uses: actions/checkout@v5
+      # Reads the lint report artifact from the Lint workflow and posts inline
+      # PR comments. Does not run skillsaw or execute any PR code.
       - uses: stbenjam/skillsaw/review@v0
 ```
 
