@@ -497,9 +497,6 @@ def _run_lint(args):
         violations = linter.run()
 
     if baseline and args.fmt == "text":
-        suppressed = linter.baseline_suppressed_count
-        if suppressed:
-            print(f"Baseline: suppressed {suppressed} existing violation(s)")
         stale = linter.stale_baseline_entries
         if stale:
             print(
@@ -514,7 +511,13 @@ def _run_lint(args):
             print("  Run `skillsaw baseline` to update.\n")
 
     stdout_output = format_report(
-        args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+        args.fmt,
+        violations,
+        context,
+        linter.rules,
+        cli_version,
+        verbose=args.verbose,
+        baseline_suppressed=linter.baseline_suppressed_count,
     )
     print(stdout_output)
 
