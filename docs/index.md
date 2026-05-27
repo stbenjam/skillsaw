@@ -6,16 +6,15 @@
 
 **Keep your skills sharp.**
 
-A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills,
-[Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins),
-and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces).
-
-Analyzes instruction file quality using attention research, detects weak language and contradictions,
-and auto-fixes violations with any LLM.
+40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
 
 [Get Started](getting-started.md){ .md-button .md-button--primary }
 [View Rules](rules/index.md){ .md-button }
 
+</div>
+
+<div style="text-align: center; padding: 1rem 0;">
+<img src="images/demo.gif" alt="skillsaw demo" style="max-width: 100%; border-radius: 8px;">
 </div>
 
 ---

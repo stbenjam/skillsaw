@@ -13,13 +13,12 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 
 <img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif" alt="skillsaw demo" width="800">
 
-**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports [Claude Code plugins](https://docs.claude.com/en/docs/claude-code/plugins), [agentskills.io](https://agentskills.io), CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
+**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
 ## Table of Contents
 
 <!-- BEGIN GENERATED TOC -->
 
-- [Features](#features)
 - [Quick Start](#quick-start)
   - [More commands](#more-commands)
 - [Installation](#installation)
