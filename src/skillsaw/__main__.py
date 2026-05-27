@@ -105,6 +105,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Preview LLM fixes without writing changes (requires --fix --llm)",
     )
     lint_parser.add_argument(
+        "--patch-file",
+        type=Path,
+        default=None,
+        dest="patch_file",
+        metavar="FILE",
+        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
+    )
+    lint_parser.add_argument(
+        "--apply-patch",
+        action="store_true",
+        dest="apply_patch",
+        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -209,6 +223,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         dest="dry_run",
         help="Preview fixes without writing changes",
+    )
+    fix_parser.add_argument(
+        "--patch-file",
+        type=Path,
+        default=None,
+        dest="patch_file",
+        metavar="FILE",
+        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
+    )
+    fix_parser.add_argument(
+        "--apply-patch",
+        action="store_true",
+        dest="apply_patch",
+        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
     )
     fix_parser.add_argument(
         "--suggest",
@@ -390,6 +418,18 @@ def _run_tree(args):
     sys.exit(0)
 
 
+def _handle_apply_patch_for_lint(args):
+    if not getattr(args, "apply_patch", False):
+        return
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+    root_path = args.path.resolve()
+    patch_path = _resolve_patch_path(args, root_path)
+    _apply_llm_patch(patch_path, root_path)
+    sys.exit(0)
+
+
 def _run_lint(args):
     if args.verbose:
         logging.basicConfig(
@@ -413,6 +453,8 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+
+    _handle_apply_patch_for_lint(args)
 
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
@@ -583,6 +625,65 @@ def _ansi_colors():
     }
 
 
+_DEFAULT_PATCH_NAME = ".skillsaw-llm-patch.diff"
+
+
+def _resolve_patch_path(args, root_path: Path) -> Path:
+    if getattr(args, "patch_file", None):
+        return args.patch_file.resolve()
+    return root_path.resolve() / _DEFAULT_PATCH_NAME
+
+
+def _save_llm_patch(diffs, patch_path: Path) -> None:
+    combined = ""
+    for diff_text in diffs.values():
+        combined += diff_text
+        if not combined.endswith("\n"):
+            combined += "\n"
+    patch_path.write_text(combined, encoding="utf-8")
+
+
+def _apply_llm_patch(patch_path: Path, root_path: Path) -> None:
+    import subprocess
+
+    c = _ansi_colors()
+    if not patch_path.exists():
+        print(f"Error: Patch file not found: {patch_path}", file=sys.stderr)
+        sys.exit(1)
+
+    patch_content = patch_path.read_text(encoding="utf-8")
+    if not patch_content.strip():
+        print(f"Error: Patch file is empty: {patch_path}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["git", "apply", "--check", str(patch_path)],
+        cwd=str(root_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            f"Error: Patch does not apply cleanly:\n{result.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["git", "apply", str(patch_path)],
+        cwd=str(root_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Error: Failed to apply patch:\n{result.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"{c['green']}Patch applied successfully from {patch_path}{c['reset']}")
+    patch_path.unlink()
+    print(f"{c['dim']}Patch file removed.{c['reset']}")
+
+
 def _require_llm_provider(config):
     if not config.llm.model:
         print(
@@ -686,6 +787,11 @@ def _run_llm_fix_inline(args, linter, config):
 
     if dry_run:
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
+        if result.diffs:
+            patch_path = _resolve_patch_path(args, linter.context.root_path)
+            _save_llm_patch(result.diffs, patch_path)
+            print(f"{c['cyan']}Patch saved to {patch_path}{c['reset']}")
+            print(f"\n{c['bold']}To apply:{c['reset']}" f" skillsaw fix --apply-patch")
 
     _print_token_usage(result.total_usage, c)
 
@@ -694,6 +800,12 @@ def _run_fix(args):
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
+
+    if getattr(args, "apply_patch", False):
+        root_path = args.path.resolve()
+        patch_path = _resolve_patch_path(args, root_path)
+        _apply_llm_patch(patch_path, root_path)
+        sys.exit(0)
 
     context = RepositoryContext(args.path)
 
@@ -955,6 +1067,11 @@ def _run_fix(args):
         print(f"  {c['yellow']}{result.violations_after} remaining{c['reset']}")
     if dry_run:
         print(f"  {c['yellow']}dry-run — no files were modified{c['reset']}")
+        if result.diffs:
+            patch_path = _resolve_patch_path(args, context.root_path)
+            _save_llm_patch(result.diffs, patch_path)
+            print(f"  {c['cyan']}Patch saved to {patch_path}{c['reset']}")
+            print(f"\n  {c['bold']}To apply:{c['reset']}" f" skillsaw fix --apply-patch")
     else:
         print(f"  {len(result.files_modified)} file(s) modified")
 
