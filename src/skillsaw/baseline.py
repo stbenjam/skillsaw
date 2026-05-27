@@ -140,7 +140,9 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
         "version": baseline.version,
         "generated_by": baseline.generated_by,
         "generated_at": baseline.generated_at,
-        "violations": [asdict(e) for e in baseline.violations],
+        "violations": [
+            {k: v for k, v in asdict(e).items() if v is not None} for e in baseline.violations
+        ],
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 

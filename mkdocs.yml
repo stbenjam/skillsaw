@@ -59,6 +59,7 @@ nav:
   - Repository Types: repo-types.md
   - Configuration: configuration.md
   - Autofixing: autofixing.md
+  - Baseline: baseline.md
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
@@ -94,7 +95,6 @@ nav:
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
   - Guides:
-    - Baseline: baseline.md
     - custom-rules.md
     - scaffolding.md
     - ci.md
