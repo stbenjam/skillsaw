@@ -58,3 +58,5 @@ valid feedback that comes in.
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.
+
+You should probably try to make sure tests work correctly before pushing.
