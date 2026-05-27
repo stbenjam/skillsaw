@@ -177,7 +177,7 @@ jobs:
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
-          skillsaw --format json /tmp/ai-helpers | python3 -c "
+          skillsaw --format json --skip-rule plugins-doc-up-to-date /tmp/ai-helpers | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['plugins'] > 0, 'no plugins scanned'

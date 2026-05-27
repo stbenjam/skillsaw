@@ -137,6 +137,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         metavar="RULE",
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
     )
+    lint_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -208,6 +216,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="RULE",
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+    )
+    fix_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
     )
 
     # --- init ---
@@ -418,8 +434,12 @@ def _run_lint(args):
         config.strict = True
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids)
+        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -623,8 +643,12 @@ def _run_fix(args):
         config = LinterConfig.default()
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids)
+        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -638,7 +662,7 @@ def _run_fix(args):
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
             context = RepositoryContext(args.path)
-            linter = Linter(context, config, rule_ids=rule_ids)
+            linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)
             applied.extend(rename_applied)
             suggested.extend(rename_suggested)
