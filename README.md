@@ -812,7 +812,10 @@ skillsaw fix --llm --model openrouter/minimax/minimax-m1
 skillsaw fix --llm --all                    # Include info-level violations
 skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
 skillsaw fix --llm --max-iterations 10      # Max iterations per file
-skillsaw fix --llm --dry-run                # Preview changes without writing
+skillsaw fix --llm --dry-run                # Preview changes and save patch
+skillsaw fix --apply-patch                  # Apply the saved patch
+skillsaw fix --llm --dry-run --patch-file p.diff  # Custom patch path
+skillsaw fix --apply-patch --patch-file p.diff    # Apply from custom path
 skillsaw fix --llm -y                       # Auto-apply without confirmation
 ```
 
@@ -824,7 +827,7 @@ skillsaw fix --llm -y                       # Auto-apply without confirmation
 4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
 5. Files are processed in parallel with a live progress bar showing ETA
 
-The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
+The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to preview changes — because LLM output is non-deterministic, the dry-run saves a patch file (`.skillsaw-llm-patch.diff`) so you can review and then apply the exact changes with `--apply-patch`.
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
