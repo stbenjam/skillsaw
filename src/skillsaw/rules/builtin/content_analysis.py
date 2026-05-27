@@ -100,7 +100,9 @@ def is_inside_inline_code(line: str, match_start: int, match_end: int) -> bool:
     return False
 
 
-def inline_code_span_bounds(line: str, match_start: int, match_end: int) -> Optional[tuple]:
+def inline_code_span_bounds(
+    line: str, match_start: int, match_end: int
+) -> Optional[Tuple[int, int]]:
     """Return (span_start, span_end) of the enclosing backtick span if the match
     is exactly its content, else None.  The bounds include the backtick delimiters."""
     for m in _INLINE_CODE_RE.finditer(line):
