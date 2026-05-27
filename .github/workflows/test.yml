@@ -194,6 +194,7 @@ jobs:
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
+          assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
