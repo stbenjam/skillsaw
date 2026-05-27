@@ -109,22 +109,33 @@ def sync_comments(repo, pr_number, new_comments):
 
     replied_to = {c["in_reply_to_id"] for c in all_comments if c.get("in_reply_to_id")}
 
-    current_fps = {c["fingerprint"] for c in new_comments}
+    new_by_fp = {c["fingerprint"]: c for c in new_comments}
+    moved_fps = set()
     deleted = 0
     for fp, comment in existing.items():
-        if fp in current_fps:
+        if fp not in new_by_fp:
+            if comment["id"] in replied_to:
+                continue
+            try:
+                github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
+                deleted += 1
+            except urllib.error.HTTPError:
+                pass
             continue
-        if comment["id"] in replied_to:
-            continue
-        try:
-            github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
-            deleted += 1
-        except urllib.error.HTTPError:
-            pass
+        new = new_by_fp[fp]
+        old_line = comment.get("line")
+        new_line = new.get("line")
+        if old_line != new_line and comment["id"] not in replied_to:
+            try:
+                github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
+                moved_fps.add(fp)
+                deleted += 1
+            except urllib.error.HTTPError:
+                pass
     if deleted:
-        print(f"Deleted {deleted} comment(s) for fixed issues.")
+        print(f"Deleted {deleted} comment(s) for fixed/moved issues.")
 
-    return [c for c in new_comments if c["fingerprint"] not in existing]
+    return [c for c in new_comments if c["fingerprint"] not in existing or c["fingerprint"] in moved_fps]
 
 
 def upsert_summary_comment(repo, pr_number, non_diff_violations):
