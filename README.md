@@ -4,7 +4,7 @@
 
 ### skillsaw
 
-Lint, fix, and ship better AI agent instructions. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them with any LLM.
+Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues in AI agent instructions — then auto-fix them with any LLM.
 
 [![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
