@@ -246,7 +246,7 @@ mark {
     padding: 0 2px; border-radius: 2px;
 }
 
-/* Content items — shared across modal and single-plugin view */
+/* Content items — shared across detail and single-plugin view */
 .command-item {
     margin-bottom: 1rem; padding: 0.75rem;
     background: var(--bg-code); border-radius: 8px;
@@ -318,35 +318,30 @@ mark {
 .md-body a { color: var(--primary); }
 
 /* Modal */
-.modal {
-    display: none; position: fixed; z-index: 1000;
-    left: 0; top: 0; width: 100%; height: 100%;
-    background-color: rgba(0, 0, 0, 0.8);
-    align-items: center; justify-content: center;
+/* Plugin detail view */
+.detail-back {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    color: var(--text-muted); font-size: 0.875rem; cursor: pointer;
+    background: none; border: none; font-family: inherit;
+    margin-bottom: 1.5rem; padding: 0;
 }
-.modal.show { display: flex; }
-.modal-content {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius); max-width: 700px; width: 90%;
-    max-height: 85vh; position: relative;
-    display: flex; flex-direction: column;
-}
-.modal-header {
+.detail-back:hover { color: var(--primary); }
+.detail-header {
     display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 1.5rem 2rem 1rem 2rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    margin-bottom: 1rem;
 }
-.modal-title-section { flex: 1; }
-.modal-title { font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; }
-.modal-meta { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-#modal-body { padding: 1.5rem 2rem 2rem 2rem; overflow-y: auto; flex: 1; }
-.modal-filter {
+.detail-title-section { flex: 1; }
+.detail-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; }
+.detail-meta { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.detail-body { margin-top: 1rem; }
+.detail-filter {
     width: 100%; padding: 0.5rem 0.75rem; font-size: 0.875rem; font-family: inherit;
     background: var(--bg-code); border: 1px solid var(--border);
     border-radius: 6px; color: var(--text-primary); margin-bottom: 1rem;
     transition: border-color 0.2s;
 }
-.modal-filter:focus { outline: none; border-color: var(--primary); }
-.modal-filter::placeholder { color: var(--text-muted); }
+.detail-filter:focus { outline: none; border-color: var(--primary); }
+.detail-filter::placeholder { color: var(--text-muted); }
 .modal-section-items[data-filtered="true"] .command-item,
 .modal-section-items[data-filtered="true"] .skill-item,
 .modal-section-items[data-filtered="true"] .agent-item,
@@ -606,13 +601,6 @@ def _wrap_page(
     </footer>
   </main>
 
-  <div id="modal" class="modal" onclick="closeModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <div class="modal-header" id="modal-header"></div>
-      <div id="modal-body"></div>
-    </div>
-  </div>
-
   <script>
   var DATA = {data_json};
   var IS_MARKETPLACE = {'true' if is_marketplace else 'false'};
@@ -637,7 +625,7 @@ def _get_js() -> str:
     applyHashState();
     document.getElementById('search').addEventListener('input', onSearchInput);
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') navigateTo('');
       if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         document.getElementById('search').focus();
@@ -663,7 +651,6 @@ def _get_js() -> str:
     var hash = decodeURIComponent(window.location.hash.slice(1));
     var input = document.getElementById('search');
     var nr = document.getElementById('no-results');
-    document.getElementById('modal').classList.remove('show');
 
     if (!hash) {
       input.value = '';
@@ -707,10 +694,9 @@ def _get_js() -> str:
       input.value = '';
       document.getElementById('search-clear').style.display = 'none';
       activeCategory = null;
-      renderDefault();
-      nr.classList.remove('show');
       var p = allPlugins.find(function(x) { return x.name === hash; });
-      if (p) openPluginModal(hash);
+      if (p) { showPluginDetail(hash); }
+      else { renderDefault(); nr.classList.remove('show'); }
     }
   }
 
@@ -1108,24 +1094,25 @@ def _get_js() -> str:
     el.innerHTML = html;
   }
 
-  // ---- Modal ----
-  window.showPluginModal = function(name) {
-    navigateTo(name);
-  };
-
-  function openPluginModal(name) {
+  // ---- Plugin detail view ----
+  function showPluginDetail(name) {
     var p = allPlugins.find(function(x){return x.name===name;});
     if (!p) return;
+    var el = document.getElementById('content');
+    var nr = document.getElementById('no-results');
+    nr.classList.remove('show');
+
     var counts = buildCountBadges(p);
     var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
     var cat = p.category ? '<span class="plugin-category">'+esc(p.category)+'</span>' : '';
     var lic = p.license ? '<span class="plugin-license">'+esc(p.license)+'</span>' : '';
-    var hdr = '<div class="modal-title-section"><div class="modal-title">'+esc(pName(p))+'</div>' +
-              '<div class="modal-meta">'+counts+cat+lic+'</div></div>' +
-              '<div style="display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end">' +
-              '<div style="display:flex;gap:1rem;align-items:flex-start">'+ver+
-              '<button class="close-button" onclick="closeModal()">&times;</button></div></div>';
-    var totalItems = p.commands.length + p.skills.length + p.agents.length + p.hooks.length + p.mcp_servers.length + p.rules.length;
+
+    var html = '<button class="detail-back" onclick="navigateTo(\\'\\')">&#8592; Back</button>';
+    html += '<div class="detail-header"><div class="detail-title-section">';
+    html += '<div class="detail-title">'+esc(pName(p))+'</div>';
+    html += '<div class="detail-meta">'+counts+cat+lic+ver+'</div>';
+    html += '</div></div>';
+
     var metaLinks = [];
     if (p.homepage) metaLinks.push('<a href="'+esc(p.homepage)+'">Homepage</a>');
     if (p.repository) metaLinks.push('<a href="'+esc(p.repository)+'">Repository</a>');
@@ -1136,31 +1123,29 @@ def _get_js() -> str:
     var metaLinksHtml = metaLinks.length ? '<div class="plugin-meta-links">'+metaLinks.join(' &middot; ')+'</div>' : '';
     var allTags = (p.tags||[]).concat(p.keywords||[]);
     var tagsHtml = allTags.length ? '<div class="plugin-tags" style="margin-bottom:1rem">'+allTags.map(function(t){return '<span class="plugin-tag">'+esc(t)+'</span>';}).join('')+'</div>' : '';
-    var body = '<div class="plugin-description" style="margin-bottom:0.5rem">'+(p.description_html || esc(p.description) || '')+'</div>' + metaLinksHtml + tagsHtml;
+
+    html += '<div class="detail-body">';
+    html += '<div class="plugin-description" style="margin-bottom:0.5rem">'+(p.description_html || esc(p.description) || '')+'</div>' + metaLinksHtml + tagsHtml;
+
+    var totalItems = p.commands.length + p.skills.length + p.agents.length + p.hooks.length + p.mcp_servers.length + p.rules.length;
     if (totalItems >= 5) {
-      body += '<input type="text" class="modal-filter" id="modal-filter" placeholder="Filter commands, skills..." autocomplete="off">';
+      html += '<input type="text" class="detail-filter" id="detail-filter" placeholder="Filter commands, skills..." autocomplete="off">';
     }
-    body += '<div id="modal-sections">' + renderPluginSections(p, true) + '</div>';
-    document.getElementById('modal-header').innerHTML = hdr;
-    document.getElementById('modal-body').innerHTML = body;
-    document.getElementById('modal').classList.add('show');
-    var filterInput = document.getElementById('modal-filter');
+    html += '<div id="detail-sections">' + renderPluginSections(p, true) + '</div>';
+    html += '</div>';
+
+    el.innerHTML = html;
+    window.scrollTo(0, 0);
+
+    var filterInput = document.getElementById('detail-filter');
     if (filterInput) {
-      filterInput.addEventListener('input', function(e) { filterModalItems(e.target.value); });
-      filterInput.focus();
+      filterInput.addEventListener('input', function(e) { filterDetailItems(e.target.value); });
     }
   }
 
-  window.closeModal = function(event) {
-    if (!event || event.target.id === 'modal') {
-      document.getElementById('modal').classList.remove('show');
-      history.pushState(null,'',window.location.pathname+window.location.search);
-    }
-  };
-
-  function filterModalItems(query) {
+  function filterDetailItems(query) {
     var q = query.toLowerCase().trim();
-    var sections = document.querySelectorAll('#modal-sections .modal-section-items');
+    var sections = document.querySelectorAll('#detail-sections .modal-section-items');
     sections.forEach(function(section) {
       if (!q) { section.setAttribute('data-filtered', 'false'); return; }
       section.setAttribute('data-filtered', 'true');
@@ -1174,8 +1159,7 @@ def _get_js() -> str:
         }
       }
     });
-    // Hide section titles with no visible items
-    var titles = document.querySelectorAll('#modal-sections .section-title');
+    var titles = document.querySelectorAll('#detail-sections .section-title');
     titles.forEach(function(title) {
       var next = title.nextElementSibling;
       if (!next || !next.classList.contains('modal-section-items')) return;

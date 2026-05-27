@@ -442,13 +442,13 @@ class TestHtmlRenderer:
         page = render_html(docs)["index.html"]
         assert "<script>alert" not in page
 
-    def test_modal_support(self, marketplace_repo):
-        """Marketplace pages include modal infrastructure."""
+    def test_detail_view_support(self, marketplace_repo):
+        """Marketplace pages include plugin detail view."""
         ctx = RepositoryContext(marketplace_repo)
         docs = extract_docs(ctx)
         page = render_html(docs)["index.html"]
-        assert "modal" in page
-        assert "showPluginModal" in page
+        assert "showPluginDetail" in page
+        assert "detail-back" in page
 
     def test_dark_theme(self, valid_plugin):
         """Page uses the dark theme."""
