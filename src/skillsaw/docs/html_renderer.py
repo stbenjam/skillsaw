@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from skillsaw.context import RepositoryType
 from skillsaw.docs.models import (
@@ -18,6 +18,17 @@ from skillsaw.docs.models import (
     RuleFileDoc,
     SkillDoc,
 )
+
+COLOR_THEMES = {
+    "indigo": {"primary": "#6366f1", "primary_dark": "#4f46e5", "secondary": "#818cf8"},
+    "forest-green": {"primary": "#228B22", "primary_dark": "#1a6b1a", "secondary": "#32CD32"},
+    "ocean-blue": {"primary": "#0077be", "primary_dark": "#005a8e", "secondary": "#4db8ff"},
+    "sunset-orange": {"primary": "#ff6b35", "primary_dark": "#d94f1f", "secondary": "#ff9966"},
+    "royal-purple": {"primary": "#6a4c93", "primary_dark": "#4a3369", "secondary": "#9d84b7"},
+    "crimson-red": {"primary": "#dc143c", "primary_dark": "#a0102a", "secondary": "#ff6b7a"},
+}
+
+_DEFAULT_THEME = "indigo"
 
 CSS = """\
 :root {
@@ -74,7 +85,13 @@ nav.navbar {
     background-clip: text; margin: 0;
 }
 .subtitle { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
+.navbar-home { text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 0.125rem; cursor: pointer; }
+.navbar-home:hover { text-decoration: none; }
+.navbar-home:hover h1 { opacity: 0.85; }
 .navbar-stats { display: flex; gap: 1rem; align-items: center; }
+.stat-link { text-decoration: none; color: inherit; cursor: pointer; }
+.stat-link:hover { text-decoration: none; }
+.stat-link:hover .stat-value { color: var(--secondary); }
 .stat {
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.375rem 0.75rem; background: var(--bg-code);
@@ -127,6 +144,42 @@ nav.navbar {
     background: var(--bg-code); padding: 0.25rem 0.5rem; border-radius: 4px;
 }
 .plugin-description { color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.95rem; }
+.plugin-meta-links {
+    display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+}
+.plugin-meta-links a { color: var(--text-muted); }
+.plugin-meta-links a:hover { color: var(--primary); }
+.plugin-license {
+    font-size: 0.75rem; color: var(--text-muted);
+    background: var(--bg-code); padding: 0.125rem 0.5rem; border-radius: 4px;
+}
+.plugin-category {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--secondary);
+    background: rgba(129, 140, 248, 0.12); padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+}
+.plugin-tags { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.plugin-tag {
+    font-size: 0.7rem; color: var(--text-muted);
+    background: var(--bg-code); padding: 0.125rem 0.5rem; border-radius: 4px;
+    cursor: pointer; transition: all 0.2s ease;
+}
+.plugin-tag:hover { color: var(--primary); border-color: var(--primary); }
+.category-filter {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;
+}
+.category-btn {
+    font-size: 0.8rem; padding: 0.375rem 0.75rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text-muted); cursor: pointer; transition: all 0.2s ease;
+    font-family: inherit;
+}
+.category-btn:hover { border-color: var(--primary); color: var(--text-primary); }
+.category-btn.active {
+    background: var(--primary); color: white; border-color: var(--primary);
+}
 .item-counts {
     color: var(--text-muted); font-size: 0.875rem;
     display: flex; gap: 1rem; flex-wrap: wrap; margin-top: auto;
@@ -193,7 +246,7 @@ mark {
     padding: 0 2px; border-radius: 2px;
 }
 
-/* Content items — shared across modal and single-plugin view */
+/* Content items — shared across detail and single-plugin view */
 .command-item {
     margin-bottom: 1rem; padding: 0.75rem;
     background: var(--bg-code); border-radius: 8px;
@@ -265,35 +318,30 @@ mark {
 .md-body a { color: var(--primary); }
 
 /* Modal */
-.modal {
-    display: none; position: fixed; z-index: 1000;
-    left: 0; top: 0; width: 100%; height: 100%;
-    background-color: rgba(0, 0, 0, 0.8);
-    align-items: center; justify-content: center;
+/* Plugin detail view */
+.detail-back {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    color: var(--text-muted); font-size: 0.875rem; cursor: pointer;
+    background: none; border: none; font-family: inherit;
+    margin-bottom: 1.5rem; padding: 0;
 }
-.modal.show { display: flex; }
-.modal-content {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius); max-width: 700px; width: 90%;
-    max-height: 85vh; position: relative;
-    display: flex; flex-direction: column;
-}
-.modal-header {
+.detail-back:hover { color: var(--primary); }
+.detail-header {
     display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 1.5rem 2rem 1rem 2rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    margin-bottom: 1rem;
 }
-.modal-title-section { flex: 1; }
-.modal-title { font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; }
-.modal-meta { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-#modal-body { padding: 1.5rem 2rem 2rem 2rem; overflow-y: auto; flex: 1; }
-.modal-filter {
+.detail-title-section { flex: 1; }
+.detail-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; }
+.detail-meta { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+.detail-body { margin-top: 1rem; }
+.detail-filter {
     width: 100%; padding: 0.5rem 0.75rem; font-size: 0.875rem; font-family: inherit;
     background: var(--bg-code); border: 1px solid var(--border);
     border-radius: 6px; color: var(--text-primary); margin-bottom: 1rem;
     transition: border-color 0.2s;
 }
-.modal-filter:focus { outline: none; border-color: var(--primary); }
-.modal-filter::placeholder { color: var(--text-muted); }
+.detail-filter:focus { outline: none; border-color: var(--primary); }
+.detail-filter::placeholder { color: var(--text-muted); }
 .modal-section-items[data-filtered="true"] .command-item,
 .modal-section-items[data-filtered="true"] .skill-item,
 .modal-section-items[data-filtered="true"] .agent-item,
@@ -327,24 +375,39 @@ footer a { color: var(--primary); }
 """
 
 
-def render_html(docs: DocsOutput) -> Dict[str, str]:
+def _apply_theme(css: str, theme: Optional[str]) -> str:
+    if not theme:
+        return css
+    colors = COLOR_THEMES.get(theme)
+    if not colors:
+        return css
+    css = css.replace("--primary: #6366f1;", f"--primary: {colors['primary']};")
+    css = css.replace("--primary-dark: #4f46e5;", f"--primary-dark: {colors['primary_dark']};")
+    css = css.replace("--secondary: #818cf8;", f"--secondary: {colors['secondary']};")
+    return css
+
+
+def render_html(docs: DocsOutput, theme: Optional[str] = None) -> Dict[str, str]:
     """Render documentation as a single self-contained HTML page."""
-    return {"index.html": _render_page(docs)}
+    return {"index.html": _render_page(docs, theme=theme)}
 
 
-def _render_page(docs: DocsOutput) -> str:
+def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
     is_marketplace = docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace is not None
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag
     data_json = json.dumps(data, indent=None).replace("<", "\\u003c").replace(">", "\\u003e")
 
-    mp = docs.marketplace
-    title = (mp.name if mp and mp.name else docs.title) if is_marketplace else docs.title
+    title = docs.title
     subtitle = _repo_type_label(docs.repo_type)
 
     return _wrap_page(
-        title=title, subtitle=subtitle, data_json=data_json, is_marketplace=is_marketplace
+        title=title,
+        subtitle=subtitle,
+        data_json=data_json,
+        is_marketplace=is_marketplace,
+        theme=theme,
     )
 
 
@@ -367,6 +430,33 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
             "mcp_servers": [],
             "rules": [],
         }
+        if plugin.display_name:
+            p["display_name"] = plugin.display_name
+        if plugin.category:
+            p["category"] = plugin.category
+        if plugin.tags:
+            p["tags"] = plugin.tags
+        if plugin.keywords:
+            p["keywords"] = plugin.keywords
+        if plugin.homepage:
+            p["homepage"] = plugin.homepage
+        if plugin.repository:
+            p["repository"] = plugin.repository
+        if plugin.license:
+            p["license"] = plugin.license
+        has_marketplace_meta = any(
+            [
+                plugin.display_name,
+                plugin.category,
+                plugin.tags,
+                plugin.keywords,
+                plugin.homepage,
+                plugin.repository,
+                plugin.license,
+            ]
+        )
+        if has_marketplace_meta and plugin.author:
+            p["author"] = plugin.author
 
         for cmd in plugin.commands:
             p["commands"].append(
@@ -456,12 +546,19 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
     }
 
 
-def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) -> str:
+def _wrap_page(
+    title: str,
+    subtitle: str,
+    data_json: str,
+    is_marketplace: bool,
+    theme: Optional[str] = None,
+) -> str:
     search_placeholder = (
         "Search plugins, commands, skills..."
         if is_marketplace
         else "Search commands, skills, agents..."
     )
+    themed_css = _apply_theme(CSS, theme)
 
     return f"""\
 <!DOCTYPE html>
@@ -470,16 +567,16 @@ def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{_esc(title)}</title>
-  <style>{CSS}</style>
+  <style>{themed_css}</style>
 </head>
 <body>
   <nav class="navbar">
     <div class="navbar-content">
       <div class="navbar-brand">
-        <div class="navbar-title">
+        <a class="navbar-home" onclick="goHome()">
           <h1>{_esc(title)}</h1>
           <p class="subtitle">{_esc(subtitle)}</p>
-        </div>
+        </a>
         <div class="navbar-stats" id="navbar-stats"></div>
       </div>
     </div>
@@ -504,13 +601,6 @@ def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) 
     </footer>
   </main>
 
-  <div id="modal" class="modal" onclick="closeModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <div class="modal-header" id="modal-header"></div>
-      <div id="modal-body"></div>
-    </div>
-  </div>
-
   <script>
   var DATA = {data_json};
   var IS_MARKETPLACE = {'true' if is_marketplace else 'false'};
@@ -528,39 +618,107 @@ def _get_js() -> str:
 (function() {
   var allPlugins = DATA.plugins;
   var standaloneSkills = DATA.standalone_skills || [];
+  var activeCategory = null;
 
   function init() {
     updateStats();
-    renderDefault();
-    handleHashChange();
+    applyHashState();
     document.getElementById('search').addEventListener('input', onSearchInput);
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') navigateTo('');
       if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         document.getElementById('search').focus();
       }
     });
+    window.addEventListener('popstate', function() { applyHashState(); });
+    var nb = document.querySelector('nav.navbar');
+    if (nb) document.body.style.paddingTop = nb.offsetHeight + 'px';
   }
 
+  // ---- Navigation / URL state ----
+  window.goHome = function() {
+    history.pushState(null, '', window.location.pathname + window.location.search);
+    applyHashState();
+  };
+
+  window.navigateTo = function(hash) {
+    history.pushState(null, '', hash ? '#' + hash : window.location.pathname + window.location.search);
+    applyHashState();
+  };
+
+  function applyHashState() {
+    var hash = decodeURIComponent(window.location.hash.slice(1));
+    var input = document.getElementById('search');
+    var nr = document.getElementById('no-results');
+
+    if (!hash) {
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderDefault();
+      nr.classList.remove('show');
+      return;
+    }
+
+    if (hash.indexOf('category=') === 0) {
+      var cat = hash.slice(9);
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderDefault();
+      nr.classList.remove('show');
+      applyCategoryUI(cat);
+      return;
+    }
+
+    if (hash.indexOf('q=') === 0) {
+      var q = hash.slice(2);
+      input.value = q;
+      document.getElementById('search-clear').style.display = q ? 'block' : 'none';
+      activeCategory = null;
+      doSearch(q, true);
+      return;
+    }
+
+    if (hash.indexOf('type=') === 0) {
+      var type = hash.slice(5);
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      renderTypeView(type);
+      return;
+    }
+
+    if (IS_MARKETPLACE) {
+      input.value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      activeCategory = null;
+      var p = allPlugins.find(function(x) { return x.name === hash; });
+      if (p) { showPluginDetail(hash); }
+      else { renderDefault(); nr.classList.remove('show'); }
+    }
+  }
+
+  // ---- Stats ----
   function updateStats() {
     var stats = document.getElementById('navbar-stats');
     var items = [];
-    if (IS_MARKETPLACE) items.push({label: 'Plugins', value: allPlugins.length});
+    if (IS_MARKETPLACE) items.push({label: 'Plugins', value: allPlugins.length, type: 'plugins'});
     var tc = allPlugins.reduce(function(s,p){return s+p.commands.length;},0);
     var ts = allPlugins.reduce(function(s,p){return s+p.skills.length;},0) + standaloneSkills.length;
     var ta = allPlugins.reduce(function(s,p){return s+p.agents.length;},0);
     var th = allPlugins.reduce(function(s,p){return s+p.hooks.length;},0);
     var tm = allPlugins.reduce(function(s,p){return s+p.mcp_servers.length;},0);
     var tr = allPlugins.reduce(function(s,p){return s+p.rules.length;},0);
-    if (tc > 0) items.push({label: 'Commands', value: tc});
-    if (ts > 0) items.push({label: 'Skills', value: ts});
-    if (ta > 0) items.push({label: 'Agents', value: ta});
-    if (th > 0) items.push({label: 'Hooks', value: th});
-    if (tm > 0) items.push({label: 'MCP Servers', value: tm});
-    if (tr > 0) items.push({label: 'Rules', value: tr});
+    if (tc > 0) items.push({label: 'Commands', value: tc, type: 'commands'});
+    if (ts > 0) items.push({label: 'Skills', value: ts, type: 'skills'});
+    if (ta > 0) items.push({label: 'Agents', value: ta, type: 'agents'});
+    if (th > 0) items.push({label: 'Hooks', value: th, type: 'hooks'});
+    if (tm > 0) items.push({label: 'MCP Servers', value: tm, type: 'mcp_servers'});
+    if (tr > 0) items.push({label: 'Rules', value: tr, type: 'rules'});
     stats.innerHTML = items.map(function(i) {
-      return '<div class="stat"><div class="stat-value">'+i.value+'</div><div class="stat-label">'+i.label+'</div></div>';
+      return '<a href="#type='+i.type+'" class="stat stat-link" onclick="event.preventDefault();navigateTo(\\'type='+i.type+'\\')"><div class="stat-value">'+i.value+'</div><div class="stat-label">'+i.label+'</div></a>';
     }).join('');
   }
 
@@ -572,21 +730,110 @@ def _get_js() -> str:
     }
   }
 
+  // ---- Type view: show all items of a given type ----
+  function renderTypeView(type) {
+    var el = document.getElementById('content');
+    var nr = document.getElementById('no-results');
+    var html = '';
+    var typeLabels = {plugins:'Plugins',commands:'Commands',skills:'Skills',agents:'Agents',hooks:'Hooks',mcp_servers:'MCP Servers',rules:'Rules'};
+    var label = typeLabels[type] || type;
+
+    if (type === 'plugins' && IS_MARKETPLACE) {
+      html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
+      allPlugins.forEach(function(p) {
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
+        html += '<div class="search-result-content"><div class="search-result-title">'+esc(pName(p))+'</div>';
+        html += '<div class="search-result-subtitle">'+esc(p.description)+'</div></div></div>';
+      });
+    } else {
+      var items = [];
+      allPlugins.forEach(function(p) {
+        if (type === 'commands') p.commands.forEach(function(c) { items.push({plugin:p.name, name:c.full_name||c.name, desc:c.description, icon:'cmd', iconChar:'$'}); });
+        if (type === 'skills') p.skills.forEach(function(s) { items.push({plugin:p.name, name:s.name, desc:s.description, icon:'skill', iconChar:'S'}); });
+        if (type === 'agents') p.agents.forEach(function(a) { items.push({plugin:p.name, name:a.name, desc:a.description, icon:'agent', iconChar:'A'}); });
+        if (type === 'hooks') p.hooks.forEach(function(h) { items.push({plugin:p.name, name:h.event_type, desc:'Matcher: '+h.matcher, icon:'hook', iconChar:'H'}); });
+        if (type === 'mcp_servers') p.mcp_servers.forEach(function(m) { items.push({plugin:p.name, name:m.name, desc:m.type+' — '+m.endpoint, icon:'mcp', iconChar:'M'}); });
+        if (type === 'rules') p.rules.forEach(function(r) { items.push({plugin:p.name, name:r.name, desc:r.description, icon:'rule', iconChar:'R'}); });
+      });
+      if (type === 'skills') standaloneSkills.forEach(function(s) { items.push({plugin:'', name:s.name, desc:s.description, icon:'skill', iconChar:'S'}); });
+      if (items.length) {
+        html += '<div class="search-results-heading">'+label+' ('+items.length+')</div>';
+        items.forEach(function(r) {
+          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+          html += '<div class="search-result-item"'+onclick+'>';
+          html += '<div class="search-result-icon '+r.icon+'">'+r.iconChar+'</div>';
+          html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
+          html += '<div class="search-result-subtitle">'+esc(r.desc)+'</div></div>';
+          if (r.plugin) html += '<span class="search-result-plugin">'+esc(r.plugin)+'</span>';
+          html += '</div>';
+        });
+      }
+    }
+
+    if (html) { el.innerHTML = html; nr.classList.remove('show'); }
+    else { el.innerHTML = ''; nr.classList.add('show'); }
+  }
+
   // ---- Marketplace: plugin card grid ----
+  function pName(p) { return p.display_name || p.name; }
+
   function renderPluginGrid(plugins) {
     var el = document.getElementById('content');
     var nr = document.getElementById('no-results');
     if (plugins.length === 0) { el.innerHTML = ''; nr.classList.add('show'); return; }
     nr.classList.remove('show');
-    el.innerHTML = '<div class="plugins-grid">' + plugins.map(function(p) {
+    var cats = collectCategories();
+    var filterHtml = cats.length >= 1 ? renderCategoryFilter(cats) : '';
+    el.innerHTML = filterHtml + '<div class="plugins-grid" id="plugins-grid">' + plugins.map(function(p) {
       var counts = buildCountBadges(p);
       var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-      return '<div class="plugin-card" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">' +
-        '<div class="plugin-header"><div><div class="plugin-name">'+esc(p.name)+'</div>'+ver+'</div></div>' +
+      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
+      var allTags = (p.tags||[]).concat(p.keywords||[]);
+      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">' +
+        '<div class="plugin-header"><div><div class="plugin-name">'+esc(pName(p))+'</div>'+ver+'</div>'+cat+'</div>' +
         '<div class="plugin-description">'+(p.description_html || esc(p.description) || '<em>No description</em>')+'</div>' +
+        tagsHtml +
         '<div class="item-counts">'+counts+'</div></div>';
     }).join('') + '</div>';
   }
+
+  function collectCategories() {
+    var seen = {};
+    allPlugins.forEach(function(p) { if (p.category) seen[p.category] = true; });
+    return Object.keys(seen).sort();
+  }
+
+  function renderCategoryFilter(cats) {
+    var btns = '<button class="category-btn'+(activeCategory?'':' active')+'" onclick="navigateTo(\\'\\')">All</button>';
+    cats.forEach(function(c) {
+      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escAttr(c)+'\\')">'+esc(c)+'</a>';
+    });
+    return '<div class="category-filter" id="category-filter">' + btns + '</div>';
+  }
+
+  function applyCategoryUI(cat) {
+    activeCategory = cat;
+    var btns = document.querySelectorAll('.category-btn');
+    btns.forEach(function(b) { b.classList.remove('active'); });
+    if (!cat) { if (btns[0]) btns[0].classList.add('active'); }
+    else {
+      btns.forEach(function(b) { if (b.textContent === cat) b.classList.add('active'); });
+    }
+    var cards = document.querySelectorAll('.plugin-card');
+    cards.forEach(function(c) {
+      c.style.display = (!cat || c.getAttribute('data-category') === cat) ? '' : 'none';
+    });
+  }
+
+  window.filterByCategory = function(cat) {
+    navigateTo(cat ? 'category=' + encodeURIComponent(cat) : '');
+  };
+
+  window.filterByTag = function(tag) {
+    navigateTo('q=' + encodeURIComponent(tag));
+  };
 
   function buildCountBadges(p) {
     var b = [];
@@ -706,21 +953,19 @@ def _get_js() -> str:
   }
 
   window.clearSearch = function() {
-    var input = document.getElementById('search');
-    input.value = '';
-    document.getElementById('search-clear').style.display = 'none';
-    renderDefault();
-    document.getElementById('no-results').classList.remove('show');
+    goHome();
   };
 
-  function doSearch(query) {
+  function doSearch(query, skipHash) {
     var q = query.toLowerCase().trim();
-    if (!q) { renderDefault(); document.getElementById('no-results').classList.remove('show'); return; }
+    if (!q) { renderDefault(); document.getElementById('no-results').classList.remove('show'); if (!skipHash) history.replaceState(null,'',window.location.pathname+window.location.search); return; }
+    if (!skipHash) history.replaceState(null, '', '#q=' + encodeURIComponent(q));
 
     var results = { plugins: [], commands: [], skills: [], agents: [], hooks: [], rules: [] };
 
     allPlugins.forEach(function(p) {
-      if (match(p.name, q) || match(p.description, q)) results.plugins.push(p);
+      var tagMatch = (p.tags||[]).concat(p.keywords||[]).some(function(t){return match(t,q);});
+      if (match(pName(p), q) || match(p.name, q) || match(p.description, q) || match(p.category, q) || tagMatch) results.plugins.push(p);
       p.commands.forEach(function(c) {
         if (match(c.name, q) || match(c.full_name, q) || match(c.description, q) || match(c.synopsis, q))
           results.commands.push({plugin: p.name, item: c});
@@ -774,9 +1019,9 @@ def _get_js() -> str:
     if (results.plugins.length && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">Plugins (' + results.plugins.length + ')</div>';
       results.plugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="showPluginModal(\\''+escAttr(p.name)+'\\')">';
-        html += '<div class="search-result-icon plugin">'+esc(p.name.charAt(0).toUpperCase())+'</div>';
-        html += '<div class="search-result-content"><div class="search-result-title">'+hi(p.name,q)+'</div>';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
+        html += '<div class="search-result-content"><div class="search-result-title">'+hi(pName(p),q)+'</div>';
         html += '<div class="search-result-subtitle">'+hi(p.description,q)+'</div></div></div>';
       });
     }
@@ -784,7 +1029,7 @@ def _get_js() -> str:
     if (results.commands.length) {
       html += '<div class="search-results-heading">Commands (' + results.commands.length + ')</div>';
       results.commands.forEach(function(r) {
-        var onclick = IS_MARKETPLACE ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon cmd">$</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.full_name || r.item.name, q)+'</div>';
@@ -797,7 +1042,7 @@ def _get_js() -> str:
     if (results.skills.length) {
       html += '<div class="search-results-heading">Skills (' + results.skills.length + ')</div>';
       results.skills.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon skill">S</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -810,7 +1055,7 @@ def _get_js() -> str:
     if (results.agents.length) {
       html += '<div class="search-results-heading">Agents (' + results.agents.length + ')</div>';
       results.agents.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon agent">A</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -823,7 +1068,7 @@ def _get_js() -> str:
     if (results.hooks.length) {
       html += '<div class="search-results-heading">Hooks (' + results.hooks.length + ')</div>';
       results.hooks.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon hook">H</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.event_type,q)+'</div>';
@@ -836,7 +1081,7 @@ def _get_js() -> str:
     if (results.rules.length) {
       html += '<div class="search-results-heading">Rules (' + results.rules.length + ')</div>';
       results.rules.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="showPluginModal(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon rule">R</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -849,44 +1094,58 @@ def _get_js() -> str:
     el.innerHTML = html;
   }
 
-  // ---- Modal ----
-  window.showPluginModal = function(name) {
+  // ---- Plugin detail view ----
+  function showPluginDetail(name) {
     var p = allPlugins.find(function(x){return x.name===name;});
     if (!p) return;
+    var el = document.getElementById('content');
+    var nr = document.getElementById('no-results');
+    nr.classList.remove('show');
+
     var counts = buildCountBadges(p);
     var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-    var hdr = '<div class="modal-title-section"><div class="modal-title">'+esc(p.name)+'</div>' +
-              '<div class="modal-meta">'+counts+'</div></div>' +
-              '<div style="display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end">' +
-              '<div style="display:flex;gap:1rem;align-items:flex-start">'+ver+
-              '<button class="close-button" onclick="closeModal()">&times;</button></div></div>';
+    var cat = p.category ? '<span class="plugin-category">'+esc(p.category)+'</span>' : '';
+    var lic = p.license ? '<span class="plugin-license">'+esc(p.license)+'</span>' : '';
+
+    var html = '<button class="detail-back" onclick="navigateTo(\\'\\')">&#8592; Back</button>';
+    html += '<div class="detail-header"><div class="detail-title-section">';
+    html += '<div class="detail-title">'+esc(pName(p))+'</div>';
+    html += '<div class="detail-meta">'+counts+cat+lic+ver+'</div>';
+    html += '</div></div>';
+
+    var metaLinks = [];
+    if (p.homepage) metaLinks.push('<a href="'+esc(p.homepage)+'">Homepage</a>');
+    if (p.repository) metaLinks.push('<a href="'+esc(p.repository)+'">Repository</a>');
+    if (p.author) {
+      var authorText = typeof p.author === 'object' ? (p.author.name||'') : p.author;
+      if (authorText) metaLinks.push('Author: '+esc(authorText));
+    }
+    var metaLinksHtml = metaLinks.length ? '<div class="plugin-meta-links">'+metaLinks.join(' &middot; ')+'</div>' : '';
+    var allTags = (p.tags||[]).concat(p.keywords||[]);
+    var tagsHtml = allTags.length ? '<div class="plugin-tags" style="margin-bottom:1rem">'+allTags.map(function(t){return '<span class="plugin-tag">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+
+    html += '<div class="detail-body">';
+    html += '<div class="plugin-description" style="margin-bottom:0.5rem">'+(p.description_html || esc(p.description) || '')+'</div>' + metaLinksHtml + tagsHtml;
+
     var totalItems = p.commands.length + p.skills.length + p.agents.length + p.hooks.length + p.mcp_servers.length + p.rules.length;
-    var body = '<div class="plugin-description" style="margin-bottom:1rem">'+(p.description_html || esc(p.description) || '')+'</div>';
     if (totalItems >= 5) {
-      body += '<input type="text" class="modal-filter" id="modal-filter" placeholder="Filter commands, skills..." autocomplete="off">';
+      html += '<input type="text" class="detail-filter" id="detail-filter" placeholder="Filter commands, skills..." autocomplete="off">';
     }
-    body += '<div id="modal-sections">' + renderPluginSections(p, true) + '</div>';
-    document.getElementById('modal-header').innerHTML = hdr;
-    document.getElementById('modal-body').innerHTML = body;
-    document.getElementById('modal').classList.add('show');
-    window.location.hash = name;
-    var filterInput = document.getElementById('modal-filter');
+    html += '<div id="detail-sections">' + renderPluginSections(p, true) + '</div>';
+    html += '</div>';
+
+    el.innerHTML = html;
+    window.scrollTo(0, 0);
+
+    var filterInput = document.getElementById('detail-filter');
     if (filterInput) {
-      filterInput.addEventListener('input', function(e) { filterModalItems(e.target.value); });
-      filterInput.focus();
+      filterInput.addEventListener('input', function(e) { filterDetailItems(e.target.value); });
     }
-  };
+  }
 
-  window.closeModal = function(event) {
-    if (!event || event.target.id === 'modal') {
-      document.getElementById('modal').classList.remove('show');
-      if (window.location.hash) history.pushState('','',window.location.pathname+window.location.search);
-    }
-  };
-
-  function filterModalItems(query) {
+  function filterDetailItems(query) {
     var q = query.toLowerCase().trim();
-    var sections = document.querySelectorAll('#modal-sections .modal-section-items');
+    var sections = document.querySelectorAll('#detail-sections .modal-section-items');
     sections.forEach(function(section) {
       if (!q) { section.setAttribute('data-filtered', 'false'); return; }
       section.setAttribute('data-filtered', 'true');
@@ -900,8 +1159,7 @@ def _get_js() -> str:
         }
       }
     });
-    // Hide section titles with no visible items
-    var titles = document.querySelectorAll('#modal-sections .section-title');
+    var titles = document.querySelectorAll('#detail-sections .section-title');
     titles.forEach(function(title) {
       var next = title.nextElementSibling;
       if (!next || !next.classList.contains('modal-section-items')) return;
@@ -910,15 +1168,6 @@ def _get_js() -> str:
       title.style.display = hasVisible ? '' : 'none';
     });
   }
-
-  function handleHashChange() {
-    var hash = window.location.hash.slice(1);
-    if (hash && IS_MARKETPLACE) {
-      var p = allPlugins.find(function(x){return x.name===hash;});
-      if (p) showPluginModal(hash);
-    }
-  }
-  window.addEventListener('hashchange', handleHashChange);
 
   function esc(str) {
     if (!str) return '';

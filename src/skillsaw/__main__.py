@@ -138,6 +138,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
     )
     lint_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
+    lint_parser.add_argument(
         "--no-baseline",
         action="store_true",
         dest="no_baseline",
@@ -215,6 +223,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         metavar="RULE",
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
     )
+    fix_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
 
     # --- init ---
     init_parser = subparsers.add_parser(
@@ -261,6 +277,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "If it ends with .html/.md, writes a single file directly.",
     )
     docs_parser.add_argument("--title", default=None, help="Custom title for the documentation")
+    docs_parser.add_argument(
+        "--theme",
+        default=None,
+        help="Color theme for HTML output. Presets: indigo (default), forest-green, "
+        "ocean-blue, sunset-orange, royal-purple, crimson-red.",
+    )
 
     # --- tree ---
     tree_parser = subparsers.add_parser(
@@ -462,8 +484,14 @@ def _run_lint(args):
                 print(f"Warning: Failed to load baseline: {e}", file=sys.stderr)
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids, baseline=baseline)
+        linter = Linter(
+            context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids, baseline=baseline
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -687,8 +715,12 @@ def _run_fix(args):
         config = LinterConfig.default()
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids)
+        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -702,7 +734,7 @@ def _run_fix(args):
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
             context = RepositoryContext(args.path)
-            linter = Linter(context, config, rule_ids=rule_ids)
+            linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)
             applied.extend(rename_applied)
             suggested.extend(rename_suggested)
@@ -1040,11 +1072,20 @@ def _run_docs(args):
     context.apply_excludes()
 
     from .docs import extract_docs, render_html, render_markdown
+    from .docs.html_renderer import COLOR_THEMES
+
+    theme = args.theme
+    if theme and theme not in COLOR_THEMES:
+        print(
+            f"Error: Unknown theme '{theme}'. " f"Available: {', '.join(sorted(COLOR_THEMES))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     docs_output = extract_docs(context, title=args.title)
 
     if args.fmt == "html":
-        pages = render_html(docs_output)
+        pages = render_html(docs_output, theme=theme)
     else:
         pages = render_markdown(docs_output)
 

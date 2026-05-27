@@ -75,6 +75,13 @@ class PluginDoc:
     description: str = ""
     version: str = ""
     author: Optional[Dict[str, Any]] = None
+    display_name: str = ""
+    category: str = ""
+    tags: List[str] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=list)
+    homepage: str = ""
+    repository: str = ""
+    license: str = ""
     commands: List[CommandDoc] = field(default_factory=list)
     skills: List[SkillDoc] = field(default_factory=list)
     agents: List[AgentDoc] = field(default_factory=list)

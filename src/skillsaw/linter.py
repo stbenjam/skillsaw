@@ -48,19 +48,13 @@ class Linter:
         context: RepositoryContext,
         config: LinterConfig = None,
         rule_ids: Optional[Set[str]] = None,
+        skip_rule_ids: Optional[Set[str]] = None,
         baseline: Optional["BaselineFile"] = None,
     ):
-        """
-        Initialize linter
-
-        Args:
-            context: Repository context
-            config: Linter configuration (uses default if None)
-            rule_ids: If set, only load rules with these IDs
-        """
         self.context = context
         self.config = config or LinterConfig.default()
         self._rule_ids = rule_ids
+        self._skip_rule_ids = skip_rule_ids or set()
         self._baseline = baseline
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
@@ -95,6 +89,9 @@ class Linter:
             rule_instance = rule_class()
             self._known_rule_ids.add(rule_instance.rule_id)
             if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
+                continue
+            if rule_instance.rule_id in self._skip_rule_ids:
+                logger.info("Rule %-30s skipped (--skip-rule)", rule_instance.rule_id)
                 continue
             config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
@@ -141,6 +138,13 @@ class Linter:
                 self._known_rule_ids.add(rule_instance.rule_id)
                 if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
                     continue
+                if rule_instance.rule_id in self._skip_rule_ids:
+                    logger.info(
+                        "Rule %-30s skipped (--skip-rule, custom: %s)",
+                        rule_instance.rule_id,
+                        path.name,
+                    )
+                    continue
                 config = self.config.get_rule_config(rule_instance.rule_id)
                 if config:
                     rule_instance = obj(config)
@@ -151,6 +155,7 @@ class Linter:
                     rule_instance.repo_types,
                     rule_instance.formats,
                 ):
+                    rule_instance._source = "custom"
                     self.rules.append(rule_instance)
                     logger.info("Rule %-30s enabled (custom: %s)", rule_instance.rule_id, path.name)
                 else:
