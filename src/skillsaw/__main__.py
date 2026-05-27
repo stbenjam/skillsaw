@@ -271,6 +271,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "If it ends with .html/.md, writes a single file directly.",
     )
     docs_parser.add_argument("--title", default=None, help="Custom title for the documentation")
+    docs_parser.add_argument(
+        "--theme",
+        default=None,
+        help="Color theme for HTML output. Presets: indigo (default), forest-green, "
+        "ocean-blue, sunset-orange, royal-purple, crimson-red.",
+    )
 
     # --- tree ---
     tree_parser = subparsers.add_parser(
@@ -951,11 +957,20 @@ def _run_docs(args):
     context.apply_excludes()
 
     from .docs import extract_docs, render_html, render_markdown
+    from .docs.html_renderer import COLOR_THEMES
+
+    theme = args.theme
+    if theme and theme not in COLOR_THEMES:
+        print(
+            f"Error: Unknown theme '{theme}'. " f"Available: {', '.join(sorted(COLOR_THEMES))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     docs_output = extract_docs(context, title=args.title)
 
     if args.fmt == "html":
-        pages = render_html(docs_output)
+        pages = render_html(docs_output, theme=theme)
     else:
         pages = render_markdown(docs_output)
 

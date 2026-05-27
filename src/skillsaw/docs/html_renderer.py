@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from skillsaw.context import RepositoryType
 from skillsaw.docs.models import (
@@ -18,6 +18,17 @@ from skillsaw.docs.models import (
     RuleFileDoc,
     SkillDoc,
 )
+
+COLOR_THEMES = {
+    "indigo": {"primary": "#6366f1", "primary_dark": "#4f46e5", "secondary": "#818cf8"},
+    "forest-green": {"primary": "#228B22", "primary_dark": "#1a6b1a", "secondary": "#32CD32"},
+    "ocean-blue": {"primary": "#0077be", "primary_dark": "#005a8e", "secondary": "#4db8ff"},
+    "sunset-orange": {"primary": "#ff6b35", "primary_dark": "#d94f1f", "secondary": "#ff9966"},
+    "royal-purple": {"primary": "#6a4c93", "primary_dark": "#4a3369", "secondary": "#9d84b7"},
+    "crimson-red": {"primary": "#dc143c", "primary_dark": "#a0102a", "secondary": "#ff6b7a"},
+}
+
+_DEFAULT_THEME = "indigo"
 
 CSS = """\
 :root {
@@ -369,24 +380,39 @@ footer a { color: var(--primary); }
 """
 
 
-def render_html(docs: DocsOutput) -> Dict[str, str]:
+def _apply_theme(css: str, theme: Optional[str]) -> str:
+    if not theme:
+        return css
+    colors = COLOR_THEMES.get(theme)
+    if not colors:
+        return css
+    css = css.replace("--primary: #6366f1;", f"--primary: {colors['primary']};")
+    css = css.replace("--primary-dark: #4f46e5;", f"--primary-dark: {colors['primary_dark']};")
+    css = css.replace("--secondary: #818cf8;", f"--secondary: {colors['secondary']};")
+    return css
+
+
+def render_html(docs: DocsOutput, theme: Optional[str] = None) -> Dict[str, str]:
     """Render documentation as a single self-contained HTML page."""
-    return {"index.html": _render_page(docs)}
+    return {"index.html": _render_page(docs, theme=theme)}
 
 
-def _render_page(docs: DocsOutput) -> str:
+def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
     is_marketplace = docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace is not None
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag
     data_json = json.dumps(data, indent=None).replace("<", "\\u003c").replace(">", "\\u003e")
 
-    mp = docs.marketplace
-    title = (mp.name if mp and mp.name else docs.title) if is_marketplace else docs.title
+    title = docs.title
     subtitle = _repo_type_label(docs.repo_type)
 
     return _wrap_page(
-        title=title, subtitle=subtitle, data_json=data_json, is_marketplace=is_marketplace
+        title=title,
+        subtitle=subtitle,
+        data_json=data_json,
+        is_marketplace=is_marketplace,
+        theme=theme,
     )
 
 
@@ -525,12 +551,19 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
     }
 
 
-def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) -> str:
+def _wrap_page(
+    title: str,
+    subtitle: str,
+    data_json: str,
+    is_marketplace: bool,
+    theme: Optional[str] = None,
+) -> str:
     search_placeholder = (
         "Search plugins, commands, skills..."
         if is_marketplace
         else "Search commands, skills, agents..."
     )
+    themed_css = _apply_theme(CSS, theme)
 
     return f"""\
 <!DOCTYPE html>
@@ -539,7 +572,7 @@ def _wrap_page(title: str, subtitle: str, data_json: str, is_marketplace: bool) 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{_esc(title)}</title>
-  <style>{CSS}</style>
+  <style>{themed_css}</style>
 </head>
 <body>
   <nav class="navbar">
@@ -611,6 +644,8 @@ def _get_js() -> str:
       }
     });
     window.addEventListener('popstate', function() { applyHashState(); });
+    var nb = document.querySelector('nav.navbar');
+    if (nb) document.body.style.paddingTop = nb.offsetHeight + 'px';
   }
 
   // ---- Navigation / URL state ----

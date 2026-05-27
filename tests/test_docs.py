@@ -9,7 +9,7 @@ import pytest
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.docs.extractor import extract_docs
-from skillsaw.docs.html_renderer import render_html
+from skillsaw.docs.html_renderer import render_html, COLOR_THEMES
 from skillsaw.docs.markdown_renderer import render_markdown
 
 # ---------------------------------------------------------------------------
@@ -555,6 +555,38 @@ class TestHtmlRenderer:
 
         assert "filterByCategory" in page
         assert "category-filter" in page
+
+    def test_theme_applies_colors(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs, theme="ocean-blue")["index.html"]
+
+        colors = COLOR_THEMES["ocean-blue"]
+        assert colors["primary"] in page
+        assert colors["primary_dark"] in page
+        assert colors["secondary"] in page
+        assert "#6366f1" not in page
+
+    def test_theme_none_uses_defaults(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+
+        assert "#6366f1" in page
+
+    def test_title_override_respected(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx, title="Custom Title")
+        page = render_html(docs)["index.html"]
+
+        assert "<title>Custom Title</title>" in page
+
+    def test_title_override_marketplace(self, marketplace_repo):
+        ctx = RepositoryContext(marketplace_repo)
+        docs = extract_docs(ctx, title="My Marketplace")
+        page = render_html(docs)["index.html"]
+
+        assert "<title>My Marketplace</title>" in page
 
 
 # ---------------------------------------------------------------------------
