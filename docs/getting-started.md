@@ -9,7 +9,7 @@ uvx skillsaw
 # Generate default config you can customize
 skillsaw init
 
-# Accept existing violations so only new ones fail CI
+# Accept existing violations so only new ones fail
 skillsaw baseline
 
 # View the lint tree (what skillsaw sees)
@@ -123,7 +123,7 @@ Summary:
 
 Most projects will have violations when first running skillsaw. You have
 three options — fix them, disable noisy rules for your use case, or
-use a **baseline** to get CI green immediately:
+use a **baseline** to get passing immediately:
 
 ```bash
 # 1. Set up config

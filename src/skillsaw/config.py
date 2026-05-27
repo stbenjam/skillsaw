@@ -49,7 +49,6 @@ class LinterConfig:
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
-    baseline: Optional[str] = None
     llm: LLMSettings = field(default_factory=LLMSettings)
     config_dir: Optional[Path] = None
 
@@ -131,11 +130,6 @@ class LinterConfig:
         else:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
-        raw_baseline = data.get("baseline")
-        if raw_baseline is not None and not isinstance(raw_baseline, str):
-            raise ValueError(f"'baseline' must be a string path, got {type(raw_baseline).__name__}")
-        baseline = raw_baseline
-
         llm_data = data.get("llm", {})
         llm_settings = LLMSettings(
             model=llm_data.get("model", LLMSettings.model),
@@ -152,7 +146,6 @@ class LinterConfig:
             exclude_patterns=exclude_patterns,
             content_paths=data.get("content-paths", []),
             strict=strict,
-            baseline=baseline,
             llm=llm_settings,
             config_dir=config_path.resolve().parent,
         )
@@ -344,8 +337,6 @@ class LinterConfig:
         d["custom-rules"] = self.custom_rules
         d["exclude"] = self.exclude_patterns
         d["strict"] = self.strict
-        if self.baseline:
-            d["baseline"] = self.baseline
         if self.content_paths:
             d["content-paths"] = self.content_paths
         return d
@@ -409,11 +400,6 @@ class LinterConfig:
             self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
-            f.write("\n# Baseline file for accepted violations\n")
-            if self.baseline:
-                f.write(f"baseline: {self._yaml_value(self.baseline)}\n")
-            else:
-                f.write("# baseline: .skillsaw-baseline.json\n")
 
     def _write_field(self, f, key: str, value: Any):
         """Helper to write a YAML field to the file."""

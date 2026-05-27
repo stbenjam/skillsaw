@@ -3,7 +3,7 @@
 When adopting skillsaw on an existing project, you may have many
 pre-existing violations. The **baseline** feature lets you snapshot
 current violations so that `skillsaw lint` only reports *new* ones —
-existing violations are accepted and won't fail CI.
+existing violations are accepted and won't cause failures.
 
 ## Creating a Baseline
 
@@ -13,14 +13,8 @@ Generate a `.skillsaw-baseline.json` from the current violations:
 skillsaw baseline
 ```
 
-Write to a custom path:
-
-```bash
-skillsaw baseline -o my-baseline.json
-```
-
-The baseline file should be committed to your repository so that CI and
-other developers share the same accepted set of violations.
+The baseline file should be committed to your repository so that all
+contributors share the same accepted set of violations.
 
 ## How It Works
 
@@ -58,17 +52,6 @@ Baseline: 3 stale entries (violations resolved since baseline was set)
 Run `skillsaw baseline` again to regenerate the file without the
 resolved violations.
 
-## Configuration
-
-You can set a custom baseline path in `.skillsaw.yaml`:
-
-```yaml
-baseline: path/to/my-baseline.json
-```
-
-When omitted, skillsaw auto-discovers `.skillsaw-baseline.json` by
-walking up the directory tree (same behavior as config discovery).
-
 ## Baseline and Fix
 
 The `skillsaw fix` command operates on all violations regardless of the
@@ -89,7 +72,7 @@ skillsaw lint
 # 3. Accept them as the baseline
 skillsaw baseline
 
-# 4. CI now passes — only new violations will fail
+# 4. Lint now passes — only new violations will fail
 skillsaw lint  # exit 0
 
 # 5. Over time, fix violations and re-baseline

@@ -59,6 +59,11 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
 - [Baseline](#baseline)
+  - [Creating a baseline](#creating-a-baseline)
+  - [How it works](#how-it-works)
+  - [Ignoring the baseline](#ignoring-the-baseline)
+  - [Stale entries](#stale-entries)
+  - [Baseline and fix](#baseline-and-fix)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
@@ -116,7 +121,7 @@ skillsaw tree
 # Generate plugin/skill documentation
 skillsaw docs
 
-# Accept existing violations (baseline), only fail on new ones
+# Accept existing violations (baseline), only report new ones
 skillsaw baseline
 
 # Scaffold a new marketplace, plugin, or skill
@@ -494,16 +499,13 @@ fixes via `skillsaw fix --llm`.
 When adopting skillsaw on an existing project, you may have many
 pre-existing violations. The **baseline** feature lets you snapshot
 current violations so that `skillsaw lint` only reports *new* ones —
-existing violations are accepted and won't fail CI.
+existing violations are accepted and won't cause failures.
 
 ### Creating a baseline
 
 ```bash
 # Generate .skillsaw-baseline.json from current violations
 skillsaw baseline
-
-# Write to a custom path
-skillsaw baseline -o my-baseline.json
 ```
 
 ### How it works
@@ -540,17 +542,6 @@ Baseline: 3 stale entries (violations resolved since baseline was set)
 
 Run `skillsaw baseline` again to regenerate the file without the
 resolved violations.
-
-### Configuration
-
-You can set a custom baseline path in `.skillsaw.yaml`:
-
-```yaml
-baseline: path/to/my-baseline.json
-```
-
-When omitted, skillsaw auto-discovers `.skillsaw-baseline.json` by
-walking up the directory tree (same behavior as config discovery).
 
 ### Baseline and fix
 

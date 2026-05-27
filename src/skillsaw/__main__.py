@@ -307,14 +307,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file",
     )
-    baseline_parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=None,
-        help="Output path for baseline file (default: .skillsaw-baseline.json next to config)",
-    )
-
     # --- add ---
     subparsers.add_parser(
         "add",
@@ -456,15 +448,7 @@ def _run_lint(args):
     if not args.no_baseline:
         from .baseline import find_baseline, load_baseline
 
-        baseline_path = None
-        if config.baseline:
-            bp = Path(config.baseline)
-            if not bp.is_absolute():
-                bp = (config.config_dir or args.path) / bp
-            if bp.exists():
-                baseline_path = bp
-        else:
-            baseline_path = find_baseline(config.config_dir or args.path)
+        baseline_path = find_baseline(config.config_dir or args.path)
 
         if baseline_path:
             try:
@@ -979,13 +963,7 @@ def _run_baseline(args):
     cli_version = _get_version()
     baseline = build_baseline(violations, context.root_path, cli_version)
 
-    if args.output:
-        output_path = args.output
-    elif config.baseline:
-        output_path = Path(config.baseline)
-        if not output_path.is_absolute():
-            output_path = (config.config_dir or args.path) / output_path
-    elif config_path:
+    if config_path:
         output_path = config_path.parent / BASELINE_FILENAME
     else:
         output_path = args.path / BASELINE_FILENAME

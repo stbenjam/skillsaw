@@ -1323,27 +1323,3 @@ class TestBaseline:
         r = run_lint(repo)
         assert "Failed to load baseline" in r["stderr"]
         assert summary(r)["warnings"] > 0
-
-    def test_baseline_config_path(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        custom = repo / "my-baseline.json"
-        run_baseline(repo, "-o", str(custom))
-        assert custom.exists()
-        assert not (repo / ".skillsaw-baseline.json").exists()
-
-        config = repo / ".skillsaw.yaml"
-        content = config.read_text()
-        content += "\nbaseline: my-baseline.json\n"
-        config.write_text(content)
-
-        r = run_lint(repo)
-        assert r["rc"] == 0
-        assert summary(r)["warnings"] == 0
-
-    def test_baseline_output_flag(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        custom_path = repo / "custom-baseline.json"
-        r = run_baseline(repo, "-o", str(custom_path))
-        assert r["rc"] == 0
-        assert custom_path.exists()
-        assert not (repo / ".skillsaw-baseline.json").exists()
