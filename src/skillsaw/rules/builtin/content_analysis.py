@@ -28,7 +28,6 @@ from skillsaw.rules.builtin.utils import (
     extract_section,
     frontmatter_key_line as _frontmatter_key_line,
     _extract_frontmatter_text,
-    _FRONTMATTER_RE,
     yaml_line_map as _yaml_line_map,
     yaml_key_line as _yaml_key_line_util,
     yaml_key_line_after as _yaml_key_line_after_util,
@@ -239,45 +238,6 @@ class FileContentBlock(ContentBlock):
 
     def write_body(self, new_body: str) -> None:
         self.path.write_text(new_body, encoding="utf-8")
-
-
-@dataclass(eq=False)
-class FrontmatterContentBlock(ContentBlock):
-    """A file with YAML frontmatter (e.g. .mdc) — frontmatter is stripped on read, preserved on write."""
-
-    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
-        if self.body is not None:
-            body = self.body
-        else:
-            content = read_text(self.path)
-            if content is None:
-                return None
-            _, body, _ = parse_frontmatter(content)
-        if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-        return body
-
-    def write_body(self, new_body: str) -> None:
-        content = read_text(self.path)
-        if content:
-            m = _FRONTMATTER_RE.match(content)
-            if m:
-                raw_fm = m.group(0)
-                if not raw_fm.endswith("\n"):
-                    raw_fm += "\n"
-                self.path.write_text(raw_fm + new_body, encoding="utf-8")
-                return
-        self.path.write_text(new_body, encoding="utf-8")
-
-    @property
-    def frontmatter_line_offset(self) -> int:
-        content = read_text(self.path)
-        if not content:
-            return 0
-        fm_text, _ = _extract_frontmatter_text(content)
-        if fm_text is None:
-            return 0
-        return fm_text.count("\n") + 2  # frontmatter + closing ---
 
 
 @dataclass(eq=False)
@@ -598,13 +558,6 @@ class GeminiMdBlock(InstructionBlock):
     category: str = "gemini-md"
 
 
-@dataclass(eq=False)
-class CursorRuleBlock(FrontmatterContentBlock):
-    """.cursor/rules/*.mdc files."""
-
-    category: str = "instruction"
-
-
 def _parse_file_frontmatter(
     path: Path,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]:
@@ -725,6 +678,13 @@ class ParsedFrontmatterBlock(FileContentBlock):
         else:
             self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
         self._fm_parsed = None
+
+
+@dataclass(eq=False)
+class CursorRuleBlock(ParsedFrontmatterBlock):
+    """.cursor/rules/*.mdc files."""
+
+    category: str = "instruction"
 
 
 @dataclass(eq=False)
