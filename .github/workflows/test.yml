@@ -213,6 +213,32 @@ jobs:
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
+      - name: Test kubernetes-sigs/maintainer-tools
+        run: |
+          git clone https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
+
+          skillsaw --format json /tmp/maintainer-tools | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
+          assert r['summary']['warnings'] == 0, f\"unexpected warnings: {r['summary']['warnings']}\"
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
+          "
+
+      - name: Test RedHatProductSecurity/prodsec-skills
+        run: |
+          git clone https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
+
+          skillsaw --format json /tmp/prodsec-skills | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
+          assert r['summary']['warnings'] == 0, f\"unexpected warnings: {r['summary']['warnings']}\"
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
+          "
+
       - name: Test --output flag with multiple formats
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
