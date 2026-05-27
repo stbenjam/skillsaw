@@ -917,7 +917,7 @@ class TestUnlinkedInternalReferenceAutofix:
         assert fixed_line_count == original_line_count
 
     def test_fix_skips_backtick_paths(self, tmp_path):
-        """Paths inside backtick spans must not be flagged or modified by fix."""
+        """Paths inside backtick spans, HTML comments, and fenced blocks must not be flagged or modified."""
         repo = copy_fixture("autofix/unlinked-ref-backtick-paths", tmp_path)
         r = run_lint(repo)
         unlinked = [
@@ -932,6 +932,7 @@ class TestUnlinkedInternalReferenceAutofix:
         fixed = (repo / "CLAUDE.md").read_text()
         assert "`${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md`" in fixed
         assert "``prompts/analyze-skill.md``" in fixed
+        assert "<!-- This is a comment mentioning prompts/analyze-skill.md" in fixed
         assert "[prompts/analyze-skill.md](prompts/analyze-skill.md)" in fixed
 
         r2 = run_lint(repo)

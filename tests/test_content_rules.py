@@ -997,6 +997,42 @@ class TestContentUnlinkedInternalReferenceRule:
         assert len(violations) == 1
         assert "prompts/analyze-skill.md" in violations[0].message
 
+    def test_fenced_code_block_path_not_flagged(self, temp_dir):
+        """Paths inside fenced code blocks should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "```\n" "prompts/analyze-skill.md\n" "```\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_tilde_fenced_code_block_path_not_flagged(self, temp_dir):
+        """Paths inside ~~~ fenced code blocks should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "~~~\n" "prompts/analyze-skill.md\n" "~~~\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_html_comment_path_not_flagged(self, temp_dir):
+        """Paths inside HTML comments should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "<!-- This references prompts/analyze-skill.md internally -->\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_multiline_html_comment_path_not_flagged(self, temp_dir):
+        """Paths inside multi-line HTML comments should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "<!--\n" "prompts/analyze-skill.md\n" "-->\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
