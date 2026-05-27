@@ -11,7 +11,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 </td>
 </tr></table>
 
-<img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif" alt="skillsaw demo" width="800">
+[![skillsaw demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif)](https://asciinema.org/a/uQ9xfM5S1SXcd777)
 
 **[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 

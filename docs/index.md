@@ -14,7 +14,9 @@
 </div>
 
 <div style="text-align: center; padding: 1rem 0;">
+<a href="https://asciinema.org/a/uQ9xfM5S1SXcd777">
 <img src="images/demo.gif" alt="skillsaw demo" style="max-width: 100%; border-radius: 8px;">
+</a>
 </div>
 
 ---
