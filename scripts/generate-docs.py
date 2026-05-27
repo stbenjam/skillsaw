@@ -58,8 +58,13 @@ RULE_GROUPS = [
     ),
     (
         "Rules Directory",
-        ["rules-valid"],
+        ["claude-rule-valid"],
         None,
+    ),
+    (
+        "Cursor",
+        ["cursor-rule-valid"],
+        "Validates `.cursor/rules/*.mdc` frontmatter fields.",
     ),
     (
         "Openclaw",

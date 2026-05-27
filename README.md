@@ -560,7 +560,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning (disabled) | auto, llm |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 
@@ -581,7 +581,27 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+| `claude-rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+
+**`claude-rule-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `valid-keys` | Recognized frontmatter keys (unknown keys trigger a warning) | `["paths"]` |
+
+### Cursor
+
+Validates `.cursor/rules/*.mdc` frontmatter fields.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `cursor-rule-valid` | .cursor/rules/*.mdc files should have valid frontmatter | warning (auto) | - |
+
+**`cursor-rule-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `valid-keys` | Recognized frontmatter keys (unknown keys trigger a warning) | `["description", "globs", "alwaysApply"]` |
 
 ### Openclaw
 
