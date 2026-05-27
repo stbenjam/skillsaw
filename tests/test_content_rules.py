@@ -976,14 +976,15 @@ class TestContentUnlinkedInternalReferenceRule:
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) == 0
 
-    def test_double_backtick_path_not_flagged(self, temp_dir):
-        """Paths inside double-backtick code spans should not trigger violations."""
+    def test_double_backtick_exact_path_flagged(self, temp_dir):
+        """A path that is the entire content of a double-backtick span should still be flagged."""
         (temp_dir / "CLAUDE.md").write_text(
             "You can also reference ``prompts/analyze-skill.md`` with double backticks.\n"
         )
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
-        assert len(violations) == 0
+        assert len(violations) == 1
+        assert "prompts/analyze-skill.md" in violations[0].message
 
     def test_bare_path_next_to_backtick_path_flagged(self, temp_dir):
         """A bare path on the same line as a backtick-quoted path should still be flagged."""
@@ -1178,8 +1179,8 @@ class TestContentUnlinkedInternalReferenceAutofix:
         (temp_dir / "scripts").mkdir()
         (temp_dir / "scripts" / "test.py").write_text("# test\n")
         (temp_dir / "CLAUDE.md").write_text(
-            "Use the scripts/test.py script to do a review\n\n"
-            "Re-run script scripts/test.py again for some reason\n"
+            "Use the `scripts/test.py` script to do a review\n\n"
+            "Re-run script `scripts/test.py` again for some reason\n"
         )
         context = RepositoryContext(temp_dir)
         rule = ContentUnlinkedInternalReferenceRule()
@@ -1188,8 +1189,8 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         fixed = fixes[0].fixed_content
-        assert fixed.count("[scripts/test.py](scripts/test.py)") == 2
-        assert "[[scripts/test.py]" not in fixed
+        assert fixed.count("[`scripts/test.py`](scripts/test.py)") == 2
+        assert "[[" not in fixed
 
     def test_autofix_triple_duplicate_no_double_wrap(self, temp_dir):
         """Three occurrences of the same path should each be wrapped exactly once."""

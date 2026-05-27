@@ -83,13 +83,32 @@ def _strip_html_comments(text: str) -> str:
 
 
 def is_inside_inline_code(line: str, match_start: int, match_end: int) -> bool:
-    """Check if a character range falls inside an inline code span (backticks)."""
+    """Check if a character range falls inside an inline code span (backticks).
+
+    Returns True only when the code span contains more than just the matched text
+    (e.g. a variable prefix like ``${VAR}/path``). When the entire code span content
+    equals the matched text, the path is a plain reference that should still be
+    linkable, so this returns False.
+    """
     for m in _INLINE_CODE_RE.finditer(line):
         code_start = m.start() + len(m.group(1))
         code_end = m.end() - len(m.group(1))
         if code_start <= match_start and match_end <= code_end:
+            if code_start == match_start and code_end == match_end:
+                return False
             return True
     return False
+
+
+def inline_code_span_bounds(line: str, match_start: int, match_end: int) -> Optional[tuple]:
+    """Return (span_start, span_end) of the enclosing backtick span if the match
+    is exactly its content, else None.  The bounds include the backtick delimiters."""
+    for m in _INLINE_CODE_RE.finditer(line):
+        code_start = m.start() + len(m.group(1))
+        code_end = m.end() - len(m.group(1))
+        if code_start == match_start and code_end == match_end:
+            return (m.start(), m.end())
+    return None
 
 
 @dataclass
