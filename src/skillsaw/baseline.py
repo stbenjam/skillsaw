@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -141,7 +141,7 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
         "generated_by": baseline.generated_by,
         "generated_at": baseline.generated_at,
         "violations": [
-            {k: v for k, v in asdict(e).items() if v is not None} for e in baseline.violations
+            {k: v for k, v in e.__dict__.items() if v is not None} for e in baseline.violations
         ],
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
