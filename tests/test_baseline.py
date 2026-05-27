@@ -1,5 +1,6 @@
 """Unit tests for skillsaw.baseline."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -296,6 +297,92 @@ class TestFilterBaselinedViolations:
         kept, stale = filter_baselined_violations([], baseline, tmp_path)
         assert len(kept) == 0
         assert len(stale) == 1
+
+
+class TestRatchetBaseline:
+    def _baseline_with(self, entries):
+        return BaselineFile(
+            version="1",
+            generated_by="test",
+            generated_at="2025-01-01T00:00:00+00:00",
+            violations=entries,
+        )
+
+    def _ratchet_entry(self, value, mode, rule_id="context-budget", file_path="CLAUDE.md"):
+        fp = hashlib.sha256(f"{rule_id}\0{file_path}".encode()).hexdigest()[:16]
+        return BaselineEntry(
+            fingerprint=fp,
+            rule_id=rule_id,
+            file_path=file_path,
+            line=None,
+            message="test",
+            severity="warning",
+            value=value,
+            baseline_mode=mode,
+        )
+
+    def _ratchet_violation(self, value, tmp_path, rule_id="context-budget"):
+        src = tmp_path / "CLAUDE.md"
+        if not src.exists():
+            src.write_text("content\n")
+        return _make_violation(rule_id=rule_id, file_path=src, line=None, message=f"value={value}")
+
+    def test_ceiling_improved_suppressed(self, tmp_path):
+        entry = self._ratchet_entry(5000, "ceiling")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(4800, tmp_path)
+        v.value = 4800
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 0
+
+    def test_ceiling_worsened_reported(self, tmp_path):
+        entry = self._ratchet_entry(5000, "ceiling")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(5200, tmp_path)
+        v.value = 5200
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 1
+
+    def test_floor_improved_suppressed(self, tmp_path):
+        entry = self._ratchet_entry(30, "floor")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(35, tmp_path)
+        v.value = 35
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 0
+
+    def test_floor_worsened_reported(self, tmp_path):
+        entry = self._ratchet_entry(30, "floor")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(25, tmp_path)
+        v.value = 25
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 1
+
+    def test_ratchet_equal_suppressed(self, tmp_path):
+        entry = self._ratchet_entry(5000, "ceiling")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(5000, tmp_path)
+        v.value = 5000
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 0
+
+    def test_ratchet_stale_when_violation_gone(self, tmp_path):
+        entry = self._ratchet_entry(5000, "ceiling")
+        baseline = self._baseline_with([entry])
+        kept, stale = filter_baselined_violations([], baseline, tmp_path)
+        assert len(stale) == 1
+
+    def test_ratchet_fingerprint_stable_across_values(self, tmp_path):
+        src = tmp_path / "CLAUDE.md"
+        src.write_text("content\n")
+        v1 = _make_violation(rule_id="context-budget", file_path=src, message="5000 tokens")
+        v1.value = 5000
+        v2 = _make_violation(rule_id="context-budget", file_path=src, message="4800 tokens")
+        v2.value = 4800
+        fp1 = fingerprint_violation(v1, tmp_path)
+        fp2 = fingerprint_violation(v2, tmp_path)
+        assert fp1 == fp2
 
 
 class TestFindBaseline:

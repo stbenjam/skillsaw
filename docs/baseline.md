@@ -31,6 +31,31 @@ content hasn't changed.
 If you reformat or rewrite a line, the fingerprint changes and the
 violation resurfaces for a fresh look — which is the correct behavior.
 
+## Ratchet Rules
+
+Some rules measure a numeric value (token count, instruction count,
+actionability score) rather than flagging a specific line. These rules
+use **ratchet** behavior: the baseline records the value at the time it
+was created and only suppresses violations that are equal to or *better*
+than the baseline. If the value gets worse, the violation is reported.
+
+For example, if `context-budget` records 5,000 tokens at baseline time:
+
+- Shrink the file to 4,800 tokens → **suppressed** (improvement)
+- Grow the file to 5,200 tokens → **reported** (regression)
+- Get under the limit entirely → violation disappears, baseline entry becomes stale
+
+Rules with ratchet behavior:
+
+| Rule | Metric | Baseline acts as |
+|------|--------|-----------------|
+| `context-budget` | token count | ceiling (can't increase) |
+| `content-instruction-budget` | instruction count | ceiling (can't increase) |
+| `content-actionability-score` | actionability score | floor (can't decrease) |
+
+All other rules use fingerprint matching — the violation is suppressed
+as long as the source line content hasn't changed.
+
 ## Ignoring the Baseline
 
 Run lint without baseline filtering:

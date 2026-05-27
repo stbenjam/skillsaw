@@ -32,6 +32,8 @@ class BaselineEntry:
     line: Optional[int]
     message: str
     severity: str
+    value: Optional[float] = None
+    baseline_mode: Optional[str] = None
 
 
 @dataclass
@@ -75,6 +77,12 @@ def fingerprint_violation(
     rel_path = relative_path(violation.file_path, root_path)
     file_line = violation.file_line
 
+    # Ratchet violations use rule_id + file_path only so the fingerprint
+    # is stable across value changes (e.g. token count going up or down).
+    if violation.value is not None and rel_path is not None:
+        raw = f"{rule_id}\0{rel_path}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
         if not file_path.is_absolute():
@@ -97,12 +105,15 @@ def build_baseline(
     violations: List[RuleViolation],
     root_path: Path,
     version_string: str,
+    baseline_modes: Optional[Dict[str, str]] = None,
 ) -> BaselineFile:
     file_cache: Dict[Path, Optional[List[str]]] = {}
+    modes = baseline_modes or {}
     entries: List[BaselineEntry] = []
 
     for v in violations:
         fp = fingerprint_violation(v, root_path, _file_cache=file_cache)
+        mode = modes.get(v.rule_id)
         entries.append(
             BaselineEntry(
                 fingerprint=fp,
@@ -111,6 +122,8 @@ def build_baseline(
                 line=v.file_line,
                 message=v.message,
                 severity=v.severity.value,
+                value=v.value,
+                baseline_mode=mode if v.value is not None else None,
             )
         )
 
@@ -166,6 +179,8 @@ def load_baseline(path: Path) -> BaselineFile:
                 line=v.get("line"),
                 message=v.get("message", ""),
                 severity=v.get("severity", ""),
+                value=v.get("value"),
+                baseline_mode=v.get("baseline_mode"),
             )
         )
 
@@ -188,6 +203,14 @@ def find_baseline(start_path: Path) -> Optional[Path]:
     return None
 
 
+def _is_worse(current_value: float, baseline_value: float, mode: str) -> bool:
+    if mode == "ceiling":
+        return current_value > baseline_value
+    if mode == "floor":
+        return current_value < baseline_value
+    return False
+
+
 def filter_baselined_violations(
     violations: List[RuleViolation],
     baseline: BaselineFile,
@@ -198,27 +221,47 @@ def filter_baselined_violations(
     Returns ``(kept, stale)`` where *kept* are violations not in the
     baseline (new violations) and *stale* are baseline entries that no
     longer match any current violation.
+
+    Ratchet entries (those with ``value`` and ``baseline_mode``) use
+    value comparison: a violation is only suppressed if it is equal to
+    or better than the baselined value.
     """
-    budget = Counter(e.fingerprint for e in baseline.violations)
+    # Separate ratchet entries from regular fingerprint entries.
+    ratchet_entries: Dict[str, BaselineEntry] = {}
+    regular_budget = Counter()
+    for e in baseline.violations:
+        if e.value is not None and e.baseline_mode:
+            ratchet_entries[e.fingerprint] = e
+        else:
+            regular_budget[e.fingerprint] += 1
+
     file_cache: Dict[Path, Optional[List[str]]] = {}
     kept: List[RuleViolation] = []
+    consumed_ratchet: set = set()
 
     for v in violations:
         fp = fingerprint_violation(v, root_path, _file_cache=file_cache)
-        if budget[fp] > 0:
-            budget[fp] -= 1
+
+        if fp in ratchet_entries:
+            entry = ratchet_entries[fp]
+            if v.value is not None and _is_worse(v.value, entry.value, entry.baseline_mode):
+                kept.append(v)
+            else:
+                consumed_ratchet.add(fp)
+        elif regular_budget[fp] > 0:
+            regular_budget[fp] -= 1
         else:
             kept.append(v)
 
-    # budget now holds the *unconsumed* count per fingerprint.  Walk the
-    # baseline entries and mark the unconsumed ones as stale.  When a
-    # fingerprint has partial consumption (e.g. 3 in baseline, 1 remaining)
-    # we mark exactly the surplus entries as stale.
-    remaining = dict(budget)
+    # Stale entries: unconsumed regular + unconsumed ratchet.
+    remaining = dict(regular_budget)
     stale: List[BaselineEntry] = []
     for entry in baseline.violations:
         fp = entry.fingerprint
-        if remaining.get(fp, 0) > 0:
+        if entry.value is not None and entry.baseline_mode:
+            if fp not in consumed_ratchet:
+                stale.append(entry)
+        elif remaining.get(fp, 0) > 0:
             remaining[fp] -= 1
             stale.append(entry)
 

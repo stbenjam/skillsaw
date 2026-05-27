@@ -523,6 +523,11 @@ content hasn't changed.
 If you reformat or rewrite a line, the fingerprint changes and the
 violation resurfaces for a fresh look — which is the correct behavior.
 
+Rules that measure a numeric value (`context-budget`, `content-instruction-budget`,
+`content-actionability-score`) use **ratchet** behavior instead: the baseline
+records the value and only suppresses violations that are equal to or better.
+Regressions (e.g., file grew past the baselined token count) are always reported.
+
 ### Ignoring the baseline
 
 ```bash

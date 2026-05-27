@@ -967,7 +967,8 @@ def _run_baseline(args):
     from .baseline import build_baseline, save_baseline, BASELINE_FILENAME
 
     cli_version = _get_version()
-    baseline = build_baseline(violations, context.root_path, cli_version)
+    baseline_modes = {r.rule_id: r.baseline_mode for r in linter.rules if r.baseline_mode}
+    baseline = build_baseline(violations, context.root_path, cli_version, baseline_modes)
 
     if config_path:
         output_path = config_path.parent / BASELINE_FILENAME

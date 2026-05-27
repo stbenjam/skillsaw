@@ -246,6 +246,7 @@ class ContentInstructionBudgetRule(Rule):
     autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
+    baseline_mode = "ceiling"
 
     @property
     def rule_id(self) -> str:
@@ -287,13 +288,17 @@ class ContentInstructionBudgetRule(Rule):
                     f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
                     f"({budget.budget_remaining} remaining)"
                 )
-                violations.append(self.violation(msg, block=cf, severity=sev))
+                violations.append(
+                    self.violation(msg, block=cf, severity=sev, value=budget.total_count)
+                )
             elif budget.total_count >= 80:
                 msg = (
                     f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
                     f"— approaching limit"
                 )
-                violations.append(self.violation(msg, block=cf, severity=Severity.INFO))
+                violations.append(
+                    self.violation(msg, block=cf, severity=Severity.INFO, value=budget.total_count)
+                )
         return violations
 
 
@@ -676,6 +681,7 @@ class ContentActionabilityScoreRule(Rule):
     autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
+    baseline_mode = "floor"
 
     @property
     def llm_fix_prompt(self):
@@ -740,6 +746,7 @@ class ContentActionabilityScoreRule(Rule):
                     self.violation(
                         f"Low actionability score: {score}/100 (verbs: {verb_ratio:.0%}, commands: {cmd_ratio:.0%}, paths: {path_ratio:.0%})",
                         block=cf,
+                        value=score,
                     )
                 )
         return violations
