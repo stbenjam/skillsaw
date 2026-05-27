@@ -736,7 +736,11 @@ def _get_js() -> str:
     var nr = document.getElementById('no-results');
     var html = '';
     var typeLabels = {plugins:'Plugins',commands:'Commands',skills:'Skills',agents:'Agents',hooks:'Hooks',mcp_servers:'MCP Servers',rules:'Rules'};
-    if (!typeLabels[type]) return;
+    if (!typeLabels[type]) {
+      el.innerHTML = '';
+      nr.classList.add('show');
+      return;
+    }
     var label = typeLabels[type];
 
     if (type === 'plugins' && IS_MARKETPLACE) {
