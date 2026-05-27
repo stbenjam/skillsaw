@@ -60,6 +60,7 @@ def format_report(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    baseline_suppressed: int = 0,
 ) -> str:
     """
     Format lint results in the specified format.
@@ -71,11 +72,12 @@ def format_report(
         rules: List of Rule instances that were run
         version: skillsaw version string
         verbose: Include extra detail (info-level messages, expanded stats)
+        baseline_suppressed: Number of violations suppressed by baseline
     """
     if fmt == "text":
         from .text import format_text
 
-        return format_text(violations, context, rules, version, verbose)
+        return format_text(violations, context, rules, version, verbose, baseline_suppressed)
     elif fmt == "json":
         from .json_fmt import format_json
 

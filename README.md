@@ -38,6 +38,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 - [Features](#features)
 - [Quick Start](#quick-start)
+  - [More commands](#more-commands)
 - [Installation](#installation)
   - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
@@ -58,6 +59,12 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Per-Rule Excludes](#per-rule-excludes)
   - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
+- [Baseline](#baseline)
+  - [Creating a baseline](#creating-a-baseline)
+  - [How it works](#how-it-works)
+  - [Ignoring the baseline](#ignoring-the-baseline)
+  - [Stale entries](#stale-entries)
+  - [Baseline and fix](#baseline-and-fix)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
@@ -84,18 +91,36 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 ## Quick Start
 
-```bash
-# Lint current directory (no install required)
-uvx skillsaw
+No install required — run with `uvx skillsaw` (or [install](#installation)
+it for repeated use).
 
-# Fix structural issues automatically
+```bash
+# 1. See what skillsaw detects in your repo
+skillsaw tree
+
+# 2. Lint it
+skillsaw
+
+# 3. Fix what you can automatically
 skillsaw fix
 
-# Fix content quality issues with an LLM
+# 4. Accept remaining violations as the baseline
+skillsaw baseline
+
+# Done — only new violations will fail from here on
+skillsaw   # exit 0
+```
+
+### More commands
+
+```bash
+# Fix content quality issues with an LLM (requires extras)
+# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
+# uvx --from "skillsaw[llm]" skillsaw fix --llm
 skillsaw fix --llm
 
-# Preview LLM fixes without writing
-skillsaw fix --llm --dry-run
+# Generate default config you can customize
+skillsaw init
 
 # Verbose output (includes info-level findings)
 skillsaw -v
@@ -103,14 +128,8 @@ skillsaw -v
 # Strict mode (warnings become errors)
 skillsaw --strict
 
-# Generate default config
-skillsaw init
-
 # List all rules with fix support info
 skillsaw list-rules
-
-# View the lint tree (what skillsaw sees)
-skillsaw tree
 
 # Generate plugin/skill documentation
 skillsaw docs
@@ -484,6 +503,66 @@ content-paths:
 
 Matched files are analyzed by all content-\* rules and support LLM-powered
 fixes via `skillsaw fix --llm`.
+
+## Baseline
+
+When adopting skillsaw on an existing project, you may have many
+pre-existing violations. The **baseline** feature lets you snapshot
+current violations so that `skillsaw lint` only reports *new* ones —
+existing violations are accepted and won't cause failures.
+
+### Creating a baseline
+
+```bash
+# Generate .skillsaw-baseline.json from current violations
+skillsaw baseline
+```
+
+### How it works
+
+Once a `.skillsaw-baseline.json` file exists (next to `.skillsaw.yaml` or
+in the repo root), `skillsaw lint` automatically loads it and subtracts
+matching violations from the output. Only new violations are reported.
+
+Violations are matched by a **content hash** — a fingerprint built from
+the rule ID, file path, and the content of the source line (not the line
+number). This means the baseline survives line drift: if you add lines
+above a baselined violation, the fingerprint still matches because the
+content hasn't changed.
+
+If you reformat or rewrite a line, the fingerprint changes and the
+violation resurfaces for a fresh look — which is the correct behavior.
+
+Rules that measure a numeric value (`context-budget`, `content-instruction-budget`,
+`content-actionability-score`) use **ratchet** behavior instead: the baseline
+records the value and only suppresses violations that are equal to or better.
+Regressions (e.g., file grew past the baselined token count) are always reported.
+
+### Ignoring the baseline
+
+```bash
+# Run lint without baseline filtering
+skillsaw lint --no-baseline
+```
+
+### Stale entries
+
+When you fix a baselined violation, its baseline entry becomes **stale**.
+Skillsaw reports stale entries so you know the baseline can be refreshed:
+
+```
+Baseline: 3 stale entries (violations resolved since baseline was set)
+  Run `skillsaw baseline` to update.
+```
+
+Run `skillsaw baseline` again to regenerate the file without the
+resolved violations.
+
+### Baseline and fix
+
+The `skillsaw fix` command operates on all violations regardless of the
+baseline. The baseline only affects `lint` reporting and exit codes — if
+you explicitly ask to fix, everything is eligible.
 
 ## Builtin Rules
 

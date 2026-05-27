@@ -38,6 +38,7 @@ class RuleViolation:
     line: Optional[int] = None
     block: Optional["ContentBlock"] = field(default=None, repr=False)
     source: str = "builtin"
+    value: Optional[float] = None
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -89,6 +90,7 @@ class Rule(ABC):
     since = "0.1.0"
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
+    baseline_mode: Optional[str] = None  # "ceiling" or "floor"
 
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -188,6 +190,7 @@ class Rule(ABC):
         line: int = None,
         severity: Severity = None,
         block: "ContentBlock" = None,
+        value: float = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
@@ -202,4 +205,5 @@ class Rule(ABC):
             line=line,
             block=block,
             source=self._source,
+            value=value,
         )

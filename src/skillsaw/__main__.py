@@ -17,7 +17,7 @@ from .rule import AutofixConfidence, AutofixResult, Severity
 from .formatters import format_report, get_counts, infer_format, FORMATS
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
 
 
 def _get_version() -> str:
@@ -144,6 +144,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="RULE",
         help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
+    lint_parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        dest="no_baseline",
+        help="Ignore baseline file even if .skillsaw-baseline.json exists",
     )
 
     # --- fix ---
@@ -304,6 +310,25 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Output format (default: text)",
     )
 
+    # --- baseline ---
+    baseline_parser = subparsers.add_parser(
+        "baseline",
+        help="Generate or update the baseline file from current violations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    baseline_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    baseline_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file",
+    )
     # --- add ---
     subparsers.add_parser(
         "add",
@@ -323,6 +348,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         _run_list_rules()
     elif args.command == "docs":
         _run_docs(args)
+    elif args.command == "baseline":
+        _run_baseline(args)
     elif args.command == "tree":
         _run_tree(args)
 
@@ -439,13 +466,32 @@ def _run_lint(args):
     if args.strict:
         config.strict = True
 
+    baseline = None
+    if not args.no_baseline:
+        from .baseline import find_baseline, load_baseline
+
+        baseline_path = find_baseline(config.config_dir or args.path)
+
+        if baseline_path:
+            try:
+                baseline = load_baseline(baseline_path)
+                if args.verbose and args.fmt == "text":
+                    print(
+                        f"Using baseline: {baseline_path}"
+                        f" ({len(baseline.violations)} entries)\n"
+                    )
+            except (ValueError, OSError) as e:
+                print(f"Warning: Failed to load baseline: {e}", file=sys.stderr)
+
     rule_ids = set(args.rule_ids) if args.rule_ids else None
     skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
+        linter = Linter(
+            context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids, baseline=baseline
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -478,8 +524,28 @@ def _run_lint(args):
     else:
         violations = linter.run()
 
+    if baseline and args.fmt == "text":
+        stale = linter.stale_baseline_entries
+        if stale:
+            print(
+                f"Baseline: {len(stale)} stale"
+                f" {'entry' if len(stale) == 1 else 'entries'}"
+                f" (violations resolved since baseline was set)"
+            )
+            if args.verbose:
+                for entry in stale:
+                    location = f" [{entry.file_path}]" if entry.file_path else ""
+                    print(f"  - {entry.rule_id}{location}: {entry.message}")
+            print("  Run `skillsaw baseline` to update.\n")
+
     stdout_output = format_report(
-        args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+        args.fmt,
+        violations,
+        context,
+        linter.rules,
+        cli_version,
+        verbose=args.verbose,
+        baseline_suppressed=linter.baseline_suppressed_count,
     )
     print(stdout_output)
 
@@ -898,6 +964,54 @@ def _run_fix(args):
     sys.exit(0)
 
 
+def _run_baseline(args):
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    try:
+        linter = Linter(context, config)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    violations = [v for v in linter.run() if v.severity != Severity.INFO]
+
+    from .baseline import build_baseline, save_baseline, BASELINE_FILENAME
+
+    cli_version = _get_version()
+    baseline_modes = {r.rule_id: r.baseline_mode for r in linter.rules if r.baseline_mode}
+    baseline = build_baseline(violations, context.root_path, cli_version, baseline_modes)
+
+    if config_path:
+        output_path = config_path.parent / BASELINE_FILENAME
+    else:
+        output_path = args.path / BASELINE_FILENAME
+
+    save_baseline(output_path, baseline)
+    print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
+    sys.exit(0)
+
+
 def _run_init(args):
     config_path = args.path / ".skillsaw.yaml"
     if config_path.exists():
@@ -907,6 +1021,7 @@ def _run_init(args):
     config = LinterConfig.for_init()
     config.save(config_path)
     print(f"Created default config: {config_path}")
+    print("Run `skillsaw baseline` to accept existing violations.")
     sys.exit(0)
 
 

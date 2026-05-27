@@ -20,6 +20,7 @@ from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
 
 if TYPE_CHECKING:
+    from .baseline import BaselineFile, BaselineEntry
     from .llm._litellm import CompletionProvider, TokenUsage
 
 
@@ -48,11 +49,15 @@ class Linter:
         config: LinterConfig = None,
         rule_ids: Optional[Set[str]] = None,
         skip_rule_ids: Optional[Set[str]] = None,
+        baseline: Optional["BaselineFile"] = None,
     ):
         self.context = context
         self.config = config or LinterConfig.default()
         self._rule_ids = rule_ids
         self._skip_rule_ids = skip_rule_ids or set()
+        self._baseline = baseline
+        self._stale_baseline_entries: List["BaselineEntry"] = []
+        self._baseline_suppressed_count: int = 0
         self.context.content_paths = self.config.content_paths
         self.context.exclude_patterns = self.config.exclude_patterns
         self.context.apply_excludes()
@@ -242,7 +247,35 @@ class Linter:
                 len(violations) - len(kept),
                 len(violations),
             )
+
+        if self._baseline is not None:
+            from .baseline import filter_baselined_violations
+
+            before = len(kept)
+            kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
+            self._stale_baseline_entries = stale
+            self._baseline_suppressed_count = before - len(kept)
+            if before > len(kept):
+                logger.info(
+                    "Filtered %d of %d violations via baseline",
+                    before - len(kept),
+                    before,
+                )
+            if stale:
+                logger.info(
+                    "Baseline: %d stale entries (violations no longer present)",
+                    len(stale),
+                )
+
         return kept
+
+    @property
+    def stale_baseline_entries(self) -> List["BaselineEntry"]:
+        return self._stale_baseline_entries
+
+    @property
+    def baseline_suppressed_count(self) -> int:
+        return self._baseline_suppressed_count
 
     def run(self) -> List[RuleViolation]:
         """

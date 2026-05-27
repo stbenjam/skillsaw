@@ -15,6 +15,7 @@ def format_text(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    baseline_suppressed: int = 0,
 ) -> str:
     no_color = "NO_COLOR" in os.environ
     red = "" if no_color else "\033[91m"
@@ -67,6 +68,9 @@ def format_text(
     output.append(f"  {yellow}Warnings: {warnings}{reset}")
     if verbose:
         output.append(f"  {blue}Info:     {info}{reset}")
+    if baseline_suppressed:
+        dim = "" if no_color else "\033[2m"
+        output.append(f"  {dim}Baseline: {baseline_suppressed} suppressed{reset}")
 
     if errors == 0 and warnings == 0:
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")
