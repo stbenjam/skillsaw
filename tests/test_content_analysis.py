@@ -14,7 +14,7 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_instruction_files,
     gather_all_content_files,
     ContentFile,
-    FrontmatterContentBlock,
+    CursorRuleBlock,
     _strip_fenced_code_blocks,
 )
 from skillsaw.context import RepositoryContext
@@ -788,17 +788,15 @@ class TestContentBlockReadWrite:
         block.write_body("new content")
         assert f.read_text(encoding="utf-8") == "new content"
 
-    def test_frontmatter_write_body_preserves_raw_frontmatter(self, temp_dir):
-        """Regression: write_body must preserve raw frontmatter, not write dict repr."""
+    def test_cursor_rule_block_reads_full_file(self, temp_dir):
+        """CursorRuleBlock reads full file content including frontmatter."""
         f = temp_dir / "test.mdc"
-        f.write_text("---\nname: my-rule\ndescription: A test rule\n---\noriginal body\n")
-        block = FrontmatterContentBlock(path=f, category="cursor-rule")
-        block.write_body("new body\n")
-        result = f.read_text(encoding="utf-8")
-        assert result.startswith("---\n")
-        assert "name: my-rule" in result
-        assert "new body" in result
-        assert "{" not in result, "dict repr was written instead of raw YAML"
+        f.write_text("---\ndescription: A test rule\n---\noriginal body\n")
+        block = CursorRuleBlock(path=f)
+        body = block.read_body()
+        assert "---" in body
+        assert "description: A test rule" in body
+        assert "original body" in body
 
     def test_file_line_with_offset(self):
         block = ContentFile(
