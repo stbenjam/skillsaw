@@ -271,7 +271,7 @@ class FrontmatterContentBlock(ContentBlock):
         if not content:
             return 0
         front, _, _ = parse_frontmatter(content)
-        if not front:
+        if front is None:
             return 0
         return front.count("\n") + 2  # frontmatter + closing ---
 
