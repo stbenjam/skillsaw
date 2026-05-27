@@ -38,6 +38,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 - [Features](#features)
 - [Quick Start](#quick-start)
+  - [More commands](#more-commands)
 - [Installation](#installation)
   - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
