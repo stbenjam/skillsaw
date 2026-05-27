@@ -1336,6 +1336,18 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 return True
         return False
 
+    _INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
+
+    @classmethod
+    def _is_inside_backticks(cls, line: str, match_start: int, match_end: int) -> bool:
+        """Check if a match position falls inside an inline code span."""
+        for m in cls._INLINE_CODE_RE.finditer(line):
+            code_start = m.start() + len(m.group(1))
+            code_end = m.end() - len(m.group(1))
+            if code_start <= match_start and match_end <= code_end:
+                return True
+        return False
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         root = context.root_path.resolve()
         patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
@@ -1354,6 +1366,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                     if self._is_inside_link(line, match.start(), match.end()):
                         continue
                     if self._is_inside_url(line, match.start(), match.end()):
+                        continue
+                    if self._is_inside_backticks(line, match.start(), match.end()):
                         continue
                     if not any(PurePath(path_str).match(p) for p in patterns):
                         continue
@@ -1402,8 +1416,10 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                     if loc == -1:
                         break
                     end = loc + len(path_str)
-                    if not self._is_inside_link(line, loc, end) and not self._is_inside_url(
-                        line, loc, end
+                    if (
+                        not self._is_inside_link(line, loc, end)
+                        and not self._is_inside_url(line, loc, end)
+                        and not self._is_inside_backticks(line, loc, end)
                     ):
                         lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
                         violations_fixed.append(v)
