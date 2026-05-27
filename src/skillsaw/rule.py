@@ -87,6 +87,7 @@ class Rule(ABC):
     repo_types = None
     formats = None
     config_schema = {}
+    aliases: set = set()
     since = "0.1.0"
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"

@@ -39,17 +39,26 @@ def _parse_frontmatter(content: str):
     return data, None
 
 
-_VALID_FRONTMATTER_KEYS = {"paths"}
+_DEFAULT_VALID_KEYS = ["paths"]
 
 
 class RulesValidRule(Rule):
     """Validate .claude/rules/ files: markdown extension, valid frontmatter, valid path globs"""
 
     repo_types = {RepositoryType.DOT_CLAUDE}
+    aliases = {"rules-valid"}
+
+    config_schema = {
+        "valid-keys": {
+            "type": "list",
+            "default": _DEFAULT_VALID_KEYS,
+            "description": "Recognized frontmatter keys (unknown keys trigger a warning)",
+        },
+    }
 
     @property
     def rule_id(self) -> str:
-        return "rules-valid"
+        return "claude-rule-valid"
 
     @property
     def description(self) -> str:
@@ -101,12 +110,13 @@ class RulesValidRule(Rule):
             if frontmatter is None:
                 continue
 
-            unknown_keys = set(frontmatter.keys()) - _VALID_FRONTMATTER_KEYS
+            valid_keys = set(self.config.get("valid-keys", _DEFAULT_VALID_KEYS))
+            unknown_keys = set(frontmatter.keys()) - valid_keys
             if unknown_keys:
                 for key in sorted(unknown_keys):
                     violations.append(
                         self.violation(
-                            f"Unknown frontmatter key '{key}'. " f"Only 'paths' is supported",
+                            f"Unknown frontmatter key '{key}'",
                             file_path=file_path,
                             line=frontmatter_key_line(file_path, key),
                             severity=Severity.WARNING,

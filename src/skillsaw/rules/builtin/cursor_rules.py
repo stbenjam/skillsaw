@@ -9,17 +9,25 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.content_analysis import CursorRuleBlock
 from skillsaw.rules.builtin.utils import validate_glob_patterns
 
-_VALID_FRONTMATTER_KEYS = {"description", "globs", "alwaysApply"}
+_DEFAULT_VALID_KEYS = ["description", "globs", "alwaysApply"]
 
 
-class CursorRuleFrontmatterRule(Rule):
+class CursorRuleValidRule(Rule):
     """Validate .cursor/rules/*.mdc frontmatter fields"""
 
     repo_types = {RepositoryType.DOT_CURSOR}
 
+    config_schema = {
+        "valid-keys": {
+            "type": "list",
+            "default": _DEFAULT_VALID_KEYS,
+            "description": "Recognized frontmatter keys (unknown keys trigger a warning)",
+        },
+    }
+
     @property
     def rule_id(self) -> str:
-        return "cursor-rule-frontmatter"
+        return "cursor-rule-valid"
 
     @property
     def description(self) -> str:
@@ -30,6 +38,7 @@ class CursorRuleFrontmatterRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        valid_keys = set(self.config.get("valid-keys", _DEFAULT_VALID_KEYS))
 
         for block in context.lint_tree.find(CursorRuleBlock):
             if block.frontmatter_error:
@@ -47,15 +56,13 @@ class CursorRuleFrontmatterRule(Rule):
 
             fm = block.frontmatter
 
-            unknown_keys = set(fm.keys()) - _VALID_FRONTMATTER_KEYS
+            unknown_keys = set(fm.keys()) - valid_keys
             for key in sorted(unknown_keys):
                 violations.append(
                     self.violation(
-                        f"Unknown frontmatter key '{key}'. "
-                        f"Valid keys: description, globs, alwaysApply",
+                        f"Unknown frontmatter key '{key}'",
                         file_path=block.path,
                         line=block.key_line(key),
-                        severity=Severity.WARNING,
                     )
                 )
 

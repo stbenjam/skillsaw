@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **50** builtin rules 
+skillsaw includes **51** builtin rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (6 rules)
@@ -13,6 +13,7 @@ organized into the following categories:
 - [Skills, Agents, Hooks](skills-agents-hooks.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
+- [Cursor](cursor.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
@@ -41,12 +42,13 @@ organized into the following categories:
 | `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Command Format |
 | `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - | Marketplace |
 | `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm | Skills, Agents, Hooks |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning (disabled) | auto, llm | Skills, Agents, Hooks |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm | Skills, Agents, Hooks |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
+| `claude-rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
+| `cursor-rule-valid` | .cursor/rules/*.mdc files should have valid frontmatter | warning (auto) | - | Cursor |
 | `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - | OpenClaw |
 | `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | `instruction-imports-valid` | Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files | warning (auto) | - | Instruction Files |

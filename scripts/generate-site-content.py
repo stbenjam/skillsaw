@@ -93,8 +93,16 @@ RULE_GROUPS = [
     (
         "Rules Directory",
         "rules-directory",
-        ["rules-valid"],
+        ["claude-rule-valid"],
         None,
+    ),
+    (
+        "Cursor",
+        "cursor",
+        ["cursor-rule-valid"],
+        "Validates `.cursor/rules/*.mdc` frontmatter fields: `description`, "
+        "`globs`, and `alwaysApply`. The set of recognized keys is configurable "
+        "via `valid-keys`.",
     ),
     (
         "OpenClaw",

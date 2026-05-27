@@ -278,7 +278,7 @@ class TestAgentskills:
         assert r["rc"] == 1
 
         ids = rule_ids(r)
-        assert "agentskill-valid" in ids or "skill-frontmatter" in ids
+        assert "agentskill-valid" in ids
 
         all_violations = violations(r)
         assert any("name" in v["message"].lower() for v in all_violations)
@@ -312,15 +312,15 @@ class TestCursorRules:
     def test_clean_cursor_rules_pass(self, tmp_path):
         repo = copy_fixture("cursor-rules/clean", tmp_path)
         r = run_lint(repo)
-        assert "cursor-rule-frontmatter" not in rule_ids(r)
+        assert "cursor-rule-valid" not in rule_ids(r)
 
     def test_broken_cursor_rules_detected(self, tmp_path):
         repo = copy_fixture("cursor-rules/broken", tmp_path)
         r = run_lint(repo)
         ids = rule_ids(r)
-        assert "cursor-rule-frontmatter" in ids
+        assert "cursor-rule-valid" in ids
 
-        fm_violations = by_rule(r)["cursor-rule-frontmatter"]
+        fm_violations = by_rule(r)["cursor-rule-valid"]
         messages = [v["message"] for v in fm_violations]
         assert any("absolute" in m for m in messages)
         assert any("alwaysApply" in m and "boolean" in m for m in messages)
@@ -704,7 +704,10 @@ class TestRuleCoverage:
         """Every rule must produce a violation in at least one fixture."""
         from skillsaw.config import LinterConfig
 
-        all_rule_ids = set(LinterConfig.default().rules.keys())
+        default = LinterConfig.default()
+        all_rule_ids = {
+            rid for rid, cfg in default.rules.items() if cfg.get("enabled") is not False
+        }
         fired: Set[str] = set()
 
         for fixture_name in BROKEN_FIXTURES:
@@ -944,12 +947,16 @@ def _discover_safe_autofix_rule_ids() -> Set[str]:
     """Auto-discover all rules that produce SAFE-confidence autofixes."""
     from skillsaw.rules.builtin import BUILTIN_RULES
     from skillsaw.rule import AutofixConfidence
+    from skillsaw.config import LinterConfig
 
+    default = LinterConfig.default()
     safe_ids: Set[str] = set()
     for rule_class in BUILTIN_RULES:
         instance = rule_class()
         if instance.autofix_confidence == AutofixConfidence.SAFE:
-            safe_ids.add(instance.rule_id)
+            cfg = default.rules.get(instance.rule_id, {})
+            if cfg.get("enabled") is not False:
+                safe_ids.add(instance.rule_id)
     return safe_ids
 
 
@@ -1014,7 +1021,6 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 2,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 22,
-        "skill-frontmatter": 2,
     }
 
     def test_fixture_violation_counts(self, tmp_path):

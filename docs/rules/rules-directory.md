@@ -5,5 +5,12 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+| `claude-rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+
+
+**`claude-rule-valid` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `valid-keys` | Recognized frontmatter keys (unknown keys trigger a warning) | `["paths"]` |
 

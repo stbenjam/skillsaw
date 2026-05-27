@@ -5,7 +5,7 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning (disabled) | auto, llm |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 

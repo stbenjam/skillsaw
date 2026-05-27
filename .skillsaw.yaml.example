@@ -61,7 +61,7 @@ rules:
 
   # SKILL.md files should have frontmatter with name and description
   skill-frontmatter:
-    enabled: true
+    enabled: false
     severity: warning
 
   # Agent files must have valid frontmatter with name and description
@@ -86,9 +86,20 @@ rules:
     # allowlist: []
 
   # .claude/rules/ files must be markdown with valid optional paths frontmatter
-  rules-valid:
+  claude-rule-valid:
     enabled: auto
     severity: error
+    # valid-keys:
+    #   - paths
+
+  # .cursor/rules/*.mdc files should have valid frontmatter
+  cursor-rule-valid:
+    enabled: auto
+    severity: warning
+    # valid-keys:
+    #   - description
+    #   - globs
+    #   - alwaysApply
 
   # SKILL.md must have valid frontmatter with name and description
   agentskill-valid:

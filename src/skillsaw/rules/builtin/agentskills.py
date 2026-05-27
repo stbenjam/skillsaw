@@ -128,30 +128,53 @@ class AgentSkillValidRule(Rule):
         self, context: RepositoryContext, violations: List[RuleViolation]
     ) -> List[AutofixResult]:
         results: List[AutofixResult] = []
+        by_file: dict[Path, list[RuleViolation]] = {}
         for v in violations:
-            if not v.file_path or not v.file_path.exists():
+            if v.file_path:
+                by_file.setdefault(v.file_path, []).append(v)
+
+        for file_path, file_violations in by_file.items():
+            if not file_path.exists():
                 continue
-            if "Missing required 'name'" not in v.message:
-                continue
-            original = v.file_path.read_text(encoding="utf-8")
-            dir_name = v.file_path.parent.name
+            original = file_path.read_text(encoding="utf-8")
+            messages = {v.message for v in file_violations}
+            dir_name = file_path.parent.name
             kebab_name = _to_kebab(dir_name)
-            match = re.match(r"^---\s*\n(.*?)\n---", original, re.DOTALL)
-            if match:
-                fm_text = match.group(1)
-                new_fm = f"name: {kebab_name}\n{fm_text}"
-                fixed = f"---\n{new_fm}\n---" + original[match.end() :]
+
+            if any("Missing YAML frontmatter" in m for m in messages) and not original.startswith(
+                "---"
+            ):
+                fixed = f"---\nname: {kebab_name}\ndescription: \n---\n{original}"
                 results.append(
                     AutofixResult(
                         rule_id=self.rule_id,
-                        file_path=v.file_path,
+                        file_path=file_path,
                         confidence=AutofixConfidence.SAFE,
                         original_content=original,
                         fixed_content=fixed,
-                        description=f"Added name '{kebab_name}' from directory name",
-                        violations_fixed=[v],
+                        description="Added missing frontmatter",
+                        violations_fixed=file_violations,
                     )
                 )
+                continue
+
+            if any("Missing required 'name'" in m for m in messages):
+                match = re.match(r"^---\s*\n(.*?)\n---", original, re.DOTALL)
+                if match and "name:" not in match.group(1):
+                    fm_text = match.group(1)
+                    new_fm = f"name: {kebab_name}\n{fm_text}"
+                    fixed = f"---\n{new_fm}\n---" + original[match.end() :]
+                    results.append(
+                        AutofixResult(
+                            rule_id=self.rule_id,
+                            file_path=file_path,
+                            confidence=AutofixConfidence.SAFE,
+                            original_content=original,
+                            fixed_content=fixed,
+                            description=f"Added name '{kebab_name}' from directory name",
+                            violations_fixed=file_violations,
+                        )
+                    )
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

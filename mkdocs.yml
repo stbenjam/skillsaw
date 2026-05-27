@@ -63,12 +63,14 @@ nav:
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
-    - Plugin Structure: rules/plugin-structure.md
-    - Command Format: rules/command-format.md
-    - Marketplace: rules/marketplace.md
-    - Skills, Agents, Hooks: rules/skills-agents-hooks.md
-    - MCP: rules/mcp.md
-    - Rules Directory: rules/rules-directory.md
+    - Claude Code:
+      - Plugin Structure: rules/plugin-structure.md
+      - Command Format: rules/command-format.md
+      - Marketplace: rules/marketplace.md
+      - Skills, Agents, Hooks: rules/skills-agents-hooks.md
+      - MCP: rules/mcp.md
+      - Rules Directory: rules/rules-directory.md
+    - Cursor: rules/cursor.md
     - OpenClaw: rules/openclaw.md
     - Instruction Files: rules/instruction-files.md
     - Context Budget: rules/context-budget.md

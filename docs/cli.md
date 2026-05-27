@@ -19,6 +19,8 @@ skillsaw [command] [options]
 
 ## `skillsaw tree`
 
+## `skillsaw baseline`
+
 ## `skillsaw add`
 
 Scaffold marketplaces, plugins, skills, commands, agents, and hooks
