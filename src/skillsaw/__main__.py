@@ -14,7 +14,7 @@ from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
 from .rule import AutofixConfidence, AutofixResult, Severity
-from .formatters import format_report, get_counts, infer_format, FORMATS
+from .formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS
 from . import __version__
 
 _SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
@@ -130,8 +130,9 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="outputs",
         action="append",
         default=[],
-        metavar="FILE",
-        help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
+        metavar="[FORMAT:]FILE",
+        help="Write output to FILE. Format is inferred from extension (.json, .sarif, .html) "
+        "or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). "
         "Can be specified multiple times.",
     )
     lint_parser.add_argument(
@@ -447,12 +448,13 @@ def _run_lint(args):
     cli_version = _get_version()
 
     output_formats = {}
-    for output_path in args.outputs:
+    for spec in args.outputs:
         try:
-            output_formats[output_path] = infer_format(output_path)
+            fmt, filepath = parse_output_spec(spec)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        output_formats[filepath] = fmt
 
     _handle_apply_patch_for_lint(args)
 

@@ -124,6 +124,13 @@ skillsaw --format gitlab          # Alias for code-climate
 # Write formatted output to a file (format inferred from extension)
 skillsaw --output report.sarif
 
+# Explicit format prefix (needed when extension is ambiguous, e.g. .json)
+skillsaw --output gitlab:gl-code-quality.json
+skillsaw --output json:native-report.json
+
+# Multiple outputs in one run
+skillsaw --output report.sarif --output gitlab:gl-code-quality.json
+
 # Scaffold a new marketplace, plugin, or skill
 skillsaw add marketplace
 skillsaw add plugin my-plugin
@@ -174,7 +181,7 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 skillsaw:
   script:
     - pip install skillsaw==0.11.0
-    - skillsaw lint --format gitlab . > gl-code-quality-report.json
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
       codequality: gl-code-quality-report.json
