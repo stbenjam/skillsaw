@@ -173,7 +173,7 @@ jobs:
             exit 1
           fi
 
-      - name: Test ai-helpers repo
+      - name: Test openshift-eng/ai-helpers
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
@@ -186,7 +186,7 @@ jobs:
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
-      - name: Test auth0/agent-skills repo
+      - name: Test auth0/agent-skills
         run: |
           git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills
 
@@ -194,6 +194,20 @@ jobs:
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
+          assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
+          assert r['summary']['warnings'] == 0, f\"unexpected warnings: {r['summary']['warnings']}\"
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
+          "
+
+      - name: Test opendatahub-io/agent-eval-harness
+        run: |
+          git clone https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
+
+          skillsaw --format json /tmp/agent-eval-harness | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
