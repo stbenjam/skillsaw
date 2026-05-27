@@ -125,13 +125,14 @@ def sync_comments(repo, pr_number, new_comments):
         new = new_by_fp[fp]
         old_line = comment.get("line")
         new_line = new.get("line")
-        if old_line != new_line and comment["id"] not in replied_to:
-            try:
-                github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
-                moved_fps.add(fp)
-                deleted += 1
-            except urllib.error.HTTPError:
-                pass
+        if old_line != new_line:
+            if comment["id"] not in replied_to:
+                try:
+                    github_api("DELETE", f"/repos/{repo}/pulls/comments/{comment['id']}")
+                    deleted += 1
+                except urllib.error.HTTPError:
+                    pass
+            moved_fps.add(fp)
     if deleted:
         print(f"Deleted {deleted} comment(s) for fixed/moved issues.")
 
