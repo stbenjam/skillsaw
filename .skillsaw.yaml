@@ -7,7 +7,6 @@ exclude:
   - "GEMINI.md"
   - "CLAUDE.md"
   - ".claude/*"
-  - ".cursor/*"
   - ".gemini/*"
   - ".opencode/*"
   - ".agents/*"
