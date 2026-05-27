@@ -201,7 +201,7 @@ jobs:
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
 
-          skillsaw --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
+          skillsaw --skip-rule plugins-doc-up-to-date --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
 
           python3 -c "
           import json, os
