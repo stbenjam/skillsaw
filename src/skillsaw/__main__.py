@@ -956,7 +956,7 @@ def _run_baseline(args):
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    violations = linter.run()
+    violations = [v for v in linter.run() if v.severity != Severity.INFO]
 
     from .baseline import build_baseline, save_baseline, BASELINE_FILENAME
 
