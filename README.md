@@ -29,7 +29,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 - 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
 - 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
 - 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
+- 🤖 **CI-Ready** — GitHub Action with inline PR comments; GitLab Code Quality via `--format gitlab`
 - ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
 
 ## Table of Contents
@@ -44,7 +44,7 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Via pip](#via-pip)
   - [From source](#from-source)
   - [Using Docker](#using-docker)
-  - [GitHub Action](#github-action)
+  - [CI Integration](#ci-integration)
 - [Repository Types](#repository-types)
   - [agentskills.io Skills](#agentskillsio-skills)
   - [Single Plugin](#single-plugin)
@@ -178,105 +178,28 @@ docker pull ghcr.io/stbenjam/skillsaw:latest
 docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 ```
 
-### GitHub Action
-
-The GitHub Action installs skillsaw, runs it, and prints violations in the CI
-log. A separate review action posts violations as inline PR comments with
-automatic deduplication and thread resolution.
-
-#### Basic usage (lint only)
+### CI Integration
 
 ```yaml
-name: Lint
-
-on: [pull_request]
-
-permissions:
-  contents: read
-
-jobs:
-  skillsaw:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
-```
-
-#### With PR review comments
-
-To post inline comments on PRs (including fork PRs), use the two-workflow
-pattern. The lint workflow runs with read-only permissions and uploads the
-report as an artifact. A second workflow triggers on completion and posts
-comments with write permissions — without ever checking out untrusted code.
-
-```yaml
-# .github/workflows/lint.yml
-name: Lint
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  skillsaw:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
+# GitHub Actions
+- uses: stbenjam/skillsaw@v0
+  with:
+    strict: true
 ```
 
 ```yaml
-# .github/workflows/lint-review.yml
-name: Lint Review
-
-on:
-  workflow_run:
-    workflows: ["Lint"]
-    types: [completed]
-
-jobs:
-  review:
-    if: github.event.workflow_run.event == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw/review@v0
+# GitLab CI — outputs Code Quality JSON for MR widgets
+skillsaw:
+  script:
+    - pip install skillsaw==0.11.0
+    - skillsaw lint --format gitlab . > gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
 ```
 
-#### Inputs
-
-| Input | Description | Default |
-|-------|-------------|---------|
-| `path` | Path to lint | `.` |
-| `version` | Specific skillsaw version to install | latest |
-| `strict` | Treat warnings as errors | `false` |
-| `verbose` | Include info-level violations | `false` |
-
-#### Outputs
-
-| Output | Description |
-|--------|-------------|
-| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
-| `errors` | Number of errors found |
-| `warnings` | Number of warnings found |
-| `report-file` | Path to JSON report file |
-
-#### PR comment behavior
-
-- Each violation gets its own inline comment on the relevant line or file
-- Comments are deduplicated across re-runs using content fingerprinting
-- When a violation is fixed, its comment thread is automatically resolved
-- Comments with human replies are preserved
+For PR review comments, the secure two-workflow pattern, and full configuration
+options, see the [CI Integration guide](https://skillsaw.org/ci/).
 
 ## Repository Types
 

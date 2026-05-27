@@ -106,6 +106,22 @@ jobs:
 | `warnings` | Number of warnings found |
 | `report-file` | Path to JSON report file |
 
+### Pinning to a commit SHA
+
+The examples above use `@v0` for brevity. For supply-chain protection,
+replace `@v0` with a pinned commit SHA:
+
+```yaml
+- uses: stbenjam/skillsaw@d252498eb6260e197c9c395a650643d9c49ae37b # v0
+```
+
+This prevents a compromised tag from injecting malicious code into your
+workflow. Find the current SHA for a tag with:
+
+```bash
+git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
+```
+
 ### PR comment behavior
 
 - Each violation gets its own inline comment on the relevant line or file
