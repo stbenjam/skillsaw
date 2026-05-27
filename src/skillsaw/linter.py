@@ -63,6 +63,7 @@ class Linter:
         self._rule_ids = rule_ids
         self._baseline = baseline
         self._stale_baseline_entries: List["BaselineEntry"] = []
+        self._baseline_suppressed_count: int = 0
         self.context.content_paths = self.config.content_paths
         self.context.exclude_patterns = self.config.exclude_patterns
         self.context.apply_excludes()
@@ -248,6 +249,7 @@ class Linter:
             before = len(kept)
             kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
             self._stale_baseline_entries = stale
+            self._baseline_suppressed_count = before - len(kept)
             if before > len(kept):
                 logger.info(
                     "Filtered %d of %d violations via baseline",
@@ -265,6 +267,10 @@ class Linter:
     @property
     def stale_baseline_entries(self) -> List["BaselineEntry"]:
         return self._stale_baseline_entries
+
+    @property
+    def baseline_suppressed_count(self) -> int:
+        return self._baseline_suppressed_count
 
     def run(self) -> List[RuleViolation]:
         """

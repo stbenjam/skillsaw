@@ -497,6 +497,9 @@ def _run_lint(args):
         violations = linter.run()
 
     if baseline and args.fmt == "text":
+        suppressed = linter.baseline_suppressed_count
+        if suppressed:
+            print(f"Baseline: suppressed {suppressed} existing violation(s)")
         stale = linter.stale_baseline_entries
         if stale:
             print(
