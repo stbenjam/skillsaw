@@ -736,7 +736,8 @@ def _get_js() -> str:
     var nr = document.getElementById('no-results');
     var html = '';
     var typeLabels = {plugins:'Plugins',commands:'Commands',skills:'Skills',agents:'Agents',hooks:'Hooks',mcp_servers:'MCP Servers',rules:'Rules'};
-    var label = typeLabels[type] || type;
+    if (!typeLabels[type]) return;
+    var label = typeLabels[type];
 
     if (type === 'plugins' && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
@@ -762,7 +763,7 @@ def _get_js() -> str:
         items.forEach(function(r) {
           var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
           html += '<div class="search-result-item"'+onclick+'>';
-          html += '<div class="search-result-icon '+r.icon+'">'+r.iconChar+'</div>';
+          html += '<div class="search-result-icon '+esc(r.icon)+'">'+esc(r.iconChar)+'</div>';
           html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
           html += '<div class="search-result-subtitle">'+esc(r.desc)+'</div></div>';
           if (r.plugin) html += '<span class="search-result-plugin">'+esc(r.plugin)+'</span>';
