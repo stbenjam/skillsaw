@@ -43,7 +43,10 @@ class BaselineFile:
 
 
 def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Optional[List[str]]:
-    resolved = path.resolve()
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return None
     if resolved not in cache:
         try:
             cache[resolved] = resolved.read_text(encoding="utf-8").splitlines()
@@ -73,7 +76,10 @@ def fingerprint_violation(
     file_line = violation.file_line
 
     if rel_path is not None and file_line is not None and violation.file_path is not None:
-        lines = _read_file_lines(violation.file_path, _file_cache)
+        file_path = violation.file_path
+        if not file_path.is_absolute():
+            file_path = root_path / file_path
+        lines = _read_file_lines(file_path, _file_cache)
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
             raw = f"{rule_id}\0{rel_path}\0{line_content}"
@@ -132,6 +138,9 @@ def load_baseline(path: Path) -> BaselineFile:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid baseline JSON in {path}: {exc}") from exc
 
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid baseline JSON in {path}: expected a JSON object")
+
     version = data.get("version")
     if version != _BASELINE_VERSION:
         raise ValueError(
@@ -139,8 +148,12 @@ def load_baseline(path: Path) -> BaselineFile:
             f"(expected '{_BASELINE_VERSION}')"
         )
 
+    violations_data = data.get("violations", [])
+    if not isinstance(violations_data, list):
+        raise ValueError(f"Invalid baseline JSON in {path}: 'violations' must be a list")
+
     entries = []
-    for i, v in enumerate(data.get("violations", [])):
+    for i, v in enumerate(violations_data):
         if not isinstance(v, dict) or "fingerprint" not in v:
             raise ValueError(
                 f"Baseline entry {i} in {path} is missing required 'fingerprint' field"
