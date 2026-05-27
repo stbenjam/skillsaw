@@ -183,6 +183,7 @@ jobs:
           assert r['stats']['plugins'] > 0, 'no plugins scanned'
           assert r['stats']['rules_run'] > 0, 'no rules ran'
           assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
+          assert r['summary']['warnings'] == 0, f\"unexpected warnings: {r['summary']['warnings']}\"
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
@@ -208,6 +209,7 @@ jobs:
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
           assert r['summary']['errors'] == 0, f\"unexpected errors: {r['summary']['errors']}\"
+          assert r['summary']['warnings'] == 0, f\"unexpected warnings: {r['summary']['warnings']}\"
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
