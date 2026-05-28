@@ -86,7 +86,7 @@ rules:
     # allowlist: []
 
   # .claude/rules/ files must be markdown with valid optional paths frontmatter
-  rule-valid:
+  rules-valid:
     enabled: auto
     severity: error
     # valid-keys:

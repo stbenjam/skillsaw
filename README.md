@@ -531,9 +531,9 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
 
-**`rule-valid` parameters:**
+**`rules-valid` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|

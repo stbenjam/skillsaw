@@ -63,7 +63,7 @@ RULE_GROUPS = [
     ),
     (
         "Rules Directory",
-        ["rule-valid"],
+        ["rules-valid"],
         None,
     ),
     (

@@ -57,7 +57,7 @@ class RulesValidRule(Rule):
 
     @property
     def rule_id(self) -> str:
-        return "rule-valid"
+        return "rules-valid"
 
     @property
     def description(self) -> str:

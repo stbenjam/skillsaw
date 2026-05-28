@@ -187,7 +187,7 @@ class LinterConfig:
                 "mcp-valid-json": {"enabled": True, "severity": "error"},
                 "mcp-prohibited": {"enabled": False, "severity": "error"},
                 # Rules directory
-                "rule-valid": {"enabled": "auto", "severity": "error"},
+                "rules-valid": {"enabled": "auto", "severity": "error"},
                 # Cursor rules
                 "cursor-rule-valid": {"enabled": "auto", "severity": "warning"},
                 # Agentskills rules (auto-enabled for agentskills repos)

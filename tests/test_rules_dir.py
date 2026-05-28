@@ -293,7 +293,7 @@ def test_frontmatter_no_trailing_newline(dot_claude_with_rules):
 def test_rule_metadata():
     """Verify rule ID, description, and default severity"""
     rule = RulesValidRule()
-    assert rule.rule_id == "rule-valid"
+    assert rule.rule_id == "rules-valid"
     assert "rules/" in rule.description
     assert rule.default_severity() == Severity.ERROR
 
@@ -306,7 +306,7 @@ def test_auto_enabled_for_dot_claude(dot_claude_with_rules):
     assert context.repo_type == RepositoryType.DOT_CLAUDE
 
     config = LinterConfig.default()
-    assert config.is_rule_enabled("rule-valid", context, RulesValidRule.repo_types) is True
+    assert config.is_rule_enabled("rules-valid", context, RulesValidRule.repo_types) is True
 
 
 def test_auto_disabled_for_non_dot_claude(valid_plugin):
@@ -317,7 +317,7 @@ def test_auto_disabled_for_non_dot_claude(valid_plugin):
     assert context.repo_type == RepositoryType.SINGLE_PLUGIN
 
     config = LinterConfig.default()
-    assert config.is_rule_enabled("rule-valid", context, RulesValidRule.repo_types) is False
+    assert config.is_rule_enabled("rules-valid", context, RulesValidRule.repo_types) is False
 
 
 def test_linting_dot_claude_directly(temp_dir):
