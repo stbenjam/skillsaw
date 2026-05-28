@@ -1,49 +1,31 @@
-[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/)
-[![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/skillsaw.svg)](https://pypi.org/project/skillsaw/)
-
 <table><tr>
 <td width="200" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="200"></td>
 <td valign="top">
 
 ### skillsaw
 
-Keep your skills sharp. A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces). Analyzes instruction file quality using attention research, detects weak language and contradictions, and auto-fixes violations with any LLM.
+Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
 
-📖 **[Full documentation at skillsaw.org](https://skillsaw.org)**
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </td>
 </tr></table>
 
-> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+[![skillsaw demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif)](https://asciinema.org/a/uQ9xfM5S1SXcd777)
 
-## Features
-
-- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
-- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
-- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
-- 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
-- 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
-- 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action with inline PR comments, deduplication, and thread resolution
-- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
+**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
 ## Table of Contents
 
 <!-- BEGIN GENERATED TOC -->
 
-- [Features](#features)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
   - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
   - [From source](#from-source)
   - [Using Docker](#using-docker)
-  - [GitHub Action](#github-action)
+  - [CI Integration](#ci-integration)
 - [Repository Types](#repository-types)
   - [agentskills.io Skills](#agentskillsio-skills)
   - [Single Plugin](#single-plugin)
@@ -58,6 +40,12 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
   - [Per-Rule Excludes](#per-rule-excludes)
   - [Inline Suppression](#inline-suppression)
   - [Content Paths](#content-paths)
+- [Baseline](#baseline)
+  - [Creating a baseline](#creating-a-baseline)
+  - [How it works](#how-it-works)
+  - [Ignoring the baseline](#ignoring-the-baseline)
+  - [Stale entries](#stale-entries)
+  - [Baseline and fix](#baseline-and-fix)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
@@ -84,42 +72,27 @@ Keep your skills sharp. A linter with built-in content intelligence for [agentsk
 
 ## Quick Start
 
+No install required — run with `uvx skillsaw` (or [install](#installation)
+it for repeated use).
+
 ```bash
-# Lint current directory (no install required)
-uvx skillsaw
-
-# Fix structural issues automatically
-skillsaw fix
-
-# Fix content quality issues with an LLM
-skillsaw fix --llm
-
-# Preview LLM fixes without writing
-skillsaw fix --llm --dry-run
-
-# Verbose output (includes info-level findings)
-skillsaw -v
-
-# Strict mode (warnings become errors)
-skillsaw --strict
-
-# Generate default config
-skillsaw init
-
-# List all rules with fix support info
-skillsaw list-rules
-
-# View the lint tree (what skillsaw sees)
+# 1. See what skillsaw detects in your repo
 skillsaw tree
 
-# Generate plugin/skill documentation
-skillsaw docs
+# 2. Lint it
+skillsaw
 
-# Scaffold a new marketplace, plugin, or skill
-skillsaw add marketplace
-skillsaw add plugin my-plugin
-skillsaw add skill my-skill
+# 3. Fix what you can automatically
+skillsaw fix
+
+# 4. Accept remaining violations as the baseline
+skillsaw baseline
+
+# Done — only new violations will fail from here on
+skillsaw   # exit 0
 ```
+
+For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 
 ## Installation
 
@@ -151,105 +124,28 @@ docker pull ghcr.io/stbenjam/skillsaw:latest
 docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 ```
 
-### GitHub Action
-
-The GitHub Action installs skillsaw, runs it, and prints violations in the CI
-log. A separate review action posts violations as inline PR comments with
-automatic deduplication and thread resolution.
-
-#### Basic usage (lint only)
+### CI Integration
 
 ```yaml
-name: Lint
-
-on: [pull_request]
-
-permissions:
-  contents: read
-
-jobs:
-  skillsaw:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
-```
-
-#### With PR review comments
-
-To post inline comments on PRs (including fork PRs), use the two-workflow
-pattern. The lint workflow runs with read-only permissions and uploads the
-report as an artifact. A second workflow triggers on completion and posts
-comments with write permissions — without ever checking out untrusted code.
-
-```yaml
-# .github/workflows/lint.yml
-name: Lint
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  skillsaw:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
+# GitHub Actions
+- uses: stbenjam/skillsaw@v0
+  with:
+    strict: true
 ```
 
 ```yaml
-# .github/workflows/lint-review.yml
-name: Lint Review
-
-on:
-  workflow_run:
-    workflows: ["Lint"]
-    types: [completed]
-
-jobs:
-  review:
-    if: github.event.workflow_run.event == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw/review@v0
+# GitLab CI — outputs Code Quality JSON for MR widgets
+skillsaw:
+  script:
+    - pip install skillsaw==0.11.0
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
 ```
 
-#### Inputs
-
-| Input | Description | Default |
-|-------|-------------|---------|
-| `path` | Path to lint | `.` |
-| `version` | Specific skillsaw version to install | latest |
-| `strict` | Treat warnings as errors | `false` |
-| `verbose` | Include info-level violations | `false` |
-
-#### Outputs
-
-| Output | Description |
-|--------|-------------|
-| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
-| `errors` | Number of errors found |
-| `warnings` | Number of warnings found |
-| `report-file` | Path to JSON report file |
-
-#### PR comment behavior
-
-- Each violation gets its own inline comment on the relevant line or file
-- Comments are deduplicated across re-runs using content fingerprinting
-- When a violation is fixed, its comment thread is automatically resolved
-- Comments with human replies are preserved
+For PR review comments, the secure two-workflow pattern, and full configuration
+options, see the [CI Integration guide](https://skillsaw.org/ci/).
 
 ## Repository Types
 
@@ -484,6 +380,66 @@ content-paths:
 
 Matched files are analyzed by all content-\* rules and support LLM-powered
 fixes via `skillsaw fix --llm`.
+
+## Baseline
+
+When adopting skillsaw on an existing project, you may have many
+pre-existing violations. The **baseline** feature lets you snapshot
+current violations so that `skillsaw lint` only reports *new* ones —
+existing violations are accepted and won't cause failures.
+
+### Creating a baseline
+
+```bash
+# Generate .skillsaw-baseline.json from current violations
+skillsaw baseline
+```
+
+### How it works
+
+Once a `.skillsaw-baseline.json` file exists (next to `.skillsaw.yaml` or
+in the repo root), `skillsaw lint` automatically loads it and subtracts
+matching violations from the output. Only new violations are reported.
+
+Violations are matched by a **content hash** — a fingerprint built from
+the rule ID, file path, and the content of the source line (not the line
+number). This means the baseline survives line drift: if you add lines
+above a baselined violation, the fingerprint still matches because the
+content hasn't changed.
+
+If you reformat or rewrite a line, the fingerprint changes and the
+violation resurfaces for a fresh look — which is the correct behavior.
+
+Rules that measure a numeric value (`context-budget`, `content-instruction-budget`,
+`content-actionability-score`) use **ratchet** behavior instead: the baseline
+records the value and only suppresses violations that are equal to or better.
+Regressions (e.g., file grew past the baselined token count) are always reported.
+
+### Ignoring the baseline
+
+```bash
+# Run lint without baseline filtering
+skillsaw lint --no-baseline
+```
+
+### Stale entries
+
+When you fix a baselined violation, its baseline entry becomes **stale**.
+Skillsaw reports stale entries so you know the baseline can be refreshed:
+
+```
+Baseline: 3 stale entries (violations resolved since baseline was set)
+  Run `skillsaw baseline` to update.
+```
+
+Run `skillsaw baseline` again to regenerate the file without the
+resolved violations.
+
+### Baseline and fix
+
+The `skillsaw fix` command operates on all violations regardless of the
+baseline. The baseline only affects `lint` reporting and exit codes — if
+you explicitly ask to fix, everything is eligible.
 
 ## Builtin Rules
 
@@ -725,7 +681,10 @@ skillsaw fix --llm --model openrouter/minimax/minimax-m1
 skillsaw fix --llm --all                    # Include info-level violations
 skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
 skillsaw fix --llm --max-iterations 10      # Max iterations per file
-skillsaw fix --llm --dry-run                # Preview changes without writing
+skillsaw fix --llm --dry-run                # Preview changes and save patch
+skillsaw fix --apply-patch                  # Apply the saved patch
+skillsaw fix --llm --dry-run --patch-file p.diff  # Custom patch path
+skillsaw fix --apply-patch --patch-file p.diff    # Apply from custom path
 skillsaw fix --llm -y                       # Auto-apply without confirmation
 ```
 
@@ -737,7 +696,7 @@ skillsaw fix --llm -y                       # Auto-apply without confirmation
 4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
 5. Files are processed in parallel with a live progress bar showing ETA
 
-The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to review all proposed changes as unified diffs before committing to them.
+The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to preview changes — because LLM output is non-deterministic, the dry-run saves a patch file (`.skillsaw-llm-patch.diff`) so you can review and then apply the exact changes with `--apply-patch`.
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 

@@ -967,6 +967,73 @@ class TestContentUnlinkedInternalReferenceRule:
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) == 0
 
+    def test_backtick_path_not_flagged(self, temp_dir):
+        """Paths inside inline code spans should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Read the template at `${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md` for the full schema.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_double_backtick_exact_path_flagged(self, temp_dir):
+        """A path that is the entire content of a double-backtick span should still be flagged."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "You can also reference ``prompts/analyze-skill.md`` with double backticks.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "prompts/analyze-skill.md" in violations[0].message
+
+    def test_bare_path_next_to_backtick_path_flagged(self, temp_dir):
+        """A bare path on the same line as a backtick-quoted path should still be flagged."""
+        (temp_dir / "prompts").mkdir()
+        (temp_dir / "prompts" / "analyze-skill.md").write_text("# Prompt\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "See `${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md` and prompts/analyze-skill.md for details.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "prompts/analyze-skill.md" in violations[0].message
+
+    def test_fenced_code_block_path_not_flagged(self, temp_dir):
+        """Paths inside fenced code blocks should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "```\n" "prompts/analyze-skill.md\n" "```\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_tilde_fenced_code_block_path_not_flagged(self, temp_dir):
+        """Paths inside ~~~ fenced code blocks should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "~~~\n" "prompts/analyze-skill.md\n" "~~~\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_html_comment_path_not_flagged(self, temp_dir):
+        """Paths inside HTML comments should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "<!-- This references prompts/analyze-skill.md internally -->\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
+    def test_multiline_html_comment_path_not_flagged(self, temp_dir):
+        """Paths inside multi-line HTML comments should not trigger violations."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Guide\n\n" "<!--\n" "prompts/analyze-skill.md\n" "-->\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 0
+
     def test_no_files_no_violations(self, temp_dir):
         context = RepositoryContext(temp_dir)
         violations = ContentUnlinkedInternalReferenceRule().check(context)
@@ -1122,8 +1189,8 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         fixed = fixes[0].fixed_content
-        assert fixed.count("[scripts/test.py](scripts/test.py)") == 2
-        assert "[[scripts/test.py]" not in fixed
+        assert fixed.count("[`scripts/test.py`](scripts/test.py)") == 2
+        assert "[[" not in fixed
 
     def test_autofix_triple_duplicate_no_double_wrap(self, temp_dir):
         """Three occurrences of the same path should each be wrapped exactly once."""
@@ -1236,6 +1303,25 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes2 = rule.fix(context2, violations2)
         if fixes2:
             assert fixes2[0].fixed_content == first_fixed
+
+    def test_autofix_skips_backtick_paths(self, temp_dir):
+        """Paths inside backtick spans should not be modified by autofix."""
+        (temp_dir / "prompts").mkdir()
+        (temp_dir / "prompts" / "analyze-skill.md").write_text("# Prompt\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Read the template at `${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md` for the full schema.\n\n"
+            "For bare references, see prompts/analyze-skill.md directly.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "prompts/analyze-skill.md" in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "`${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md`" in fixed
+        assert "[prompts/analyze-skill.md](prompts/analyze-skill.md)" in fixed
 
     def test_supports_autofix_property(self):
         rule = ContentUnlinkedInternalReferenceRule()

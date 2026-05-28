@@ -88,12 +88,29 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
     if isinstance(author_val, str):
         author_val = {"name": author_val}
 
+    tags = meta.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+    tags = [str(t) for t in tags if t]
+
+    keywords = meta.get("keywords", [])
+    if not isinstance(keywords, list):
+        keywords = []
+    keywords = [str(k) for k in keywords if k]
+
     return PluginDoc(
         name=name,
         path=plugin_path,
         description=meta.get("description", ""),
         version=str(v) if (v := meta.get("version")) is not None else "",
         author=author_val if isinstance(author_val, dict) else None,
+        display_name=str(meta.get("displayName", "")) or "",
+        category=str(meta.get("category", "")) or "",
+        tags=tags,
+        keywords=keywords,
+        homepage=str(meta.get("homepage", "")) or "",
+        repository=str(meta.get("repository", "")) or "",
+        license=str(meta.get("license", "")) or "",
         commands=_extract_commands(plugin_node),
         skills=_extract_skills(plugin_node),
         agents=_extract_agents(plugin_node),
@@ -110,7 +127,6 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
 def _extract_commands(plugin_node: PluginNode) -> List[CommandDoc]:
     docs = []
     for block in plugin_node.find(CommandBlock):
-        fm = block.frontmatter or {}
         name_lines = block.section("Name").strip().splitlines()
         full_name = name_lines[0] if name_lines else ""
         synopsis = _strip_fences(block.section("Synopsis"))
@@ -119,7 +135,7 @@ def _extract_commands(plugin_node: PluginNode) -> List[CommandDoc]:
             CommandDoc(
                 name=block.path.stem,
                 file_path=block.path,
-                description=fm.get("description", ""),
+                description=block.field_value("description", ""),
                 full_name=full_name,
                 synopsis=synopsis,
                 body=body_text,
@@ -145,23 +161,20 @@ def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
     if not blocks:
         return None
     block = blocks[0]
-    fm = block.frontmatter
-    if fm is None:
-        fm = {}
 
-    allowed_tools = fm.get("allowed-tools", [])
+    allowed_tools = block.field_value("allowed-tools", [])
     if isinstance(allowed_tools, str):
         allowed_tools = [allowed_tools]
     if not isinstance(allowed_tools, list):
         allowed_tools = []
 
     return SkillDoc(
-        name=fm.get("name", skill_node.path.name),
+        name=block.field_value("name", skill_node.path.name),
         dir_path=skill_node.path,
-        description=fm.get("description", ""),
-        license=fm.get("license", ""),
-        compatibility=fm.get("compatibility", ""),
-        metadata=fm.get("metadata", {}),
+        description=block.field_value("description", ""),
+        license=block.field_value("license", ""),
+        compatibility=block.field_value("compatibility", ""),
+        metadata=block.field_value("metadata", {}),
         allowed_tools=allowed_tools or [],
         body=block.body_text.strip(),
     )
@@ -173,12 +186,11 @@ def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
 def _extract_agents(plugin_node: PluginNode) -> List[AgentDoc]:
     docs = []
     for block in plugin_node.find(AgentBlock):
-        fm = block.frontmatter or {}
         docs.append(
             AgentDoc(
-                name=fm.get("name", block.path.stem),
+                name=block.field_value("name", block.path.stem),
                 file_path=block.path,
-                description=fm.get("description", ""),
+                description=block.field_value("description", ""),
                 body=block.body_text.strip(),
             )
         )
@@ -250,16 +262,15 @@ def _extract_mcp_servers(plugin_node: PluginNode, plugin_meta: dict) -> List[Mcp
 def _extract_rules(plugin_node: PluginNode) -> List[RuleFileDoc]:
     docs = []
     for block in plugin_node.find(PluginRuleBlock):
-        fm = block.frontmatter or {}
         globs: List[str] = []
-        paths = fm.get("paths", [])
+        paths = block.field_value("paths", [])
         if isinstance(paths, list):
             globs = [str(p) for p in paths]
         docs.append(
             RuleFileDoc(
                 name=block.path.stem,
                 file_path=block.path,
-                description=fm.get("description", ""),
+                description=block.field_value("description", ""),
                 globs=globs,
                 body=block.body_text.strip(),
             )

@@ -38,6 +38,9 @@ class CompletionProvider(Protocol):
 
 def _get_litellm():
     try:
+        import logging
+
+        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
         import litellm
 
         return litellm

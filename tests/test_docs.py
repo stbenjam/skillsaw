@@ -9,7 +9,7 @@ import pytest
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.docs.extractor import extract_docs
-from skillsaw.docs.html_renderer import render_html
+from skillsaw.docs.html_renderer import render_html, COLOR_THEMES
 from skillsaw.docs.markdown_renderer import render_markdown
 
 # ---------------------------------------------------------------------------
@@ -217,6 +217,70 @@ class TestExtractor:
         docs = extract_docs(ctx)
         assert docs.title == "test-marketplace"
 
+    def test_extract_marketplace_plugin_metadata(self, temp_dir):
+        """Marketplace entry fields (category, tags, keywords, displayName, etc.) are extracted."""
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+
+        marketplace_json = {
+            "name": "meta-marketplace",
+            "owner": {"name": "Test"},
+            "plugins": [
+                {
+                    "name": "rich-plugin",
+                    "source": "./plugins/rich-plugin",
+                    "description": "A richly annotated plugin",
+                    "displayName": "Rich Plugin",
+                    "category": "bundle",
+                    "tags": ["testing", "ci"],
+                    "keywords": ["lint", "format"],
+                    "homepage": "https://example.com",
+                    "repository": "https://github.com/example/rich-plugin",
+                    "license": "MIT",
+                    "author": {"name": "Jane Doe"},
+                }
+            ],
+        }
+        (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+
+        plugin_dir = temp_dir / "plugins" / "rich-plugin"
+        plugin_dir.mkdir(parents=True)
+        plugin_claude = plugin_dir / ".claude-plugin"
+        plugin_claude.mkdir()
+        (plugin_claude / "plugin.json").write_text(
+            json.dumps({"name": "rich-plugin", "description": "A richly annotated plugin"})
+        )
+        commands_dir = plugin_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "noop.md").write_text(
+            "---\ndescription: noop\n---\n\n## Name\nrich-plugin:noop\n"
+        )
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        assert docs.marketplace is not None
+        plugin = docs.marketplace.plugins[0]
+        assert plugin.display_name == "Rich Plugin"
+        assert plugin.category == "bundle"
+        assert plugin.tags == ["testing", "ci"]
+        assert plugin.keywords == ["lint", "format"]
+        assert plugin.homepage == "https://example.com"
+        assert plugin.repository == "https://github.com/example/rich-plugin"
+        assert plugin.license == "MIT"
+
+    def test_extract_plugin_missing_optional_fields(self, valid_plugin):
+        """Plugins without the new optional fields get safe defaults."""
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        plugin = docs.plugins[0]
+        assert plugin.display_name == ""
+        assert plugin.category == ""
+        assert plugin.tags == []
+        assert plugin.keywords == []
+        assert plugin.homepage == ""
+        assert plugin.repository == ""
+        assert plugin.license == ""
+
 
 # ---------------------------------------------------------------------------
 # HTML renderer tests
@@ -378,13 +442,13 @@ class TestHtmlRenderer:
         page = render_html(docs)["index.html"]
         assert "<script>alert" not in page
 
-    def test_modal_support(self, marketplace_repo):
-        """Marketplace pages include modal infrastructure."""
+    def test_detail_view_support(self, marketplace_repo):
+        """Marketplace pages include plugin detail view."""
         ctx = RepositoryContext(marketplace_repo)
         docs = extract_docs(ctx)
         page = render_html(docs)["index.html"]
-        assert "modal" in page
-        assert "showPluginModal" in page
+        assert "showPluginDetail" in page
+        assert "detail-back" in page
 
     def test_dark_theme(self, valid_plugin):
         """Page uses the dark theme."""
@@ -403,6 +467,126 @@ class TestHtmlRenderer:
         assert "<main " in page
         assert "<section " in page
         assert "<footer>" in page
+
+    def test_html_contains_marketplace_metadata(self, temp_dir):
+        """HTML output includes category, tags, displayName, homepage, repository, license."""
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        marketplace_json = {
+            "name": "rich-mp",
+            "owner": {"name": "Test"},
+            "plugins": [
+                {
+                    "name": "rp",
+                    "source": "./plugins/rp",
+                    "description": "Rich plugin",
+                    "displayName": "Rich Plugin Display",
+                    "category": "security",
+                    "tags": ["audit", "scan"],
+                    "keywords": ["vuln"],
+                    "homepage": "https://example.com/rp",
+                    "repository": "https://github.com/test/rp",
+                    "license": "Apache-2.0",
+                    "author": {"name": "Alice"},
+                }
+            ],
+        }
+        (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+        plugin_dir = temp_dir / "plugins" / "rp"
+        plugin_dir.mkdir(parents=True)
+        p_claude = plugin_dir / ".claude-plugin"
+        p_claude.mkdir()
+        (p_claude / "plugin.json").write_text(
+            json.dumps({"name": "rp", "description": "Rich plugin"})
+        )
+        commands_dir = plugin_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "x.md").write_text("---\ndescription: x\n---\n\n## Name\nrp:x\n")
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+
+        assert "Rich Plugin Display" in page
+        assert "security" in page
+        assert "audit" in page
+        assert "scan" in page
+        assert "vuln" in page
+        assert "https://example.com/rp" in page
+        assert "https://github.com/test/rp" in page
+        assert "Apache-2.0" in page
+
+    def test_html_category_filter(self, temp_dir):
+        """Marketplace with categories renders a category filter."""
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        marketplace_json = {
+            "name": "cat-mp",
+            "owner": {"name": "Test"},
+            "plugins": [
+                {
+                    "name": "p1",
+                    "source": "./plugins/p1",
+                    "category": "ci",
+                },
+                {
+                    "name": "p2",
+                    "source": "./plugins/p2",
+                    "category": "security",
+                },
+            ],
+        }
+        (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+        for pname in ["p1", "p2"]:
+            pd = temp_dir / "plugins" / pname
+            pd.mkdir(parents=True)
+            pc = pd / ".claude-plugin"
+            pc.mkdir()
+            (pc / "plugin.json").write_text(
+                json.dumps({"name": pname, "description": f"Plugin {pname}"})
+            )
+            cd = pd / "commands"
+            cd.mkdir()
+            (cd / "x.md").write_text(f"---\ndescription: x\n---\n\n## Name\n{pname}:x\n")
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+
+        assert "filterByCategory" in page
+        assert "category-filter" in page
+
+    def test_theme_applies_colors(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs, theme="ocean-blue")["index.html"]
+
+        colors = COLOR_THEMES["ocean-blue"]
+        assert colors["primary"] in page
+        assert colors["primary_dark"] in page
+        assert colors["secondary"] in page
+        assert "#6366f1" not in page
+
+    def test_theme_none_uses_defaults(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+
+        assert "#6366f1" in page
+
+    def test_title_override_respected(self, valid_plugin):
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx, title="Custom Title")
+        page = render_html(docs)["index.html"]
+
+        assert "<title>Custom Title</title>" in page
+
+    def test_title_override_marketplace(self, marketplace_repo):
+        ctx = RepositoryContext(marketplace_repo)
+        docs = extract_docs(ctx, title="My Marketplace")
+        page = render_html(docs)["index.html"]
+
+        assert "<title>My Marketplace</title>" in page
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +656,61 @@ class TestMarkdownRenderer:
 
         assert "MIT" in md
         assert "code-review:pr" in md
+
+    def test_markdown_contains_marketplace_metadata(self, temp_dir):
+        """Markdown output includes category, tags, displayName, homepage, repository, license."""
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        marketplace_json = {
+            "name": "rich-mp",
+            "owner": {"name": "Test"},
+            "plugins": [
+                {
+                    "name": "rp",
+                    "source": "./plugins/rp",
+                    "description": "Rich plugin",
+                    "displayName": "Rich Plugin Display",
+                    "category": "security",
+                    "tags": ["audit", "scan"],
+                    "keywords": ["vuln"],
+                    "homepage": "https://example.com/rp",
+                    "repository": "https://github.com/test/rp",
+                    "license": "Apache-2.0",
+                    "author": {"name": "Alice"},
+                }
+            ],
+        }
+        (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+        plugin_dir = temp_dir / "plugins" / "rp"
+        plugin_dir.mkdir(parents=True)
+        p_claude = plugin_dir / ".claude-plugin"
+        p_claude.mkdir()
+        (p_claude / "plugin.json").write_text(
+            json.dumps({"name": "rp", "description": "Rich plugin"})
+        )
+        commands_dir = plugin_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "x.md").write_text("---\ndescription: x\n---\n\n## Name\nrp:x\n")
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        pages = render_markdown(docs)
+
+        # Index uses displayName
+        assert "[Rich Plugin Display](rp.md)" in pages["README.md"]
+
+        # Plugin page heading uses displayName
+        plugin_md = pages["rp.md"]
+        assert "# Rich Plugin Display" in plugin_md
+
+        # Metadata fields rendered
+        assert "**License:** Apache-2.0" in plugin_md
+        assert "**Category:** security" in plugin_md
+        assert "[Homepage](https://example.com/rp)" in plugin_md
+        assert "[Repository](https://github.com/test/rp)" in plugin_md
+        assert "`audit`" in plugin_md
+        assert "`scan`" in plugin_md
+        assert "`vuln`" in plugin_md
 
 
 # ---------------------------------------------------------------------------

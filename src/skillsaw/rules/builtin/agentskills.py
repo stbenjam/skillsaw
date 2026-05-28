@@ -179,8 +179,7 @@ class AgentSkillValidRule(Rule):
                 )
                 continue
 
-            frontmatter = block.frontmatter
-            if frontmatter is None:
+            if not block.has_frontmatter:
                 violations.append(
                     self.violation(
                         "Missing YAML frontmatter (must start with ---)",
@@ -189,7 +188,7 @@ class AgentSkillValidRule(Rule):
                 )
                 continue
 
-            name = frontmatter.get("name")
+            name = block.field_value("name")
             if not name:
                 violations.append(
                     self.violation("Missing required 'name' field", file_path=block.path)
@@ -211,7 +210,7 @@ class AgentSkillValidRule(Rule):
                     )
                 )
 
-            desc = frontmatter.get("description")
+            desc = block.field_value("description")
             if not desc:
                 violations.append(
                     self.violation("Missing required 'description' field", file_path=block.path)
@@ -225,18 +224,20 @@ class AgentSkillValidRule(Rule):
                     )
                 )
 
-            if "license" in frontmatter and not isinstance(frontmatter["license"], str):
+            license_fld = block.field("license")
+            if license_fld and not isinstance(license_fld.value, str):
                 violations.append(
                     self.violation(
                         "'license' must be a string",
                         file_path=block.path,
-                        line=block.key_line("license"),
+                        line=license_fld.field_line,
                     )
                 )
 
-            if "compatibility" in frontmatter:
-                compat = frontmatter["compatibility"]
-                compat_line = block.key_line("compatibility")
+            compat_fld = block.field("compatibility")
+            if compat_fld:
+                compat = compat_fld.value
+                compat_line = compat_fld.field_line
                 if not isinstance(compat, str):
                     violations.append(
                         self.violation(
@@ -262,9 +263,10 @@ class AgentSkillValidRule(Rule):
                         )
                     )
 
-            if "metadata" in frontmatter:
-                meta = frontmatter["metadata"]
-                meta_line = block.key_line("metadata")
+            meta_fld = block.field("metadata")
+            if meta_fld:
+                meta = meta_fld.value
+                meta_line = meta_fld.field_line
                 if not isinstance(meta, dict):
                     violations.append(
                         self.violation(
@@ -284,9 +286,10 @@ class AgentSkillValidRule(Rule):
                                 )
                             )
 
-            if "allowed-tools" in frontmatter:
-                at = frontmatter["allowed-tools"]
-                at_line = block.key_line("allowed-tools")
+            at_fld = block.field("allowed-tools")
+            if at_fld:
+                at = at_fld.value
+                at_line = at_fld.field_line
                 if isinstance(at, list):
                     if not all(isinstance(item, str) for item in at):
                         violations.append(
@@ -309,8 +312,9 @@ class AgentSkillValidRule(Rule):
             for field_name in extra_required:
                 if field_name in self.BUILTIN_REQUIRED:
                     continue
-                if not frontmatter.get(field_name):
-                    line = block.key_line(field_name) if field_name in frontmatter else None
+                if not block.field_value(field_name):
+                    fld = block.field(field_name)
+                    line = fld.field_line if fld else None
                     violations.append(
                         self.violation(
                             f"Missing required field '{field_name}'",
@@ -321,7 +325,7 @@ class AgentSkillValidRule(Rule):
 
             required_meta = self.config.get("required-metadata", [])
             if required_meta:
-                meta = frontmatter.get("metadata")
+                meta = block.field_value("metadata")
                 meta_line = block.key_line("metadata")
                 if meta is None:
                     if "metadata" not in extra_required:
@@ -377,10 +381,10 @@ class AgentSkillNameRule(Rule):
             if not blocks:
                 continue
             block = blocks[0]
-            if block.frontmatter_error or block.frontmatter is None:
+            if block.frontmatter_error or not block.has_frontmatter:
                 continue
 
-            name = block.frontmatter.get("name")
+            name = block.field_value("name")
             if not name or not isinstance(name, str):
                 continue
 
@@ -645,10 +649,10 @@ class AgentSkillDescriptionRule(Rule):
             if not blocks:
                 continue
             block = blocks[0]
-            if block.frontmatter_error or block.frontmatter is None:
+            if block.frontmatter_error or not block.has_frontmatter:
                 continue
 
-            desc = block.frontmatter.get("description")
+            desc = block.field_value("description")
             if not desc or not isinstance(desc, str):
                 continue
 
@@ -829,12 +833,12 @@ class AgentSkillEvalsRule(Rule):
                 )
             elif isinstance(skill_name, str):
                 skill_blocks = skill_node.find(SkillBlock)
-                fm = skill_blocks[0].frontmatter if skill_blocks else None
-                if fm and fm.get("name") != skill_name:
+                fm_name = skill_blocks[0].field_value("name") if skill_blocks else None
+                if fm_name is not None and fm_name != skill_name:
                     violations.append(
                         self.violation(
                             f"'skill_name' ({skill_name!r}) does not match "
-                            f"SKILL.md name ({fm.get('name')!r})",
+                            f"SKILL.md name ({fm_name!r})",
                             file_path=evals_json,
                         )
                     )

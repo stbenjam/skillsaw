@@ -1,7 +1,7 @@
 """
 Output formatters for skillsaw lint results.
 
-Supported formats: text, json, sarif, html.
+Supported formats: text, json, sarif, html, code-climate (alias: gitlab).
 """
 
 from pathlib import Path
@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from ..rule import Rule, RuleViolation
 
-FORMATS = ("text", "json", "sarif", "html")
+FORMATS = ("text", "json", "sarif", "html", "code-climate", "gitlab")
 
 
 def relative_path(file_path: Optional[Path], root: Path) -> Optional[str]:
@@ -27,7 +27,10 @@ EXTENSION_MAP = {
     ".sarif": "sarif",
     ".html": "html",
     ".htm": "html",
+    ".txt": "text",
 }
+
+_FORMAT_SET = set(FORMATS)
 
 
 def infer_format(filename: str) -> str:
@@ -41,6 +44,26 @@ def infer_format(filename: str) -> str:
             f"Supported: {', '.join(sorted(EXTENSION_MAP))}"
         )
     return EXTENSION_MAP[ext]
+
+
+def parse_output_spec(spec: str) -> tuple:
+    """Parse an --output value into (format, filepath).
+
+    Accepts either a bare path (format inferred from extension) or an explicit
+    ``FORMAT:PATH`` prefix where FORMAT is a recognised output format name.
+
+    Returns:
+        (format_name, filepath_string)
+
+    Raises:
+        ValueError: when the format cannot be determined.
+    """
+    colon = spec.find(":")
+    if colon > 0:
+        prefix = spec[:colon]
+        if prefix in _FORMAT_SET:
+            return prefix, spec[colon + 1 :]
+    return infer_format(spec), spec
 
 
 def get_counts(violations: List[RuleViolation]):
@@ -60,22 +83,24 @@ def format_report(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    baseline_suppressed: int = 0,
 ) -> str:
     """
     Format lint results in the specified format.
 
     Args:
-        fmt: One of "text", "json", "sarif", "html"
+        fmt: One of "text", "json", "sarif", "html", "code-climate", "gitlab"
         violations: Violations from linter.run()
         context: RepositoryContext
         rules: List of Rule instances that were run
         version: skillsaw version string
         verbose: Include extra detail (info-level messages, expanded stats)
+        baseline_suppressed: Number of violations suppressed by baseline
     """
     if fmt == "text":
         from .text import format_text
 
-        return format_text(violations, context, rules, version, verbose)
+        return format_text(violations, context, rules, version, verbose, baseline_suppressed)
     elif fmt == "json":
         from .json_fmt import format_json
 
@@ -88,5 +113,9 @@ def format_report(
         from .html import format_html
 
         return format_html(violations, context, rules, version, verbose)
+    elif fmt in ("code-climate", "gitlab"):
+        from .code_climate import format_code_climate
+
+        return format_code_climate(violations, context, rules, version, verbose)
     else:
         raise ValueError(f"Unknown format: {fmt}. Supported: {', '.join(FORMATS)}")

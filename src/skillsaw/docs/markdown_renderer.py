@@ -74,9 +74,10 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     lines.append("|--------|-------------|---------|")
     for plugin in sorted_plugins:
         fname = _plugin_filename(plugin)
+        label = plugin.display_name or plugin.name
         desc = plugin.description or "-"
         ver = plugin.version or "-"
-        lines.append(f"| [{plugin.name}]({fname}) | {desc} | {ver} |")
+        lines.append(f"| [{label}]({fname}) | {desc} | {ver} |")
     lines.append("")
 
     lines.append("---")
@@ -86,7 +87,8 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     # Per-plugin pages
     for plugin in sorted_plugins:
         fname = _plugin_filename(plugin)
-        plines: List[str] = [f"# {plugin.name}", ""]
+        heading = plugin.display_name or plugin.name
+        plines: List[str] = [f"# {heading}", ""]
         plines.append(f"[&larr; Back to {mp.name or 'index'}](README.md)")
         plines.append("")
         _append_plugin_meta(plines, plugin)
@@ -111,8 +113,24 @@ def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
         meta.append(f"**Version:** {plugin.version}")
     if plugin.author and plugin.author.get("name"):
         meta.append(f"**Author:** {plugin.author['name']}")
+    if plugin.license:
+        meta.append(f"**License:** {plugin.license}")
+    if plugin.category:
+        meta.append(f"**Category:** {plugin.category}")
     if meta:
         lines.append(" | ".join(meta))
+        lines.append("")
+    link_parts = []
+    if plugin.homepage:
+        link_parts.append(f"[Homepage]({plugin.homepage})")
+    if plugin.repository:
+        link_parts.append(f"[Repository]({plugin.repository})")
+    if link_parts:
+        lines.append(" | ".join(link_parts))
+        lines.append("")
+    all_tags = (plugin.tags or []) + (plugin.keywords or [])
+    if all_tags:
+        lines.append("**Tags:** " + ", ".join(f"`{t}`" for t in all_tags))
         lines.append("")
 
 

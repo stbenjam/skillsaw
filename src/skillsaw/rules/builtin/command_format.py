@@ -124,11 +124,11 @@ class CommandFrontmatterRule(Rule):
                 )
                 continue
 
-            if block.frontmatter is None:
+            if not block.has_frontmatter:
                 violations.append(self.violation("Missing frontmatter", file_path=block.path))
                 continue
 
-            if "description" not in block.frontmatter:
+            if not block.field("description"):
                 violations.append(
                     self.violation("Missing 'description' in frontmatter", file_path=block.path)
                 )

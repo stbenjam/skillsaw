@@ -11,6 +11,7 @@ from pathlib import Path
 from skillsaw.linter import Linter
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig, find_config
+from skillsaw.rules.builtin.utils import invalidate_read_caches
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -451,6 +452,66 @@ def test_promptfoo_budget_example_fixture():
     assert any("judge-size" in v.message for v in errors)
     assert any("exceeds budget" in v.message for v in errors)
     assert any("over-classified" in v.message for v in warnings)
+
+
+def test_custom_rule_tree_example_finds_violations(tmp_path):
+    """Test the docs custom rule example: tree-based TODO detection."""
+    fixture = copy_fixture("custom-rule-tree-example", tmp_path)
+    rule_file = fixture / "no_todo_instructions.py"
+
+    config = LinterConfig(
+        custom_rules=[str(rule_file)],
+        rules={"no-todo-instructions": {"enabled": True}},
+    )
+    context = RepositoryContext(fixture)
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    todo_violations = [v for v in violations if v.rule_id == "no-todo-instructions"]
+    assert (
+        len(todo_violations) == 2
+    ), f"Expected 2 violations, got {len(todo_violations)}: {todo_violations}"
+    messages = [v.message for v in todo_violations]
+    assert any("TODO" in m for m in messages)
+    assert any("FIXME" in m for m in messages)
+    assert all(v.line is not None for v in todo_violations)
+
+
+def test_custom_rule_tree_example_autofix(tmp_path):
+    """Test the docs custom rule example: autofix removes TODO/FIXME lines."""
+    fixture = copy_fixture("custom-rule-tree-example", tmp_path)
+    rule_file = fixture / "no_todo_instructions.py"
+
+    config = LinterConfig(
+        custom_rules=[str(rule_file)],
+        rules={"no-todo-instructions": {"enabled": True}},
+    )
+    context = RepositoryContext(fixture)
+    linter = Linter(context, config)
+    violations = linter.run()
+    todo_violations = [v for v in violations if v.rule_id == "no-todo-instructions"]
+
+    rule = next(r for r in linter.rules if r.rule_id == "no-todo-instructions")
+    fixes = rule.fix(context, todo_violations)
+    assert len(fixes) == 1
+    assert "TODO" not in fixes[0].fixed_content
+    assert "FIXME" not in fixes[0].fixed_content
+
+    claude_md = fixture / "CLAUDE.md"
+    original_line_count = len(claude_md.read_text().splitlines())
+    claude_md.write_text(fixes[0].fixed_content, encoding="utf-8")
+    invalidate_read_caches(claude_md)
+
+    assert len(claude_md.read_text().splitlines()) == original_line_count - 2
+
+    context2 = RepositoryContext(fixture)
+    linter2 = Linter(context2, config)
+    violations2 = linter2.run()
+    remaining = [v for v in violations2 if v.rule_id == "no-todo-instructions"]
+    assert remaining == [], f"Expected 0 violations after fix, got {remaining}"
+
+    fixes2 = rule.fix(context2, remaining)
+    assert fixes2 == []
 
 
 def test_custom_rule_resolved_via_find_config(tmp_path):

@@ -19,6 +19,7 @@ from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     ContentBlock,
+    FrontmatterField,
     SkillRefBlock,
     WeakLanguageDetector,
     TautologicalDetector,
@@ -28,6 +29,8 @@ from skillsaw.rules.builtin.content_analysis import (
     _HEADING_RE,
     _TAUTOLOGICAL_PHRASES,
     _strip_fenced_code_blocks,
+    is_inside_inline_code,
+    inline_code_span_bounds,
 )
 
 
@@ -246,6 +249,7 @@ class ContentInstructionBudgetRule(Rule):
     autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
+    baseline_mode = "ceiling"
 
     @property
     def rule_id(self) -> str:
@@ -287,13 +291,17 @@ class ContentInstructionBudgetRule(Rule):
                     f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
                     f"({budget.budget_remaining} remaining)"
                 )
-                violations.append(self.violation(msg, block=cf, severity=sev))
+                violations.append(
+                    self.violation(msg, block=cf, severity=sev, value=budget.total_count)
+                )
             elif budget.total_count >= 80:
                 msg = (
                     f"Instruction budget: {budget.total_count}/{analyzer.BUDGET} instructions "
                     f"— approaching limit"
                 )
-                violations.append(self.violation(msg, block=cf, severity=Severity.INFO))
+                violations.append(
+                    self.violation(msg, block=cf, severity=Severity.INFO, value=budget.total_count)
+                )
         return violations
 
 
@@ -676,6 +684,7 @@ class ContentActionabilityScoreRule(Rule):
     autofix_confidence = AutofixConfidence.LLM
     formats = None
     since = "0.7.0"
+    baseline_mode = "floor"
 
     @property
     def llm_fix_prompt(self):
@@ -740,6 +749,7 @@ class ContentActionabilityScoreRule(Rule):
                     self.violation(
                         f"Low actionability score: {score}/100 (verbs: {verb_ratio:.0%}, commands: {cmd_ratio:.0%}, paths: {path_ratio:.0%})",
                         block=cf,
+                        value=score,
                     )
                 )
         return violations
@@ -888,16 +898,11 @@ class ContentEmbeddedSecretsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        seen_paths: Set[Path] = set()
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
-            if resolved in seen_paths:
+            body = cf.read_body(strip_code_blocks=False)
+            if not body:
                 continue
-            seen_paths.add(resolved)
-            content = read_text(cf.path)
-            if not content:
-                continue
-            for line_num, line in enumerate(content.splitlines(), 1):
+            for line_num, line in enumerate(body.splitlines(), 1):
                 for pattern, desc in self._PATTERNS:
                     if pattern.search(line):
                         violations.append(
@@ -908,6 +913,19 @@ class ContentEmbeddedSecretsRule(Rule):
                             )
                         )
                         break
+        for fld in context.lint_tree.find(FrontmatterField):
+            text = str(fld.value) if fld.value is not None else ""
+            for pattern, desc in self._PATTERNS:
+                if pattern.search(text):
+                    violations.append(
+                        self.violation(
+                            f"Potential secret detected in frontmatter "
+                            f"field '{fld.name}': {desc}",
+                            file_path=fld.path,
+                            line=fld.field_line,
+                        )
+                    )
+                    break
         return violations
 
 
@@ -989,16 +1007,11 @@ class ContentBannedReferencesRule(Rule):
         if not patterns:
             return []
         violations = []
-        seen_paths: Set[Path] = set()
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
-            if resolved in seen_paths:
+            body = cf.read_body(strip_code_blocks=False)
+            if not body:
                 continue
-            seen_paths.add(resolved)
-            content = read_text(cf.path)
-            if not content:
-                continue
-            for line_num, line in enumerate(content.splitlines(), 1):
+            for line_num, line in enumerate(body.splitlines(), 1):
                 for pattern, msg in patterns:
                     if pattern.search(line):
                         violations.append(
@@ -1348,6 +1361,8 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                         continue
                     if self._is_inside_url(line, match.start(), match.end()):
                         continue
+                    if is_inside_inline_code(line, match.start(), match.end()):
+                        continue
                     if not any(PurePath(path_str).match(p) for p in patterns):
                         continue
                     resolved = (cf.path.parent / path_str).resolve()
@@ -1395,10 +1410,18 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                     if loc == -1:
                         break
                     end = loc + len(path_str)
-                    if not self._is_inside_link(line, loc, end) and not self._is_inside_url(
-                        line, loc, end
+                    if (
+                        not self._is_inside_link(line, loc, end)
+                        and not self._is_inside_url(line, loc, end)
+                        and not is_inside_inline_code(line, loc, end)
                     ):
-                        lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
+                        bounds = inline_code_span_bounds(line, loc, end)
+                        if bounds:
+                            bt = line[bounds[0] : loc]
+                            replacement = f"[{bt}{path_str}{bt}]({path_str})"
+                            lines[idx] = line[: bounds[0]] + replacement + line[bounds[1] :]
+                        else:
+                            lines[idx] = line[:loc] + f"[{path_str}]({path_str})" + line[end:]
                         violations_fixed.append(v)
                         break
                     pos = end

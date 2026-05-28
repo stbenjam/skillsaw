@@ -1,0 +1,7 @@
+custom-rules:
+  - ./no_todo_instructions.py
+
+rules:
+  no-todo-instructions:
+    enabled: true
+    severity: warning

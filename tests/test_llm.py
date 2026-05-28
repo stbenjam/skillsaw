@@ -554,6 +554,7 @@ class TestMaxIterationsCLIOverride:
             workers=None,
             dry_run=False,
             rule_ids=[],
+            skip_rule_ids=[],
         )
 
         with (
@@ -590,6 +591,7 @@ class TestMaxIterationsCLIOverride:
             workers=None,
             dry_run=False,
             rule_ids=[],
+            skip_rule_ids=[],
         )
 
         with (

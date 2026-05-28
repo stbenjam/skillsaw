@@ -56,9 +56,16 @@ exclude_docs: |
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Repository Types: repo-types.md
-  - Configuration: configuration.md
-  - Autofixing: autofixing.md
+  - Guides:
+    - Autofixing: autofixing.md
+    - Baseline: baseline.md
+    - Configuration: configuration.md
+    - Repository Types: repo-types.md
+    - CI Integration: ci.md
+    - CLI Reference: cli.md
+    - Custom Rules: custom-rules.md
+    - Scaffolding: scaffolding.md
+    - Lint Tree: lint-tree.md
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
@@ -93,10 +100,4 @@ nav:
     - CodeRabbit: rules/coderabbit.md
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
-  - Guides:
-    - custom-rules.md
-    - scaffolding.md
-    - ci.md
-    - lint-tree.md
-    - CLI Reference: cli.md
   - Research: research.md

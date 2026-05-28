@@ -14,10 +14,17 @@ from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
 from .rule import AutofixConfidence, AutofixResult, Severity
-from .formatters import format_report, get_counts, infer_format, FORMATS
+from .formatters import (
+    format_report,
+    get_counts,
+    infer_format,
+    parse_output_spec,
+    FORMATS,
+    EXTENSION_MAP,
+)
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree"}
+_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
 
 
 def _get_version() -> str:
@@ -27,18 +34,12 @@ def _get_version() -> str:
         return __version__
 
 
-def main():
-    # When no subcommand is given (or the first arg looks like a path/flag),
-    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
-    # `add` has its own argparse — dispatch before the main parser sees the args.
-    if len(sys.argv) > 1 and sys.argv[1] == "add":
-        from .marketplace.cli import _run_add_cli
+def _build_parser():
+    """Build the main argument parser with all subcommands.
 
-        return _run_add_cli()
-
-    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
-        sys.argv.insert(1, "lint")
-
+    Extracted so that documentation generators can introspect the real parser
+    without running main().
+    """
     parser = argparse.ArgumentParser(
         prog="skillsaw",
         description="Keep your skills sharp.",
@@ -86,23 +87,19 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
+    # Deprecated: use `skillsaw fix` instead. Hidden from --help.
+    lint_parser.add_argument("--fix", action="store_true", help=argparse.SUPPRESS)
     lint_parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Automatically fix violations where possible (applies safe fixes)",
+        "--llm", "--ai", action="store_true", dest="use_llm", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--llm",
-        "--ai",
-        action="store_true",
-        dest="use_llm",
-        help="Use LLM-powered fixes for content violations (requires --fix)",
+        "--dry-run", action="store_true", dest="dry_run", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="dry_run",
-        help="Preview LLM fixes without writing changes (requires --fix --llm)",
+        "--patch-file", type=Path, default=None, dest="patch_file", help=argparse.SUPPRESS
+    )
+    lint_parser.add_argument(
+        "--apply-patch", action="store_true", dest="apply_patch", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
         "--format",
@@ -116,9 +113,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="outputs",
         action="append",
         default=[],
-        metavar="FILE",
-        help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
-        "Can be specified multiple times.",
+        metavar="[FORMAT:]FILE",
+        help="Write output to FILE. Format is inferred from extension "
+        f"({', '.join(sorted(EXTENSION_MAP))}) "
+        "or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). "
+        "Use the prefix when an extension is ambiguous (e.g. .json could be "
+        "json or gitlab/code-climate). Can be specified multiple times.",
     )
     lint_parser.add_argument(
         "--type",
@@ -136,6 +136,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="RULE",
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+    )
+    lint_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
+    lint_parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        dest="no_baseline",
+        help="Ignore baseline file even if .skillsaw-baseline.json exists",
     )
 
     # --- fix ---
@@ -197,6 +211,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Preview fixes without writing changes",
     )
     fix_parser.add_argument(
+        "--patch-file",
+        type=Path,
+        default=None,
+        dest="patch_file",
+        metavar="FILE",
+        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
+    )
+    fix_parser.add_argument(
+        "--apply-patch",
+        action="store_true",
+        dest="apply_patch",
+        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
+    )
+    fix_parser.add_argument(
         "--suggest",
         action="store_true",
         help="Also apply suggested fixes (not just safe ones)",
@@ -208,6 +236,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="RULE",
         help="Only run these rules (repeatable). Config still comes from .skillsaw.yaml.",
+    )
+    fix_parser.add_argument(
+        "--skip-rule",
+        dest="skip_rule_ids",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rules (repeatable). Cannot be combined with --rule.",
     )
 
     # --- init ---
@@ -255,6 +291,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "If it ends with .html/.md, writes a single file directly.",
     )
     docs_parser.add_argument("--title", default=None, help="Custom title for the documentation")
+    docs_parser.add_argument(
+        "--theme",
+        default=None,
+        help="Color theme for HTML output. Presets: indigo (default), forest-green, "
+        "ocean-blue, sunset-orange, royal-purple, crimson-red.",
+    )
 
     # --- tree ---
     tree_parser = subparsers.add_parser(
@@ -282,6 +324,25 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Output format (default: text)",
     )
 
+    # --- baseline ---
+    baseline_parser = subparsers.add_parser(
+        "baseline",
+        help="Generate or update the baseline file from current violations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    baseline_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    baseline_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file",
+    )
     # --- add ---
     subparsers.add_parser(
         "add",
@@ -289,6 +350,22 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    return parser
+
+
+def main():
+    # When no subcommand is given (or the first arg looks like a path/flag),
+    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
+    # `add` has its own argparse — dispatch before the main parser sees the args.
+    if len(sys.argv) > 1 and sys.argv[1] == "add":
+        from .marketplace.cli import _run_add_cli
+
+        return _run_add_cli()
+
+    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
+        sys.argv.insert(1, "lint")
+
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "lint":
@@ -301,6 +378,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         _run_list_rules()
     elif args.command == "docs":
         _run_docs(args)
+    elif args.command == "baseline":
+        _run_baseline(args)
     elif args.command == "tree":
         _run_tree(args)
 
@@ -341,6 +420,18 @@ def _run_tree(args):
     sys.exit(0)
 
 
+def _handle_apply_patch_for_lint(args):
+    if not getattr(args, "apply_patch", False):
+        return
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+    root_path = args.path.resolve()
+    patch_path = _resolve_patch_path(args, root_path)
+    _apply_llm_patch(patch_path, root_path)
+    sys.exit(0)
+
+
 def _run_lint(args):
     if args.verbose:
         logging.basicConfig(
@@ -358,18 +449,22 @@ def _run_lint(args):
     cli_version = _get_version()
 
     output_formats = {}
-    for output_path in args.outputs:
+    for spec in args.outputs:
         try:
-            output_formats[output_path] = infer_format(output_path)
+            fmt, filepath = parse_output_spec(spec)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        output_formats[filepath] = fmt
+
+    _handle_apply_patch_for_lint(args)
 
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
     if args.fmt == "text":
+        print(f"skillsaw {cli_version}")
         print(f"Linting: {args.path}\n")
     context = RepositoryContext(args.path)
 
@@ -417,9 +512,32 @@ def _run_lint(args):
     if args.strict:
         config.strict = True
 
+    baseline = None
+    if not args.no_baseline:
+        from .baseline import find_baseline, load_baseline
+
+        baseline_path = find_baseline(config.config_dir or args.path)
+
+        if baseline_path:
+            try:
+                baseline = load_baseline(baseline_path)
+                if args.verbose and args.fmt == "text":
+                    print(
+                        f"Using baseline: {baseline_path}"
+                        f" ({len(baseline.violations)} entries)\n"
+                    )
+            except (ValueError, OSError) as e:
+                print(f"Warning: Failed to load baseline: {e}", file=sys.stderr)
+
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids)
+        linter = Linter(
+            context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids, baseline=baseline
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -452,8 +570,28 @@ def _run_lint(args):
     else:
         violations = linter.run()
 
+    if baseline and args.fmt == "text":
+        stale = linter.stale_baseline_entries
+        if stale:
+            print(
+                f"Baseline: {len(stale)} stale"
+                f" {'entry' if len(stale) == 1 else 'entries'}"
+                f" (violations resolved since baseline was set)"
+            )
+            if args.verbose:
+                for entry in stale:
+                    location = f" [{entry.file_path}]" if entry.file_path else ""
+                    print(f"  - {entry.rule_id}{location}: {entry.message}")
+            print("  Run `skillsaw baseline` to update.\n")
+
     stdout_output = format_report(
-        args.fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+        args.fmt,
+        violations,
+        context,
+        linter.rules,
+        cli_version,
+        verbose=args.verbose,
+        baseline_suppressed=linter.baseline_suppressed_count,
     )
     print(stdout_output)
 
@@ -489,6 +627,65 @@ def _ansi_colors():
         "reset": "" if no_color else "\033[0m",
         "no_color": no_color,
     }
+
+
+_DEFAULT_PATCH_NAME = ".skillsaw-llm-patch.diff"
+
+
+def _resolve_patch_path(args, root_path: Path) -> Path:
+    if getattr(args, "patch_file", None):
+        return args.patch_file.resolve()
+    return root_path.resolve() / _DEFAULT_PATCH_NAME
+
+
+def _save_llm_patch(diffs, patch_path: Path) -> None:
+    combined = ""
+    for diff_text in diffs.values():
+        combined += diff_text
+        if not combined.endswith("\n"):
+            combined += "\n"
+    patch_path.write_text(combined, encoding="utf-8")
+
+
+def _apply_llm_patch(patch_path: Path, root_path: Path) -> None:
+    import subprocess
+
+    c = _ansi_colors()
+    if not patch_path.exists():
+        print(f"Error: Patch file not found: {patch_path}", file=sys.stderr)
+        sys.exit(1)
+
+    patch_content = patch_path.read_text(encoding="utf-8")
+    if not patch_content.strip():
+        print(f"Error: Patch file is empty: {patch_path}", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["git", "apply", "--check", str(patch_path)],
+        cwd=str(root_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            f"Error: Patch does not apply cleanly:\n{result.stderr}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    result = subprocess.run(
+        ["git", "apply", str(patch_path)],
+        cwd=str(root_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Error: Failed to apply patch:\n{result.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"{c['green']}Patch applied successfully from {patch_path}{c['reset']}")
+    patch_path.unlink()
+    print(f"{c['dim']}Patch file removed.{c['reset']}")
 
 
 def _require_llm_provider(config):
@@ -594,6 +791,11 @@ def _run_llm_fix_inline(args, linter, config):
 
     if dry_run:
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
+        if result.diffs:
+            patch_path = _resolve_patch_path(args, linter.context.root_path)
+            _save_llm_patch(result.diffs, patch_path)
+            print(f"{c['cyan']}Patch saved to {patch_path}{c['reset']}")
+            print(f"\n{c['bold']}To apply:{c['reset']}" f" skillsaw fix --apply-patch")
 
     _print_token_usage(result.total_usage, c)
 
@@ -602,6 +804,12 @@ def _run_fix(args):
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
+
+    if getattr(args, "apply_patch", False):
+        root_path = args.path.resolve()
+        patch_path = _resolve_patch_path(args, root_path)
+        _apply_llm_patch(patch_path, root_path)
+        sys.exit(0)
 
     context = RepositoryContext(args.path)
 
@@ -623,8 +831,12 @@ def _run_fix(args):
         config = LinterConfig.default()
 
     rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids)
+        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -638,7 +850,7 @@ def _run_fix(args):
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
             context = RepositoryContext(args.path)
-            linter = Linter(context, config, rule_ids=rule_ids)
+            linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)
             applied.extend(rename_applied)
             suggested.extend(rename_suggested)
@@ -859,12 +1071,65 @@ def _run_fix(args):
         print(f"  {c['yellow']}{result.violations_after} remaining{c['reset']}")
     if dry_run:
         print(f"  {c['yellow']}dry-run — no files were modified{c['reset']}")
+        if result.diffs:
+            patch_path = _resolve_patch_path(args, context.root_path)
+            _save_llm_patch(result.diffs, patch_path)
+            print(f"  {c['cyan']}Patch saved to {patch_path}{c['reset']}")
+            print(f"\n  {c['bold']}To apply:{c['reset']}" f" skillsaw fix --apply-patch")
     else:
         print(f"  {len(result.files_modified)} file(s) modified")
 
     _print_token_usage(result.total_usage, c, indent="  ")
     _print_colored_diff(result.diffs, c, header="Changes", separator=True)
 
+    sys.exit(0)
+
+
+def _run_baseline(args):
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    try:
+        linter = Linter(context, config)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    violations = [v for v in linter.run() if v.severity != Severity.INFO]
+
+    from .baseline import build_baseline, save_baseline, BASELINE_FILENAME
+
+    cli_version = _get_version()
+    baseline_modes = {r.rule_id: r.baseline_mode for r in linter.rules if r.baseline_mode}
+    baseline = build_baseline(violations, context.root_path, cli_version, baseline_modes)
+
+    if config_path:
+        output_path = config_path.parent / BASELINE_FILENAME
+    else:
+        output_path = args.path / BASELINE_FILENAME
+
+    save_baseline(output_path, baseline)
+    print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
     sys.exit(0)
 
 
@@ -877,6 +1142,7 @@ def _run_init(args):
     config = LinterConfig.for_init()
     config.save(config_path)
     print(f"Created default config: {config_path}")
+    print("Run `skillsaw baseline` to accept existing violations.")
     sys.exit(0)
 
 
@@ -927,11 +1193,20 @@ def _run_docs(args):
     context.apply_excludes()
 
     from .docs import extract_docs, render_html, render_markdown
+    from .docs.html_renderer import COLOR_THEMES
+
+    theme = args.theme
+    if theme and theme not in COLOR_THEMES:
+        print(
+            f"Error: Unknown theme '{theme}'. " f"Available: {', '.join(sorted(COLOR_THEMES))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     docs_output = extract_docs(context, title=args.title)
 
     if args.fmt == "html":
-        pages = render_html(docs_output)
+        pages = render_html(docs_output, theme=theme)
     else:
         pages = render_markdown(docs_output)
 

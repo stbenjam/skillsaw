@@ -88,9 +88,8 @@ class RepositoryContext:
             "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
         )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
-        self.plugin_metadata: Dict[Path, Dict[str, Any]] = (
-            {}
-        )  # marketplace metadata for strict:false plugins without plugin.json
+        self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
+        self.marketplace_entries: Dict[Path, Dict[str, Any]] = {}
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
@@ -510,8 +509,12 @@ class RepositoryContext:
             if not plugin_path:
                 continue
 
-            # Skip duplicates
             resolved_path = plugin_path.resolve()
+
+            # Always store marketplace entry data for metadata merging
+            self.marketplace_entries[resolved_path] = plugin_entry
+
+            # Skip duplicates for plugin discovery
             if resolved_path in discovered_paths:
                 continue
 
@@ -599,6 +602,13 @@ class RepositoryContext:
             # Exclude marketplace-specific fields
             for key, value in marketplace_entry.items():
                 if key not in ("source", "strict"):
+                    metadata[key] = value
+
+        # Merge marketplace entry fields that aren't already in metadata
+        if resolved_path in self.marketplace_entries:
+            entry = self.marketplace_entries[resolved_path]
+            for key, value in entry.items():
+                if key not in ("source", "strict") and key not in metadata:
                     metadata[key] = value
 
         return metadata or None
