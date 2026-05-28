@@ -605,6 +605,44 @@ class TestOutputFormats:
         assert "$schema" in sarif
         assert len(sarif["runs"]) == 1
 
+    def test_output_gitlab_format_prefix(self, tmp_path):
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        gl_path = tmp_path / "gl-code-quality.json"
+        run_lint(repo, "--output", f"gitlab:{gl_path}")
+        assert gl_path.exists()
+        data = json.loads(gl_path.read_text())
+        assert isinstance(data, list)
+        assert len(data) > 0
+        assert "fingerprint" in data[0]
+        assert "check_name" in data[0]
+
+    def test_output_explicit_json_format_prefix(self, tmp_path):
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        json_path = tmp_path / "report.json"
+        run_lint(repo, "--output", f"json:{json_path}")
+        assert json_path.exists()
+        data = json.loads(json_path.read_text())
+        assert "version" in data
+        assert "violations" in data
+
+    def test_output_multiple_formats_same_extension(self, tmp_path):
+        repo = copy_fixture("single-plugin/broken", tmp_path)
+        native_path = tmp_path / "native.json"
+        gitlab_path = tmp_path / "gitlab.json"
+        run_lint(
+            repo,
+            "--output",
+            f"json:{native_path}",
+            "--output",
+            f"gitlab:{gitlab_path}",
+        )
+        assert native_path.exists()
+        assert gitlab_path.exists()
+        native = json.loads(native_path.read_text())
+        gitlab = json.loads(gitlab_path.read_text())
+        assert "version" in native
+        assert isinstance(gitlab, list)
+
 
 # ── Assert Directives (data-driven) ─────────────────────────────
 

@@ -5,7 +5,7 @@ Tests for output formatters
 import json
 from pathlib import Path
 
-from skillsaw.formatters import format_report, get_counts, infer_format, FORMATS
+from skillsaw.formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS
 from skillsaw.formatters.text import format_text
 from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
@@ -72,11 +72,54 @@ def test_infer_format_known_extensions():
     assert infer_format("/tmp/path/to/report.JSON") == "json"
 
 
+def test_infer_format_txt_extension():
+    assert infer_format("report.txt") == "text"
+
+
 def test_infer_format_unknown_extension():
     import pytest
 
     with pytest.raises(ValueError, match="Cannot infer format"):
-        infer_format("report.txt")
+        infer_format("report.csv")
+
+
+# --- parse_output_spec ---
+
+
+def test_parse_output_spec_bare_path():
+    assert parse_output_spec("report.json") == ("json", "report.json")
+    assert parse_output_spec("report.sarif") == ("sarif", "report.sarif")
+    assert parse_output_spec("report.html") == ("html", "report.html")
+
+
+def test_parse_output_spec_explicit_format():
+    assert parse_output_spec("gitlab:report.json") == ("gitlab", "report.json")
+    assert parse_output_spec("code-climate:cc.json") == ("code-climate", "cc.json")
+    assert parse_output_spec("sarif:out.sarif") == ("sarif", "out.sarif")
+    assert parse_output_spec("json:native.json") == ("json", "native.json")
+    assert parse_output_spec("html:report.html") == ("html", "report.html")
+    assert parse_output_spec("text:output.txt") == ("text", "output.txt")
+
+
+def test_parse_output_spec_explicit_overrides_extension():
+    fmt, path = parse_output_spec("gitlab:report.json")
+    assert fmt == "gitlab"
+    assert path == "report.json"
+
+
+def test_parse_output_spec_unknown_prefix_falls_through():
+    assert parse_output_spec("foo:report.json") == ("json", "foo:report.json")
+
+
+def test_parse_output_spec_txt_infers_text():
+    assert parse_output_spec("report.txt") == ("text", "report.txt")
+
+
+def test_parse_output_spec_unknown_extension_raises():
+    import pytest
+
+    with pytest.raises(ValueError, match="Cannot infer format"):
+        parse_output_spec("report.csv")
 
 
 # --- format_report dispatcher ---

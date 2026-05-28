@@ -20,7 +20,6 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 <!-- BEGIN GENERATED TOC -->
 
 - [Quick Start](#quick-start)
-  - [More commands](#more-commands)
 - [Installation](#installation)
   - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
@@ -93,42 +92,7 @@ skillsaw baseline
 skillsaw   # exit 0
 ```
 
-### More commands
-
-```bash
-# Fix content quality issues with an LLM (requires extras)
-# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
-# uvx --from "skillsaw[llm]" skillsaw fix --llm
-skillsaw fix --llm
-
-# Generate default config you can customize
-skillsaw init
-
-# Verbose output (includes info-level findings)
-skillsaw -v
-
-# Strict mode (warnings become errors)
-skillsaw --strict
-
-# List all rules with fix support info
-skillsaw list-rules
-
-# Generate plugin/skill documentation
-skillsaw docs
-
-# Output in different formats (text, json, sarif, html, code-climate)
-skillsaw --format json
-skillsaw --format code-climate   # Code Climate / GitLab Code Quality format
-skillsaw --format gitlab          # Alias for code-climate
-
-# Write formatted output to a file (format inferred from extension)
-skillsaw --output report.sarif
-
-# Scaffold a new marketplace, plugin, or skill
-skillsaw add marketplace
-skillsaw add plugin my-plugin
-skillsaw add skill my-skill
-```
+For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 
 ## Installation
 
@@ -174,7 +138,7 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 skillsaw:
   script:
     - pip install skillsaw==0.11.0
-    - skillsaw lint --format gitlab . > gl-code-quality-report.json
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
       codequality: gl-code-quality-report.json
