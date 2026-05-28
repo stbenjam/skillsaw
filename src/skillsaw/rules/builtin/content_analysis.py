@@ -14,7 +14,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 import yaml
 
@@ -649,38 +649,56 @@ class FrontmatterField(LintTarget):
         return len(str(self.value)) // 4
 
 
-@dataclass
-class BodyContent(LintTarget):
-    """The markdown body of a frontmattered file, after the closing ``---``."""
+@dataclass(eq=False)
+class BodyContent(ContentBlock):
+    """The lintable markdown body of a frontmattered file."""
 
-    text: str = ""
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        if not self.body:
+            return None
+        body = self.body
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+            body = _strip_html_comments(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        content = read_text(self.path)
+        if content is None or not content.startswith("---"):
+            self.path.write_text(new_body, encoding="utf-8")
+        else:
+            _, file_body, _ = parse_frontmatter(content)
+            fm_section = content[: len(content) - len(file_body)]
+            self.path.write_text(fm_section + new_body, encoding="utf-8")
+        self.body = new_body
 
     def tree_label(self) -> str:
         return "body"
 
-    def estimate_tokens(self) -> int:
-        return len(self.text) // 4 if self.text else 0
 
+@dataclass
+class FrontmatteredBlock(LintTarget):
+    """Container for files with YAML frontmatter followed by a markdown body.
 
-@dataclass(eq=False)
-class FrontmatteredBlock(FileContentBlock):
-    """Content block whose file has YAML frontmatter followed by a markdown body.
-
-    ``read_body()`` returns only the markdown body (after the closing ``---``),
-    keeping frontmatter out of content-rule analysis.  Individual frontmatter
-    keys are exposed as ``FrontmatterField`` children in the lint tree.
+    Not a ``ContentBlock`` itself — the lintable content lives in the
+    ``BodyContent`` child node.  Frontmatter keys are exposed as
+    ``FrontmatterField`` children.
     """
 
+    category: str = ""
     content_lintable_fields: Tuple[str, ...] = ()
 
     _fm_parsed: Optional[
         Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]
     ] = field(default=None, init=False, repr=False)
 
+    def walk(self) -> Iterator["LintTarget"]:
+        self._ensure_parsed()
+        yield from super().walk()
+
     def _ensure_parsed(self) -> None:
         if self._fm_parsed is None:
             self._fm_parsed = _parse_file_frontmatter(self.path)
-            self.line_offset = self._fm_parsed[4]
             self._build_children()
 
     def _build_children(self) -> None:
@@ -697,7 +715,14 @@ class FrontmatteredBlock(FileContentBlock):
                 )
         body_text = self._fm_parsed[3]
         if body_text:
-            self.children.append(BodyContent(path=self.path, text=body_text))
+            self.children.append(
+                BodyContent(
+                    path=self.path,
+                    category=self.category,
+                    line_offset=self._fm_parsed[4],
+                    body=body_text,
+                )
+            )
 
     @property
     def frontmatter(self) -> Optional[Dict[str, Any]]:
@@ -719,30 +744,6 @@ class FrontmatteredBlock(FileContentBlock):
         self._ensure_parsed()
         return self._fm_parsed[3]
 
-    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
-        if self.body is not None:
-            body = self.body
-        else:
-            self._ensure_parsed()
-            body = self._fm_parsed[3]
-        if not body:
-            return None
-        if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-            body = _strip_html_comments(body)
-        return body
-
-    def write_body(self, new_body: str) -> None:
-        content = read_text(self.path)
-        if content is None or not content.startswith("---"):
-            self.path.write_text(new_body, encoding="utf-8")
-            self._fm_parsed = None
-            return
-        _, body, _ = parse_frontmatter(content)
-        fm_section = content[: len(content) - len(body)]
-        self.path.write_text(fm_section + new_body, encoding="utf-8")
-        self._fm_parsed = None
-
     def key_line(self, key: str) -> Optional[int]:
         return _frontmatter_key_line(self.path, key)
 
@@ -755,12 +756,12 @@ class FrontmatteredBlock(FileContentBlock):
             return {}
         return _yaml_line_map(fm_text, line_offset=offset)
 
-    def tree_label(self) -> str:
-        return super().tree_label()
-
     def estimate_tokens(self) -> int:
         self._ensure_parsed()
-        return sum(c.estimate_tokens() for c in self.children)
+        return super().estimate_tokens()
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} ({self.category})"
 
     def read_frontmatter_text(self) -> str:
         """Return the raw YAML text between the --- delimiters (no delimiters)."""

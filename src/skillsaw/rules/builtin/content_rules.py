@@ -913,19 +913,19 @@ class ContentEmbeddedSecretsRule(Rule):
                             )
                         )
                         break
-            for fld in cf.find(FrontmatterField):
-                text = str(fld.value) if fld.value is not None else ""
-                for pattern, desc in self._PATTERNS:
-                    if pattern.search(text):
-                        violations.append(
-                            self.violation(
-                                f"Potential secret detected in frontmatter "
-                                f"field '{fld.name}': {desc}",
-                                file_path=cf.path,
-                                line=fld.field_line,
-                            )
+        for fld in context.lint_tree.find(FrontmatterField):
+            text = str(fld.value) if fld.value is not None else ""
+            for pattern, desc in self._PATTERNS:
+                if pattern.search(text):
+                    violations.append(
+                        self.violation(
+                            f"Potential secret detected in frontmatter "
+                            f"field '{fld.name}': {desc}",
+                            file_path=fld.path,
+                            line=fld.field_line,
                         )
-                        break
+                    )
+                    break
         return violations
 
 

@@ -14,6 +14,7 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_instruction_files,
     gather_all_content_files,
     ContentFile,
+    BodyContent,
     CursorRuleBlock,
     FrontmatteredBlock,
     FrontmatterField,
@@ -791,24 +792,27 @@ class TestContentBlockReadWrite:
         assert f.read_text(encoding="utf-8") == "new content"
 
     def test_frontmattered_block_excludes_frontmatter(self, temp_dir):
-        """FrontmatteredBlock.read_body() returns only the markdown body."""
+        """BodyContent.read_body() returns only the markdown body."""
         f = temp_dir / "test.mdc"
         f.write_text("---\ndescription: A test rule\n---\noriginal body\n")
         block = CursorRuleBlock(path=f)
-        body = block.read_body()
+        bodies = block.find(BodyContent)
+        assert len(bodies) == 1
+        body = bodies[0].read_body()
         assert "---" not in body
         assert "description: A test rule" not in body
         assert "original body" in body
 
     def test_frontmattered_block_line_offset(self, temp_dir):
-        """FrontmatteredBlock sets line_offset from frontmatter line count."""
+        """BodyContent sets line_offset from frontmatter line count."""
         f = temp_dir / "test.mdc"
         f.write_text("---\ndescription: test\nglobs: '*.py'\n---\nBody line 1\nBody line 2\n")
         block = CursorRuleBlock(path=f)
-        body = block.read_body(strip_code_blocks=False)
+        body_node = block.find(BodyContent)[0]
+        body = body_node.read_body(strip_code_blocks=False)
         assert body == "Body line 1\nBody line 2\n"
-        assert block.line_offset == 4
-        assert block.file_line(1) == 5
+        assert body_node.line_offset == 4
+        assert body_node.file_line(1) == 5
 
     def test_frontmattered_block_write_body_preserves_frontmatter(self, temp_dir):
         """write_body() preserves frontmatter and only replaces the body."""
@@ -816,18 +820,20 @@ class TestContentBlockReadWrite:
         original = "---\ndescription: A test rule\nglobs: '*.py'\n---\nOriginal body\n"
         f.write_text(original)
         block = CursorRuleBlock(path=f)
-        block.write_body("New body content\n")
+        body_node = block.find(BodyContent)[0]
+        body_node.write_body("New body content\n")
         result = f.read_text(encoding="utf-8")
         assert result == "---\ndescription: A test rule\nglobs: '*.py'\n---\nNew body content\n"
 
     def test_frontmattered_block_no_frontmatter(self, temp_dir):
-        """FrontmatteredBlock without frontmatter returns full content."""
+        """FrontmatteredBlock without frontmatter has BodyContent with full content."""
         f = temp_dir / "test.mdc"
         f.write_text("Just plain content\nNo frontmatter here\n")
         block = CursorRuleBlock(path=f)
-        body = block.read_body(strip_code_blocks=False)
+        body_node = block.find(BodyContent)[0]
+        body = body_node.read_body(strip_code_blocks=False)
         assert body == "Just plain content\nNo frontmatter here\n"
-        assert block.line_offset == 0
+        assert body_node.line_offset == 0
 
     def test_frontmattered_block_has_field_children(self, temp_dir):
         """FrontmatteredBlock creates FrontmatterField children for each key."""
