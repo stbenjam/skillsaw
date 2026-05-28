@@ -19,6 +19,7 @@ from skillsaw.rules.builtin.utils import read_text
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     ContentBlock,
+    FrontmatterField,
     SkillRefBlock,
     WeakLanguageDetector,
     TautologicalDetector,
@@ -897,16 +898,11 @@ class ContentEmbeddedSecretsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        seen_paths: Set[Path] = set()
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
-            if resolved in seen_paths:
+            body = cf.read_body(strip_code_blocks=False)
+            if not body:
                 continue
-            seen_paths.add(resolved)
-            content = read_text(cf.path)
-            if not content:
-                continue
-            for line_num, line in enumerate(content.splitlines(), 1):
+            for line_num, line in enumerate(body.splitlines(), 1):
                 for pattern, desc in self._PATTERNS:
                     if pattern.search(line):
                         violations.append(
@@ -917,6 +913,19 @@ class ContentEmbeddedSecretsRule(Rule):
                             )
                         )
                         break
+        for fld in context.lint_tree.find(FrontmatterField):
+            text = str(fld.value) if fld.value is not None else ""
+            for pattern, desc in self._PATTERNS:
+                if pattern.search(text):
+                    violations.append(
+                        self.violation(
+                            f"Potential secret detected in frontmatter "
+                            f"field '{fld.name}': {desc}",
+                            file_path=fld.path,
+                            line=fld.field_line,
+                        )
+                    )
+                    break
         return violations
 
 
@@ -998,16 +1007,11 @@ class ContentBannedReferencesRule(Rule):
         if not patterns:
             return []
         violations = []
-        seen_paths: Set[Path] = set()
         for cf in gather_all_content_blocks(context):
-            resolved = cf.path.resolve()
-            if resolved in seen_paths:
+            body = cf.read_body(strip_code_blocks=False)
+            if not body:
                 continue
-            seen_paths.add(resolved)
-            content = read_text(cf.path)
-            if not content:
-                continue
-            for line_num, line in enumerate(content.splitlines(), 1):
+            for line_num, line in enumerate(body.splitlines(), 1):
                 for pattern, msg in patterns:
                     if pattern.search(line):
                         violations.append(
