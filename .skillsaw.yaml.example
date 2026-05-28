@@ -59,11 +59,6 @@ rules:
     enabled: auto
     severity: warning
 
-  # SKILL.md files should have frontmatter with name and description
-  skill-frontmatter:
-    enabled: false
-    severity: warning
-
   # Agent files must have valid frontmatter with name and description
   agent-frontmatter:
     enabled: true
