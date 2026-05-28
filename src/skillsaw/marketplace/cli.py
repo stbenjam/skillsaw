@@ -70,7 +70,11 @@ def _handle_multi_plugin(exc: ValueError, callback, **kwargs) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_add_cli() -> None:
+def _build_add_parser():
+    """Build the 'skillsaw add' argument parser.
+
+    Extracted so that documentation generators can introspect the real parser.
+    """
     parser = argparse.ArgumentParser(
         prog="skillsaw add",
         description="Scaffold marketplaces, plugins, skills, commands, agents, and hooks",
@@ -184,6 +188,11 @@ Examples:
     )
     hook_parser.add_argument("--path", type=Path, default=None, help="Marketplace root path")
 
+    return parser
+
+
+def _run_add_cli() -> None:
+    parser = _build_add_parser()
     args = parser.parse_args(sys.argv[2:])
 
     if not args.subcommand:

@@ -9,33 +9,135 @@ skillsaw [command] [options]
 
 ## `skillsaw lint`
 
+Lint agent skills, plugins, and AI coding assistant context
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
+| `-v`, `--verbose` | Show info-level messages |  |
+| `--strict` | Treat warnings as errors (exit with error code if warnings exist) |  |
+| `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
+| `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
+| `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit. |  |
+| `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
+| `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
+| `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
+
 ## `skillsaw fix`
+
+Automatically fix lint violations
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `--llm`, `--ai` | Use LLM-powered fixes for content violations |  |
+| `--model` | Override LLM model (default: from config or claude-sonnet-4-20250514) |  |
+| `--max-iterations` | Max fix iterations per file (default: 3) |  |
+| `--all` | Include info-level violations (default: only errors and warnings) |  |
+| `-y`, `--yes` | Auto-apply changes without confirmation |  |
+| `--workers` | Number of parallel LLM workers (default: 4) |  |
+| `--dry-run` | Preview fixes without writing changes |  |
+| `--patch-file` | Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root) |  |
+| `--apply-patch` | Apply a previously saved LLM dry-run patch (use --patch-file to specify path) |  |
+| `--suggest` | Also apply suggested fixes (not just safe ones) |  |
+| `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
+| `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 
 ## `skillsaw init`
 
+Generate a default .skillsaw.yaml config file
+
 ## `skillsaw list-rules`
+
+List all available builtin rules
 
 ## `skillsaw docs`
 
+Generate documentation for a plugin, marketplace, or .claude repository
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--format` | Output format (default: html) (choices: html, markdown) | `html` |
+| `-o`, `--output` | Output file or directory (default: skillsaw-docs/). If it ends with .html/.md, writes a single file directly. |  |
+| `--title` | Custom title for the documentation |  |
+| `--theme` | Color theme for HTML output. Presets: indigo (default), forest-green, ocean-blue, sunset-orange, royal-purple, crimson-red. |  |
+
 ## `skillsaw tree`
 
+Display the repository lint tree
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `--format` | Output format (default: text) (choices: text, dot) | `text` |
+
 ## `skillsaw baseline`
+
+Generate or update the baseline file from current violations
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 
 ## `skillsaw add`
 
 Scaffold marketplaces, plugins, skills, commands, agents, and hooks
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `component` | Component type: marketplace, plugin, skill, command, agent, hook |  |
+### `skillsaw add marketplace`
 
-## `skillsaw docs`
-
-Generate documentation for a plugin, marketplace, or .claude repository.
+Initialize a new marketplace
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--format` | Output format: `html` or `markdown` | `html` |
-| `-o`, `--output` | Output file or directory | `skillsaw-docs/` |
-| `--title` | Custom title for the documentation | |
+| `--name` | Marketplace name |  |
+| `--owner` | Owner name (e.g., GitHub username) |  |
+| `--github-repo` | GitHub repository (owner/repo) |  |
+| `--color-scheme` | Color scheme preset (choices: forest-green, ocean-blue, sunset-orange, royal-purple, crimson-red) |  |
+| `--type` | Marketplace type (default: claude-code) (choices: claude-code) | `claude-code` |
+| `--no-example-plugin` | Do not create the example plugin |  |
+| `--interactive` | Prompt for missing values interactively |  |
+
+### `skillsaw add plugin`
+
+Add a new plugin
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--path` | Marketplace root path |  |
+
+### `skillsaw add skill`
+
+Add a skill to a plugin
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
+| `--path` | Marketplace root path |  |
+
+### `skillsaw add command`
+
+Add a command to a plugin
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
+| `--path` | Marketplace root path |  |
+
+### `skillsaw add agent`
+
+Add an agent to a plugin
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
+| `--path` | Marketplace root path |  |
+
+### `skillsaw add hook`
+
+Add a hook to a plugin
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
+| `--path` | Marketplace root path |  |
 

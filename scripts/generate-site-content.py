@@ -278,75 +278,83 @@ def parse_research():
     return sections
 
 
-def parse_cli():
-    """Extract CLI subcommands and arguments from __main__.py source."""
-    source = (ROOT / "src" / "skillsaw" / "__main__.py").read_text()
+def _extract_args(subparser):
+    """Extract argument info from an argparse subparser."""
+    import argparse as _argparse
 
-    commands = []
-
-    # Extract subcommands
-    parser_blocks = re.findall(
-        r'# --- (\w[\w-]*) ---.*?(?=# ---|\Z)', source, re.DOTALL
-    )
-
-    for block in parser_blocks:
-        lines = block.strip().split("\n")
-        cmd_name = lines[0].strip()
-        if cmd_name == "add":
+    args = []
+    for act in subparser._actions:
+        if isinstance(act, _argparse._HelpAction):
+            continue
+        flags = act.option_strings
+        if not flags:
+            continue
+        if act.help == _argparse.SUPPRESS:
             continue
 
-        help_m = re.search(r'help="([^"]+)"', block)
-        cmd_help = help_m.group(1) if help_m else ""
+        flag_str = ", ".join(f"`{f}`" for f in flags)
+        help_text = act.help or ""
+        default = act.default
+        if default in (None, False, [], _argparse.SUPPRESS):
+            default_str = ""
+        elif isinstance(default, Path):
+            default_str = ""
+        else:
+            default_str = str(default)
 
-        args = []
-        for m in re.finditer(
-            r'\.add_argument\(\s*\n?\s*([^)]+)\)',
-            block,
-            re.DOTALL,
-        ):
-            arg_text = m.group(1)
+        choices_str = ""
+        if act.choices:
+            choices_str = ", ".join(str(c) for c in act.choices)
 
-            flags = re.findall(r'"(-[\w-]+)"', arg_text)
-            if not flags:
-                name_m = re.search(r'"(\w+)"', arg_text)
-                if name_m:
-                    flags = [name_m.group(1)]
-
-            help_m = re.search(r'help="([^"]*(?:"[^"]*"[^"]*)*)"', arg_text)
-            if not help_m:
-                help_m = re.search(r"help='([^']*)'", arg_text)
-            arg_help = help_m.group(1) if help_m else ""
-
-            default_m = re.search(r'default=([^,\n)]+)', arg_text)
-            default = default_m.group(1).strip().strip('"').strip("'") if default_m else ""
-            if default in ("None", "Path.cwd()", "[]"):
-                default = ""
-
-            if flags and flags[0] != "path":
-                args.append({
-                    "flags": ", ".join(f"`{f}`" for f in flags),
-                    "help": arg_help,
-                    "default": default,
-                })
-
-        commands.append({
-            "name": cmd_name,
-            "help": cmd_help,
-            "args": args,
+        args.append({
+            "flags": flag_str,
+            "help": help_text,
+            "default": default_str,
+            "choices": choices_str,
         })
+    return args
 
-    # Add the 'add' command manually since it has its own parser
-    commands.append({
-        "name": "add",
-        "help": "Scaffold marketplaces, plugins, skills, commands, agents, and hooks",
-        "args": [
-            {
-                "flags": "`component`",
-                "help": "Component type: marketplace, plugin, skill, command, agent, hook",
-                "default": "",
-            },
-        ],
-    })
+
+def _extract_subcommands(parser, prefix=""):
+    """Extract subcommand info from a parser, recursively for nested subparsers."""
+    import argparse as _argparse
+
+    commands = []
+    for action in parser._subparsers._actions:
+        if not isinstance(action, _argparse._SubParsersAction):
+            continue
+
+        help_map = {ca.dest: ca.help for ca in action._choices_actions}
+
+        for name, subparser in action.choices.items():
+            full_name = f"{prefix} {name}".strip() if prefix else name
+            commands.append({
+                "name": full_name,
+                "help": help_map.get(name, ""),
+                "args": _extract_args(subparser),
+            })
+
+            if subparser._subparsers:
+                commands.extend(_extract_subcommands(subparser, full_name))
+
+    return commands
+
+
+def parse_cli():
+    """Extract CLI subcommands and arguments by introspecting the real parsers."""
+    from skillsaw.__main__ import _build_parser
+    from skillsaw.marketplace.cli import _build_add_parser
+
+    parser = _build_parser()
+    commands = _extract_subcommands(parser)
+
+    for cmd in commands:
+        if cmd["name"] == "add":
+            add_parser = _build_add_parser()
+            add_subs = _extract_subcommands(add_parser, prefix="add")
+            idx = commands.index(cmd)
+            commands[idx:idx + 1] = [cmd] + add_subs
+            break
 
     return commands
 
@@ -492,7 +500,9 @@ def generate_cli_reference(commands):
     lines.append("```\nskillsaw [command] [options]\n```\n")
 
     for cmd in commands:
-        lines.append(f"## `skillsaw {cmd['name']}`\n")
+        depth = cmd["name"].count(" ")
+        heading = "#" * (depth + 2)
+        lines.append(f"{heading} `skillsaw {cmd['name']}`\n")
         if cmd["help"]:
             lines.append(f"{cmd['help']}\n")
 
@@ -501,18 +511,11 @@ def generate_cli_reference(commands):
             lines.append("|------|-------------|---------|")
             for arg in cmd["args"]:
                 default = f"`{arg['default']}`" if arg["default"] else ""
-                lines.append(f"| {arg['flags']} | {arg['help']} | {default} |")
+                desc = arg["help"]
+                if arg.get("choices"):
+                    desc += f" (choices: {arg['choices']})"
+                lines.append(f"| {arg['flags']} | {desc} | {default} |")
             lines.append("")
-
-    # Documentation generation section
-    lines.append("## `skillsaw docs`\n")
-    lines.append("Generate documentation for a plugin, marketplace, or .claude repository.\n")
-    lines.append("| Flag | Description | Default |")
-    lines.append("|------|-------------|---------|")
-    lines.append("| `--format` | Output format: `html` or `markdown` | `html` |")
-    lines.append("| `-o`, `--output` | Output file or directory | `skillsaw-docs/` |")
-    lines.append("| `--title` | Custom title for the documentation | |")
-    lines.append("")
 
     return "\n".join(lines) + "\n"
 

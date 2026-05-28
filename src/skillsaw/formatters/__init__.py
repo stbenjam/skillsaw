@@ -27,7 +27,10 @@ EXTENSION_MAP = {
     ".sarif": "sarif",
     ".html": "html",
     ".htm": "html",
+    ".txt": "text",
 }
+
+_FORMAT_SET = set(FORMATS)
 
 
 def infer_format(filename: str) -> str:
@@ -41,6 +44,26 @@ def infer_format(filename: str) -> str:
             f"Supported: {', '.join(sorted(EXTENSION_MAP))}"
         )
     return EXTENSION_MAP[ext]
+
+
+def parse_output_spec(spec: str) -> tuple:
+    """Parse an --output value into (format, filepath).
+
+    Accepts either a bare path (format inferred from extension) or an explicit
+    ``FORMAT:PATH`` prefix where FORMAT is a recognised output format name.
+
+    Returns:
+        (format_name, filepath_string)
+
+    Raises:
+        ValueError: when the format cannot be determined.
+    """
+    colon = spec.find(":")
+    if colon > 0:
+        prefix = spec[:colon]
+        if prefix in _FORMAT_SET:
+            return prefix, spec[colon + 1 :]
+    return infer_format(spec), spec
 
 
 def get_counts(violations: List[RuleViolation]):

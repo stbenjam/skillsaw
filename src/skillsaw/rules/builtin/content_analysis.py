@@ -39,6 +39,10 @@ from skillsaw.rules.builtin.utils import (
 _OPENING_FENCE_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})")
 _CLOSING_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
 
+_INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
+
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
 
 def _strip_fenced_code_blocks(text: str) -> str:
     """Replace content inside fenced code blocks with blank lines to preserve line numbers."""
@@ -67,6 +71,46 @@ def _strip_fenced_code_blocks(text: str) -> str:
             result.append("")
 
     return "\n".join(result)
+
+
+def _strip_html_comments(text: str) -> str:
+    """Replace content inside HTML comments with spaces, preserving line numbers."""
+
+    def _blank_preserving_newlines(m: re.Match) -> str:
+        return re.sub(r"[^\n]", " ", m.group(0))
+
+    return _HTML_COMMENT_RE.sub(_blank_preserving_newlines, text)
+
+
+def is_inside_inline_code(line: str, match_start: int, match_end: int) -> bool:
+    """Check if a character range falls inside an inline code span (backticks).
+
+    Returns True only when the code span contains more than just the matched text
+    (e.g. a variable prefix like ``${VAR}/path``). When the entire code span content
+    equals the matched text, the path is a plain reference that should still be
+    linkable, so this returns False.
+    """
+    for m in _INLINE_CODE_RE.finditer(line):
+        code_start = m.start() + len(m.group(1))
+        code_end = m.end() - len(m.group(1))
+        if code_start <= match_start and match_end <= code_end:
+            if code_start == match_start and code_end == match_end:
+                return False
+            return True
+    return False
+
+
+def inline_code_span_bounds(
+    line: str, match_start: int, match_end: int
+) -> Optional[Tuple[int, int]]:
+    """Return (span_start, span_end) of the enclosing backtick span if the match
+    is exactly its content, else None.  The bounds include the backtick delimiters."""
+    for m in _INLINE_CODE_RE.finditer(line):
+        code_start = m.start() + len(m.group(1))
+        code_end = m.end() - len(m.group(1))
+        if code_start == match_start and code_end == match_end:
+            return (m.start(), m.end())
+    return None
 
 
 @dataclass
@@ -234,6 +278,7 @@ class FileContentBlock(ContentBlock):
             body = content
         if strip_code_blocks:
             body = _strip_fenced_code_blocks(body)
+            body = _strip_html_comments(body)
         return body
 
     def write_body(self, new_body: str) -> None:
@@ -250,6 +295,7 @@ class CodeRabbitContentBlock(ContentBlock):
         body = self.body if self.body is not None else ""
         if strip_code_blocks:
             body = _strip_fenced_code_blocks(body)
+            body = _strip_html_comments(body)
         return body
 
     def write_body(self, new_body: str) -> None:
@@ -455,6 +501,7 @@ class PromptfooPromptBlock(ContentBlock):
         body = self.body if self.body is not None else ""
         if strip_code_blocks:
             body = _strip_fenced_code_blocks(body)
+            body = _strip_html_comments(body)
         return body
 
     def write_body(self, new_body: str) -> None:
