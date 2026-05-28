@@ -1002,6 +1002,17 @@ class TestUnlinkedInternalReferenceAutofix:
 
         assert fixed_line_count == original_line_count
 
+    def test_frontmatter_paths_not_flagged(self, tmp_path):
+        """Path-like strings in YAML frontmatter must not trigger violations."""
+        repo = copy_fixture("frontmatter-paths", tmp_path)
+        r = run_lint(repo)
+        unlinked = [
+            v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
+        ]
+        assert len(unlinked) == 1
+        assert "scripts/run_tests.py" in unlinked[0]["message"]
+        assert unlinked[0]["line"] == 18
+
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
 

@@ -607,33 +607,97 @@ class GeminiMdBlock(InstructionBlock):
 
 def _parse_file_frontmatter(
     path: Path,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
     """Parse YAML frontmatter from a markdown file.
 
-    Returns (frontmatter_dict, error_string, error_line, body_after_frontmatter).
+    Returns (frontmatter_dict, error_string, error_line, body_after_frontmatter,
+    fm_line_count).  ``fm_line_count`` is the number of file lines occupied by
+    the frontmatter block (including the ``---`` delimiters).
     """
     content = read_text(path)
     if content is None:
-        return None, f"Failed to read file: {path}", None, ""
+        return None, f"Failed to read file: {path}", None, "", 0
     if not content.startswith("---"):
-        return None, None, None, content
+        return None, None, None, content, 0
     fm, body, error_line = parse_frontmatter(content)
     if fm is None:
-        return None, "Invalid frontmatter (malformed YAML or missing closing ---)", error_line, body
-    return fm, None, None, body
+        return (
+            None,
+            "Invalid frontmatter (malformed YAML or missing closing ---)",
+            error_line,
+            body,
+            0,
+        )
+    fm_line_count = content[: len(content) - len(body)].count("\n")
+    return fm, None, None, body, fm_line_count
+
+
+@dataclass
+class FrontmatterField(LintTarget):
+    """A single key-value pair from YAML frontmatter, exposed as a tree node."""
+
+    name: str = ""
+    value: Any = None
+    field_line: Optional[int] = None
+
+    def tree_label(self) -> str:
+        return f"frontmatter:{self.name}"
+
+    def estimate_tokens(self) -> int:
+        if self.value is None:
+            return 0
+        return len(str(self.value)) // 4
+
+
+@dataclass
+class BodyContent(LintTarget):
+    """The markdown body of a frontmattered file, after the closing ``---``."""
+
+    text: str = ""
+
+    def tree_label(self) -> str:
+        return "body"
+
+    def estimate_tokens(self) -> int:
+        return len(self.text) // 4 if self.text else 0
 
 
 @dataclass(eq=False)
-class ParsedFrontmatterBlock(FileContentBlock):
-    """File content block with lazy-parsed YAML frontmatter."""
+class FrontmatteredBlock(FileContentBlock):
+    """Content block whose file has YAML frontmatter followed by a markdown body.
 
-    _fm_parsed: Optional[Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str]] = (
-        field(default=None, init=False, repr=False)
-    )
+    ``read_body()`` returns only the markdown body (after the closing ``---``),
+    keeping frontmatter out of content-rule analysis.  Individual frontmatter
+    keys are exposed as ``FrontmatterField`` children in the lint tree.
+    """
+
+    content_lintable_fields: Tuple[str, ...] = ()
+
+    _fm_parsed: Optional[
+        Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]
+    ] = field(default=None, init=False, repr=False)
 
     def _ensure_parsed(self) -> None:
         if self._fm_parsed is None:
             self._fm_parsed = _parse_file_frontmatter(self.path)
+            self.line_offset = self._fm_parsed[4]
+            self._build_children()
+
+    def _build_children(self) -> None:
+        fm = self._fm_parsed[0]
+        if fm:
+            for key, value in fm.items():
+                self.children.append(
+                    FrontmatterField(
+                        path=self.path,
+                        name=key,
+                        value=value,
+                        field_line=self.key_line(key),
+                    )
+                )
+        body_text = self._fm_parsed[3]
+        if body_text:
+            self.children.append(BodyContent(path=self.path, text=body_text))
 
     @property
     def frontmatter(self) -> Optional[Dict[str, Any]]:
@@ -655,6 +719,30 @@ class ParsedFrontmatterBlock(FileContentBlock):
         self._ensure_parsed()
         return self._fm_parsed[3]
 
+    def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
+        if self.body is not None:
+            body = self.body
+        else:
+            self._ensure_parsed()
+            body = self._fm_parsed[3]
+        if not body:
+            return None
+        if strip_code_blocks:
+            body = _strip_fenced_code_blocks(body)
+            body = _strip_html_comments(body)
+        return body
+
+    def write_body(self, new_body: str) -> None:
+        content = read_text(self.path)
+        if content is None or not content.startswith("---"):
+            self.path.write_text(new_body, encoding="utf-8")
+            self._fm_parsed = None
+            return
+        _, body, _ = parse_frontmatter(content)
+        fm_section = content[: len(content) - len(body)]
+        self.path.write_text(fm_section + new_body, encoding="utf-8")
+        self._fm_parsed = None
+
     def key_line(self, key: str) -> Optional[int]:
         return _frontmatter_key_line(self.path, key)
 
@@ -668,12 +756,11 @@ class ParsedFrontmatterBlock(FileContentBlock):
         return _yaml_line_map(fm_text, line_offset=offset)
 
     def tree_label(self) -> str:
-        label = super().tree_label()
-        fm = self.frontmatter
-        if fm and isinstance(fm.get("description"), str):
-            desc_tokens = len(fm["description"]) // 4
-            label += f" [desc: {desc_tokens:,} tokens]"
-        return label
+        return super().tree_label()
+
+    def estimate_tokens(self) -> int:
+        self._ensure_parsed()
+        return sum(c.estimate_tokens() for c in self.children)
 
     def read_frontmatter_text(self) -> str:
         """Return the raw YAML text between the --- delimiters (no delimiters)."""
@@ -727,15 +814,18 @@ class ParsedFrontmatterBlock(FileContentBlock):
         self._fm_parsed = None
 
 
+ParsedFrontmatterBlock = FrontmatteredBlock
+
+
 @dataclass(eq=False)
-class CursorRuleBlock(ParsedFrontmatterBlock):
+class CursorRuleBlock(FrontmatteredBlock):
     """.cursor/rules/*.mdc files."""
 
     category: str = "instruction"
 
 
 @dataclass(eq=False)
-class CommandBlock(ParsedFrontmatterBlock):
+class CommandBlock(FrontmatteredBlock):
     """commands/*.md in plugins."""
 
     category: str = "command"
@@ -748,14 +838,14 @@ class CommandBlock(ParsedFrontmatterBlock):
 
 
 @dataclass(eq=False)
-class AgentBlock(ParsedFrontmatterBlock):
+class AgentBlock(FrontmatteredBlock):
     """agents/*.md in plugins or APM agent files."""
 
     category: str = "agent"
 
 
 @dataclass(eq=False)
-class SkillBlock(ParsedFrontmatterBlock):
+class SkillBlock(FrontmatteredBlock):
     """SKILL.md in skills."""
 
     category: str = "skill"
@@ -769,7 +859,7 @@ class SkillRefBlock(FileContentBlock):
 
 
 @dataclass(eq=False)
-class PluginRuleBlock(ParsedFrontmatterBlock):
+class PluginRuleBlock(FrontmatteredBlock):
     """rules/*.md in plugins."""
 
     category: str = "rule"
