@@ -66,7 +66,15 @@ class CursorRuleValidRule(Rule):
                     )
                 )
 
-            if "description" in fm:
+            if "description" not in fm:
+                violations.append(
+                    self.violation(
+                        "Missing required frontmatter key 'description'",
+                        file_path=block.path,
+                        line=1,
+                    )
+                )
+            else:
                 desc = fm["description"]
                 if not isinstance(desc, str) or not desc.strip():
                     violations.append(
@@ -76,6 +84,15 @@ class CursorRuleValidRule(Rule):
                             line=block.key_line("description"),
                         )
                     )
+
+            if "globs" not in fm and "alwaysApply" not in fm:
+                violations.append(
+                    self.violation(
+                        "Either 'globs' or 'alwaysApply' must be specified",
+                        file_path=block.path,
+                        line=1,
+                    )
+                )
 
             if "globs" in fm:
                 globs_line = block.key_line("globs")

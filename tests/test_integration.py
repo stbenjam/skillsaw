@@ -326,6 +326,8 @@ class TestCursorRules:
         assert any("alwaysApply" in m and "boolean" in m for m in messages)
         assert any("Unknown frontmatter key" in m for m in messages)
         assert any("description" in m and "non-empty" in m for m in messages)
+        assert any("Missing required frontmatter key 'description'" in m for m in messages)
+        assert any("Either 'globs' or 'alwaysApply' must be specified" in m for m in messages)
 
 
 @pytest.mark.integration
