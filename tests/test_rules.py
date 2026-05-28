@@ -580,3 +580,89 @@ def test_skill_frontmatter_malformed_yaml_reports_line(temp_dir):
     assert len(fm_violations) == 1
     assert fm_violations[0].line is not None
     assert fm_violations[0].line == 5
+
+
+# ---------------------------------------------------------------------------
+# Rule ID stability — renaming a rule breaks user configs
+# ---------------------------------------------------------------------------
+
+STABLE_RULE_IDS = frozenset(
+    {
+        "agent-frontmatter",
+        "agentskill-description",
+        "agentskill-evals",
+        "agentskill-evals-required",
+        "agentskill-name",
+        "agentskill-rename-refs",
+        "agentskill-structure",
+        "agentskill-valid",
+        "apm-structure-valid",
+        "apm-yaml-valid",
+        "coderabbit-yaml-valid",
+        "command-frontmatter",
+        "command-name-format",
+        "command-naming",
+        "command-sections",
+        "content-actionability-score",
+        "content-banned-references",
+        "content-broken-internal-reference",
+        "content-cognitive-chunks",
+        "content-contradiction",
+        "content-critical-position",
+        "content-embedded-secrets",
+        "content-hook-candidate",
+        "content-inconsistent-terminology",
+        "content-instruction-budget",
+        "content-negative-only",
+        "content-placeholder-text",
+        "content-redundant-with-tooling",
+        "content-section-length",
+        "content-tautological",
+        "content-unlinked-internal-reference",
+        "content-weak-language",
+        "context-budget",
+        "cursor-rule-valid",
+        "hooks-json-valid",
+        "instruction-file-valid",
+        "instruction-imports-valid",
+        "marketplace-json-valid",
+        "marketplace-registration",
+        "mcp-prohibited",
+        "mcp-valid-json",
+        "openclaw-metadata",
+        "plugin-json-required",
+        "plugin-json-valid",
+        "plugin-naming",
+        "plugin-readme",
+        "promptfoo-assertions",
+        "promptfoo-metadata",
+        "promptfoo-valid",
+        "rules-valid",
+        "skill-frontmatter",
+    }
+)
+
+
+def test_rule_ids_are_stable():
+    """Rule IDs must not be renamed — they are part of the public API.
+
+    Users reference rule IDs in .skillsaw.yaml, inline suppression comments,
+    CI scripts, and baseline files. Renaming a rule silently breaks all of
+    those. To add a new rule, add its ID to STABLE_RULE_IDS above. To
+    remove a rule, delete it from STABLE_RULE_IDS (this is a one-way door).
+    """
+    from skillsaw.rules.builtin import BUILTIN_RULES
+
+    current_ids = frozenset(r().rule_id for r in BUILTIN_RULES)
+
+    renamed = STABLE_RULE_IDS - current_ids
+    assert not renamed, (
+        f"Rule IDs were renamed or removed (this breaks user configs): {sorted(renamed)}. "
+        f"If intentionally removed, delete them from STABLE_RULE_IDS in this test."
+    )
+
+    missing_from_snapshot = current_ids - STABLE_RULE_IDS
+    assert not missing_from_snapshot, (
+        f"New rule IDs not in STABLE_RULE_IDS: {sorted(missing_from_snapshot)}. "
+        f"Add them to the set in this test to acknowledge they are now part of the public API."
+    )
