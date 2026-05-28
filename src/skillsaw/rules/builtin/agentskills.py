@@ -164,6 +164,10 @@ class AgentSkillValidRule(Rule):
                     fm_text = match.group(1)
                     new_fm = f"name: {kebab_name}\n{fm_text}"
                     fixed = f"---\n{new_fm}\n---" + original[match.end() :]
+                    name_violations = [
+                        v for v in file_violations
+                        if "Missing required 'name'" in v.message
+                    ]
                     results.append(
                         AutofixResult(
                             rule_id=self.rule_id,
@@ -172,7 +176,7 @@ class AgentSkillValidRule(Rule):
                             original_content=original,
                             fixed_content=fixed,
                             description=f"Added name '{kebab_name}' from directory name",
-                            violations_fixed=file_violations,
+                            violations_fixed=name_violations,
                         )
                     )
         return results

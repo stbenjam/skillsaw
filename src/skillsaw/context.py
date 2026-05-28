@@ -66,6 +66,7 @@ class RepositoryContext:
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
+        RepositoryType.DOT_CURSOR,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
