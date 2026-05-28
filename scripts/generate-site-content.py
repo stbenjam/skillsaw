@@ -199,6 +199,11 @@ CONTENT_RULE_IDS = [
     for rule_id in rule_ids
 ]
 
+CLAUDE_CODE_SLUGS = {
+    "plugin-structure", "command-format", "marketplace",
+    "agents", "hooks", "mcp", "rules-directory",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data collection
@@ -412,6 +417,8 @@ def generate_rules_index(rules_data):
         plural = "rule" if count == 1 else "rules"
         if slug == "content-intelligence":
             lines.append(f"- [{group_name}](content/index.md) ({count} {plural})")
+        elif slug in CLAUDE_CODE_SLUGS:
+            lines.append(f"- [{group_name}](claude-code/{slug}.md) ({count} {plural})")
         else:
             lines.append(f"- [{group_name}]({slug}.md) ({count} {plural})")
 
@@ -500,6 +507,32 @@ def generate_content_rule_page(rule_id, rules_data, research):
     return "\n".join(lines) + "\n"
 
 
+def generate_claude_code_index(rules_data):
+    """Generate docs/rules/claude-code/index.md — combined Claude Code rules page."""
+    lines = [GENERATED_HEADER, "# Claude Code\n"]
+    lines.append(
+        "Rules that validate [Claude Code](https://docs.claude.com/en/docs/claude-code) "
+        "plugins, commands, marketplaces, agents, hooks, MCP servers, and rules.\n"
+    )
+
+    for group_name, slug, rule_ids, description in RULE_GROUPS:
+        if slug not in CLAUDE_CODE_SLUGS:
+            continue
+        lines.append(f"## {group_name}\n")
+        if description:
+            lines.append(f"{description}\n")
+        lines.append(_rule_table(rule_ids, rules_data))
+        lines.append("")
+
+        for rule_id in rule_ids:
+            r = rules_data[rule_id]
+            if r["config_schema"]:
+                lines.append(_params_table(rule_id, r["config_schema"]))
+                lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def generate_cli_reference(commands):
     """Generate docs/cli.md from parsed argparse data."""
     lines = [GENERATED_HEADER, "# CLI Reference\n"]
@@ -582,6 +615,8 @@ def main():
 
     rules_dir.mkdir(parents=True, exist_ok=True)
     content_dir.mkdir(parents=True, exist_ok=True)
+    claude_code_dir = rules_dir / "claude-code"
+    claude_code_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy logo
     images_dir = docs_dir / "images"
@@ -604,15 +639,37 @@ def main():
     (rules_dir / "index.md").write_text(generate_rules_index(rules_data))
     print(f"  rules/index.md ({len(rules_data)} rules)")
 
+    # Claude Code index
+    (claude_code_dir / "index.md").write_text(generate_claude_code_index(rules_data))
+    print("  rules/claude-code/index.md")
+
     # Group pages
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         content = generate_group_page(group_name, slug, rule_ids, description, rules_data)
         if slug == "content-intelligence":
             (content_dir / "index.md").write_text(content)
-            print(f"  rules/content/index.md")
+            print("  rules/content/index.md")
+        elif slug in CLAUDE_CODE_SLUGS:
+            (claude_code_dir / f"{slug}.md").write_text(content)
+            print(f"  rules/claude-code/{slug}.md")
         else:
             (rules_dir / f"{slug}.md").write_text(content)
             print(f"  rules/{slug}.md")
+
+    # Redirects for old Claude Code rule paths
+    for slug in CLAUDE_CODE_SLUGS:
+        redirect = (
+            f'<meta http-equiv="refresh" content="0; url=../claude-code/{slug}/">\n'
+            f"Moved to [claude-code/{slug}](claude-code/{slug}.md)\n"
+        )
+        (rules_dir / f"{slug}.md").write_text(redirect)
+
+    # Redirect for old skills-agents-hooks path
+    redirect = (
+        '<meta http-equiv="refresh" content="0; url=../claude-code/">\n'
+        "Moved to [Claude Code](claude-code/index.md)\n"
+    )
+    (rules_dir / "skills-agents-hooks.md").write_text(redirect)
 
     # Individual content rule pages
     for rule_id in CONTENT_RULE_IDS:
