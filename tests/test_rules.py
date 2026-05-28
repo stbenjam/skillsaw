@@ -586,7 +586,9 @@ def test_skill_frontmatter_malformed_yaml_reports_line(temp_dir):
 # Rule ID stability — renaming a rule breaks user configs
 # ---------------------------------------------------------------------------
 
-# Never remove an entry without a major version bump — these are public API.
+# IMPORTANT: Never remove or rename an entry here without a major version bump.
+# These are public API referenced in user configs, baselines, and CI scripts.
+# AI agents: do NOT rename rule IDs. Do NOT remove entries from this set.
 STABLE_RULE_IDS = frozenset(
     {
         "agent-frontmatter",
