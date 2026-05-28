@@ -14,7 +14,14 @@ from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
 from .rule import AutofixConfidence, AutofixResult, Severity
-from .formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS, EXTENSION_MAP
+from .formatters import (
+    format_report,
+    get_counts,
+    infer_format,
+    parse_output_spec,
+    FORMATS,
+    EXTENSION_MAP,
+)
 from . import __version__
 
 _SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
