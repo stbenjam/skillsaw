@@ -10,7 +10,8 @@ organized into the following categories:
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
-- [Skills, Agents, Hooks](skills-agents-hooks.md) (3 rules)
+- [Agents](agents.md) (1 rule)
+- [Hooks](hooks.md) (1 rule)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
 - [Cursor](cursor.md) (1 rule)
@@ -42,9 +43,8 @@ organized into the following categories:
 | `command-name-format` | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Command Format |
 | `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - | Marketplace |
 | `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning (disabled) | auto, llm | Skills, Agents, Hooks |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm | Skills, Agents, Hooks |
-| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm | Agents |
+| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | `claude-rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |

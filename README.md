@@ -502,12 +502,16 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - |
 | `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto |
 
-### Skills, Agents, Hooks
+### Agents
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning (disabled) | auto, llm |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
+
+### Hooks
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 
 ### MCP (Model Context Protocol)

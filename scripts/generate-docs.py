@@ -47,8 +47,13 @@ RULE_GROUPS = [
         None,
     ),
     (
-        "Skills, Agents, Hooks",
-        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid"],
+        "Agents",
+        ["agent-frontmatter"],
+        None,
+    ),
+    (
+        "Hooks",
+        ["hooks-json-valid"],
         None,
     ),
     (

@@ -73,7 +73,8 @@ nav:
       - Plugin Structure: rules/plugin-structure.md
       - Command Format: rules/command-format.md
       - Marketplace: rules/marketplace.md
-      - Skills, Agents, Hooks: rules/skills-agents-hooks.md
+      - Agents: rules/agents.md
+      - Hooks: rules/hooks.md
       - MCP: rules/mcp.md
       - Rules Directory: rules/rules-directory.md
     - Cursor: rules/cursor.md
