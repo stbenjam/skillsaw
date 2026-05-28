@@ -47,7 +47,7 @@ organized into the following categories:
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
-| `claude-rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
+| `rule-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
 | `cursor-rule-valid` | .cursor/rules/*.mdc files should have valid frontmatter | warning (auto) | - | Cursor |
 | `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - | OpenClaw |
 | `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |

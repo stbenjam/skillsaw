@@ -46,7 +46,6 @@ class RulesValidRule(Rule):
     """Validate .claude/rules/ files: markdown extension, valid frontmatter, valid path globs"""
 
     repo_types = {RepositoryType.DOT_CLAUDE}
-    aliases = {"rules-valid"}
 
     config_schema = {
         "valid-keys": {
@@ -58,7 +57,7 @@ class RulesValidRule(Rule):
 
     @property
     def rule_id(self) -> str:
-        return "claude-rule-valid"
+        return "rule-valid"
 
     @property
     def description(self) -> str:
