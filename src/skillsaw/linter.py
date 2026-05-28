@@ -88,18 +88,12 @@ class Linter:
         for rule_class in BUILTIN_RULES:
             rule_instance = rule_class()
             self._known_rule_ids.add(rule_instance.rule_id)
-            self._known_rule_ids.update(rule_instance.aliases)
-            if (
-                self._rule_ids
-                and not ({rule_instance.rule_id} | rule_instance.aliases) & self._rule_ids
-            ):
+            if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
                 continue
-            if ({rule_instance.rule_id} | rule_instance.aliases) & self._skip_rule_ids:
+            if rule_instance.rule_id in self._skip_rule_ids:
                 logger.info("Rule %-30s skipped (--skip-rule)", rule_instance.rule_id)
                 continue
-            config = self.config.get_rule_config(
-                rule_instance.rule_id, aliases=rule_instance.aliases
-            )
+            config = self.config.get_rule_config(rule_instance.rule_id)
             if config:
                 rule_instance = rule_class(config)
 
@@ -109,7 +103,6 @@ class Linter:
                 rule_instance.repo_types,
                 rule_instance.formats,
                 since_version=rule_instance.since,
-                aliases=rule_instance.aliases,
             ):
                 self.rules.append(rule_instance)
                 logger.info("Rule %-30s enabled", rule_instance.rule_id)

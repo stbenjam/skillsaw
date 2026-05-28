@@ -248,30 +248,19 @@ class LinterConfig:
         config.version = __version__
         return config
 
-    def _resolve_rule_key(self, rule_id: str, aliases: set = None) -> str:
-        """Return the config key that matches rule_id or one of its aliases."""
-        if rule_id in self.rules:
-            return rule_id
-        for alias in aliases or ():
-            if alias in self.rules:
-                return alias
-        return rule_id
-
-    def get_rule_config(self, rule_id: str, aliases: set = None) -> Dict[str, Any]:
+    def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
         Get configuration for a specific rule, merging user overrides
         on top of defaults so unmentioned fields keep their default values.
 
         Args:
             rule_id: Rule identifier
-            aliases: Deprecated names that should also be checked in user config
 
         Returns:
             Rule configuration dict
         """
-        resolved = self._resolve_rule_key(rule_id, aliases)
         defaults = self.default().rules.get(rule_id, {})
-        overrides = self.rules.get(resolved)
+        overrides = self.rules.get(rule_id)
         if overrides is None:
             overrides = {}
         merged = {**defaults, **overrides}
@@ -284,7 +273,6 @@ class LinterConfig:
         repo_types=None,
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
-        aliases: set = None,
     ) -> bool:
         """
         Check if a rule is enabled for the given context
@@ -295,13 +283,11 @@ class LinterConfig:
             repo_types: Set of RepositoryType values the rule applies to (None = all)
             formats: Set of detected format constants the rule requires (None = all)
             since_version: Minimum config version required for this rule
-            aliases: Deprecated names that should also be checked in user config
 
         Returns:
             True if rule should run
         """
-        resolved = self._resolve_rule_key(rule_id, aliases)
-        user_overrides = self.rules.get(resolved, {})
+        user_overrides = self.rules.get(rule_id, {})
         has_explicit_enabled = "enabled" in user_overrides
         if has_explicit_enabled:
             explicit = user_overrides["enabled"]
