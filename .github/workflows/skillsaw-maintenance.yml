@@ -28,7 +28,7 @@ jobs:
 
       - name: Upload execution log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: claude-execution-log-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
