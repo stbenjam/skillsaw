@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.plugin_structure import PluginJsonValidRule
+from skillsaw.rules.builtin.plugins import PluginJsonValidRule
 from skillsaw.rules.builtin.mcp import McpValidJsonRule, McpProhibitedRule
 
 # -- helpers -----------------------------------------------------------------

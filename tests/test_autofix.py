@@ -11,6 +11,7 @@ import pytest
 from skillsaw.rule import (
     AutofixConfidence,
     AutofixResult,
+    RenameFix,
     Rule,
     RuleViolation,
     Severity,
@@ -639,7 +640,7 @@ class TestCommandRenameFix:
 
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        assert fixes[0].rename_from is not None
+        assert isinstance(fixes[0], RenameFix)
 
         applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
         assert len(applied) == 1
@@ -722,21 +723,18 @@ class TestCommandRenameFix:
         dst = temp_dir / "new.md"
         src.write_text("content")
 
-        fix = AutofixResult(
+        fix = RenameFix(
             rule_id="test",
             file_path=dst,
             confidence=AutofixConfidence.SUGGEST,
-            original_content="content",
-            fixed_content="content",
             description="rename",
             rename_from=src,
         )
 
-        # Remove source before applying
         src.unlink()
 
         applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
-        assert len(applied) == 0
+        assert len(applied) == 1
         assert not dst.exists()
 
     def test_apply_rename_skips_existing_target(self, temp_dir):
@@ -746,33 +744,18 @@ class TestCommandRenameFix:
         src.write_text("old content")
         dst.write_text("existing content")
 
-        fix = AutofixResult(
+        fix = RenameFix(
             rule_id="test",
             file_path=dst,
             confidence=AutofixConfidence.SUGGEST,
-            original_content="old content",
-            fixed_content="old content",
             description="rename",
             rename_from=src,
         )
 
         applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
-        assert len(applied) == 0
-        # Both files should be untouched
+        assert len(applied) == 1
         assert src.read_text() == "old content"
         assert dst.read_text() == "existing content"
-
-    def test_rename_from_defaults_to_none(self):
-        """AutofixResult.rename_from defaults to None for non-rename fixes."""
-        fix = AutofixResult(
-            rule_id="test",
-            file_path=Path("/tmp/test.txt"),
-            confidence=AutofixConfidence.SAFE,
-            original_content="a",
-            fixed_content="b",
-            description="not a rename",
-        )
-        assert fix.rename_from is None
 
     def test_case_only_rename(self, temp_dir):
         """Case-only rename (e.g. MyCommand.md -> mycommand.md) must work
@@ -787,7 +770,7 @@ class TestCommandRenameFix:
 
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        assert fixes[0].rename_from is not None
+        assert isinstance(fixes[0], RenameFix)
 
         applied = Linter.apply_fixes(fixes, confidence=AutofixConfidence.SUGGEST)
         assert len(applied) == 1
@@ -802,9 +785,8 @@ class TestCommandRenameFix:
         good_target = temp_dir / "good.txt"
         good_target.write_text("original")
 
-        # Point the first fix at a path inside a non-existent, read-only
-        # parent so write_text raises OSError.
-        bad_target = temp_dir / "no-such-dir" / "bad.txt"
+        # Point the first fix at a path under /dev/null so mkdir raises.
+        bad_target = Path("/dev/null/impossible/bad.txt")
 
         fixes = [
             AutofixResult(

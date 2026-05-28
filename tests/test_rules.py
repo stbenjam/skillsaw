@@ -8,7 +8,7 @@ from pathlib import Path
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
-from skillsaw.rules.builtin.plugin_structure import (
+from skillsaw.rules.builtin.plugins import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,

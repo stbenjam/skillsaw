@@ -2,7 +2,7 @@
 Builtin linting rules for Claude Code plugins
 """
 
-from .plugin_structure import (
+from .plugins import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
     PluginNamingRule,
@@ -56,7 +56,7 @@ from .openclaw import (
     OpenclawMetadataRule,
 )
 
-from .instruction_files import (
+from .instructions import (
     InstructionFileValidRule,
     InstructionImportsValidRule,
 )
@@ -65,7 +65,7 @@ from .context_budget import (
     ContextBudgetRule,
 )
 
-from .content_rules import (
+from .content import (
     ContentWeakLanguageRule,
     ContentTautologicalRule,
     ContentCriticalPositionRule,

@@ -557,13 +557,13 @@ def _run_lint(args):
         if applied and args.fmt == "text":
             print(f"Fixed {len(applied)} issue(s):")
             for fix in applied:
-                print(f"  ✓ [{fix.file_path}] {fix.description}")
+                print(f"  ✓ [{fix.target_path}] {fix.description}")
             print()
         suggested = [f for f in fixes if f not in applied]
         if suggested and args.fmt == "text":
             print(f"Suggested fixes ({len(suggested)} — review before applying):")
             for fix in suggested:
-                print(f"  ? [{fix.file_path}] {fix.description}")
+                print(f"  ? [{fix.target_path}] {fix.description}")
             print()
         if args.use_llm:
             _run_llm_fix_inline(args, linter, config)
@@ -842,8 +842,6 @@ def _run_fix(args):
         sys.exit(1)
 
     if not args.use_llm:
-        import difflib
-
         dry_run = getattr(args, "dry_run", False)
         confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
         applied, suggested = linter.fix_and_apply(confidence, dry_run=dry_run)
@@ -861,36 +859,27 @@ def _run_fix(args):
             label = "Would fix" if dry_run else "Fixed"
             print(f"{label} {len(applied)} issue(s):")
             for fix in applied:
-                print(f"  {c['bold']}✓ [{fix.file_path}] {fix.description}{c['reset']}")
-                if dry_run and fix.original_content != fix.fixed_content:
-                    try:
-                        rel = fix.file_path.relative_to(context.root_path)
-                    except ValueError:
-                        rel = fix.file_path
-                    diff_lines = difflib.unified_diff(
-                        fix.original_content.splitlines(keepends=True),
-                        fix.fixed_content.splitlines(keepends=True),
-                        fromfile=f"a/{rel}",
-                        tofile=f"b/{rel}",
-                    )
-                    for line in diff_lines:
-                        line = line.rstrip("\n")
-                        if line.startswith("+") and not line.startswith("+++"):
-                            print(f"      {c['green']}{line}{c['reset']}")
-                        elif line.startswith("-") and not line.startswith("---"):
-                            print(f"      {c['red']}{line}{c['reset']}")
-                        elif line.startswith("@@"):
-                            print(f"      {c['cyan']}{line}{c['reset']}")
-                        else:
-                            print(f"      {line}")
-                    print(f"      {c['dim']}{'─' * 40}{c['reset']}")
+                print(f"  {c['bold']}✓ [{fix.target_path}] {fix.description}{c['reset']}")
+                if dry_run:
+                    diff_text = fix.diff(root=context.root_path)
+                    if diff_text:
+                        for line in diff_text.splitlines():
+                            if line.startswith("+") and not line.startswith("+++"):
+                                print(f"      {c['green']}{line}{c['reset']}")
+                            elif line.startswith("-") and not line.startswith("---"):
+                                print(f"      {c['red']}{line}{c['reset']}")
+                            elif line.startswith("@@"):
+                                print(f"      {c['cyan']}{line}{c['reset']}")
+                            else:
+                                print(f"      {line}")
+                        print(f"      {c['dim']}{'─' * 40}{c['reset']}")
         else:
             print("No auto-fixable violations found.")
 
         if suggested:
             print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
             for fix in suggested:
-                print(f"  ? [{fix.file_path}] {fix.description}")
+                print(f"  ? [{fix.target_path}] {fix.description}")
             print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
             print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
 

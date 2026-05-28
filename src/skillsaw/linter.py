@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence, FixOp
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
@@ -300,7 +300,7 @@ class Linter:
 
         return self._filter_violations(violations)
 
-    def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
+    def fix(self) -> tuple[List[RuleViolation], List[FixOp]]:
         """
         Run all enabled rules and attempt to fix violations.
 
@@ -308,7 +308,7 @@ class Linter:
             Tuple of (remaining violations, autofix results)
         """
         all_violations = self._validate_config()
-        all_fixes: List[AutofixResult] = []
+        all_fixes: List[FixOp] = []
 
         for rule in self.rules:
             try:
@@ -336,8 +336,8 @@ class Linter:
 
     @staticmethod
     def _first_per_file(
-        fixes: List[AutofixResult],
-    ) -> tuple[List[AutofixResult], bool]:
+        fixes: List[FixOp],
+    ) -> tuple[List[FixOp], bool]:
         """Snapshot-isolation filter: first-committer-wins per file.
 
         Returns the independent subset (at most one fix per file) and
@@ -345,12 +345,14 @@ class Linter:
         Deferred fixes are not applied — the next pass will re-derive
         them against the committed file state.
         """
+        from .rule import RenameFix
+
         seen: set[Path] = set()
-        independent: List[AutofixResult] = []
+        independent: List[FixOp] = []
         has_conflicts = False
         for fix in fixes:
-            targets = {fix.file_path.resolve()}
-            if fix.rename_from is not None:
+            targets = {fix.target_path.resolve()}
+            if isinstance(fix, RenameFix):
                 targets.add(fix.rename_from.resolve())
             if any(t in seen for t in targets):
                 has_conflicts = True
@@ -364,7 +366,7 @@ class Linter:
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
         dry_run: bool = False,
-    ) -> tuple[List[AutofixResult], List[AutofixResult]]:
+    ) -> tuple[List[FixOp], List[FixOp]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
         Each fix is a pre-computed transformation against a file snapshot.
@@ -389,8 +391,8 @@ class Linter:
         """
         from .rules.builtin.utils import invalidate_read_caches
 
-        all_applied: List[AutofixResult] = []
-        all_suggested: List[AutofixResult] = []
+        all_applied: List[FixOp] = []
+        all_suggested: List[FixOp] = []
 
         allowed = {AutofixConfidence.SAFE}
         if confidence == AutofixConfidence.SUGGEST:
@@ -431,9 +433,9 @@ class Linter:
 
     @staticmethod
     def apply_fixes(
-        fixes: List[AutofixResult],
+        fixes: List[FixOp],
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
-    ) -> List[AutofixResult]:
+    ) -> List[FixOp]:
         """
         Write fix results to disk.
 
@@ -447,7 +449,7 @@ class Linter:
         Returns:
             List of fixes that were actually applied
         """
-        applied: List[AutofixResult] = []
+        applied: List[FixOp] = []
         allowed = {AutofixConfidence.SAFE}
         if confidence == AutofixConfidence.SUGGEST:
             allowed.add(AutofixConfidence.SUGGEST)
@@ -459,34 +461,12 @@ class Linter:
                 continue
 
             try:
-                if fix.rename_from is not None:
-                    # Rename operation: use Path.rename() for atomicity and
-                    # safety on case-insensitive filesystems (macOS/Windows).
-                    # If the source no longer exists or the target already exists
-                    # (and isn't the same file on a case-insensitive FS), skip.
-                    src = fix.rename_from
-                    dst = fix.file_path
-                    if not src.exists():
-                        continue
-                    # On case-insensitive filesystems src and dst may resolve to
-                    # the same inode even when their names differ in casing.
-                    # Path.rename() handles this correctly, but we must not skip
-                    # a case-only rename via the ``dst.exists()`` guard.
-                    same_file = src.resolve() == dst.resolve()
-                    if dst.exists() and not same_file:
-                        continue
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    src.rename(dst)
-                    # If the content also changed, write the updated content
-                    if fix.fixed_content != fix.original_content:
-                        dst.write_text(fix.fixed_content, encoding="utf-8")
-                else:
-                    fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+                fix.apply()
             except OSError as exc:
                 logger.warning(
                     "Failed to apply fix for %s on %s: %s",
                     fix.rule_id,
-                    fix.file_path,
+                    fix.target_path,
                     exc,
                 )
                 continue

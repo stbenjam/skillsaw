@@ -731,6 +731,10 @@ class FrontmatteredBlock(LintTarget):
                 )
             )
 
+    def file_line(self, line: int) -> int:
+        """For FrontmatteredBlock, line numbers are already file-absolute."""
+        return line
+
     def field(self, name: str) -> Optional[FrontmatterField]:
         """Return the ``FrontmatterField`` child with the given key name, or ``None``."""
         for fld in self.find(FrontmatterField):
