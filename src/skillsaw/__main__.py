@@ -14,7 +14,7 @@ from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
 from .rule import AutofixConfidence, AutofixResult, Severity
-from .formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS
+from .formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS, EXTENSION_MAP
 from . import __version__
 
 _SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
@@ -131,9 +131,11 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="append",
         default=[],
         metavar="[FORMAT:]FILE",
-        help="Write output to FILE. Format is inferred from extension (.json, .sarif, .html) "
+        help="Write output to FILE. Format is inferred from extension "
+        f"({', '.join(sorted(EXTENSION_MAP))}) "
         "or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). "
-        "Can be specified multiple times.",
+        "Use the prefix when an extension is ambiguous (e.g. .json could be "
+        "json or gitlab/code-climate). Can be specified multiple times.",
     )
     lint_parser.add_argument(
         "--type",

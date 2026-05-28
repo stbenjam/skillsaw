@@ -27,6 +27,7 @@ EXTENSION_MAP = {
     ".sarif": "sarif",
     ".html": "html",
     ".htm": "html",
+    ".txt": "text",
 }
 
 _FORMAT_SET = set(FORMATS)
