@@ -586,6 +586,7 @@ def test_skill_frontmatter_malformed_yaml_reports_line(temp_dir):
 # Rule ID stability — renaming a rule breaks user configs
 # ---------------------------------------------------------------------------
 
+# Never remove an entry without a major version bump — these are public API.
 STABLE_RULE_IDS = frozenset(
     {
         "agent-frontmatter",
