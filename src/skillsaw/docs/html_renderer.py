@@ -397,7 +397,11 @@ def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag
-    data_json = json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    data_json = (
+        json.dumps(data, indent=2, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
 
     title = docs.title
     subtitle = _repo_type_label(docs.repo_type)
