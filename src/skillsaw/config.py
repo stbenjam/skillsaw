@@ -349,11 +349,14 @@ class LinterConfig:
 
         descriptions = {}
         schemas = {}
+        hidden = set()
         for rule_class in BUILTIN_RULES:
             rule = rule_class()
             descriptions[rule.rule_id] = rule.description
             if rule.config_schema:
                 schemas[rule.rule_id] = rule.config_schema
+            if rule.hidden:
+                hidden.add(rule.rule_id)
 
         with open(config_path, "w") as f:
             f.write("# skillsaw configuration\n")
@@ -362,6 +365,8 @@ class LinterConfig:
                 f.write(f'version: "{self.version}"\n\n')
             f.write("rules:\n")
             for rule_id, rule_config in self.rules.items():
+                if rule_id in hidden:
+                    continue
                 desc = descriptions.get(rule_id, "")
                 if desc:
                     f.write(f"\n  # {desc}\n")

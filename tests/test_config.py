@@ -868,8 +868,11 @@ def test_save_includes_description_comments(tmp_path):
 
     # Check a few known rule descriptions appear as comments
     assert "# Plugin must have .claude-plugin/plugin.json" in content
-    assert "# SKILL.md files should have frontmatter with name and description" in content
+    assert "# Agent files must have valid frontmatter with name and description" in content
     assert "# Detect potential API keys, tokens, and passwords in instruction files" in content
+
+    # Hidden rules should not appear in saved config
+    assert "skill-frontmatter" not in content
 
 
 def test_save_includes_config_schema_as_comments(tmp_path):

@@ -91,6 +91,7 @@ class Rule(ABC):
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"
+    hidden: bool = False
 
     def __init__(self, config: Dict[str, Any] = None):
         """
