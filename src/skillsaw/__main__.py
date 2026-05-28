@@ -464,6 +464,7 @@ def _run_lint(args):
         sys.exit(1)
 
     if args.fmt == "text":
+        print(f"skillsaw {cli_version}")
         print(f"Linting: {args.path}\n")
     context = RepositoryContext(args.path)
 
