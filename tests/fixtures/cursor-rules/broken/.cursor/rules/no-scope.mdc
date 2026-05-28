@@ -1,7 +1,0 @@
----
-description: Rule with no globs or alwaysApply
----
-
-# No Scope
-
-This rule has neither globs nor alwaysApply specified.
