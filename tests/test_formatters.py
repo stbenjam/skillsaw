@@ -72,11 +72,15 @@ def test_infer_format_known_extensions():
     assert infer_format("/tmp/path/to/report.JSON") == "json"
 
 
+def test_infer_format_txt_extension():
+    assert infer_format("report.txt") == "text"
+
+
 def test_infer_format_unknown_extension():
     import pytest
 
     with pytest.raises(ValueError, match="Cannot infer format"):
-        infer_format("report.txt")
+        infer_format("report.csv")
 
 
 # --- parse_output_spec ---
@@ -107,11 +111,15 @@ def test_parse_output_spec_unknown_prefix_falls_through():
     assert parse_output_spec("foo:report.json") == ("json", "foo:report.json")
 
 
+def test_parse_output_spec_txt_infers_text():
+    assert parse_output_spec("report.txt") == ("text", "report.txt")
+
+
 def test_parse_output_spec_unknown_extension_raises():
     import pytest
 
     with pytest.raises(ValueError, match="Cannot infer format"):
-        parse_output_spec("report.txt")
+        parse_output_spec("report.csv")
 
 
 # --- format_report dispatcher ---

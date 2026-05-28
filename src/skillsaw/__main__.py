@@ -34,18 +34,12 @@ def _get_version() -> str:
         return __version__
 
 
-def main():
-    # When no subcommand is given (or the first arg looks like a path/flag),
-    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
-    # `add` has its own argparse — dispatch before the main parser sees the args.
-    if len(sys.argv) > 1 and sys.argv[1] == "add":
-        from .marketplace.cli import _run_add_cli
+def _build_parser():
+    """Build the main argument parser with all subcommands.
 
-        return _run_add_cli()
-
-    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
-        sys.argv.insert(1, "lint")
-
+    Extracted so that documentation generators can introspect the real parser
+    without running main().
+    """
     parser = argparse.ArgumentParser(
         prog="skillsaw",
         description="Keep your skills sharp.",
@@ -93,37 +87,19 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
+    # Deprecated: use `skillsaw fix` instead. Hidden from --help.
+    lint_parser.add_argument("--fix", action="store_true", help=argparse.SUPPRESS)
     lint_parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Automatically fix violations where possible (applies safe fixes)",
+        "--llm", "--ai", action="store_true", dest="use_llm", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--llm",
-        "--ai",
-        action="store_true",
-        dest="use_llm",
-        help="Use LLM-powered fixes for content violations (requires --fix)",
+        "--dry-run", action="store_true", dest="dry_run", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="dry_run",
-        help="Preview LLM fixes without writing changes (requires --fix --llm)",
+        "--patch-file", type=Path, default=None, dest="patch_file", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--patch-file",
-        type=Path,
-        default=None,
-        dest="patch_file",
-        metavar="FILE",
-        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
-    )
-    lint_parser.add_argument(
-        "--apply-patch",
-        action="store_true",
-        dest="apply_patch",
-        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
+        "--apply-patch", action="store_true", dest="apply_patch", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
         "--format",
@@ -374,6 +350,22 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    return parser
+
+
+def main():
+    # When no subcommand is given (or the first arg looks like a path/flag),
+    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
+    # `add` has its own argparse — dispatch before the main parser sees the args.
+    if len(sys.argv) > 1 and sys.argv[1] == "add":
+        from .marketplace.cli import _run_add_cli
+
+        return _run_add_cli()
+
+    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
+        sys.argv.insert(1, "lint")
+
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "lint":
