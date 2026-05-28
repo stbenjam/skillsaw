@@ -667,7 +667,9 @@ class BodyContent(ContentBlock):
         if content is None or not content.startswith("---"):
             self.path.write_text(new_body, encoding="utf-8")
         else:
-            _, file_body, _ = parse_frontmatter(content)
+            fm, file_body, _ = parse_frontmatter(content)
+            if fm is None:
+                raise ValueError("Cannot rewrite body: frontmatter is malformed")
             fm_section = content[: len(content) - len(file_body)]
             self.path.write_text(fm_section + new_body, encoding="utf-8")
         self.body = new_body
@@ -702,6 +704,9 @@ class FrontmatteredBlock(LintTarget):
             self._build_children()
 
     def _build_children(self) -> None:
+        self.children = [
+            c for c in self.children if not isinstance(c, (FrontmatterField, BodyContent))
+        ]
         fm = self._fm_parsed[0]
         if fm:
             for key, value in fm.items():
@@ -711,6 +716,7 @@ class FrontmatteredBlock(LintTarget):
                         name=key,
                         value=value,
                         field_line=self.key_line(key),
+                        parent=self,
                     )
                 )
         body_text = self._fm_parsed[3]
@@ -721,6 +727,7 @@ class FrontmatteredBlock(LintTarget):
                     category=self.category,
                     line_offset=self._fm_parsed[4],
                     body=body_text,
+                    parent=self,
                 )
             )
 
