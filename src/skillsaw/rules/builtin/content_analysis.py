@@ -731,10 +731,22 @@ class FrontmatteredBlock(LintTarget):
                 )
             )
 
+    def field(self, name: str) -> Optional[FrontmatterField]:
+        """Return the ``FrontmatterField`` child with the given key name, or ``None``."""
+        for fld in self.find(FrontmatterField):
+            if fld.name == name:
+                return fld
+        return None
+
+    def field_value(self, name: str, default: Any = None) -> Any:
+        """Return the value of the named frontmatter field, or *default*."""
+        fld = self.field(name)
+        return fld.value if fld is not None else default
+
     @property
-    def frontmatter(self) -> Optional[Dict[str, Any]]:
+    def has_frontmatter(self) -> bool:
         self._ensure_parsed()
-        return self._fm_parsed[0]
+        return self._fm_parsed[0] is not None
 
     @property
     def frontmatter_error(self) -> Optional[str]:

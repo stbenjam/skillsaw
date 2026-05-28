@@ -6,8 +6,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.lint_target import SkillNode
-from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
@@ -38,15 +37,11 @@ class OpenclawMetadataRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for skill_node in context.lint_tree.find(SkillNode):
-            blocks = skill_node.find(SkillBlock)
-            if not blocks:
+        for block in context.lint_tree.find(SkillBlock):
+            metadata_fields = [f for f in block.find(FrontmatterField) if f.name == "metadata"]
+            if not metadata_fields:
                 continue
-            block = blocks[0]
-            if block.frontmatter_error or block.frontmatter is None:
-                continue
-
-            metadata = block.frontmatter.get("metadata")
+            metadata = metadata_fields[0].value
             if not isinstance(metadata, dict):
                 continue
 

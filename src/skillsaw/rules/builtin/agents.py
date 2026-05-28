@@ -64,20 +64,20 @@ class AgentFrontmatterRule(Rule):
                 )
                 continue
 
-            if block.frontmatter is None:
+            if not block.has_frontmatter:
                 violations.append(
                     self.violation("Missing frontmatter", file_path=block.path, block=block)
                 )
                 continue
 
-            if "name" not in block.frontmatter:
+            if not block.field("name"):
                 violations.append(
                     self.violation(
                         "Missing 'name' in frontmatter", file_path=block.path, block=block
                     )
                 )
 
-            if "description" not in block.frontmatter:
+            if not block.field("description"):
                 violations.append(
                     self.violation(
                         "Missing 'description' in frontmatter", file_path=block.path, block=block

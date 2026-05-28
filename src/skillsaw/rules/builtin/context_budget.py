@@ -136,10 +136,10 @@ class ContextBudgetRule(Rule):
             if warn_limit is None and error_limit is None:
                 continue
             for block in context.lint_tree.find(block_type):
-                fm = block.frontmatter
-                if not fm or not isinstance(fm.get("description"), str):
+                desc = block.field_value("description")
+                if not isinstance(desc, str):
                     continue
-                tokens = _estimate_tokens(fm["description"])
+                tokens = _estimate_tokens(desc)
                 if error_limit is not None and tokens > error_limit:
                     violations.append(
                         self.violation(

@@ -840,7 +840,6 @@ class TestContentBlockReadWrite:
         f = temp_dir / "test.mdc"
         f.write_text("---\ndescription: A test rule\nglobs: '*.py'\n---\nBody\n")
         block = CursorRuleBlock(path=f)
-        _ = block.frontmatter  # trigger lazy parse
         fields = block.find(FrontmatterField)
         assert len(fields) == 2
         names = {fld.name for fld in fields}
