@@ -242,8 +242,8 @@ def test_fix_both_name_and_description_missing(plugin_with_missing_both_fields):
     assert len(fixes) == 1
 
     fix = fixes[0]
-    assert "name: both-missing" in fix.fixed_content
-    assert "description: " in fix.fixed_content
+    assert "name: both-missing" in fix.fixed_fm
+    assert "description: " in fix.fixed_fm
     # Both violations should be covered by the single fix
     assert len(fix.violations_fixed) == 2
 

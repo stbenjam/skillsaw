@@ -1170,13 +1170,14 @@ def test_rename_refs_autofix_markdown(temp_dir):
     violations = rule.check(context)
     fixes = rule.fix(context, violations)
 
-    ref_fixes = [f for f in fixes if f.file_path.name == "guide.md"]
+    ref_fixes = [f for f in fixes if f.target_path.name == "guide.md"]
     assert len(ref_fixes) == 1
-    from skillsaw.rule import AutofixConfidence
+    from skillsaw.rule import AutofixConfidence, BodyFix
 
     assert ref_fixes[0].confidence == AutofixConfidence.SUGGEST
-    assert "eat-potato" in ref_fixes[0].fixed_content
-    assert "Eat-Potato" not in ref_fixes[0].fixed_content
+    assert isinstance(ref_fixes[0], BodyFix)
+    assert "eat-potato" in ref_fixes[0].fixed_body
+    assert "Eat-Potato" not in ref_fixes[0].fixed_body
 
 
 def test_rename_refs_autofix_evals(temp_dir):
@@ -1198,8 +1199,11 @@ def test_rename_refs_autofix_evals(temp_dir):
     violations = rule.check(context)
     fixes = rule.fix(context, violations)
 
-    evals_fixes = [f for f in fixes if f.file_path.name == "evals.json"]
+    evals_fixes = [f for f in fixes if f.target_path.name == "evals.json"]
     assert len(evals_fixes) == 1
+    from skillsaw.rule import FileFix
+
+    assert isinstance(evals_fixes[0], FileFix)
     assert "eat-potato" in evals_fixes[0].fixed_content
     assert "Eat-Potato" not in evals_fixes[0].fixed_content
 

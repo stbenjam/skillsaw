@@ -2,14 +2,13 @@
 Rule for validating agent file frontmatter
 """
 
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.rule import Rule, RuleViolation, Severity, FixOp, AutofixConfidence
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.content_analysis import AgentBlock
+from skillsaw.rules.builtin.content_analysis import AgentBlock, FrontmatteredBlock
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -88,12 +87,9 @@ class AgentFrontmatterRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
-        results: List[AutofixResult] = []
+    ) -> List[FixOp]:
+        results: List[FixOp] = []
 
-        # Group violations by file path so we can apply all fixes for the same
-        # file in a single AutofixResult, avoiding conflicts when multiple
-        # fields are missing.
         by_file: defaultdict[Path, List[RuleViolation]] = defaultdict(list)
         for v in violations:
             if v.file_path:
@@ -103,54 +99,44 @@ class AgentFrontmatterRule(Rule):
             if not file_path.exists():
                 continue
 
-            original = read_text(file_path)
-            if original is None:
-                continue
             messages = {v.message for v in file_violations}
+            block = next(
+                (v.block for v in file_violations if isinstance(v.block, FrontmatteredBlock)),
+                None,
+            )
 
-            # Case 1: Missing frontmatter block entirely
             if any("Missing frontmatter" in m for m in messages):
+                original = read_text(file_path)
+                if original is None:
+                    continue
                 name = file_path.stem
-                fixed = f"---\nname: {name}\ndescription: \n---\n{original}"
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description="Added missing frontmatter to agent file",
-                        violations_fixed=file_violations,
-                    )
-                )
+                results.append(self.file_fix(
+                    file_path=file_path,
+                    original_content=original,
+                    fixed_content=f"---\nname: {name}\ndescription: \n---\n{original}",
+                    description="Added missing frontmatter to agent file",
+                    violations=file_violations,
+                ))
                 continue
 
-            # Case 2: Frontmatter exists but fields are missing — collect all
-            # missing fields and produce one combined fix.
+            if block is None:
+                continue
             missing_name = any("Missing 'name'" in m for m in messages)
             missing_desc = any("Missing 'description'" in m for m in messages)
-            if (missing_name or missing_desc) and original.startswith("---"):
-                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
-                if fm_match:
-                    fm_text = fm_match.group(1)
-                    additions = []
-                    if missing_name and "name:" not in fm_text:
-                        additions.append(f"name: {file_path.stem}")
-                    if missing_desc and "description:" not in fm_text:
-                        additions.append("description: ")
-                    if additions:
-                        insert = "\n".join(additions) + "\n"
-                        fixed = original[: fm_match.end()].replace("\n---", f"\n{insert}---", 1)
-                        fixed += original[fm_match.end() :]
-                        results.append(
-                            AutofixResult(
-                                rule_id=self.rule_id,
-                                file_path=file_path,
-                                confidence=AutofixConfidence.SAFE,
-                                original_content=original,
-                                fixed_content=fixed,
-                                description="Added missing fields to agent frontmatter",
-                                violations_fixed=file_violations,
-                            )
-                        )
+            if missing_name or missing_desc:
+                original_fm = block.read_frontmatter_text()
+                additions = []
+                if missing_name and "name:" not in original_fm:
+                    additions.append(f"name: {file_path.stem}")
+                if missing_desc and "description:" not in original_fm:
+                    additions.append("description: ")
+                if additions:
+                    fixed_fm = original_fm.rstrip("\n") + "\n" + "\n".join(additions) + "\n"
+                    results.append(self.frontmatter_fix(
+                        block=block,
+                        original_fm=original_fm,
+                        fixed_fm=fixed_fm,
+                        description="Added missing fields to agent frontmatter",
+                        violations=file_violations,
+                    ))
         return results

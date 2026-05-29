@@ -1,12 +1,11 @@
 """AgentSkill SKILL.md validation rule"""
 
-import re
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
+from skillsaw.rule import Rule, RuleViolation, FixOp, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
-from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.content_analysis import SkillBlock, FrontmatteredBlock
 
 from ._helpers import NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH, COMPATIBILITY_MAX_LENGTH, _to_kebab
 
@@ -63,32 +62,27 @@ class AgentSkillValidRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
-        results: List[AutofixResult] = []
+    ) -> List[FixOp]:
+        results: List[FixOp] = []
         for v in violations:
-            if not v.file_path or not v.file_path.exists():
-                continue
             if "Missing required 'name'" not in v.message:
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
-            dir_name = v.file_path.parent.name
+            block = v.block if isinstance(v.block, FrontmatteredBlock) else None
+            if block is None or not block.path.exists():
+                continue
+            original_fm = block.read_frontmatter_text()
+            if not original_fm and not block.has_frontmatter:
+                continue
+            dir_name = block.path.parent.name
             kebab_name = _to_kebab(dir_name)
-            match = re.match(r"^---\s*\n(.*?)\n---", original, re.DOTALL)
-            if match:
-                fm_text = match.group(1)
-                new_fm = f"name: {kebab_name}\n{fm_text}"
-                fixed = f"---\n{new_fm}\n---" + original[match.end() :]
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=v.file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description=f"Added name '{kebab_name}' from directory name",
-                        violations_fixed=[v],
-                    )
-                )
+            fixed_fm = f"name: {kebab_name}\n{original_fm}"
+            results.append(self.frontmatter_fix(
+                block=block,
+                original_fm=original_fm,
+                fixed_fm=fixed_fm,
+                description=f"Added name '{kebab_name}' from directory name",
+                violations=[v],
+            ))
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

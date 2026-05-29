@@ -24,6 +24,7 @@ from ruamel.yaml import YAML as _RuamelYAML
 
 from skillsaw.rules.builtin.utils import (
     read_text,
+    invalidate_read_caches,
     parse_frontmatter,
     extract_section,
     frontmatter_key_line as _frontmatter_key_line,
@@ -283,6 +284,7 @@ class FileContentBlock(ContentBlock):
 
     def write_body(self, new_body: str) -> None:
         self.path.write_text(new_body, encoding="utf-8")
+        invalidate_read_caches(self.path)
 
 
 @dataclass(eq=False)
@@ -333,6 +335,7 @@ class CodeRabbitContentBlock(ContentBlock):
         buf = StringIO()
         ruyaml.dump(data, buf)
         self.path.write_text(buf.getvalue(), encoding="utf-8")
+        invalidate_read_caches(self.path)
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
@@ -524,6 +527,7 @@ class PromptfooPromptBlock(ContentBlock):
         buf = StringIO()
         ruyaml.dump(data, buf)
         self.path.write_text(buf.getvalue(), encoding="utf-8")
+        invalidate_read_caches(self.path)
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
@@ -663,7 +667,10 @@ class BodyContent(ContentBlock):
         return body
 
     def write_body(self, new_body: str) -> None:
-        content = read_text(self.path)
+        try:
+            content = self.path.read_text(encoding="utf-8")
+        except OSError:
+            content = None
         if content is None or not content.startswith("---"):
             self.path.write_text(new_body, encoding="utf-8")
         else:
@@ -672,6 +679,7 @@ class BodyContent(ContentBlock):
                 raise ValueError("Cannot rewrite body: frontmatter is malformed")
             fm_section = content[: len(content) - len(file_body)]
             self.path.write_text(fm_section + new_body, encoding="utf-8")
+        invalidate_read_caches(self.path)
         self.body = new_body
 
     def tree_label(self) -> str:
@@ -808,9 +816,13 @@ class FrontmatteredBlock(LintTarget):
 
         fm = new_fm_text.rstrip("\n") + "\n"
 
-        content = read_text(self.path)
+        try:
+            content = self.path.read_text(encoding="utf-8")
+        except OSError:
+            content = None
         if not content:
             self.path.write_text(f"---\n{fm}---\n", encoding="utf-8")
+            invalidate_read_caches(self.path)
             self._fm_parsed = None
             return
 
@@ -835,6 +847,7 @@ class FrontmatteredBlock(LintTarget):
                 self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
         else:
             self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
+        invalidate_read_caches(self.path)
         self._fm_parsed = None
 
 

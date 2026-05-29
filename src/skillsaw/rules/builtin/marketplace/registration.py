@@ -5,7 +5,7 @@ Rule: marketplace-registration
 import json
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.rule import Rule, RuleViolation, Severity, FixOp, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 
@@ -55,8 +55,8 @@ class MarketplaceRegistrationRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
-        results: List[AutofixResult] = []
+    ) -> List[FixOp]:
+        results: List[FixOp] = []
         if not violations:
             return results
 
@@ -98,16 +98,13 @@ class MarketplaceRegistrationRule(Rule):
 
         if fixed_violations:
             fixed = json.dumps(data, indent=2) + "\n"
-            results.append(
-                AutofixResult(
-                    rule_id=self.rule_id,
-                    file_path=marketplace_file,
-                    confidence=AutofixConfidence.SUGGEST,
-                    original_content=original,
-                    fixed_content=fixed,
-                    description=f"Registered {len(fixed_violations)} plugin(s) in marketplace.json",
-                    violations_fixed=fixed_violations,
-                )
-            )
+            results.append(self.file_fix(
+                file_path=marketplace_file,
+                original_content=original,
+                fixed_content=fixed,
+                description=f"Registered {len(fixed_violations)} plugin(s) in marketplace.json",
+                violations=fixed_violations,
+                confidence=AutofixConfidence.SUGGEST,
+            ))
 
         return results

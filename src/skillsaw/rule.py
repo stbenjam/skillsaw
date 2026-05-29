@@ -164,8 +164,11 @@ class FileFix(FixOp):
         return self.file_path
 
     def apply(self) -> None:
+        from .rules.builtin.utils import invalidate_read_caches
+
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.file_path.write_text(self.fixed_content, encoding="utf-8")
+        invalidate_read_caches(self.file_path)
 
     def diff(self, root: Optional[Path] = None) -> str:
         return _unified_diff(self.original_content, self.fixed_content, self.file_path, root)
@@ -184,6 +187,8 @@ class RenameFix(FixOp):
         return self.file_path
 
     def apply(self) -> None:
+        from .rules.builtin.utils import invalidate_read_caches
+
         src, dst = self.rename_from, self.file_path
         if not src.exists():
             return
@@ -192,6 +197,8 @@ class RenameFix(FixOp):
             return
         dst.parent.mkdir(parents=True, exist_ok=True)
         src.rename(dst)
+        invalidate_read_caches(src)
+        invalidate_read_caches(dst)
 
     def diff(self, root: Optional[Path] = None) -> str:
         return ""

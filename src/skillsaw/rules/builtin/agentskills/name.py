@@ -3,10 +3,10 @@
 import re
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
+from skillsaw.rule import Rule, RuleViolation, FixOp, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
-from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.content_analysis import SkillBlock, FrontmatteredBlock
 
 from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
 
@@ -91,33 +91,30 @@ class AgentSkillNameRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
-        results: List[AutofixResult] = []
+    ) -> List[FixOp]:
+        results: List[FixOp] = []
         for v in violations:
-            if not v.file_path or not v.file_path.exists():
+            block = v.block if isinstance(v.block, FrontmatteredBlock) else None
+            if block is None or not block.path.exists():
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
-            match = re.search(r"^name:\s*(.+)$", original, re.MULTILINE)
+            original_fm = block.read_frontmatter_text()
+            match = re.search(r"^name:\s*(.+)$", original_fm, re.MULTILINE)
             if not match:
                 continue
             old_name = match.group(1).strip()
             if "does not match directory" in v.message:
-                new_name = v.file_path.parent.name
+                new_name = block.path.parent.name
             else:
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed = original[: match.start()] + f"name: {new_name}" + original[match.end() :]
-            results.append(
-                AutofixResult(
-                    rule_id=self.rule_id,
-                    file_path=v.file_path,
-                    confidence=AutofixConfidence.SAFE,
-                    original_content=original,
-                    fixed_content=fixed,
-                    description=f"Renamed '{old_name}' to '{new_name}'",
-                    violations_fixed=[v],
-                )
-            )
+            fixed_fm = original_fm[: match.start()] + f"name: {new_name}" + original_fm[match.end() :]
+            results.append(self.frontmatter_fix(
+                block=block,
+                original_fm=original_fm,
+                fixed_fm=fixed_fm,
+                description=f"Renamed '{old_name}' to '{new_name}'",
+                violations=[v],
+            ))
             _add_rename(context.root_path, old_name, new_name)
         return results

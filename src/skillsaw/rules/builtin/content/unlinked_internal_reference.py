@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path, PurePath
 from typing import Dict, List
 
-from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
+from skillsaw.rule import AutofixConfidence, FixOp, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -110,27 +110,29 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
-    ) -> List[AutofixResult]:
-        fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
+    ) -> List[FixOp]:
+        fixes_by_block: Dict[int, List[tuple]] = defaultdict(list)
+        block_map: Dict[int, object] = {}
         for v in violations:
-            if not v.file_path or "autofixable" not in v.message:
+            if not v.block or "autofixable" not in v.message:
                 continue
             path_str = v.message.split("'")[1]
-            fixes_by_file[v.file_path].append((path_str, v))
+            key = id(v.block)
+            fixes_by_block[key].append((path_str, v))
+            block_map[key] = v.block
 
-        results: List[AutofixResult] = []
-        for fpath, replacements in fixes_by_file.items():
-            try:
-                content = fpath.read_text(encoding="utf-8")
-            except OSError:
+        results: List[FixOp] = []
+        for key, replacements in fixes_by_block.items():
+            block = block_map[key]
+            body = block.read_body(strip_code_blocks=False)
+            if body is None:
                 continue
-            lines = content.splitlines(True)
+            lines = body.splitlines(True)
             violations_fixed = []
             for path_str, v in replacements:
-                fl = v.file_line
-                if fl is None:
+                if v.line is None:
                     continue
-                idx = fl - 1
+                idx = v.line - 1
                 if idx < 0 or idx >= len(lines):
                     continue
                 line = lines[idx]
@@ -155,17 +157,13 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                         violations_fixed.append(v)
                         break
                     pos = end
-            fixed = "".join(lines)
-            if fixed != content:
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=fpath,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=content,
-                        fixed_content=fixed,
-                        description=f"Wrap {len(violations_fixed)} bare path(s) in markdown link syntax",
-                        violations_fixed=violations_fixed,
-                    )
-                )
+            fixed_body = "".join(lines)
+            if fixed_body != body:
+                results.append(self.body_fix(
+                    block=block,
+                    original_body=body,
+                    fixed_body=fixed_body,
+                    description=f"Wrap {len(violations_fixed)} bare path(s) in markdown link syntax",
+                    violations=violations_fixed,
+                ))
         return results

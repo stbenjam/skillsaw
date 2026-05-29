@@ -1161,7 +1161,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SAFE
-        assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_content
+        assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_body
 
     def test_no_autofix_for_nonexistent_path(self, temp_dir):
         """Bare paths to nonexistent files should not be autofixed."""
@@ -1188,7 +1188,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(violations) == 2
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert fixed.count("[`scripts/test.py`](scripts/test.py)") == 2
         assert "[[" not in fixed
 
@@ -1207,7 +1207,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(violations) == 3
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert fixed.count("[src/main.py](src/main.py)") == 3
         assert "[[src/main.py]" not in fixed
         assert "](src/main.py)](src/main.py)" not in fixed
@@ -1231,7 +1231,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(violations) == 3
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert "[docs/guide.md](docs/guide.md)" in fixed
         assert "[scripts/run.sh](scripts/run.sh)" in fixed
         assert "[src/app.py](src/app.py)" in fixed
@@ -1252,7 +1252,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(autofixable) == 1
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert "[src/real.py](src/real.py)" in fixed
         assert "src/fake.py" in fixed
         assert "[src/fake.py]" not in fixed
@@ -1275,7 +1275,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(violations) == 4
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert fixed.count("[src/main.py](src/main.py)") == 2
         assert fixed.count("[docs/api.md](docs/api.md)") == 2
         assert "[[" not in fixed
@@ -1294,15 +1294,15 @@ class TestContentUnlinkedInternalReferenceAutofix:
         violations = rule.check(context)
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        first_fixed = fixes[0].fixed_content
+        first_fixed = fixes[0].fixed_body
         assert first_fixed.count("[src/main.py](src/main.py)") == 2
         assert "[[" not in first_fixed
-        fixes[0].file_path.write_text(first_fixed, encoding="utf-8")
+        fixes[0].apply()
         context2 = RepositoryContext(temp_dir)
         violations2 = rule.check(context2)
         fixes2 = rule.fix(context2, violations2)
         if fixes2:
-            assert fixes2[0].fixed_content == first_fixed
+            assert fixes2[0].fixed_body == first_fixed
 
     def test_autofix_skips_backtick_paths(self, temp_dir):
         """Paths inside backtick spans should not be modified by autofix."""
@@ -1319,7 +1319,7 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert "prompts/analyze-skill.md" in violations[0].message
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        fixed = fixes[0].fixed_content
+        fixed = fixes[0].fixed_body
         assert "`${CLAUDE_SKILL_DIR}/prompts/analyze-skill.md`" in fixed
         assert "[prompts/analyze-skill.md](prompts/analyze-skill.md)" in fixed
 
@@ -1362,7 +1362,7 @@ class TestContentBrokenInternalReferenceAutofix:
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SUGGEST
-        assert "docs/setpu.md" not in fixes[0].fixed_content
+        assert "docs/setpu.md" not in fixes[0].fixed_body
 
     def test_supports_autofix_property(self):
         rule = ContentBrokenInternalReferenceRule()

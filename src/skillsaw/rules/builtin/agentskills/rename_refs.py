@@ -4,7 +4,7 @@ import json
 import re
 from typing import List, Optional
 
-from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
+from skillsaw.rule import Rule, RuleViolation, FixOp, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
@@ -53,25 +53,18 @@ class AgentSkillRenameRefsRule(Rule):
         referenced_olds: set[str] = set()
 
         for block in gather_all_content_blocks(context):
-            try:
-                content = block.path.read_text(encoding="utf-8")
-            except OSError:
+            body = block.read_body(strip_code_blocks=False)
+            if not body:
                 continue
             for rename in renames:
                 old, new = rename["old"], rename["new"]
-                if old not in content:
+                if old not in body:
                     continue
-                if block.path.name == "SKILL.md":
-                    fm_match = re.search(r"^name:\s*(.+)$", content, re.MULTILINE)
-                    if fm_match and fm_match.group(1).strip() == new:
-                        body_after_fm = content[fm_match.end() :]
-                        if old not in body_after_fm:
-                            continue
-                line = self._find_line(content, old)
+                line = self._find_line(body, old)
                 violations.append(
                     self.violation(
                         f"Stale reference to renamed skill '{old}' " f"(renamed to '{new}')",
-                        file_path=block.path,
+                        block=block,
                         line=line,
                     )
                 )
@@ -110,25 +103,21 @@ class AgentSkillRenameRefsRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
+    ) -> List[FixOp]:
         renames = _read_renames_manifest(context.root_path)
         if not renames:
             return []
 
         rename_map = {r["old"]: r["new"] for r in renames}
-        results: List[AutofixResult] = []
+        results: List[FixOp] = []
 
         for v in violations:
             if not v.file_path or not v.file_path.exists():
                 continue
 
-            try:
-                original = v.file_path.read_text(encoding="utf-8")
-            except OSError:
-                continue
-
             if v.file_path.name == "evals.json":
                 try:
+                    original = v.file_path.read_text(encoding="utf-8")
                     data = json.loads(original)
                     sk = data.get("skill_name", "")
                     if sk in rename_map:
@@ -136,10 +125,22 @@ class AgentSkillRenameRefsRule(Rule):
                         fixed = json.dumps(data, indent=2) + "\n"
                     else:
                         continue
-                except (json.JSONDecodeError, KeyError):
+                except (json.JSONDecodeError, KeyError, OSError):
                     continue
-            elif v.line:
-                lines = original.splitlines(keepends=True)
+                if fixed != original:
+                    results.append(self.file_fix(
+                        file_path=v.file_path,
+                        original_content=original,
+                        fixed_content=fixed,
+                        description=f"Updated skill name in {v.file_path.name}",
+                        violations=[v],
+                        confidence=AutofixConfidence.SUGGEST,
+                    ))
+            elif v.block and v.line:
+                body = v.block.read_body(strip_code_blocks=False)
+                if body is None:
+                    continue
+                lines = body.splitlines(keepends=True)
                 idx = v.line - 1
                 if idx < 0 or idx >= len(lines):
                     continue
@@ -149,23 +150,15 @@ class AgentSkillRenameRefsRule(Rule):
                 if line == lines[idx]:
                     continue
                 lines[idx] = line
-                fixed = "".join(lines)
-            else:
-                continue
-
-            if fixed == original:
-                continue
-
-            results.append(
-                AutofixResult(
-                    rule_id=self.rule_id,
-                    file_path=v.file_path,
-                    confidence=AutofixConfidence.SUGGEST,
-                    original_content=original,
-                    fixed_content=fixed,
-                    description=f"Updated skill name references in {v.file_path.name}",
-                    violations_fixed=[v],
-                )
-            )
+                fixed_body = "".join(lines)
+                if fixed_body != body:
+                    results.append(self.body_fix(
+                        block=v.block,
+                        original_body=body,
+                        fixed_body=fixed_body,
+                        description=f"Updated skill name references in {v.file_path.name}",
+                        violations=[v],
+                        confidence=AutofixConfidence.SUGGEST,
+                    ))
 
         return results

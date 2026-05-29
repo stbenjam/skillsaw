@@ -497,8 +497,8 @@ class TestSkillFixBothFieldsMissing:
         assert len(fixes) == 1
 
         fix = fixes[0]
-        assert "name: my-skill" in fix.fixed_content
-        assert "description: " in fix.fixed_content
+        assert "name: my-skill" in fix.fixed_fm
+        assert "description: " in fix.fixed_fm
         assert len(fix.violations_fixed) == 2
 
     def test_skill_fix_single_field_still_works(self, temp_dir):
@@ -528,8 +528,8 @@ class TestSkillFixBothFieldsMissing:
 
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        assert "description: " in fixes[0].fixed_content
-        assert "name: my-skill" in fixes[0].fixed_content
+        assert "description: " in fixes[0].fixed_fm
+        assert "name: my-skill" in fixes[0].fixed_fm
 
 
 class TestAgentFixBothFieldsMissing:
@@ -565,8 +565,8 @@ class TestAgentFixBothFieldsMissing:
         assert len(fixes) == 1
 
         fix = fixes[0]
-        assert "name: my-agent" in fix.fixed_content
-        assert "description: " in fix.fixed_content
+        assert "name: my-agent" in fix.fixed_fm
+        assert "description: " in fix.fixed_fm
         assert len(fix.violations_fixed) == 2
 
     def test_agent_fix_single_field_still_works(self, temp_dir):
@@ -593,8 +593,8 @@ class TestAgentFixBothFieldsMissing:
 
         fixes = rule.fix(context, violations)
         assert len(fixes) == 1
-        assert "description: " in fixes[0].fixed_content
-        assert "name: my-agent" in fixes[0].fixed_content
+        assert "description: " in fixes[0].fixed_fm
+        assert "name: my-agent" in fixes[0].fixed_fm
 
 
 def _make_plugin(tmp_path, plugin_name, command_files):

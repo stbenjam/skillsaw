@@ -1,10 +1,11 @@
 """Command frontmatter validation rule"""
 
-import re
 from typing import List
 
-from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.rule import Rule, RuleViolation, Severity, FixOp, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.content_analysis import FrontmatteredBlock
+from skillsaw.rules.builtin.utils import read_text
 
 
 class CommandFrontmatterRule(Rule):
@@ -52,40 +53,31 @@ class CommandFrontmatterRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[AutofixResult]:
-        results: List[AutofixResult] = []
+    ) -> List[FixOp]:
+        results: List[FixOp] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
+            block = v.block if isinstance(v.block, FrontmatteredBlock) else None
             if "Missing frontmatter" in v.message:
-                fixed = f"---\ndescription: \n---\n{original}"
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=v.file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description="Added missing frontmatter with description field",
-                        violations_fixed=[v],
-                    )
-                )
-            elif "Missing 'description'" in v.message and original.startswith("---"):
-                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
-                if fm_match:
-                    fm_end = fm_match.end()
-                    fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
-                    fixed += original[fm_end:]
-                    results.append(
-                        AutofixResult(
-                            rule_id=self.rule_id,
-                            file_path=v.file_path,
-                            confidence=AutofixConfidence.SAFE,
-                            original_content=original,
-                            fixed_content=fixed,
-                            description="Added missing description field to frontmatter",
-                            violations_fixed=[v],
-                        )
-                    )
+                original = read_text(v.file_path)
+                if original is None:
+                    continue
+                results.append(self.file_fix(
+                    file_path=v.file_path,
+                    original_content=original,
+                    fixed_content=f"---\ndescription: \n---\n{original}",
+                    description="Added missing frontmatter with description field",
+                    violations=[v],
+                ))
+            elif "Missing 'description'" in v.message and block is not None:
+                original_fm = block.read_frontmatter_text()
+                fixed_fm = original_fm.rstrip("\n") + "\ndescription: \n"
+                results.append(self.frontmatter_fix(
+                    block=block,
+                    original_fm=original_fm,
+                    fixed_fm=fixed_fm,
+                    description="Added missing description field to frontmatter",
+                    violations=[v],
+                ))
         return results

@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
+from skillsaw.rule import AutofixConfidence, FixOp, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -130,29 +130,30 @@ class ContentBrokenInternalReferenceRule(Rule):
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
-    ) -> List[AutofixResult]:
-        root = context.root_path.resolve()
-        fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
+    ) -> List[FixOp]:
+        fixes_by_block: Dict[int, List[tuple]] = defaultdict(list)
+        block_map: Dict[int, object] = {}
         for v in violations:
-            if not v.file_path or "did you mean" not in v.message:
+            if not v.block or "did you mean" not in v.message:
                 continue
             suggestion = v.message.split("did you mean '")[1].rstrip("'?)")
             old_target = v.message.split("](")[1].split(")")[0]
-            fixes_by_file[v.file_path].append((old_target, suggestion, v))
+            key = id(v.block)
+            fixes_by_block[key].append((old_target, suggestion, v))
+            block_map[key] = v.block
 
-        results: List[AutofixResult] = []
-        for fpath, replacements in fixes_by_file.items():
-            try:
-                content = fpath.read_text(encoding="utf-8")
-            except OSError:
+        results: List[FixOp] = []
+        for key, replacements in fixes_by_block.items():
+            block = block_map[key]
+            body = block.read_body(strip_code_blocks=False)
+            if body is None:
                 continue
-            lines = content.splitlines(True)
+            lines = body.splitlines(True)
             violations_fixed = []
             for old_target, suggestion, v in replacements:
-                fl = v.file_line
-                if fl is None:
+                if v.line is None:
                     continue
-                idx = fl - 1
+                idx = v.line - 1
                 if idx < 0 or idx >= len(lines):
                     continue
                 old_frag = f"]({old_target})"
@@ -160,17 +161,14 @@ class ContentBrokenInternalReferenceRule(Rule):
                 if old_frag in lines[idx]:
                     lines[idx] = lines[idx].replace(old_frag, new_frag, 1)
                     violations_fixed.append(v)
-            fixed = "".join(lines)
-            if fixed != content:
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=fpath,
-                        confidence=AutofixConfidence.SUGGEST,
-                        original_content=content,
-                        fixed_content=fixed,
-                        description=f"Fix {len(violations_fixed)} broken link(s) with likely matches",
-                        violations_fixed=violations_fixed,
-                    )
-                )
+            fixed_body = "".join(lines)
+            if fixed_body != body:
+                results.append(self.body_fix(
+                    block=block,
+                    original_body=body,
+                    fixed_body=fixed_body,
+                    description=f"Fix {len(violations_fixed)} broken link(s) with likely matches",
+                    violations=violations_fixed,
+                    confidence=AutofixConfidence.SUGGEST,
+                ))
         return results
