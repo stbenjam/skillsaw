@@ -197,7 +197,60 @@ skillsaw:
 If the user declines CI setup, skip this step. Mention they can set it up later
 by following the skillsaw CI documentation.
 
-## Step 8: Final verification
+## Step 8: Makefile targets
+
+Ask the user if they want Makefile targets for running skillsaw locally. If
+they decline, skip to Step 9.
+
+First, look up the latest skillsaw version to pin against:
+
+```
+curl -s https://pypi.org/pypi/skillsaw/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
+```
+
+If `curl` or `python3` is unavailable, fall back to:
+
+```
+git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k3 -V | tail -1
+```
+
+Ask the user whether they prefer **uvx** or **podman/docker** for the targets.
+
+### uvx targets
+
+```makefile
+SKILLSAW_VERSION := <LATEST_VERSION>
+
+.PHONY: lint lint-fix
+lint:
+	uvx skillsaw==$(SKILLSAW_VERSION) --strict
+
+lint-fix:
+	uvx skillsaw==$(SKILLSAW_VERSION) fix
+```
+
+### podman/docker targets
+
+Use whichever container runtime is installed. Pin to the version tag, not
+`latest`:
+
+```makefile
+SKILLSAW_VERSION := <LATEST_VERSION>
+CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || echo docker)
+
+.PHONY: lint lint-fix
+lint:
+	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:v$(SKILLSAW_VERSION) --strict
+
+lint-fix:
+	$(CONTAINER_ENGINE) run --rm -v $$(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw:v$(SKILLSAW_VERSION) fix
+```
+
+If a `Makefile` already exists, append the targets. If not, create one. In
+either case, do not overwrite existing `lint` or `lint-fix` targets — if they
+already exist, ask the user what names to use instead (e.g. `skillsaw-lint`).
+
+## Step 9: Final verification
 
 Run `skillsaw` one final time and confirm the repo passes (exit 0). Summarize
 what was done:
@@ -207,6 +260,7 @@ what was done:
 - Number fixed manually
 - Number baselined
 - CI setup (if any)
+- Makefile targets (if any)
 - Files created or modified
 
 Remind the user to commit all new/changed files:
@@ -215,4 +269,5 @@ Remind the user to commit all new/changed files:
 - `.github/workflows/lint.yml` (if created)
 - `.github/workflows/lint-review.yml` (if created)
 - `.gitlab-ci.yml` (if modified)
+- `Makefile` (if created or modified)
 - Any files that were fixed
