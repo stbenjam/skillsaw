@@ -149,6 +149,29 @@ skillsaw add skill my-skill
 
 See the [CLI Reference](cli.md) for all flags and options.
 
+## Onboarding with AI
+
+The **skillsaw-onboard** skill automates the entire adoption process — it
+installs skillsaw, runs the linter, applies autofixes, manually fixes
+remaining violations, sets up CI, and creates a baseline. Your AI coding
+agent handles everything interactively.
+
+=== "Claude Code"
+
+    Install the skillsaw plugin, then run the skill:
+
+    ```bash
+    claude install-plugin stbenjam/skillsaw
+    ```
+
+    Then in Claude Code, type `/skillsaw-onboard` to start.
+
+=== "Other AI coding agents"
+
+    The skillsaw-onboard skill follows the
+    [agentskills.io](https://agentskills.io) specification. Refer to your
+    coding agent's documentation for how to install and use agentskills.
+
 ## What's Next?
 
 - Learn about [Repository Types](repo-types.md) that skillsaw detects
