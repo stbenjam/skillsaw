@@ -5,5 +5,5 @@
   "author": {
     "name": "stbenjam"
   },
-  "skills": "../skills"
+  "skills": "./skills/"
 }
