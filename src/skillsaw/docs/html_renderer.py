@@ -397,7 +397,11 @@ def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag
-    data_json = json.dumps(data, indent=None).replace("<", "\\u003c").replace(">", "\\u003e")
+    data_json = (
+        json.dumps(data, indent=2, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
 
     title = docs.title
     subtitle = _repo_type_label(docs.repo_type)
@@ -736,7 +740,12 @@ def _get_js() -> str:
     var nr = document.getElementById('no-results');
     var html = '';
     var typeLabels = {plugins:'Plugins',commands:'Commands',skills:'Skills',agents:'Agents',hooks:'Hooks',mcp_servers:'MCP Servers',rules:'Rules'};
-    var label = typeLabels[type] || type;
+    if (!typeLabels[type]) {
+      el.innerHTML = '';
+      nr.classList.add('show');
+      return;
+    }
+    var label = typeLabels[type];
 
     if (type === 'plugins' && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
@@ -762,7 +771,7 @@ def _get_js() -> str:
         items.forEach(function(r) {
           var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
           html += '<div class="search-result-item"'+onclick+'>';
-          html += '<div class="search-result-icon '+r.icon+'">'+r.iconChar+'</div>';
+          html += '<div class="search-result-icon '+esc(r.icon)+'">'+esc(r.iconChar)+'</div>';
           html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
           html += '<div class="search-result-subtitle">'+esc(r.desc)+'</div></div>';
           if (r.plugin) html += '<span class="search-result-plugin">'+esc(r.plugin)+'</span>';

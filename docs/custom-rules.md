@@ -6,6 +6,12 @@ built-in rules operate on — to discover files instead of walking the
 filesystem directly.  Run `skillsaw tree` to see what nodes your repo
 contains (see [Lint Tree](lint-tree.md) for details).
 
+!!! tip "Let an LLM write your rule"
+    Point your AI coding assistant at the
+    [skillsaw repo](https://github.com/stbenjam/skillsaw) and
+    [these docs](https://skillsaw.org), then describe what you want to
+    check — it can produce a working custom rule in a single prompt.
+
 ## Example: flag TODO comments in instruction files
 
 This rule finds every instruction file node in the tree (CLAUDE.md,
@@ -146,10 +152,3 @@ For a more complete example — including a config schema, promptfoo eval
 validation, and test fixtures — see the
 [`examples/custom-rules/`](https://github.com/stbenjam/skillsaw/tree/main/examples/custom-rules)
 directory.
-
-!!! tip "Let an LLM write your rule"
-    Custom rules follow a predictable pattern — give an LLM the `Rule` base
-    class, a few examples, and describe what you want to check. Claude, GPT,
-    and Gemini can all produce working skillsaw rules in a single prompt. Start
-    with `skillsaw tree` output so the LLM knows which node types are available
-    in your repo.

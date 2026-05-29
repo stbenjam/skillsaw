@@ -1,44 +1,25 @@
-[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/)
-[![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Versions](https://img.shields.io/pypi/pyversions/skillsaw.svg)](https://pypi.org/project/skillsaw/)
-
 <table><tr>
 <td width="200" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="200"></td>
 <td valign="top">
 
 ### skillsaw
 
-Keep your skills sharp. A linter with built-in content intelligence for [agentskills.io](https://agentskills.io) skills, [Claude Code](https://docs.claude.com/en/docs/claude-code) [plugins](https://docs.claude.com/en/docs/claude-code/plugins), and [plugin marketplaces](https://docs.claude.com/en/docs/claude-code/plugin-marketplaces). Analyzes instruction file quality using attention research, detects weak language and contradictions, and auto-fixes violations with any LLM.
+Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
 
-📖 **[Full documentation at skillsaw.org](https://skillsaw.org)**
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 </td>
 </tr></table>
 
-> Formerly named `claudelint`. If you're migrating, see [Migrating from claudelint](#migrating-from-claudelint).
+[![skillsaw demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif)](https://asciinema.org/a/uQ9xfM5S1SXcd777)
 
-## Features
-
-- 🧠 **Content Intelligence** — [Research-backed](docs/designs/content-rules-research.md) rules that catch [weak language](#content-intelligence), [tautological instructions](https://arxiv.org/abs/2407.01906), [attention dead zones](https://arxiv.org/abs/2307.03172), embedded secrets, contradictions, and more
-- 🔧 **LLM Autofix** — Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint, per-file rollback
-- 🔍 **Context-Aware** — Auto-detects repo type and instruction formats (CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro)
-- 📐 **40+ Rules** — Validates structure, metadata, commands, cross-file consistency, context budget, and content quality
-- 🏗️ **Scaffolding** — `skillsaw add` generates plugins, skills, commands, agents, and hooks
-- 📝 **Docs** — `skillsaw docs` generates HTML or Markdown documentation
-- 🔌 **Extensible** — Custom rules, banned patterns, per-rule thresholds
-- 🤖 **CI-Ready** — GitHub Action with inline PR comments; GitLab Code Quality via `--format gitlab`
-- ⚡ **Version-Gated** — New rules gated behind config versions — no surprises on upgrade
+**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
 ## Table of Contents
 
 <!-- BEGIN GENERATED TOC -->
 
-- [Features](#features)
 - [Quick Start](#quick-start)
-  - [More commands](#more-commands)
 - [Installation](#installation)
   - [Via uvx (easiest, no install required)](#via-uvx-easiest-no-install-required)
   - [Via pip](#via-pip)
@@ -111,42 +92,7 @@ skillsaw baseline
 skillsaw   # exit 0
 ```
 
-### More commands
-
-```bash
-# Fix content quality issues with an LLM (requires extras)
-# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
-# uvx --from "skillsaw[llm]" skillsaw fix --llm
-skillsaw fix --llm
-
-# Generate default config you can customize
-skillsaw init
-
-# Verbose output (includes info-level findings)
-skillsaw -v
-
-# Strict mode (warnings become errors)
-skillsaw --strict
-
-# List all rules with fix support info
-skillsaw list-rules
-
-# Generate plugin/skill documentation
-skillsaw docs
-
-# Output in different formats (text, json, sarif, html, code-climate)
-skillsaw --format json
-skillsaw --format code-climate   # Code Climate / GitLab Code Quality format
-skillsaw --format gitlab          # Alias for code-climate
-
-# Write formatted output to a file (format inferred from extension)
-skillsaw --output report.sarif
-
-# Scaffold a new marketplace, plugin, or skill
-skillsaw add marketplace
-skillsaw add plugin my-plugin
-skillsaw add skill my-skill
-```
+For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 
 ## Installation
 
@@ -192,7 +138,7 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 skillsaw:
   script:
     - pip install skillsaw==0.11.0
-    - skillsaw lint --format gitlab . > gl-code-quality-report.json
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
       codequality: gl-code-quality-report.json

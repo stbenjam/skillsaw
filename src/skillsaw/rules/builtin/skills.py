@@ -71,7 +71,7 @@ class SkillFrontmatterRule(Rule):
                 )
                 continue
 
-            if block.frontmatter is None:
+            if not block.has_frontmatter:
                 violations.append(
                     self.violation(
                         "Missing frontmatter (recommended for SKILL.md)",
@@ -81,7 +81,7 @@ class SkillFrontmatterRule(Rule):
                 )
                 continue
 
-            if "name" not in block.frontmatter:
+            if not block.field("name"):
                 violations.append(
                     self.violation(
                         "Missing 'name' in SKILL.md frontmatter",
@@ -90,7 +90,7 @@ class SkillFrontmatterRule(Rule):
                     )
                 )
 
-            if "description" not in block.frontmatter:
+            if not block.field("description"):
                 violations.append(
                     self.violation(
                         "Missing 'description' in SKILL.md frontmatter",

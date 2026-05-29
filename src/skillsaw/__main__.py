@@ -14,7 +14,14 @@ from .context import RepositoryContext, RepositoryType
 from .config import LinterConfig, find_config
 from .linter import Linter
 from .rule import AutofixConfidence, AutofixResult, Severity
-from .formatters import format_report, get_counts, infer_format, FORMATS
+from .formatters import (
+    format_report,
+    get_counts,
+    infer_format,
+    parse_output_spec,
+    FORMATS,
+    EXTENSION_MAP,
+)
 from . import __version__
 
 _SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline"}
@@ -27,18 +34,12 @@ def _get_version() -> str:
         return __version__
 
 
-def main():
-    # When no subcommand is given (or the first arg looks like a path/flag),
-    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
-    # `add` has its own argparse — dispatch before the main parser sees the args.
-    if len(sys.argv) > 1 and sys.argv[1] == "add":
-        from .marketplace.cli import _run_add_cli
+def _build_parser():
+    """Build the main argument parser with all subcommands.
 
-        return _run_add_cli()
-
-    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
-        sys.argv.insert(1, "lint")
-
+    Extracted so that documentation generators can introspect the real parser
+    without running main().
+    """
     parser = argparse.ArgumentParser(
         prog="skillsaw",
         description="Keep your skills sharp.",
@@ -86,37 +87,19 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
+    # Deprecated: use `skillsaw fix` instead. Hidden from --help.
+    lint_parser.add_argument("--fix", action="store_true", help=argparse.SUPPRESS)
     lint_parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Automatically fix violations where possible (applies safe fixes)",
+        "--llm", "--ai", action="store_true", dest="use_llm", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--llm",
-        "--ai",
-        action="store_true",
-        dest="use_llm",
-        help="Use LLM-powered fixes for content violations (requires --fix)",
+        "--dry-run", action="store_true", dest="dry_run", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        dest="dry_run",
-        help="Preview LLM fixes without writing changes (requires --fix --llm)",
+        "--patch-file", type=Path, default=None, dest="patch_file", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
-        "--patch-file",
-        type=Path,
-        default=None,
-        dest="patch_file",
-        metavar="FILE",
-        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
-    )
-    lint_parser.add_argument(
-        "--apply-patch",
-        action="store_true",
-        dest="apply_patch",
-        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
+        "--apply-patch", action="store_true", dest="apply_patch", help=argparse.SUPPRESS
     )
     lint_parser.add_argument(
         "--format",
@@ -130,9 +113,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="outputs",
         action="append",
         default=[],
-        metavar="FILE",
-        help="Write output to FILE (format inferred from extension: .json, .sarif, .html). "
-        "Can be specified multiple times.",
+        metavar="[FORMAT:]FILE",
+        help="Write output to FILE. Format is inferred from extension "
+        f"({', '.join(sorted(EXTENSION_MAP))}) "
+        "or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). "
+        "Use the prefix when an extension is ambiguous (e.g. .json could be "
+        "json or gitlab/code-climate). Can be specified multiple times.",
     )
     lint_parser.add_argument(
         "--type",
@@ -364,6 +350,22 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    return parser
+
+
+def main():
+    # When no subcommand is given (or the first arg looks like a path/flag),
+    # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
+    # `add` has its own argparse — dispatch before the main parser sees the args.
+    if len(sys.argv) > 1 and sys.argv[1] == "add":
+        from .marketplace.cli import _run_add_cli
+
+        return _run_add_cli()
+
+    if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
+        sys.argv.insert(1, "lint")
+
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "lint":
@@ -447,12 +449,13 @@ def _run_lint(args):
     cli_version = _get_version()
 
     output_formats = {}
-    for output_path in args.outputs:
+    for spec in args.outputs:
         try:
-            output_formats[output_path] = infer_format(output_path)
+            fmt, filepath = parse_output_spec(spec)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        output_formats[filepath] = fmt
 
     _handle_apply_patch_for_lint(args)
 
@@ -461,6 +464,7 @@ def _run_lint(args):
         sys.exit(1)
 
     if args.fmt == "text":
+        print(f"skillsaw {cli_version}")
         print(f"Linting: {args.path}\n")
     context = RepositoryContext(args.path)
 
