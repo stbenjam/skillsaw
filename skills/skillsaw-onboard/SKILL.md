@@ -37,10 +37,11 @@ If not installed, choose the best method for this environment:
    Use whichever runtime is installed (`podman` or `docker`):
    ```
    podman pull ghcr.io/stbenjam/skillsaw:latest
-   podman run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
+   podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw
    ```
-   Mount the repo at `/workspace` and pass subcommands after the image
-   name (e.g. `podman run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw tree`).
+   The `:Z` suffix relabels the mount for SELinux. Mount the repo at
+   `/workspace` and pass subcommands after the image name
+   (e.g. `podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw tree`).
 
 Confirm the installation works by running `skillsaw --version` (or the
 equivalent for the chosen method) before proceeding.
