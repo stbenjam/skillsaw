@@ -1,0 +1,12 @@
+{
+  "name": "skillsaw-marketplace",
+  "owner": {
+    "name": "stbenjam"
+  },
+  "plugins": [
+    {
+      "name": "skillsaw",
+      "source": "./"
+    }
+  ]
+}
