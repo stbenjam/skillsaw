@@ -76,7 +76,7 @@ apm:
 
 lock:
 	uv pip compile --generate-hashes --python-version 3.9 -o requirements/lock.txt pyproject.toml
-	uv pip compile --generate-hashes --python-version 3.9 --extra llm --extra vertexai --extra bedrock -o requirements/llm-lock.txt pyproject.toml
+	uv pip compile --generate-hashes --python-version 3.11 --extra llm --extra vertexai --extra bedrock -o requirements/llm-lock.txt pyproject.toml
 	uv pip compile --generate-hashes --python-version 3.11 --extra dev -o requirements/dev-lock.txt pyproject.toml
 
 verify-apm: apm
