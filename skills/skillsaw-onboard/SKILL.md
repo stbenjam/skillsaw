@@ -33,13 +33,14 @@ If not installed, choose the best method for this environment:
    pip install skillsaw
    ```
 
-3. **Docker** — if neither uvx nor pip is available:
+3. **Container (podman or docker)** — if neither uvx nor pip is available.
+   Use whichever runtime is installed (`podman` or `docker`):
    ```
-   docker pull ghcr.io/stbenjam/skillsaw:latest
-   docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
+   podman pull ghcr.io/stbenjam/skillsaw:latest
+   podman run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
    ```
-   When using Docker, mount the repo at `/workspace` and pass subcommands
-   after the image name (e.g. `docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw tree`).
+   Mount the repo at `/workspace` and pass subcommands after the image
+   name (e.g. `podman run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw tree`).
 
 Confirm the installation works by running `skillsaw --version` (or the
 equivalent for the chosen method) before proceeding.
