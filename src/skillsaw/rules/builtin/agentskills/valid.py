@@ -60,9 +60,7 @@ class AgentSkillValidRule(Rule):
             "- Preserve the SKILL.md body content"
         )
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
         for v in violations:
             if "Missing required 'name'" not in v.message:
@@ -76,13 +74,15 @@ class AgentSkillValidRule(Rule):
             dir_name = block.path.parent.name
             kebab_name = _to_kebab(dir_name)
             fixed_fm = f"name: {kebab_name}\n{original_fm}"
-            results.append(self.frontmatter_fix(
-                block=block,
-                original_fm=original_fm,
-                fixed_fm=fixed_fm,
-                description=f"Added name '{kebab_name}' from directory name",
-                violations=[v],
-            ))
+            results.append(
+                self.frontmatter_fix(
+                    block=block,
+                    original_fm=original_fm,
+                    fixed_fm=fixed_fm,
+                    description=f"Added name '{kebab_name}' from directory name",
+                    violations=[v],
+                )
+            )
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -121,9 +121,7 @@ class AgentSkillValidRule(Rule):
 
             name = block.field_value("name")
             if not name:
-                violations.append(
-                    self.violation("Missing required 'name' field", block=block)
-                )
+                violations.append(self.violation("Missing required 'name' field", block=block))
             elif not isinstance(name, str):
                 violations.append(
                     self.violation(

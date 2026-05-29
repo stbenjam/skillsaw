@@ -985,9 +985,7 @@ class TestBodyFix:
         )
 
         parent = FrontmatteredBlock(path=skill_md, category="skill")
-        body_block = BodyContent(
-            path=skill_md, category="body", body="Old body.\n", parent=parent
-        )
+        body_block = BodyContent(path=skill_md, category="body", body="Old body.\n", parent=parent)
         parent.children = [body_block]
 
         fix = BodyFix(
@@ -1150,8 +1148,7 @@ class TestMultipleFixesSameFile:
         must apply correctly without reverting each other's changes."""
         skill_md = temp_dir / "SKILL.md"
         skill_md.write_text(
-            "---\nname: Bad-Name\ndescription: A skill\n---\n"
-            "Use Bad-Name to do stuff.\n"
+            "---\nname: Bad-Name\ndescription: A skill\n---\n" "Use Bad-Name to do stuff.\n"
         )
 
         from skillsaw.rules.builtin.content_analysis import (
@@ -1195,9 +1192,7 @@ class TestMultipleFixesSameFile:
     def test_body_then_frontmatter_fix_no_corruption(self, temp_dir):
         """Reverse order: BodyFix first, then FrontmatterFix."""
         skill_md = temp_dir / "SKILL.md"
-        skill_md.write_text(
-            "---\nname: Old-Name\n---\nRefer to Old-Name here.\n"
-        )
+        skill_md.write_text("---\nname: Old-Name\n---\nRefer to Old-Name here.\n")
 
         from skillsaw.rules.builtin.content_analysis import (
             FrontmatteredBlock,

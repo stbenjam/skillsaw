@@ -47,7 +47,7 @@ def _resolve_file_ref(ref: str, config_dir: Path) -> Optional[Path]:
             return None
         raw = ref
     else:
-        raw = ref[len("file://"):]
+        raw = ref[len("file://") :]
 
     if not raw:
         return None

@@ -101,9 +101,7 @@ class AgentSkillRenameRefsRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         renames = _read_renames_manifest(context.root_path)
         if not renames:
             return []
@@ -128,14 +126,16 @@ class AgentSkillRenameRefsRule(Rule):
                 except (json.JSONDecodeError, KeyError, OSError):
                     continue
                 if fixed != original:
-                    results.append(self.file_fix(
-                        file_path=v.file_path,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description=f"Updated skill name in {v.file_path.name}",
-                        violations=[v],
-                        confidence=AutofixConfidence.SUGGEST,
-                    ))
+                    results.append(
+                        self.file_fix(
+                            file_path=v.file_path,
+                            original_content=original,
+                            fixed_content=fixed,
+                            description=f"Updated skill name in {v.file_path.name}",
+                            violations=[v],
+                            confidence=AutofixConfidence.SUGGEST,
+                        )
+                    )
             elif v.block and v.line:
                 body = v.block.read_body(strip_code_blocks=False)
                 if body is None:
@@ -152,13 +152,15 @@ class AgentSkillRenameRefsRule(Rule):
                 lines[idx] = line
                 fixed_body = "".join(lines)
                 if fixed_body != body:
-                    results.append(self.body_fix(
-                        block=v.block,
-                        original_body=body,
-                        fixed_body=fixed_body,
-                        description=f"Updated skill name references in {v.file_path.name}",
-                        violations=[v],
-                        confidence=AutofixConfidence.SUGGEST,
-                    ))
+                    results.append(
+                        self.body_fix(
+                            block=v.block,
+                            original_body=body,
+                            fixed_body=fixed_body,
+                            description=f"Updated skill name references in {v.file_path.name}",
+                            violations=[v],
+                            confidence=AutofixConfidence.SUGGEST,
+                        )
+                    )
 
         return results

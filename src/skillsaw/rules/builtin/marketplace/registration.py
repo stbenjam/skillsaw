@@ -53,9 +53,7 @@ class MarketplaceRegistrationRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
         if not violations:
             return results
@@ -98,13 +96,15 @@ class MarketplaceRegistrationRule(Rule):
 
         if fixed_violations:
             fixed = json.dumps(data, indent=2) + "\n"
-            results.append(self.file_fix(
-                file_path=marketplace_file,
-                original_content=original,
-                fixed_content=fixed,
-                description=f"Registered {len(fixed_violations)} plugin(s) in marketplace.json",
-                violations=fixed_violations,
-                confidence=AutofixConfidence.SUGGEST,
-            ))
+            results.append(
+                self.file_fix(
+                    file_path=marketplace_file,
+                    original_content=original,
+                    fixed_content=fixed,
+                    description=f"Registered {len(fixed_violations)} plugin(s) in marketplace.json",
+                    violations=fixed_violations,
+                    confidence=AutofixConfidence.SUGGEST,
+                )
+            )
 
         return results

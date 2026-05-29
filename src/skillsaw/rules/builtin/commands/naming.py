@@ -51,9 +51,7 @@ class CommandNamingRule(Rule):
         s = re.sub(r"-+", "-", s).strip("-")
         return s
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():

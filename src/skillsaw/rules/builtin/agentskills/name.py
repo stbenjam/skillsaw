@@ -89,9 +89,7 @@ class AgentSkillNameRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
         for v in violations:
             block = v.block if isinstance(v.block, FrontmatteredBlock) else None
@@ -108,13 +106,17 @@ class AgentSkillNameRule(Rule):
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed_fm = original_fm[: match.start()] + f"name: {new_name}" + original_fm[match.end() :]
-            results.append(self.frontmatter_fix(
-                block=block,
-                original_fm=original_fm,
-                fixed_fm=fixed_fm,
-                description=f"Renamed '{old_name}' to '{new_name}'",
-                violations=[v],
-            ))
+            fixed_fm = (
+                original_fm[: match.start()] + f"name: {new_name}" + original_fm[match.end() :]
+            )
+            results.append(
+                self.frontmatter_fix(
+                    block=block,
+                    original_fm=original_fm,
+                    fixed_fm=fixed_fm,
+                    description=f"Renamed '{old_name}' to '{new_name}'",
+                    violations=[v],
+                )
+            )
             _add_rename(context.root_path, old_name, new_name)
         return results

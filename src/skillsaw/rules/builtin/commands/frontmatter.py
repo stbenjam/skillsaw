@@ -51,9 +51,7 @@ class CommandFrontmatterRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
@@ -63,21 +61,25 @@ class CommandFrontmatterRule(Rule):
                 original = read_text(v.file_path)
                 if original is None:
                     continue
-                results.append(self.file_fix(
-                    file_path=v.file_path,
-                    original_content=original,
-                    fixed_content=f"---\ndescription: \n---\n{original}",
-                    description="Added missing frontmatter with description field",
-                    violations=[v],
-                ))
+                results.append(
+                    self.file_fix(
+                        file_path=v.file_path,
+                        original_content=original,
+                        fixed_content=f"---\ndescription: \n---\n{original}",
+                        description="Added missing frontmatter with description field",
+                        violations=[v],
+                    )
+                )
             elif "Missing 'description'" in v.message and block is not None:
                 original_fm = block.read_frontmatter_text()
                 fixed_fm = original_fm.rstrip("\n") + "\ndescription: \n"
-                results.append(self.frontmatter_fix(
-                    block=block,
-                    original_fm=original_fm,
-                    fixed_fm=fixed_fm,
-                    description="Added missing description field to frontmatter",
-                    violations=[v],
-                ))
+                results.append(
+                    self.frontmatter_fix(
+                        block=block,
+                        original_fm=original_fm,
+                        fixed_fm=fixed_fm,
+                        description="Added missing description field to frontmatter",
+                        violations=[v],
+                    )
+                )
         return results

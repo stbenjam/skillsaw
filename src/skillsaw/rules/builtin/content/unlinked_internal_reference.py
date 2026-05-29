@@ -159,11 +159,13 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                     pos = end
             fixed_body = "".join(lines)
             if fixed_body != body:
-                results.append(self.body_fix(
-                    block=block,
-                    original_body=body,
-                    fixed_body=fixed_body,
-                    description=f"Wrap {len(violations_fixed)} bare path(s) in markdown link syntax",
-                    violations=violations_fixed,
-                ))
+                results.append(
+                    self.body_fix(
+                        block=block,
+                        original_body=body,
+                        fixed_body=fixed_body,
+                        description=f"Wrap {len(violations_fixed)} bare path(s) in markdown link syntax",
+                        violations=violations_fixed,
+                    )
+                )
         return results

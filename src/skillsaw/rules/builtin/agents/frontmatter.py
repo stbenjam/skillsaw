@@ -85,9 +85,7 @@ class AgentFrontmatterRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
 
         by_file: defaultdict[Path, List[RuleViolation]] = defaultdict(list)
@@ -110,13 +108,15 @@ class AgentFrontmatterRule(Rule):
                 if original is None:
                     continue
                 name = file_path.stem
-                results.append(self.file_fix(
-                    file_path=file_path,
-                    original_content=original,
-                    fixed_content=f"---\nname: {name}\ndescription: \n---\n{original}",
-                    description="Added missing frontmatter to agent file",
-                    violations=file_violations,
-                ))
+                results.append(
+                    self.file_fix(
+                        file_path=file_path,
+                        original_content=original,
+                        fixed_content=f"---\nname: {name}\ndescription: \n---\n{original}",
+                        description="Added missing frontmatter to agent file",
+                        violations=file_violations,
+                    )
+                )
                 continue
 
             if block is None:
@@ -132,11 +132,13 @@ class AgentFrontmatterRule(Rule):
                     additions.append("description: ")
                 if additions:
                     fixed_fm = original_fm.rstrip("\n") + "\n" + "\n".join(additions) + "\n"
-                    results.append(self.frontmatter_fix(
-                        block=block,
-                        original_fm=original_fm,
-                        fixed_fm=fixed_fm,
-                        description="Added missing fields to agent frontmatter",
-                        violations=file_violations,
-                    ))
+                    results.append(
+                        self.frontmatter_fix(
+                            block=block,
+                            original_fm=original_fm,
+                            fixed_fm=fixed_fm,
+                            description="Added missing fields to agent frontmatter",
+                            violations=file_violations,
+                        )
+                    )
         return results

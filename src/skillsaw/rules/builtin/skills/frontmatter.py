@@ -100,9 +100,7 @@ class SkillFrontmatterRule(Rule):
 
         return violations
 
-    def fix(
-        self, context: RepositoryContext, violations: List[RuleViolation]
-    ) -> List[FixOp]:
+    def fix(self, context: RepositoryContext, violations: List[RuleViolation]) -> List[FixOp]:
         results: List[FixOp] = []
 
         by_file: defaultdict[Path, List[RuleViolation]] = defaultdict(list)
@@ -116,13 +114,15 @@ class SkillFrontmatterRule(Rule):
             if any("Missing SKILL.md" in m for m in messages):
                 skill_md = file_path / "SKILL.md"
                 name = file_path.name
-                results.append(self.file_fix(
-                    file_path=skill_md,
-                    original_content="",
-                    fixed_content=f"---\nname: {name}\ndescription: \n---\n",
-                    description=f"Created SKILL.md with frontmatter for {name}",
-                    violations=file_violations,
-                ))
+                results.append(
+                    self.file_fix(
+                        file_path=skill_md,
+                        original_content="",
+                        fixed_content=f"---\nname: {name}\ndescription: \n---\n",
+                        description=f"Created SKILL.md with frontmatter for {name}",
+                        violations=file_violations,
+                    )
+                )
                 continue
 
             if not file_path.exists():
@@ -138,13 +138,15 @@ class SkillFrontmatterRule(Rule):
                 if original is None:
                     continue
                 name = file_path.parent.name
-                results.append(self.file_fix(
-                    file_path=file_path,
-                    original_content=original,
-                    fixed_content=f"---\nname: {name}\ndescription: \n---\n{original}",
-                    description="Added missing frontmatter to SKILL.md",
-                    violations=file_violations,
-                ))
+                results.append(
+                    self.file_fix(
+                        file_path=file_path,
+                        original_content=original,
+                        fixed_content=f"---\nname: {name}\ndescription: \n---\n{original}",
+                        description="Added missing frontmatter to SKILL.md",
+                        violations=file_violations,
+                    )
+                )
                 continue
 
             if block is None:
@@ -160,11 +162,13 @@ class SkillFrontmatterRule(Rule):
                     additions.append("description: ")
                 if additions:
                     fixed_fm = original_fm.rstrip("\n") + "\n" + "\n".join(additions) + "\n"
-                    results.append(self.frontmatter_fix(
-                        block=block,
-                        original_fm=original_fm,
-                        fixed_fm=fixed_fm,
-                        description="Added missing fields to SKILL.md frontmatter",
-                        violations=file_violations,
-                    ))
+                    results.append(
+                        self.frontmatter_fix(
+                            block=block,
+                            original_fm=original_fm,
+                            fixed_fm=fixed_fm,
+                            description="Added missing fields to SKILL.md frontmatter",
+                            violations=file_violations,
+                        )
+                    )
         return results

@@ -163,12 +163,14 @@ class ContentBrokenInternalReferenceRule(Rule):
                     violations_fixed.append(v)
             fixed_body = "".join(lines)
             if fixed_body != body:
-                results.append(self.body_fix(
-                    block=block,
-                    original_body=body,
-                    fixed_body=fixed_body,
-                    description=f"Fix {len(violations_fixed)} broken link(s) with likely matches",
-                    violations=violations_fixed,
-                    confidence=AutofixConfidence.SUGGEST,
-                ))
+                results.append(
+                    self.body_fix(
+                        block=block,
+                        original_body=body,
+                        fixed_body=fixed_body,
+                        description=f"Fix {len(violations_fixed)} broken link(s) with likely matches",
+                        violations=violations_fixed,
+                        confidence=AutofixConfidence.SUGGEST,
+                    )
+                )
         return results
