@@ -45,13 +45,10 @@ generate-example: $(VENV)/bin/activate
 generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py
 
-generate-claude-readme: $(VENV)/bin/activate
-	$(VENV)/bin/skillsaw docs --format markdown -o .claude/README.md
-
 self-lint: $(VENV)/bin/activate
 	$(VENV)/bin/skillsaw lint .
 
-update: apm generate-example generate-docs generate-claude-readme format self-lint
+update: apm generate-example generate-docs format self-lint
 
 generate-site-content: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-site-content.py
