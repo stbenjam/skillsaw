@@ -690,6 +690,10 @@ class FrontmatteredBlock(LintTarget):
     category: str = ""
     content_lintable_fields: Tuple[str, ...] = ()
 
+    def file_line(self, line: int) -> int:
+        """For FrontmatteredBlock, line numbers are already file-absolute."""
+        return line
+
     _fm_parsed: Optional[
         Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]
     ] = field(default=None, init=False, repr=False)

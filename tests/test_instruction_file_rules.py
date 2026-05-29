@@ -7,7 +7,7 @@ import shutil
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
-from skillsaw.rules.builtin.instruction_files import (
+from skillsaw.rules.builtin.instructions import (
     InstructionFileValidRule,
     InstructionImportsValidRule,
 )
