@@ -29,10 +29,10 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Install package from lockfile and generate SBOM
+      - name: Install package from lockfiles and generate SBOM
         run: |
           pip install 'cyclonedx-bom==7.3.0'
-          pip install --require-hashes -r requirements/lock.txt
+          pip install --require-hashes -r requirements/lock.txt -r requirements/llm-lock.txt
           pip install --no-deps dist/*.whl
           cyclonedx-py environment --output dist/skillsaw-sbom.cdx.json
 

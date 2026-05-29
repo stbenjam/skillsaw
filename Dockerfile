@@ -12,9 +12,12 @@ WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml
 COPY README.md /app/README.md
 COPY src/ /app/src/
+COPY requirements/ /app/requirements/
 
-# Install the package
-RUN pip install --no-cache-dir /app
+# Install pinned dependencies then the package itself
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements/lock.txt \
+                                                -r /app/requirements/llm-lock.txt && \
+    pip install --no-cache-dir --no-deps /app
 
 # Set default working directory for linting
 WORKDIR /workspace
