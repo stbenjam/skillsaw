@@ -1,0 +1,9 @@
+{
+  "name": "skillsaw",
+  "description": "A configurable linter for agent skills, plugins, and AI coding assistant context",
+  "version": "1.0.0",
+  "author": {
+    "name": "stbenjam"
+  },
+  "skills": "../skills"
+}
