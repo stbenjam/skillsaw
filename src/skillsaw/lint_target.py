@@ -47,6 +47,10 @@ class LintTarget:
 
         return [n for n in self.find(ContentBlock) if not isinstance(n, (McpBlock, HooksBlock))]
 
+    def file_line(self, line: int) -> int:
+        """Translate a line number to a file line number. Default is identity."""
+        return line
+
     def tree_label(self) -> str:
         return self.path.name
 

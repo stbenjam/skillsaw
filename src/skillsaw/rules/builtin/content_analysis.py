@@ -766,10 +766,6 @@ class FrontmatteredBlock(LintTarget):
     def key_line(self, key: str) -> Optional[int]:
         return _frontmatter_key_line(self.path, key)
 
-    def file_line(self, body_line: int) -> int:
-        """Translate a body line number to a file line number."""
-        return body_line
-
     def line_map(self) -> Dict[str, int]:
         content = read_text(self.path)
         if content is None:
