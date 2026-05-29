@@ -29,17 +29,20 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Install package from lockfiles and generate SBOM
+      - name: Generate SBOM
         run: |
+          python -m venv .sbom-venv
+          .sbom-venv/bin/pip install --require-hashes -r requirements/llm-lock.txt
+          .sbom-venv/bin/pip install --no-deps dist/*.whl
           pip install 'cyclonedx-bom==7.3.0'
-          pip install --require-hashes -r requirements/lock.txt -r requirements/llm-lock.txt
-          pip install --no-deps dist/*.whl
-          cyclonedx-py environment --output dist/skillsaw-sbom.cdx.json
+          mkdir -p sbom
+          cyclonedx-py environment .sbom-venv/bin/python --output sbom/skillsaw-sbom.cdx.json
 
       - name: Upload SBOM to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/skillsaw-sbom.cdx.json
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG_NAME" sbom/skillsaw-sbom.cdx.json
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v5
