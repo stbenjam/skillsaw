@@ -11,6 +11,9 @@ import pytest
 from skillsaw.rule import (
     AutofixConfidence,
     AutofixResult,
+    BodyFix,
+    FileFix,
+    FrontmatterFix,
     RenameFix,
     Rule,
     RuleViolation,
@@ -872,3 +875,364 @@ class TestSkillRenameRefsEndToEnd:
         rename_violations = [v for v in violations3 if v.rule_id == "agentskill-rename-refs"]
         assert len(rename_violations) == 0
         assert not manifest_path.exists()
+
+
+# --- FixOp unit tests ---
+
+
+class TestFrontmatterFix:
+    def test_apply_writes_frontmatter_only(self, temp_dir):
+        """FrontmatterFix.apply() writes frontmatter without touching the body."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text("---\nname: old-name\n---\nBody with name: in it.\n")
+
+        from skillsaw.rules.builtin.content_analysis import FrontmatteredBlock
+
+        block = FrontmatteredBlock(path=skill_md, category="skill")
+        fix = FrontmatterFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="rename",
+            block=block,
+            original_fm="name: old-name\n",
+            fixed_fm="name: new-name\n",
+        )
+        fix.apply()
+
+        content = skill_md.read_text()
+        assert "name: new-name" in content
+        assert "Body with name: in it." in content
+
+    def test_apply_preserves_body_with_frontmatter_like_content(self, temp_dir):
+        """Regression: body containing 'name:' must not be corrupted by
+        a frontmatter fix. (Issue #234)"""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: my-skill\ndescription: A skill\n---\n"
+            "Use name: my-skill to invoke.\nnamespace: default\n"
+        )
+
+        from skillsaw.rules.builtin.content_analysis import FrontmatteredBlock
+
+        block = FrontmatteredBlock(path=skill_md, category="skill")
+        fix = FrontmatterFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="add field",
+            block=block,
+            original_fm="name: my-skill\ndescription: A skill\n",
+            fixed_fm="name: my-skill\ndescription: A skill\nmodel: opus\n",
+        )
+        fix.apply()
+
+        content = skill_md.read_text()
+        assert "model: opus" in content
+        assert "Use name: my-skill to invoke." in content
+        assert "namespace: default" in content
+
+    def test_diff_shows_frontmatter_change_only(self, temp_dir):
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text("---\nname: old\n---\nBody.\n")
+
+        from skillsaw.rules.builtin.content_analysis import FrontmatteredBlock
+
+        block = FrontmatteredBlock(path=skill_md, category="skill")
+        fix = FrontmatterFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="rename",
+            block=block,
+            original_fm="name: old\n",
+            fixed_fm="name: new\n",
+        )
+        d = fix.diff()
+        assert "-name: old" in d
+        assert "+name: new" in d
+        assert "Body." in d
+
+    def test_idempotent(self, temp_dir):
+        """Applying the same frontmatter fix twice produces identical content."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text("---\nname: old\ndescription: test\n---\nBody.\n")
+
+        from skillsaw.rules.builtin.content_analysis import FrontmatteredBlock
+
+        block = FrontmatteredBlock(path=skill_md, category="skill")
+        fix = FrontmatterFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="rename",
+            block=block,
+            original_fm="name: old\ndescription: test\n",
+            fixed_fm="name: new\ndescription: test\n",
+        )
+        fix.apply()
+        first = skill_md.read_text()
+        fix.apply()
+        second = skill_md.read_text()
+        assert first == second
+
+
+class TestBodyFix:
+    def test_apply_writes_body_only(self, temp_dir):
+        """BodyFix.apply() writes body without touching frontmatter."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text("---\nname: my-skill\n---\nOld body.\n")
+
+        from skillsaw.rules.builtin.content_analysis import (
+            FrontmatteredBlock,
+            BodyContent,
+        )
+
+        parent = FrontmatteredBlock(path=skill_md, category="skill")
+        body_block = BodyContent(
+            path=skill_md, category="body", body="Old body.\n", parent=parent
+        )
+        parent.children = [body_block]
+
+        fix = BodyFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix body",
+            block=body_block,
+            original_body="Old body.\n",
+            fixed_body="New body.\n",
+        )
+        fix.apply()
+
+        content = skill_md.read_text()
+        assert "name: my-skill" in content
+        assert "New body." in content
+        assert "Old body." not in content
+
+    def test_apply_preserves_frontmatter_name_field(self, temp_dir):
+        """Regression: BodyFix must not corrupt frontmatter when body
+        contains 'name:' substring matching a frontmatter field."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: My-Skill\ndescription: test\n---\n"
+            "Configure name: My-Skill in settings.\n"
+        )
+
+        from skillsaw.rules.builtin.content_analysis import (
+            FrontmatteredBlock,
+            BodyContent,
+        )
+
+        parent = FrontmatteredBlock(path=skill_md, category="skill")
+        body_block = BodyContent(
+            path=skill_md,
+            category="body",
+            body="Configure name: My-Skill in settings.\n",
+            parent=parent,
+        )
+        parent.children = [body_block]
+
+        fix = BodyFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix body",
+            block=body_block,
+            original_body="Configure name: My-Skill in settings.\n",
+            fixed_body="Configure name: my-skill in settings.\n",
+        )
+        fix.apply()
+
+        content = skill_md.read_text()
+        assert "name: My-Skill" in content.split("---")[1]
+        assert "name: my-skill" in content.split("---", 2)[2]
+
+    def test_apply_on_plain_file(self, temp_dir):
+        """BodyFix works on plain files without frontmatter."""
+        guide = temp_dir / "guide.md"
+        guide.write_text("Use Old-Skill to do things.\n")
+
+        from skillsaw.rules.builtin.content_analysis import FileContentBlock
+
+        block = FileContentBlock(path=guide, category="file", body="Use Old-Skill to do things.\n")
+        fix = BodyFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix ref",
+            block=block,
+            original_body="Use Old-Skill to do things.\n",
+            fixed_body="Use new-skill to do things.\n",
+        )
+        fix.apply()
+
+        assert guide.read_text() == "Use new-skill to do things.\n"
+
+    def test_crlf_line_endings(self, temp_dir):
+        """BodyFix handles CRLF line endings without corruption."""
+        doc = temp_dir / "doc.md"
+        doc.write_text("---\r\nname: test\r\n---\r\nLine one.\r\nLine two.\r\n")
+
+        from skillsaw.rules.builtin.content_analysis import (
+            FrontmatteredBlock,
+            BodyContent,
+        )
+
+        parent = FrontmatteredBlock(path=doc, category="skill")
+        body_block = BodyContent(
+            path=doc,
+            category="body",
+            body="Line one.\r\nLine two.\r\n",
+            parent=parent,
+        )
+        parent.children = [body_block]
+
+        fix = BodyFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix body",
+            block=body_block,
+            original_body="Line one.\r\nLine two.\r\n",
+            fixed_body="Line ONE.\r\nLine two.\r\n",
+        )
+        fix.apply()
+
+        content = doc.read_text()
+        assert "name: test" in content
+        assert "Line ONE." in content
+
+
+class TestFileFix:
+    def test_apply_writes_file(self, temp_dir):
+        target = temp_dir / "data.json"
+        target.write_text('{"old": true}\n')
+
+        fix = FileFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix json",
+            file_path=target,
+            original_content='{"old": true}\n',
+            fixed_content='{"new": true}\n',
+        )
+        fix.apply()
+
+        assert target.read_text() == '{"new": true}\n'
+
+    def test_apply_creates_parent_dirs(self, temp_dir):
+        target = temp_dir / "sub" / "dir" / "file.md"
+
+        fix = FileFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="create file",
+            file_path=target,
+            original_content="",
+            fixed_content="---\nname: new\n---\n",
+        )
+        fix.apply()
+
+        assert target.exists()
+        assert target.read_text() == "---\nname: new\n---\n"
+
+    def test_diff(self, temp_dir):
+        target = temp_dir / "file.txt"
+        fix = FileFix(
+            rule_id="test",
+            confidence=AutofixConfidence.SAFE,
+            description="fix",
+            file_path=target,
+            original_content="old\n",
+            fixed_content="new\n",
+        )
+        d = fix.diff()
+        assert "-old" in d
+        assert "+new" in d
+
+
+class TestMultipleFixesSameFile:
+    def test_frontmatter_then_body_fix_no_corruption(self, temp_dir):
+        """When FrontmatterFix and BodyFix target the same file, both
+        must apply correctly without reverting each other's changes."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: Bad-Name\ndescription: A skill\n---\n"
+            "Use Bad-Name to do stuff.\n"
+        )
+
+        from skillsaw.rules.builtin.content_analysis import (
+            FrontmatteredBlock,
+            BodyContent,
+        )
+
+        parent = FrontmatteredBlock(path=skill_md, category="skill")
+        body_block = BodyContent(
+            path=skill_md,
+            category="body",
+            body="Use Bad-Name to do stuff.\n",
+            parent=parent,
+        )
+        parent.children = [body_block]
+
+        fm_fix = FrontmatterFix(
+            rule_id="name-fix",
+            confidence=AutofixConfidence.SAFE,
+            description="fix name",
+            block=parent,
+            original_fm="name: Bad-Name\ndescription: A skill\n",
+            fixed_fm="name: bad-name\ndescription: A skill\n",
+        )
+        body_fix = BodyFix(
+            rule_id="ref-fix",
+            confidence=AutofixConfidence.SAFE,
+            description="fix ref",
+            block=body_block,
+            original_body="Use Bad-Name to do stuff.\n",
+            fixed_body="Use bad-name to do stuff.\n",
+        )
+
+        fm_fix.apply()
+        body_fix.apply()
+
+        content = skill_md.read_text()
+        assert "name: bad-name" in content.split("---")[1]
+        assert "Use bad-name to do stuff." in content
+
+    def test_body_then_frontmatter_fix_no_corruption(self, temp_dir):
+        """Reverse order: BodyFix first, then FrontmatterFix."""
+        skill_md = temp_dir / "SKILL.md"
+        skill_md.write_text(
+            "---\nname: Old-Name\n---\nRefer to Old-Name here.\n"
+        )
+
+        from skillsaw.rules.builtin.content_analysis import (
+            FrontmatteredBlock,
+            BodyContent,
+        )
+
+        parent = FrontmatteredBlock(path=skill_md, category="skill")
+        body_block = BodyContent(
+            path=skill_md,
+            category="body",
+            body="Refer to Old-Name here.\n",
+            parent=parent,
+        )
+        parent.children = [body_block]
+
+        body_fix = BodyFix(
+            rule_id="ref-fix",
+            confidence=AutofixConfidence.SAFE,
+            description="fix ref",
+            block=body_block,
+            original_body="Refer to Old-Name here.\n",
+            fixed_body="Refer to new-name here.\n",
+        )
+        fm_fix = FrontmatterFix(
+            rule_id="name-fix",
+            confidence=AutofixConfidence.SAFE,
+            description="fix name",
+            block=parent,
+            original_fm="name: Old-Name\n",
+            fixed_fm="name: new-name\n",
+        )
+
+        body_fix.apply()
+        fm_fix.apply()
+
+        content = skill_md.read_text()
+        assert "name: new-name" in content.split("---")[1]
+        assert "Refer to new-name here." in content
