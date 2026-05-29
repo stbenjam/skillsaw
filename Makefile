@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site
+.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site lock
 
 help:
 	@echo "Available targets:"
@@ -15,6 +15,7 @@ help:
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
 	@echo "  generate-docs - Regenerate Builtin Rules section of README.md"
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
+	@echo "  lock          - Regenerate hash-pinned dependency lockfiles"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
 
@@ -72,6 +73,10 @@ clean:
 apm:
 	uvx --from apm-cli@$(APM_VERSION) apm install
 	uvx --from apm-cli@$(APM_VERSION) apm compile
+
+lock:
+	uv pip compile --generate-hashes --python-version 3.9 -o requirements/lock.txt pyproject.toml
+	uv pip compile --generate-hashes --python-version 3.11 --extra dev -o requirements/dev-lock.txt pyproject.toml
 
 verify-apm: apm
 	@echo "APM install and compile succeeded."
