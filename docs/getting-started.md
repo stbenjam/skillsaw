@@ -26,6 +26,30 @@ Over time, fix violations and re-run `skillsaw baseline` to shrink the
 accepted set. See the [Baseline guide](baseline.md) for details on how
 fingerprinting works and configuration options.
 
+## Onboarding with AI
+
+The **skillsaw-onboard** skill automates the entire adoption process — it
+installs skillsaw, runs the linter, applies autofixes, manually fixes
+remaining violations, sets up CI, and creates a baseline. Your AI coding
+agent handles everything interactively.
+
+=== "Claude Code"
+
+    Add the marketplace and install the plugin:
+
+    ```bash
+    claude plugin marketplace add stbenjam/skillsaw
+    claude plugin install skillsaw@skillsaw-marketplace
+    ```
+
+    Then in Claude Code, type `/skillsaw-onboard` to start.
+
+=== "Other AI coding agents"
+
+    The skillsaw-onboard skill follows the
+    [agentskills.io](https://agentskills.io) specification. Refer to your
+    coding agent's documentation for how to install and use agentskills.
+
 ## Installation
 
 === "uvx (no install required)"
@@ -148,30 +172,6 @@ skillsaw add skill my-skill
 ```
 
 See the [CLI Reference](cli.md) for all flags and options.
-
-## Onboarding with AI
-
-The **skillsaw-onboard** skill automates the entire adoption process — it
-installs skillsaw, runs the linter, applies autofixes, manually fixes
-remaining violations, sets up CI, and creates a baseline. Your AI coding
-agent handles everything interactively.
-
-=== "Claude Code"
-
-    Add the marketplace and install the plugin:
-
-    ```bash
-    claude plugin marketplace add stbenjam/skillsaw
-    claude plugin install skillsaw@skillsaw-marketplace
-    ```
-
-    Then in Claude Code, type `/skillsaw-onboard` to start.
-
-=== "Other AI coding agents"
-
-    The skillsaw-onboard skill follows the
-    [agentskills.io](https://agentskills.io) specification. Refer to your
-    coding agent's documentation for how to install and use agentskills.
 
 ## What's Next?
 
