@@ -26,23 +26,30 @@ Over time, fix violations and re-run `skillsaw baseline` to shrink the
 accepted set. See the [Baseline guide](baseline.md) for details on how
 fingerprinting works and configuration options.
 
-## Onboarding with AI
+## :sparkles: Onboard with AI
 
-The **skillsaw-onboard** skill automates the entire adoption process — it
-installs skillsaw, runs the linter, applies autofixes, manually fixes
-remaining violations, sets up CI, and creates a baseline. Your AI coding
-agent handles everything interactively.
+!!! tip "Skip the manual setup — let your AI coding agent do it all"
+
+    The **`/skillsaw-onboard`** skill walks your agent through the full
+    adoption flow in one interactive session:
+
+    | | Step | What happens |
+    |---|---|---|
+    | :material-numeric-1-circle:{ .step-icon } | **Install** | Adds skillsaw to your project |
+    | :material-numeric-2-circle:{ .step-icon } | **Lint** | Runs a full scan of your repo |
+    | :material-numeric-3-circle:{ .step-icon } | **Autofix** | Applies deterministic fixes automatically |
+    | :material-numeric-4-circle:{ .step-icon } | **Manual fix** | Your agent resolves remaining violations interactively |
+    | :material-numeric-5-circle:{ .step-icon } | **CI** | Sets up CI to lint on every PR |
+    | :material-numeric-6-circle:{ .step-icon } | **Baseline** | Accepts any leftover violations so you start clean |
 
 === "Claude Code"
-
-    Add the marketplace and install the plugin:
 
     ```bash
     claude plugin marketplace add stbenjam/skillsaw
     claude plugin install skillsaw@skillsaw-marketplace
     ```
 
-    Then in Claude Code, type `/skillsaw-onboard` to start.
+    Then type **`/skillsaw-onboard`** and follow the prompts.
 
 === "Other AI coding agents"
 
