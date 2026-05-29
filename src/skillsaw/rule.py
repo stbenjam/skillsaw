@@ -139,17 +139,7 @@ class BodyFix(FixOp):
         self.block.write_body(self.fixed_body)
 
     def diff(self, root: Optional[Path] = None) -> str:
-        from .rules.builtin.content_analysis import FrontmatteredBlock
-
-        parent = self.block.parent
-        if isinstance(parent, FrontmatteredBlock):
-            fm = parent.read_frontmatter_text()
-            prefix = f"---\n{fm}\n---\n" if fm else ""
-        else:
-            prefix = ""
-        old = prefix + self.original_body
-        new = prefix + self.fixed_body
-        return _unified_diff(old, new, self.block.path, root)
+        return _unified_diff(self.original_body, self.fixed_body, self.block.path, root)
 
 
 @dataclass
