@@ -721,7 +721,7 @@ class TestCommandRenameFix:
         assert len(fixes) == 0
 
     def test_apply_rename_skips_missing_source(self, temp_dir):
-        """If rename_from no longer exists at apply time, skip silently."""
+        """If rename_from no longer exists at apply time, skip gracefully."""
         src = temp_dir / "old.md"
         dst = temp_dir / "new.md"
         src.write_text("content")
@@ -737,11 +737,11 @@ class TestCommandRenameFix:
         src.unlink()
 
         applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
-        assert len(applied) == 1
+        assert len(applied) == 0
         assert not dst.exists()
 
     def test_apply_rename_skips_existing_target(self, temp_dir):
-        """If the target already exists (different file), skip."""
+        """If the target already exists (different file), skip gracefully."""
         src = temp_dir / "old.md"
         dst = temp_dir / "new.md"
         src.write_text("old content")
@@ -756,7 +756,7 @@ class TestCommandRenameFix:
         )
 
         applied = Linter.apply_fixes([fix], confidence=AutofixConfidence.SUGGEST)
-        assert len(applied) == 1
+        assert len(applied) == 0
         assert src.read_text() == "old content"
         assert dst.read_text() == "existing content"
 

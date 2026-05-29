@@ -95,6 +95,7 @@ class FixOp(ABC):
         """Write the fix to disk through the appropriate node method."""
         ...
 
+    @abstractmethod
     def diff(self, root: Optional[Path] = None) -> str:
         """Produce a unified diff string for dry-run display."""
         ...
@@ -191,10 +192,10 @@ class RenameFix(FixOp):
 
         src, dst = self.rename_from, self.file_path
         if not src.exists():
-            return
+            raise FileNotFoundError(f"Rename source does not exist: {src}")
         same_file = src.resolve() == dst.resolve()
         if dst.exists() and not same_file:
-            return
+            raise FileExistsError(f"Rename target already exists: {dst}")
         dst.parent.mkdir(parents=True, exist_ok=True)
         src.rename(dst)
         invalidate_read_caches(src)
