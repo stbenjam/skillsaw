@@ -158,10 +158,11 @@ agent handles everything interactively.
 
 === "Claude Code"
 
-    Install the skillsaw plugin, then run the skill:
+    Add the marketplace and install the plugin:
 
     ```bash
-    claude install-plugin stbenjam/skillsaw
+    claude plugin marketplace add stbenjam/skillsaw
+    claude plugin install skillsaw@skillsaw-marketplace
     ```
 
     Then in Claude Code, type `/skillsaw-onboard` to start.
