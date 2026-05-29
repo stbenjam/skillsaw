@@ -15,8 +15,7 @@ COPY src/ /app/src/
 COPY requirements/ /app/requirements/
 
 # Install pinned dependencies then the package itself
-RUN pip install --no-cache-dir --require-hashes -r /app/requirements/lock.txt \
-                                                -r /app/requirements/llm-lock.txt && \
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements/llm-lock.txt && \
     pip install --no-cache-dir --no-deps /app
 
 # Set default working directory for linting
