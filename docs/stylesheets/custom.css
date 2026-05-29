@@ -162,6 +162,48 @@
     border-color: #546e7a;
 }
 
+/* Onboarding admonition — sparkle gradient */
+.md-typeset .admonition.tip {
+    border-color: #4fc3f7;
+    background: linear-gradient(135deg, #1a2a3020 0%, #1a3a4a30 100%);
+}
+
+.md-typeset .admonition.tip > .admonition-title {
+    background-color: #4fc3f718;
+    font-size: 1.05em;
+}
+
+.md-typeset .admonition.tip > .admonition-title::before {
+    background-color: #4fc3f7;
+}
+
+/* Onboarding step icons */
+.step-icon {
+    color: #4fc3f7;
+}
+
+/* Onboarding step table — borderless, compact */
+.md-typeset .admonition.tip table {
+    border: none;
+    background: transparent;
+    margin-top: 0.4rem;
+    margin-bottom: 0;
+}
+
+.md-typeset .admonition.tip table th {
+    display: none;
+}
+
+.md-typeset .admonition.tip table td {
+    border: none;
+    padding: 0.25em 0.5em;
+    background: transparent;
+}
+
+.md-typeset .admonition.tip table tr:hover td {
+    background: transparent;
+}
+
 /* Tabs */
 .md-typeset .tabbed-labels > label.tabbed-alternate--active {
     color: var(--md-accent-fg-color);
