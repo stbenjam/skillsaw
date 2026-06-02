@@ -66,6 +66,7 @@ nav:
     - Custom Rules: custom-rules.md
     - Scaffolding: scaffolding.md
     - Lint Tree: lint-tree.md
+    - Other Coding Agents: other-coding-agents.md
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
