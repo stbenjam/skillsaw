@@ -53,9 +53,16 @@ fingerprinting works and configuration options.
 
 === "Other AI coding agents"
 
-    The skillsaw-onboard skill follows the
-    [agentskills.io](https://agentskills.io) specification. Refer to your
-    coding agent's documentation for how to install and use agentskills.
+    Paste this into your coding agent:
+
+    ```
+    Read and follow the instructions at
+    https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
+    to onboard this repo to skillsaw.
+    ```
+
+    Or consult your agent's documentation for how to install a new
+    [agentskills.io](https://agentskills.io) skill.
 
 ## Installation
 
