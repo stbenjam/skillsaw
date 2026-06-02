@@ -53,7 +53,7 @@ fingerprinting works and configuration options.
 
 === "Other AI coding agents"
 
-    Paste this into your coding agent's chat:
+    Paste this into your coding agent:
 
     ```
     Read and follow the instructions at
