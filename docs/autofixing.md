@@ -69,7 +69,7 @@ Install the extras for your provider and set the required environment variables:
     pip install 'skillsaw[vertexai]'
     gcloud auth application-default login
     export VERTEXAI_PROJECT=my-gcp-project
-    export VERTEXAI_LOCATION=us-east5
+    export VERTEXAI_LOCATION=global
     skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
     ```
 
