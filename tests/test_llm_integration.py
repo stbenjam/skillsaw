@@ -841,3 +841,25 @@ class TestLLMFixFrontmatteredBlock:
         provider = _fake_fix_provider(fixed_frontmatter)
         result = linter.llm_fix(provider)
         assert result.violations_before > 0
+
+    @live
+    def test_llm_fix_skill_frontmatter_live(self, tmp_path):
+        """Live LLM can fix missing description in SKILL.md frontmatter."""
+        root = copy_fixture("llm-fix-frontmattered", tmp_path)
+
+        config = LinterConfig.default()
+        config.llm.model = os.environ.get("SKILLSAW_MODEL", "openrouter/minimax/minimax-m2.7")
+        context = RepositoryContext(root)
+        linter = Linter(context, config)
+
+        violations = linter.run()
+        fm_violations = [v for v in violations if v.rule_id == "skill-frontmatter"]
+        assert len(fm_violations) >= 1, "Expected skill-frontmatter violation"
+
+        from skillsaw.llm._litellm import LiteLLMProvider
+
+        provider = LiteLLMProvider()
+        result = linter.llm_fix(provider)
+        assert (
+            result.violations_after == 0
+        ), f"skill-frontmatter: expected 0 violations after fix, got {result.violations_after}"
