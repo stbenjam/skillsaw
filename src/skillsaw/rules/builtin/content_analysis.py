@@ -638,13 +638,25 @@ def _parse_file_frontmatter(
     return fm, None, None, body, fm_line_count
 
 
-@dataclass
+@dataclass(eq=False)
 class FrontmatterField(LintTarget):
     """A single key-value pair from YAML frontmatter, exposed as a tree node."""
 
     name: str = ""
     value: Any = None
     field_line: Optional[int] = None
+
+    def __eq__(self, other):
+        if not isinstance(other, FrontmatterField):
+            return NotImplemented
+        return (
+            type(self) is type(other)
+            and self.path.resolve() == other.path.resolve()
+            and self.name == other.name
+        )
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve(), self.name))
 
     def tree_label(self) -> str:
         return f"frontmatter:{self.name}"
