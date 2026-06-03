@@ -831,11 +831,13 @@ class TestLLMFixFrontmatteredBlock:
 
         from skillsaw.rules.builtin.content_analysis import SkillBlock
 
-        assert isinstance(fm_violations[0].block, SkillBlock), (
-            "Violation block must be a SkillBlock to exercise the bug path"
-        )
+        assert isinstance(
+            fm_violations[0].block, SkillBlock
+        ), "Violation block must be a SkillBlock to exercise the bug path"
 
-        fixed_frontmatter = "name: missing-description\ndescription: Deploy a service to the production cluster\n"
+        fixed_frontmatter = (
+            "name: missing-description\ndescription: Deploy a service to the production cluster\n"
+        )
         provider = _fake_fix_provider(fixed_frontmatter)
         result = linter.llm_fix(provider)
         assert result.violations_before > 0
