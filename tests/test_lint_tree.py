@@ -330,3 +330,34 @@ def test_tree_all_rules_use_tree(temp_dir):
                                 f"{py_file.name}:{node.name}.check() "
                                 f"uses context.skills instead of tree"
                             )
+
+
+def test_all_lint_targets_are_hashable():
+    """Every LintTarget subclass must be hashable (usable as a dict key).
+
+    llm_fix groups violations by block via dict.setdefault(block, []).
+    If a LintTarget subclass is decorated with bare @dataclass (without
+    eq=False), Python generates __eq__ and sets __hash__ = None, making
+    it unhashable. Regression guard for GH-245.
+    """
+    # Force-import all modules that define LintTarget subclasses
+    import importlib
+
+    for mod in [
+        "skillsaw.lint_target",
+        "skillsaw.rules.builtin.content_analysis",
+    ]:
+        importlib.import_module(mod)
+
+    def _all_subclasses(cls):
+        result = set()
+        for sub in cls.__subclasses__():
+            result.add(sub)
+            result.update(_all_subclasses(sub))
+        return result
+
+    for cls in _all_subclasses(LintTarget):
+        assert cls.__hash__ is not None, (
+            f"{cls.__qualname__} is not hashable — "
+            f"add @dataclass(eq=False) and define __eq__/__hash__"
+        )

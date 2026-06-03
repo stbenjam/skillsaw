@@ -255,13 +255,19 @@ class ContentBlock(LintTarget):
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"
 
+    @property
+    def resolved_path(self) -> Path:
+        if not hasattr(self, "_resolved_path"):
+            self._resolved_path = self.path.resolve()
+        return self._resolved_path
+
     def __eq__(self, other):
         if not isinstance(other, ContentBlock):
             return NotImplemented
-        return type(self) is type(other) and self.path.resolve() == other.path.resolve()
+        return type(self) is type(other) and self.resolved_path == other.resolved_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve()))
+        return hash((type(self), self.resolved_path))
 
 
 @dataclass(eq=False)
@@ -632,13 +638,25 @@ def _parse_file_frontmatter(
     return fm, None, None, body, fm_line_count
 
 
-@dataclass
+@dataclass(eq=False)
 class FrontmatterField(LintTarget):
     """A single key-value pair from YAML frontmatter, exposed as a tree node."""
 
     name: str = ""
     value: Any = None
     field_line: Optional[int] = None
+
+    def __eq__(self, other):
+        if not isinstance(other, FrontmatterField):
+            return NotImplemented
+        return (
+            type(self) is type(other)
+            and self.path.resolve() == other.path.resolve()
+            and self.name == other.name
+        )
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve(), self.name))
 
     def tree_label(self) -> str:
         return f"frontmatter:{self.name}"
@@ -678,7 +696,7 @@ class BodyContent(ContentBlock):
         return "body"
 
 
-@dataclass
+@dataclass(eq=False)
 class FrontmatteredBlock(LintTarget):
     """Container for files with YAML frontmatter followed by a markdown body.
 
@@ -693,6 +711,20 @@ class FrontmatteredBlock(LintTarget):
     _fm_parsed: Optional[
         Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]
     ] = field(default=None, init=False, repr=False)
+
+    @property
+    def resolved_path(self) -> Path:
+        if not hasattr(self, "_resolved_path"):
+            self._resolved_path = self.path.resolve()
+        return self._resolved_path
+
+    def __eq__(self, other):
+        if not isinstance(other, FrontmatteredBlock):
+            return NotImplemented
+        return type(self) is type(other) and self.resolved_path == other.resolved_path
+
+    def __hash__(self):
+        return hash((type(self), self.resolved_path))
 
     def walk(self) -> Iterator["LintTarget"]:
         self._ensure_parsed()

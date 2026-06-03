@@ -5,7 +5,9 @@ a real LLM (live, requires SKILLSAW_LLM_INTEGRATION=1 + OPENROUTER_API_KEY).
 """
 
 import os
+import shutil
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, List, Optional
 
 import pytest
@@ -792,3 +794,50 @@ class TestYAMLContentBlockLLMFix:
             assert isinstance(pi, list)
             assert len(pi) >= 1
             assert (pi[0].get("instructions") or "").strip() == case.fixed_content.strip()
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
+
+
+class TestLLMFixFrontmatteredBlock:
+    """Regression test for GH-245: FrontmatteredBlock subclasses as dict keys.
+
+    skill-frontmatter violations carry a SkillBlock (a FrontmatteredBlock
+    subclass) as the block reference. llm_fix groups violations by block
+    via dict.setdefault(block, []), which requires __hash__. Before the
+    fix, @dataclass without eq=False made SkillBlock unhashable, crashing
+    with TypeError.
+    """
+
+    def test_llm_fix_skill_frontmatter(self, tmp_path):
+        """llm_fix must not crash when grouping violations on a SkillBlock."""
+        root = copy_fixture("llm-fix-frontmattered", tmp_path)
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(root)
+        linter = Linter(context, config)
+
+        violations = linter.run()
+        fm_violations = [v for v in violations if v.rule_id == "skill-frontmatter"]
+        assert len(fm_violations) >= 1, "Expected skill-frontmatter violation"
+
+        from skillsaw.rules.builtin.content_analysis import SkillBlock
+
+        assert isinstance(
+            fm_violations[0].block, SkillBlock
+        ), "Violation block must be a SkillBlock to exercise the bug path"
+
+        fixed_frontmatter = (
+            "name: missing-description\ndescription: Deploy a service to the production cluster\n"
+        )
+        provider = _fake_fix_provider(fixed_frontmatter)
+        result = linter.llm_fix(provider)
+        assert result.violations_before > 0
