@@ -369,6 +369,24 @@ def test_version_from_file_explicit(tmp_path):
     assert config.version == "0.7.0"
 
 
+def test_integer_version_does_not_crash(tmp_path):
+    """version: 1 (unquoted integer) should not crash with AttributeError"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("version: 1\n")
+    config = LinterConfig.from_file(config_file)
+    assert isinstance(config.version, str)
+    assert config.version == "1"
+
+
+def test_float_version_does_not_crash(tmp_path):
+    """version: 1.0 (unquoted float) should not crash with AttributeError"""
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("version: 1.0\n")
+    config = LinterConfig.from_file(config_file)
+    assert isinstance(config.version, str)
+    assert config.version == "1.0"
+
+
 def test_version_gates_new_rules(temp_dir):
     """Rules with since > config version are skipped when not explicitly configured"""
     (temp_dir / "CLAUDE.md").write_text("# Test")
