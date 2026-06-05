@@ -2,6 +2,7 @@
 name: skillsaw-release
 description: Bump the version, generate release notes, and publish a new skillsaw release to PyPI. Use when cutting a new release.
 compatibility: Requires git, gh CLI, and internet access
+user-invocable: true
 metadata:
   author: stbenjam
   version: "1.0"

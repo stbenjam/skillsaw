@@ -2,6 +2,7 @@
 name: skillsaw-maintenance
 description: Analyze upstream specs (agentskills.io, Claude Code plugin/marketplace format) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
 compatibility: Requires git, gh CLI, and internet access
+user-invocable: true
 metadata:
   author: stbenjam
   version: "1.0"
