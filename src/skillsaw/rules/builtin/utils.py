@@ -226,7 +226,7 @@ def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     return yaml_key_line(fm_text, key, top_level=True, line_offset=offset)
 
 
-_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", re.DOTALL)
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*(?:\n|\Z)", re.DOTALL)
 
 
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:
