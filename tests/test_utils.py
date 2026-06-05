@@ -397,6 +397,23 @@ def test_extract_frontmatter_text_bogus_closing_delimiter():
     assert text is None
 
 
+def test_parse_frontmatter_bogus_closing_delimiter_with_whitespace():
+    """Closing delimiter with whitespace then non-whitespace (e.g. '--- BOGUS') must not match."""
+    content = "---\nname: test\n--- BOGUS\n# Body\n"
+    fm, body, error_line = parse_frontmatter(content)
+    assert fm is None
+    assert error_line is None
+    assert body == content
+
+
+def test_parse_frontmatter_trailing_whitespace_on_closing_delimiter():
+    """Closing delimiter with only trailing whitespace ('---   ') should still match."""
+    content = "---\nname: test\n---   \n# Body\n"
+    fm, body, error_line = parse_frontmatter(content)
+    assert fm == {"name": "test"}
+    assert error_line is None
+
+
 def test_parse_frontmatter_closing_at_eof_without_newline():
     """Closing --- at end of string with no trailing newline should still match."""
     content = "---\nname: test\n---"
