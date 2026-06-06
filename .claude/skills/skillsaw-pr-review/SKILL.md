@@ -2,6 +2,7 @@
 name: skillsaw-pr-review
 description: Review open PRs in skillsaw, fix failing CI, address reviewer feedback, and push updates. Use for triaging and fixing up existing pull requests.
 compatibility: Requires git, gh CLI, and internet access
+user-invocable: true
 metadata:
   author: stbenjam
   version: "1.0"
