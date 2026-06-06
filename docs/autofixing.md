@@ -51,57 +51,26 @@ Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fi
 
 skillsaw uses [LiteLLM](https://docs.litellm.ai/docs/providers) under the hood, so any LiteLLM-compatible model works. Model names follow the LiteLLM `provider/model` format.
 
-### Vertex AI (recommended)
+### Providers
 
-Most users access LLMs through Google Cloud's Vertex AI. Set up authentication and pass the model with the `vertex_ai/` prefix:
+Install the extras for your provider and set the required environment variables:
 
-```bash
-# Install with Vertex AI support
-pip install 'skillsaw[vertexai]'
-
-# Authenticate (one-time)
-gcloud auth application-default login
-
-# Set your project and region
-export VERTEXAI_PROJECT=my-gcp-project
-export VERTEXAI_LOCATION=us-east5
-
-# Fix with Claude on Vertex AI
-skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-
-# Or with Gemini
-skillsaw fix --llm --model vertex_ai/gemini-2.5-flash
-```
-
-With `uvx` (no install required):
-
-```bash
-uvx --with 'skillsaw[vertexai]' skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-```
-
-To avoid passing `--model` every time, set it in your environment or config:
-
-```bash
-# Environment variable
-export SKILLSAW_MODEL=vertex_ai/claude-sonnet-4-6
-```
-
-```yaml
-# .skillsaw.yaml
-llm:
-  model: vertex_ai/claude-sonnet-4-6
-```
-
-### Other Providers
-
-skillsaw works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers). Install the appropriate extras and set the provider-specific environment variables:
-
-=== "Anthropic (direct)"
+=== "Anthropic"
 
     ```bash
     pip install 'skillsaw[llm]'
     export ANTHROPIC_API_KEY=sk-ant-...
     skillsaw fix --llm --model claude-sonnet-4-6
+    ```
+
+=== "Vertex AI"
+
+    ```bash
+    pip install 'skillsaw[vertexai]'
+    gcloud auth application-default login
+    export VERTEXAI_PROJECT=my-gcp-project
+    export VERTEXAI_LOCATION=global
+    skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
     ```
 
 === "AWS Bedrock"
@@ -129,6 +98,18 @@ skillsaw works with any [LiteLLM-supported provider](https://docs.litellm.ai/doc
     export OPENROUTER_API_KEY=...
     skillsaw fix --llm --model openrouter/anthropic/claude-sonnet-4-6
     ```
+
+To avoid passing `--model` every time, set it in your environment or config:
+
+```bash
+export SKILLSAW_MODEL=claude-sonnet-4-6
+```
+
+```yaml
+# .skillsaw.yaml
+llm:
+  model: claude-sonnet-4-6
+```
 
 ### Environment Variables Reference
 

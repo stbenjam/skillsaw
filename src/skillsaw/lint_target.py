@@ -11,13 +11,21 @@ from typing import Iterator, List, Optional, Type, TypeVar
 T = TypeVar("T", bound="LintTarget")
 
 
-@dataclass
+@dataclass(eq=False)
 class LintTarget:
     """A node in the repository lint tree."""
 
     path: Path
     children: List["LintTarget"] = field(default_factory=list)
     parent: Optional["LintTarget"] = field(default=None, repr=False)
+
+    def __eq__(self, other):
+        if not isinstance(other, LintTarget):
+            return NotImplemented
+        return type(self) is type(other) and self.path.resolve() == other.path.resolve()
+
+    def __hash__(self):
+        return hash((type(self), self.path.resolve()))
 
     def walk(self) -> Iterator["LintTarget"]:
         yield self
@@ -144,7 +152,7 @@ class LintTarget:
         return "\n".join(lines)
 
 
-@dataclass
+@dataclass(eq=False)
 class MarketplaceConfigNode(LintTarget):
     """The .claude-plugin/marketplace.json manifest file."""
 
@@ -152,7 +160,7 @@ class MarketplaceConfigNode(LintTarget):
         return "marketplace.json"
 
 
-@dataclass
+@dataclass(eq=False)
 class MarketplaceNode(LintTarget):
     """A marketplace plugins directory."""
 
@@ -160,7 +168,7 @@ class MarketplaceNode(LintTarget):
         return f"{self.path.name}/ [marketplace]"
 
 
-@dataclass
+@dataclass(eq=False)
 class PluginNode(LintTarget):
     """A plugin directory."""
 
@@ -168,7 +176,7 @@ class PluginNode(LintTarget):
         return f"{self.path.name}/ [plugin]"
 
 
-@dataclass
+@dataclass(eq=False)
 class SkillNode(LintTarget):
     """A skill directory."""
 
@@ -176,7 +184,7 @@ class SkillNode(LintTarget):
         return f"{self.path.name}/ [skill]"
 
 
-@dataclass
+@dataclass(eq=False)
 class ApmConfigNode(LintTarget):
     """The apm.yml manifest file."""
 
@@ -184,7 +192,7 @@ class ApmConfigNode(LintTarget):
         return "apm.yml"
 
 
-@dataclass
+@dataclass(eq=False)
 class ApmNode(LintTarget):
     """The .apm/ directory container."""
 
@@ -192,7 +200,7 @@ class ApmNode(LintTarget):
         return ".apm/"
 
 
-@dataclass
+@dataclass(eq=False)
 class CodeRabbitNode(LintTarget):
     """A .coderabbit.yaml file container."""
 
@@ -200,7 +208,7 @@ class CodeRabbitNode(LintTarget):
         return ".coderabbit.yaml"
 
 
-@dataclass
+@dataclass(eq=False)
 class PromptfooConfigNode(LintTarget):
     """A promptfoo eval config or test fragment file."""
 

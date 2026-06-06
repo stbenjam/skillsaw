@@ -94,12 +94,17 @@ skillsaw   # exit 0
 
 For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 
-> **AI-assisted onboarding:** The `skillsaw-onboard` skill automates the
-> entire adoption process — install, lint, autofix, manual fixes, CI setup,
-> and baseline. In Claude Code: `claude plugin marketplace add stbenjam/skillsaw`,
-> then `claude plugin install skillsaw@skillsaw-marketplace`, then type
-> `/skillsaw-onboard`. For other agents, see the
-> [Getting Started guide](https://skillsaw.org/getting-started/#onboarding-with-ai).
+> [!TIP]
+> **:sparkles: Onboard with AI** — let your coding agent handle the entire setup in one shot.
+>
+> **Claude Code:**
+> ```bash
+> claude plugin marketplace add stbenjam/skillsaw
+> claude plugin install skillsaw@skillsaw-marketplace
+> ```
+> Then type `/skillsaw-onboard` — it installs skillsaw, lints your repo, autofixes what it can, walks you through manual fixes, sets up CI, and creates a baseline.
+>
+> **Other agents** — see the [Getting Started guide](https://skillsaw.org/getting-started/#onboarding-with-ai).
 
 ## Installation
 

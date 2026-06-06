@@ -2,6 +2,7 @@
 name: skillsaw-issue-solver
 description: Pick up open GitHub issues from collaborators and create PRs to solve them. Use when triaging and resolving reported bugs or feature requests.
 compatibility: Requires git, gh CLI, and internet access
+user-invocable: true
 metadata:
   author: stbenjam
   version: "1.0"

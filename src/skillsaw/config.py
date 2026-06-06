@@ -140,7 +140,7 @@ class LinterConfig:
         )
 
         return cls(
-            version=data.get("version", _DEFAULT_VERSION),
+            version=str(data.get("version", _DEFAULT_VERSION)),
             rules=rules,
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
