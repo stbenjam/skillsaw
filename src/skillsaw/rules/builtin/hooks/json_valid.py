@@ -1,5 +1,5 @@
 """
-Rules for validating hook configuration
+Rule for validating hook configuration JSON structure
 """
 
 from typing import List

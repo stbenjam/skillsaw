@@ -1,5 +1,5 @@
 """
-Rules for validating openclaw metadata in SKILL.md frontmatter
+Rule for validating openclaw metadata in SKILL.md frontmatter
 """
 
 from typing import List

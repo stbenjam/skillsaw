@@ -1,26 +1,17 @@
 """
-Rules for validating APM (Agent Package Manager) format repositories
+Rule: apm-yaml-valid
 """
 
-from typing import List, Optional
+from typing import List
 
 import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import ApmConfigNode, ApmNode
-from skillsaw.rules.builtin.utils import read_text, yaml_key_line
+from skillsaw.lint_target import ApmConfigNode
+from skillsaw.rules.builtin.utils import read_text
 
-
-def _yaml_key_line(file_path, key: str) -> Optional[int]:
-    """Find the line number of a top-level key in a YAML file.
-
-    Uses ruamel.yaml round-trip parsing for accurate line tracking.
-    """
-    content = read_text(file_path)
-    if content is None:
-        return None
-    return yaml_key_line(content, key, top_level=True)
+from ._helpers import _yaml_key_line
 
 
 class ApmYamlValidRule(Rule):
@@ -105,64 +96,5 @@ class ApmYamlValidRule(Rule):
                         line=_yaml_key_line(apm_yml, field),
                     )
                 )
-
-        return violations
-
-
-class ApmStructureValidRule(Rule):
-    """Validate .apm/ directory structure"""
-
-    repo_types = None  # runs when enabled; auto-enable via config + has_apm check
-
-    since = "0.7.0"
-
-    @property
-    def rule_id(self) -> str:
-        return "apm-structure-valid"
-
-    @property
-    def description(self) -> str:
-        return ".apm/ directory must contain skills/ or instructions/ with valid structure"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        if not context.has_apm:
-            return []
-
-        apm_nodes = context.lint_tree.find(ApmNode)
-        if not apm_nodes:
-            return []
-
-        violations = []
-        apm_dir = apm_nodes[0].path
-
-        has_skills = (apm_dir / "skills").is_dir()
-        has_instructions = (apm_dir / "instructions").is_dir()
-
-        if not has_skills and not has_instructions:
-            violations.append(
-                self.violation(
-                    ".apm/ directory should contain a 'skills/' or 'instructions/' subdirectory",
-                    file_path=apm_dir,
-                )
-            )
-
-        if has_skills:
-            skills_dir = apm_dir / "skills"
-            try:
-                for item in skills_dir.iterdir():
-                    if not item.is_dir() or item.name.startswith("."):
-                        continue
-                    if not (item / "SKILL.md").exists():
-                        violations.append(
-                            self.violation(
-                                f"Skill directory '{item.name}' is missing SKILL.md",
-                                file_path=item,
-                            )
-                        )
-            except OSError:
-                pass
 
         return violations

@@ -1,5 +1,5 @@
 """
-Rules for validating .claude/rules/ directory structure and content
+Rule for validating .claude/rules/ directory structure and content
 """
 
 import re

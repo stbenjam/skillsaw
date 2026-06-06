@@ -1,5 +1,5 @@
 """
-Rules for validating .coderabbit.yaml configuration files.
+Rule for validating .coderabbit.yaml configuration files.
 
 CodeRabbit config files contain ``instructions`` fields consumed by an LLM.
 The YAML structure is validated here; instruction text quality is checked by
