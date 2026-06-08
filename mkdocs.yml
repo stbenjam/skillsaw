@@ -66,6 +66,7 @@ nav:
     - Custom Rules: custom-rules.md
     - Scaffolding: scaffolding.md
     - Lint Tree: lint-tree.md
+    - Supply Chain Protection: supply-chain-protection.md
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
@@ -97,6 +98,7 @@ nav:
       - rules/content/broken-internal-reference.md
       - rules/content/unlinked-internal-reference.md
       - rules/content/placeholder-text.md
+    - Settings: rules/settings.md
     - CodeRabbit: rules/coderabbit.md
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md

@@ -1119,7 +1119,7 @@ class McpServerConfig:
 
 @dataclass(eq=False)
 class McpBlock(FileContentBlock):
-    """.mcp.json in a plugin."""
+    """.mcp.json at the project root or inside a plugin."""
 
     category: str = "mcp"
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
@@ -1158,6 +1158,62 @@ class McpBlock(FileContentBlock):
     @property
     def server_names(self) -> Set[str]:
         return {s.name for s in self.servers}
+
+
+@dataclass(eq=False)
+class SettingsBlock(FileContentBlock):
+    """settings.json or settings.local.json in .claude/."""
+
+    category: str = "settings"
+    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
+        default=None, init=False, repr=False
+    )
+
+    def _ensure_parsed(self) -> None:
+        if self._parsed is None:
+            self._parsed = _parse_json_file(self.path)
+
+    @property
+    def parse_error(self) -> Optional[str]:
+        self._ensure_parsed()
+        return self._parsed[1]
+
+    @property
+    def raw_data(self) -> Optional[Dict[str, Any]]:
+        self._ensure_parsed()
+        data = self._parsed[0]
+        return data if isinstance(data, dict) else None
+
+    @property
+    def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Extract hooks, supporting both nested and flat formats.
+
+        Nested (hooks.json style): { matcher, hooks: [{type, command}] }
+        Flat (settings.json style): { type, command, matcher? }
+        """
+        data = self.raw_data
+        if data is None:
+            return {}
+        hooks_obj = data.get("hooks", {})
+        if not isinstance(hooks_obj, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for event_type, configs in hooks_obj.items():
+            if not isinstance(configs, list):
+                continue
+            entries: List[HookEventConfig] = []
+            for cfg in configs:
+                if not isinstance(cfg, dict):
+                    continue
+                if "hooks" in cfg:
+                    entries.append(HookEventConfig.from_dict(cfg))
+                elif "type" in cfg:
+                    handler = HookHandler.from_dict(cfg)
+                    matcher = cfg.get("matcher", ".*")
+                    entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
+            if entries:
+                result[event_type] = entries
+        return result
 
 
 # Backward compat aliases

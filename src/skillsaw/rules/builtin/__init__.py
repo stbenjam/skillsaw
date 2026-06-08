@@ -31,6 +31,8 @@ from .agents import (
 
 from .hooks import (
     HooksJsonValidRule,
+    HooksDangerousRule,
+    HooksProhibitedRule,
 )
 
 from .mcp import (
@@ -95,6 +97,10 @@ from .promptfoo import (
     PromptfooMetadataRule,
 )
 
+from .settings import (
+    SettingsDangerousRule,
+)
+
 from .apm import (
     ApmYamlValidRule,
     ApmStructureValidRule,
@@ -121,6 +127,8 @@ BUILTIN_RULES = [
     AgentFrontmatterRule,
     # Hooks
     HooksJsonValidRule,
+    HooksDangerousRule,
+    HooksProhibitedRule,
     # MCP
     McpValidJsonRule,
     McpProhibitedRule,
@@ -165,6 +173,8 @@ BUILTIN_RULES = [
     PromptfooValidRule,
     PromptfooAssertionsRule,
     PromptfooMetadataRule,
+    # Settings
+    SettingsDangerousRule,
     # APM (Agent Package Manager)
     ApmYamlValidRule,
     ApmStructureValidRule,
@@ -187,6 +197,8 @@ __all__ = [
     "SkillFrontmatterRule",
     "AgentFrontmatterRule",
     "HooksJsonValidRule",
+    "HooksDangerousRule",
+    "HooksProhibitedRule",
     "McpValidJsonRule",
     "McpProhibitedRule",
     "RulesValidRule",
@@ -222,6 +234,7 @@ __all__ = [
     "PromptfooValidRule",
     "PromptfooAssertionsRule",
     "PromptfooMetadataRule",
+    "SettingsDangerousRule",
     "ApmYamlValidRule",
     "ApmStructureValidRule",
 ]

@@ -232,6 +232,52 @@ class TestHooksJson:
         assert "content-cognitive-chunks" not in rule_ids(r)
 
 
+# ── Supply Chain Hooks ──────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestSupplyChainHooks:
+
+    def test_clean_hooks_pass(self, tmp_path):
+        repo = copy_fixture("supply-chain-hooks/clean", tmp_path)
+        r = run_lint(repo)
+        assert "hooks-dangerous" not in rule_ids(r)
+
+    def test_malicious_hooks_detected(self, tmp_path):
+        repo = copy_fixture("supply-chain-hooks/malicious", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "hooks-dangerous" in rule_ids(r)
+        sc = by_rule(r)["hooks-dangerous"]
+        assert len(sc) >= 2
+        assert any("dotfile directory" in v["message"] for v in sc)
+        assert any("downloads and executes" in v["message"] for v in sc)
+
+
+# ── Root-Level MCP ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestRootLevelMcp:
+
+    def test_root_mcp_prohibited_fires(self, tmp_path):
+        repo = copy_fixture("root-mcp/broken", tmp_path)
+        r = run_lint(repo, "--rule", "mcp-prohibited")
+        assert "mcp-prohibited" in rule_ids(r)
+
+    def test_root_mcp_valid_json_fires_on_invalid(self, tmp_path):
+        repo = copy_fixture("root-mcp/invalid-json", tmp_path)
+        r = run_lint(repo)
+        assert "mcp-valid-json" in rule_ids(r)
+
+    def test_root_mcp_clean_passes(self, tmp_path):
+        repo = copy_fixture("root-mcp/clean", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "mcp-prohibited" not in rule_ids(r)
+        assert "mcp-valid-json" not in rule_ids(r)
+
+
 # ── Marketplace ──────────────────────────────────────────────────
 
 
@@ -407,6 +453,20 @@ class TestApm:
 
         apm_violations = by_rule(r)["apm-yaml-valid"]
         assert any("description" in v["message"].lower() for v in apm_violations)
+
+    def test_apm_clean_hooks_pass(self, tmp_path):
+        repo = copy_fixture("apm/hooks-clean", tmp_path)
+        r = run_lint(repo)
+        assert "hooks-dangerous" not in rule_ids(r)
+
+    def test_apm_dangerous_hooks_detected(self, tmp_path):
+        repo = copy_fixture("apm/hooks-dangerous", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "hooks-dangerous" in rule_ids(r)
+        sc = by_rule(r)["hooks-dangerous"]
+        assert any("downloads and executes" in v["message"] for v in sc)
+        assert any("dotfile directory" in v["message"] for v in sc)
 
 
 # ── Promptfoo ────────────────────────────────────────────────────
@@ -691,6 +751,9 @@ BROKEN_FIXTURES = [
     "dot-claude/agents-imports-broken",
     "coderabbit/broken",
     "apm/broken",
+    "supply-chain-hooks/malicious",
+    "apm/hooks-dangerous",
+    "root-mcp/invalid-json",
 ]
 
 CLEAN_FIXTURES = [
@@ -701,6 +764,9 @@ CLEAN_FIXTURES = [
     "dot-claude/agents-imports-clean",
     "coderabbit/clean",
     "apm/clean",
+    "apm/hooks-clean",
+    "supply-chain-hooks/clean",
+    "root-mcp/clean",
 ]
 
 OPT_IN_RULES = {
@@ -711,6 +777,7 @@ OPT_IN_RULES = {
     "agentskill-evals-required",
     "promptfoo-assertions",
     "promptfoo-metadata",
+    "hooks-prohibited",
 }
 
 

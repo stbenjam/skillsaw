@@ -12,7 +12,7 @@ from skillsaw.rules.builtin.utils import read_json
 
 
 class McpProhibitedRule(Rule):
-    """Check that plugins do not enable MCP servers (security/policy rule)"""
+    """Check that the repository does not enable non-allowlisted MCP servers"""
 
     config_schema = {
         "allowlist": {
@@ -28,7 +28,7 @@ class McpProhibitedRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugins should not enable non-allowlisted MCP servers"
+        return "Repository should not enable non-allowlisted MCP servers"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -44,14 +44,14 @@ class McpProhibitedRule(Rule):
             if allowlist:
                 violations.append(
                     self.violation(
-                        f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
+                        f"non-allowlisted MCP servers defined: {', '.join(sorted(prohibited))}",
                         file_path=block.path,
                     )
                 )
             else:
                 violations.append(
                     self.violation(
-                        "Plugin defines MCP servers in .mcp.json",
+                        f"MCP servers defined in {block.path.name}",
                         file_path=block.path,
                     )
                 )
@@ -76,14 +76,14 @@ class McpProhibitedRule(Rule):
             if allowlist:
                 violations.append(
                     self.violation(
-                        f"Plugin defines non-allowlisted MCP servers: {', '.join(sorted(prohibited))}",
+                        f"non-allowlisted MCP servers defined: {', '.join(sorted(prohibited))}",
                         file_path=plugin_json_path,
                     )
                 )
             else:
                 violations.append(
                     self.violation(
-                        "Plugin defines MCP servers in plugin.json",
+                        "MCP servers defined in plugin.json",
                         file_path=plugin_json_path,
                     )
                 )

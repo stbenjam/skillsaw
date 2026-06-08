@@ -6,7 +6,7 @@
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
-| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - |
+| `mcp-prohibited` | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
 
 
 **`mcp-prohibited` parameters:**

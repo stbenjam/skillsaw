@@ -20,3 +20,5 @@ rules:
     required-keys:
       - token-usage
       - tier
+  hooks-prohibited:
+    enabled: true
