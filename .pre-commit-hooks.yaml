@@ -1,0 +1,50 @@
+# pre-commit hook definitions for skillsaw.
+# https://pre-commit.com/
+#
+# Usage, in a consuming repository's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/stbenjam/skillsaw
+#       rev: v0.12.1  # or a full commit SHA
+#       hooks:
+#         - id: skillsaw
+#
+# skillsaw is a repo-level linter (repo-type detection, marketplace
+# registration, cross-file rules), so the hook lints the whole repository
+# rather than individual staged files (pass_filenames: false). The `files`
+# pattern below only controls *when* the hook fires: at least one staged
+# file must match it.
+- id: skillsaw
+  name: skillsaw
+  description: Lint agentic contextual building blocks (CLAUDE.md, skills, plugins, hooks, ...)
+  entry: skillsaw lint
+  language: python
+  pass_filenames: false
+  files: |
+    (?x)^(
+        (.*/)?(CLAUDE|AGENTS|GEMINI|SKILL)\.md|
+        .*\.instructions\.md|
+        (.*/)?\.claude-plugin/.*|
+        \.claude/.*|
+        plugins/.*|
+        commands/.*|
+        skills/.*|
+        agents/.*|
+        hooks/.*|
+        rules/.*|
+        \.cursor/rules/.*|
+        \.cursorrules|
+        \.github/copilot-instructions\.md|
+        \.kiro/.*|
+        \.apm/.*|
+        apm\.yml|
+        (.*/)?hooks\.json|
+        (.*/)?\.mcp\.json|
+        (.*/)?settings\.json|
+        \.skillsaw\.ya?ml|
+        \.claudelint\.ya?ml|
+        \.skillsaw-baseline\.json|
+        \.coderabbit\.yaml|
+        (.*/)?promptfooconfig[^/]*\.ya?ml|
+        evals/.*\.ya?ml
+    )$
