@@ -873,7 +873,13 @@ def _run_fix(args):
 
         if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
             context = RepositoryContext(args.path)
-            linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
+            linter = Linter(
+                context,
+                config,
+                rule_ids=rule_ids,
+                skip_rule_ids=skip_rule_ids,
+                no_custom_rules=args.no_custom_rules,
+            )
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)
             applied.extend(rename_applied)
             suggested.extend(rename_suggested)
