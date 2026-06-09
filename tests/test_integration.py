@@ -1422,6 +1422,51 @@ class TestRuleFilter:
         assert result.returncode == 0
 
 
+# ── Custom-rule bypass on rename re-lint (GH-257) ────────────────
+
+
+class TestNoCustomRulesRenameBypass:
+    """--no-custom-rules must be honoured on the post-rename re-lint pass."""
+
+    FIXTURE = "custom-rule-rename-bypass"
+
+    def test_no_custom_rules_blocks_import_after_rename(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "fix",
+            "--no-custom-rules",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert result.returncode == 0, f"fix failed: {result.stderr}"
+        assert not sentinel.exists(), (
+            "Custom rule was imported despite --no-custom-rules " "(sentinel file was created)"
+        )
+
+    def test_custom_rules_loaded_without_flag(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "fix",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert result.returncode == 0, f"fix failed: {result.stderr}"
+        assert sentinel.exists(), (
+            "Custom rule was NOT imported without --no-custom-rules "
+            "(fixture does not exercise the code path)"
+        )
+
+
 # ── Baseline ─────────────────────────────────────────────────────
 
 
