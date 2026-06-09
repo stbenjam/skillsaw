@@ -267,3 +267,43 @@ def test_rule_crash_in_fix_produces_error_violation(valid_plugin):
     assert len(crashes) == 1
     assert crashes[0].severity.value == "error"
     assert fixes == []
+
+
+class _CrashingFixRule:
+    """Stand-in rule whose check() succeeds but fix() always raises."""
+
+    rule_id = "crashing-fix-rule"
+    description = "fix always crashes"
+    supports_autofix = True
+
+    def check(self, context):
+        from skillsaw.rule import RuleViolation, Severity
+
+        return [
+            RuleViolation(
+                rule_id="crashing-fix-rule",
+                severity=Severity.WARNING,
+                message="needs fixing",
+            )
+        ]
+
+    def fix(self, context, violations):
+        raise RuntimeError("fix boom")
+
+
+def test_rule_crash_during_autofix_produces_error_violation(valid_plugin):
+    """A rule that raises during fix()'s autofix pass surfaces as an ERROR violation."""
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    linter.rules = [_CrashingFixRule()]
+
+    violations, fixes = linter.fix()
+
+    crashes = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert len(crashes) == 1
+    assert crashes[0].severity.value == "error"
+    assert "during fix" in crashes[0].message
+    assert "fix boom" in crashes[0].message
+    # The unfixed violations are still reported alongside the crash
+    assert any(v.rule_id == "crashing-fix-rule" for v in violations)
+    assert fixes == []
