@@ -1133,7 +1133,12 @@ class Linter:
                 if bpath in restored:
                     continue
                 restored.add(bpath)
-                original_content = block_file_originals.get(bpath)
+                if bpath not in block_file_originals:
+                    # Every processed block was snapshotted above; if a path
+                    # is somehow missing, skip rather than risk deleting a
+                    # file we have no snapshot for.
+                    continue
+                original_content = block_file_originals[bpath]
                 if original_content is None:
                     if bpath.exists():
                         bpath.unlink()
