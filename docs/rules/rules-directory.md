@@ -5,5 +5,5 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
+| [`rules-valid`](rules-valid.md) | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - |
 

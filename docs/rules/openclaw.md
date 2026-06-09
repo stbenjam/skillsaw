@@ -7,5 +7,5 @@ Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - |
+| [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - |
 

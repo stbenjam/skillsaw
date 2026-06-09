@@ -7,5 +7,5 @@ Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fiel
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `coderabbit-yaml-valid` | .coderabbit.yaml must be valid YAML | error (auto) | - |
+| [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - |
 

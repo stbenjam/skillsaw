@@ -48,7 +48,7 @@ generate-docs: $(VENV)/bin/activate
 self-lint: $(VENV)/bin/activate
 	$(VENV)/bin/skillsaw lint .
 
-update: apm generate-example generate-docs format self-lint
+update: apm generate-example generate-docs generate-site-content format self-lint
 
 generate-site-content: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-site-content.py
