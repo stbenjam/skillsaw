@@ -451,7 +451,9 @@ def add_hook(
     existing_cmds = {
         handler.get("command")
         for entry in data["hooks"][event]
+        if isinstance(entry, dict)
         for handler in (entry.get("hooks") or [])
+        if isinstance(handler, dict)
     }
     if hook_cmd not in existing_cmds:
         data["hooks"][event].append(
