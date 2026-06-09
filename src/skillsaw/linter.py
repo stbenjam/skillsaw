@@ -308,8 +308,21 @@ class Linter:
                 violations.extend(rule_violations)
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                violations.append(self._crash_violation(rule, e))
 
         return self._filter_violations(violations)
+
+    @staticmethod
+    def _crash_violation(rule: Rule, exc: Exception, action: str = "check") -> RuleViolation:
+        """Surface a rule crash as an ERROR violation so it affects the exit code."""
+        return RuleViolation(
+            rule_id="rule-execution-error",
+            severity=Severity.ERROR,
+            message=(
+                f"Rule '{rule.rule_id}' crashed during {action}:"
+                f" {exc.__class__.__name__}: {exc}"
+            ),
+        )
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -327,6 +340,7 @@ class Linter:
                 rule_violations = rule.check(self.context)
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                all_violations.append(self._crash_violation(rule, e))
                 continue
 
             checked.extend(rule_violations)
@@ -341,6 +355,7 @@ class Linter:
                     all_violations.extend(remaining)
                 except Exception as e:
                     print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
+                    all_violations.append(self._crash_violation(rule, e, action="fix"))
                     all_violations.extend(visible)
             else:
                 all_violations.extend(visible)
@@ -977,6 +992,19 @@ class Linter:
             else:
                 originals[fpath] = None
 
+        # Snapshot block files before any processing so dry-run can restore
+        # them verbatim. None means the file did not exist before the run —
+        # only those may be unlinked on restore (a pre-existing file whose
+        # block text was empty must be restored, not deleted).
+        block_file_originals: Dict[Path, Optional[str]] = {}
+        for block in block_violations:
+            bpath = block.path.resolve()
+            if bpath not in block_file_originals:
+                if bpath.exists():
+                    block_file_originals[bpath] = bpath.read_text(encoding="utf-8")
+                else:
+                    block_file_originals[bpath] = None
+
         violations_before = len(llm_violations)
         total_units = len(block_violations) + len(file_violations)
         root_resolved = self.context.root_path.resolve()
@@ -1112,14 +1140,25 @@ class Linter:
                         fpath.unlink()
                 else:
                     fpath.write_text(original_content, encoding="utf-8")
+            restored: Set[Path] = set()
             for br in block_results:
-                if br["changed"]:
-                    if not br["original_body"] and br["block"].path.exists():
-                        br["block"].path.unlink()
-                    elif br.get("frontmatter_mode"):
-                        br["block"].write_frontmatter_text(br["original_body"])
-                    else:
-                        br["block"].write_body(br["original_body"])
+                if not br["changed"]:
+                    continue
+                bpath = br["block"].path.resolve()
+                if bpath in restored:
+                    continue
+                restored.add(bpath)
+                if bpath not in block_file_originals:
+                    # Every processed block was snapshotted above; if a path
+                    # is somehow missing, skip rather than risk deleting a
+                    # file we have no snapshot for.
+                    continue
+                original_content = block_file_originals[bpath]
+                if original_content is None:
+                    if bpath.exists():
+                        bpath.unlink()
+                else:
+                    bpath.write_text(original_content, encoding="utf-8")
 
         return LLMFixResult(
             files_modified=[] if dry_run else kept_files,

@@ -104,7 +104,7 @@ def format_report(
     elif fmt == "json":
         from .json_fmt import format_json
 
-        return format_json(violations, context, rules, version, verbose)
+        return format_json(violations, context, rules, version, verbose, baseline_suppressed)
     elif fmt == "sarif":
         from .sarif import format_sarif
 
