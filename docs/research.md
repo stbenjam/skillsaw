@@ -5,7 +5,7 @@
 
 skillsaw's content intelligence rules analyze the *quality* of AI context building blocks. Each rule is grounded in published research on LLM behavior, prompt engineering best practices, or established software engineering principles.
 
-## [Weak Language](rules/content/weak-language.md)
+## [Weak Language](rules/content-weak-language.md)
 
 **Rule:** `content-weak-language`
 
@@ -36,7 +36,7 @@ your instructions, the more likely you'll receive the output you want."*
 
 ---
 
-## [Tautological](rules/content/tautological.md)
+## [Tautological](rules/content-tautological.md)
 
 **Rule:** `content-tautological`
 
@@ -68,7 +68,7 @@ line must earn its place."*
 
 ---
 
-## [Critical Position](rules/content/critical-position.md)
+## [Critical Position](rules/content-critical-position.md)
 
 **Rule:** `content-critical-position`
 
@@ -99,7 +99,7 @@ routine instructions at line 47.
 
 ---
 
-## [Redundant With Tooling](rules/content/redundant-with-tooling.md)
+## [Redundant With Tooling](rules/content-redundant-with-tooling.md)
 
 **Rule:** `content-redundant-with-tooling`
 
@@ -131,7 +131,7 @@ instructions wastes context tokens and adds no reliability.
 
 ---
 
-## [Instruction Budget](rules/content/instruction-budget.md)
+## [Instruction Budget](rules/content-instruction-budget.md)
 
 **Rule:** `content-instruction-budget`
 
@@ -170,7 +170,7 @@ for how this differs from the `context-budget` rule.
 
 ---
 
-## [Negative Only](rules/content/negative-only.md)
+## [Negative Only](rules/content-negative-only.md)
 
 **Rule:** `content-negative-only`
 
@@ -204,7 +204,7 @@ instructions that tell the model what not to do."*
 
 ---
 
-## [Section Length](rules/content/section-length.md)
+## [Section Length](rules/content-section-length.md)
 
 **Rule:** `content-section-length`
 
@@ -237,7 +237,7 @@ comprehension. The threshold is configurable via the `max-tokens` parameter.
 
 ---
 
-## [Contradiction](rules/content/contradiction.md)
+## [Contradiction](rules/content-contradiction.md)
 
 **Rule:** `content-contradiction`
 
@@ -269,7 +269,7 @@ instructions that cannot be simultaneously satisfied.
 
 ---
 
-## [Hook Candidate](rules/content/hook-candidate.md)
+## [Hook Candidate](rules/content-hook-candidate.md)
 
 **Rule:** `content-hook-candidate`
 
@@ -300,7 +300,7 @@ belong in hooks.
 
 ---
 
-## [Actionability Score](rules/content/actionability-score.md)
+## [Actionability Score](rules/content-actionability-score.md)
 
 **Rule:** `content-actionability-score`
 
@@ -334,7 +334,7 @@ strongest predictors of prompt quality.
 
 ---
 
-## [Cognitive Chunks](rules/content/cognitive-chunks.md)
+## [Cognitive Chunks](rules/content-cognitive-chunks.md)
 
 **Rule:** `content-cognitive-chunks`
 
@@ -367,7 +367,7 @@ Markdown headings are the idiomatic delimiter for instruction files.
 
 ---
 
-## [Embedded Secrets](rules/content/embedded-secrets.md)
+## [Embedded Secrets](rules/content-embedded-secrets.md)
 
 **Rule:** `content-embedded-secrets`
 
@@ -392,7 +392,7 @@ Credentials), mapping to OWASP Top Ten 2021 A07.
 
 ---
 
-## [Banned References](rules/content/banned-references.md)
+## [Banned References](rules/content-banned-references.md)
 
 **Rule:** `content-banned-references`
 
@@ -421,7 +421,7 @@ and supports user-defined patterns via the `banned` config key.
 
 ---
 
-## [Inconsistent Terminology](rules/content/inconsistent-terminology.md)
+## [Inconsistent Terminology](rules/content-inconsistent-terminology.md)
 
 **Rule:** `content-inconsistent-terminology`
 
@@ -448,7 +448,7 @@ two different terms refer to the same concept from broader context.
 
 ---
 
-## [Broken Internal Reference](rules/content/broken-internal-reference.md)
+## [Broken Internal Reference](rules/content-broken-internal-reference.md)
 
 **Rule:** `content-broken-internal-reference`
 
@@ -485,7 +485,7 @@ template directories where placeholder links are expected.
 
 ---
 
-## [Unlinked Internal Reference](rules/content/unlinked-internal-reference.md)
+## [Unlinked Internal Reference](rules/content-unlinked-internal-reference.md)
 
 **Rule:** `content-unlinked-internal-reference`
 
@@ -517,7 +517,7 @@ are illustrative examples rather than real file references.
 
 ---
 
-## [Placeholder Text](rules/content/placeholder-text.md)
+## [Placeholder Text](rules/content-placeholder-text.md)
 
 **Rule:** `content-placeholder-text`
 

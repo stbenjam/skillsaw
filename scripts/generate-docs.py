@@ -22,6 +22,7 @@ RULE_GROUPS = [
         [
             "agentskill-valid",
             "agentskill-name",
+            "agentskill-rename-refs",
             "agentskill-description",
             "agentskill-structure",
             "agentskill-evals",
@@ -48,7 +49,13 @@ RULE_GROUPS = [
     ),
     (
         "Skills, Agents, Hooks",
-        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid", "hooks-dangerous", "hooks-prohibited"],
+        [
+            "skill-frontmatter",
+            "agent-frontmatter",
+            "hooks-json-valid",
+            "hooks-dangerous",
+            "hooks-prohibited",
+        ],
         "Validates skill/agent frontmatter and hook configuration. The security "
         "rules scan hooks in both `hooks.json` and `settings.json` for supply-chain "
         "attack patterns (inspired by the "
@@ -148,6 +155,11 @@ RULE_GROUPS = [
 ]
 
 
+def _table_cell(text):
+    """Escape characters that would break a markdown table cell."""
+    return str(text).replace("|", "\\|")
+
+
 def _heading_to_anchor(heading_text):
     """Convert a markdown heading to a GitHub-style anchor link."""
     anchor = heading_text.lower()
@@ -216,6 +228,14 @@ def main():
         rule = rule_class()
         rules_by_id[rule.rule_id] = rule
 
+    # Every builtin rule must be documented in a group — fail loudly when
+    # a new rule is missing so it can't silently drop out of the README.
+    grouped_ids = [rid for _, rids, _ in RULE_GROUPS for rid in rids]
+    missing = sorted(set(rules_by_id) - set(grouped_ids))
+    if missing:
+        print(f"ERROR: rules missing from RULE_GROUPS: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
     defaults = LinterConfig.default()
 
     lines = []
@@ -236,7 +256,7 @@ def main():
             rule = rules_by_id[rule_id]
             rule_config = defaults.rules.get(rule_id, {})
             enabled = rule_config.get("enabled", True)
-            severity = rule.default_severity().value
+            severity = rule_config.get("severity") or rule.default_severity().value
 
             if enabled == "auto":
                 severity_str = f"{severity} (auto)"
@@ -252,7 +272,9 @@ def main():
                 fix_types.append("llm")
             fix_str = ", ".join(fix_types) if fix_types else "-"
 
-            lines.append(f"| `{rule_id}` | {rule.description} | {severity_str} | {fix_str} |")
+            lines.append(
+                f"| `{rule_id}` | {_table_cell(rule.description)} | {severity_str} | {fix_str} |"
+            )
 
             if rule.config_schema:
                 params_sections.append((rule_id, rule.config_schema))
@@ -265,7 +287,7 @@ def main():
             lines.append("| Parameter | Description | Default |")
             lines.append("|-----------|-------------|---------|")
             for param_name, param_info in schema.items():
-                desc = param_info["description"]
+                desc = _table_cell(param_info["description"])
                 default = f"`{json.dumps(param_info['default'])}`"
                 lines.append(f"| `{param_name}` | {desc} | {default} |")
             lines.append("")

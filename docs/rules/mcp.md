@@ -5,13 +5,6 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
-| `mcp-prohibited` | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
-
-
-**`mcp-prohibited` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `allowlist` | MCP server names that are permitted | `[]` |
+| [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
+| [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
 

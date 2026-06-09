@@ -7,22 +7,7 @@ Validates [promptfoo](https://www.promptfoo.dev/) eval YAML configs found in `ev
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `promptfoo-valid` | Validate promptfoo eval YAML config structure and file references | error (auto) | - |
-| `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
-| `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
-
-
-**`promptfoo-assertions` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `required-types` | Assertion types that every test must include (via test-level or defaultTest assertions) | `[]` |
-| `threshold-constraints` | Per-assertion-type threshold bounds, e.g. {cost: {max: 2.0}, latency: {max: 30000}} | `{}` |
-
-
-**`promptfoo-metadata` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `required-keys` | Metadata keys required on every test case | `[]` |
+| [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - |
+| [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - |
+| [`promptfoo-metadata`](promptfoo-metadata.md) | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - |
 

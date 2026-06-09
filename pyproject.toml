@@ -46,6 +46,7 @@ bedrock = [
 ]
 docs = [
     "mkdocs-material>=9.0",
+    "mkdocs-redirects>=1.2",
 ]
 dev = [
     "pytest>=7.0",
@@ -71,6 +72,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
 "skillsaw.marketplace.templates" = ["**/*"]
+"skillsaw.rules" = ["docs/*.md"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

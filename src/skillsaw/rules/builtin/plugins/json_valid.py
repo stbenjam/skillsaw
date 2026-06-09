@@ -33,7 +33,7 @@ class PluginJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Plugin.json must be valid JSON with required fields"
+        return "plugin.json must be valid JSON with required fields"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR

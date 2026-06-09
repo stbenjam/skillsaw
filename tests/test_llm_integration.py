@@ -462,6 +462,32 @@ class TestLLMFixDryRun:
         assert len(result.files_modified) == 0
         assert len(result.diffs) > 0
 
+    def test_dry_run_preserves_preexisting_file_with_empty_block(self, tmp_path):
+        """Dry-run must not delete a pre-existing file whose original block
+        text was empty (GH-267).
+
+        A SKILL.md without frontmatter has an empty frontmatter block, which
+        previously hit the "file didn't exist" unlink branch on restore.
+        """
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        skill_md = skill_dir / "SKILL.md"
+        original = "# My Skill\n\nUse this skill to deploy services to production.\n"
+        skill_md.write_text(original, encoding="utf-8")
+
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(tmp_path)
+        linter = Linter(context, config)
+
+        provider = _fake_fix_provider(
+            "name: my-skill\ndescription: Use when deploying services to production\n"
+        )
+        linter.llm_fix(provider, dry_run=True)
+
+        assert skill_md.exists(), "Dry-run deleted a pre-existing file"
+        assert skill_md.read_text(encoding="utf-8") == original
+
     def test_dry_run_rollback_preserves_original(self, tmp_path):
         """Dry-run rollback when LLM changes don't improve violations.
 

@@ -471,6 +471,87 @@ def test_sarif_invalid_config_has_rule_descriptor(valid_plugin):
     assert results[0]["ruleId"] == "invalid-config"
 
 
+def test_sarif_builtin_rules_have_help_uri(valid_plugin):
+    """Builtin rule descriptors link to their documentation page."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    output = format_sarif(violations, context, linter.rules, "1.0.0")
+    data = json.loads(output)
+
+    rules = data["runs"][0]["tool"]["driver"]["rules"]
+    assert len(rules) > 0
+    for r in rules:
+        assert r["helpUri"] == f"https://skillsaw.org/rules/{r['id']}/"
+
+
+def test_sarif_synthetic_descriptor_has_no_help_uri(valid_plugin):
+    """Synthetic rule IDs (e.g. invalid-config) have no docs page to link."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="invalid-config",
+            severity=Severity.WARNING,
+            message="Unknown rule 'bogus-rule' in config",
+        ),
+    ]
+
+    output = format_sarif(violations, context, [], "1.0.0")
+    data = json.loads(output)
+
+    descriptor = next(r for r in data["runs"][0]["tool"]["driver"]["rules"])
+    assert "helpUri" not in descriptor
+
+
+def test_text_links_rule_docs_for_violations(valid_plugin):
+    """Text output lists doc URLs for the builtin rules that fired."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    linter.run()
+    violations = [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="Command file should use kebab-case",
+            file_path=Path("plugins/foo/commands/Bad_Name.md"),
+            line=3,
+        ),
+    ]
+
+    output = format_text(violations, context, linter.rules, "1.0.0")
+    assert "Rule docs" in output
+    assert "https://skillsaw.org/rules/command-naming/" in output
+
+
+def test_text_no_rule_docs_section_when_clean(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+
+    output = format_text([], context, linter.rules, "1.0.0")
+    assert "Rule docs" not in output
+
+
+def test_text_no_rule_docs_for_synthetic_rule_ids(valid_plugin):
+    """Synthetic rule IDs (invalid-config) must not produce doc links."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = [
+        RuleViolation(
+            rule_id="invalid-config",
+            severity=Severity.WARNING,
+            message="Unknown rule 'bogus-rule' in config",
+        ),
+    ]
+
+    output = format_text(violations, context, linter.rules, "1.0.0")
+    assert "https://skillsaw.org/rules/invalid-config/" not in output
+
+
 def test_sarif_synthetic_descriptor_for_unknown_rule_id(valid_plugin):
     """Any violation with a rule_id not in the rules list gets a synthetic descriptor."""
     context = RepositoryContext(valid_plugin)
