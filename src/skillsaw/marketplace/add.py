@@ -448,9 +448,12 @@ def add_hook(
     data.setdefault("hooks", {})
     data["hooks"].setdefault(event, [])
     hook_cmd = f"./hooks/{event}.sh"
-    if not any(
-        (h.get("hooks") or [{}])[0].get("command") == hook_cmd for h in data["hooks"][event]
-    ):
+    existing_cmds = {
+        handler.get("command")
+        for entry in data["hooks"][event]
+        for handler in (entry.get("hooks") or [])
+    }
+    if hook_cmd not in existing_cmds:
         data["hooks"][event].append(
             {
                 "hooks": [

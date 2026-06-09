@@ -389,6 +389,44 @@ class TestAddComponents:
         assert len(data["hooks"]["PreToolUse"]) == 2
         assert data["hooks"]["PreToolUse"][1]["hooks"][0]["type"] == "command"
 
+    def test_add_hook_detects_duplicate_in_later_handlers(self, temp_dir):
+        """Duplicate detection must scan all handlers, not just the first (GH-269)."""
+        root = self._init_with_plugin(temp_dir)
+        hooks_dir = root / "plugins" / "my-plugin" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        hooks_json = hooks_dir / "hooks.json"
+        # The command is already registered, but as the second handler
+        hooks_json.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "hooks": [
+                                    {"type": "command", "command": "./hooks/other.sh"},
+                                    {"type": "command", "command": "./hooks/PreToolUse.sh"},
+                                ]
+                            }
+                        ]
+                    }
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        add_hook("PreToolUse", "my-plugin", path=root)
+
+        data = json.loads(hooks_json.read_text())
+        # No duplicate entry — the command was already registered
+        assert len(data["hooks"]["PreToolUse"]) == 1
+        commands = [
+            handler["command"]
+            for entry in data["hooks"]["PreToolUse"]
+            for handler in entry["hooks"]
+        ]
+        assert commands.count("./hooks/PreToolUse.sh") == 1
+
     def test_add_command_rejects_duplicate(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
         add_command("greet", "my-plugin", path=root)
