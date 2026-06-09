@@ -534,3 +534,37 @@ def test_custom_rule_resolved_via_find_config(tmp_path):
 
     violations = linter.run()
     assert any(v.rule_id == "repo-root-rule" for v in violations)
+
+
+def test_no_custom_rules_skips_custom_rules(valid_plugin, temp_dir):
+    """--no-custom-rules should prevent custom rules from loading."""
+    custom_rule_file = temp_dir / "custom_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class AlwaysFailRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "always-fail"
+
+    @property
+    def description(self) -> str:
+        return "Always fails"
+
+    def default_severity(self) -> Severity:
+        return Severity.ERROR
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("this should not run")]
+""")
+
+    config = LinterConfig(custom_rules=[str(custom_rule_file)])
+    context = RepositoryContext(valid_plugin)
+
+    linter = Linter(context, config, no_custom_rules=True)
+    rule_ids = [r.rule_id for r in linter.rules]
+    assert "always-fail" not in rule_ids
+
+    violations = linter.run()
+    assert not any(v.rule_id == "always-fail" for v in violations)

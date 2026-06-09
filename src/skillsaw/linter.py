@@ -50,12 +50,14 @@ class Linter:
         rule_ids: Optional[Set[str]] = None,
         skip_rule_ids: Optional[Set[str]] = None,
         baseline: Optional["BaselineFile"] = None,
+        no_custom_rules: bool = False,
     ):
         self.context = context
         self.config = config or LinterConfig.default()
         self._rule_ids = rule_ids
         self._skip_rule_ids = skip_rule_ids or set()
         self._baseline = baseline
+        self._no_custom_rules = no_custom_rules
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
         self.context.content_paths = self.config.content_paths
@@ -77,9 +79,9 @@ class Linter:
         # Load builtin rules
         self._load_builtin_rules()
 
-        # Load custom rules
-        for custom_rule_path in self.config.custom_rules:
-            self._load_custom_rule(custom_rule_path)
+        if not self._no_custom_rules:
+            for custom_rule_path in self.config.custom_rules:
+                self._load_custom_rule(custom_rule_path)
 
     def _load_builtin_rules(self):
         """Load builtin rules from skillsaw.rules.builtin"""

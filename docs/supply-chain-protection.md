@@ -1,5 +1,10 @@
 # Supply Chain Protection
 
+!!! warning "skillsaw itself is a supply chain surface"
+    Any tool you run in CI can be a vector. Pin skillsaw to a specific
+    version and commit SHA, and use `--no-custom-rules` on untrusted PRs.
+    See [Skillsaw as a vector](#skillsaw-as-a-vector) for details.
+
 AI coding assistants execute hooks, MCP servers, and shell commands defined
 in repository configuration files. An attacker who lands a malicious
 `.claude/settings.json`, `.mcp.json`, or `hooks.json` in a project — via a
@@ -150,3 +155,58 @@ be defined:
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
+
+## Skillsaw as a vector
+
+skillsaw itself is a tool that runs in your CI pipeline, and its own
+supply chain matters. See
+[THREAT_MODEL.md](https://github.com/stbenjam/skillsaw/blob/main/THREAT_MODEL.md)
+for the full threat model.
+
+### Pin to a specific version
+
+Always pin skillsaw to a specific version in CI rather than installing
+the latest. This prevents a compromised release from silently entering
+your pipeline:
+
+```bash
+uvx skillsaw@0.12.0 lint
+```
+
+If you use the skillsaw GitHub Action, pin it to a commit SHA rather
+than a mutable tag:
+
+```yaml
+- uses: stbenjam/skillsaw@<full-commit-sha>
+```
+
+skillsaw is published to PyPI using
+[trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC
+via `pypa/gh-action-pypi-publish`), which means releases are
+cryptographically tied to the GitHub Actions workflow that built them —
+no long-lived API tokens that could be stolen.
+
+### Custom rules
+
+Custom rules defined in `.skillsaw.yaml` are arbitrary Python files
+loaded via `importlib` and executed during linting. An attacker who
+modifies or adds a custom rule in a pull request can achieve code
+execution on the CI runner — leaking secrets, tokens, or credentials
+from the build environment.
+
+Use `--no-custom-rules` when running skillsaw on untrusted PRs:
+
+```bash
+skillsaw lint --no-custom-rules
+```
+
+This skips loading all custom rules while still running the full set of
+builtin rules. Additional mitigations for CI environments:
+
+- **Don't run custom checks for untrusted contributors.** Only enable
+  custom rules for PRs from trusted collaborators or after manual review.
+- **Run in a sandboxed environment.** Use ephemeral runners with no
+  access to production systems or persistent credentials.
+- **Don't expose tokens to the linting step.** Use GitHub's
+  `permissions` block to restrict the `GITHUB_TOKEN` scope, and never
+  pass secrets as environment variables to the step that runs skillsaw.
