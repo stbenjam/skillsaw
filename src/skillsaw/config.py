@@ -418,9 +418,21 @@ class LinterConfig:
         """Check if a string value needs quoting for valid YAML output."""
         if not s:
             return True
+        # Plain scalars cannot carry leading/trailing whitespace
+        if s != s.strip():
+            return True
         # Characters that are special in YAML and need quoting
-        yaml_special = set("*&!|>{[%@`")
-        return any(c in yaml_special for c in s)
+        yaml_special = set("*&!|>{[%@`\"'\\")
+        if any(c in yaml_special for c in s):
+            return True
+        # ": " (or trailing ":") would start a nested mapping; "#" after a
+        # space (or at the start) would start a comment
+        if ": " in s or s.endswith(":"):
+            return True
+        if " #" in s or s.startswith("#"):
+            return True
+        # Indicators that are special at the start of a plain scalar
+        return s[0] in "-?:,]}"
 
     @staticmethod
     def _yaml_value(value, indent=4):
@@ -449,7 +461,7 @@ class LinterConfig:
             return "\n" + "\n".join(lines)
         if isinstance(value, str):
             if LinterConfig._needs_quoting(value):
-                escaped = value.replace('"', '\\"')
+                escaped = value.replace("\\", "\\\\").replace('"', '\\"')
                 return f'"{escaped}"'
             return value
         return str(value)

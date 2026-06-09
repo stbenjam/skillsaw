@@ -990,3 +990,31 @@ def test_save_multiline_schema_defaults_commented(tmp_path):
     # The file should still be valid YAML (multi-line comments don't break parsing)
     parsed = yaml.safe_load(content)
     assert parsed is not None
+
+
+def test_save_round_trips_yaml_significant_strings(tmp_path):
+    """Values containing ': ', '#', quotes, or backslashes survive save/load (GH-268)"""
+    tricky = [
+        "docs: legacy/**",
+        "path #1/**",
+        "ends-with-colon:",
+        "#leading-hash",
+        "- leading-dash",
+        'has "quotes" inside',
+        "back\\slash",
+        "  padded  ",
+    ]
+    config = LinterConfig.default()
+    config.exclude_patterns = tricky
+    config.rules["content-weak-language"]["note"] = "warning: avoid #hedging"
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+
+    parsed = yaml.safe_load(config_path.read_text())
+    assert parsed["exclude"] == tricky
+    assert parsed["rules"]["content-weak-language"]["note"] == "warning: avoid #hedging"
+
+    # And via the real loader
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.exclude_patterns == tricky
+    assert reloaded.rules["content-weak-language"]["note"] == "warning: avoid #hedging"
