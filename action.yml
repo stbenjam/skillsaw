@@ -10,7 +10,7 @@ inputs:
     required: false
     default: '.'
   version:
-    description: 'skillsaw version to install (e.g. "0.4.3"). Empty for latest.'
+    description: 'skillsaw version to install (e.g. "0.12.1"). Defaults to the version this action was released with.'
     required: false
     default: '0.12.1'
   strict:
