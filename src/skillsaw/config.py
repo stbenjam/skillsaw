@@ -418,6 +418,9 @@ class LinterConfig:
         """Check if a string value needs quoting for valid YAML output."""
         if not s:
             return True
+        # Control characters (newlines, tabs, ...) must be quoted and escaped
+        if any(ord(c) < 0x20 for c in s):
+            return True
         # Plain scalars cannot carry leading/trailing whitespace
         if s != s.strip():
             return True
@@ -461,7 +464,13 @@ class LinterConfig:
             return "\n" + "\n".join(lines)
         if isinstance(value, str):
             if LinterConfig._needs_quoting(value):
-                escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+                escaped = (
+                    value.replace("\\", "\\\\")
+                    .replace('"', '\\"')
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t")
+                )
                 return f'"{escaped}"'
             return value
         return str(value)

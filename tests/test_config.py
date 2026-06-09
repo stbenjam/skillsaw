@@ -1003,6 +1003,9 @@ def test_save_round_trips_yaml_significant_strings(tmp_path):
         'has "quotes" inside',
         "back\\slash",
         "  padded  ",
+        "multi\nline",
+        "tab\tseparated",
+        "carriage\rreturn",
     ]
     config = LinterConfig.default()
     config.exclude_patterns = tricky
