@@ -30,6 +30,32 @@ theme:
 extra_css:
   - stylesheets/custom.css
 
+# Listing plugins disables the implicit default, so search must be explicit.
+plugins:
+  - search
+  # Content rule pages moved from rules/content/<short>/ to the uniform
+  # rules/<rule-id>/ scheme (#279) — keep the old URLs alive.
+  - redirects:
+      redirect_maps:
+        rules/content/index.md: rules/content-intelligence.md
+        rules/content/weak-language.md: rules/content-weak-language.md
+        rules/content/tautological.md: rules/content-tautological.md
+        rules/content/critical-position.md: rules/content-critical-position.md
+        rules/content/redundant-with-tooling.md: rules/content-redundant-with-tooling.md
+        rules/content/instruction-budget.md: rules/content-instruction-budget.md
+        rules/content/negative-only.md: rules/content-negative-only.md
+        rules/content/section-length.md: rules/content-section-length.md
+        rules/content/contradiction.md: rules/content-contradiction.md
+        rules/content/hook-candidate.md: rules/content-hook-candidate.md
+        rules/content/actionability-score.md: rules/content-actionability-score.md
+        rules/content/cognitive-chunks.md: rules/content-cognitive-chunks.md
+        rules/content/embedded-secrets.md: rules/content-embedded-secrets.md
+        rules/content/banned-references.md: rules/content-banned-references.md
+        rules/content/inconsistent-terminology.md: rules/content-inconsistent-terminology.md
+        rules/content/broken-internal-reference.md: rules/content-broken-internal-reference.md
+        rules/content/unlinked-internal-reference.md: rules/content-unlinked-internal-reference.md
+        rules/content/placeholder-text.md: rules/content-placeholder-text.md
+
 markdown_extensions:
   - admonition
   - pymdownx.details

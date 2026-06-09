@@ -46,6 +46,7 @@ bedrock = [
 ]
 docs = [
     "mkdocs-material>=9.0",
+    "mkdocs-redirects>=1.2",
 ]
 dev = [
     "pytest>=7.0",
