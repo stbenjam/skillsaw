@@ -530,7 +530,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
-| `plugin-json-valid` | Plugin.json must be valid JSON with required fields | error (auto) | - |
+| `plugin-json-valid` | plugin.json must be valid JSON with required fields | error (auto) | - |
 | `plugin-naming` | Plugin names should use kebab-case | warning (auto) | - |
 | `plugin-readme` | Plugin should have a README.md file | warning (auto) | llm |
 
@@ -565,7 +565,7 @@ Validates skill/agent frontmatter and hook configuration. The security rules sca
 | `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
-| `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
+| `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
 | `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
 
 **`hooks-dangerous` parameters:**

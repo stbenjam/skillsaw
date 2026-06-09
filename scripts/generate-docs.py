@@ -155,6 +155,11 @@ RULE_GROUPS = [
 ]
 
 
+def _table_cell(text):
+    """Escape characters that would break a markdown table cell."""
+    return str(text).replace("|", "\\|")
+
+
 def _heading_to_anchor(heading_text):
     """Convert a markdown heading to a GitHub-style anchor link."""
     anchor = heading_text.lower()
@@ -267,7 +272,9 @@ def main():
                 fix_types.append("llm")
             fix_str = ", ".join(fix_types) if fix_types else "-"
 
-            lines.append(f"| `{rule_id}` | {rule.description} | {severity_str} | {fix_str} |")
+            lines.append(
+                f"| `{rule_id}` | {_table_cell(rule.description)} | {severity_str} | {fix_str} |"
+            )
 
             if rule.config_schema:
                 params_sections.append((rule_id, rule.config_schema))
@@ -280,7 +287,7 @@ def main():
             lines.append("| Parameter | Description | Default |")
             lines.append("|-----------|-------------|---------|")
             for param_name, param_info in schema.items():
-                desc = param_info["description"]
+                desc = _table_cell(param_info["description"])
                 default = f"`{json.dumps(param_info['default'])}`"
                 lines.append(f"| `{param_name}` | {desc} | {default} |")
             lines.append("")

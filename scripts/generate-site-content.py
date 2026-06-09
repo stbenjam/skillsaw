@@ -382,6 +382,11 @@ def parse_cli():
 # ---------------------------------------------------------------------------
 
 
+def _table_cell(text):
+    """Escape characters that would break a markdown table cell."""
+    return str(text).replace("|", "\\|")
+
+
 def _rule_table(rule_ids, rules_data):
     """Generate a markdown table for a list of rule IDs."""
     lines = [
@@ -391,7 +396,9 @@ def _rule_table(rule_ids, rules_data):
     for rule_id in rule_ids:
         r = rules_data[rule_id]
         link = f"[`{rule_id}`]({rule_id}.md)"
-        lines.append(f"| {link} | {r['description']} | {r['severity']} | {r['fix']} |")
+        lines.append(
+            f"| {link} | {_table_cell(r['description'])} | {r['severity']} | {r['fix']} |"
+        )
     return "\n".join(lines)
 
 
@@ -403,7 +410,7 @@ def _params_table(rule_id, schema):
         "|-----------|-------------|---------|",
     ]
     for param_name, param_info in schema.items():
-        desc = param_info["description"]
+        desc = _table_cell(param_info["description"])
         default = f"`{json.dumps(param_info['default'])}`"
         lines.append(f"| `{param_name}` | {desc} | {default} |")
     return "\n".join(lines)
@@ -429,7 +436,8 @@ def generate_rules_index(rules_data):
             r = rules_data[rule_id]
             link = f"[`{rule_id}`]({rule_id}.md)"
             lines.append(
-                f"| {link} | {r['description']} | {r['severity']} | {r['fix']} | {group_name} |"
+                f"| {link} | {_table_cell(r['description'])} | {r['severity']}"
+                f" | {r['fix']} | {group_name} |"
             )
 
     return "\n".join(lines) + "\n"
@@ -488,7 +496,7 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
         lines.append("| Parameter | Description | Default |")
         lines.append("|-----------|-------------|---------|")
         for param_name, param_info in r["config_schema"].items():
-            desc = param_info["description"]
+            desc = _table_cell(param_info["description"])
             default = f"`{json.dumps(param_info['default'])}`"
             lines.append(f"| `{param_name}` | {desc} | {default} |")
         lines.append("")

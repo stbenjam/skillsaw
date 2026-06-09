@@ -14,14 +14,15 @@ from skillsaw.rule_docs import load_rule_docs, rule_doc_url
 from skillsaw.rules.builtin import BUILTIN_RULES
 
 
-def run_explain(rule_id, *extra_args, cwd=None):
+def run_explain(rule_id, *extra_args):
+    """Run `skillsaw explain RULE [PATH...]`; extra_args are CLI arguments
+    (typically the positional repository path)."""
     args = [sys.executable, "-m", "skillsaw", "explain", rule_id, *extra_args]
     result = subprocess.run(
         args,
         capture_output=True,
         text=True,
         timeout=60,
-        cwd=str(cwd) if cwd else None,
         env={**os.environ, "NO_COLOR": "1"},
     )
     return result
@@ -107,6 +108,18 @@ def test_explain_effective_repo_type_no_match(temp_dir):
     result = run_explain("marketplace-registration", str(temp_dir))
     assert result.returncode == 0
     assert "no matching repo type or format detected" in result.stdout
+
+
+def test_explain_nonexistent_path_fails(temp_dir):
+    result = run_explain("content-weak-language", str(temp_dir / "does-not-exist"))
+    assert result.returncode == 1
+    assert "Path not found" in result.stderr
+
+
+def test_explain_missing_config_file_fails(temp_dir):
+    result = run_explain("content-weak-language", str(temp_dir), "-c", str(temp_dir / "nope.yaml"))
+    assert result.returncode == 1
+    assert "Config file not found" in result.stderr
 
 
 def test_explain_effective_repo_type_match(valid_plugin):

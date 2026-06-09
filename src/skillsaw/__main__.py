@@ -1231,6 +1231,13 @@ def _run_explain(args):
     from .rules.builtin import BUILTIN_RULES
     from .rule_docs import load_rule_docs, rule_doc_url
 
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+    if args.config and not args.config.exists():
+        print(f"Error: Config file not found: {args.config}", file=sys.stderr)
+        sys.exit(1)
+
     rule_class = None
     known_ids = []
     for candidate in BUILTIN_RULES:
@@ -1290,46 +1297,46 @@ def _run_explain(args):
         default_val = LinterConfig._yaml_value(param_info.get("default"), indent=8)
         desc = param_info.get("description", "")
         if default_val.startswith("\n"):
-            print(f"      {param_name}:{default_val}  # {desc}")
+            print(f"      {param_name}:  # {desc}{default_val}")
         else:
             print(f"      {param_name}: {default_val}  # {desc}")
 
     # Effective config in the target repository — doubles as a debugging
     # tool for "why didn't this rule fire?"
-    if args.path.exists():
-        context = RepositoryContext(args.path)
-        config_path = args.config if args.config else find_config(args.path)
-        config = None
-        if config_path and config_path.exists():
-            try:
-                config = LinterConfig.from_file(config_path)
-            except ValueError as e:
-                print(f"Warning: Failed to load config: {e}", file=sys.stderr)
-        if config is None:
-            config = LinterConfig.default()
-            config_label = "builtin defaults"
-        else:
-            config_label = str(config_path)
-
-        enabled, reason = config.rule_enabled_reason(
-            args.rule_id,
-            context,
-            default_rule.repo_types,
-            default_rule.formats,
-            since_version=default_rule.since,
-        )
+    context = RepositoryContext(args.path)
+    config_path = args.config if args.config else find_config(args.path)
+    config = None
+    if config_path:
         try:
-            effective_rule = rule_class(config.get_rule_config(args.rule_id))
-            effective_severity = effective_rule.severity.value
-        except ValueError:
-            effective_severity = "(invalid severity in config)"
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    if config is None:
+        config = LinterConfig.default()
+        config_label = "builtin defaults"
+    else:
+        config_label = str(config_path)
 
-        state = f"{c['green']}enabled{c['reset']}" if enabled else f"{c['red']}disabled{c['reset']}"
-        print()
-        print(f"{c['bold']}Effective in {args.path.resolve()}{c['reset']} ({config_label}):")
-        print(f"  {state} — {reason}")
-        if enabled:
-            print(f"  severity: {effective_severity}")
+    enabled, reason = config.rule_enabled_reason(
+        args.rule_id,
+        context,
+        default_rule.repo_types,
+        default_rule.formats,
+        since_version=default_rule.since,
+    )
+    try:
+        effective_rule = rule_class(config.get_rule_config(args.rule_id))
+        effective_severity = effective_rule.severity.value
+    except ValueError:
+        effective_severity = "(invalid severity in config)"
+
+    state = f"{c['green']}enabled{c['reset']}" if enabled else f"{c['red']}disabled{c['reset']}"
+    print()
+    print(f"{c['bold']}Effective in {args.path.resolve()}{c['reset']} ({config_label}):")
+    print(f"  {state} — {reason}")
+    if enabled:
+        print(f"  severity: {effective_severity}")
 
     print()
     print(f"{c['bold']}Docs:{c['reset']} {rule_doc_url(args.rule_id)}")

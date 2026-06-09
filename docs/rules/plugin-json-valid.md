@@ -3,7 +3,7 @@
 
 # plugin-json-valid
 
-Plugin.json must be valid JSON with required fields
+plugin.json must be valid JSON with required fields
 
 | | |
 |---|---|
