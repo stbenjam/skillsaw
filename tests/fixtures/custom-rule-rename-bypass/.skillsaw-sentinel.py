@@ -4,8 +4,9 @@ from typing import List
 
 from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 
-sentinel = Path(os.environ.get("SKILLSAW_SENTINEL", "/dev/null"))
-sentinel.write_text("custom rule was imported")
+sentinel_env = os.environ.get("SKILLSAW_SENTINEL")
+if sentinel_env:
+    Path(sentinel_env).write_text("custom rule was imported")
 
 
 class SentinelRule(Rule):
