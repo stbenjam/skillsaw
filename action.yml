@@ -10,9 +10,9 @@ inputs:
     required: false
     default: '.'
   version:
-    description: 'skillsaw version to install (e.g. "0.4.3"). Empty for latest.'
+    description: 'skillsaw version to install (e.g. "0.12.1"). Defaults to the version this action was released with.'
     required: false
-    default: ''
+    default: '0.12.1'
   strict:
     description: 'Treat warnings as errors'
     required: false
@@ -50,12 +50,10 @@ runs:
         SKILLSAW_VERSION: ${{ inputs.version }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
-        if [ -n "$SKILLSAW_VERSION" ]; then
-          pip install -q "skillsaw==$SKILLSAW_VERSION"
-        elif [ -f "$ACTION_PATH/pyproject.toml" ]; then
+        if [ -f "$ACTION_PATH/pyproject.toml" ]; then
           pip install -q "$ACTION_PATH"
         else
-          pip install -q skillsaw
+          pip install -q "skillsaw==$SKILLSAW_VERSION"
         fi
 
     - name: Run skillsaw

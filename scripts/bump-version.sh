@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
 INIT_PY="$REPO_ROOT/src/skillsaw/__init__.py"
+ACTION_YML="$REPO_ROOT/action.yml"
 
 current_version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$PYPROJECT")
 
@@ -27,6 +28,7 @@ import re, sys
 for path, pattern, repl in [
     ('$PYPROJECT', r'^version = \"$current_version\"', 'version = \"$new_version\"'),
     ('$INIT_PY', r'^__version__ = \"$current_version\"', '__version__ = \"$new_version\"'),
+    ('$ACTION_YML', r\"default: '$current_version'\", \"default: '$new_version'\"),
 ]:
     text = open(path).read()
     text = re.sub(pattern, repl, text, count=1, flags=re.MULTILINE)
@@ -36,3 +38,4 @@ for path, pattern, repl in [
 echo "Updated:"
 echo "  $PYPROJECT"
 echo "  $INIT_PY"
+echo "  $ACTION_YML"
