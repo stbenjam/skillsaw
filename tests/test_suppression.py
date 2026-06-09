@@ -131,6 +131,22 @@ class TestBuildSuppressionMap:
         assert not smap.is_suppressed("content-weak-language", 3)
         assert not smap.is_suppressed("content-tautological", 3)
 
+    def test_disable_next_line_no_rules_suppresses_all(self):
+        """Bare <!-- skillsaw-disable-next-line --> suppresses all rules on the next line."""
+        content = (
+            "Line one\n"
+            "<!-- skillsaw-disable-next-line -->\n"
+            "Try to handle errors.\n"
+            "Try to handle errors again.\n"
+        )
+        smap = build_suppression_map(content)
+        # Line 3 should be suppressed for any rule
+        assert smap.is_suppressed("content-weak-language", 3)
+        assert smap.is_suppressed("content-tautological", 3)
+        # Lines 1 and 4 should NOT be suppressed
+        assert not smap.is_suppressed("content-weak-language", 1)
+        assert not smap.is_suppressed("content-weak-language", 4)
+
     def test_disable_all(self):
         """Bare <!-- skillsaw-disable --> should suppress all rules."""
         content = (
@@ -346,6 +362,16 @@ class TestBuildSuppressionMap:
         )
         smap = build_suppression_map(content)
         assert smap.is_suppressed("promptfoo-valid", 3)
+        assert not smap.is_suppressed("promptfoo-valid", 4)
+
+    def test_yaml_disable_next_line_no_rules_suppresses_all(self):
+        """Bare # skillsaw-disable-next-line suppresses all rules on the next line."""
+        content = (
+            "providers:\n" "# skillsaw-disable-next-line\n" "tests: 42\n" "scenarios: also-bad\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("promptfoo-valid", 3)
+        assert smap.is_suppressed("any-other-rule", 3)
         assert not smap.is_suppressed("promptfoo-valid", 4)
 
     def test_yaml_disable_all(self):
