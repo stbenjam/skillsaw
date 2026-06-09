@@ -151,6 +151,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_baseline",
         help="Ignore baseline file even if .skillsaw-baseline.json exists",
     )
+    lint_parser.add_argument(
+        "--no-custom-rules",
+        action="store_true",
+        dest="no_custom_rules",
+        help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
+    )
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -244,6 +250,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="RULE",
         help="Skip these rules (repeatable). Cannot be combined with --rule.",
+    )
+    fix_parser.add_argument(
+        "--no-custom-rules",
+        action="store_true",
+        dest="no_custom_rules",
+        help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
 
     # --- init ---
@@ -536,7 +548,12 @@ def _run_lint(args):
         sys.exit(1)
     try:
         linter = Linter(
-            context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids, baseline=baseline
+            context,
+            config,
+            rule_ids=rule_ids,
+            skip_rule_ids=skip_rule_ids,
+            baseline=baseline,
+            no_custom_rules=args.no_custom_rules,
         )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -836,7 +853,13 @@ def _run_fix(args):
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
     try:
-        linter = Linter(context, config, rule_ids=rule_ids, skip_rule_ids=skip_rule_ids)
+        linter = Linter(
+            context,
+            config,
+            rule_ids=rule_ids,
+            skip_rule_ids=skip_rule_ids,
+            no_custom_rules=args.no_custom_rules,
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

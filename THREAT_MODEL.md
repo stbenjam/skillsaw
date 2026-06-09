@@ -57,7 +57,7 @@ litellm. A GitHub Action mode posts lint results as PR review comments.
 
 | id | threat | actor | surface | asset | impact | likelihood | status | controls | evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| T1 | Arbitrary code execution via custom rules: a malicious `.skillsaw.yaml` points `custom-rules` at a Python file containing attacker code, which is loaded with `exec_module` | remote_unauth | custom_rule_files | developer_workstation | critical | possible | risk_accepted | Custom rules are an intentional feature; the file must exist in the repo, so this is equivalent to running any repo script. No sandbox. | None — design-level risk |
+| T1 | Arbitrary code execution via custom rules: a malicious `.skillsaw.yaml` points `custom-rules` at a Python file containing attacker code, which is loaded with `exec_module` | remote_unauth | custom_rule_files | developer_workstation | critical | possible | mitigated | `--no-custom-rules` flag skips loading custom rules entirely. Recommended for CI on untrusted PRs. Custom rules remain an intentional feature for trusted contexts; the file must exist in the repo. No sandbox. | `--no-custom-rules` (v0.12.0) |
 | T2 | LLM-driven file write outside repo root: the LLM issues a `write_file` or `replace_section` tool call with a path that escapes the repo via `../` traversal | remote_unauth | llm_api_responses | developer_workstation | critical | very_rare | mitigated | `_resolve_safe()` in `llm/tools.py` checks `is_relative_to(root)` before every read/write | None |
 | T3 | Prompt injection via linted file content: adversarial text in a CLAUDE.md or SKILL.md file manipulates the LLM during `fix --llm` to write malicious content or exfiltrate data through tool calls | remote_unauth | target_repo_files, llm_api_responses | repository_files, llm_api_credentials | high | possible | partially_mitigated | LLM is scoped to read/write/replace/lint/diff tools only; rollback reverts changes that don't reduce violations; no network-access tools. Credentials in env vars are not directly exposed to the LLM but may appear in file content if present in the repo. | None — general class risk for LLM-in-the-loop tools |
 | T4 | CI gate bypass via crafted file content: a PR author crafts files that cause skillsaw to exit 0 despite containing violations (e.g., triggering an unhandled exception that is silently caught, or exploiting baseline/suppression logic) | remote_unauth | target_repo_files, skillsaw_yaml_config | ci_gate_integrity | high | rare | partially_mitigated | Rule exceptions are caught per-rule and logged but do not abort; if all rules crash, exit 0 (no violations found). Inline suppression (`skillsaw-disable`) and baseline files can silence violations by design. | None |
@@ -82,7 +82,7 @@ litellm. A GitHub Action mode posts lint results as PR review comments.
 
 ## 6. Open questions
 
-- Should custom rule loading (`exec_module`) be gated behind an explicit opt-in flag or environment variable, rather than silently executing any Python file referenced in config? This is the highest-impact entry point.
+- ~~Should custom rule loading (`exec_module`) be gated behind an explicit opt-in flag or environment variable, rather than silently executing any Python file referenced in config? This is the highest-impact entry point.~~ Addressed: `--no-custom-rules` flag added in v0.12.0.
 - Should `fix --llm` enforce a mandatory `--dry-run` first pass in CI, or should that be left to the operator's CI config?
 - Should file-size limits be enforced during discovery to prevent resource exhaustion from multi-GB files in adversarial repos?
 - Does the rollback mechanism in `llm_fix` reliably prevent net-negative changes, or can an adversarial prompt produce changes that pass re-lint but introduce semantic harm?
@@ -101,7 +101,7 @@ litellm. A GitHub Action mode posts lint results as PR review comments.
 
 | mitigation | threat_ids | closes_class | effort |
 |---|---|---|---|
-| Add a `--no-custom-rules` flag and default to rejecting custom rules in CI unless explicitly opted in | T1 | partial | S |
+| ~~Add a `--no-custom-rules` flag and default to rejecting custom rules in CI unless explicitly opted in~~ Done: `--no-custom-rules` added in v0.12.0 | T1 | partial | S |
 | Add file-size caps and symlink-loop detection to the file discovery walker | T11 | yes | S |
 | Enforce `--dry-run` as default for `fix --llm` and require explicit `--write` to persist changes | T3, T10 | partial | S |
 | Pin dependency hashes in `pyproject.toml` or use a lockfile, and publish an SBOM with releases | T8 | partial | M |
