@@ -26,6 +26,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
   - [From source](#from-source)
   - [Using Docker](#using-docker)
   - [CI Integration](#ci-integration)
+  - [Pre-commit](#pre-commit)
 - [Repository Types](#repository-types)
   - [agentskills.io Skills](#agentskillsio-skills)
   - [Single Plugin](#single-plugin)
@@ -162,6 +163,21 @@ skillsaw:
 
 For PR review comments, the secure two-workflow pattern, and full configuration
 options, see the [CI Integration guide](https://skillsaw.org/ci/).
+
+### Pre-commit
+
+skillsaw ships a [Pre-commit](https://pre-commit.com/) hook. Add this to your
+repository's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/stbenjam/skillsaw
+    rev: v0.12.1  # or pin a full commit SHA
+    hooks:
+      - id: skillsaw
+```
+
+See the [Pre-commit guide](https://skillsaw.org/pre-commit/) for details.
 
 ## Repository Types
 
