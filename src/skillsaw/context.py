@@ -316,15 +316,15 @@ class RepositoryContext:
             for f in filenames:
                 yield Path(dirpath) / f
 
+    def _should_skip_dir(self, item: Path) -> bool:
+        """True if *item* is not a directory worth recursing into."""
+        return not item.is_dir() or item.name.startswith(".") or item.name in self._WALK_SKIP_DIRS
+
     def _has_skill_md_recursive(self, path: Path) -> bool:
         """Check if any subdirectory contains SKILL.md, recursively"""
         try:
             for item in path.iterdir():
-                if (
-                    not item.is_dir()
-                    or item.name.startswith(".")
-                    or item.name in self._WALK_SKIP_DIRS
-                ):
+                if self._should_skip_dir(item):
                     continue
                 if (item / "SKILL.md").exists():
                     return True
@@ -689,11 +689,7 @@ class RepositoryContext:
         """Discover skill directories within a parent directory, recursively"""
         try:
             for item in parent.iterdir():
-                if (
-                    not item.is_dir()
-                    or item.name.startswith(".")
-                    or item.name in self._WALK_SKIP_DIRS
-                ):
+                if self._should_skip_dir(item):
                     continue
                 resolved = item.resolve()
                 if resolved in discovered:
