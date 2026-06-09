@@ -3,6 +3,7 @@ Configuration management for skillsaw
 """
 
 import os
+import re
 
 import yaml
 from pathlib import Path
@@ -22,7 +23,21 @@ _DEFAULT_EXCLUDE_PATTERNS = [
 
 
 def _parse_version(v: str) -> Tuple[int, ...]:
-    return tuple(int(x) for x in v.split("."))
+    """Parse a version string leniently into a comparable numeric tuple.
+
+    The ``version`` field is user-controlled config, so common variants of
+    ``X.Y.Z`` must not crash the lint: a leading ``v`` (``v0.12.0``) and
+    pre-release/build suffixes (``0.12.0-rc1``, ``0.12.0+build5``) are
+    accepted. Components that still aren't numeric contribute their leading
+    digits, or 0 when there are none.
+    """
+    v = str(v).strip().lstrip("vV")
+    v = re.split(r"[-+]", v, maxsplit=1)[0]
+    parts = []
+    for component in v.split("."):
+        m = re.match(r"\d+", component.strip())
+        parts.append(int(m.group()) if m else 0)
+    return tuple(parts)
 
 
 @dataclass
