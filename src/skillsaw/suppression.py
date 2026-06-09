@@ -16,6 +16,8 @@ Markdown / HTML::
     <!-- skillsaw-disable rule-a, rule-b -->
     <!-- skillsaw-enable -->  (re-enables all)
 
+    <!-- skillsaw-disable-next-line -->  (suppresses all rules on the next line)
+
 YAML::
 
     # skillsaw-disable rule-id
@@ -43,7 +45,7 @@ from typing import Dict, FrozenSet, List, Optional, Set
 # Directive patterns applied to the *text inside* an HTML comment.
 # These match the full comment body, allowing arbitrary whitespace/newlines.
 _DISABLE_NEXT_LINE_DIR = re.compile(
-    r"skillsaw-disable-next-line\s+([\w,\s-]+)",
+    r"skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?",
     re.IGNORECASE,
 )
 _DISABLE_DIR = re.compile(
@@ -97,7 +99,7 @@ class _CommentParser(HTMLParser):
         m = _DISABLE_NEXT_LINE_DIR.search(text)
         if m:
             self.directives.append(
-                _Directive("disable-next-line", _parse_rule_ids(m.group(1)), line)
+                _Directive("disable-next-line", _parse_rule_ids(m.group(1) or ""), line)
             )
             return
 
@@ -140,7 +142,9 @@ def _extract_yaml_directives(content: str) -> List[_Directive]:
         m2 = _DISABLE_NEXT_LINE_DIR.search(text)
         if m2:
             directives.append(
-                _Directive("disable-next-line", _parse_rule_ids(m2.group(1)), line, is_yaml=True)
+                _Directive(
+                    "disable-next-line", _parse_rule_ids(m2.group(1) or ""), line, is_yaml=True
+                )
             )
             continue
 
@@ -270,9 +274,13 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
             # this line is itself a directive, carry it forward.
             continue
 
-        # Apply next-line suppression
+        # Apply next-line suppression (empty rule list means "all rules",
+        # matching the block disable/enable directives)
         if next_line_rules is not None:
-            suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
+            if next_line_rules:
+                suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
+            else:
+                fully_suppressed_lines.add(file_line)
             next_line_rules = None
 
         # Apply "disable all" to this line
