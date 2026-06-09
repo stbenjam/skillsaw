@@ -573,3 +573,11 @@ class TestInlineSuppressionIntegration:
 
         pf = [v for v in violations if v.rule_id == "promptfoo-valid"]
         assert len(pf) == 0
+
+
+def test_unknown_hyphenated_directive_not_treated_as_bare_disable():
+    """A longer token like skillsaw-disable-next-line-foo is not a directive."""
+    content = "Line one\n" "<!-- skillsaw-disable-next-line-custom -->\n" "Try to handle errors.\n"
+    smap = build_suppression_map(content)
+    assert not smap.is_suppressed("content-weak-language", 3)
+    assert not smap.is_suppressed("any-rule", 3)

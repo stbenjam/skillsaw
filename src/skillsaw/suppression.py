@@ -45,7 +45,7 @@ from typing import Dict, FrozenSet, List, Optional, Set
 # Directive patterns applied to the *text inside* an HTML comment.
 # These match the full comment body, allowing arbitrary whitespace/newlines.
 _DISABLE_NEXT_LINE_DIR = re.compile(
-    r"skillsaw-disable-next-line(?:\s+([\w,\s-]+))?",
+    r"skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?",
     re.IGNORECASE,
 )
 _DISABLE_DIR = re.compile(
