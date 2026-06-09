@@ -221,3 +221,49 @@ def test_self_lint():
     ]
 
     assert len(errors) == 0, f"Self-lint found errors: {errors}"
+
+
+class _CrashingRule:
+    """Stand-in rule whose check() always raises."""
+
+    rule_id = "crashing-rule"
+    description = "always crashes"
+    supports_autofix = False
+
+    def check(self, context):
+        raise RuntimeError("boom")
+
+
+def test_rule_crash_produces_error_violation(valid_plugin, capsys):
+    """A rule that raises during check() surfaces as an ERROR violation."""
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    linter.rules = [_CrashingRule()]
+
+    violations = linter.run()
+
+    crashes = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert len(crashes) == 1
+    assert crashes[0].severity.value == "error"
+    assert "crashing-rule" in crashes[0].message
+    assert "RuntimeError" in crashes[0].message
+    assert "boom" in crashes[0].message
+    # Still printed to stderr for visibility
+    assert "Error running rule crashing-rule" in capsys.readouterr().err
+
+    errors, _, _ = get_counts(violations)
+    assert errors >= 1
+
+
+def test_rule_crash_in_fix_produces_error_violation(valid_plugin):
+    """A rule that raises during fix()'s check pass surfaces as an ERROR violation."""
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    linter.rules = [_CrashingRule()]
+
+    violations, fixes = linter.fix()
+
+    crashes = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert len(crashes) == 1
+    assert crashes[0].severity.value == "error"
+    assert fixes == []
