@@ -183,6 +183,8 @@ class LinterConfig:
                 "agent-frontmatter": {"enabled": True, "severity": "error"},
                 # Hooks rules
                 "hooks-json-valid": {"enabled": True, "severity": "error"},
+                "hooks-dangerous": {"enabled": "auto", "severity": "error"},
+                "hooks-prohibited": {"enabled": False, "severity": "error"},
                 # MCP rules
                 "mcp-valid-json": {"enabled": True, "severity": "error"},
                 "mcp-prohibited": {"enabled": False, "severity": "error"},
@@ -225,6 +227,8 @@ class LinterConfig:
                 "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
                 "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
                 "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
+                # Settings validation
+                "settings-dangerous": {"enabled": "auto", "severity": "error"},
                 # Promptfoo eval validation
                 "promptfoo-valid": {"enabled": "auto", "severity": "error"},
                 "promptfoo-assertions": {"enabled": False, "severity": "warning"},

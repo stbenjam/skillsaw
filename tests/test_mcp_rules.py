@@ -813,3 +813,148 @@ def test_mcp_prohibited_skips_string_path(temp_dir):
     rule = McpProhibitedRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+# Tests for root-level .mcp.json detection
+
+
+def test_root_mcp_json_prohibited(temp_dir):
+    """Test that mcp-prohibited detects root-level .mcp.json"""
+    mcp_config = {
+        "mcpServers": {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    }
+    (temp_dir / ".mcp.json").write_text(json.dumps(mcp_config, indent=2))
+    context = RepositoryContext(temp_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert ".mcp.json" in violations[0].message
+
+
+def test_root_mcp_json_prohibited_with_allowlist(temp_dir):
+    """Test that root-level .mcp.json allowlist works"""
+    mcp_config = {
+        "mcpServers": {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            },
+            "github": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+            },
+        }
+    }
+    (temp_dir / ".mcp.json").write_text(json.dumps(mcp_config, indent=2))
+    context = RepositoryContext(temp_dir)
+
+    # Allow one, flag the other
+    rule = McpProhibitedRule(config={"allowlist": ["filesystem"]})
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "github" in violations[0].message
+    assert "filesystem" not in violations[0].message
+
+    # Allow both
+    rule = McpProhibitedRule(config={"allowlist": ["filesystem", "github"]})
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_root_mcp_json_valid_json(temp_dir):
+    """Test that mcp-valid-json validates root-level .mcp.json"""
+    mcp_config = {
+        "mcpServers": {
+            "my-server": {
+                "command": "node",
+                "args": ["server.js"],
+            }
+        }
+    }
+    (temp_dir / ".mcp.json").write_text(json.dumps(mcp_config, indent=2))
+    context = RepositoryContext(temp_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_root_mcp_json_invalid_json(temp_dir):
+    """Test that mcp-valid-json detects invalid JSON at root level"""
+    (temp_dir / ".mcp.json").write_text("{ this is not valid json }")
+    context = RepositoryContext(temp_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "Invalid JSON" in violations[0].message
+
+
+def test_root_mcp_json_missing_command(temp_dir):
+    """Test that mcp-valid-json detects missing command field at root level"""
+    mcp_config = {
+        "mcpServers": {
+            "my-server": {
+                "args": ["server.js"]
+                # Missing command field
+            }
+        }
+    }
+    (temp_dir / ".mcp.json").write_text(json.dumps(mcp_config, indent=2))
+    context = RepositoryContext(temp_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "'command' field" in violations[0].message
+
+
+def test_no_root_mcp_json(temp_dir):
+    """Test that no violations when root .mcp.json does not exist"""
+    context = RepositoryContext(temp_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_root_and_plugin_mcp_json_both_detected(temp_dir):
+    """Test that both root and plugin .mcp.json are detected"""
+    # Root-level .mcp.json
+    root_mcp = {
+        "mcpServers": {
+            "root-server": {
+                "command": "node",
+                "args": ["root-server.js"],
+            }
+        }
+    }
+    (temp_dir / ".mcp.json").write_text(json.dumps(root_mcp, indent=2))
+
+    # Plugin inside plugins/ so marketplace detection discovers it
+    plugins_dir = temp_dir / "plugins" / "test-plugin"
+    plugins_dir.mkdir(parents=True)
+    claude_dir = plugins_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+    plugin_mcp = {
+        "mcpServers": {
+            "plugin-server": {
+                "command": "node",
+                "args": ["plugin-server.js"],
+            }
+        }
+    }
+    (plugins_dir / ".mcp.json").write_text(json.dumps(plugin_mcp, indent=2))
+
+    context = RepositoryContext(temp_dir)
+    rule = McpProhibitedRule()
+    violations = rule.check(context)
+    assert len(violations) == 2
+    messages = [v.message for v in violations]
+    assert any(".mcp.json" in m for m in messages)

@@ -48,13 +48,23 @@ RULE_GROUPS = [
     ),
     (
         "Skills, Agents, Hooks",
-        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid"],
-        None,
+        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid", "hooks-dangerous", "hooks-prohibited"],
+        "Validates skill/agent frontmatter and hook configuration. The security "
+        "rules scan hooks in both `hooks.json` and `settings.json` for supply-chain "
+        "attack patterns (inspired by the "
+        "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
         "MCP (Model Context Protocol)",
         ["mcp-valid-json", "mcp-prohibited"],
         None,
+    ),
+    (
+        "Settings",
+        ["settings-dangerous"],
+        "Security rules for `.claude/settings.json`. Project-scoped settings "
+        "can set keys that execute arbitrary shell commands or environment "
+        "variables that hijack process behaviour — these rules flag them.",
     ),
     (
         "Rules Directory",

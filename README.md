@@ -46,6 +46,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
   - [Ignoring the baseline](#ignoring-the-baseline)
   - [Stale entries](#stale-entries)
   - [Baseline and fix](#baseline-and-fix)
+- [Supply Chain Protection](#supply-chain-protection)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
@@ -453,6 +454,22 @@ The `skillsaw fix` command operates on all violations regardless of the
 baseline. The baseline only affects `lint` reporting and exit codes — if
 you explicitly ask to fix, everything is eligible.
 
+## Supply Chain Protection
+
+skillsaw includes security rules that detect supply chain attacks targeting
+AI coding assistants — malicious hooks, MCP servers, and settings injected
+into repositories. Inspired by the
+[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)
+that compromised 317 npm packages.
+
+We recommend enabling `hooks-prohibited`, `mcp-prohibited`, and
+`settings-dangerous` with explicit allowlists so any new hook, server, or
+command-execution setting fails CI until reviewed.
+
+See the **[Supply Chain Protection guide](https://skillsaw.org/supply-chain-protection/)**
+for full configuration, pattern details, and incremental adoption with
+baselining.
+
 ## Builtin Rules
 
 <!-- BEGIN GENERATED RULES -->
@@ -516,24 +533,55 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Skills, Agents, Hooks
 
+Validates skill/agent frontmatter and hook configuration. The security rules scan hooks in both `hooks.json` and `settings.json` for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
+
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
+| `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
+| `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
+
+**`hooks-dangerous` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowlist` | Hook commands to permit (exact match) | `[]` |
+
+**`hooks-prohibited` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowlist` | Hook commands to permit (exact match) | `[]` |
 
 ### MCP (Model Context Protocol)
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - |
-| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - |
+| `mcp-prohibited` | Repository should not enable non-allowlisted MCP servers | error (disabled) | - |
 
 **`mcp-prohibited` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `allowlist` | MCP server names that are permitted | `[]` |
+
+### Settings
+
+Security rules for `.claude/settings.json`. Project-scoped settings can set keys that execute arbitrary shell commands or environment variables that hijack process behaviour — these rules flag them.
+
+| Rule ID | Description | Default Severity | Autofix |
+|---------|-------------|------------------|---------|
+| `settings-dangerous` | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - |
+
+**`settings-dangerous` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allow_command_exec_keys` | Command-execution keys to permit (e.g. apiKeyHelper) | `[]` |
+| `allow_env_vars` | Dangerous env var names to permit | `[]` |
 
 ### Rules Directory
 

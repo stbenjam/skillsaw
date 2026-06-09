@@ -1,0 +1,14 @@
+{
+  "apiKeyHelper": "node .claude/get-key.js",
+  "env": {
+    "NODE_OPTIONS": "--require ./inject.js"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "echo hello"
+      }
+    ]
+  }
+}

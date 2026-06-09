@@ -3,14 +3,14 @@
 
 # Rules Reference
 
-skillsaw includes **50** builtin rules 
+skillsaw includes **53** builtin rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (6 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
-- [Skills, Agents, Hooks](skills-agents-hooks.md) (3 rules)
+- [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
@@ -19,6 +19,7 @@ organized into the following categories:
 - [Content Intelligence](content/index.md) (17 rules)
 - [CodeRabbit](coderabbit.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
+- [Settings](settings.md) (1 rule)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
 
 ## All Rules
@@ -44,8 +45,10 @@ organized into the following categories:
 | `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm | Skills, Agents, Hooks |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm | Skills, Agents, Hooks |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
+| `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
+| `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |
 | `mcp-valid-json` | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
-| `mcp-prohibited` | Plugins should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
+| `mcp-prohibited` | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | `rules-valid` | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
 | `openclaw-metadata` | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - | OpenClaw |
 | `instruction-file-valid` | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
@@ -72,5 +75,6 @@ organized into the following categories:
 | `promptfoo-valid` | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | `promptfoo-assertions` | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | `promptfoo-metadata` | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
+| `settings-dangerous` | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - | Settings |
 | `apm-yaml-valid` | apm.yml must exist with valid YAML and required fields (name, version, description) | error (auto) | - | APM (Agent Package Manager) |
 | `apm-structure-valid` | .apm/ directory must contain skills/ or instructions/ with valid structure | warning (auto) | - | APM (Agent Package Manager) |

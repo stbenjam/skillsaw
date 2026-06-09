@@ -44,6 +44,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         InstructionBlock,
         McpBlock,
         ReadmeBlock,
+        SettingsBlock,
         PluginRuleBlock,
         PromptBlock,
         SkillBlock,
@@ -111,6 +112,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
         _add_block(root, f, block_cls)
 
+    # --- .claude/settings.json (supply-chain attack surface) ---
+    _add_block(root, context.root_path / ".claude" / "settings.json", SettingsBlock)
+    _add_block(root, context.root_path / ".claude" / "settings.local.json", SettingsBlock)
+
+    # --- Root-level .mcp.json (MCP server configuration) ---
+    _add_block(root, context.root_path / ".mcp.json", McpBlock)
+
     _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
     _add_block(root, context.root_path / ".cursorrules", InstructionBlock)
 
@@ -167,6 +175,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 _add_block(plugin_node, rule_file, PluginRuleBlock)
 
         _add_block(plugin_node, plugin_path / "hooks" / "hooks.json", HooksBlock)
+        _add_block(plugin_node, plugin_path / "settings.json", SettingsBlock)
+        _add_block(plugin_node, plugin_path / "settings.local.json", SettingsBlock)
         _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
         _add_block(plugin_node, plugin_path / "README.md", ReadmeBlock)
 
@@ -253,6 +263,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if apm_context.is_dir():
             for md in sorted(apm_context.glob("*.md")):
                 _add_block(apm_node, md, ContextFileBlock)
+
+        # Hooks and settings inside .apm/ (supply-chain attack surface)
+        _add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+        _add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
+        _add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
 
         apm_skills = apm_dir / "skills"
         if apm_skills.is_dir():
