@@ -7,7 +7,7 @@ from __future__ import annotations
 import fnmatch
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Set, TYPE_CHECKING
+from typing import Iterator, Optional, List, Dict, Any, Set, TYPE_CHECKING
 import json
 import logging
 import os
@@ -291,26 +291,40 @@ class RepositoryContext:
 
     def _is_promptfoo_repo(self) -> bool:
         """Check if this repository contains promptfoo eval configs."""
-        for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
-            if any(self.root_path.rglob(pattern)):
+        for f in self._walk_files(self.root_path):
+            if fnmatch.fnmatch(f.name, "promptfooconfig*.yaml") or fnmatch.fnmatch(
+                f.name, "promptfooconfig*.yml"
+            ):
                 return True
         evals_dir = self.root_path / "evals"
         if evals_dir.is_dir():
             from .rules.builtin.promptfoo import _is_promptfoo_config
             from .rules.builtin.utils import read_yaml
 
-            for pattern in ("*.yaml", "*.yml"):
-                for yaml_file in evals_dir.rglob(pattern):
-                    data, error = read_yaml(yaml_file)
-                    if not error and _is_promptfoo_config(data):
-                        return True
+            for yaml_file in self._walk_files(evals_dir):
+                if yaml_file.suffix not in (".yaml", ".yml"):
+                    continue
+                data, error = read_yaml(yaml_file)
+                if not error and _is_promptfoo_config(data):
+                    return True
         return False
+
+    def _walk_files(self, root: Path) -> Iterator[Path]:
+        """Yield all files under *root*, pruning ``_WALK_SKIP_DIRS`` directories."""
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
+            for f in filenames:
+                yield Path(dirpath) / f
 
     def _has_skill_md_recursive(self, path: Path) -> bool:
         """Check if any subdirectory contains SKILL.md, recursively"""
         try:
             for item in path.iterdir():
-                if not item.is_dir() or item.name.startswith("."):
+                if (
+                    not item.is_dir()
+                    or item.name.startswith(".")
+                    or item.name in self._WALK_SKIP_DIRS
+                ):
                     continue
                 if (item / "SKILL.md").exists():
                     return True
@@ -675,7 +689,11 @@ class RepositoryContext:
         """Discover skill directories within a parent directory, recursively"""
         try:
             for item in parent.iterdir():
-                if not item.is_dir() or item.name.startswith("."):
+                if (
+                    not item.is_dir()
+                    or item.name.startswith(".")
+                    or item.name in self._WALK_SKIP_DIRS
+                ):
                     continue
                 resolved = item.resolve()
                 if resolved in discovered:
