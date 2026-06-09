@@ -387,6 +387,62 @@ def test_float_version_does_not_crash(tmp_path):
     assert config.version == "1.0"
 
 
+def test_parse_version_lenient_forms():
+    """Common non-strict version forms parse without crashing"""
+    from skillsaw.config import _parse_version
+
+    assert _parse_version("0.12.0") == (0, 12, 0)
+    assert _parse_version("v0.12.0") == (0, 12, 0)
+    assert _parse_version("0.12.0-rc1") == (0, 12, 0)
+    assert _parse_version("0.12.0+build5") == (0, 12, 0)
+    assert _parse_version("2026.06.09") == (2026, 6, 9)
+    # Short versions are zero-padded so "1.2" compares equal to "1.2.0"
+    assert _parse_version("1") == (1, 0, 0)
+    assert _parse_version("1.2") == (1, 2, 0)
+    # Fully non-numeric components degrade to 0 rather than raising
+    assert _parse_version("abc") == (0, 0, 0)
+
+
+def test_prerelease_version_does_not_crash_version_gate(temp_dir, tmp_path):
+    """A pre-release version string in config must not crash is_rule_enabled"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text('version: "0.12.0-rc1"\nrules: {}\n')
+    config = LinterConfig.from_file(config_file)
+    # Gate behaves as 0.12.0: since 0.7.0 rules pass, future rules are blocked
+    assert config.is_rule_enabled(
+        "content-weak-language",
+        context,
+        formats=ALL_INSTRUCTION_FORMATS,
+        since_version="0.7.0",
+    )
+    assert (
+        config.is_rule_enabled(
+            "content-weak-language",
+            context,
+            formats=ALL_INSTRUCTION_FORMATS,
+            since_version="99.0.0",
+        )
+        is False
+    )
+
+
+def test_v_prefixed_version_does_not_crash_version_gate(temp_dir, tmp_path):
+    """A v-prefixed version string in config must not crash is_rule_enabled"""
+    (temp_dir / "CLAUDE.md").write_text("# Test")
+    context = RepositoryContext(temp_dir)
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text('version: "v0.12.0"\nrules: {}\n')
+    config = LinterConfig.from_file(config_file)
+    assert config.is_rule_enabled(
+        "content-weak-language",
+        context,
+        formats=ALL_INSTRUCTION_FORMATS,
+        since_version="0.7.0",
+    )
+
+
 def test_version_gates_new_rules(temp_dir):
     """Rules with since > config version are skipped when not explicitly configured"""
     (temp_dir / "CLAUDE.md").write_text("# Test")

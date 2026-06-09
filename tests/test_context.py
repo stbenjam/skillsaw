@@ -562,3 +562,63 @@ def test_coderabbit_with_claude_md_gets_both_formats(temp_dir):
     context = RepositoryContext(temp_dir)
     assert HAS_CODERABBIT in context.detected_formats
     assert HAS_CLAUDE_MD in context.detected_formats
+
+
+def test_skill_in_node_modules_not_detected(temp_dir):
+    """SKILL.md inside node_modules should not mark the repo as agentskills."""
+    dep_skill = temp_dir / "node_modules" / "some-dep" / "skills" / "helper"
+    dep_skill.mkdir(parents=True)
+    (dep_skill / "SKILL.md").write_text("---\nname: helper\ndescription: A dep skill\n---\nBody\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert dep_skill not in [s.resolve() for s in context.skills]
+
+
+def test_skill_in_venv_not_discovered(temp_dir):
+    """Skills vendored in venv/__pycache__ are not discovered alongside real skills."""
+    real_skill = temp_dir / "skills" / "real-skill"
+    real_skill.mkdir(parents=True)
+    (real_skill / "SKILL.md").write_text(
+        "---\nname: real-skill\ndescription: A real skill\n---\nBody\n"
+    )
+    for skip_dir in ("venv", "__pycache__", "node_modules"):
+        vendored = temp_dir / skip_dir / "pkg" / "vendored-skill"
+        vendored.mkdir(parents=True)
+        (vendored / "SKILL.md").write_text(
+            "---\nname: vendored-skill\ndescription: Vendored\n---\nBody\n"
+        )
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    skill_names = {s.name for s in context.skills}
+    assert "real-skill" in skill_names
+    assert "vendored-skill" not in skill_names
+
+
+def test_promptfoo_config_in_node_modules_not_detected(temp_dir):
+    """promptfooconfig.yaml inside node_modules should not mark the repo as promptfoo."""
+    dep = temp_dir / "node_modules" / "promptfoo-dep"
+    dep.mkdir(parents=True)
+    (dep / "promptfooconfig.yaml").write_text("prompts:\n  - 'test'\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO not in context.repo_types
+
+
+def test_promptfoo_eval_in_evals_node_modules_not_detected(temp_dir):
+    """promptfoo-shaped YAML under evals/node_modules should not mark the repo as promptfoo."""
+    dep = temp_dir / "evals" / "node_modules" / "dep"
+    dep.mkdir(parents=True)
+    (dep / "eval.yaml").write_text("prompts:\n  - 'test'\nproviders:\n  - openai:gpt-4\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO not in context.repo_types
+
+
+def test_promptfoo_config_at_root_still_detected(temp_dir):
+    """promptfooconfig.yaml outside skip dirs is still detected."""
+    (temp_dir / "promptfooconfig.yaml").write_text("prompts:\n  - 'test'\n")
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.PROMPTFOO in context.repo_types
