@@ -22,6 +22,7 @@ RULE_GROUPS = [
         [
             "agentskill-valid",
             "agentskill-name",
+            "agentskill-rename-refs",
             "agentskill-description",
             "agentskill-structure",
             "agentskill-evals",
@@ -48,7 +49,13 @@ RULE_GROUPS = [
     ),
     (
         "Skills, Agents, Hooks",
-        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid", "hooks-dangerous", "hooks-prohibited"],
+        [
+            "skill-frontmatter",
+            "agent-frontmatter",
+            "hooks-json-valid",
+            "hooks-dangerous",
+            "hooks-prohibited",
+        ],
         "Validates skill/agent frontmatter and hook configuration. The security "
         "rules scan hooks in both `hooks.json` and `settings.json` for supply-chain "
         "attack patterns (inspired by the "
@@ -216,6 +223,14 @@ def main():
         rule = rule_class()
         rules_by_id[rule.rule_id] = rule
 
+    # Every builtin rule must be documented in a group — fail loudly when
+    # a new rule is missing so it can't silently drop out of the README.
+    grouped_ids = [rid for _, rids, _ in RULE_GROUPS for rid in rids]
+    missing = sorted(set(rules_by_id) - set(grouped_ids))
+    if missing:
+        print(f"ERROR: rules missing from RULE_GROUPS: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
     defaults = LinterConfig.default()
 
     lines = []
@@ -236,7 +251,7 @@ def main():
             rule = rules_by_id[rule_id]
             rule_config = defaults.rules.get(rule_id, {})
             enabled = rule_config.get("enabled", True)
-            severity = rule.default_severity().value
+            severity = rule_config.get("severity") or rule.default_severity().value
 
             if enabled == "auto":
                 severity_str = f"{severity} (auto)"

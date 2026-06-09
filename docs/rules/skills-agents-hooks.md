@@ -7,23 +7,9 @@ Validates skill/agent frontmatter and hook configuration. The security rules sca
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
-| `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
-| `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
-| `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
-
-
-**`hooks-dangerous` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `allowlist` | Hook commands to permit (exact match) | `[]` |
-
-
-**`hooks-prohibited` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `allowlist` | Hook commands to permit (exact match) | `[]` |
+| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
+| [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto, llm |
+| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - |
+| [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
+| [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
 

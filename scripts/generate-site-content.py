@@ -4,7 +4,7 @@
 Produces:
   - docs/rules/index.md          All rules overview table
   - docs/rules/<group>.md        Per-group rule pages
-  - docs/rules/content/<rule>.md Individual content rule pages
+  - docs/rules/<rule-id>.md      Individual rule pages (stable URL per rule)
   - docs/cli.md                  CLI reference from argparse
   - docs/research.md             Research citations page
   - Injects stats into docs/index.md
@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from skillsaw.rules.builtin import BUILTIN_RULES  # noqa: E402
 from skillsaw.config import LinterConfig  # noqa: E402
+from skillsaw.rule_docs import load_rule_docs  # noqa: E402
 from skillsaw import __version__  # noqa: E402
 
 GENERATED_HEADER = (
@@ -40,6 +41,7 @@ def _format_title(slug):
     words = slug.replace("-", " ").split()
     return " ".join(_TITLE_OVERRIDES.get(w, w.capitalize()) for w in words)
 
+
 # ---------------------------------------------------------------------------
 # Rule groups — mirrors scripts/generate-docs.py
 # ---------------------------------------------------------------------------
@@ -51,6 +53,7 @@ RULE_GROUPS = [
         [
             "agentskill-valid",
             "agentskill-name",
+            "agentskill-rename-refs",
             "agentskill-description",
             "agentskill-structure",
             "agentskill-evals",
@@ -81,7 +84,13 @@ RULE_GROUPS = [
     (
         "Skills, Agents, Hooks",
         "skills-agents-hooks",
-        ["skill-frontmatter", "agent-frontmatter", "hooks-json-valid", "hooks-dangerous", "hooks-prohibited"],
+        [
+            "skill-frontmatter",
+            "agent-frontmatter",
+            "hooks-json-valid",
+            "hooks-dangerous",
+            "hooks-prohibited",
+        ],
         "Validates skill/agent frontmatter and hook configuration. The security "
         "rules scan hooks in both `hooks.json` and `settings.json` for supply-chain "
         "attack patterns (inspired by the "
@@ -210,13 +219,14 @@ def collect_rules():
         rule = rule_class()
         rule_config = defaults.rules.get(rule.rule_id, {})
         enabled = rule_config.get("enabled", True)
+        default_severity = rule_config.get("severity") or rule.default_severity().value
 
         if enabled == "auto":
-            severity_str = f"{rule.default_severity().value} (auto)"
+            severity_str = f"{default_severity} (auto)"
         elif enabled is False:
-            severity_str = f"{rule.default_severity().value} (disabled)"
+            severity_str = f"{default_severity} (disabled)"
         else:
-            severity_str = rule.default_severity().value
+            severity_str = default_severity
 
         fix_types = []
         if rule.supports_autofix:
@@ -232,6 +242,7 @@ def collect_rules():
             "rule_id": rule.rule_id,
             "description": rule.description,
             "severity": severity_str,
+            "default_severity": default_severity,
             "fix": ", ".join(fix_types) if fix_types else "-",
             "config_schema": rule.config_schema,
             "since": rule.since,
@@ -309,12 +320,14 @@ def _extract_args(subparser):
         if act.choices:
             choices_str = ", ".join(str(c) for c in act.choices)
 
-        args.append({
-            "flags": flag_str,
-            "help": help_text,
-            "default": default_str,
-            "choices": choices_str,
-        })
+        args.append(
+            {
+                "flags": flag_str,
+                "help": help_text,
+                "default": default_str,
+                "choices": choices_str,
+            }
+        )
     return args
 
 
@@ -331,11 +344,13 @@ def _extract_subcommands(parser, prefix=""):
 
         for name, subparser in action.choices.items():
             full_name = f"{prefix} {name}".strip() if prefix else name
-            commands.append({
-                "name": full_name,
-                "help": help_map.get(name, ""),
-                "args": _extract_args(subparser),
-            })
+            commands.append(
+                {
+                    "name": full_name,
+                    "help": help_map.get(name, ""),
+                    "args": _extract_args(subparser),
+                }
+            )
 
             if subparser._subparsers:
                 commands.extend(_extract_subcommands(subparser, full_name))
@@ -356,7 +371,7 @@ def parse_cli():
             add_parser = _build_add_parser()
             add_subs = _extract_subcommands(add_parser, prefix="add")
             idx = commands.index(cmd)
-            commands[idx:idx + 1] = [cmd] + add_subs
+            commands[idx : idx + 1] = [cmd] + add_subs
             break
 
     return commands
@@ -367,7 +382,7 @@ def parse_cli():
 # ---------------------------------------------------------------------------
 
 
-def _rule_table(rule_ids, rules_data, content_link_prefix="content/"):
+def _rule_table(rule_ids, rules_data):
     """Generate a markdown table for a list of rule IDs."""
     lines = [
         "| Rule ID | Description | Default Severity | Autofix |",
@@ -375,11 +390,7 @@ def _rule_table(rule_ids, rules_data, content_link_prefix="content/"):
     ]
     for rule_id in rule_ids:
         r = rules_data[rule_id]
-        if rule_id in CONTENT_RULE_IDS:
-            short = rule_id.replace("content-", "")
-            link = f"[`{rule_id}`]({content_link_prefix}{short}.md)"
-        else:
-            link = f"`{rule_id}`"
+        link = f"[`{rule_id}`]({rule_id}.md)"
         lines.append(f"| {link} | {r['description']} | {r['severity']} | {r['fix']} |")
     return "\n".join(lines)
 
@@ -407,10 +418,7 @@ def generate_rules_index(rules_data):
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         count = len(rule_ids)
         plural = "rule" if count == 1 else "rules"
-        if slug == "content-intelligence":
-            lines.append(f"- [{group_name}](content/index.md) ({count} {plural})")
-        else:
-            lines.append(f"- [{group_name}]({slug}.md) ({count} {plural})")
+        lines.append(f"- [{group_name}]({slug}.md) ({count} {plural})")
 
     lines.append("\n## All Rules\n")
     lines.append("| Rule ID | Description | Default Severity | Autofix | Category |")
@@ -419,10 +427,7 @@ def generate_rules_index(rules_data):
     for group_name, slug, rule_ids, _ in RULE_GROUPS:
         for rule_id in rule_ids:
             r = rules_data[rule_id]
-            if rule_id in CONTENT_RULE_IDS:
-                link = f"[`{rule_id}`](content/{rule_id.replace('content-', '')}.md)"
-            else:
-                link = f"`{rule_id}`"
+            link = f"[`{rule_id}`]({rule_id}.md)"
             lines.append(
                 f"| {link} | {r['description']} | {r['severity']} | {r['fix']} | {group_name} |"
             )
@@ -432,35 +437,26 @@ def generate_rules_index(rules_data):
 
 def generate_group_page(group_name, slug, rule_ids, description, rules_data):
     """Generate a per-group rule page."""
-    is_content = slug == "content-intelligence"
     lines = [GENERATED_HEADER, f"# {group_name}\n"]
 
     if description:
-        if is_content:
-            description = description.replace("../research.md", "../../research.md")
         lines.append(f"{description}\n")
 
-    content_prefix = "" if is_content else "content/"
-    lines.append(_rule_table(rule_ids, rules_data, content_link_prefix=content_prefix))
+    lines.append(_rule_table(rule_ids, rules_data))
     lines.append("")
-
-    for rule_id in rule_ids:
-        r = rules_data[rule_id]
-        if r["config_schema"]:
-            lines.append(_params_table(rule_id, r["config_schema"]))
-            lines.append("")
 
     return "\n".join(lines) + "\n"
 
 
-def generate_content_rule_page(rule_id, rules_data, research):
-    """Generate an individual content rule page."""
-    r = rules_data[rule_id]
-    short_name = rule_id.replace("content-", "")
-    title = _format_title(short_name)
+def generate_rule_page(rule_id, group_name, slug, rules_data, research):
+    """Generate an individual rule page at docs/rules/<rule-id>.md.
 
-    lines = [GENERATED_HEADER, f"# {title}\n"]
-    lines.append(f"**Rule ID:** `{rule_id}`\n")
+    This is the rule's stable documentation URL — linked from violation
+    output, SARIF helpUri, and `skillsaw explain`.
+    """
+    r = rules_data[rule_id]
+
+    lines = [GENERATED_HEADER, f"# {rule_id}\n"]
     lines.append(f"{r['description']}\n")
 
     # Metadata badges
@@ -471,10 +467,24 @@ def generate_content_rule_page(rule_id, rules_data, research):
     lines.append(f"| **Since** | v{r['since']} |")
     if r["repo_types"]:
         lines.append(f"| **Repo Types** | {r['repo_types']} |")
+    lines.append(f"| **Category** | [{group_name}]({slug}.md) |")
+    lines.append("")
+
+    long_docs = load_rule_docs(rule_id)
+    if long_docs:
+        lines.append(long_docs)
+        lines.append("")
+
+    lines.append("## Configuration\n")
+    lines.append("```yaml")
+    lines.append("rules:")
+    lines.append(f"  {rule_id}:")
+    lines.append(f"    enabled: {LinterConfig._yaml_value(r['enabled'])}  # true | false | auto")
+    lines.append(f"    severity: {r['default_severity']}")
+    lines.append("```")
     lines.append("")
 
     if r["config_schema"]:
-        lines.append("## Configuration\n")
         lines.append("| Parameter | Description | Default |")
         lines.append("|-----------|-------------|---------|")
         for param_name, param_info in r["config_schema"].items():
@@ -489,10 +499,15 @@ def generate_content_rule_page(rule_id, rules_data, research):
         # Rewrite intra-doc anchors to point to the research page
         research_text = research_text.replace(
             "(#instruction-budget-vs-context-budget)",
-            "(../../research.md#instruction-budget-vs-context-budget)",
+            "(../research.md#instruction-budget-vs-context-budget)",
         )
         lines.append(research_text)
         lines.append("")
+
+    lines.append(
+        f"\n*Run `skillsaw explain {rule_id}` to see this documentation "
+        "and the rule's effective configuration in your terminal.*"
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -538,7 +553,7 @@ def generate_research_page(research):
             continue
         short = rule_id.replace("content-", "")
         title = _format_title(short)
-        lines.append(f"## [{title}](rules/content/{short}.md)\n")
+        lines.append(f"## [{title}](rules/{rule_id}.md)\n")
         lines.append(f"**Rule:** `{rule_id}`\n")
         lines.append(research[rule_id])
         lines.append("\n---\n")
@@ -575,10 +590,14 @@ def inject_stats(index_path, rules_data):
 def main():
     docs_dir = ROOT / "docs"
     rules_dir = docs_dir / "rules"
-    content_dir = rules_dir / "content"
 
     rules_dir.mkdir(parents=True, exist_ok=True)
-    content_dir.mkdir(parents=True, exist_ok=True)
+
+    # Per-rule pages used to live under docs/rules/content/ — clean up
+    # stale checkouts so old and new pages don't coexist.
+    legacy_content_dir = rules_dir / "content"
+    if legacy_content_dir.exists():
+        shutil.rmtree(legacy_content_dir)
 
     # Copy logo
     images_dir = docs_dir / "images"
@@ -591,6 +610,24 @@ def main():
     print("Collecting rule data...")
     rules_data = collect_rules()
 
+    # Every builtin rule must belong to exactly one group so it gets a
+    # documentation page — fail loudly when a new rule is missing.
+    grouped_ids = [rule_id for _, _, rule_ids, _ in RULE_GROUPS for rule_id in rule_ids]
+    missing = sorted(set(rules_data) - set(grouped_ids))
+    duplicated = sorted({rid for rid in grouped_ids if grouped_ids.count(rid) > 1})
+    unknown = sorted(set(grouped_ids) - set(rules_data))
+    if missing or duplicated or unknown:
+        if missing:
+            print(f"ERROR: rules missing from RULE_GROUPS: {', '.join(missing)}", file=sys.stderr)
+        if duplicated:
+            print(
+                f"ERROR: rules listed twice in RULE_GROUPS: {', '.join(duplicated)}",
+                file=sys.stderr,
+            )
+        if unknown:
+            print(f"ERROR: unknown rules in RULE_GROUPS: {', '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
     print("Parsing research citations...")
     research = parse_research()
 
@@ -601,22 +638,16 @@ def main():
     (rules_dir / "index.md").write_text(generate_rules_index(rules_data))
     print(f"  rules/index.md ({len(rules_data)} rules)")
 
-    # Group pages
+    # Group pages and individual rule pages
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         content = generate_group_page(group_name, slug, rule_ids, description, rules_data)
-        if slug == "content-intelligence":
-            (content_dir / "index.md").write_text(content)
-            print(f"  rules/content/index.md")
-        else:
-            (rules_dir / f"{slug}.md").write_text(content)
-            print(f"  rules/{slug}.md")
+        (rules_dir / f"{slug}.md").write_text(content)
+        print(f"  rules/{slug}.md")
 
-    # Individual content rule pages
-    for rule_id in CONTENT_RULE_IDS:
-        short = rule_id.replace("content-", "")
-        content = generate_content_rule_page(rule_id, rules_data, research)
-        (content_dir / f"{short}.md").write_text(content)
-        print(f"  rules/content/{short}.md")
+        for rule_id in rule_ids:
+            page = generate_rule_page(rule_id, group_name, slug, rules_data, research)
+            (rules_dir / f"{rule_id}.md").write_text(page)
+            print(f"  rules/{rule_id}.md")
 
     # CLI reference
     (docs_dir / "cli.md").write_text(generate_cli_reference(commands))

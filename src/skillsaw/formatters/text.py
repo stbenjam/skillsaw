@@ -6,6 +6,7 @@ import os
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
+from ..rule_docs import rule_doc_url
 from . import get_counts, relative_path
 
 
@@ -55,6 +56,16 @@ def format_text(
         output.append(f"\n{blue}{bold}Info:{reset}")
         for v in info_list:
             output.append(f"  {fmt_violation(v)}")
+
+    shown = errors_list + warnings_list + (info_list if verbose else [])
+    # Synthetic rule IDs (e.g. invalid-config) have no documentation page —
+    # only link rules that actually ran as builtins.
+    builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
+    documented = sorted({v.rule_id for v in shown if v.rule_id in builtin_ids})
+    if documented:
+        output.append(f"\n{bold}Rule docs{reset} (or run `skillsaw explain <rule-id>`):")
+        for rule_id in documented:
+            output.append(f"  {rule_doc_url(rule_id)}")
 
     output.append(f"\n{bold}Scanned:{reset}")
     repo_types_str = ", ".join(sorted(t.value for t in context.repo_types if t.value != "unknown"))

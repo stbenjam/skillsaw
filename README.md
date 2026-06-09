@@ -91,6 +91,9 @@ skillsaw baseline
 
 # Done — only new violations will fail from here on
 skillsaw   # exit 0
+
+# Curious why a rule fired (or didn't)?
+skillsaw explain content-weak-language
 ```
 
 For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
@@ -479,6 +482,20 @@ baselining.
 
 ## Builtin Rules
 
+Every rule has a documentation page at
+[skillsaw.org/rules](https://skillsaw.org/rules/) with rationale,
+examples, and configuration options. The same content is available
+offline in your terminal:
+
+```bash
+skillsaw explain <rule-id>
+```
+
+`explain` also shows the rule's *effective* configuration in the current
+repository — whether it's enabled and why (user override, repo-type
+auto-detection, or version gate) — which makes it the quickest way to
+debug "why didn't this rule fire?"
+
 <!-- BEGIN GENERATED RULES -->
 
 ### agentskills.io
@@ -489,10 +506,11 @@ These rules validate skills against the [agentskills.io specification](https://a
 |---------|-------------|------------------|---------|
 | `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
+| `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
-| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
-| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
+| `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
+| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
 
 **`agentskill-valid` parameters:**
 
@@ -635,10 +653,10 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |---------|-------------|------------------|---------|
 | `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
 | `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
-| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | info (auto) | llm |
+| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm |
 | `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
 | `content-instruction-budget` | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm |
-| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | info (auto) | llm |
+| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
 | `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
 | `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
 | `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
