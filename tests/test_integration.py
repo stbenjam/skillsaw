@@ -1504,6 +1504,19 @@ class TestBaseline:
         assert r["rc"] == 0
         assert summary(r)["warnings"] == 0
 
+    def test_output_report_includes_baseline_suppressed(self, tmp_path):
+        """--output file reports must carry the same baseline-suppressed count as stdout."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+        json_path = tmp_path / "report.json"
+        r = run_lint(repo, "--output", f"json:{json_path}")
+        assert r["rc"] == 0
+        stdout_suppressed = summary(r)["baseline_suppressed"]
+        assert stdout_suppressed > 0
+
+        file_report = json.loads(json_path.read_text())
+        assert file_report["summary"]["baseline_suppressed"] == stdout_suppressed
+
     def test_lint_no_baseline_flag(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         run_baseline(repo)
