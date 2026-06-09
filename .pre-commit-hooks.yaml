@@ -40,7 +40,7 @@
         apm\.yml|
         (.*/)?hooks\.json|
         (.*/)?\.mcp\.json|
-        (.*/)?settings\.json|
+        settings(\.local)?\.json|
         \.skillsaw\.ya?ml|
         \.claudelint\.ya?ml|
         \.skillsaw-baseline\.json|

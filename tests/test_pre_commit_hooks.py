@@ -74,6 +74,11 @@ def test_files_regex_compiles(skillsaw_hook):
         "plugins/my-plugin/hooks/hooks.json",
         ".mcp.json",
         ".claude/settings.json",
+        ".claude/settings.local.json",
+        "settings.json",
+        "settings.local.json",
+        "plugins/my-plugin/settings.json",
+        ".apm/settings.json",
         ".cursor/rules/style.mdc",
         ".cursorrules",
         ".github/copilot-instructions.md",
@@ -106,6 +111,8 @@ def test_files_regex_matches_lintable_paths(skillsaw_hook, path):
         "tests/test_linter.py",
         "package.json",
         ".github/workflows/ci.yml",
+        ".vscode/settings.json",
+        "frontend/config/settings.json",
     ],
 )
 def test_files_regex_ignores_unrelated_paths(skillsaw_hook, path):
