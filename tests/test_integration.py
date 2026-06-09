@@ -1821,3 +1821,21 @@ class TestApplyPatch:
         assert result.returncode == 0
         assert "applied successfully" in result.stdout
         assert "(lint-path)" in target.read_text()
+
+
+# ── Rule crash handling (GH-263) ─────────────────────────────────
+
+
+class TestRuleCrashExitCode:
+    """A rule that raises must surface in the report and fail the lint."""
+
+    FIXTURE = "crashing-rule"
+
+    def test_rule_crash_fails_lint(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        args = [sys.executable, "-m", "skillsaw", "lint", str(repo)]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        assert result.returncode == 1, f"expected exit 1, got {result.returncode}"
+        assert "rule-execution-error" in result.stdout
+        assert "fixture-crashing-rule" in result.stdout
+        assert "intentional crash" in result.stdout
