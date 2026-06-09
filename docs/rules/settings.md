@@ -7,13 +7,5 @@ Security rules for `.claude/settings.json`. Project-scoped settings can set keys
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `settings-dangerous` | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - |
-
-
-**`settings-dangerous` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `allow_command_exec_keys` | Command-execution keys to permit (e.g. apiKeyHelper) | `[]` |
-| `allow_env_vars` | Dangerous env var names to permit | `[]` |
+| [`settings-dangerous`](settings-dangerous.md) | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - |
 

@@ -4,6 +4,7 @@ import json
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
+from ..rule_docs import rule_doc_url
 from . import relative_path
 
 _SEVERITY_MAP = {
@@ -29,10 +30,14 @@ def format_sarif(
     seen = {}
     for r in rules:
         if r.rule_id not in seen:
-            seen[r.rule_id] = {
+            descriptor = {
                 "id": r.rule_id,
                 "shortDescription": {"text": r.description},
             }
+            # Custom rules have no page on the documentation site.
+            if getattr(r, "_source", "builtin") == "builtin":
+                descriptor["helpUri"] = rule_doc_url(r.rule_id)
+            seen[r.rule_id] = descriptor
 
     # Add synthetic descriptors for violations whose rule_id has no
     # matching Rule instance (e.g. "invalid-config" from _validate_config).

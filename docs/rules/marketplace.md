@@ -5,6 +5,6 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `marketplace-json-valid` | Marketplace.json must be valid JSON with required fields | error (auto) | - |
-| `marketplace-registration` | Plugins must be registered in marketplace.json | error (auto) | auto |
+| [`marketplace-json-valid`](marketplace-json-valid.md) | Marketplace.json must be valid JSON with required fields | error (auto) | - |
+| [`marketplace-registration`](marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto |
 

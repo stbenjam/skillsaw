@@ -7,25 +7,11 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
-| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
-| `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
-| `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
-| `agentskill-evals` | Validate evals/evals.json format when present | error (auto) | - |
-| `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | error (disabled) | - |
-
-
-**`agentskill-valid` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `required-fields` | Additional frontmatter fields to require (name and description are always required) | `[]` |
-| `required-metadata` | Keys that must be present inside the metadata mapping | `[]` |
-
-
-**`agentskill-structure` parameters:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
+| [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
+| [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
+| [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto |
+| [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - |
+| [`agentskill-structure`](agentskill-structure.md) | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
+| [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - |
+| [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
 

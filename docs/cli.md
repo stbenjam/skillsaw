@@ -53,6 +53,14 @@ Generate a default .skillsaw.yaml config file
 
 List all available builtin rules
 
+## `skillsaw explain`
+
+Show documentation and effective configuration for a rule
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
+
 ## `skillsaw docs`
 
 Generate documentation for a plugin, marketplace, or .claude repository

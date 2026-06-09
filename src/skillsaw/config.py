@@ -308,14 +308,37 @@ class LinterConfig:
         Returns:
             True if rule should run
         """
+        enabled, _reason = self.rule_enabled_reason(
+            rule_id, context, repo_types, formats, since_version
+        )
+        return enabled
+
+    def rule_enabled_reason(
+        self,
+        rule_id: str,
+        context: "RepositoryContext",
+        repo_types=None,
+        formats: Optional[Set[str]] = None,
+        since_version: str = "0.1.0",
+    ) -> Tuple[bool, str]:
+        """
+        Determine whether a rule is enabled and why.
+
+        Same logic as :meth:`is_rule_enabled`, but also returns a
+        human-readable reason — used by ``skillsaw explain`` to show the
+        effective config state.
+
+        Returns:
+            Tuple of (enabled, reason)
+        """
         user_overrides = self.rules.get(rule_id, {})
         has_explicit_enabled = "enabled" in user_overrides
         if has_explicit_enabled:
             explicit = user_overrides["enabled"]
             if explicit is True:
-                return True
+                return True, "enabled: true set in config"
             if explicit is False:
-                return False
+                return False, "enabled: false set in config"
             # enabled: "auto" falls through to version gate + auto logic below
         else:
             # Any non-enabled override (e.g. severity) without an explicit
@@ -325,7 +348,7 @@ class LinterConfig:
             if user_overrides:
                 default_enabled = self.default().rules.get(rule_id, {}).get("enabled", True)
                 if default_enabled is False:
-                    return True
+                    return True, "configured in config (overrides disabled-by-default)"
                 # For "auto" rules, non-enabled overrides don't change
                 # activation — fall through to version gate + auto logic.
 
@@ -335,21 +358,28 @@ class LinterConfig:
 
         if not has_user_overrides and self.version:
             if _parse_version(self.version) < _parse_version(since_version):
-                return False
+                return False, (
+                    f"config version {self.version} is older than the rule "
+                    f"(since {since_version}) — bump version in config to enable"
+                )
 
         rule_config = self.get_rule_config(rule_id)
         enabled = rule_config.get("enabled", True)
 
         if enabled == "auto":
             if repo_types is None and formats is None:
-                return True
+                return True, "enabled: auto (applies to all repo types)"
             if repo_types is not None and repo_types & context.repo_types:
-                return True
+                matched = sorted(t.value for t in repo_types & context.repo_types)
+                return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
             if formats is not None and formats & context.detected_formats:
-                return True
-            return False
+                matched = sorted(formats & context.detected_formats)
+                return True, f"enabled: auto — detected format: {', '.join(matched)}"
+            return False, "enabled: auto — no matching repo type or format detected"
 
-        return bool(enabled)
+        if bool(enabled):
+            return True, "enabled by default"
+        return False, "disabled by default"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization"""
