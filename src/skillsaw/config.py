@@ -29,7 +29,9 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     ``X.Y.Z`` must not crash the lint: a leading ``v`` (``v0.12.0``) and
     pre-release/build suffixes (``0.12.0-rc1``, ``0.12.0+build5``) are
     accepted. Components that still aren't numeric contribute their leading
-    digits, or 0 when there are none.
+    digits, or 0 when there are none. Results are zero-padded to at least
+    three components so short versions like "1.2" compare correctly against
+    "1.2.0" (tuple comparison would otherwise rank (1, 2) below (1, 2, 0)).
     """
     v = str(v).strip().lstrip("vV")
     v = re.split(r"[-+]", v, maxsplit=1)[0]
@@ -37,6 +39,8 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     for component in v.split("."):
         m = re.match(r"\d+", component.strip())
         parts.append(int(m.group()) if m else 0)
+    while len(parts) < 3:
+        parts.append(0)
     return tuple(parts)
 
 

@@ -396,8 +396,11 @@ def test_parse_version_lenient_forms():
     assert _parse_version("0.12.0-rc1") == (0, 12, 0)
     assert _parse_version("0.12.0+build5") == (0, 12, 0)
     assert _parse_version("2026.06.09") == (2026, 6, 9)
+    # Short versions are zero-padded so "1.2" compares equal to "1.2.0"
+    assert _parse_version("1") == (1, 0, 0)
+    assert _parse_version("1.2") == (1, 2, 0)
     # Fully non-numeric components degrade to 0 rather than raising
-    assert _parse_version("abc") == (0,)
+    assert _parse_version("abc") == (0, 0, 0)
 
 
 def test_prerelease_version_does_not_crash_version_gate(temp_dir, tmp_path):
