@@ -342,6 +342,7 @@ class TestRatchetBaseline:
         v.value = 5200
         kept, stale = filter_baselined_violations([v], baseline, tmp_path)
         assert len(kept) == 1
+        assert stale == []
 
     def test_floor_improved_suppressed(self, tmp_path):
         entry = self._ratchet_entry(30, "floor")
@@ -358,6 +359,20 @@ class TestRatchetBaseline:
         v.value = 25
         kept, stale = filter_baselined_violations([v], baseline, tmp_path)
         assert len(kept) == 1
+        assert stale == []
+
+    def test_ratchet_worsened_not_reported_stale(self, tmp_path):
+        """Regression for issue #258 (Bug B): a ratchet entry whose value
+        regressed past the baseline must be kept as a violation but never
+        also reported stale — a stale report prompts `skillsaw baseline`,
+        which would rebaseline the regressed value and defeat the ratchet."""
+        entry = self._ratchet_entry(100, "ceiling")
+        baseline = self._baseline_with([entry])
+        v = self._ratchet_violation(200, tmp_path)
+        v.value = 200
+        kept, stale = filter_baselined_violations([v], baseline, tmp_path)
+        assert len(kept) == 1
+        assert stale == []
 
     def test_ratchet_equal_suppressed(self, tmp_path):
         entry = self._ratchet_entry(5000, "ceiling")

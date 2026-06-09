@@ -1497,6 +1497,26 @@ class TestBaseline:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 0
 
+    def test_lint_fix_matches_lint_baseline_accounting(self, tmp_path):
+        """Regression for issue #258 (Bug A): `lint --fix` filtered the
+        baseline once per rule, overwriting stale/suppressed accounting, so
+        the last rule's view won and every other rule's entries were falsely
+        reported stale — prompting users to destroy a correct baseline."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        run_baseline(repo)
+
+        lint_r = run_lint(repo, fmt="text", verbose=False)
+        fix_r = run_lint(repo, "--fix", fmt="text", verbose=False)
+
+        assert "stale" not in lint_r["stdout"].lower()
+        assert "stale" not in fix_r["stdout"].lower()
+
+        def suppressed_lines(r):
+            return [ln.strip() for ln in r["stdout"].splitlines() if "suppressed" in ln]
+
+        assert suppressed_lines(lint_r)  # baseline suppressed something
+        assert suppressed_lines(fix_r) == suppressed_lines(lint_r)
+
     def test_corrupt_baseline_warns_and_continues(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         (repo / ".skillsaw-baseline.json").write_text("not valid json{{{")
