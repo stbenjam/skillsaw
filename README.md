@@ -332,6 +332,13 @@ Suppress a single line:
 Follow best practices for error handling.
 ```
 
+Omitting the rule IDs suppresses all rules on the next line:
+
+```markdown
+<!-- skillsaw-disable-next-line -->
+This line is exempt from every rule.
+```
+
 Suppress multiple rules at once:
 
 ```markdown

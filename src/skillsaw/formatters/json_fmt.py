@@ -13,6 +13,7 @@ def format_json(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    baseline_suppressed: int = 0,
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
@@ -54,6 +55,7 @@ def format_json(
             "errors": errors,
             "warnings": warnings,
             "info": info,
+            "baseline_suppressed": baseline_suppressed,
         },
     }
 

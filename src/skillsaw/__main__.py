@@ -616,7 +616,13 @@ def _run_lint(args):
     for output_path, fmt in output_formats.items():
         if fmt not in report_cache:
             report_cache[fmt] = format_report(
-                fmt, violations, context, linter.rules, cli_version, verbose=args.verbose
+                fmt,
+                violations,
+                context,
+                linter.rules,
+                cli_version,
+                verbose=args.verbose,
+                baseline_suppressed=linter.baseline_suppressed_count,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)

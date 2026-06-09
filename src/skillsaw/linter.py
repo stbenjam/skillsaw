@@ -308,8 +308,21 @@ class Linter:
                 violations.extend(rule_violations)
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                violations.append(self._crash_violation(rule, e))
 
         return self._filter_violations(violations)
+
+    @staticmethod
+    def _crash_violation(rule: Rule, exc: Exception, action: str = "check") -> RuleViolation:
+        """Surface a rule crash as an ERROR violation so it affects the exit code."""
+        return RuleViolation(
+            rule_id="rule-execution-error",
+            severity=Severity.ERROR,
+            message=(
+                f"Rule '{rule.rule_id}' crashed during {action}:"
+                f" {exc.__class__.__name__}: {exc}"
+            ),
+        )
 
     def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
@@ -327,6 +340,7 @@ class Linter:
                 rule_violations = rule.check(self.context)
             except Exception as e:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
+                all_violations.append(self._crash_violation(rule, e))
                 continue
 
             checked.extend(rule_violations)
@@ -341,6 +355,7 @@ class Linter:
                     all_violations.extend(remaining)
                 except Exception as e:
                     print(f"Error fixing rule {rule.rule_id}: {e}", file=sys.stderr)
+                    all_violations.append(self._crash_violation(rule, e, action="fix"))
                     all_violations.extend(visible)
             else:
                 all_violations.extend(visible)
