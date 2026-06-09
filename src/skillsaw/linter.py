@@ -218,8 +218,16 @@ class Linter:
             return False
         return smap.is_suppressed(violation.rule_id, file_line)
 
-    def _filter_violations(self, violations: List[RuleViolation]) -> List[RuleViolation]:
-        """Filter violations by global excludes, per-rule excludes, and inline suppression."""
+    def _filter_violations(
+        self, violations: List[RuleViolation], record_baseline: bool = True
+    ) -> List[RuleViolation]:
+        """Filter violations by global excludes, per-rule excludes, and inline suppression.
+
+        When *record_baseline* is False, baseline subtraction still applies
+        but stale/suppressed accounting is left untouched — used for the
+        per-rule calls in :meth:`fix`, which would otherwise overwrite the
+        accounting with only the last rule's view of the baseline.
+        """
         kept: List[RuleViolation] = []
         for v in violations:
             if self._is_excluded(v):
@@ -255,8 +263,9 @@ class Linter:
 
             before = len(kept)
             kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
-            self._stale_baseline_entries = stale
-            self._baseline_suppressed_count = before - len(kept)
+            if record_baseline:
+                self._stale_baseline_entries = stale
+                self._baseline_suppressed_count = before - len(kept)
             if before > len(kept):
                 logger.info(
                     "Filtered %d of %d violations via baseline",
@@ -311,6 +320,7 @@ class Linter:
         """
         all_violations = self._validate_config()
         all_fixes: List[AutofixResult] = []
+        checked: List[RuleViolation] = list(all_violations)
 
         for rule in self.rules:
             try:
@@ -319,7 +329,8 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 continue
 
-            visible = self._filter_violations(rule_violations)
+            checked.extend(rule_violations)
+            visible = self._filter_violations(rule_violations, record_baseline=False)
 
             if visible and rule.supports_autofix:
                 try:
@@ -333,6 +344,12 @@ class Linter:
                     all_violations.extend(visible)
             else:
                 all_violations.extend(visible)
+
+        # Baseline stale/suppressed accounting must consider all rules'
+        # violations together, exactly as run() does — the per-rule calls
+        # above skip it (record_baseline=False).
+        if self._baseline is not None:
+            self._filter_violations(checked)
 
         return all_violations, all_fixes
 

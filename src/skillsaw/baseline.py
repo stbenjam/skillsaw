@@ -246,10 +246,12 @@ def filter_baselined_violations(
 
         if fp in ratchet_entries:
             entry = ratchet_entries[fp]
+            # The entry matched a current violation, so it is not stale —
+            # even when the violation is kept because the value regressed
+            # past the baselined value.
+            consumed_ratchet.add(fp)
             if v.value is not None and _is_worse(v.value, entry.value, entry.baseline_mode):
                 kept.append(v)
-            else:
-                consumed_ratchet.add(fp)
         elif regular_budget[fp] > 0:
             regular_budget[fp] -= 1
         else:
