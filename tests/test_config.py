@@ -1006,6 +1006,13 @@ def test_save_round_trips_yaml_significant_strings(tmp_path):
         "multi\nline",
         "tab\tseparated",
         "carriage\rreturn",
+        # Strings that resolve to other types under YAML implicit typing
+        "no",
+        "true",
+        "null",
+        "~",
+        "123",
+        "12:34:56",
     ]
     config = LinterConfig.default()
     config.exclude_patterns = tricky

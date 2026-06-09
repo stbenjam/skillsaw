@@ -414,28 +414,20 @@ class LinterConfig:
             f.write(f"{key}: {val}\n")
 
     @staticmethod
-    def _needs_quoting(s: str) -> bool:
-        """Check if a string value needs quoting for valid YAML output."""
-        if not s:
-            return True
-        # Control characters (newlines, tabs, ...) must be quoted and escaped
-        if any(ord(c) < 0x20 for c in s):
-            return True
-        # Plain scalars cannot carry leading/trailing whitespace
-        if s != s.strip():
-            return True
-        # Characters that are special in YAML and need quoting
-        yaml_special = set("*&!|>{[%@`\"'\\")
-        if any(c in yaml_special for c in s):
-            return True
-        # ": " (or trailing ":") would start a nested mapping; "#" after a
-        # space (or at the start) would start a comment
-        if ": " in s or s.endswith(":"):
-            return True
-        if " #" in s or s.startswith("#"):
-            return True
-        # Indicators that are special at the start of a plain scalar
-        return s[0] in "-?:,]}"
+    def _yaml_scalar(value: str) -> str:
+        """Serialize a string scalar through PyYAML's emitter.
+
+        Delegating quoting/escaping to the same library that reparses the
+        file means the output can never drift out of sync with the parser:
+        YAML-special characters, comment/mapping indicators, control
+        characters, and strings that would resolve to other types under
+        implicit typing ("no", "123", "12:34:56", ...) all come back as the
+        same string. Double-quoted style is forced for control characters so
+        the result always stays on a single line.
+        """
+        style = '"' if any(ord(c) < 0x20 for c in value) else None
+        dumped = yaml.safe_dump(value, default_flow_style=True, default_style=style, width=2**31)
+        return dumped.rstrip("\n").removesuffix("\n...")
 
     @staticmethod
     def _yaml_value(value, indent=4):
@@ -463,16 +455,7 @@ class LinterConfig:
                     lines.append(f"{pad}{k}: {rendered}")
             return "\n" + "\n".join(lines)
         if isinstance(value, str):
-            if LinterConfig._needs_quoting(value):
-                escaped = (
-                    value.replace("\\", "\\\\")
-                    .replace('"', '\\"')
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                    .replace("\t", "\\t")
-                )
-                return f'"{escaped}"'
-            return value
+            return LinterConfig._yaml_scalar(value)
         return str(value)
 
 
