@@ -18,9 +18,14 @@ from skillsaw.rules.builtin.content_analysis import (
     CursorRuleBlock,
     FrontmatteredBlock,
     FrontmatterField,
-    _strip_fenced_code_blocks,
 )
+from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.context import RepositoryContext
+
+
+def _strip_fenced_code_blocks(content: str) -> str:
+    """Code-block stripping as rules see it via read_body(strip_code_blocks=True)."""
+    return MarkdownDoc(content).prose_text()
 
 
 def _cf(path: Path, category: str = "instruction") -> ContentFile:
@@ -87,11 +92,14 @@ class TestStripFencedCodeBlocks:
         assert "code" not in result
         assert result.count("\n") == content.count("\n")
 
-    def test_4_space_indent_not_stripped(self):
-        """4+ spaces of indentation is not a valid CommonMark code fence."""
+    def test_4_space_indent_is_verbatim_content(self):
+        """4+ spaces of indentation is not a valid CommonMark code fence, but
+        the backticks form a code span across the paragraph continuation —
+        either way the content is verbatim and must be blanked."""
         content = "Before\n    ```\n    code\n    ```\nAfter\n"
         result = _strip_fenced_code_blocks(content)
-        assert "code" in result
+        assert "code" not in result
+        assert result.count("\n") == content.count("\n")
 
     def test_strips_indented_tilde_blocks(self):
         content = "Before\n  ~~~\n  code\n  ~~~\nAfter\n"

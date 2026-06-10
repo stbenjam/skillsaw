@@ -10,9 +10,7 @@ from skillsaw.rules.builtin.content_analysis import (
     AgentsMdBlock,
     ClaudeMdBlock,
     GeminiMdBlock,
-    _strip_fenced_code_blocks,
 )
-from skillsaw.rules.builtin.utils import read_text
 
 from ._helpers import _IMPORT_RE
 
@@ -43,13 +41,10 @@ class InstructionImportsValidRule(Rule):
         )
         for block in import_blocks:
             file_path = block.path
-            content = read_text(file_path)
-            if content is None:
+            if block.read_body(strip_code_blocks=False) is None:
                 continue
 
-            content = _strip_fenced_code_blocks(content)
-
-            for line_num, line in enumerate(content.splitlines(), 1):
+            for line_num, line in block.markdown.prose_lines():
                 match = _IMPORT_RE.match(line)
                 if not match:
                     continue

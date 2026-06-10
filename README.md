@@ -402,6 +402,10 @@ Only full-line `#` comments are recognized — inline comments like
 Inline suppression only affects rules that are already enabled. It cannot
 be used to enable a normally disabled rule.
 
+In markdown files, directives are located through the markdown parser: a
+directive shown inside a fenced or indented code block is treated as
+documentation and is not honored.
+
 ### Content Paths
 
 By default, content intelligence rules only analyze recognized instruction

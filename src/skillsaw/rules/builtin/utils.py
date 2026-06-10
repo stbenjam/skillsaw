@@ -226,7 +226,51 @@ def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
     return yaml_key_line(fm_text, key, top_level=True, line_offset=offset)
 
 
-_FRONTMATTER_RE = re.compile(r"^---[ \t]*\n(.*?\n)---[ \t]*(?:\n|\Z)", re.DOTALL)
+# The single source of truth for frontmatter block matching.  Tolerates CRLF
+# line endings (previously only the skills fix path did).
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)---[ \t]*\r?(?:\n|\Z)", re.DOTALL)
+FRONTMATTER_RE = _FRONTMATTER_RE
+
+# Variant that also matches an empty frontmatter block (``---\n---``); the
+# group is always present but may be the empty string.
+FRONTMATTER_RE_EMPTY_OK = re.compile(
+    r"^---[ \t]*\r?\n((?:.*?\r?\n)?)---[ \t]*\r?(?:\n|$)", re.DOTALL
+)
+
+
+def frontmatter_text(content: str) -> Optional[str]:
+    """Return the raw YAML text between the ``---`` delimiters, or ``None``."""
+    m = _FRONTMATTER_RE.match(content)
+    return m.group(1) if m else None
+
+
+def _frontmatter_newline(matched: str) -> str:
+    return "\r\n" if "\r\n" in matched else "\n"
+
+
+def insert_frontmatter_fields(content: str, additions: List[str]) -> Optional[str]:
+    """Insert field lines just before the closing ``---`` of the frontmatter.
+
+    Returns the new content, or ``None`` when *content* has no parseable
+    frontmatter block.
+    """
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return None
+    newline = _frontmatter_newline(m.group(0))
+    insert = "".join(line + newline for line in additions)
+    close_offset = m.end(1)
+    return content[:close_offset] + insert + content[close_offset:]
+
+
+def prepend_frontmatter_fields(content: str, additions: List[str]) -> Optional[str]:
+    """Insert field lines right after the opening ``---`` of the frontmatter."""
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return None
+    newline = _frontmatter_newline(m.group(0))
+    insert = "".join(line + newline for line in additions)
+    return content[: m.start(1)] + insert + content[m.start(1) :]
 
 
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:

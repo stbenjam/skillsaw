@@ -1368,6 +1368,21 @@ class TestContentBrokenInternalReferenceAutofix:
         rule = ContentBrokenInternalReferenceRule()
         assert rule.supports_autofix
 
+    def test_fix_reference_definition(self, temp_dir):
+        """Fix should rewrite the reference definition destination, not the usage."""
+        (temp_dir / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text("See [the guide][g] for help.\n\n[g]: docs/guide.md\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(context)
+        assert len(violations) == 1
+        assert "did you mean" in violations[0].message
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "[g]: guide.md" in fixed
+        assert "[the guide][g]" in fixed
+
     def test_no_suggestion_when_no_similar_file(self, temp_dir):
         """No suggestion when no similar file exists."""
         (temp_dir / "CLAUDE.md").write_text(

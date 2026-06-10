@@ -10,7 +10,7 @@ import yaml
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rules.builtin.utils import read_text, frontmatter_key_line
+from skillsaw.rules.builtin.utils import FRONTMATTER_RE_EMPTY_OK, read_text, frontmatter_key_line
 
 
 def _parse_frontmatter(content: str):
@@ -22,7 +22,7 @@ def _parse_frontmatter(content: str):
     if not content.startswith("---"):
         return None, None
 
-    match = re.match(r"^---[ \t]*\n(.*?\n)?---[ \t]*(?:\n|$)", content, re.DOTALL)
+    match = FRONTMATTER_RE_EMPTY_OK.match(content)
     if not match:
         return None, "Unterminated frontmatter (missing closing '---')"
 

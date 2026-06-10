@@ -6,7 +6,6 @@ from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
-    _HEADING_RE,
 )
 
 
@@ -66,22 +65,22 @@ class ContentSectionLengthRule(Rule):
             body = cf.read_body()
             if not body:
                 continue
+            doc = cf.markdown
             lines = body.splitlines()
             sections: List[tuple] = []
             current_heading_line = 1
             current_heading_text = "(top of file)"
             section_start = 0
 
-            for i, line in enumerate(lines):
-                m = _HEADING_RE.match(line)
-                if m:
-                    if i > section_start:
-                        sections.append(
-                            (current_heading_text, current_heading_line, section_start, i)
-                        )
-                    current_heading_text = m.group(2)
-                    current_heading_line = i + 1
-                    section_start = i + 1
+            for heading in doc.headings():
+                heading_start = heading.body_line - 1  # 0-based section end
+                if heading_start > section_start:
+                    sections.append(
+                        (current_heading_text, current_heading_line, section_start, heading_start)
+                    )
+                current_heading_text = heading.text
+                current_heading_line = heading.body_line
+                section_start = heading.body_line_end - 1
 
             if len(lines) > section_start:
                 sections.append(

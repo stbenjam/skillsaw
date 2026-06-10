@@ -76,6 +76,21 @@ class _Directive:
     rule_ids: List[str]  # empty list means "all rules"
     line: int  # 1-based line number where the comment starts (``<!--`` or ``#``)
     is_yaml: bool = False  # True for ``#`` comments (always single-line)
+    end_line: Optional[int] = None  # last line of the comment, when known
+
+
+def _classify_directive(text: str, line: int, **kwargs) -> Optional[_Directive]:
+    """Parse a normalised comment text into a directive, if it is one."""
+    m = _DISABLE_NEXT_LINE_DIR.search(text)
+    if m:
+        return _Directive("disable-next-line", _parse_rule_ids(m.group(1) or ""), line, **kwargs)
+    m = _DISABLE_DIR.search(text)
+    if m:
+        return _Directive("disable", _parse_rule_ids(m.group(1).strip()), line, **kwargs)
+    m = _ENABLE_DIR.search(text)
+    if m:
+        return _Directive("enable", _parse_rule_ids(m.group(1).strip()), line, **kwargs)
+    return None
 
 
 class _CommentParser(HTMLParser):
@@ -95,23 +110,9 @@ class _CommentParser(HTMLParser):
         # comments like ``<!--\n  skillsaw-enable\n  some-rule -->`` become a
         # single logical string we can match against.
         text = " ".join(data.split())
-
-        m = _DISABLE_NEXT_LINE_DIR.search(text)
-        if m:
-            self.directives.append(
-                _Directive("disable-next-line", _parse_rule_ids(m.group(1) or ""), line)
-            )
-            return
-
-        m = _DISABLE_DIR.search(text)
-        if m:
-            self.directives.append(_Directive("disable", _parse_rule_ids(m.group(1).strip()), line))
-            return
-
-        m = _ENABLE_DIR.search(text)
-        if m:
-            self.directives.append(_Directive("enable", _parse_rule_ids(m.group(1).strip()), line))
-            return
+        directive = _classify_directive(text, line)
+        if directive is not None:
+            self.directives.append(directive)
 
 
 _YAML_COMMENT_RE = re.compile(r"^\s*#\s*(.*)", re.MULTILINE)
@@ -122,6 +123,25 @@ def _extract_html_directives(content: str) -> List[_Directive]:
     parser = _CommentParser()
     parser.feed(content)
     return parser.directives
+
+
+def _extract_markdown_directives(content: str) -> List[_Directive]:
+    """Extract directives from HTML comments via the markdown AST.
+
+    Unlike a raw scan, this honours markdown structure: a directive shown
+    inside a fenced or indented code block is documentation, not a directive.
+    """
+    from skillsaw.markdown_doc import MarkdownDoc
+
+    directives: List[_Directive] = []
+    for comment in MarkdownDoc(content).html_comments():
+        text = " ".join(comment.text.split())
+        directive = _classify_directive(
+            text, comment.body_line_start, end_line=comment.body_line_end
+        )
+        if directive is not None:
+            directives.append(directive)
+    return directives
 
 
 def _extract_yaml_directives(content: str) -> List[_Directive]:
@@ -138,40 +158,26 @@ def _extract_yaml_directives(content: str) -> List[_Directive]:
             continue
         text = m.group(1).strip()
         line = lineno_0 + 1  # 1-based
-
-        m2 = _DISABLE_NEXT_LINE_DIR.search(text)
-        if m2:
-            directives.append(
-                _Directive(
-                    "disable-next-line", _parse_rule_ids(m2.group(1) or ""), line, is_yaml=True
-                )
-            )
-            continue
-
-        m2 = _DISABLE_DIR.search(text)
-        if m2:
-            directives.append(
-                _Directive("disable", _parse_rule_ids(m2.group(1).strip()), line, is_yaml=True)
-            )
-            continue
-
-        m2 = _ENABLE_DIR.search(text)
-        if m2:
-            directives.append(
-                _Directive("enable", _parse_rule_ids(m2.group(1).strip()), line, is_yaml=True)
-            )
-            continue
+        directive = _classify_directive(text, line, is_yaml=True)
+        if directive is not None:
+            directives.append(directive)
 
     return directives
 
 
-def _extract_directives(content: str) -> List[_Directive]:
+def _extract_directives(content: str, *, markdown: bool = True) -> List[_Directive]:
     """Extract all skillsaw directives from *content*.
 
     Scans both HTML ``<!-- -->`` comments and YAML ``#`` comments.  The two
     syntaxes don't overlap so results are simply merged by line number.
+
+    When *markdown* is true, HTML comments are located through the markdown
+    AST so directives shown inside fenced code blocks are not honoured.
     """
-    html = _extract_html_directives(content)
+    if markdown:
+        html = _extract_markdown_directives(content)
+    else:
+        html = _extract_html_directives(content)
     yaml = _extract_yaml_directives(content)
     return sorted(html + yaml, key=lambda d: d.line)
 
@@ -200,24 +206,34 @@ class SuppressionMap:
         return False
 
 
-def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
+def build_suppression_map(
+    content: str, line_offset: int = 0, *, markdown: bool = True
+) -> SuppressionMap:
     """Parse suppression directives from file content.
 
     Args:
         content: Full file content (including frontmatter etc.)
         line_offset: Offset to add to body-relative line numbers to get file lines.
                      For files without frontmatter this is 0.
+        markdown: Treat *content* as markdown, locating HTML comments through
+                  the markdown AST (directives inside code fences are ignored).
+                  Pass ``False`` for YAML/JSON files.
 
     Returns:
         SuppressionMap that can check if a rule is suppressed at a given line.
     """
+    # Fast path: no directive text anywhere means an empty map — skip the
+    # comment extraction (and its markdown parse) entirely.
+    if "skillsaw-" not in content:
+        return SuppressionMap()
+
     if content.endswith("\n"):
         total_lines = content.count("\n")
     else:
         total_lines = content.count("\n") + 1
 
     # --- Step 1: extract directives (handles multi-line comments) ----------
-    directives = _extract_directives(content)
+    directives = _extract_directives(content, markdown=markdown)
 
     # Build a map of line -> list of directives that start on that line.
     # ``_Directive.line`` is 1-based from HTMLParser.getpos().
@@ -234,6 +250,8 @@ def build_suppression_map(content: str, line_offset: int = 0) -> SuppressionMap:
     for d in directives:
         if d.is_yaml:
             directive_comment_lines.add(d.line)
+        elif d.end_line is not None:
+            directive_comment_lines.update(range(d.line, d.end_line + 1))
         else:
             _mark_comment_lines(content, d.line, directive_comment_lines)
 
@@ -323,6 +341,14 @@ def _mark_comment_lines(content: str, start_line: int, out: Set[int]) -> None:
                 break
 
 
+_MARKDOWN_SUFFIXES = {".md", ".mdc", ".markdown"}
+_MARKDOWN_FILENAMES = {".cursorrules", ".windsurfrules", ".clinerules"}
+
+
+def _is_markdown_file(file_path: Path) -> bool:
+    return file_path.suffix.lower() in _MARKDOWN_SUFFIXES or file_path.name in _MARKDOWN_FILENAMES
+
+
 def build_suppression_map_for_file(file_path: Path) -> Optional[SuppressionMap]:
     """Build a suppression map for a file, returning None if the file can't be read."""
     try:
@@ -330,4 +356,4 @@ def build_suppression_map_for_file(file_path: Path) -> Optional[SuppressionMap]:
     except (OSError, UnicodeDecodeError):
         return None
 
-    return build_suppression_map(content)
+    return build_suppression_map(content, markdown=_is_markdown_file(file_path))

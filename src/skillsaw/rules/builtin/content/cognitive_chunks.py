@@ -6,7 +6,6 @@ from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
-    _HEADING_RE,
 )
 
 
@@ -51,7 +50,7 @@ class ContentCognitiveChunksRule(Rule):
             if not body or len(body.strip()) < 100:
                 continue
             lines = body.splitlines()
-            headings = [l for l in lines if _HEADING_RE.match(l)]
+            headings = cf.markdown.headings()
 
             if not headings and len(lines) > 10:
                 violations.append(

@@ -1,12 +1,12 @@
 """AgentSkill SKILL.md validation rule"""
 
-import re
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.rules.builtin.utils import prepend_frontmatter_fields
 
 from ._helpers import NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH, COMPATIBILITY_MAX_LENGTH, _to_kebab
 
@@ -74,11 +74,8 @@ class AgentSkillValidRule(Rule):
             original = v.file_path.read_text(encoding="utf-8")
             dir_name = v.file_path.parent.name
             kebab_name = _to_kebab(dir_name)
-            match = re.match(r"^---\s*\n(.*?)\n---", original, re.DOTALL)
-            if match:
-                fm_text = match.group(1)
-                new_fm = f"name: {kebab_name}\n{fm_text}"
-                fixed = f"---\n{new_fm}\n---" + original[match.end() :]
+            fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
+            if fixed is not None:
                 results.append(
                     AutofixResult(
                         rule_id=self.rule_id,

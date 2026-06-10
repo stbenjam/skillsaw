@@ -11,7 +11,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixC
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.utils import frontmatter_text, insert_frontmatter_fields, read_text
 
 
 class SkillFrontmatterRule(Rule):
@@ -164,18 +164,15 @@ class SkillFrontmatterRule(Rule):
             missing_name = any("Missing 'name'" in m for m in messages)
             missing_desc = any("Missing 'description'" in m for m in messages)
             if (missing_name or missing_desc) and original.startswith("---"):
-                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", original, re.DOTALL)
-                if fm_match:
-                    fm_text = fm_match.group(1)
+                fm_text = frontmatter_text(original)
+                if fm_text is not None:
                     additions = []
                     if missing_name and "name:" not in fm_text:
                         additions.append(f"name: {file_path.parent.name}")
                     if missing_desc and "description:" not in fm_text:
                         additions.append("description: ")
                     if additions:
-                        insert = "\n".join(additions) + "\n"
-                        fixed = original[: fm_match.end()].replace("\n---", f"\n{insert}---", 1)
-                        fixed += original[fm_match.end() :]
+                        fixed = insert_frontmatter_fields(original, additions)
                         results.append(
                             AutofixResult(
                                 rule_id=self.rule_id,
