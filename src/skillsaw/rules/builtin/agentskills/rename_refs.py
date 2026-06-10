@@ -48,26 +48,6 @@ class AgentSkillRenameRefsRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "A skill was renamed, and these lines still contain the old "
-            "name. The old name may also be a generic term (e.g. a skill "
-            "named 'api'), so judge each flagged occurrence from its "
-            "surrounding text:\n"
-            "- If it refers to the renamed skill, replace just that "
-            "occurrence of the old name with the new name. Never modify "
-            "surrounding words, and never touch text where the old name is "
-            "only a substring of another word.\n"
-            "- If it does NOT refer to the skill (a generic use of the "
-            "term), leave the text unchanged and instead add a suppression "
-            "comment on its own line directly above it:\n"
-            "  <!-- skillsaw-disable-next-line agentskill-rename-refs -->\n"
-            "  (in YAML files use '# skillsaw-disable-next-line "
-            "agentskill-rename-refs' instead)\n"
-            "- Make no other edits."
-        )
-
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         renames = _read_renames_manifest(context.root_path)
         if not renames:

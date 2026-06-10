@@ -526,7 +526,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 |---------|-------------|------------------|---------|
 | `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
-| `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto, llm |
+| `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
