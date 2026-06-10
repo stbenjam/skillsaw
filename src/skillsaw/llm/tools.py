@@ -31,6 +31,30 @@ def _resolve_safe(root: Path, path: str) -> Optional[Path]:
     return resolved
 
 
+def _drop_suppressed(violations: list) -> list:
+    """Drop violations silenced by inline suppression directives.
+
+    The LLM fix flow accepts adding a ``skillsaw-disable-next-line``
+    directive as the resolution for a false positive, so the lint feedback
+    the model sees must honor it — mirroring ``Linter._filter_violations``.
+    """
+    from ..suppression import build_suppression_map_for_file
+
+    maps: Dict[Path, Any] = {}
+    kept = []
+    for v in violations:
+        line = v.file_line
+        if v.file_path and line:
+            resolved = v.file_path.resolve()
+            if resolved not in maps:
+                maps[resolved] = build_suppression_map_for_file(resolved)
+            smap = maps[resolved]
+            if smap is not None and smap.is_suppressed(v.rule_id, line):
+                continue
+        kept.append(v)
+    return kept
+
+
 class ReadFileTool:
     name = "read_file"
     description = "Read the contents of a file"
@@ -182,6 +206,7 @@ class LintTool:
             except Exception as e:
                 return f"Error running lint ({rule.rule_id}): {e}"
 
+        violations = _drop_suppressed(violations)
         if not violations:
             return "No violations found."
         return "\n".join(str(v) for v in violations)
@@ -353,6 +378,7 @@ class LintBlockTool:
             except Exception as e:
                 return f"Error running lint ({rule.rule_id}): {e}"
 
+        violations = _drop_suppressed(violations)
         if not violations:
             return "No violations found."
         return "\n".join(str(v) for v in violations)

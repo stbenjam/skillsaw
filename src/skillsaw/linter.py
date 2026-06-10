@@ -628,6 +628,11 @@ class Linter:
         from .rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches(fpath)
+        # The LLM fix may have added inline suppression directives (the
+        # accepted resolution for false positives); rebuild the file's
+        # suppression map so they count as resolved.
+        if hasattr(self, "_suppression_cache"):
+            self._suppression_cache.pop(fpath, None)
         context = RepositoryContext(self.context.root_path)
         context.content_paths = self.config.content_paths
         context.exclude_patterns = self.config.exclude_patterns
@@ -641,6 +646,8 @@ class Linter:
                 re_violations = rule.check(context)
                 for v in re_violations:
                     if self._SEVERITY_ORDER.get(v.severity, 99) > threshold:
+                        continue
+                    if self._is_inline_suppressed(v):
                         continue
                     if block is not None:
                         if v.block == block:

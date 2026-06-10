@@ -889,3 +889,76 @@ class TestLLMFixFrontmatteredBlock:
         assert (
             result.violations_after == 0
         ), f"skill-frontmatter: expected 0 violations after fix, got {result.violations_after}"
+
+
+class TestRenameRefsLLMFix:
+    """GH-283: the LLM fix path for agentskill-rename-refs.
+
+    Deciding whether 'api' means the renamed skill or the generic term needs
+    semantic judgment. A genuine reference is rewritten; a false positive is
+    resolved by adding a skillsaw-disable-next-line directive without
+    changing the text — and that suppression must count as resolved in the
+    rollback re-lint."""
+
+    def _make_repo(self, tmp_path, claude_md):
+        import json
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        skill = repo / "api-v2"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: api-v2\ndescription: Use this skill to call our service\n---\n"
+        )
+        (repo / "CLAUDE.md").write_text(claude_md)
+        (repo / ".skillsaw-renames.json").write_text(
+            json.dumps({"renames": [{"old": "api", "new": "api-v2"}]})
+        )
+        return repo
+
+    def _run_llm_fix(self, repo, fixed_content):
+        config = LinterConfig.default()
+        config.llm.model = "fake-model"
+        context = RepositoryContext(repo)
+        linter = Linter(context, config)
+
+        violations = linter.run()
+        rule_violations = [v for v in violations if v.rule_id == "agentskill-rename-refs"]
+        assert len(rule_violations) == 1, f"Expected one rename-refs violation: {violations}"
+
+        provider = _fake_fix_provider(fixed_content)
+        return linter.llm_fix(provider)
+
+    def test_genuine_reference_rewritten(self, tmp_path):
+        repo = self._make_repo(tmp_path, "Always run the api skill before opening a PR.\n")
+        result = self._run_llm_fix(repo, "Always run the api-v2 skill before opening a PR.\n")
+
+        assert result.violations_before == 1
+        assert result.violations_after == 0
+        assert (repo / "CLAUDE.md").read_text() == (
+            "Always run the api-v2 skill before opening a PR.\n"
+        )
+
+    def test_false_positive_resolved_by_suppression(self, tmp_path):
+        repo = self._make_repo(tmp_path, "Route requests through the api gateway.\n")
+        suppressed = (
+            "<!-- skillsaw-disable-next-line agentskill-rename-refs -->\n"
+            "Route requests through the api gateway.\n"
+        )
+        result = self._run_llm_fix(repo, suppressed)
+
+        # The text itself is unchanged; the directive must count as resolved
+        # (previously the rollback re-lint ignored suppressions and reverted).
+        assert result.violations_before == 1
+        assert result.violations_after == 0
+        assert (repo / "CLAUDE.md").read_text() == suppressed
+
+    def test_unchanged_content_rolls_back(self, tmp_path):
+        """If the LLM neither rewrites nor suppresses, the violation persists
+        and the original content is kept (rollback)."""
+        original = "Route requests through the api gateway.\n"
+        repo = self._make_repo(tmp_path, original)
+        result = self._run_llm_fix(repo, original)
+
+        assert result.violations_after == result.violations_before
+        assert (repo / "CLAUDE.md").read_text() == original

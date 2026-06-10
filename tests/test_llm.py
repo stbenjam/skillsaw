@@ -703,6 +703,41 @@ class TestLintToolExcludePatterns:
         assert result_excluded == "No violations found."
 
 
+class TestLintToolSuppression:
+    """LintTool must honour inline suppression directives (GH-283): adding a
+    skillsaw-disable-next-line comment is the accepted resolution for a
+    false positive, so the lint feedback the model sees must reflect it."""
+
+    def _make_skill(self, tmp_path, body):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir(exist_ok=True)
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(
+            f"---\nname: my-skill\ndescription: a test skill\n---\n{body}",
+            encoding="utf-8",
+        )
+        return skill_md
+
+    def test_lint_tool_respects_disable_next_line(self, tmp_path):
+        from skillsaw.config import LinterConfig
+        from skillsaw.llm.tools import LintTool
+
+        self._make_skill(tmp_path, "You should maybe try to do things.\n")
+        config = LinterConfig.default()
+        config.version = "999.0.0"
+        tool = LintTool(tmp_path, config, rule_ids={"content-weak-language"})
+        result = tool.execute(path="my-skill/SKILL.md")
+        assert "weak" in result.lower()
+
+        self._make_skill(
+            tmp_path,
+            "<!-- skillsaw-disable-next-line content-weak-language -->\n"
+            "You should maybe try to do things.\n",
+        )
+        result = tool.execute(path="my-skill/SKILL.md")
+        assert result == "No violations found."
+
+
 class TestLintToolExceptionHandling:
     """LintTool.execute must surface rule exceptions, not swallow them."""
 

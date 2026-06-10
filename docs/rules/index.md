@@ -28,7 +28,7 @@ organized into the following categories:
 |---------|-------------|------------------|---------|----------|
 | [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm | agentskills.io |
 | [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto | agentskills.io |
-| [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto | agentskills.io |
+| [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto, llm | agentskills.io |
 | [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - | agentskills.io |
 | [`agentskill-structure`](agentskill-structure.md) | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - | agentskills.io |
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - | agentskills.io |

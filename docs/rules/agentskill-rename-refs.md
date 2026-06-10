@@ -8,7 +8,7 @@ Update stale skill name references after a rename
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | auto |
+| **Autofix** | auto, llm |
 | **Since** | v0.1.0 |
 | **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
