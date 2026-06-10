@@ -22,5 +22,9 @@ rules:
     severity: warning
 ```
 
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
+
 
 *Run `skillsaw explain agentskill-rename-refs` to see this documentation and the rule's effective configuration in your terminal.*
