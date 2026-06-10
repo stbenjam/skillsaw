@@ -14,7 +14,10 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+
+if TYPE_CHECKING:
+    from skillsaw.markdown_doc import MarkdownDoc
 
 import yaml
 
@@ -23,6 +26,7 @@ from skillsaw.lint_target import LintTarget
 from ruamel.yaml import YAML as _RuamelYAML
 
 from skillsaw.rules.builtin.utils import (
+    _FRONTMATTER_RE,
     read_text,
     parse_frontmatter,
     extract_section,
@@ -36,81 +40,9 @@ from skillsaw.rules.builtin.utils import (
     yaml_nth_list_item_key_line as _yaml_nth_list_item_key_line_util,
 )
 
-_OPENING_FENCE_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})")
-_CLOSING_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*$")
-
-_INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
-
-_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-
-
-def _strip_fenced_code_blocks(text: str) -> str:
-    """Replace content inside fenced code blocks with blank lines to preserve line numbers."""
-    lines = text.split("\n")
-    result: list[str] = []
-    fence_char: str | None = None
-    fence_len = 0
-    in_fence = False
-
-    for line in lines:
-        if not in_fence:
-            m = _OPENING_FENCE_RE.match(line)
-            if m:
-                fence_char = m.group(2)[0]
-                fence_len = len(m.group(2))
-                in_fence = True
-                result.append("")
-            else:
-                result.append(line)
-        else:
-            cm = _CLOSING_FENCE_RE.match(line)
-            if cm and cm.group(1)[0] == fence_char and len(cm.group(1)) >= fence_len:
-                in_fence = False
-                fence_char = None
-                fence_len = 0
-            result.append("")
-
-    return "\n".join(result)
-
-
-def _strip_html_comments(text: str) -> str:
-    """Replace content inside HTML comments with spaces, preserving line numbers."""
-
-    def _blank_preserving_newlines(m: re.Match) -> str:
-        return re.sub(r"[^\n]", " ", m.group(0))
-
-    return _HTML_COMMENT_RE.sub(_blank_preserving_newlines, text)
-
-
-def is_inside_inline_code(line: str, match_start: int, match_end: int) -> bool:
-    """Check if a character range falls inside an inline code span (backticks).
-
-    Returns True only when the code span contains more than just the matched text
-    (e.g. a variable prefix like ``${VAR}/path``). When the entire code span content
-    equals the matched text, the path is a plain reference that should still be
-    linkable, so this returns False.
-    """
-    for m in _INLINE_CODE_RE.finditer(line):
-        code_start = m.start() + len(m.group(1))
-        code_end = m.end() - len(m.group(1))
-        if code_start <= match_start and match_end <= code_end:
-            if code_start == match_start and code_end == match_end:
-                return False
-            return True
-    return False
-
-
-def inline_code_span_bounds(
-    line: str, match_start: int, match_end: int
-) -> Optional[Tuple[int, int]]:
-    """Return (span_start, span_end) of the enclosing backtick span if the match
-    is exactly its content, else None.  The bounds include the backtick delimiters."""
-    for m in _INLINE_CODE_RE.finditer(line):
-        code_start = m.start() + len(m.group(1))
-        code_end = m.end() - len(m.group(1))
-        if code_start == match_start and code_end == match_end:
-            return (m.start(), m.end())
-    return None
+# Markdown structure (fences, code spans, HTML comments, links, headings) is
+# derived from the markdown-it-py AST — see ``skillsaw.markdown_doc``.  The
+# legacy per-line regex strip helpers were removed in the GH-284 migration.
 
 
 @dataclass
@@ -212,9 +144,6 @@ _CRITICAL_KEYWORDS = re.compile(
     r"\b(IMPORTANT|MUST|NEVER|ALWAYS|CRITICAL|WARNING|REQUIRED)\b",
 )
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)", re.MULTILINE)
-
-
 _INSTRUCTION_FILE_CATEGORIES = {
     "AGENTS.md": "agents-md",
     "CLAUDE.md": "claude-md",
@@ -247,6 +176,28 @@ class ContentBlock(LintTarget):
 
     @abstractmethod
     def write_body(self, new_body: str) -> None: ...
+
+    @property
+    def markdown(self) -> "MarkdownDoc":
+        """Lazily parsed :class:`MarkdownDoc` for this block's body.
+
+        Re-parses automatically when the underlying body text changes (the
+        read caches are invalidated per file after autofixes are applied).
+        """
+        from skillsaw.markdown_doc import MarkdownDoc
+
+        raw = self.read_body(strip_code_blocks=False) or ""
+        cached = self.__dict__.get("_markdown_doc")
+        if cached is not None and cached.body == raw:
+            return cached
+        doc = MarkdownDoc(raw, line_offset=self.line_offset, line_map=self._line_map)
+        self.__dict__["_markdown_doc"] = doc
+        return doc
+
+    def _stripped_body(self) -> str:
+        """Body with verbatim content (fences, indented code blocks, code
+        spans, HTML comments) blanked, line count preserved."""
+        return self.markdown.prose_text()
 
     def estimate_tokens(self) -> int:
         body = self.read_body()
@@ -283,8 +234,7 @@ class FileContentBlock(ContentBlock):
                 return None
             body = content
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-            body = _strip_html_comments(body)
+            return self._stripped_body()
         return body
 
     def write_body(self, new_body: str) -> None:
@@ -298,11 +248,9 @@ class CodeRabbitContentBlock(ContentBlock):
     yaml_path: str = ""
 
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
-        body = self.body if self.body is not None else ""
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-            body = _strip_html_comments(body)
-        return body
+            return self._stripped_body()
+        return self.body if self.body is not None else ""
 
     def write_body(self, new_body: str) -> None:
         ruyaml = _RuamelYAML()
@@ -504,11 +452,9 @@ class PromptfooPromptBlock(ContentBlock):
     category: str = "promptfoo-prompt"
 
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
-        body = self.body if self.body is not None else ""
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-            body = _strip_html_comments(body)
-        return body
+            return self._stripped_body()
+        return self.body if self.body is not None else ""
 
     def write_body(self, new_body: str) -> None:
         ruyaml = _RuamelYAML()
@@ -674,11 +620,9 @@ class BodyContent(ContentBlock):
     def read_body(self, *, strip_code_blocks: bool = True) -> Optional[str]:
         if not self.body:
             return None
-        body = self.body
         if strip_code_blocks:
-            body = _strip_fenced_code_blocks(body)
-            body = _strip_html_comments(body)
-        return body
+            return self._stripped_body()
+        return self.body
 
     def write_body(self, new_body: str) -> None:
         content = read_text(self.path)
@@ -846,7 +790,7 @@ class FrontmatteredBlock(LintTarget):
             self._fm_parsed = None
             return
 
-        m = re.match(r"^---[ \t]*\n(.*?\n)---[ \t]*\n?", content, re.DOTALL)
+        m = _FRONTMATTER_RE.match(content)
         if m:
             body_after = content[m.end() :]
             self.path.write_text(f"---\n{fm}---\n{body_after}", encoding="utf-8")
@@ -1282,6 +1226,21 @@ def _extract_instructions(data: Any, raw: str) -> List[Tuple[str, str, Optional[
 # ---------------------------------------------------------------------------
 
 
+_WEAK_LANGUAGE_PATTERNS = [
+    (re.compile(pattern, re.IGNORECASE), category, fix)
+    for patterns, category in (
+        (_HEDGING, "hedging"),
+        (_VAGUENESS, "vagueness"),
+        (_NON_ACTIONABLE, "non-actionable"),
+    )
+    for pattern, fix in patterns
+]
+
+_TAUTOLOGICAL_COMPILED = [
+    (re.compile(pattern, re.IGNORECASE), reason) for pattern, reason in _TAUTOLOGICAL_PHRASES
+]
+
+
 class WeakLanguageDetector:
     def analyze(self, cf: ContentBlock) -> List[WeakLanguageMatch]:
         content = _get_body_from_cf(cf)
@@ -1289,15 +1248,9 @@ class WeakLanguageDetector:
             return []
         results: List[WeakLanguageMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, fix in _HEDGING:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "hedging", fix))
-            for pattern, fix in _VAGUENESS:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "vagueness", fix))
-            for pattern, fix in _NON_ACTIONABLE:
-                for m in re.finditer(pattern, line, re.IGNORECASE):
-                    results.append(WeakLanguageMatch(line_num, m.group(), "non-actionable", fix))
+            for pattern, category, fix in _WEAK_LANGUAGE_PATTERNS:
+                for m in pattern.finditer(line):
+                    results.append(WeakLanguageMatch(line_num, m.group(), category, fix))
         return results
 
 
@@ -1308,8 +1261,8 @@ class TautologicalDetector:
             return []
         results: List[TautologicalMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, reason in _TAUTOLOGICAL_PHRASES:
-                m = re.search(pattern, line, re.IGNORECASE)
+            for pattern, reason in _TAUTOLOGICAL_COMPILED:
+                m = pattern.search(line)
                 if m:
                     results.append(TautologicalMatch(line_num, m.group(), reason))
         return results

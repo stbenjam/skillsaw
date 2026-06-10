@@ -1,10 +1,10 @@
 """Command frontmatter validation rule"""
 
-import re
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.utils import insert_frontmatter_fields
 
 
 class CommandFrontmatterRule(Rule):
@@ -72,11 +72,8 @@ class CommandFrontmatterRule(Rule):
                     )
                 )
             elif "Missing 'description'" in v.message and original.startswith("---"):
-                fm_match = re.match(r"^---\n(.*?)\n---", original, re.DOTALL)
-                if fm_match:
-                    fm_end = fm_match.end()
-                    fixed = original[:fm_end].replace("\n---", "\ndescription: \n---", 1)
-                    fixed += original[fm_end:]
+                fixed = insert_frontmatter_fields(original, ["description: "])
+                if fixed is not None:
                     results.append(
                         AutofixResult(
                             rule_id=self.rule_id,

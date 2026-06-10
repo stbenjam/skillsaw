@@ -420,3 +420,44 @@ def test_parse_frontmatter_closing_at_eof_without_newline():
     fm, body, error_line = parse_frontmatter(content)
     assert fm == {"name": "test"}
     assert error_line is None
+
+
+class TestFrontmatterHelpers:
+    """Shared frontmatter regex + insertion helpers (GH-284 consolidation)."""
+
+    def test_frontmatter_text(self):
+        from skillsaw.rules.builtin.utils import frontmatter_text
+
+        assert frontmatter_text("---\nname: x\n---\nbody\n") == "name: x\n"
+        assert frontmatter_text("no frontmatter\n") is None
+
+    def test_frontmatter_text_crlf(self):
+        from skillsaw.rules.builtin.utils import frontmatter_text
+
+        assert frontmatter_text("---\r\nname: x\r\n---\r\nbody\r\n") == "name: x\r\n"
+
+    def test_insert_frontmatter_fields(self):
+        from skillsaw.rules.builtin.utils import insert_frontmatter_fields
+
+        out = insert_frontmatter_fields("---\nname: x\n---\nbody\n", ["description: "])
+        assert out == "---\nname: x\ndescription: \n---\nbody\n"
+
+    def test_insert_frontmatter_fields_crlf(self):
+        from skillsaw.rules.builtin.utils import insert_frontmatter_fields
+
+        out = insert_frontmatter_fields("---\r\nname: x\r\n---\r\nbody\r\n", ["description: "])
+        assert out == "---\r\nname: x\r\ndescription: \r\n---\r\nbody\r\n"
+
+    def test_prepend_frontmatter_fields(self):
+        from skillsaw.rules.builtin.utils import prepend_frontmatter_fields
+
+        out = prepend_frontmatter_fields("---\ndescription: d\n---\nbody\n", ["name: x"])
+        assert out == "---\nname: x\ndescription: d\n---\nbody\n"
+
+    def test_parse_frontmatter_crlf(self):
+        from skillsaw.rules.builtin.utils import parse_frontmatter
+
+        fm, body, err = parse_frontmatter("---\r\nname: x\r\n---\r\nbody text\r\n")
+        assert err is None
+        assert fm == {"name": "x"}
+        assert body == "body text\r\n"

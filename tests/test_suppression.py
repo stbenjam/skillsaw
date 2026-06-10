@@ -581,3 +581,38 @@ def test_unknown_hyphenated_directive_not_treated_as_bare_disable():
     smap = build_suppression_map(content)
     assert not smap.is_suppressed("content-weak-language", 3)
     assert not smap.is_suppressed("any-rule", 3)
+
+
+class TestMarkdownAwareExtraction:
+    """HTML comment directives are located through the markdown AST (GH-284)."""
+
+    def test_directive_inside_fence_ignored(self):
+        content = (
+            "# Doc\n\n"
+            "```markdown\n"
+            "<!-- skillsaw-disable some-rule -->\n"
+            "```\n\n"
+            "target line\n"
+        )
+        smap = build_suppression_map(content)
+        assert not smap.is_suppressed("some-rule", 7)
+
+    def test_directive_inside_indented_code_ignored(self):
+        content = "# Doc\n\nexample:\n\n    <!-- skillsaw-disable some-rule -->\n\ntarget line\n"
+        smap = build_suppression_map(content)
+        assert not smap.is_suppressed("some-rule", 7)
+
+    def test_directive_after_fence_still_works(self):
+        content = (
+            "# Doc\n\n"
+            "```\ncode\n```\n\n"
+            "<!-- skillsaw-disable some-rule -->\n"
+            "suppressed line\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("some-rule", 8)
+
+    def test_non_markdown_mode_keeps_legacy_raw_scan(self):
+        content = "```\n<!-- skillsaw-disable some-rule -->\n```\nline\n"
+        smap = build_suppression_map(content, markdown=False)
+        assert smap.is_suppressed("some-rule", 4)

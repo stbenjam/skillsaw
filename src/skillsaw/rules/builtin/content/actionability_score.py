@@ -1,7 +1,8 @@
 """Content actionability score rule"""
 
 import re
-from typing import List
+from collections import defaultdict
+from typing import Dict, List
 
 from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -60,10 +61,22 @@ class ContentActionabilityScoreRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         for cf in gather_all_content_blocks(context):
-            body = cf.read_body()
-            if not body:
+            if not cf.read_body(strip_code_blocks=False):
                 continue
-            lines = [l for l in body.splitlines() if l.strip()]
+            doc = cf.markdown
+            # Code spans are blanked in prose, but commands and backticked
+            # paths count toward actionability — rebuild each line from its
+            # prose text plus the code spans the AST located on it.
+            spans_by_line: Dict[int, List[str]] = defaultdict(list)
+            for span in doc.code_spans():
+                spans_by_line[span.body_line].append(span.content)
+            lines: List[str] = []
+            for body_line, prose in enumerate((text for _, text in doc.prose_lines()), 1):
+                rebuilt = prose
+                for span_content in spans_by_line.get(body_line, []):
+                    rebuilt += f" `{span_content}`"
+                if rebuilt.strip():
+                    lines.append(rebuilt)
             if len(lines) < 5:
                 continue
             total = len(lines)

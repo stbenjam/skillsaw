@@ -1839,3 +1839,77 @@ class TestRuleCrashExitCode:
         assert "rule-execution-error" in result.stdout
         assert "fixture-crashing-rule" in result.stdout
         assert "intentional crash" in result.stdout
+
+
+# ── Markdown AST regression suite (GH-284) ───────────────────────
+
+
+class TestMarkdownAstRegressions:
+    """End-to-end regressions for the markdown-it-py AST migration.
+
+    These are the bug classes the migration eliminates structurally:
+    fixes splice at the exact token span their check matched, instead of
+    re-locating targets by string search.
+    """
+
+    def test_substring_corruption_fix_targets_exact_span(self, tmp_path):
+        """A path that is a substring of another token must not be corrupted."""
+        repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
+        _run_fix(repo)
+        fixed = (repo / "AGENTS.md").read_text()
+        assert "Backup docs/setup.md.bak and [docs/setup.md](docs/setup.md) too." in fixed
+        # Second run must be byte-identical (idempotent).
+        _run_fix(repo)
+        assert (repo / "AGENTS.md").read_text() == fixed
+
+    def test_substring_fix_preserves_line_count(self, tmp_path):
+        repo = copy_fixture("regression/markdown-ast-substring", tmp_path)
+        before = len((repo / "AGENTS.md").read_text().splitlines())
+        _run_fix(repo)
+        assert len((repo / "AGENTS.md").read_text().splitlines()) == before
+
+    def test_cross_paragraph_stray_backticks_do_not_hide_broken_link(self, tmp_path):
+        """Stray backticks in surrounding paragraphs must not blank the link."""
+        repo = copy_fixture("regression/markdown-ast-crossparagraph", tmp_path)
+        r = run_lint(repo)
+        broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+        assert len(broken) == 1
+        assert "docs/nope.md" in broken[0]["message"]
+        assert broken[0]["line"] == 5
+
+    def test_broken_link_fix_preserves_anchor(self, tmp_path):
+        """Fixing [x](docs/gone.md#sec) must keep the #sec anchor."""
+        repo = copy_fixture("regression/markdown-ast-anchor", tmp_path)
+        _run_fix(repo, "--suggest")
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert "[the section](gone.md#sec)" in fixed
+        r = run_lint(repo)
+        assert not [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+
+    def test_broken_link_fix_preserves_title(self, tmp_path):
+        """Titled links must be fixable, keeping the title intact."""
+        repo = copy_fixture("regression/markdown-ast-titled", tmp_path)
+        r = run_lint(repo)
+        broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+        assert len(broken) == 1 and "did you mean" in broken[0]["message"]
+        _run_fix(repo, "--suggest")
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert '[the setup guide](docs/setup.md "Setup Guide")' in fixed
+
+    def test_indented_code_blocks_not_scanned_as_prose(self, tmp_path):
+        """4-space-indented code must not be scanned by any content rule."""
+        repo = copy_fixture("regression/markdown-ast-indented-code", tmp_path)
+        r = run_lint(repo)
+        flagged = [
+            v for v in violations(r) if v["file_path"].endswith("CLAUDE.md") and v["line"] in (7, 8)
+        ]
+        assert flagged == [], f"indented code lines were scanned as prose: {flagged}"
+
+    def test_suppression_directive_inside_fence_not_honored(self, tmp_path):
+        """A directive shown inside a fenced code block is documentation,
+        not a directive — later violations must still be reported."""
+        repo = copy_fixture("regression/markdown-ast-suppress-fence", tmp_path)
+        r = run_lint(repo)
+        weak = [v for v in violations(r) if v["rule_id"] == "content-weak-language"]
+        assert len(weak) == 2, f"fenced directive suppressed violations: {violations(r)}"
+        assert {v["line"] for v in weak} == {9}
