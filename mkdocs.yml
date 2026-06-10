@@ -89,6 +89,7 @@ nav:
     - Repository Types: repo-types.md
     - CI Integration: ci.md
     - Pre-commit: pre-commit.md
+    - Editor Integration: editor-integration.md
     - CLI Reference: cli.md
     - Custom Rules: custom-rules.md
     - Scaffolding: scaffolding.md

@@ -13,7 +13,9 @@ mypy>=1.0
 # LLM integration
 litellm>=1.40
 
+# Language server
+pygls>=2.0,<3
+
 # Build
 build>=0.10
 twine>=4.0
-

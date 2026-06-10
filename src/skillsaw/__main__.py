@@ -24,7 +24,18 @@ from .formatters import (
 )
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline", "explain"}
+_SUBCOMMANDS = {
+    "lint",
+    "init",
+    "list-rules",
+    "docs",
+    "add",
+    "fix",
+    "tree",
+    "baseline",
+    "explain",
+    "lsp",
+}
 
 
 def _get_version() -> str:
@@ -386,6 +397,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    # --- lsp ---
+    subparsers.add_parser(
+        "lsp",
+        help="Run the skillsaw language server over stdio (requires skillsaw[lsp])",
+        description="Run a Language Server Protocol server over stdio so editors "
+        "can show skillsaw violations as diagnostics. "
+        "Requires the optional lsp extra: pip install skillsaw[lsp]",
+    )
+
     return parser
 
 
@@ -420,6 +440,21 @@ def main():
         _run_baseline(args)
     elif args.command == "tree":
         _run_tree(args)
+    elif args.command == "lsp":
+        _run_lsp(args)
+
+
+def _run_lsp(args):
+    try:
+        from .lsp.server import start_server
+    except ImportError:
+        print(
+            "Error: The language server requires pygls. " "Install with: pip install skillsaw[lsp]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    start_server()
 
 
 def _run_tree(args):

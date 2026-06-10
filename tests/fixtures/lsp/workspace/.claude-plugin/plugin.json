@@ -1,0 +1,8 @@
+{
+  "name": "example-tools",
+  "description": "Example plugin used by the LSP integration tests",
+  "version": "1.0.0",
+  "author": {
+    "name": "Example Author"
+  }
+}

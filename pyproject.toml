@@ -49,6 +49,9 @@ docs = [
     "mkdocs-material>=9.0",
     "mkdocs-redirects>=1.2",
 ]
+lsp = [
+    "pygls>=2.0,<3",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -56,6 +59,7 @@ dev = [
     "flake8>=6.0",
     "mypy>=1.0",
     "litellm>=1.40",
+    "pygls>=2.0,<3",
 ]
 
 [project.urls]

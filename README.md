@@ -60,6 +60,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
   - [Context Detection](#context-detection)
 - [Lint Tree](#lint-tree)
 - [Documentation Generation](#documentation-generation)
+- [Editor Integration (LSP)](#editor-integration-lsp)
 - [Exit Codes](#exit-codes)
 - [Example Output](#example-output)
 - [Migrating from claudelint](#migrating-from-claudelint)
@@ -974,6 +975,32 @@ skillsaw docs --title "My Plugin Docs"
 
 The generated documentation includes plugin metadata, command descriptions,
 skill summaries, and configuration details extracted from your repository.
+
+## Editor Integration (LSP)
+
+skillsaw ships a language server so violations appear as diagnostics
+(squiggles) in your editor as you work, instead of only at commit or CI time.
+
+```bash
+# Install with the lsp extra
+pip install 'skillsaw[lsp]'
+
+# Run the server over stdio (your editor does this for you)
+skillsaw lsp
+```
+
+The server lints the whole workspace on open and on every save, publishing
+diagnostics for all affected files — cross-file rules (like marketplace
+registration) update wherever they fire. Severity maps to editor severity,
+each diagnostic carries its rule ID and a link to the rule docs, and inline
+suppressions and the baseline are respected exactly as on the CLI. Safe
+deterministic autofixes are offered as quick-fix code actions.
+
+Linting is save-based: diagnostics reflect file contents on disk, not unsaved
+buffer changes.
+
+See [Editor Integration](https://skillsaw.org/editor-integration/) for setup
+instructions covering VS Code, Cursor, Neovim, Helix, and other editors.
 
 ## Exit Codes
 

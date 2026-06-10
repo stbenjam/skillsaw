@@ -151,3 +151,7 @@ Add a hook to a plugin
 | `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
 | `--path` | Marketplace root path |  |
 
+## `skillsaw lsp`
+
+Run the skillsaw language server over stdio (requires skillsaw[lsp])
+
