@@ -37,6 +37,14 @@ class AgentSkillRenameRefsRule(Rule):
         RepositoryType.DOT_CLAUDE,
     }
 
+    config_schema = {
+        "autofix-min-segments": {
+            "type": "int",
+            "default": 2,
+            "description": "Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely)",
+        },
+    }
+
     @property
     def rule_id(self) -> str:
         return "agentskill-rename-refs"
@@ -117,7 +125,15 @@ class AgentSkillRenameRefsRule(Rule):
         if not renames:
             return []
 
-        rename_map = {r["old"]: r["new"] for r in renames}
+        min_segments = self.config.get(
+            "autofix-min-segments",
+            self.config_schema["autofix-min-segments"]["default"],
+        )
+        rename_map = {
+            r["old"]: r["new"] for r in renames if len(r["old"].split("-")) >= min_segments
+        }
+        if not rename_map:
+            return []
         patterns = {old: _name_pattern(old) for old in rename_map}
         results: List[AutofixResult] = []
 

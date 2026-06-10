@@ -1280,14 +1280,16 @@ def test_rename_refs_one_violation_per_line_single_fix_per_file(temp_dir):
     per file that rewrites each whole-name occurrence exactly once."""
     repo = temp_dir / "repo"
     repo.mkdir()
-    skill = repo / "api-v2"
+    skill = repo / "api-client-v2"
     skill.mkdir()
-    (skill / "SKILL.md").write_text("---\nname: api-v2\ndescription: A skill\n---\n")
+    (skill / "SKILL.md").write_text("---\nname: api-client-v2\ndescription: A skill\n---\n")
     (repo / "CLAUDE.md").write_text(
-        "Use the api skill for rapid calls; api is preferred.\n" "\n" "The api skill needs auth.\n"
+        "Use the api-client skill for rapid calls; api-client is preferred.\n"
+        "\n"
+        "The api-client skill needs auth.\n"
     )
 
-    manifest = {"renames": [{"old": "api", "new": "api-v2"}]}
+    manifest = {"renames": [{"old": "api-client", "new": "api-client-v2"}]}
     (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
 
     context = RepositoryContext(repo)
@@ -1301,9 +1303,9 @@ def test_rename_refs_one_violation_per_line_single_fix_per_file(temp_dir):
     assert len(claude_fixes) == 1
     fixed = claude_fixes[0].fixed_content
     assert fixed == (
-        "Use the api-v2 skill for rapid calls; api-v2 is preferred.\n"
+        "Use the api-client-v2 skill for rapid calls; api-client-v2 is preferred.\n"
         "\n"
-        "The api-v2 skill needs auth.\n"
+        "The api-client-v2 skill needs auth.\n"
     )
 
 
@@ -1312,13 +1314,13 @@ def test_rename_refs_fix_is_idempotent(temp_dir):
     fix() produces no results (running fix twice is byte-identical)."""
     repo = temp_dir / "repo"
     repo.mkdir()
-    skill = repo / "api-v2"
+    skill = repo / "api-client-v2"
     skill.mkdir()
-    (skill / "SKILL.md").write_text("---\nname: api-v2\ndescription: A skill\n---\n")
+    (skill / "SKILL.md").write_text("---\nname: api-client-v2\ndescription: A skill\n---\n")
     claude = repo / "CLAUDE.md"
-    claude.write_text("Prefer rapid iteration when using the api skill.\n")
+    claude.write_text("Prefer rapid iteration when using the api-client skill.\n")
 
-    manifest = {"renames": [{"old": "api", "new": "api-v2"}]}
+    manifest = {"renames": [{"old": "api-client", "new": "api-client-v2"}]}
     (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
 
     context = RepositoryContext(repo)
@@ -1326,7 +1328,7 @@ def test_rename_refs_fix_is_idempotent(temp_dir):
     fixes = rule.fix(context, rule.check(context))
     assert len(fixes) == 1
     claude.write_text(fixes[0].fixed_content)
-    assert claude.read_text() == "Prefer rapid iteration when using the api-v2 skill.\n"
+    assert claude.read_text() == "Prefer rapid iteration when using the api-client-v2 skill.\n"
 
     # Manifest survives the first check (reference was still stale then);
     # a fresh check now finds nothing and a second fix changes nothing.
@@ -1335,6 +1337,28 @@ def test_rename_refs_fix_is_idempotent(temp_dir):
     violations2 = rule.check(context2)
     assert violations2 == []
     assert rule.fix(context2, violations2) == []
+
+
+def test_rename_refs_fix_skips_single_word_names(temp_dir):
+    """Single-word old names are too ambiguous for autofix; check() reports
+    them but fix() produces no results (default autofix-min-segments=2)."""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "api-v2"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: api-v2\ndescription: A skill\n---\n")
+    (repo / "CLAUDE.md").write_text("Use the api skill for calls.\n")
+
+    manifest = {"renames": [{"old": "api", "new": "api-v2"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    fixes = rule.fix(context, violations)
+    assert fixes == []
 
 
 def test_name_fix_defers_manifest_to_apply(temp_dir):

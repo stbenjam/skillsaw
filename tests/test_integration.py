@@ -1947,22 +1947,23 @@ class TestRenameRefsAutofix:
     FIXTURE = "autofix/rename-refs-substring"
 
     def test_substring_matches_not_corrupted(self, tmp_path):
-        """'rapid'/'Therapists'/'api-staging' must survive a rename of 'api'."""
+        """'metadata-parser'/'data-parser-staging' must survive a rename of 'data-parser'."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         before_lines = _snapshot_line_counts(repo)
 
         _run_fix(repo, "--suggest")
 
-        skill_md = (repo / "api-v2" / "SKILL.md").read_text()
-        assert "name: api-v2" in skill_md
+        skill_md = (repo / "data-parser-v2" / "SKILL.md").read_text()
+        assert "name: data-parser-v2" in skill_md
 
         claude_md = (repo / "CLAUDE.md").read_text()
         assert "Prefer rapid iteration" in claude_md
-        assert "Therapists and rapid-response teams" in claude_md
-        assert "api-staging" in claude_md
-        assert "using the api-v2 skill" in claude_md
-        assert "Run the api-v2 skill" in claude_md
-        assert "`api-v2` skill must be used" in claude_md
+        assert "metadata-parser is separate" in claude_md
+        assert "data-parser-staging" in claude_md
+        assert "using the data-parser-v2 skill" in claude_md
+        assert "Run the data-parser-v2 skill" in claude_md
+        assert "`data-parser-v2` skill must be used" in claude_md
+        assert "metadata-parser-extended" in claude_md
         # The corruption signature: the suffix applied more than once.
         assert "-v2-v2" not in claude_md
 
