@@ -115,12 +115,30 @@ class TestLinks:
         assert link.is_image
         _assert_dest_span_exact(body, link)
 
-    def test_reference_link_resolved_without_dest_span(self):
+    def test_reference_link_resolved_with_dest_span(self):
         body = "See [ref style][myref] link.\n\n[myref]: docs/ref.md\n"
         link = _link_by_href(_doc(body), "docs/ref.md")
         assert link.is_reference
-        assert not link.has_dest_span
+        assert link.has_dest_span
         assert link.body_line == 1
+        assert link.dest_body_line == 3
+        _assert_dest_span_exact(body, link)
+
+    def test_reference_link_shortcut(self):
+        body = "See [docs/ref.md] for info.\n\n[docs/ref.md]: docs/ref.md\n"
+        link = _link_by_href(_doc(body), "docs/ref.md")
+        assert link.is_reference
+        assert link.has_dest_span
+        assert link.dest_body_line == 3
+        _assert_dest_span_exact(body, link)
+
+    def test_reference_link_angle_bracketed(self):
+        body = "See [ref][r] link.\n\n[r]: <docs/ref.md>\n"
+        link = _link_by_href(_doc(body), "docs/ref.md")
+        assert link.is_reference
+        assert link.has_dest_span
+        assert link.dest_body_line == 3
+        _assert_dest_span_exact(body, link)
 
     def test_autolink(self):
         body = "Go to <https://example.com/x.md> now.\n"

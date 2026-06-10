@@ -63,6 +63,7 @@ def _make_parser() -> MarkdownIt:
 _PARSER = _make_parser()
 
 _HTML_COMMENT_RE = re.compile(r"<!--(.*?)-->", re.DOTALL)
+_REF_DEF_RE = re.compile(r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]+")
 
 
 @lru_cache(maxsize=128)
@@ -751,6 +752,61 @@ class MarkdownDoc:
 
     # -- inline walking -----------------------------------------------------
 
+    def _ref_def_dest_spans(self) -> Dict[str, List[Tuple[int, int, int]]]:
+        """Parse reference-definition destinations from body lines.
+
+        Returns a dict mapping raw destination text to a list of
+        ``(body_line_1based, col_start, col_end)`` tuples.  Lines inside
+        fenced/indented code blocks are excluded.
+        """
+        fence_lines: set = set()
+        for f in self.fences():
+            for bl in range(f.body_line_start, f.body_line_end + 1):
+                fence_lines.add(bl)
+        result: Dict[str, List[Tuple[int, int, int]]] = {}
+        for i, line in enumerate(self._lines):
+            body_line = i + 1
+            if body_line in fence_lines:
+                continue
+            m = _REF_DEF_RE.match(line)
+            if m is None:
+                continue
+            pos = m.end()
+            if pos < len(line) and line[pos] == "<":
+                dest_start = pos + 1
+                end = line.find(">", dest_start)
+                if end < 0:
+                    continue
+                dest_end = end
+            else:
+                dest_start = pos
+                dest_end = pos
+                while dest_end < len(line) and line[dest_end] not in " \t":
+                    dest_end += 1
+            dest = line[dest_start:dest_end]
+            if dest:
+                result.setdefault(dest, []).append((body_line, dest_start, dest_end))
+        return result
+
+    def _backfill_reference_spans(self) -> None:
+        """Populate dest spans on reference links from their definitions."""
+        ref_defs = self._ref_def_dest_spans()
+        for link in self._links:
+            if not link.is_reference or link.has_dest_span:
+                continue
+            entries = ref_defs.get(link.href)
+            if not entries:
+                continue
+            # Unambiguous: exactly one definition with this destination.
+            # With multiple defs sharing a destination we can't determine
+            # which label this link used, so we skip (safe degradation).
+            if len(entries) == 1:
+                body_line, col_start, col_end = entries[0]
+                link.dest_body_line = body_line
+                link.dest_file_line = self.file_line(body_line)
+                link.dest_col_start = col_start
+                link.dest_col_end = col_end
+
     def _ensure_walked(self) -> None:
         if self._walked:
             return
@@ -767,6 +823,7 @@ class MarkdownDoc:
             map_start = token.map[0] if token.map else 0
             for span in walker.verbatim_spans:
                 self._inline_maps.append((map_start, token.content, [span]))
+        self._backfill_reference_spans()
 
     # -- accessors ------------------------------------------------------------
 

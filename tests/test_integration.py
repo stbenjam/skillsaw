@@ -1896,6 +1896,26 @@ class TestMarkdownAstRegressions:
         fixed = (repo / "CLAUDE.md").read_text()
         assert '[the setup guide](docs/setup.md "Setup Guide")' in fixed
 
+    def test_broken_link_fix_reference_definition(self, tmp_path):
+        """Fixing a reference-style link must rewrite only the definition destination."""
+        repo = copy_fixture("regression/markdown-ast-refdef", tmp_path)
+        r = run_lint(repo)
+        broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+        assert len(broken) == 1 and "did you mean" in broken[0]["message"]
+        _run_fix(repo, "--suggest")
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert "[g]: guide.md" in fixed
+        # Inline reference construct must be untouched.
+        assert "[installation guide][g]" in fixed
+        # Idempotent: second fix is byte-identical.
+        _run_fix(repo, "--suggest")
+        assert (repo / "CLAUDE.md").read_text() == fixed
+        # No violations remain for this rule.
+        r2 = run_lint(repo)
+        assert not [
+            v for v in violations(r2) if v["rule_id"] == "content-broken-internal-reference"
+        ]
+
     def test_indented_code_blocks_not_scanned_as_prose(self, tmp_path):
         """4-space-indented code must not be scanned by any content rule."""
         repo = copy_fixture("regression/markdown-ast-indented-code", tmp_path)
