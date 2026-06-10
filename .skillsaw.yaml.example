@@ -118,6 +118,7 @@ rules:
   agentskill-rename-refs:
     enabled: auto
     severity: warning
+    # autofix-min-segments: 2
 
   # Skill description should be meaningful and within length limits
   agentskill-description:
