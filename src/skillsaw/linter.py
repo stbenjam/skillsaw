@@ -453,7 +453,11 @@ class Linter:
             applied = self.apply_fixes(independent, confidence)
             all_applied.extend(applied)
 
-            if not applied or not has_conflicts:
+            # An on_apply side effect (e.g. recording a rename in the
+            # manifest) can unlock new violations for other rules, so a
+            # further pass is needed even without file-level conflicts.
+            state_changed = any(f.on_apply is not None for f in applied)
+            if not applied or not (has_conflicts or state_changed):
                 break
 
             invalidate_read_caches()
@@ -524,6 +528,17 @@ class Linter:
                     exc,
                 )
                 continue
+
+            if fix.on_apply is not None:
+                try:
+                    fix.on_apply()
+                except OSError as exc:
+                    logger.warning(
+                        "on_apply side effect failed for %s on %s: %s",
+                        fix.rule_id,
+                        fix.file_path,
+                        exc,
+                    )
 
             applied.append(fix)
 

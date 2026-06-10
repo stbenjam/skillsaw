@@ -109,6 +109,10 @@ class AgentSkillNameRule(Rule):
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
             fixed = original[: match.start()] + f"name: {new_name}" + original[match.end() :]
+
+            def _record_rename(root=context.root_path, old=old_name, new=new_name):
+                _add_rename(root, old, new)
+
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
@@ -118,7 +122,9 @@ class AgentSkillNameRule(Rule):
                     fixed_content=fixed,
                     description=f"Renamed '{old_name}' to '{new_name}'",
                     violations_fixed=[v],
+                    # Recording the rename is a repository state change; defer
+                    # it to apply time so dry-run stays side-effect free.
+                    on_apply=_record_rename,
                 )
             )
-            _add_rename(context.root_path, old_name, new_name)
         return results
