@@ -44,8 +44,10 @@ def run_lint(path, *extra_args, config=None, verbose=True, fmt="json"):
         args.append("-v")
     if config:
         args.extend(["-c", str(config)])
-    args.extend(extra_args)
+    # path goes before extra_args so multi-path tests exercise the
+    # CLI argument order their names describe (extra paths follow it)
     args.append(str(path))
+    args.extend(extra_args)
     result = subprocess.run(args, capture_output=True, text=True, timeout=60)
     output = None
     if fmt == "json" and result.stdout.strip():
@@ -408,6 +410,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 2
 
     def test_lint_one_dir_one_file(self, tmp_path):
         """dir then file should lint both."""
@@ -418,6 +421,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 2
 
     def test_lint_one_file_one_dir(self, tmp_path):
         """file then dir should lint both."""
@@ -428,6 +432,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 2
 
     def test_lint_dir_file_dir(self, tmp_path):
         """dir, file, dir ordering should lint all three."""
@@ -439,6 +444,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_file_dir_file(self, tmp_path):
         """file, dir, file ordering should lint all three."""
@@ -450,6 +456,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_three_files(self, tmp_path):
         """Three SKILL.md files should all lint."""
@@ -461,6 +468,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_three_files_and_dir(self, tmp_path):
         """Three files plus a directory should lint all four."""
@@ -473,6 +481,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 4
 
     def test_lint_three_directories(self, tmp_path):
         """Three directories should all lint."""
@@ -484,6 +493,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_dir_dir_file(self, tmp_path):
         """dir, dir, file ordering should lint all three."""
@@ -495,6 +505,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_dir_file_file(self, tmp_path):
         """dir, file, file ordering should lint all three."""
@@ -506,6 +517,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_file_file_dir(self, tmp_path):
         """file, file, dir ordering should lint all three."""
@@ -517,6 +529,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_file_dir_dir(self, tmp_path):
         """file, dir, dir ordering should lint all three."""
@@ -528,6 +541,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 3
 
     def test_lint_three_dirs_and_file(self, tmp_path):
         """Three directories plus a file should lint all four."""
@@ -540,6 +554,7 @@ class TestMultiplePaths:
         assert r["rc"] == 0
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
+        assert len(stats["skills"]) == 4
 
     def test_lint_same_file_repeated(self, tmp_path):
         """Passing the same file multiple times should not produce duplicate violations."""
@@ -547,6 +562,8 @@ class TestMultiplePaths:
         f = repo / "code-review" / "SKILL.md"
         r = run_lint(f, str(f), str(f))
         assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert len(stats["skills"]) == 1
 
     def test_lint_dir_and_file_within_it(self, tmp_path):
         """Passing a dir and a file inside that dir should not duplicate violations."""
@@ -555,6 +572,8 @@ class TestMultiplePaths:
         file_path = repo / "code-review" / "SKILL.md"
         r = run_lint(dir_path, str(file_path))
         assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert len(stats["skills"]) == 1
 
     def test_lint_file_within_dir_and_dir(self, tmp_path):
         """Passing a file then its parent dir should not duplicate violations."""
@@ -563,6 +582,8 @@ class TestMultiplePaths:
         dir_path = repo / "code-review"
         r = run_lint(file_path, str(dir_path))
         assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert len(stats["skills"]) == 1
 
     def test_lint_same_dir_repeated(self, tmp_path):
         """Passing the same directory twice should not duplicate violations."""
@@ -570,6 +591,8 @@ class TestMultiplePaths:
         dir_path = repo / "code-review"
         r = run_lint(dir_path, str(dir_path))
         assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert len(stats["skills"]) == 1
 
     def test_lint_broken_file_and_clean_dir(self, tmp_path):
         """A broken file and a clean dir should exit 1."""
@@ -588,7 +611,7 @@ class TestMultiplePaths:
         assert r["rc"] == 1
 
     def test_lint_valid_dir_and_nonexistent_dir(self, tmp_path):
-        """valid dir, nonexistent dir should warn, lint valid, exit 3."""
+        """valid dir, nonexistent dir should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         bad = tmp_path / "no-such-dir"
         r = run_lint(repo, str(bad))
@@ -596,7 +619,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_dir_and_valid_dir(self, tmp_path):
-        """nonexistent dir, valid dir should warn, lint valid, exit 3."""
+        """nonexistent dir, valid dir should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         bad = tmp_path / "no-such-dir"
         r = run_lint(bad, str(repo))
@@ -604,7 +627,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_valid_file_and_nonexistent_file(self, tmp_path):
-        """valid file, nonexistent file should warn, lint valid, exit 3."""
+        """valid file, nonexistent file should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         valid_file = repo / "code-review" / "SKILL.md"
         bad = tmp_path / "nonexistent.md"
@@ -613,7 +636,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_file_and_valid_file(self, tmp_path):
-        """nonexistent file, valid file should warn, lint valid, exit 3."""
+        """nonexistent file, valid file should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         valid_file = repo / "code-review" / "SKILL.md"
         bad = tmp_path / "nonexistent.md"
@@ -622,7 +645,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_valid_dir_and_nonexistent_file(self, tmp_path):
-        """valid dir, nonexistent file should warn, lint valid, exit 3."""
+        """valid dir, nonexistent file should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         bad = tmp_path / "nonexistent.md"
         r = run_lint(repo, str(bad))
@@ -630,7 +653,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_file_and_valid_dir(self, tmp_path):
-        """nonexistent file, valid dir should warn, lint valid, exit 3."""
+        """nonexistent file, valid dir should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         bad = tmp_path / "nonexistent.md"
         r = run_lint(bad, str(repo))
@@ -638,7 +661,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_valid_file_and_nonexistent_dir(self, tmp_path):
-        """valid file, nonexistent dir should warn, lint valid, exit 3."""
+        """valid file, nonexistent dir should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         valid_file = repo / "code-review" / "SKILL.md"
         bad = tmp_path / "no-such-dir"
@@ -647,7 +670,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_dir_and_valid_file(self, tmp_path):
-        """nonexistent dir, valid file should warn, lint valid, exit 3."""
+        """nonexistent dir, valid file should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         valid_file = repo / "code-review" / "SKILL.md"
         bad = tmp_path / "no-such-dir"
@@ -656,7 +679,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_among_dir_file_dir(self, tmp_path):
-        """dir, nonexistent, file should warn, lint valid, exit 3."""
+        """dir, nonexistent, file should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         dir1 = repo / "code-review"
         file1 = repo / "deploy-service" / "SKILL.md"
@@ -666,7 +689,7 @@ class TestMultiplePaths:
         assert f"Path not found: {bad}" in r["stderr"]
 
     def test_lint_nonexistent_among_file_dir_file(self, tmp_path):
-        """file, nonexistent, dir should warn, lint valid, exit 3."""
+        """file, nonexistent, dir should warn, lint valid, exit 1."""
         repo = copy_fixture("agentskills/clean", tmp_path)
         file1 = repo / "code-review" / "SKILL.md"
         dir1 = repo / "deploy-service"
@@ -706,6 +729,83 @@ class TestMultiplePaths:
         r = run_lint(real, str(fake1), str(fake2))
         assert r["rc"] == 1
         assert "2 path(s) not found" in r["stderr"]
+
+
+# ── Multiple Paths: fix ────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestFixMultiplePaths:
+    """Regression tests for `skillsaw fix` with multiple paths.
+
+    The original multi-path implementation built a linter per path in a
+    loop but ran the fix only on the last one, silently skipping the rest.
+    """
+
+    def _run_fix(self, *cli_args):
+        args = [sys.executable, "-m", "skillsaw", "fix"]
+        args.extend(str(a) for a in cli_args)
+        return subprocess.run(args, capture_output=True, text=True, timeout=60)
+
+    def test_fix_two_repos_fixes_both(self, tmp_path):
+        """Every path passed to fix gets fixed, not just the last one."""
+        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
+        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before1 = (repo1 / "CLAUDE.md").read_text()
+        before2 = (repo2 / "CLAUDE.md").read_text()
+
+        result = self._run_fix(repo1, repo2)
+        assert result.returncode == 0
+        assert (repo1 / "CLAUDE.md").read_text() != before1
+        assert (repo2 / "CLAUDE.md").read_text() != before2
+
+        for repo in (repo1, repo2):
+            r = run_lint(repo)
+            remaining = [
+                v for v in violations(r) if v["rule_id"] == "content-unlinked-internal-reference"
+            ]
+            assert remaining == []
+
+    def test_fix_dry_run_two_repos_reports_both(self, tmp_path):
+        """Dry-run over two repos reports fixes for both and modifies neither."""
+        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
+        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+        before1 = (repo1 / "CLAUDE.md").read_text()
+        before2 = (repo2 / "CLAUDE.md").read_text()
+
+        result = self._run_fix("--dry-run", repo1, repo2)
+        assert result.returncode == 0
+        assert str(repo1) in result.stdout
+        assert str(repo2) in result.stdout
+        assert (repo1 / "CLAUDE.md").read_text() == before1
+        assert (repo2 / "CLAUDE.md").read_text() == before2
+
+    def test_fix_nonexistent_path_fails_before_fixing(self, tmp_path):
+        """A missing path aborts the whole fix — valid paths stay untouched."""
+        repo = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
+        before = (repo / "CLAUDE.md").read_text()
+
+        result = self._run_fix(repo, tmp_path / "ghost")
+        assert result.returncode == 1
+        assert "Path not found" in result.stderr
+        assert (repo / "CLAUDE.md").read_text() == before
+
+    def test_fix_llm_rejects_multiple_paths(self, tmp_path):
+        """--llm runs an interactive session against a single repository."""
+        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
+        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+
+        result = self._run_fix("--llm", repo1, repo2)
+        assert result.returncode == 1
+        assert "--llm accepts a single path" in result.stderr
+
+    def test_fix_apply_patch_rejects_multiple_paths(self, tmp_path):
+        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
+        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
+
+        result = self._run_fix("--apply-patch", repo1, repo2)
+        assert result.returncode == 1
+        assert "--apply-patch accepts a single path" in result.stderr
 
 
 # ── Dot-Claude ───────────────────────────────────────────────────

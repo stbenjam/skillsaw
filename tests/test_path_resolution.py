@@ -1,22 +1,13 @@
 """
 Unit tests for CLI path resolution and deduplication logic.
 
-Two passes of deduplication:
-
-Pass 1 — _resolve_lint_paths (CLI input normalization):
+_resolve_lint_paths normalizes CLI input in a single pass:
   - Files resolve to their parent directory
   - Exact duplicate resolved paths are removed
+  - Paths nested inside another entry are dropped (the parent's
+    RepositoryContext already discovers everything beneath it)
   - Order of first appearance is preserved
-  - Does NOT drop children when a parent is present (that's pass 2)
-
-Pass 2 — _dedup_discovered_files (after RepositoryContext discovery):
-  - Removes duplicate files discovered by overlapping RepositoryContexts
-  - Operates on the merged violation/file lists, not on input paths
 """
-
-from pathlib import Path
-
-import pytest
 
 from skillsaw.__main__ import _resolve_lint_paths
 
@@ -97,25 +88,62 @@ class TestDeduplicateExactPaths:
         assert result == [d]
 
 
-class TestOverlappingPathsKept:
-    """Pass 1 does NOT drop children when a parent is present.
-
-    Parent/child overlap is handled by pass 2 after file discovery.
+class TestOverlappingPathsDropped:
+    """Paths nested inside another entry are redundant — the parent's
+    RepositoryContext already discovers everything beneath it.
     """
 
-    def test_parent_and_child_dir_both_kept(self, tmp_path):
+    def test_child_dropped_when_parent_present(self, tmp_path):
         parent = tmp_path / "repo"
         child = parent / "subdir"
         child.mkdir(parents=True)
         result = _resolve_lint_paths([parent, child])
-        assert result == [parent, child]
+        assert result == [parent]
 
-    def test_child_dir_then_parent_both_kept(self, tmp_path):
+    def test_child_first_then_parent_drops_child(self, tmp_path):
+        """Order shouldn't matter — child is still redundant."""
         parent = tmp_path / "repo"
         child = parent / "subdir"
         child.mkdir(parents=True)
         result = _resolve_lint_paths([child, parent])
-        assert result == [child, parent]
+        assert result == [parent]
+
+    def test_deeply_nested_child_dropped(self, tmp_path):
+        parent = tmp_path / "repo"
+        deep = parent / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        result = _resolve_lint_paths([parent, deep])
+        assert result == [parent]
+
+    def test_nested_file_dropped_when_parent_present(self, tmp_path):
+        """A SKILL.md under a passed directory dedups against that directory."""
+        parent = tmp_path / "repo"
+        skill = parent / "skills" / "deploy"
+        skill.mkdir(parents=True)
+        f = skill / "SKILL.md"
+        f.touch()
+        result = _resolve_lint_paths([parent, f])
+        assert result == [parent]
+
+    def test_siblings_both_kept(self, tmp_path):
+        """Two siblings under the same parent are not overlapping."""
+        parent = tmp_path / "repo"
+        a = parent / "skill-a"
+        b = parent / "skill-b"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        result = _resolve_lint_paths([a, b])
+        assert result == [a, b]
+
+    def test_complex_overlap(self, tmp_path):
+        """Mix of overlapping and distinct paths."""
+        repo1 = tmp_path / "repo1"
+        repo1_sub = repo1 / "skills" / "deploy"
+        repo2 = tmp_path / "repo2"
+        repo1_sub.mkdir(parents=True)
+        repo2.mkdir()
+        result = _resolve_lint_paths([repo1, repo1_sub, repo2])
+        assert result == [repo1, repo2]
 
 
 class TestPreservesOrder:
@@ -271,98 +299,6 @@ class TestIsSubpath:
         assert _is_subpath(repo_extra, repo) is False
 
 
-# ── Pass 2: _dedup_discovered_paths ────────────────────────────
-
-
-from skillsaw.__main__ import _dedup_discovered_paths
-
-
-class TestDedupDiscoveredPaths:
-    """After multiple RepositoryContexts discover files, duplicates are removed
-    before passing to the linter. This prevents the same file being linted twice
-    when overlapping paths are given (e.g. dir/ and dir/subdir/).
-    """
-
-    def test_identical_paths_deduped(self, tmp_path):
-        a = tmp_path / "a"
-        a.mkdir()
-        result = _dedup_discovered_paths([a, a, a])
-        assert result == [a]
-
-    def test_distinct_paths_kept(self, tmp_path):
-        a = tmp_path / "a"
-        b = tmp_path / "b"
-        a.mkdir()
-        b.mkdir()
-        result = _dedup_discovered_paths([a, b])
-        assert result == [a, b]
-
-    def test_child_dropped_when_parent_present(self, tmp_path):
-        """If parent/ and parent/child/ are both discovered, drop the child."""
-        parent = tmp_path / "repo"
-        child = parent / "subdir"
-        child.mkdir(parents=True)
-        result = _dedup_discovered_paths([parent, child])
-        assert result == [parent]
-
-    def test_child_first_then_parent_drops_child(self, tmp_path):
-        """Order shouldn't matter — child is still redundant."""
-        parent = tmp_path / "repo"
-        child = parent / "subdir"
-        child.mkdir(parents=True)
-        result = _dedup_discovered_paths([child, parent])
-        assert child not in result
-        assert parent in result
-
-    def test_deeply_nested_child_dropped(self, tmp_path):
-        parent = tmp_path / "repo"
-        deep = parent / "a" / "b" / "c"
-        deep.mkdir(parents=True)
-        result = _dedup_discovered_paths([parent, deep])
-        assert result == [parent]
-
-    def test_siblings_both_kept(self, tmp_path):
-        """Two siblings under the same parent are not overlapping."""
-        parent = tmp_path / "repo"
-        a = parent / "skill-a"
-        b = parent / "skill-b"
-        a.mkdir(parents=True)
-        b.mkdir(parents=True)
-        result = _dedup_discovered_paths([a, b])
-        assert result == [a, b]
-
-    def test_empty_list(self):
-        result = _dedup_discovered_paths([])
-        assert result == []
-
-    def test_single_path(self, tmp_path):
-        result = _dedup_discovered_paths([tmp_path])
-        assert result == [tmp_path]
-
-    def test_preserves_order(self, tmp_path):
-        a = tmp_path / "a"
-        b = tmp_path / "b"
-        c = tmp_path / "c"
-        a.mkdir()
-        b.mkdir()
-        c.mkdir()
-        result = _dedup_discovered_paths([c, a, b])
-        assert result == [c, a, b]
-
-    def test_complex_overlap(self, tmp_path):
-        """Mix of overlapping and distinct paths."""
-        repo1 = tmp_path / "repo1"
-        repo1_sub = repo1 / "skills" / "deploy"
-        repo2 = tmp_path / "repo2"
-        repo1_sub.mkdir(parents=True)
-        repo2.mkdir()
-        result = _dedup_discovered_paths([repo1, repo1_sub, repo2])
-        assert repo1 in result
-        assert repo2 in result
-        assert repo1_sub not in result
-        assert len(result) == 2
-
-
 # ── _build_merged_context ──────────────────────────────────────
 
 
@@ -423,18 +359,18 @@ class TestBuildMergedContext:
 class TestMergedContextRepoType:
     """The repo_type property should return the primary type by priority."""
 
-    def test_unknown_when_empty(self):
+    def test_unknown_when_empty(self, tmp_path):
         ctx = _MergedContext(
-            root_path=Path("/tmp"),
+            root_path=tmp_path,
             repo_types={RepositoryType.UNKNOWN},
             plugins=[],
             skills=[],
         )
         assert ctx.repo_type == RepositoryType.UNKNOWN
 
-    def test_returns_highest_priority(self):
+    def test_returns_highest_priority(self, tmp_path):
         ctx = _MergedContext(
-            root_path=Path("/tmp"),
+            root_path=tmp_path,
             repo_types={RepositoryType.AGENTSKILLS, RepositoryType.DOT_CLAUDE},
             plugins=[],
             skills=[],
@@ -446,7 +382,6 @@ class TestMergedContextRepoType:
 
 
 from skillsaw.__main__ import _dedup_rules
-from skillsaw.rule import Rule, Severity
 
 
 class _FakeRule:
