@@ -337,6 +337,377 @@ class TestAgentskills:
         assert len(stats["skills"]) == 4
 
 
+# ── File Path Argument ──────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestFilePathArgument:
+
+    def test_lint_skill_md_file_directly(self, tmp_path):
+        """Passing a SKILL.md file path should lint its parent directory."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        skill_file = repo / "code-review" / "SKILL.md"
+        r = run_lint(skill_file)
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_broken_skill_md_file_directly(self, tmp_path):
+        """Passing a broken SKILL.md file should report violations."""
+        repo = copy_fixture("agentskills/broken", tmp_path)
+        skill_file = repo / "Bad_Formatter" / "SKILL.md"
+        r = run_lint(skill_file)
+        assert r["rc"] == 1
+        ids = rule_ids(r)
+        assert len(ids) > 0
+
+    def test_lint_nonexistent_file_errors(self, tmp_path):
+        """Passing a nonexistent file should error."""
+        bad = tmp_path / "nonexistent.md"
+        r = run_lint(bad)
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_dir_errors(self, tmp_path):
+        """Passing a nonexistent directory should error."""
+        bad = tmp_path / "no-such-dir"
+        r = run_lint(bad)
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+
+# ── Multiple Paths ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestMultiplePaths:
+
+    def test_lint_two_directories(self, tmp_path):
+        """Linting two directories should produce a merged report."""
+        repo1 = copy_fixture("agentskills/clean", tmp_path)
+        repo2 = copy_fixture("single-plugin/clean", tmp_path)
+        r = run_lint(repo1, str(repo2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        repo_types = stats["repo_types"]
+        assert len(repo_types) >= 2
+
+    def test_lint_mixed_clean_and_broken(self, tmp_path):
+        """If any path has errors, exit code should be 1."""
+        repo_clean = copy_fixture("agentskills/clean", tmp_path)
+        repo_broken = copy_fixture("agentskills/broken", tmp_path)
+        r = run_lint(repo_clean, str(repo_broken))
+        assert r["rc"] == 1
+
+    def test_lint_two_skill_files_directly(self, tmp_path):
+        """Passing two SKILL.md files should lint both parents."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        file2 = repo / "deploy-service" / "SKILL.md"
+        r = run_lint(file1, str(file2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_one_dir_one_file(self, tmp_path):
+        """dir then file should lint both."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir_path = repo / "code-review"
+        file_path = repo / "deploy-service" / "SKILL.md"
+        r = run_lint(dir_path, str(file_path))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_one_file_one_dir(self, tmp_path):
+        """file then dir should lint both."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file_path = repo / "code-review" / "SKILL.md"
+        dir_path = repo / "deploy-service"
+        r = run_lint(file_path, str(dir_path))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_dir_file_dir(self, tmp_path):
+        """dir, file, dir ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        file1 = repo / "deploy-service" / "SKILL.md"
+        dir2 = repo / "run-tests"
+        r = run_lint(dir1, str(file1), str(dir2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_file_dir_file(self, tmp_path):
+        """file, dir, file ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        dir1 = repo / "deploy-service"
+        file2 = repo / "run-tests" / "SKILL.md"
+        r = run_lint(file1, str(dir1), str(file2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_three_files(self, tmp_path):
+        """Three SKILL.md files should all lint."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        file2 = repo / "deploy-service" / "SKILL.md"
+        file3 = repo / "run-tests" / "SKILL.md"
+        r = run_lint(file1, str(file2), str(file3))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_three_files_and_dir(self, tmp_path):
+        """Three files plus a directory should lint all four."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        file2 = repo / "deploy-service" / "SKILL.md"
+        file3 = repo / "run-tests" / "SKILL.md"
+        dir1 = repo / "database-migrate"
+        r = run_lint(file1, str(file2), str(file3), str(dir1))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_three_directories(self, tmp_path):
+        """Three directories should all lint."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        dir2 = repo / "deploy-service"
+        dir3 = repo / "run-tests"
+        r = run_lint(dir1, str(dir2), str(dir3))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_dir_dir_file(self, tmp_path):
+        """dir, dir, file ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        dir2 = repo / "deploy-service"
+        file1 = repo / "run-tests" / "SKILL.md"
+        r = run_lint(dir1, str(dir2), str(file1))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_dir_file_file(self, tmp_path):
+        """dir, file, file ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        file1 = repo / "deploy-service" / "SKILL.md"
+        file2 = repo / "run-tests" / "SKILL.md"
+        r = run_lint(dir1, str(file1), str(file2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_file_file_dir(self, tmp_path):
+        """file, file, dir ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        file2 = repo / "deploy-service" / "SKILL.md"
+        dir1 = repo / "run-tests"
+        r = run_lint(file1, str(file2), str(dir1))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_file_dir_dir(self, tmp_path):
+        """file, dir, dir ordering should lint all three."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        dir1 = repo / "deploy-service"
+        dir2 = repo / "run-tests"
+        r = run_lint(file1, str(dir1), str(dir2))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_three_dirs_and_file(self, tmp_path):
+        """Three directories plus a file should lint all four."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        dir2 = repo / "deploy-service"
+        dir3 = repo / "run-tests"
+        file1 = repo / "database-migrate" / "SKILL.md"
+        r = run_lint(dir1, str(dir2), str(dir3), str(file1))
+        assert r["rc"] == 0
+        stats = r["out"]["stats"]
+        assert "agentskills" in stats["repo_types"]
+
+    def test_lint_same_file_repeated(self, tmp_path):
+        """Passing the same file multiple times should not produce duplicate violations."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        f = repo / "code-review" / "SKILL.md"
+        r = run_lint(f, str(f), str(f))
+        assert r["rc"] == 0
+
+    def test_lint_dir_and_file_within_it(self, tmp_path):
+        """Passing a dir and a file inside that dir should not duplicate violations."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir_path = repo / "code-review"
+        file_path = repo / "code-review" / "SKILL.md"
+        r = run_lint(dir_path, str(file_path))
+        assert r["rc"] == 0
+
+    def test_lint_file_within_dir_and_dir(self, tmp_path):
+        """Passing a file then its parent dir should not duplicate violations."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file_path = repo / "code-review" / "SKILL.md"
+        dir_path = repo / "code-review"
+        r = run_lint(file_path, str(dir_path))
+        assert r["rc"] == 0
+
+    def test_lint_same_dir_repeated(self, tmp_path):
+        """Passing the same directory twice should not duplicate violations."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir_path = repo / "code-review"
+        r = run_lint(dir_path, str(dir_path))
+        assert r["rc"] == 0
+
+    def test_lint_broken_file_and_clean_dir(self, tmp_path):
+        """A broken file and a clean dir should exit 1."""
+        repo_broken = copy_fixture("agentskills/broken", tmp_path)
+        repo_clean = copy_fixture("agentskills/clean", tmp_path)
+        broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
+        r = run_lint(broken_file, str(repo_clean))
+        assert r["rc"] == 1
+
+    def test_lint_clean_dir_and_broken_file(self, tmp_path):
+        """A clean dir and a broken file should exit 1."""
+        repo_clean = copy_fixture("agentskills/clean", tmp_path)
+        repo_broken = copy_fixture("agentskills/broken", tmp_path)
+        broken_file = repo_broken / "Bad_Formatter" / "SKILL.md"
+        r = run_lint(repo_clean, str(broken_file))
+        assert r["rc"] == 1
+
+    def test_lint_valid_dir_and_nonexistent_dir(self, tmp_path):
+        """valid dir, nonexistent dir should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        bad = tmp_path / "no-such-dir"
+        r = run_lint(repo, str(bad))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_dir_and_valid_dir(self, tmp_path):
+        """nonexistent dir, valid dir should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        bad = tmp_path / "no-such-dir"
+        r = run_lint(bad, str(repo))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_valid_file_and_nonexistent_file(self, tmp_path):
+        """valid file, nonexistent file should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        valid_file = repo / "code-review" / "SKILL.md"
+        bad = tmp_path / "nonexistent.md"
+        r = run_lint(valid_file, str(bad))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_file_and_valid_file(self, tmp_path):
+        """nonexistent file, valid file should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        valid_file = repo / "code-review" / "SKILL.md"
+        bad = tmp_path / "nonexistent.md"
+        r = run_lint(bad, str(valid_file))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_valid_dir_and_nonexistent_file(self, tmp_path):
+        """valid dir, nonexistent file should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        bad = tmp_path / "nonexistent.md"
+        r = run_lint(repo, str(bad))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_file_and_valid_dir(self, tmp_path):
+        """nonexistent file, valid dir should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        bad = tmp_path / "nonexistent.md"
+        r = run_lint(bad, str(repo))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_valid_file_and_nonexistent_dir(self, tmp_path):
+        """valid file, nonexistent dir should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        valid_file = repo / "code-review" / "SKILL.md"
+        bad = tmp_path / "no-such-dir"
+        r = run_lint(valid_file, str(bad))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_dir_and_valid_file(self, tmp_path):
+        """nonexistent dir, valid file should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        valid_file = repo / "code-review" / "SKILL.md"
+        bad = tmp_path / "no-such-dir"
+        r = run_lint(bad, str(valid_file))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_among_dir_file_dir(self, tmp_path):
+        """dir, nonexistent, file should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        dir1 = repo / "code-review"
+        file1 = repo / "deploy-service" / "SKILL.md"
+        bad = tmp_path / "ghost"
+        r = run_lint(dir1, str(bad), str(file1))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_among_file_dir_file(self, tmp_path):
+        """file, nonexistent, dir should warn, lint valid, exit 3."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        file1 = repo / "code-review" / "SKILL.md"
+        dir1 = repo / "deploy-service"
+        bad = tmp_path / "ghost"
+        r = run_lint(file1, str(bad), str(dir1))
+        assert r["rc"] == 1
+        assert f"Path not found: {bad}" in r["stderr"]
+
+    def test_lint_nonexistent_file_with_existing_parent(self, tmp_path):
+        """A nonexistent file whose parent exists should warn, lint valid paths, exit 1."""
+        repo = copy_fixture("agentskills/broken", tmp_path)
+        real = repo / "Bad_Formatter" / "SKILL.md"
+        fake = repo / "Bad_Formatter" / "SKILL2.md"
+        r = run_lint(real, str(fake))
+        assert r["rc"] == 1
+        assert f"Path not found: {fake}" in r["stderr"]
+        assert "1 path(s) not found" in r["stderr"]
+        # Valid path was still linted — violations present in output
+        assert len(violations(r)) > 0
+
+    def test_lint_nonexistent_sibling_file(self, tmp_path):
+        """Two files in same dir, one nonexistent, should warn, lint valid paths, exit 1."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        real = repo / "code-review" / "SKILL.md"
+        fake = repo / "code-review" / "NOPE.md"
+        r = run_lint(real, str(fake))
+        assert r["rc"] == 1
+        assert f"Path not found: {fake}" in r["stderr"]
+        assert "1 path(s) not found" in r["stderr"]
+
+    def test_lint_two_nonexistent_among_valid_shows_count(self, tmp_path):
+        """Two missing paths should report count of 2."""
+        repo = copy_fixture("agentskills/clean", tmp_path)
+        real = repo / "code-review" / "SKILL.md"
+        fake1 = tmp_path / "ghost1"
+        fake2 = tmp_path / "ghost2"
+        r = run_lint(real, str(fake1), str(fake2))
+        assert r["rc"] == 1
+        assert "2 path(s) not found" in r["stderr"]
+
+
 # ── Dot-Claude ───────────────────────────────────────────────────
 
 
