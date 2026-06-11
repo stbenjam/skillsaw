@@ -68,16 +68,16 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     )
     lint_parser.add_argument(
         "path",
-        nargs="?",
+        nargs="*",
         type=Path,
-        default=Path.cwd(),
-        help="Path to skill, plugin, or marketplace directory (default: current directory)",
+        default=[Path.cwd()],
+        help="Paths to skill, plugin, or marketplace directories/files (default: current directory)",
     )
     lint_parser.add_argument(
         "-c",
         "--config",
         type=Path,
-        help="Path to .skillsaw.yaml config file (default: auto-discover)",
+        help="Path to .skillsaw.yaml config file (default: auto-discover from the first path)",
     )
     lint_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show info-level messages"
@@ -166,16 +166,16 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     )
     fix_parser.add_argument(
         "path",
-        nargs="?",
+        nargs="*",
         type=Path,
-        default=Path.cwd(),
-        help="Path to repository (default: current directory)",
+        default=[Path.cwd()],
+        help="Paths to repositories or files (default: current directory)",
     )
     fix_parser.add_argument(
         "-c",
         "--config",
         type=Path,
-        help="Path to .skillsaw.yaml config file",
+        help="Path to .skillsaw.yaml config file (default: auto-discover from the first path)",
     )
     fix_parser.add_argument(
         "--llm",
@@ -458,13 +458,103 @@ def _run_tree(args):
     sys.exit(0)
 
 
+def _resolve_lint_paths(paths):
+    """Normalize CLI paths into a unique list of directories to lint.
+
+    Files resolve to their parent directory, then exact duplicates and
+    paths nested inside another entry are dropped (a parent's
+    RepositoryContext already discovers everything beneath it).
+    First-seen order is preserved.
+    """
+    normalized = []
+    for p in paths:
+        resolved = p.resolve()
+        if resolved.is_file():
+            resolved = resolved.parent
+        normalized.append(resolved)
+
+    seen = set()
+    result = []
+    for p in normalized:
+        if p in seen:
+            continue
+        if any(p != other and _is_subpath(p, other) for other in normalized):
+            continue
+        seen.add(p)
+        result.append(p)
+    return result
+
+
+def _is_subpath(child, parent):
+    """Check if child is a strict subpath of parent."""
+    try:
+        child.relative_to(parent)
+        return child != parent
+    except ValueError:
+        return False
+
+
+class _MergedContext:
+    """Duck-typed context for formatters when linting multiple paths."""
+
+    def __init__(self, root_path, repo_types, plugins, skills):
+        self.root_path = root_path
+        self.repo_types = repo_types
+        self.plugins = plugins
+        self.skills = skills
+
+    @property
+    def repo_type(self):
+        for t in RepositoryContext._TYPE_PRIORITY:
+            if t in self.repo_types:
+                return t
+        return RepositoryType.UNKNOWN
+
+
+def _build_merged_context(contexts):
+    """Build a merged context from multiple RepositoryContexts."""
+    if len(contexts) == 1:
+        return contexts[0]
+    try:
+        root_path = Path(os.path.commonpath([c.root_path for c in contexts]))
+    except ValueError:
+        # No common ancestor (e.g. different drives on Windows)
+        root_path = contexts[0].root_path
+    repo_types = set()
+    plugins = []
+    skills = []
+    for ctx in contexts:
+        repo_types |= ctx.repo_types
+        plugins.extend(ctx.plugins)
+        skills.extend(ctx.skills)
+    return _MergedContext(root_path, repo_types, plugins, skills)
+
+
+def _dedup_rules(rules):
+    """Deduplicate rules by rule_id, preserving first occurrence."""
+    seen = set()
+    result = []
+    for rule in rules:
+        if rule.rule_id not in seen:
+            seen.add(rule.rule_id)
+            result.append(rule)
+    return result
+
+
 def _handle_apply_patch_for_lint(args):
     if not getattr(args, "apply_patch", False):
         return
-    if not args.path.exists():
-        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+    paths = _resolve_lint_paths(args.path)
+    if not paths:
+        print("Error: No path provided for --apply-patch", file=sys.stderr)
         sys.exit(1)
-    root_path = args.path.resolve()
+    if len(paths) > 1:
+        print("Error: --apply-patch accepts a single path", file=sys.stderr)
+        sys.exit(1)
+    if not paths[0].exists():
+        print(f"Error: Path not found: {paths[0]}", file=sys.stderr)
+        sys.exit(1)
+    root_path = paths[0].resolve()
     patch_path = _resolve_patch_path(args, root_path)
     _apply_llm_patch(patch_path, root_path)
     sys.exit(0)
@@ -497,16 +587,31 @@ def _run_lint(args):
 
     _handle_apply_patch_for_lint(args)
 
-    if not args.path.exists():
-        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+    # Validate paths as given, before file→parent normalization, so error
+    # messages reference exactly what the user typed
+    missing_count = 0
+    valid_raw_paths = []
+    for p in args.path:
+        if not p.exists():
+            print(f"Error: Path not found: {p}", file=sys.stderr)
+            missing_count += 1
+        else:
+            valid_raw_paths.append(p)
+
+    if missing_count:
+        print(f"{missing_count} path(s) not found", file=sys.stderr)
+
+    if not valid_raw_paths:
         sys.exit(1)
+
+    paths = _resolve_lint_paths(valid_raw_paths)
 
     if args.fmt == "text":
         print(f"skillsaw {cli_version}")
-        print(f"Linting: {args.path}\n")
-    context = RepositoryContext(args.path)
+        print(f"Linting: {', '.join(str(p) for p in paths)}\n")
 
     # Override repo_types if --type was provided
+    override_types = None
     if args.repo_types:
         type_map = {t.value: t for t in RepositoryType}
         override_types = set()
@@ -519,14 +624,6 @@ def _run_lint(args):
                 )
                 sys.exit(1)
             override_types.add(type_map[val])
-        context.repo_types = override_types
-
-    if context.repo_type == RepositoryType.UNKNOWN:
-        print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
-        print(
-            "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
-            file=sys.stderr,
-        )
 
     if args.config:
         config_path = args.config
@@ -534,7 +631,7 @@ def _run_lint(args):
             print(f"Error: Config file not found: {config_path}", file=sys.stderr)
             sys.exit(1)
     else:
-        config_path = find_config(args.path)
+        config_path = find_config(paths[0])
 
     if config_path:
         try:
@@ -554,7 +651,7 @@ def _run_lint(args):
     if not args.no_baseline:
         from .baseline import find_baseline, load_baseline
 
-        baseline_path = find_baseline(config.config_dir or args.path)
+        baseline_path = find_baseline(config.config_dir or paths[0])
 
         if baseline_path:
             try:
@@ -572,69 +669,99 @@ def _run_lint(args):
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
-    try:
-        linter = Linter(
-            context,
-            config,
-            rule_ids=rule_ids,
-            skip_rule_ids=skip_rule_ids,
-            baseline=baseline,
-            no_custom_rules=args.no_custom_rules,
-        )
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    if args.fix:
-        import warnings
+    # Create a context and linter per path, collect violations
+    all_violations = []
+    all_rules = []
+    contexts = []
+    baseline_suppressed = 0
+    for lint_path in paths:
+        context = RepositoryContext(lint_path)
+        if override_types:
+            context.repo_types = override_types
+        contexts.append(context)
 
-        fix_cmd = "skillsaw fix --llm" if args.use_llm else "skillsaw fix"
-        msg = (
-            f"`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
-            f"Use `{fix_cmd}` instead."
-        )
-        warnings.warn(msg, DeprecationWarning, stacklevel=1)
-        print(f"Warning: {msg}", file=sys.stderr)
-        violations, fixes = linter.fix()
-        applied = linter.apply_fixes(fixes)
-        if applied and args.fmt == "text":
-            print(f"Fixed {len(applied)} issue(s):")
-            for fix in applied:
-                print(f"  ✓ [{fix.file_path}] {fix.description}")
-            print()
-        suggested = [f for f in fixes if f not in applied]
-        if suggested and args.fmt == "text":
-            print(f"Suggested fixes ({len(suggested)} — review before applying):")
-            for fix in suggested:
-                print(f"  ? [{fix.file_path}] {fix.description}")
-            print()
-        if args.use_llm:
-            _run_llm_fix_inline(args, linter, config)
-    else:
-        violations = linter.run()
-
-    if baseline and args.fmt == "text":
-        stale = linter.stale_baseline_entries
-        if stale:
+        if context.repo_type == RepositoryType.UNKNOWN:
             print(
-                f"Baseline: {len(stale)} stale"
-                f" {'entry' if len(stale) == 1 else 'entries'}"
-                f" (violations resolved since baseline was set)"
+                "Warning: Directory doesn't appear to be a recognized repository",
+                file=sys.stderr,
             )
-            if args.verbose:
-                for entry in stale:
-                    location = f" [{entry.file_path}]" if entry.file_path else ""
-                    print(f"  - {entry.rule_id}{location}: {entry.message}")
-            print("  Run `skillsaw baseline` to update.\n")
+            print(
+                "Expected: .claude-plugin/plugin.json, plugins/ directory,"
+                " or SKILL.md (agentskills.io)\n",
+                file=sys.stderr,
+            )
+
+        try:
+            linter = Linter(
+                context,
+                config,
+                rule_ids=rule_ids,
+                skip_rule_ids=skip_rule_ids,
+                baseline=baseline,
+                no_custom_rules=args.no_custom_rules,
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        if args.fix:
+            import warnings
+
+            fix_cmd = "skillsaw fix --llm" if args.use_llm else "skillsaw fix"
+            msg = (
+                f"`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
+                f"Use `{fix_cmd}` instead."
+            )
+            warnings.warn(msg, DeprecationWarning, stacklevel=1)
+            print(f"Warning: {msg}", file=sys.stderr)
+            violations, fixes = linter.fix()
+            applied = linter.apply_fixes(fixes)
+            if applied and args.fmt == "text":
+                print(f"Fixed {len(applied)} issue(s):")
+                for fix in applied:
+                    print(f"  ✓ [{fix.file_path}] {fix.description}")
+                print()
+            suggested = [f for f in fixes if f not in applied]
+            if suggested and args.fmt == "text":
+                print(f"Suggested fixes ({len(suggested)} — review before applying):")
+                for fix in suggested:
+                    print(f"  ? [{fix.file_path}] {fix.description}")
+                print()
+            if args.use_llm:
+                _run_llm_fix_inline(args, linter, config)
+        else:
+            violations = linter.run()
+
+        all_violations.extend(violations)
+        all_rules.extend(linter.rules)
+        baseline_suppressed += linter.baseline_suppressed_count
+
+        if baseline and args.fmt == "text":
+            stale = linter.stale_baseline_entries
+            if stale:
+                print(
+                    f"Baseline: {len(stale)} stale"
+                    f" {'entry' if len(stale) == 1 else 'entries'}"
+                    f" (violations resolved since baseline was set)"
+                )
+                if args.verbose:
+                    for entry in stale:
+                        location = f" [{entry.file_path}]" if entry.file_path else ""
+                        print(f"  - {entry.rule_id}{location}: {entry.message}")
+                print("  Run `skillsaw baseline` to update.\n")
+
+    merged_context = _build_merged_context(contexts)
+    unique_rules = _dedup_rules(all_rules)
 
     stdout_output = format_report(
         args.fmt,
-        violations,
-        context,
-        linter.rules,
+        all_violations,
+        merged_context,
+        unique_rules,
         cli_version,
         verbose=args.verbose,
-        baseline_suppressed=linter.baseline_suppressed_count,
+        baseline_suppressed=baseline_suppressed,
     )
     print(stdout_output)
 
@@ -643,20 +770,20 @@ def _run_lint(args):
         if fmt not in report_cache:
             report_cache[fmt] = format_report(
                 fmt,
-                violations,
-                context,
-                linter.rules,
+                all_violations,
+                merged_context,
+                unique_rules,
                 cli_version,
                 verbose=args.verbose,
-                baseline_suppressed=linter.baseline_suppressed_count,
+                baseline_suppressed=baseline_suppressed,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(report_cache[fmt], encoding="utf-8")
 
-    errors, warnings_count, info = get_counts(violations)
+    errors, warnings_count, info = get_counts(all_violations)
 
-    if errors > 0:
+    if missing_count > 0 or errors > 0:
         sys.exit(1)
     elif config.strict and warnings_count > 0:
         sys.exit(1)
@@ -850,17 +977,24 @@ def _run_llm_fix_inline(args, linter, config):
 
 
 def _run_fix(args):
-    if not args.path.exists():
-        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+    # Unlike lint, fix mutates files — fail fast on any missing path
+    # before touching anything, referencing exactly what the user typed
+    missing = [p for p in args.path if not p.exists()]
+    for p in missing:
+        print(f"Error: Path not found: {p}", file=sys.stderr)
+    if missing:
         sys.exit(1)
 
+    paths = _resolve_lint_paths(args.path)
+
     if getattr(args, "apply_patch", False):
-        root_path = args.path.resolve()
+        if len(paths) > 1:
+            print("Error: --apply-patch accepts a single path", file=sys.stderr)
+            sys.exit(1)
+        root_path = paths[0]
         patch_path = _resolve_patch_path(args, root_path)
         _apply_llm_patch(patch_path, root_path)
         sys.exit(0)
-
-    context = RepositoryContext(args.path)
 
     if args.config:
         config_path = args.config
@@ -868,7 +1002,7 @@ def _run_fix(args):
             print(f"Error: Config file not found: {config_path}", file=sys.stderr)
             sys.exit(1)
     else:
-        config_path = find_config(args.path)
+        config_path = find_config(paths[0])
 
     if config_path:
         try:
@@ -884,48 +1018,58 @@ def _run_fix(args):
     if rule_ids and skip_rule_ids:
         print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
         sys.exit(1)
-    try:
-        linter = Linter(
-            context,
-            config,
-            rule_ids=rule_ids,
-            skip_rule_ids=skip_rule_ids,
-            no_custom_rules=args.no_custom_rules,
-        )
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
 
     if not args.use_llm:
         import difflib
 
         dry_run = getattr(args, "dry_run", False)
         confidence = AutofixConfidence.SUGGEST if args.suggest else AutofixConfidence.SAFE
-        applied, suggested = linter.fix_and_apply(confidence, dry_run=dry_run)
 
-        if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
-            context = RepositoryContext(args.path)
-            linter = Linter(
-                context,
-                config,
-                rule_ids=rule_ids,
-                skip_rule_ids=skip_rule_ids,
-                no_custom_rules=args.no_custom_rules,
-            )
-            rename_applied, rename_suggested = linter.fix_and_apply(confidence)
-            applied.extend(rename_applied)
-            suggested.extend(rename_suggested)
+        # (fix, repo root) pairs — the root relativizes paths in dry-run diffs
+        applied = []
+        suggested = []
+        for fix_path in paths:
+            context = RepositoryContext(fix_path)
+            try:
+                linter = Linter(
+                    context,
+                    config,
+                    rule_ids=rule_ids,
+                    skip_rule_ids=skip_rule_ids,
+                    no_custom_rules=args.no_custom_rules,
+                )
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+
+            path_applied, path_suggested = linter.fix_and_apply(confidence, dry_run=dry_run)
+
+            if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
+                context = RepositoryContext(fix_path)
+                linter = Linter(
+                    context,
+                    config,
+                    rule_ids=rule_ids,
+                    skip_rule_ids=skip_rule_ids,
+                    no_custom_rules=args.no_custom_rules,
+                )
+                rename_applied, rename_suggested = linter.fix_and_apply(confidence)
+                path_applied.extend(rename_applied)
+                path_suggested.extend(rename_suggested)
+
+            applied.extend((f, context.root_path) for f in path_applied)
+            suggested.extend(path_suggested)
 
         c = _ansi_colors()
 
         if applied:
             label = "Would fix" if dry_run else "Fixed"
             print(f"{label} {len(applied)} issue(s):")
-            for fix in applied:
+            for fix, root in applied:
                 print(f"  {c['bold']}✓ [{fix.file_path}] {fix.description}{c['reset']}")
                 if dry_run and fix.original_content != fix.fixed_content:
                     try:
-                        rel = fix.file_path.relative_to(context.root_path)
+                        rel = fix.file_path.relative_to(root)
                     except ValueError:
                         rel = fix.file_path
                     diff_lines = difflib.unified_diff(
@@ -959,6 +1103,24 @@ def _run_fix(args):
             print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
 
         sys.exit(0)
+
+    # LLM fix runs an interactive session against one repository
+    if len(paths) > 1:
+        print("Error: --llm accepts a single path", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(paths[0])
+    try:
+        linter = Linter(
+            context,
+            config,
+            rule_ids=rule_ids,
+            skip_rule_ids=skip_rule_ids,
+            no_custom_rules=args.no_custom_rules,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.model:
         config.llm.model = args.model

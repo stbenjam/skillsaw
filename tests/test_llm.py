@@ -544,7 +544,7 @@ class TestMaxIterationsCLIOverride:
 
         config = LinterConfig.default()
         args = Namespace(
-            path=Path("."),
+            path=[Path(".")],
             config=None,
             use_llm=True,
             model=None,
@@ -582,7 +582,7 @@ class TestMaxIterationsCLIOverride:
         config = LinterConfig.default()
         default_value = config.llm.max_iterations
         args = Namespace(
-            path=Path("."),
+            path=[Path(".")],
             config=None,
             use_llm=True,
             model=None,

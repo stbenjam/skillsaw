@@ -13,7 +13,7 @@ Lint agent skills, plugins, and AI coding assistant context
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `-v`, `--verbose` | Show info-level messages |  |
 | `--strict` | Treat warnings as errors (exit with error code if warnings exist) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
@@ -30,7 +30,7 @@ Automatically fix lint violations
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
 | `--llm`, `--ai` | Use LLM-powered fixes for content violations |  |
 | `--model` | Override LLM model (default: from config or claude-sonnet-4-20250514) |  |
 | `--max-iterations` | Max fix iterations per file (default: 3) |  |

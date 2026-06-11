@@ -81,7 +81,8 @@ it for repeated use).
 # 1. See what skillsaw detects in your repo
 skillsaw tree
 
-# 2. Lint it
+# 2. Lint it (current directory by default — also accepts multiple
+#    directories and/or SKILL.md files: skillsaw lint dir1/ dir2/SKILL.md)
 skillsaw
 
 # 3. Fix what you can automatically
