@@ -75,6 +75,13 @@ markdown structure.
 - **Declare `repo_types`** to control when `enabled: auto` fires.
 - **Declare `config_schema`** when the rule accepts parameters.
 - **EVERYTHING MUST BE PART OF THE PARSE TREE**
+- **Prose vs config is encoded in the block hierarchy** — `ContentBlock`
+  subclasses are prose for an agent's context window and get every
+  content-quality rule automatically. Structured config files (settings,
+  hooks, MCP JSON) must subclass `JsonConfigBlock` instead; dedicated
+  rules find them with `find(SettingsBlock)` etc. Never add a config
+  file type under `ContentBlock` — content rules would lint its JSON
+  as instruction text.
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.

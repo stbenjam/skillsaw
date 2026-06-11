@@ -158,7 +158,13 @@ _INSTRUCTION_FILE_CATEGORIES = {
 
 @dataclass(eq=False)
 class ContentBlock(LintTarget):
-    """Abstract base for leaf nodes with lintable text content."""
+    """Abstract base for leaf nodes with lintable text content.
+
+    Content blocks hold prose destined for an agent's context window —
+    content-quality rules run on every one of them. Structured config
+    files (hooks, MCP, settings JSON) are :class:`JsonConfigBlock`
+    instead: still in the lint tree, but never linted as prose.
+    """
 
     category: str = ""
     line_offset: int = 0
@@ -982,10 +988,16 @@ def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
 
 
 @dataclass(eq=False)
-class HooksBlock(FileContentBlock):
-    """hooks/hooks.json in a plugin."""
+class JsonConfigBlock(LintTarget):
+    """Structured JSON configuration in the lint tree.
 
-    category: str = "hooks"
+    Deliberately not a :class:`ContentBlock`: these files are machine
+    configuration, not prose for an agent's context window, so
+    content-quality rules never see them. Dedicated rules locate them
+    with ``find(HooksBlock)`` etc. and read ``raw_data``/``parse_error``.
+    """
+
+    category: str = ""
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
@@ -1004,6 +1016,20 @@ class HooksBlock(FileContentBlock):
         self._ensure_parsed()
         data = self._parsed[0]
         return data if isinstance(data, dict) else None
+
+    def estimate_tokens(self) -> int:
+        content = read_text(self.path)
+        return len(content) // 4 if content else 0
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} ({self.category})"
+
+
+@dataclass(eq=False)
+class HooksBlock(JsonConfigBlock):
+    """hooks/hooks.json in a plugin."""
+
+    category: str = "hooks"
 
     @property
     def events(self) -> Dict[str, List[HookEventConfig]]:
@@ -1062,28 +1088,10 @@ class McpServerConfig:
 
 
 @dataclass(eq=False)
-class McpBlock(FileContentBlock):
+class McpBlock(JsonConfigBlock):
     """.mcp.json at the project root or inside a plugin."""
 
     category: str = "mcp"
-    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
-        default=None, init=False, repr=False
-    )
-
-    def _ensure_parsed(self) -> None:
-        if self._parsed is None:
-            self._parsed = _parse_json_file(self.path)
-
-    @property
-    def parse_error(self) -> Optional[str]:
-        self._ensure_parsed()
-        return self._parsed[1]
-
-    @property
-    def raw_data(self) -> Optional[Dict[str, Any]]:
-        self._ensure_parsed()
-        data = self._parsed[0]
-        return data if isinstance(data, dict) else None
 
     @property
     def servers(self) -> List[McpServerConfig]:
@@ -1105,28 +1113,10 @@ class McpBlock(FileContentBlock):
 
 
 @dataclass(eq=False)
-class SettingsBlock(FileContentBlock):
+class SettingsBlock(JsonConfigBlock):
     """settings.json or settings.local.json in .claude/."""
 
     category: str = "settings"
-    _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
-        default=None, init=False, repr=False
-    )
-
-    def _ensure_parsed(self) -> None:
-        if self._parsed is None:
-            self._parsed = _parse_json_file(self.path)
-
-    @property
-    def parse_error(self) -> Optional[str]:
-        self._ensure_parsed()
-        return self._parsed[1]
-
-    @property
-    def raw_data(self) -> Optional[Dict[str, Any]]:
-        self._ensure_parsed()
-        data = self._parsed[0]
-        return data if isinstance(data, dict) else None
 
     @property
     def hooks_events(self) -> Dict[str, List[HookEventConfig]]:

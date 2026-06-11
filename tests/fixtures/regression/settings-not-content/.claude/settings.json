@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make build)",
+      "Bash(make test)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "WebFetch(domain:docs.example.com)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Read(secrets/**)"
+    ]
+  },
+  "env": {
+    "CGO_ENABLED": "0",
+    "GOFLAGS": "-mod=vendor"
+  }
+}
