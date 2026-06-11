@@ -51,9 +51,16 @@ class LintTarget:
             child.set_parents()
 
     def content_blocks(self) -> list:
-        from .rules.builtin.content_analysis import ContentBlock, HooksBlock, McpBlock
+        """Prose blocks for content-quality rules.
 
-        return [n for n in self.find(ContentBlock) if not isinstance(n, (McpBlock, HooksBlock))]
+        Structured config files (hooks, MCP, settings JSON) are
+        ``JsonConfigBlock``s, not ``ContentBlock``s, so they are
+        naturally excluded — content rules must not lint JSON as if it
+        were instruction text.
+        """
+        from .rules.builtin.content_analysis import ContentBlock
+
+        return self.find(ContentBlock)
 
     def file_line(self, line: int) -> int:
         """Translate a line number to a file line number. Default is identity."""
