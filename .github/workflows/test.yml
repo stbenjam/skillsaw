@@ -244,15 +244,15 @@ jobs:
           git clone --depth 1 https://github.com/jeremylongshore/claude-code-plugins-plus-skills.git /tmp/ccpps
 
           # ~445 plugins, ~3.6k skills, ~11.5k markdown files. This repo does
-          # NOT need to lint clean — it guards against crashes and the
-          # quadratic-blowup class of performance regressions: before the
-          # broken-link walk cache and skill-nesting fixes it took >3.5
-          # minutes locally (~10 on a runner); now it lints in well under a
-          # minute. The timeout is the regression budget.
+          # NOT need to lint clean — it guards against crashes and performance
+          # regressions: before the broken-link walk cache and skill-nesting
+          # fixes it took >3.5 minutes locally. It lints in ~56s on a runner,
+          # so the 120s budget allows ~2x variance while failing on any real
+          # slowdown.
           rc=0
-          timeout 300 skillsaw --format json --no-custom-rules /tmp/ccpps > /tmp/ccpps.json || rc=$?
+          timeout 120 skillsaw --format json --no-custom-rules /tmp/ccpps > /tmp/ccpps.json || rc=$?
           if [ "$rc" -gt 1 ]; then
-            echo "skillsaw crashed or blew the 300s budget (rc=$rc)"
+            echo "skillsaw crashed or blew the 120s budget (rc=$rc)"
             exit 1
           fi
 
