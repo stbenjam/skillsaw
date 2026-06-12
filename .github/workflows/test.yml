@@ -239,6 +239,35 @@ jobs:
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
+      - name: Test jeremylongshore/claude-code-plugins-plus-skills (huge marketplace)
+        run: |
+          git clone --depth 1 https://github.com/jeremylongshore/claude-code-plugins-plus-skills.git /tmp/ccpps
+
+          # ~445 plugins, ~3.6k skills, ~11.5k markdown files. This repo does
+          # NOT need to lint clean — it guards against crashes and the
+          # quadratic-blowup class of performance regressions: before the
+          # broken-link walk cache and skill-nesting fixes it took >3.5
+          # minutes locally (~10 on a runner); now it lints in well under a
+          # minute. The timeout is the regression budget.
+          rc=0
+          timeout 300 skillsaw --format json --no-custom-rules /tmp/ccpps > /tmp/ccpps.json || rc=$?
+          if [ "$rc" -gt 1 ]; then
+            echo "skillsaw crashed or blew the 300s budget (rc=$rc)"
+            exit 1
+          fi
+
+          python3 -c "
+          import json
+          r = json.load(open('/tmp/ccpps.json'))
+          assert r['stats']['plugins'] > 100, f\"expected hundreds of plugins, got {r['stats']['plugins']}\"
+          assert r['stats']['skills'] > 1000, f\"expected thousands of skills, got {r['stats']['skills']}\"
+          assert r['stats']['rules_run'] > 0, 'no rules ran'
+          crashes = [v for v in r['violations'] if v['rule_id'] == 'rule-execution-error']
+          assert not crashes, f'rules crashed: {crashes}'
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, \"
+                f\"{len(r['violations'])} violations, {r['stats']['rules_run']} rules\")
+          "
+
       - name: Test --output flag with multiple formats
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
