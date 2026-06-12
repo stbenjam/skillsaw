@@ -157,6 +157,19 @@ def test_lint_text_shows_grade(tmp_path):
     assert "A+" in r["stdout"]
 
 
+def test_lint_text_hints_at_hidden_info_violations(tmp_path):
+    # The clean fixture has info-level violations that affect the grade
+    # but are hidden without -v — the summary must say so.
+    repo = copy_fixture("single-plugin/clean", tmp_path)
+    quiet = run_lint(repo, fmt="text", verbose=False)
+    assert "count toward the grade" in quiet["stdout"]
+    assert "run with -v" in quiet["stdout"]
+
+    # With -v the info list is already shown; no hint needed.
+    loud = run_lint(repo, fmt="text", verbose=True)
+    assert "run with -v" not in loud["stdout"]
+
+
 def run_badge(path, *extra_args):
     result = subprocess.run(
         [sys.executable, "-m", "skillsaw", "badge", str(path), *extra_args],

@@ -102,6 +102,12 @@ def format_text(
             f"  Grade:    {grade_color}{bold}{grade.letter}{reset} "
             f"({grade.density:.2f} weighted violations per 10k tokens)"
         )
+        if grade.info and not verbose:
+            dim = "" if no_color else "\033[2m"
+            output.append(
+                f"  {dim}{grade.info} info-level violation(s) count toward"
+                f" the grade — run with -v to see them{reset}"
+            )
 
     if errors == 0 and warnings == 0:
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

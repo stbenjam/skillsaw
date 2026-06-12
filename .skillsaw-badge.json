@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "label": "skillsaw",
+  "message": "A-",
+  "color": "brightgreen",
+  "grade": "A-",
+  "density": 2.37,
+  "errors": 0,
+  "warnings": 0,
+  "info": 44,
+  "contentTokens": 18534,
+  "skillsawVersion": "0.13.1"
+}
