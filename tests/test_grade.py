@@ -124,19 +124,34 @@ def test_invalid_grade_settings_rejected(bad):
         GradeSettings.from_dict(bad)
 
 
+# Every property the shields.io endpoint schema accepts — it rejects
+# payloads containing anything else, so badge_json() must never grow a
+# key outside this set.
+_SHIELDS_ENDPOINT_KEYS = {
+    "schemaVersion",
+    "label",
+    "message",
+    "color",
+    "labelColor",
+    "isError",
+    "namedLogo",
+    "logoSvg",
+    "logoColor",
+    "logoSize",
+    "style",
+    "cacheSeconds",
+}
+
+
 def test_badge_json_shape():
     grade = compute_grade(_violations(warnings=2, info=3), content_tokens=20_000)
-    payload = grade.badge_json("1.2.3")
+    payload = grade.badge_json()
     assert payload["schemaVersion"] == 1
     assert payload["label"] == "skillsaw"
-    assert payload["message"] == payload["grade"] == grade.letter
+    assert payload["message"] == grade.letter
     assert payload["color"] == grade.color
-    assert payload["errors"] == 0
-    assert payload["warnings"] == 2
-    assert payload["info"] == 3
-    assert payload["contentTokens"] == 20_000
-    assert payload["skillsawVersion"] == "1.2.3"
     assert payload["logoSvg"].startswith("<svg")
+    assert set(payload) <= _SHIELDS_ENDPOINT_KEYS
 
 
 # ── CLI integration ──────────────────────────────────────────────
@@ -192,11 +207,11 @@ def test_badge_writes_shields_json(tmp_path):
     assert payload["schemaVersion"] == 1
     assert payload["message"] == "A+"
     assert payload["color"] == "brightgreen"
-    assert payload["grade"] == "A+"
+    assert set(payload) <= _SHIELDS_ENDPOINT_KEYS
 
     # README markdown for both shields.io badge styles, linking to skillsaw.org
     assert "img.shields.io/badge/dynamic/json" in result.stdout
-    assert "query=%24.grade" in result.stdout
+    assert "query=%24.message" in result.stdout
     assert "img.shields.io/endpoint" in result.stdout
     assert "(https://skillsaw.org/)" in result.stdout
     # Saw-blade logo: embedded in the dynamic badge URL (endpoint badges get
@@ -255,12 +270,12 @@ def test_badge_ignores_baseline(tmp_path):
     r = run_lint(repo)
     assert summary(r)["errors"] == 0
 
-    # ...but the published badge still reflects the real state.
+    # ...but the published badge still reflects the real state. The repo
+    # has errors, so the error knockdown caps it at B+ or worse.
     result = run_badge(repo)
     assert result.returncode == 0, result.stderr
     payload = json.loads((repo / ".skillsaw-badge.json").read_text())
-    assert payload["errors"] > 0
-    assert payload["grade"] != "A+"
+    assert payload["message"][0] != "A"
 
 
 def test_badge_missing_path_errors():

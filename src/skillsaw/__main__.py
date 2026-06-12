@@ -1555,9 +1555,7 @@ def _run_badge(args):
 
     badge_path = args.output or (context.root_path / _BADGE_FILENAME)
     badge_path.parent.mkdir(parents=True, exist_ok=True)
-    badge_path.write_text(
-        json.dumps(grade.badge_json(_get_version()), indent=2) + "\n", encoding="utf-8"
-    )
+    badge_path.write_text(json.dumps(grade.badge_json(), indent=2) + "\n", encoding="utf-8")
 
     c = _ansi_colors()
     grade_color = (
@@ -1590,7 +1588,7 @@ def _run_badge(args):
     print(f"\n  Dynamic JSON badge (https://shields.io/badges/dynamic-json-badge):")
     print(
         f"  [![skillsaw grade](https://img.shields.io/badge/dynamic/json"
-        f"?url={encoded}&query=%24.grade&label={label}&color={grade.color}"
+        f"?url={encoded}&query=%24.message&label={label}&color={grade.color}"
         f"&logo={logo})](https://skillsaw.org/)"
     )
     print(f"\n  Endpoint badge (color updates with the grade automatically):")

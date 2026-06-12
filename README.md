@@ -533,8 +533,8 @@ README. The file works with both shields.io styles:
   (recommended — color tracks the grade automatically):
   `https://img.shields.io/endpoint?url=<raw-url-to-.skillsaw-badge.json>`
 - **[Dynamic JSON badge](https://shields.io/badges/dynamic-json-badge)**
-  (query `$.grade` from the same file):
-  `https://img.shields.io/badge/dynamic/json?url=<raw-url>&query=%24.grade&label=skillsaw`
+  (query `$.message` from the same file):
+  `https://img.shields.io/badge/dynamic/json?url=<raw-url>&query=%24.message&label=skillsaw`
 
 When the repository has a GitHub remote, the printed markdown already
 contains the correct `raw.githubusercontent.com` URL. Regenerate the
