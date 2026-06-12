@@ -17,6 +17,7 @@ from skillsaw.rules.builtin.command_format import (
     CommandNamingRule,
     CommandFrontmatterRule,
     CommandNameFormatRule,
+    CommandSectionsRule,
 )
 from skillsaw.rules.builtin.marketplace import (
     MarketplaceJsonValidRule,
@@ -580,3 +581,249 @@ def test_skill_frontmatter_malformed_yaml_reports_line(temp_dir):
     assert len(fm_violations) == 1
     assert fm_violations[0].line is not None
     assert fm_violations[0].line == 5
+
+
+# --- marketplace-registration autofix ---
+
+
+def _add_unregistered_plugin(repo, name):
+    """Create a plugin directory under repo/plugins that is not registered."""
+    import json
+
+    plugin_dir = repo / "plugins" / name
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": name,
+                "description": "Test plugin",
+                "version": "1.0.0",
+                "author": {"name": "Test"},
+            }
+        )
+    )
+    (plugin_dir / "commands").mkdir()
+    return plugin_dir
+
+
+def _marketplace_with_raw_json(temp_dir, marketplace_text):
+    """Marketplace repo with raw marketplace.json text and one unregistered plugin."""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text(marketplace_text)
+    _add_unregistered_plugin(temp_dir, "plugin-one")
+    return temp_dir
+
+
+def test_marketplace_registration_fix_registers_plugin(marketplace_repo):
+    """fix() appends an entry using the plugin's repo-relative path as source,
+    preserves existing registrations, and resolves the violation on re-lint."""
+    import json
+
+    from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+    _add_unregistered_plugin(marketplace_repo, "plugin-three")
+    context = RepositoryContext(marketplace_repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    fixes = rule.fix(context, violations)
+    assert len(fixes) == 1
+    fix = fixes[0]
+    assert fix.violations_fixed == violations
+
+    data = json.loads(fix.fixed_content)
+    entries = [p for p in data["plugins"] if p.get("name") == "plugin-three"]
+    assert entries == [{"name": "plugin-three", "source": "plugins/plugin-three"}]
+    assert {p["name"] for p in data["plugins"]} == {
+        "plugin-one",
+        "plugin-two",
+        "plugin-three",
+    }
+
+    fix.file_path.write_text(fix.fixed_content)
+    invalidate_read_caches()
+    assert rule.check(RepositoryContext(marketplace_repo)) == []
+
+
+def test_marketplace_registration_fix_plugins_not_list(temp_dir):
+    """Regression: fix() crashed with AttributeError when 'plugins' was a JSON
+    object instead of an array. The malformed document is reported by
+    marketplace-json-valid; fix() must skip it, not crash."""
+    import json
+
+    repo = _marketplace_with_raw_json(
+        temp_dir, json.dumps({"name": "m", "owner": {"name": "o"}, "plugins": {}})
+    )
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert rule.fix(context, violations) == []
+
+
+def test_marketplace_registration_fix_top_level_array(temp_dir):
+    """Regression: fix() crashed with TypeError when marketplace.json held a
+    top-level JSON array instead of an object."""
+    repo = _marketplace_with_raw_json(temp_dir, "[]")
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert rule.fix(context, violations) == []
+
+
+def test_marketplace_registration_fix_skips_non_dict_entries(temp_dir):
+    """Regression: string entries in 'plugins' crashed the duplicate scan with
+    AttributeError. They must be skipped while still registering the plugin."""
+    import json
+
+    repo = _marketplace_with_raw_json(
+        temp_dir,
+        json.dumps({"name": "m", "owner": {"name": "o"}, "plugins": ["plugin-zero"]}),
+    )
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    fixes = rule.fix(context, violations)
+    assert len(fixes) == 1
+    data = json.loads(fixes[0].fixed_content)
+    assert {"name": "plugin-one", "source": "plugins/plugin-one"} in data["plugins"]
+    assert "plugin-zero" in data["plugins"]
+
+
+def test_marketplace_registration_fix_invalid_json(temp_dir):
+    """Unparseable marketplace.json yields no fixes rather than a crash."""
+    repo = _marketplace_with_raw_json(temp_dir, '{"name": broken')
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert rule.fix(context, violations) == []
+
+
+# --- marketplace-json-valid: malformed documents ---
+
+
+def test_marketplace_json_invalid_json(temp_dir):
+    """Unparseable marketplace.json reports a single Invalid JSON error."""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text('{"name": broken')
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "Invalid JSON" in violations[0].message
+    assert violations[0].severity == Severity.ERROR
+
+
+def test_marketplace_json_top_level_not_object(temp_dir):
+    """A top-level JSON array is rejected with a clear message."""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text("[]")
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert [v.message for v in violations] == ["Marketplace file must contain a JSON object"]
+
+
+def test_marketplace_json_missing_required_fields(temp_dir):
+    """An empty object reports all three missing required fields."""
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text("{}")
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert {v.message for v in violations} == {
+        "Missing 'name' field",
+        "Missing 'owner' field",
+        "Missing 'plugins' array",
+    }
+
+
+def test_marketplace_json_plugins_not_array(temp_dir):
+    """A non-array 'plugins' value is rejected."""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "marketplace.json").write_text(
+        json.dumps({"name": "m", "owner": {"name": "o"}, "plugins": "nope"})
+    )
+
+    context = RepositoryContext(temp_dir)
+    rule = MarketplaceJsonValidRule()
+    violations = rule.check(context)
+    assert [v.message for v in violations] == ["'plugins' must be an array"]
+
+
+# --- command-sections ---
+
+
+def test_command_sections_all_present(valid_plugin):
+    """The valid plugin fixture command has all four recommended sections."""
+    context = RepositoryContext(valid_plugin)
+    rule = CommandSectionsRule()
+    assert rule.check(context) == []
+
+
+def test_command_sections_missing_all(temp_dir):
+    """A command with no section headings reports one warning per section."""
+    import json
+
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "deploy.md").write_text("---\ndescription: Deploy\n---\nJust prose.\n")
+
+    context = RepositoryContext(plugin_dir)
+    rule = CommandSectionsRule()
+    violations = rule.check(context)
+    assert {v.message for v in violations} == {
+        "Missing recommended section '## Name'",
+        "Missing recommended section '## Synopsis'",
+        "Missing recommended section '## Description'",
+        "Missing recommended section '## Implementation'",
+    }
+    assert all(v.severity == Severity.WARNING for v in violations)
+
+
+def test_command_sections_partial(temp_dir):
+    """Only the absent sections are reported."""
+    import json
+
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+    commands_dir = plugin_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "deploy.md").write_text(
+        "---\ndescription: Deploy\n---\n"
+        "## Name\ndeploy\n\n## Synopsis\n/deploy\n\n## Description\nDeploys.\n"
+    )
+
+    context = RepositoryContext(plugin_dir)
+    rule = CommandSectionsRule()
+    violations = rule.check(context)
+    assert [v.message for v in violations] == ["Missing recommended section '## Implementation'"]
