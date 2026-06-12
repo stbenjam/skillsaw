@@ -165,9 +165,20 @@ class Linter:
 
     def _validate_config(self) -> List[RuleViolation]:
         """Check for unknown rule IDs in config"""
+        # With --no-custom-rules, IDs supplied by unloaded custom rule files
+        # are unknowable without executing them — exactly what the flag
+        # forbids. Don't flag config entries as typos in that case.
+        skip_unknown = self._no_custom_rules and bool(self.config.custom_rules)
         warnings = []
         for rule_id in self.config.rules:
             if rule_id not in self._known_rule_ids:
+                if skip_unknown:
+                    logger.info(
+                        "Rule %-30s unknown in config; may be a custom rule "
+                        "(skipped due to --no-custom-rules)",
+                        rule_id,
+                    )
+                    continue
                 warnings.append(
                     RuleViolation(
                         rule_id="invalid-config",

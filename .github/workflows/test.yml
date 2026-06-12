@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Integration steps clone and lint third-party repositories. Linting can
+# execute repo-provided code (custom rules), so cap the token at read-only
+# and never persist credentials into checkouts (see THREAT_MODEL.md T1/T9).
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -43,6 +51,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -69,6 +79,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -101,6 +113,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -177,7 +191,10 @@ jobs:
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
-          skillsaw --format json --skip-rule plugins-doc-up-to-date /tmp/ai-helpers | python3 -c "
+          # --no-custom-rules: never execute repo-provided Python from
+          # third-party clones in CI (THREAT_MODEL.md T1). This also makes
+          # ai-helpers' plugins-doc-up-to-date custom rule a non-issue.
+          skillsaw --format json --no-custom-rules /tmp/ai-helpers | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['plugins'] > 0, 'no plugins scanned'
@@ -191,7 +208,7 @@ jobs:
         run: |
           git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills
 
-          skillsaw --format json /tmp/agent-skills | python3 -c "
+          skillsaw --format json --no-custom-rules /tmp/agent-skills | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
@@ -204,7 +221,7 @@ jobs:
         run: |
           git clone https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
 
-          skillsaw --format json /tmp/agent-eval-harness | python3 -c "
+          skillsaw --format json --no-custom-rules /tmp/agent-eval-harness | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
@@ -217,7 +234,7 @@ jobs:
         run: |
           git clone https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
 
-          skillsaw --format json /tmp/maintainer-tools | python3 -c "
+          skillsaw --format json --no-custom-rules /tmp/maintainer-tools | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
@@ -230,7 +247,7 @@ jobs:
         run: |
           git clone https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
 
-          skillsaw --format json /tmp/prodsec-skills | python3 -c "
+          skillsaw --format json --no-custom-rules /tmp/prodsec-skills | python3 -c "
           import sys, json
           r = json.load(sys.stdin)
           assert r['stats']['rules_run'] > 0, 'no rules ran'
@@ -272,7 +289,7 @@ jobs:
         run: |
           git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
 
-          skillsaw --skip-rule plugins-doc-up-to-date --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
+          skillsaw --no-custom-rules --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
 
           python3 -c "
           import json, os
