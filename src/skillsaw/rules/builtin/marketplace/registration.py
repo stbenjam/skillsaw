@@ -73,8 +73,16 @@ class MarketplaceRegistrationRule(Rule):
         except json.JSONDecodeError:
             return results
 
+        # marketplace-json-valid reports malformed shapes; mutating a
+        # non-object document or non-list plugins would crash, so leave
+        # those for manual repair.
+        if not isinstance(data, dict):
+            return results
+
         if "plugins" not in data:
             data["plugins"] = []
+        if not isinstance(data["plugins"], list):
+            return results
 
         fixed_violations = []
         for v in violations:
@@ -84,7 +92,7 @@ class MarketplaceRegistrationRule(Rule):
             if len(name_match) < 2:
                 continue
             plugin_name = name_match[1]
-            if any(p.get("name") == plugin_name for p in data["plugins"]):
+            if any(p.get("name") == plugin_name for p in data["plugins"] if isinstance(p, dict)):
                 continue
             rel_source = plugin_name
             for plugin_node in context.lint_tree.find(PluginNode):

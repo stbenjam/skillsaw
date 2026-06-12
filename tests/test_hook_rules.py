@@ -1398,3 +1398,62 @@ def test_prohibited_rule_metadata():
     rule = HooksProhibitedRule()
     assert rule.rule_id == "hooks-prohibited"
     assert rule.default_severity().value == "error"
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        pytest.param(
+            [{"type": "command", "command": "echo hi"}],
+            "hooks.json must be a JSON object",
+            id="top-level-array",
+        ),
+        pytest.param(
+            {"hooks": []},
+            "'hooks' must be a JSON object",
+            id="hooks-key-not-object",
+        ),
+        pytest.param(
+            {"hooks": {"PreToolUse": "echo hi"}},
+            "Event 'PreToolUse' must have an array of hook configurations",
+            id="event-not-array",
+        ),
+        pytest.param(
+            {"hooks": {"PreToolUse": ["echo hi"]}},
+            "Event 'PreToolUse[0]' configuration must be an object",
+            id="config-not-object",
+        ),
+        pytest.param(
+            {"hooks": {"PreToolUse": [{"matcher": ".*"}]}},
+            "Event 'PreToolUse[0]' must have a 'hooks' array",
+            id="config-missing-hooks",
+        ),
+        pytest.param(
+            {"hooks": {"PreToolUse": [{"hooks": {"type": "command"}}]}},
+            "Event 'PreToolUse[0].hooks' must be an array",
+            id="hooks-list-not-array",
+        ),
+        pytest.param(
+            {"hooks": {"PreToolUse": [{"hooks": ["echo hi"]}]}},
+            "Event 'PreToolUse[0].hooks[0]' must be an object",
+            id="hook-entry-not-object",
+        ),
+    ],
+)
+def test_malformed_hooks_structure(temp_dir, payload, expected):
+    """Each malformed hooks.json shape produces a single clear error rather
+    than a crash or a misleading cascade of follow-on violations."""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+    hooks_dir = plugin_dir / "hooks"
+    hooks_dir.mkdir()
+    (hooks_dir / "hooks.json").write_text(json.dumps(payload))
+
+    rule = HooksJsonValidRule()
+    violations = rule.check(RepositoryContext(plugin_dir))
+    assert len(violations) == 1
+    assert expected in violations[0].message
+    assert violations[0].severity == Severity.ERROR

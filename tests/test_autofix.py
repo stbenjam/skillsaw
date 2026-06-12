@@ -20,7 +20,8 @@ from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
 from skillsaw.rules.builtin.skills import SkillFrontmatterRule
 from skillsaw.rules.builtin.agents import AgentFrontmatterRule
-from skillsaw.rules.builtin.command_format import CommandNamingRule
+from skillsaw.rules.builtin.command_format import CommandNamingRule, CommandFrontmatterRule
+from skillsaw.rules.builtin.utils import invalidate_read_caches
 
 
 class NoFixRule(Rule):
@@ -890,3 +891,135 @@ class TestSkillRenameRefsEndToEnd:
         rename_violations = [v for v in violations3 if v.rule_id == "agentskill-rename-refs"]
         assert len(rename_violations) == 0
         assert not manifest_path.exists()
+
+
+class TestCommandFrontmatterFix:
+    """CommandFrontmatterRule.fix(): prepend a frontmatter block when none
+    exists, or insert a description field into an existing block. The applied
+    fix must resolve the violation on re-lint (convergence) — a fix that
+    leaves the violation in place would make `skillsaw fix` loop forever."""
+
+    def test_missing_frontmatter_prepended(self, temp_dir):
+        body = "Run the deployment steps.\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"deploy.md": body})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandFrontmatterRule()
+
+        violations = rule.check(context)
+        assert [v.message for v in violations] == ["Missing frontmatter"]
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fix = fixes[0]
+        assert fix.confidence == AutofixConfidence.SAFE
+        assert fix.fixed_content == f"---\ndescription: \n---\n{body}"
+
+        fix.file_path.write_text(fix.fixed_content)
+        invalidate_read_caches()
+        assert rule.check(RepositoryContext(plugin_dir)) == []
+
+    def test_missing_description_inserted_into_existing_block(self, temp_dir):
+        content = "---\nargument-hint: <env>\n---\nDeploy to the given environment.\n"
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"deploy.md": content})
+        context = RepositoryContext(plugin_dir)
+        rule = CommandFrontmatterRule()
+
+        violations = rule.check(context)
+        assert [v.message for v in violations] == ["Missing 'description' in frontmatter"]
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        # Field goes inside the existing block: other keys preserved, body
+        # untouched, exactly one line added.
+        assert "argument-hint: <env>" in fixed
+        assert "description: " in fixed
+        assert fixed.endswith("Deploy to the given environment.\n")
+        assert len(fixed.splitlines()) == len(content.splitlines()) + 1
+
+        fixes[0].file_path.write_text(fixed)
+        invalidate_read_caches()
+        assert rule.check(RepositoryContext(plugin_dir)) == []
+
+    def test_fix_idempotent(self, temp_dir):
+        """A second fix pass after applying must not stack frontmatter blocks."""
+        plugin_dir = _make_plugin(temp_dir, "my-plugin", {"deploy.md": "Body.\n"})
+        rule = CommandFrontmatterRule()
+
+        context = RepositoryContext(plugin_dir)
+        fixes = rule.fix(context, rule.check(context))
+        target = fixes[0].file_path
+        target.write_text(fixes[0].fixed_content)
+        first_pass = target.read_text()
+
+        invalidate_read_caches()
+        context2 = RepositoryContext(plugin_dir)
+        violations2 = rule.check(context2)
+        assert violations2 == []
+        assert rule.fix(context2, violations2) == []
+        assert target.read_text() == first_pass
+
+
+class TestSkillFixMissingFrontmatterBlock:
+    """SkillFrontmatterRule.fix(): a SKILL.md without any frontmatter gets a
+    full block prepended, deriving the name from the skill directory and
+    preserving the body byte-for-byte."""
+
+    def test_adds_block_and_preserves_body(self, temp_dir):
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        skill_dir = plugin_dir / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        body = "# My Skill\n\nDo the thing.\n"
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(body)
+
+        context = RepositoryContext(plugin_dir)
+        rule = SkillFrontmatterRule()
+
+        violations = rule.check(context)
+        assert [v.message for v in violations] == ["Missing frontmatter (recommended for SKILL.md)"]
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == f"---\nname: my-skill\ndescription: \n---\n{body}"
+
+        skill_md.write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert rule.check(RepositoryContext(plugin_dir)) == []
+
+
+class TestAgentFixMissingFrontmatterBlock:
+    """AgentFrontmatterRule.fix(): an agent file without any frontmatter gets
+    a full block prepended, deriving the name from the file stem."""
+
+    def test_adds_block_and_preserves_body(self, temp_dir):
+        plugin_dir = temp_dir / "test-plugin"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(json.dumps({"name": "test-plugin"}))
+
+        agents_dir = plugin_dir / "agents"
+        agents_dir.mkdir()
+        body = "You are a helpful code reviewer.\n"
+        agent_md = agents_dir / "my-agent.md"
+        agent_md.write_text(body)
+
+        context = RepositoryContext(plugin_dir)
+        rule = AgentFrontmatterRule()
+
+        violations = rule.check(context)
+        assert [v.message for v in violations] == ["Missing frontmatter"]
+
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == f"---\nname: my-agent\ndescription: \n---\n{body}"
+
+        agent_md.write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert rule.check(RepositoryContext(plugin_dir)) == []
