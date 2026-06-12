@@ -234,5 +234,5 @@ def generate_repo(root: Path, scale: str = "medium") -> Dict[str, int]:
         "files": files,
         "plugins": params["plugins"],
         "skills": params["skills"],
-        "scale_params": params,  # type: ignore[dict-item]
+        "scale_params": dict(params),  # type: ignore[dict-item]
     }

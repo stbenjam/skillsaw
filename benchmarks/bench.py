@@ -66,15 +66,14 @@ def _fresh_lint(repo_path: Path):
     t3 = time.perf_counter()
     phases["lint_tree"] = t3 - t2
 
-    # Mirror Linter.run() but attribute time to each rule.
+    # Mirror Linter.run() but attribute time to each rule.  Rule crashes
+    # propagate — a baseline recorded through a crashing rule (which takes
+    # ~0ms) would corrupt every later comparison.
     per_rule: Dict[str, float] = {}
     violations = linter._validate_config()
     for rule in linter.rules:
         r0 = time.perf_counter()
-        try:
-            rule_violations = rule.check(context)
-        except Exception:
-            rule_violations = []
+        rule_violations = rule.check(context)
         per_rule[rule.rule_id] = time.perf_counter() - r0
         violations.extend(rule_violations)
     violations = linter._filter_violations(violations)
@@ -233,6 +232,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--profile-out", type=Path, help="Also dump raw pstats data to this path"
     )
     args = parser.parse_args(argv)
+
+    if args.repeats < 1:
+        parser.error("--repeats must be at least 1")
 
     with tempfile.TemporaryDirectory(prefix="skillsaw-bench-") as tmp:
         if args.repo:

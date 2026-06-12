@@ -92,6 +92,11 @@ class TestCompare:
 
 
 class TestCli:
+    def test_repeats_must_be_positive(self, tiny_repo):
+        for bad in ("0", "-1"):
+            with pytest.raises(SystemExit):
+                bench.main(["--repo", str(tiny_repo), "--repeats", bad])
+
     def test_main_runs_and_writes_json(self, tiny_repo, tmp_path):
         out = tmp_path / "result.json"
         rc = bench.main(["--repo", str(tiny_repo), "--repeats", "1", "--json", str(out)])
