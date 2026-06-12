@@ -181,6 +181,58 @@ class TestFrontmatterLineMap:
         assert frontmatter_key_line(f, "name") is None
 
 
+class TestFrontmatterSuppressionWithFastPath:
+    """Inline suppression of frontmatter-field violations must work the same
+    through the libyaml line-map fast path and the ruamel fallback.
+
+    Suppression directives are YAML ``#`` comments scanned from raw text —
+    they never pass through a YAML parser — but they suppress by *file line*,
+    and frontmatter violation lines come from frontmatter_key_line().
+    """
+
+    _SECRET_FM = (
+        "---\n"
+        "name: demo-skill\n"
+        "{directive}"
+        "description: Use token ghp_" + "a" * 40 + " when calling the demo API\n"
+        "---\n\n# Demo Skill\n\nA demo skill body.\n"
+    )
+
+    def _run(self, tmp_path, directive, monkeypatch, fast):
+        from skillsaw.context import RepositoryContext
+        from skillsaw.linter import Linter
+        from skillsaw.config import LinterConfig
+        from skillsaw.rules.builtin import utils
+
+        skill = tmp_path / "skills" / "demo-skill"
+        skill.mkdir(parents=True, exist_ok=True)
+        (skill / "SKILL.md").write_text(
+            self._SECRET_FM.format(directive=directive), encoding="utf-8"
+        )
+        invalidate_read_caches()
+        if not fast:
+            monkeypatch.setattr(utils, "_fast_top_level_key_lines", lambda text: None)
+        linter = Linter(
+            RepositoryContext(tmp_path),
+            LinterConfig.default(),
+            rule_ids={"content-embedded-secrets"},
+        )
+        violations = linter.run()
+        monkeypatch.undo()
+        return violations
+
+    @pytest.mark.parametrize("fast", [True, False], ids=["libyaml", "ruamel"])
+    def test_directive_suppresses_frontmatter_violation(self, tmp_path, monkeypatch, fast):
+        directive = "# skillsaw-disable-next-line content-embedded-secrets\n"
+        assert self._run(tmp_path, directive, monkeypatch, fast) == []
+
+    @pytest.mark.parametrize("fast", [True, False], ids=["libyaml", "ruamel"])
+    def test_violation_fires_without_directive(self, tmp_path, monkeypatch, fast):
+        violations = self._run(tmp_path, "", monkeypatch, fast)
+        assert [v.rule_id for v in violations] == ["content-embedded-secrets"]
+        assert violations[0].file_line == 3
+
+
 class TestBrokenReferenceWalkCache:
     def test_repo_walked_at_most_once_per_check(self, tmp_path, monkeypatch):
         """Regression: the repo walk used to run once per broken link, making
