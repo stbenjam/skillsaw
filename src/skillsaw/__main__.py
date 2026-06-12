@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 from importlib.metadata import version, PackageNotFoundError
 
@@ -712,6 +713,7 @@ def _run_lint(args):
         sys.exit(1)
 
     # Create a context and linter per path, collect violations
+    lint_started = time.perf_counter()
     all_violations = []
     all_rules = []
     contexts = []
@@ -798,6 +800,7 @@ def _run_lint(args):
 
     merged_context = _build_merged_context(contexts)
     unique_rules = _dedup_rules(all_rules)
+    lint_duration = time.perf_counter() - lint_started
 
     stdout_output = format_report(
         args.fmt,
@@ -807,6 +810,7 @@ def _run_lint(args):
         cli_version,
         verbose=args.verbose,
         baseline_suppressed=baseline_suppressed,
+        duration=lint_duration,
     )
     print(stdout_output)
 
@@ -821,6 +825,7 @@ def _run_lint(args):
                 cli_version,
                 verbose=args.verbose,
                 baseline_suppressed=baseline_suppressed,
+                duration=lint_duration,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)

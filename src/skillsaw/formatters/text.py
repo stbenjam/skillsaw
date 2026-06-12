@@ -3,11 +3,21 @@ Text output formatter — human-readable terminal output with optional ANSI colo
 """
 
 import os
-from typing import List
+from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
 from . import get_counts, relative_path
+
+
+def format_duration(seconds: float) -> str:
+    """Human-friendly duration: 450ms, 2.3s, 1m 12s."""
+    if seconds < 1:
+        return f"{seconds * 1000:.0f}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {secs}s"
 
 
 def format_text(
@@ -17,6 +27,7 @@ def format_text(
     version: str,
     verbose: bool = False,
     baseline_suppressed: int = 0,
+    duration: Optional[float] = None,
 ) -> str:
     no_color = "NO_COLOR" in os.environ
     red = "" if no_color else "\033[91m"
@@ -73,6 +84,8 @@ def format_text(
     output.append(f"  Plugins:   {len(context.plugins)}")
     output.append(f"  Skills:    {len(context.skills)}")
     output.append(f"  Rules run: {len(rules)}")
+    if duration is not None:
+        output.append(f"  Took:      {format_duration(duration)}")
 
     output.append(f"\n{bold}Summary:{reset}")
     output.append(f"  {red}Errors:   {errors}{reset}")
