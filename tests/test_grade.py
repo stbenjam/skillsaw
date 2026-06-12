@@ -180,10 +180,11 @@ def test_badge_writes_shields_json(tmp_path):
     assert payload["color"] == "brightgreen"
     assert payload["grade"] == "A+"
 
-    # README markdown for both shields.io badge styles
+    # README markdown for both shields.io badge styles, linking to skillsaw.org
     assert "img.shields.io/badge/dynamic/json" in result.stdout
     assert "query=%24.grade" in result.stdout
     assert "img.shields.io/endpoint" in result.stdout
+    assert "(https://skillsaw.org/)" in result.stdout
 
 
 def test_badge_uses_github_remote_for_url(tmp_path):

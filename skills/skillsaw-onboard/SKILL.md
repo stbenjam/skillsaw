@@ -250,7 +250,52 @@ If a `Makefile` already exists, append the targets. If not, create one. In
 either case, do not overwrite existing `lint` or `lint-fix` targets — if they
 already exist, ask the user what names to use instead (e.g. `skillsaw-lint`).
 
-## Step 9: Final verification
+## Step 9: README badge
+
+Ask the user if they want a skillsaw grade badge in their README. The badge
+shows the repository's letter grade (A+ through F) and updates whenever the
+badge file is regenerated. If they decline, skip to Step 10.
+
+If they agree:
+
+1. Run `skillsaw badge`. This writes `.skillsaw-badge.json` to the repo root
+   and prints ready-to-paste markdown for two shields.io badge styles.
+2. Add the **endpoint badge** markdown (the variant whose color tracks the
+   grade automatically) to `README.md`:
+   - If the README already has badges (look for `img.shields.io`,
+     `badge.svg`, or similar image links near the top), add the skillsaw
+     badge on the same line or block as the existing badges.
+   - If there are no badges yet, add it on its own line directly under the
+     top-level heading.
+3. The badge must link to `https://skillsaw.org/` — the markdown printed by
+   `skillsaw badge` already does this; keep that link when placing it.
+4. If `skillsaw badge` printed a URL placeholder (no GitHub remote detected),
+   tell the user the badge will render once `.skillsaw-badge.json` is
+   published at a URL shields.io can fetch, and leave the placeholder for
+   them to fill in.
+
+If Makefile targets were set up in Step 8, wire badge regeneration into them:
+add a `badge` target using the same command prefix as the other targets, and
+make `lint` depend on it so every lint run refreshes the badge file. The
+`badge` target runs first and always succeeds, so the file is regenerated even
+when the lint fails:
+
+```makefile
+.PHONY: badge
+badge:
+	uvx skillsaw==$(SKILLSAW_VERSION) badge
+
+lint: badge
+	uvx skillsaw==$(SKILLSAW_VERSION) --strict
+```
+
+Tell the user the badge reflects the committed `.skillsaw-badge.json`, so it
+should be regenerated when content changes — run `make lint` (or `skillsaw
+badge` directly), or add it to CI (e.g. a workflow step that runs `skillsaw
+badge` and commits the file if it changed). The badge ignores any baseline:
+it always reflects the repository's true grade.
+
+## Step 10: Final verification
 
 Run `skillsaw` one final time and confirm the repo passes (exit 0). Summarize
 what was done:
@@ -261,11 +306,13 @@ what was done:
 - Number baselined
 - CI setup (if any)
 - Makefile targets (if any)
+- README badge (if added)
 - Files created or modified
 
 Remind the user to commit all new/changed files:
 - `.skillsaw.yaml` (if created)
 - `.skillsaw-baseline.json` (if created)
+- `.skillsaw-badge.json` and `README.md` (if the badge was set up)
 - `.github/workflows/lint.yml` (if created)
 - `.github/workflows/lint-review.yml` (if created)
 - `.gitlab-ci.yml` (if modified)

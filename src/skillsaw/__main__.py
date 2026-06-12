@@ -1585,12 +1585,12 @@ def _run_badge(args):
     print(
         f"  [![skillsaw grade](https://img.shields.io/badge/dynamic/json"
         f"?url={encoded}&query=%24.grade&label={label}&color={grade.color})]"
-        f"(https://github.com/stbenjam/skillsaw)"
+        f"(https://skillsaw.org/)"
     )
     print(f"\n  Endpoint badge (color updates with the grade automatically):")
     print(
         f"  [![skillsaw grade](https://img.shields.io/endpoint?url={encoded})]"
-        f"(https://github.com/stbenjam/skillsaw)"
+        f"(https://skillsaw.org/)"
     )
     print(
         f"\nCommit {badge_path.name} and regenerate it (e.g. in CI) whenever"
