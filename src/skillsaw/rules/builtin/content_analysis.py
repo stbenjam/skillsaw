@@ -12,6 +12,7 @@ import fnmatch
 import re
 from abc import abstractmethod
 from dataclasses import dataclass, field
+from functools import lru_cache
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
@@ -211,12 +212,6 @@ class ContentBlock(LintTarget):
 
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"
-
-    @property
-    def resolved_path(self) -> Path:
-        if not hasattr(self, "_resolved_path"):
-            self._resolved_path = self.path.resolve()
-        return self._resolved_path
 
     def __eq__(self, other):
         if not isinstance(other, ContentBlock):
@@ -666,12 +661,6 @@ class FrontmatteredBlock(LintTarget):
         Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]
     ] = field(default=None, init=False, repr=False)
 
-    @property
-    def resolved_path(self) -> Path:
-        if not hasattr(self, "_resolved_path"):
-            self._resolved_path = self.path.resolve()
-        return self._resolved_path
-
     def __eq__(self, other):
         if not isinstance(other, FrontmatteredBlock):
             return NotImplemented
@@ -690,6 +679,9 @@ class FrontmatteredBlock(LintTarget):
             self._build_children()
 
     def _build_children(self) -> None:
+        # Children change: stale find() memos on this node and its ancestors
+        # must not survive (e.g. after write_frontmatter_text resets _fm_parsed).
+        self.invalidate_find_cache()
         self.children = [
             c for c in self.children if not isinstance(c, (FrontmatterField, BodyContent))
         ]
@@ -794,6 +786,7 @@ class FrontmatteredBlock(LintTarget):
         if not content:
             self.path.write_text(f"---\n{fm}---\n", encoding="utf-8")
             self._fm_parsed = None
+            self.invalidate_find_cache()
             return
 
         m = _FRONTMATTER_RE.match(content)
@@ -818,6 +811,9 @@ class FrontmatteredBlock(LintTarget):
         else:
             self.path.write_text(f"---\n{fm}---\n{content}", encoding="utf-8")
         self._fm_parsed = None
+        # Children will be rebuilt on the next walk — cached find() results
+        # on this node and its ancestors must not serve the old fields.
+        self.invalidate_find_cache()
 
 
 ParsedFrontmatterBlock = FrontmatteredBlock
@@ -1231,14 +1227,85 @@ _TAUTOLOGICAL_COMPILED = [
 ]
 
 
+try:  # Python 3.11+
+    from re import _constants as _sre_constants
+    from re import _parser as _sre_parser
+except ImportError:  # Python 3.9/3.10
+    import sre_constants as _sre_constants
+    import sre_parse as _sre_parser
+
+
+@lru_cache(maxsize=512)
+def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
+    """Longest literal that every match of the pattern must contain, lowercased.
+
+    Walks the top-level concatenation of the regex parse tree collecting
+    consecutive LITERAL characters; zero-width anchors (``\\b``, ``^``…) are
+    transparent, anything else ends the run.  Returns ``None`` when no
+    usable literal exists (short, non-ASCII, or the pattern starts with a
+    branch) — callers must then fall back to a full regex scan, so this is
+    always correctness-preserving.
+    """
+    try:
+        tree = _sre_parser.parse(pattern_src, flags)
+    except Exception:
+        return None
+    best: List[str] = []
+    current: List[str] = []
+    for op, arg in tree:
+        if op is _sre_constants.LITERAL:
+            current.append(chr(arg))
+        elif op is _sre_constants.AT:
+            continue  # zero-width assertion: adjacent literals stay contiguous
+        else:
+            if len(current) > len(best):
+                best = current
+            current = []
+    if len(current) > len(best):
+        best = current
+    literal = "".join(best)
+    if len(literal) < 3 or not literal.isascii():
+        return None
+    return literal.lower()
+
+
+def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tuple]:
+    """Whole-text prefilter for per-line pattern scans.
+
+    Returns the subset of ``(compiled_pattern, ...)`` tuples whose pattern
+    matches anywhere in *content*, preserving order.  Any pattern that
+    matches some line necessarily matches the whole text, so per-line scans
+    can safely skip the rest — results are identical, but the common case
+    (pattern absent from the file) is dramatically cheaper.
+
+    Two-stage filter: a C-speed lowercase substring check on each pattern's
+    required literal eliminates most patterns without running the regex
+    engine at all; survivors (and patterns with no extractable literal) are
+    confirmed with a real whole-text search.
+    """
+    lowered = content.lower()
+    active = []
+    for t in patterns:
+        pattern = t[0]
+        literal = _required_literal(pattern.pattern, pattern.flags)
+        if literal is not None and literal not in lowered:
+            continue
+        if pattern.search(content):
+            active.append(t)
+    return active
+
+
 class WeakLanguageDetector:
     def analyze(self, cf: ContentBlock) -> List[WeakLanguageMatch]:
         content = _get_body_from_cf(cf)
         if not content:
             return []
+        active = patterns_matching_anywhere(content, _WEAK_LANGUAGE_PATTERNS)
+        if not active:
+            return []
         results: List[WeakLanguageMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, category, fix in _WEAK_LANGUAGE_PATTERNS:
+            for pattern, category, fix in active:
                 for m in pattern.finditer(line):
                     results.append(WeakLanguageMatch(line_num, m.group(), category, fix))
         return results
@@ -1249,9 +1316,12 @@ class TautologicalDetector:
         content = _get_body_from_cf(cf)
         if not content:
             return []
+        active = patterns_matching_anywhere(content, _TAUTOLOGICAL_COMPILED)
+        if not active:
+            return []
         results: List[TautologicalMatch] = []
         for line_num, line in enumerate(content.splitlines(), 1):
-            for pattern, reason in _TAUTOLOGICAL_COMPILED:
+            for pattern, reason in active:
                 m = pattern.search(line)
                 if m:
                     results.append(TautologicalMatch(line_num, m.group(), reason))
@@ -1297,14 +1367,17 @@ class RedundancyDetector:
         (re.compile(r"\bindent\s+with\s+tabs\b", re.IGNORECASE), "indent_style"),
     ]
 
-    def analyze(self, cf: ContentBlock, root: Path) -> List[RedundancyMatch]:
-        content = _get_body_from_cf(cf)
-        if not content:
-            return []
-        results: List[RedundancyMatch] = []
+    def __init__(self):
+        # Tooling-config presence per root — stat the filesystem once per
+        # detector, not once per content block.
+        self._tooling_cache: Dict[Path, Tuple[bool, bool, bool, bool]] = {}
 
-        editorconfig = root / ".editorconfig"
-        has_editorconfig = editorconfig.exists()
+    def _detect_tooling(self, root: Path) -> Tuple[bool, bool, bool, bool]:
+        cached = self._tooling_cache.get(root)
+        if cached is not None:
+            return cached
+
+        has_editorconfig = (root / ".editorconfig").exists()
 
         eslintrc_names = [
             ".eslintrc.json",
@@ -1327,6 +1400,19 @@ class RedundancyDetector:
         ]
         has_prettier = any((root / n).exists() for n in prettierrc_names)
         has_tsconfig = (root / "tsconfig.json").exists()
+
+        cached = (has_editorconfig, has_eslint, has_prettier, has_tsconfig)
+        self._tooling_cache[root] = cached
+        return cached
+
+    def analyze(self, cf: ContentBlock, root: Path) -> List[RedundancyMatch]:
+        has_editorconfig, has_eslint, has_prettier, has_tsconfig = self._detect_tooling(root)
+        if not (has_editorconfig or has_eslint or has_prettier or has_tsconfig):
+            return []
+        content = _get_body_from_cf(cf)
+        if not content:
+            return []
+        results: List[RedundancyMatch] = []
 
         for line_num, line in enumerate(content.splitlines(), 1):
             if has_editorconfig:

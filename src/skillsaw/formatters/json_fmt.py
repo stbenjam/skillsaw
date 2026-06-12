@@ -1,7 +1,7 @@
 """JSON output formatter for skillsaw lint results."""
 
 import json
-from typing import List
+from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
 from . import get_counts, relative_path
@@ -14,6 +14,7 @@ def format_json(
     version: str,
     verbose: bool = False,
     baseline_suppressed: int = 0,
+    duration: Optional[float] = None,
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
@@ -35,6 +36,9 @@ def format_json(
             "skills": len(context.skills),
             "rules_run": len(rules),
         }
+
+    if duration is not None:
+        stats["duration_seconds"] = round(duration, 3)
 
     report = {
         "version": version,

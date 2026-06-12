@@ -84,6 +84,7 @@ def format_report(
     version: str,
     verbose: bool = False,
     baseline_suppressed: int = 0,
+    duration: Optional[float] = None,
 ) -> str:
     """
     Format lint results in the specified format.
@@ -96,15 +97,21 @@ def format_report(
         version: skillsaw version string
         verbose: Include extra detail (info-level messages, expanded stats)
         baseline_suppressed: Number of violations suppressed by baseline
+        duration: Wall-clock lint time in seconds (text and json formats only;
+            sarif/code-climate schemas have no place for it)
     """
     if fmt == "text":
         from .text import format_text
 
-        return format_text(violations, context, rules, version, verbose, baseline_suppressed)
+        return format_text(
+            violations, context, rules, version, verbose, baseline_suppressed, duration
+        )
     elif fmt == "json":
         from .json_fmt import format_json
 
-        return format_json(violations, context, rules, version, verbose, baseline_suppressed)
+        return format_json(
+            violations, context, rules, version, verbose, baseline_suppressed, duration
+        )
     elif fmt == "sarif":
         from .sarif import format_sarif
 

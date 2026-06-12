@@ -568,3 +568,43 @@ class AlwaysFailRule(Rule):
 
     violations = linter.run()
     assert not any(v.rule_id == "always-fail" for v in violations)
+
+
+def test_no_custom_rules_does_not_flag_configured_custom_rule_ids(valid_plugin, temp_dir):
+    """Config entries for custom rules must not warn as 'unknown rule' when
+    --no-custom-rules prevents loading them (e.g. strict CI gates)."""
+    custom_rule_file = temp_dir / "custom_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class MyCustomRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "my-custom-rule"
+
+    @property
+    def description(self) -> str:
+        return "Custom"
+
+    def default_severity(self) -> Severity:
+        return Severity.ERROR
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+""")
+
+    config = LinterConfig(
+        custom_rules=[str(custom_rule_file)],
+        rules={"my-custom-rule": {"enabled": True, "severity": "error"}},
+    )
+    context = RepositoryContext(valid_plugin)
+
+    violations = Linter(context, config, no_custom_rules=True).run()
+    assert not any(v.rule_id == "invalid-config" for v in violations)
+
+    # Without custom-rules files configured, a typo'd ID still warns.
+    typo_config = LinterConfig(rules={"my-custom-rule": {"enabled": True}})
+    context = RepositoryContext(valid_plugin)
+    violations = Linter(context, typo_config, no_custom_rules=True).run()
+    assert any(v.rule_id == "invalid-config" for v in violations)

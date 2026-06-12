@@ -7,6 +7,7 @@ from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
+    patterns_matching_anywhere,
 )
 
 
@@ -75,8 +76,11 @@ class ContentHookCandidateRule(Rule):
             body = cf.read_body()
             if not body:
                 continue
+            active = patterns_matching_anywhere(body, self._HOOK_PATTERNS)
+            if not active:
+                continue
             for line_num, line in enumerate(body.splitlines(), 1):
-                for pattern, hook_type in self._HOOK_PATTERNS:
+                for pattern, hook_type in active:
                     if pattern.search(line):
                         violations.append(
                             self.violation(

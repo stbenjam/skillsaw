@@ -7,6 +7,7 @@ from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
+    patterns_matching_anywhere,
 )
 
 
@@ -93,8 +94,11 @@ class ContentBannedReferencesRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
+            active = patterns_matching_anywhere(body, patterns)
+            if not active:
+                continue
             for line_num, line in enumerate(body.splitlines(), 1):
-                for pattern, msg in patterns:
+                for pattern, msg in active:
                     if pattern.search(line):
                         violations.append(
                             self.violation(

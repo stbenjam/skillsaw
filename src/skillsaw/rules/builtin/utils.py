@@ -210,20 +210,58 @@ def commented_item_line(node: Any, index: int) -> Optional[int]:
     return None
 
 
-@_file_cache.cached
-def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
-    """Find the 1-based line number of a top-level key in YAML frontmatter.
+def _fast_top_level_key_lines(text: str) -> Optional[Dict[str, int]]:
+    """Map top-level mapping keys to 0-based lines using PyYAML's composer.
 
-    Uses ruamel.yaml's round-trip parser for accurate line tracking
-    that correctly handles quoted values, multiline strings, anchors, etc.
+    Much faster than a ruamel round-trip parse (libyaml-backed when
+    available).  Returns ``None`` when the document needs the ruamel
+    fallback to preserve exact behavior: parse errors, non-string keys,
+    or duplicate keys (which ruamel rejects).
+    """
+    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+    try:
+        node = yaml.compose(text, Loader=loader)
+    except yaml.YAMLError:
+        return None
+    if node is None or not isinstance(node, yaml.MappingNode):
+        return {}
+    result: Dict[str, int] = {}
+    for key_node, _value_node in node.value:
+        if not isinstance(key_node, yaml.ScalarNode) or key_node.tag != "tag:yaml.org,2002:str":
+            return None
+        if key_node.value in result:
+            return None
+        result[key_node.value] = key_node.start_mark.line
+    return result
+
+
+@_file_cache.cached
+def frontmatter_line_map_top_level(file_path: Path) -> Dict[str, int]:
+    """Map every top-level frontmatter key to its 1-based file line.
+
+    Parses the frontmatter once per file (cached), so per-key lookups via
+    :func:`frontmatter_key_line` are dictionary hits.
     """
     content = read_text(file_path)
     if content is None:
-        return None
+        return {}
     fm_text, offset = _extract_frontmatter_text(content)
     if fm_text is None:
-        return None
-    return yaml_key_line(fm_text, key, top_level=True, line_offset=offset)
+        return {}
+    fast = _fast_top_level_key_lines(fm_text)
+    if fast is not None:
+        return {key: line0 + 1 + offset for key, line0 in fast.items()}
+    # Exotic frontmatter (non-string keys, duplicates, parse errors):
+    # ruamel round-trip parse, matching the pre-fast-path behavior.
+    data = _ruamel_load(fm_text)
+    if not isinstance(data, CommentedMap):
+        return {}
+    return {key: data.lc.key(key)[0] + 1 + offset for key in data}
+
+
+def frontmatter_key_line(file_path: Path, key: str) -> Optional[int]:
+    """Find the 1-based line number of a top-level key in YAML frontmatter."""
+    return frontmatter_line_map_top_level(file_path).get(key)
 
 
 # The single source of truth for frontmatter block matching.  Tolerates CRLF

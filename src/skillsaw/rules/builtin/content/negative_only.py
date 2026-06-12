@@ -104,6 +104,8 @@ class ContentNegativeOnlyRule(Rule):
             body = cf.read_body()
             if not body:
                 continue
+            if not self._NEGATIVE_RE.search(body):
+                continue
             lines = body.splitlines()
             for i, line in enumerate(lines):
                 stripped = line.lstrip()

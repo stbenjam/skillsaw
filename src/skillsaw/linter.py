@@ -165,9 +165,20 @@ class Linter:
 
     def _validate_config(self) -> List[RuleViolation]:
         """Check for unknown rule IDs in config"""
+        # With --no-custom-rules, IDs supplied by unloaded custom rule files
+        # are unknowable without executing them — exactly what the flag
+        # forbids. Don't flag config entries as typos in that case.
+        skip_unknown = self._no_custom_rules and bool(self.config.custom_rules)
         warnings = []
         for rule_id in self.config.rules:
             if rule_id not in self._known_rule_ids:
+                if skip_unknown:
+                    logger.info(
+                        "Rule %-30s unknown in config; may be a custom rule "
+                        "(skipped due to --no-custom-rules)",
+                        rule_id,
+                    )
+                    continue
                 warnings.append(
                     RuleViolation(
                         rule_id="invalid-config",
@@ -288,9 +299,16 @@ class Linter:
     def baseline_suppressed_count(self) -> int:
         return self._baseline_suppressed_count
 
-    def run(self) -> List[RuleViolation]:
+    def run(
+        self, progress: Optional[Callable[[int, int, str], None]] = None
+    ) -> List[RuleViolation]:
         """
         Run all enabled rules
+
+        Args:
+            progress: Optional callback invoked before each rule check with
+                ``(rule_number, total_rules, rule_id)`` — used by the CLI to
+                show interactive progress on long lints.
 
         Returns:
             List of all violations found
@@ -298,7 +316,10 @@ class Linter:
         violations = self._validate_config()
 
         logger.info("Running %d enabled rules", len(self.rules))
-        for rule in self.rules:
+        total = len(self.rules)
+        for index, rule in enumerate(self.rules, 1):
+            if progress is not None:
+                progress(index, total, rule.rule_id)
             try:
                 rule_violations = rule.check(self.context)
                 if rule_violations:
@@ -324,9 +345,15 @@ class Linter:
             ),
         )
 
-    def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
+    def fix(
+        self, progress: Optional[Callable[[int, int, str], None]] = None
+    ) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
         Run all enabled rules and attempt to fix violations.
+
+        Args:
+            progress: Optional callback invoked before each rule check with
+                ``(rule_number, total_rules, rule_id)``.
 
         Returns:
             Tuple of (remaining violations, autofix results)
@@ -335,7 +362,10 @@ class Linter:
         all_fixes: List[AutofixResult] = []
         checked: List[RuleViolation] = list(all_violations)
 
-        for rule in self.rules:
+        total = len(self.rules)
+        for index, rule in enumerate(self.rules, 1):
+            if progress is not None:
+                progress(index, total, rule.rule_id)
             try:
                 rule_violations = rule.check(self.context)
             except Exception as e:
@@ -398,6 +428,7 @@ class Linter:
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
         dry_run: bool = False,
+        progress: Optional[Callable[[int, int, str], None]] = None,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -433,7 +464,7 @@ class Linter:
             allowed.update({AutofixConfidence.SUGGEST, AutofixConfidence.LLM})
 
         for _ in range(max_passes):
-            _violations, fixes = self.fix()
+            _violations, fixes = self.fix(progress=progress)
             if not fixes:
                 break
 

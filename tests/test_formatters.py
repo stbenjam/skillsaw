@@ -814,3 +814,39 @@ def test_gitlab_alias_dispatched_via_format_report(valid_plugin):
     output = format_report("gitlab", violations, context, linter.rules, "1.0.0")
     data = json.loads(output)
     assert isinstance(data, list)
+
+
+# --- duration ---
+
+
+def test_format_duration_units():
+    from skillsaw.formatters.text import format_duration
+
+    assert format_duration(0.45) == "450ms"
+    assert format_duration(2.34) == "2.3s"
+    assert format_duration(72) == "1m 12s"
+
+
+def test_text_includes_duration(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    violations = linter.run()
+
+    output = format_text(violations, context, linter.rules, "0.0.0", duration=1.23)
+    assert "Took:      1.2s" in output
+
+    # Omitted entirely when no duration is supplied (library callers)
+    output = format_text(violations, context, linter.rules, "0.0.0")
+    assert "Took:" not in output
+
+
+def test_json_includes_duration(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+    violations = linter.run()
+
+    report = json.loads(format_json(violations, context, linter.rules, "0.0.0", duration=1.2345))
+    assert report["stats"]["duration_seconds"] == 1.234
+
+    report = json.loads(format_json(violations, context, linter.rules, "0.0.0"))
+    assert "duration_seconds" not in report["stats"]

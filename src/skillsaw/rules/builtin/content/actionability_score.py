@@ -35,17 +35,32 @@ class ContentActionabilityScoreRule(Rule):
             "- Preserve markdown formatting"
         )
 
+    _VERB_WORDS = frozenset(
+        "use run create add remove check set write read call return throw "
+        "avoid prefer include exclude follow implement test validate verify "
+        "handle log format configure install update delete move copy import "
+        "export define declare initialize override extend wrap deploy build "
+        "commit push pull merge rebase review ensure make keep always never".split()
+    )
     _VERB_RE = re.compile(
-        r"\b(?:use|run|create|add|remove|check|set|write|read|call|return|throw|"
-        r"avoid|prefer|include|exclude|follow|implement|test|validate|verify|"
-        r"handle|log|format|configure|install|update|delete|move|copy|import|"
-        r"export|define|declare|initialize|override|extend|wrap|deploy|build|"
-        r"commit|push|pull|merge|rebase|review|ensure|make|keep|always|never)\b",
+        r"\b(?:" + "|".join(sorted(_VERB_WORDS)) + r")\b",
         re.IGNORECASE,
     )
     _COMMAND_RE = re.compile(r"`[^`]+`")
     _PATH_RE = re.compile(r"(?:`[^`]*[/\\][^`]*`|[\w./\\]+\.\w{1,5})")
     WARN_THRESHOLD = 40
+
+    _WORD_RE = re.compile(r"\w+")
+
+    def _has_verb(self, line: str) -> bool:
+        """Equivalent to ``_VERB_RE.search(line)`` as a boolean.
+
+        The pattern is a \\b-delimited alternation of plain words, so it
+        matches a line iff one of the words appears as a complete ``\\w+``
+        token — a frozenset intersection is much faster than running the
+        50-branch alternation at every character position.
+        """
+        return not self._VERB_WORDS.isdisjoint(self._WORD_RE.findall(line.lower()))
 
     @property
     def rule_id(self) -> str:
@@ -80,9 +95,13 @@ class ContentActionabilityScoreRule(Rule):
             if len(lines) < 5:
                 continue
             total = len(lines)
-            verb_lines = sum(1 for l in lines if self._VERB_RE.search(l))
-            cmd_lines = sum(1 for l in lines if self._COMMAND_RE.search(l))
-            path_lines = sum(1 for l in lines if self._PATH_RE.search(l))
+            verb_lines = sum(1 for line in lines if self._has_verb(line))
+            # Cheap substring prescans: _COMMAND_RE needs a backtick, _PATH_RE
+            # needs a dot or a backtick — most prose lines have neither.
+            cmd_lines = sum(1 for line in lines if "`" in line and self._COMMAND_RE.search(line))
+            path_lines = sum(
+                1 for line in lines if ("." in line or "`" in line) and self._PATH_RE.search(line)
+            )
 
             verb_ratio = verb_lines / total
             cmd_ratio = cmd_lines / total

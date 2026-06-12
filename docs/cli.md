@@ -23,6 +23,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
+| `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 
 ## `skillsaw fix`
 
@@ -44,6 +45,7 @@ Automatically fix lint violations
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
+| `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 
 ## `skillsaw init`
 

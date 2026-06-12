@@ -144,6 +144,7 @@ cython_debug/
 .DS_Store
 
 # Project specific
+.benchmarks/
 examples/test-repos/
 .work/
 uv.lock
