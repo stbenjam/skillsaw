@@ -136,6 +136,7 @@ def test_badge_json_shape():
     assert payload["info"] == 3
     assert payload["contentTokens"] == 20_000
     assert payload["skillsawVersion"] == "1.2.3"
+    assert payload["logoSvg"].startswith("<svg")
 
 
 # ── CLI integration ──────────────────────────────────────────────
@@ -198,6 +199,9 @@ def test_badge_writes_shields_json(tmp_path):
     assert "query=%24.grade" in result.stdout
     assert "img.shields.io/endpoint" in result.stdout
     assert "(https://skillsaw.org/)" in result.stdout
+    # Saw-blade logo: embedded in the dynamic badge URL (endpoint badges get
+    # it from the logoSvg field in the JSON payload instead)
+    assert "logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2C" in result.stdout
 
 
 def test_badge_uses_github_remote_for_url(tmp_path):

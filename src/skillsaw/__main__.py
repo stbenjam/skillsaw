@@ -1476,11 +1476,14 @@ def _github_raw_url(root_path: Path, badge_path: Path):
     import subprocess
 
     def _git(*argv):
-        result = subprocess.run(
-            ["git", "-C", str(root_path), *argv],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root_path), *argv],
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return None
         return result.stdout.strip() if result.returncode == 0 else None
 
     remote = _git("config", "--get", "remote.origin.url")
@@ -1577,15 +1580,18 @@ def _run_badge(args):
             "\nNo GitHub remote detected — replace the URL placeholder after"
             " publishing the badge file somewhere shields.io can fetch it."
         )
+    from .grade import logo_data_uri
+
     encoded = quote(raw_url, safe="")
     label = quote(grade.settings.label, safe="")
+    logo = quote(logo_data_uri(), safe="")
 
     print(f"\n{c['bold']}Markdown for your README:{c['reset']}")
     print(f"\n  Dynamic JSON badge (https://shields.io/badges/dynamic-json-badge):")
     print(
         f"  [![skillsaw grade](https://img.shields.io/badge/dynamic/json"
-        f"?url={encoded}&query=%24.grade&label={label}&color={grade.color})]"
-        f"(https://skillsaw.org/)"
+        f"?url={encoded}&query=%24.grade&label={label}&color={grade.color}"
+        f"&logo={logo})](https://skillsaw.org/)"
     )
     print(f"\n  Endpoint badge (color updates with the grade automatically):")
     print(

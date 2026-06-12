@@ -35,6 +35,26 @@ TOKENS_PER_UNIT = 10_000
 # Error-count brackets -> whole letters knocked off.
 _ERROR_BRACKETS = ((25, 3), (5, 2), (1, 1))
 
+# Minimal circular-saw-blade logo (8 hooked teeth, arbor hole), white so it
+# reads on the dark label half of the badge. Endpoint badges take the raw
+# SVG via logoSvg; dynamic-json badges need it base64-encoded in the URL.
+LOGO_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    '<path fill-rule="evenodd" fill="#fff" d="M20.0 12.0L22.3 15.8L19.3 15.3'
+    "L17.7 17.7L16.6 22.0L14.8 19.5L12.0 20.0L8.2 22.3L8.7 19.3L6.3 17.7"
+    "L2.0 16.6L4.5 14.8L4.0 12.0L1.7 8.2L4.7 8.7L6.3 6.3L7.4 2.0L9.2 4.5"
+    "L12.0 4.0L15.8 1.7L15.3 4.7L17.7 6.3L22.0 7.4L19.5 9.2Z"
+    'M15.0 12.0A3.0 3.0 0 1 0 9.0 12.0A3.0 3.0 0 1 0 15.0 12.0Z"/></svg>'
+)
+
+
+def logo_data_uri() -> str:
+    """data: URI for the logo, for shields.io URL ``logo=`` parameters."""
+    import base64
+
+    return "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).decode()
+
+
 # shields.io named colors per letter.
 _LETTER_COLORS = {
     "A": "brightgreen",
@@ -103,6 +123,7 @@ class Grade:
             "label": self.settings.label,
             "message": self.letter,
             "color": self.color,
+            "logoSvg": LOGO_SVG,
             "grade": self.letter,
             "density": round(self.density, 2),
             "errors": self.errors,
