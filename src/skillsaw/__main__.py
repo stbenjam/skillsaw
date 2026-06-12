@@ -157,6 +157,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
+    lint_parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        dest="no_progress",
+        help="Disable the interactive per-rule progress indicator "
+        "(auto-disabled when stderr is not a terminal)",
+    )
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -256,6 +263,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
+    )
+    fix_parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        dest="no_progress",
+        help="Disable the interactive per-rule progress indicator "
+        "(auto-disabled when stderr is not a terminal)",
     )
 
     # --- init ---
@@ -456,6 +470,33 @@ def _run_tree(args):
     else:
         print(tree.print_tree(root_path=context.root_path))
     sys.exit(0)
+
+
+class _RuleProgress:
+    """Single-line per-rule progress on stderr for interactive runs.
+
+    Inactive unless stderr is a terminal, so JSON/SARIF stdout, shell
+    pipelines, and CI logs are never polluted. Verbose mode also disables
+    it — info-level log lines share stderr and would interleave.
+    """
+
+    def __init__(self, args) -> None:
+        self.enabled = (
+            sys.stderr.isatty()
+            and not getattr(args, "no_progress", False)
+            and not getattr(args, "verbose", False)
+        )
+
+    def __call__(self, index: int, total: int, rule_id: str) -> None:
+        if self.enabled:
+            sys.stderr.write(f"\r\x1b[K  linting [{index}/{total}] {rule_id}")
+            sys.stderr.flush()
+
+    def clear(self) -> None:
+        """Erase the progress line before real output is printed."""
+        if self.enabled:
+            sys.stderr.write("\r\x1b[K")
+            sys.stderr.flush()
 
 
 def _resolve_lint_paths(paths):
@@ -731,7 +772,11 @@ def _run_lint(args):
             if args.use_llm:
                 _run_llm_fix_inline(args, linter, config)
         else:
-            violations = linter.run()
+            rule_progress = _RuleProgress(args)
+            try:
+                violations = linter.run(progress=rule_progress)
+            finally:
+                rule_progress.clear()
 
         all_violations.extend(violations)
         all_rules.extend(linter.rules)
@@ -1042,7 +1087,13 @@ def _run_fix(args):
                 print(f"Error: {e}", file=sys.stderr)
                 sys.exit(1)
 
-            path_applied, path_suggested = linter.fix_and_apply(confidence, dry_run=dry_run)
+            rule_progress = _RuleProgress(args)
+            try:
+                path_applied, path_suggested = linter.fix_and_apply(
+                    confidence, dry_run=dry_run, progress=rule_progress
+                )
+            finally:
+                rule_progress.clear()
 
             if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
                 context = RepositoryContext(fix_path)

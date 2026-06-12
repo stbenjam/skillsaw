@@ -307,3 +307,28 @@ def test_rule_crash_during_autofix_produces_error_violation(valid_plugin):
     # The unfixed violations are still reported alongside the crash
     assert any(v.rule_id == "crashing-fix-rule" for v in violations)
     assert fixes == []
+
+
+def test_run_reports_progress_per_rule(valid_plugin):
+    """run(progress=cb) must invoke cb once per enabled rule, in order."""
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+
+    calls = []
+    linter.run(progress=lambda i, total, rule_id: calls.append((i, total, rule_id)))
+
+    total = len(linter.rules)
+    assert len(calls) == total
+    assert calls[0] == (1, total, linter.rules[0].rule_id)
+    assert calls[-1] == (total, total, linter.rules[-1].rule_id)
+    assert [c[0] for c in calls] == list(range(1, total + 1))
+
+
+def test_fix_reports_progress_per_rule(valid_plugin):
+    """fix(progress=cb) must invoke cb once per enabled rule."""
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default())
+
+    calls = []
+    linter.fix(progress=lambda i, total, rule_id: calls.append((i, total, rule_id)))
+    assert len(calls) == len(linter.rules)

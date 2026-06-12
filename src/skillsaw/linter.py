@@ -299,9 +299,16 @@ class Linter:
     def baseline_suppressed_count(self) -> int:
         return self._baseline_suppressed_count
 
-    def run(self) -> List[RuleViolation]:
+    def run(
+        self, progress: Optional[Callable[[int, int, str], None]] = None
+    ) -> List[RuleViolation]:
         """
         Run all enabled rules
+
+        Args:
+            progress: Optional callback invoked before each rule check with
+                ``(rule_number, total_rules, rule_id)`` — used by the CLI to
+                show interactive progress on long lints.
 
         Returns:
             List of all violations found
@@ -309,7 +316,10 @@ class Linter:
         violations = self._validate_config()
 
         logger.info("Running %d enabled rules", len(self.rules))
-        for rule in self.rules:
+        total = len(self.rules)
+        for index, rule in enumerate(self.rules, 1):
+            if progress is not None:
+                progress(index, total, rule.rule_id)
             try:
                 rule_violations = rule.check(self.context)
                 if rule_violations:
@@ -335,9 +345,15 @@ class Linter:
             ),
         )
 
-    def fix(self) -> tuple[List[RuleViolation], List[AutofixResult]]:
+    def fix(
+        self, progress: Optional[Callable[[int, int, str], None]] = None
+    ) -> tuple[List[RuleViolation], List[AutofixResult]]:
         """
         Run all enabled rules and attempt to fix violations.
+
+        Args:
+            progress: Optional callback invoked before each rule check with
+                ``(rule_number, total_rules, rule_id)``.
 
         Returns:
             Tuple of (remaining violations, autofix results)
@@ -346,7 +362,10 @@ class Linter:
         all_fixes: List[AutofixResult] = []
         checked: List[RuleViolation] = list(all_violations)
 
-        for rule in self.rules:
+        total = len(self.rules)
+        for index, rule in enumerate(self.rules, 1):
+            if progress is not None:
+                progress(index, total, rule.rule_id)
             try:
                 rule_violations = rule.check(self.context)
             except Exception as e:
@@ -409,6 +428,7 @@ class Linter:
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
         max_passes: int = 10,
         dry_run: bool = False,
+        progress: Optional[Callable[[int, int, str], None]] = None,
     ) -> tuple[List[AutofixResult], List[AutofixResult]]:
         """Fixed-point iteration over autofix passes with snapshot isolation.
 
@@ -444,7 +464,7 @@ class Linter:
             allowed.update({AutofixConfidence.SUGGEST, AutofixConfidence.LLM})
 
         for _ in range(max_passes):
-            _violations, fixes = self.fix()
+            _violations, fixes = self.fix(progress=progress)
             if not fixes:
                 break
 
