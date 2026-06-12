@@ -19,13 +19,22 @@ class LintTarget:
     children: List["LintTarget"] = field(default_factory=list)
     parent: Optional["LintTarget"] = field(default=None, repr=False)
 
+    @property
+    def resolved_path(self) -> Path:
+        """``path.resolve()``, cached — eq/hash are called in hot loops."""
+        resolved = self.__dict__.get("_resolved_path")
+        if resolved is None:
+            resolved = self.path.resolve()
+            self.__dict__["_resolved_path"] = resolved
+        return resolved
+
     def __eq__(self, other):
         if not isinstance(other, LintTarget):
             return NotImplemented
-        return type(self) is type(other) and self.path.resolve() == other.path.resolve()
+        return type(self) is type(other) and self.resolved_path == other.resolved_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve()))
+        return hash((type(self), self.resolved_path))
 
     def walk(self) -> Iterator["LintTarget"]:
         yield self
@@ -33,7 +42,27 @@ class LintTarget:
             yield from child.walk()
 
     def find(self, target_type: Type[T]) -> List[T]:
-        return [n for n in self.walk() if isinstance(n, target_type)]
+        """Find all nodes of *target_type* in this subtree.
+
+        Results are memoized per node — every rule re-discovers its targets
+        through ``find()``, and the tree is static while rules run.  The
+        cache is dropped by ``set_parents()`` (called when tree building
+        completes) and by mutations that rebuild children (see
+        ``FrontmatteredBlock._build_children``).
+        """
+        cache = self.__dict__.setdefault("_find_cache", {})
+        found = cache.get(target_type)
+        if found is None:
+            found = [n for n in self.walk() if isinstance(n, target_type)]
+            cache[target_type] = found
+        return list(found)
+
+    def invalidate_find_cache(self) -> None:
+        """Drop memoized ``find()`` results on this node and all ancestors."""
+        node: Optional["LintTarget"] = self
+        while node is not None:
+            node.__dict__.pop("_find_cache", None)
+            node = node.parent
 
     def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
         """Find the nearest ancestor of ``target`` that is ``parent_type``."""
@@ -46,6 +75,7 @@ class LintTarget:
 
     def set_parents(self) -> None:
         """Set parent back-pointers for the entire subtree."""
+        self.__dict__.pop("_find_cache", None)
         for child in self.children:
             child.parent = self
             child.set_parents()

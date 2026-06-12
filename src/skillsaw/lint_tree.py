@@ -336,10 +336,19 @@ def _build_promptfoo_nodes(
             for yaml_file in sorted(evals_dir.rglob(pattern)):
                 _try_add_config(yaml_file, parent, require_keys=True)
 
-    # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key check)
-    for pattern in ("promptfooconfig*.yaml", "promptfooconfig*.yml"):
-        for yaml_file in sorted(context.root_path.rglob(pattern)):
-            _try_add_config(yaml_file, root, require_keys=False)
+    # Pass 1a: promptfooconfig* anywhere in repo (naming convention → no key
+    # check).  One pruned walk instead of two whole-repo rglobs — pruning
+    # matches the repo-type detector, which already skips .git/node_modules/
+    # .venv and friends.
+    yaml_matches: list[Path] = []
+    yml_matches: list[Path] = []
+    for f in context._walk_files(context.root_path):
+        if fnmatch.fnmatch(f.name, "promptfooconfig*.yaml"):
+            yaml_matches.append(f)
+        elif fnmatch.fnmatch(f.name, "promptfooconfig*.yml"):
+            yml_matches.append(f)
+    for yaml_file in sorted(yaml_matches) + sorted(yml_matches):
+        _try_add_config(yaml_file, root, require_keys=False)
 
     # Pass 1b: evals/ at repo root
     _scan_evals_dir(context.root_path / "evals", root)

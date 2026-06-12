@@ -7,6 +7,7 @@ from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
+    patterns_matching_anywhere,
     FrontmatterField,
 )
 
@@ -98,8 +99,11 @@ class ContentEmbeddedSecretsRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
+            active = patterns_matching_anywhere(body, self._PATTERNS)
+            if not active:
+                continue
             for line_num, line in enumerate(body.splitlines(), 1):
-                for pattern, desc in self._PATTERNS:
+                for pattern, desc in active:
                     if pattern.search(line):
                         violations.append(
                             self.violation(
@@ -111,15 +115,16 @@ class ContentEmbeddedSecretsRule(Rule):
                         break
         for fld in context.lint_tree.find(FrontmatterField):
             text = str(fld.value) if fld.value is not None else ""
-            for pattern, desc in self._PATTERNS:
-                if pattern.search(text):
-                    violations.append(
-                        self.violation(
-                            f"Potential secret detected in frontmatter "
-                            f"field '{fld.name}': {desc}",
-                            file_path=fld.path,
-                            line=fld.field_line,
-                        )
+            if not text:
+                continue
+            active = patterns_matching_anywhere(text, self._PATTERNS)
+            if active:
+                _pattern, desc = active[0]
+                violations.append(
+                    self.violation(
+                        f"Potential secret detected in frontmatter " f"field '{fld.name}': {desc}",
+                        file_path=fld.path,
+                        line=fld.field_line,
                     )
-                    break
+                )
         return violations

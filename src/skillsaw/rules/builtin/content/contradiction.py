@@ -6,6 +6,7 @@ from typing import List
 from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    _required_literal,
     gather_all_content_blocks,
 )
 
@@ -43,28 +44,35 @@ class ContentContradictionRule(Rule):
         return bool(ContentContradictionRule._NEGATION_PREFIX_RE.search(prefix))
 
     _CONTRADICTION_PAIRS = [
-        (r"\bmove fast\b", r"\bcomprehensive tests?\b", "'move fast' vs 'comprehensive tests'"),
-        (
-            r"\bkeep it simple\b",
-            r"\bhandle all edge cases\b",
-            "'keep it simple' vs 'handle all edge cases'",
-        ),
-        (
-            r"\bdon'?t over-?engineer\b",
-            r"\bdetailed architecture\b",
-            "'don't over-engineer' vs 'detailed architecture'",
-        ),
-        (r"\bminimal\b", r"\bexhaustive\b", "'minimal' vs 'exhaustive'"),
-        (
-            r"\bdon'?t add comments\b",
-            r"\bdocument\s+(everything|all|every)\b",
-            "'don't add comments' vs 'document everything'",
-        ),
-        (
-            r"\bavoid abstractions?\b",
-            r"\bcreate\s+(abstractions?|interfaces?|base\s+class)\b",
-            "'avoid abstractions' vs 'create abstractions'",
-        ),
+        (re.compile(pat_a), re.compile(pat_b), desc)
+        for pat_a, pat_b, desc in [
+            (
+                r"\bmove fast\b",
+                r"\bcomprehensive tests?\b",
+                "'move fast' vs 'comprehensive tests'",
+            ),
+            (
+                r"\bkeep it simple\b",
+                r"\bhandle all edge cases\b",
+                "'keep it simple' vs 'handle all edge cases'",
+            ),
+            (
+                r"\bdon'?t over-?engineer\b",
+                r"\bdetailed architecture\b",
+                "'don't over-engineer' vs 'detailed architecture'",
+            ),
+            (r"\bminimal\b", r"\bexhaustive\b", "'minimal' vs 'exhaustive'"),
+            (
+                r"\bdon'?t add comments\b",
+                r"\bdocument\s+(everything|all|every)\b",
+                "'don't add comments' vs 'document everything'",
+            ),
+            (
+                r"\bavoid abstractions?\b",
+                r"\bcreate\s+(abstractions?|interfaces?|base\s+class)\b",
+                "'avoid abstractions' vs 'create abstractions'",
+            ),
+        ]
     ]
 
     @property
@@ -86,12 +94,16 @@ class ContentContradictionRule(Rule):
                 continue
             body_lower = body.lower()
             for pat_a, pat_b, desc in self._CONTRADICTION_PAIRS:
-                has_a = any(
-                    not self._is_negated(body_lower, m) for m in re.finditer(pat_a, body_lower)
-                )
-                has_b = any(
-                    not self._is_negated(body_lower, m) for m in re.finditer(pat_b, body_lower)
-                )
+                lit_a = _required_literal(pat_a.pattern, pat_a.flags)
+                if lit_a is not None and lit_a not in body_lower:
+                    continue
+                has_a = any(not self._is_negated(body_lower, m) for m in pat_a.finditer(body_lower))
+                if not has_a:
+                    continue
+                lit_b = _required_literal(pat_b.pattern, pat_b.flags)
+                if lit_b is not None and lit_b not in body_lower:
+                    continue
+                has_b = any(not self._is_negated(body_lower, m) for m in pat_b.finditer(body_lower))
                 if has_a and has_b:
                     violations.append(
                         self.violation(

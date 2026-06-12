@@ -38,6 +38,29 @@ After opening a PR, continue monitoring for feedback from CodeRabbit, Gemini,
 and stbenjam.  You may cease monitoring 20 minutes after pushing a PR. Address
 valid feedback that comes in.
 
+## Performance
+
+Lint speed is benchmarked with the harness in `benchmarks/` (`make
+benchmark`, `make profile`, `make benchmark-save` / `make benchmark-compare`
+for regression checks — see DEVELOPMENT.md). When touching content rules,
+the lint tree, or `utils.py` read paths, save a baseline on main and compare
+on your branch.
+
+- **Never write per-line × per-pattern regex loops** in scanning rules. Run
+  `patterns_matching_anywhere(body, patterns)` (from `content_analysis`)
+  first and per-line scan only the surviving patterns — it prefilters with a
+  C-speed substring check on each pattern's required literal and is
+  results-identical to the naive loop.
+- **`lint_tree.find(NodeType)` is memoized per node.** Anything that mutates
+  tree structure outside a rebuild must call `invalidate_find_cache()` (see
+  `FrontmatteredBlock.write_frontmatter_text`).
+- **Top-level frontmatter key lines come from `frontmatter_key_line()`**,
+  which uses a libyaml-backed line map with a ruamel fallback. Don't add
+  per-key ruamel parses; ruamel round-trip parsing is ~30x slower and was
+  the dominant cost of lint-tree construction.
+- Per-blob work (whole-body `.lower()`, config-file stats) belongs outside
+  the per-block loop — compute once per `check()`.
+
 ## Markdown: AST for reading, splice for writing
 
 Markdown structure (links, code spans, fences, HTML comments, headings) comes

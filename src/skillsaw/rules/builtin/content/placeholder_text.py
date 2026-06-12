@@ -7,6 +7,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
+    patterns_matching_anywhere,
 )
 
 
@@ -50,10 +51,13 @@ class ContentPlaceholderTextRule(Rule):
             body = cf.read_body(strip_code_blocks=True)
             if not body:
                 continue
+            active = patterns_matching_anywhere(body, self._PLACEHOLDER_PATTERNS)
+            if not active:
+                continue
             for line_num, line in enumerate(body.splitlines(), 1):
                 if not line.strip():
                     continue
-                for pattern, desc in self._PLACEHOLDER_PATTERNS:
+                for pattern, desc in active:
                     match = pattern.search(line)
                     if match:
                         violations.append(

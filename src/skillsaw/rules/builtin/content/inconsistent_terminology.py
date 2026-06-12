@@ -8,6 +8,7 @@ from typing import Dict, List, Set, Tuple
 from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    _required_literal,
     gather_all_content_blocks,
 )
 
@@ -92,7 +93,11 @@ class ContentInconsistentTerminologyRule(Rule):
                 body = cf.read_body()
                 if not body:
                     continue
+                lowered = body.lower()
                 for pattern in patterns:
+                    literal = _required_literal(pattern.pattern, pattern.flags)
+                    if literal is not None and literal not in lowered:
+                        continue
                     if pattern.search(body):
                         term_usage[pattern.pattern] += 1
                         files_by_term[pattern.pattern].append(cf.path)

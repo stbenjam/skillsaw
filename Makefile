@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site
+.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile
 
 help:
 	@echo "Available targets:"
@@ -17,6 +17,10 @@ help:
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Verify generated APM files are up to date"
+	@echo "  benchmark     - Benchmark linting speed on a synthetic repo (SCALE=medium)"
+	@echo "  benchmark-save    - Save benchmark results as the local baseline"
+	@echo "  benchmark-compare - Compare against the local baseline (fails on regression)"
+	@echo "  profile       - Profile a lint run with cProfile and print hotspots"
 
 $(VENV)/bin/activate: pyproject.toml
 	test -d $(VENV) || python3 -m venv $(VENV)
@@ -58,6 +62,21 @@ serve-site: generate-site-content
 
 build-site: generate-site-content
 	$(VENV)/bin/mkdocs build
+
+SCALE ?= medium
+BENCH_BASELINE ?= .benchmarks/baseline.json
+
+benchmark: $(VENV)/bin/activate
+	$(PYTHON) benchmarks/bench.py --scale $(SCALE)
+
+benchmark-save: $(VENV)/bin/activate
+	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --save $(BENCH_BASELINE)
+
+benchmark-compare: $(VENV)/bin/activate
+	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --compare $(BENCH_BASELINE)
+
+profile: $(VENV)/bin/activate
+	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --profile
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
