@@ -45,6 +45,12 @@ class ContentBrokenInternalReferenceRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         root = context.root_path.resolve()
+        # Per-run caches: walking the repo and fuzzy-matching names once per
+        # broken link is O(links x files) and made large template-generated
+        # marketplaces effectively unlintable. Reset per check() so each run
+        # sees the current filesystem, matching the uncached behavior.
+        self._paths_by_name: Optional[Dict[str, List[str]]] = None
+        self._fuzzy_name_cache: Dict[str, Optional[str]] = {}
         violations = []
         for cf in gather_all_content_blocks(context):
             if self._is_in_template_dir(cf.path):
@@ -97,11 +103,27 @@ class ContentBrokenInternalReferenceRule(Rule):
                     continue
         return paths
 
+    def _path_index(self, root: Path) -> Dict[str, List[str]]:
+        """Map file name -> repo-relative paths, built once per check()."""
+        if self._paths_by_name is None:
+            index: Dict[str, List[str]] = {}
+            for p in self._collect_repo_paths(root):
+                index.setdefault(Path(p).name, []).append(p)
+            self._paths_by_name = index
+        return self._paths_by_name
+
+    def _close_name(self, index: Dict[str, List[str]], target_name: str) -> Optional[str]:
+        """Best fuzzy file-name match, memoized — broken targets repeat a lot."""
+        if target_name not in self._fuzzy_name_cache:
+            close = difflib.get_close_matches(target_name, list(index), n=1, cutoff=0.6)
+            self._fuzzy_name_cache[target_name] = close[0] if close else None
+        return self._fuzzy_name_cache[target_name]
+
     def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> Optional[str]:
         """Find a similar file path in the repo using fuzzy matching."""
-        repo_paths = self._collect_repo_paths(root)
+        index = self._path_index(root)
         target_name = Path(target_path).name
-        candidates = [p for p in repo_paths if Path(p).name == target_name]
+        candidates = index.get(target_name, [])
         if len(candidates) == 1:
             try:
                 return str(Path(candidates[0]).relative_to(link_dir.relative_to(root)))
@@ -109,10 +131,9 @@ class ContentBrokenInternalReferenceRule(Rule):
                 rel = os.path.relpath(root / candidates[0], link_dir)
                 return rel
         if not candidates:
-            candidate_names = [Path(p).name for p in repo_paths]
-            close = difflib.get_close_matches(target_name, candidate_names, n=1, cutoff=0.6)
-            if close:
-                candidates = [p for p in repo_paths if Path(p).name == close[0]]
+            close = self._close_name(index, target_name)
+            if close is not None:
+                candidates = index.get(close, [])
         if candidates:
             try:
                 rel = os.path.relpath(root / candidates[0], link_dir)

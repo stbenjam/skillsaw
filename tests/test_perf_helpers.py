@@ -181,6 +181,40 @@ class TestFrontmatterLineMap:
         assert frontmatter_key_line(f, "name") is None
 
 
+class TestBrokenReferenceWalkCache:
+    def test_repo_walked_at_most_once_per_check(self, tmp_path, monkeypatch):
+        """Regression: the repo walk used to run once per broken link, making
+        large repos with many broken links effectively unlintable."""
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.content.broken_internal_reference import (
+            ContentBrokenInternalReferenceRule,
+        )
+
+        skill = tmp_path / "skills" / "demo"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: demo\ndescription: Demo skill with broken links\n---\n\n"
+            "# Demo\n\n"
+            "See [one](./missing-one.md) and [two](./missing-two.md) "
+            "and [three](./missing-three.md).\n",
+            encoding="utf-8",
+        )
+        invalidate_read_caches()
+
+        calls = {"n": 0}
+        original = ContentBrokenInternalReferenceRule._collect_repo_paths
+
+        def counting(self, root):
+            calls["n"] += 1
+            return original(self, root)
+
+        monkeypatch.setattr(ContentBrokenInternalReferenceRule, "_collect_repo_paths", counting)
+        rule = ContentBrokenInternalReferenceRule()
+        violations = rule.check(RepositoryContext(tmp_path))
+        assert len(violations) == 3
+        assert calls["n"] <= 1
+
+
 class TestFindCache:
     def _make_skill_repo(self, tmp_path):
         skill = tmp_path / "skills" / "demo"
