@@ -115,22 +115,16 @@ class Grade:
             "content_tokens": self.content_tokens,
         }
 
-    def badge_json(self, version: str) -> dict:
-        """shields.io endpoint-schema payload, with extra fields for
-        dynamic-json badges (query ``$.message`` or ``$.grade``)."""
+    def badge_json(self) -> dict:
+        """shields.io endpoint-schema payload. The schema rejects unknown
+        properties, so only spec'd keys may appear here; dynamic-json
+        badges read the grade via ``query=$.message``."""
         return {
             "schemaVersion": 1,
             "label": self.settings.label,
             "message": self.letter,
             "color": self.color,
             "logoSvg": LOGO_SVG,
-            "grade": self.letter,
-            "density": round(self.density, 2),
-            "errors": self.errors,
-            "warnings": self.warnings,
-            "info": self.info,
-            "contentTokens": self.content_tokens,
-            "skillsawVersion": version,
         }
 
 
