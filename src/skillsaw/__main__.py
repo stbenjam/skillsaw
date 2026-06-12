@@ -850,7 +850,7 @@ def _run_lint(args):
     content_tokens = sum(
         block.estimate_tokens() for ctx in contexts for block in ctx.lint_tree.content_blocks()
     )
-    grade = compute_grade(all_violations, content_tokens, config.grade)
+    grade = compute_grade(all_violations, content_tokens)
 
     stdout_output = format_report(
         args.fmt,
@@ -1551,7 +1551,7 @@ def _run_badge(args):
     from .grade import compute_grade
 
     content_tokens = sum(b.estimate_tokens() for b in context.lint_tree.content_blocks())
-    grade = compute_grade(violations, content_tokens, config.grade)
+    grade = compute_grade(violations, content_tokens)
 
     badge_path = args.output or (context.root_path / _BADGE_FILENAME)
     badge_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1581,7 +1581,7 @@ def _run_badge(args):
     from .grade import logo_data_uri
 
     encoded = quote(raw_url, safe="")
-    label = quote(grade.settings.label, safe="")
+    label = "skillsaw"
     logo = quote(logo_data_uri(), safe="")
 
     print(f"\n{c['bold']}Markdown for your README:{c['reset']}")

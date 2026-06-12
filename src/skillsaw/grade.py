@@ -4,16 +4,17 @@ Repository quality grade.
 The grade condenses a lint run into a letter (A+ .. F) suitable for a
 README badge:
 
-- **Warning/info density sets the letter.** Weighted violations
-  (warnings at full weight, info lightly) are normalized per 10,000
-  estimated content tokens, so a large marketplace is not penalized for
-  having more surface area than a single skill. One density unit costs
-  one notch (A+ -> A -> A- -> ...).
-- **Errors knock off whole letters.** Errors are rare and structural —
-  a broken manifest is not diluted by prose volume, so any error drops
-  the grade a full letter regardless of repository size.
+- **Violation density sets the letter.** Weighted violations (errors
+  1.0, warnings 0.75, info 0.1) are normalized per 10,000 estimated
+  content tokens, so a large marketplace is not penalized for having
+  more surface area than a single skill. A+ requires density below
+  1.0; after that every DENSITY_PER_NOTCH units cost a notch
+  (A+ -> A -> A- -> ...).
+- **Errors additionally knock off whole letters.** Errors are rare and
+  structural — a broken manifest is not diluted by prose volume, so any
+  error drops the grade a full letter regardless of repository size.
 - Repositories smaller than one 10K-token unit are graded as one unit,
-  so a tiny skill with one warning loses one notch rather than the
+  so a tiny skill with a few warnings loses a notch rather than the
   whole scale.
 
 Token estimates come from ``ContentBlock.estimate_tokens()`` (prose
@@ -21,14 +22,27 @@ blocks only); structured JSON config blocks are not content an agent
 reads linearly and are excluded from the denominator.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List
 
 from .rule import RuleViolation, Severity
 
-# One density unit per notch; a whole letter is three notches.
+# The scoring constants are deliberately NOT configurable: a skillsaw
+# badge must mean the same thing on every repository, and tunable
+# weights would let a repo grade itself on a friendlier curve.
+#
+# A+ is exclusive (density < 1.0); after that each notch spans
+# DENSITY_PER_NOTCH units. A whole letter is three notches.
+# Calibrated against real repositories (June 2026): well-maintained
+# community marketplaces run ~12-14 weighted violations per 10K tokens
+# and should land around C+, not F.
 LETTER_NOTCHES = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F"]
 _NOTCHES_PER_LETTER = 3
+A_PLUS_THRESHOLD = 1.0
+DENSITY_PER_NOTCH = 2.0
+ERROR_WEIGHT = 1.0
+WARNING_WEIGHT = 0.75
+INFO_WEIGHT = 0.1
 
 TOKENS_PER_UNIT = 10_000
 
@@ -66,35 +80,6 @@ _LETTER_COLORS = {
 
 
 @dataclass
-class GradeSettings:
-    """Tunable grade parameters (``grade:`` section of .skillsaw.yaml)."""
-
-    warning_weight: float = 1.0
-    info_weight: float = 0.1
-    label: str = "skillsaw"
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "GradeSettings":
-        if not isinstance(data, dict):
-            raise ValueError(f"'grade' must be a mapping, got {type(data).__name__}")
-        settings = cls()
-        for yaml_key, attr in (
-            ("warning-weight", "warning_weight"),
-            ("info-weight", "info_weight"),
-        ):
-            if yaml_key in data:
-                value = data[yaml_key]
-                if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-                    raise ValueError(f"'grade.{yaml_key}' must be a non-negative number")
-                setattr(settings, attr, float(value))
-        if "label" in data:
-            if not isinstance(data["label"], str) or not data["label"].strip():
-                raise ValueError("'grade.label' must be a non-empty string")
-            settings.label = data["label"].strip()
-        return settings
-
-
-@dataclass
 class Grade:
     letter: str
     density: float
@@ -102,7 +87,6 @@ class Grade:
     warnings: int
     info: int
     content_tokens: int
-    settings: GradeSettings = field(default_factory=GradeSettings)
 
     @property
     def color(self) -> str:
@@ -121,7 +105,7 @@ class Grade:
         badges read the grade via ``query=$.message``."""
         return {
             "schemaVersion": 1,
-            "label": self.settings.label,
+            "label": "skillsaw",
             "message": self.letter,
             "color": self.color,
             "logoSvg": LOGO_SVG,
@@ -135,24 +119,21 @@ def _error_letters(errors: int) -> int:
     return 0
 
 
-def compute_grade(
-    violations: List[RuleViolation],
-    content_tokens: int,
-    settings: Optional[GradeSettings] = None,
-) -> Grade:
+def compute_grade(violations: List[RuleViolation], content_tokens: int) -> Grade:
     """Grade a lint run. ``content_tokens`` is the summed token estimate
     of every ContentBlock in the lint tree(s)."""
-    settings = settings or GradeSettings()
-
     errors = sum(1 for v in violations if v.severity == Severity.ERROR)
     warnings = sum(1 for v in violations if v.severity == Severity.WARNING)
     info = sum(1 for v in violations if v.severity == Severity.INFO)
 
     units = max(content_tokens / TOKENS_PER_UNIT, 1.0)
-    density = (settings.warning_weight * warnings + settings.info_weight * info) / units
+    density = (ERROR_WEIGHT * errors + WARNING_WEIGHT * warnings + INFO_WEIGHT * info) / units
 
     last = len(LETTER_NOTCHES) - 1
-    notch = min(int(density), last)
+    if density < A_PLUS_THRESHOLD:
+        notch = 0
+    else:
+        notch = min(1 + int((density - A_PLUS_THRESHOLD) / DENSITY_PER_NOTCH), last)
     notch = min(notch + _NOTCHES_PER_LETTER * _error_letters(errors), last)
 
     return Grade(
@@ -162,5 +143,4 @@ def compute_grade(
         warnings=warnings,
         info=info,
         content_tokens=content_tokens,
-        settings=settings,
     )

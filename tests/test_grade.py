@@ -7,9 +7,8 @@ import json
 import subprocess
 import sys
 
-import pytest
-
-from skillsaw.grade import Grade, GradeSettings, compute_grade, LETTER_NOTCHES
+import skillsaw.grade as grade_mod
+from skillsaw.grade import Grade, compute_grade, LETTER_NOTCHES
 from skillsaw.rule import RuleViolation, Severity
 
 from .test_integration import FIXTURES, copy_fixture, run_lint, summary
@@ -40,22 +39,38 @@ def test_density_normalizes_by_tokens():
     # 17 warnings in a huge marketplace is near-pristine...
     big = compute_grade(_violations(warnings=17), content_tokens=5_000_000)
     assert big.letter == "A+"
-    # ...but 17 warnings in one small skill is a mess.
+    # ...but 17 warnings in one small skill drops it six notches.
     small = compute_grade(_violations(warnings=17), content_tokens=2_000)
-    assert small.letter == "F"
+    assert small.letter == "C+"
 
 
 def test_small_repos_floor_at_one_unit():
-    # A tiny skill with one warning loses one notch, not the whole scale.
-    grade = compute_grade(_violations(warnings=1), content_tokens=500)
+    # A tiny skill with a couple of warnings loses one notch, not the
+    # whole scale (one warning at weight 0.75 stays under the A+ line).
+    assert compute_grade(_violations(warnings=1), content_tokens=500).letter == "A+"
+    grade = compute_grade(_violations(warnings=2), content_tokens=500)
     assert grade.letter == "A"
-    assert grade.density == 1.0
+    assert grade.density == 1.5
 
 
-def test_one_density_unit_per_notch():
-    for units, letter in [(0, "A+"), (1, "A"), (2, "A-"), (3, "B+"), (11, "F"), (50, "F")]:
-        grade = compute_grade(_violations(warnings=units), content_tokens=10_000)
-        assert grade.letter == letter, f"{units} warnings/10k tokens -> {grade.letter}"
+def test_density_bands():
+    # A+ is exclusive (< 1.0); after that every 2.0 density units cost a
+    # notch. Calibrated so real-world community marketplaces (~10-14
+    # density) land around B-/C+, not F. 10 info = 1.0 density unit.
+    for info, letter in [
+        (0, "A+"),
+        (9, "A+"),
+        (10, "A"),
+        (29, "A"),
+        (30, "A-"),
+        (50, "B+"),
+        (110, "C+"),
+        (130, "C"),
+        (210, "F"),
+        (500, "F"),
+    ]:
+        grade = compute_grade(_violations(info=info), content_tokens=10_000)
+        assert grade.letter == letter, f"{info} info/10k tokens -> {grade.letter}"
 
 
 def test_info_calibration_anchor():
@@ -74,7 +89,8 @@ def test_errors_knock_off_whole_letters():
 
 
 def test_errors_stack_with_density():
-    # One warning unit (A) plus one error letter (3 notches) -> B.
+    # Density 1.75 (error 1.0 + warning 0.75) lands A; the error's
+    # letter knockdown (3 notches) takes it to B.
     grade = compute_grade(_violations(errors=1, warnings=1), content_tokens=10_000)
     assert grade.letter == "B"
 
@@ -92,36 +108,19 @@ def test_letter_notches_are_well_formed():
         assert Grade(letter, 0, 0, 0, 0, 0).color  # every notch has a color
 
 
-# ── GradeSettings ────────────────────────────────────────────────
+# ── Fixed scoring constants ──────────────────────────────────────
 
 
-def test_custom_weights():
-    settings = GradeSettings.from_dict({"warning-weight": 2.0, "info-weight": 0.5})
-    grade = compute_grade(_violations(warnings=1, info=2), content_tokens=10_000, settings=settings)
-    assert grade.density == 3.0
-    assert grade.letter == "B+"
-
-
-def test_zero_info_weight_ignores_info():
-    settings = GradeSettings.from_dict({"info-weight": 0})
-    grade = compute_grade(_violations(info=500), content_tokens=10_000, settings=settings)
-    assert grade.letter == "A+"
-
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        {"warning-weight": -1},
-        {"warning-weight": "heavy"},
-        {"info-weight": True},
-        {"label": ""},
-        {"label": 7},
-        "not-a-mapping",
-    ],
-)
-def test_invalid_grade_settings_rejected(bad):
-    with pytest.raises(ValueError):
-        GradeSettings.from_dict(bad)
+def test_weights_are_fixed_constants():
+    # The grade is deliberately NOT configurable — a skillsaw badge must
+    # mean the same thing on every repository. These values changing is
+    # a breaking change to every published badge; bump knowingly.
+    assert grade_mod.ERROR_WEIGHT == 1.0
+    assert grade_mod.WARNING_WEIGHT == 0.75
+    assert grade_mod.INFO_WEIGHT == 0.1
+    assert grade_mod.DENSITY_PER_NOTCH == 2.0
+    assert grade_mod.A_PLUS_THRESHOLD == 1.0
+    assert not hasattr(grade_mod, "GradeSettings")
 
 
 # Every property the shields.io endpoint schema accepts — it rejects
