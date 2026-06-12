@@ -47,6 +47,8 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
   - [Ignoring the baseline](#ignoring-the-baseline)
   - [Stale entries](#stale-entries)
   - [Baseline and fix](#baseline-and-fix)
+- [Quality Grade & Badge](#quality-grade-badge)
+  - [README badge](#readme-badge)
 - [Supply Chain Protection](#supply-chain-protection)
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
@@ -484,6 +486,63 @@ resolved violations.
 The `skillsaw fix` command operates on all violations regardless of the
 baseline. The baseline only affects `lint` reporting and exit codes — if
 you explicitly ask to fix, everything is eligible.
+
+## Quality Grade & Badge
+
+Every lint run computes a letter grade (A+ through F) summarizing
+repository quality, shown in the text summary and in the JSON report
+under `summary.grade`.
+
+**How it's calculated:** weighted warning-and-info density sets your
+letter; errors knock letters off.
+
+- **Density sets the letter.** Warnings (weight 1.0) and info-level
+  violations (weight 0.1) are counted per 10,000 estimated content
+  tokens, so a large marketplace isn't penalized for having more
+  surface area than a single skill. Each density unit costs one notch
+  (A+ → A → A- → …). Repositories smaller than 10K tokens are graded
+  as one unit.
+- **Errors knock off whole letters** regardless of repository size:
+  one error costs a letter, five or more cost two, twenty-five or more
+  cost three. A broken manifest can't be diluted by prose volume.
+- **Zero violations is an A+.**
+
+The weights are tunable in `.skillsaw.yaml`:
+
+```yaml
+grade:
+  warning-weight: 1.0
+  info-weight: 0.1
+  label: skillsaw   # badge label text
+```
+
+### README badge
+
+`skillsaw badge` grades the repository, writes `.skillsaw-badge.json`
+(a [shields.io](https://shields.io) compatible payload), and prints the
+markdown to embed the badge:
+
+```bash
+skillsaw badge
+```
+
+Commit `.skillsaw-badge.json` and add the printed markdown to your
+README. The file works with both shields.io styles:
+
+- **[Endpoint badge](https://shields.io/badges/endpoint-badge)**
+  (recommended — color tracks the grade automatically):
+  `https://img.shields.io/endpoint?url=<raw-url-to-.skillsaw-badge.json>`
+- **[Dynamic JSON badge](https://shields.io/badges/dynamic-json-badge)**
+  (query `$.grade` from the same file):
+  `https://img.shields.io/badge/dynamic/json?url=<raw-url>&query=%24.grade&label=skillsaw`
+
+When the repository has a GitHub remote, the printed markdown already
+contains the correct `raw.githubusercontent.com` URL. Regenerate the
+badge file in CI (or a pre-push hook) so it stays current.
+
+Unlike `lint`, the badge **ignores any baseline** — the published grade
+reflects every violation, so a baselined repository can't advertise a
+clean bill of health it doesn't have.
 
 ## Supply Chain Protection
 

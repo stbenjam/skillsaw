@@ -15,6 +15,7 @@ def format_json(
     verbose: bool = False,
     baseline_suppressed: int = 0,
     duration: Optional[float] = None,
+    grade=None,
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
@@ -62,5 +63,8 @@ def format_json(
             "baseline_suppressed": baseline_suppressed,
         },
     }
+
+    if grade is not None:
+        report["summary"]["grade"] = grade.to_dict()
 
     return json.dumps(report, indent=2)

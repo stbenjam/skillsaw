@@ -25,7 +25,18 @@ from .formatters import (
 )
 from . import __version__
 
-_SUBCOMMANDS = {"lint", "init", "list-rules", "docs", "add", "fix", "tree", "baseline", "explain"}
+_SUBCOMMANDS = {
+    "lint",
+    "init",
+    "list-rules",
+    "docs",
+    "add",
+    "fix",
+    "tree",
+    "baseline",
+    "explain",
+    "badge",
+}
 
 
 def _get_version() -> str:
@@ -394,6 +405,36 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file",
     )
+    # --- badge ---
+    badge_parser = subparsers.add_parser(
+        "badge",
+        help="Grade the repository and write a shields.io badge JSON file",
+        description="Lint the repository, compute its letter grade, write a "
+        "shields.io-compatible badge file, and print the markdown to embed it. "
+        "Ignores any baseline so the published grade reflects all violations.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    badge_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to repository (default: current directory)",
+    )
+    badge_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file (default: auto-discover)",
+    )
+    badge_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Badge JSON output path (default: .skillsaw-badge.json in the repository root)",
+    )
+
     # --- add ---
     subparsers.add_parser(
         "add",
@@ -433,6 +474,8 @@ def main():
         _run_docs(args)
     elif args.command == "baseline":
         _run_baseline(args)
+    elif args.command == "badge":
+        _run_badge(args)
     elif args.command == "tree":
         _run_tree(args)
 
@@ -802,6 +845,13 @@ def _run_lint(args):
     unique_rules = _dedup_rules(all_rules)
     lint_duration = time.perf_counter() - lint_started
 
+    from .grade import compute_grade
+
+    content_tokens = sum(
+        block.estimate_tokens() for ctx in contexts for block in ctx.lint_tree.content_blocks()
+    )
+    grade = compute_grade(all_violations, content_tokens, config.grade)
+
     stdout_output = format_report(
         args.fmt,
         all_violations,
@@ -811,6 +861,7 @@ def _run_lint(args):
         verbose=args.verbose,
         baseline_suppressed=baseline_suppressed,
         duration=lint_duration,
+        grade=grade,
     )
     print(stdout_output)
 
@@ -826,6 +877,7 @@ def _run_lint(args):
                 verbose=args.verbose,
                 baseline_suppressed=baseline_suppressed,
                 duration=lint_duration,
+                grade=grade,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1409,6 +1461,141 @@ def _run_baseline(args):
 
     save_baseline(output_path, baseline)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
+    sys.exit(0)
+
+
+_BADGE_FILENAME = ".skillsaw-badge.json"
+
+
+def _github_raw_url(root_path: Path, badge_path: Path):
+    """Best-effort raw.githubusercontent.com URL for the badge file.
+
+    Returns None when the repo has no recognizable GitHub remote.
+    """
+    import re
+    import subprocess
+
+    def _git(*argv):
+        result = subprocess.run(
+            ["git", "-C", str(root_path), *argv],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    remote = _git("config", "--get", "remote.origin.url")
+    if not remote:
+        return None
+    m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?/?$", remote)
+    if not m:
+        return None
+    owner, repo = m.group(1), m.group(2)
+
+    branch = _git("symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    if branch and branch.startswith("origin/"):
+        branch = branch[len("origin/") :]
+    if not branch:
+        branch = _git("rev-parse", "--abbrev-ref", "HEAD") or "main"
+
+    try:
+        rel = badge_path.resolve().relative_to(root_path.resolve())
+    except ValueError:
+        rel = Path(badge_path.name)
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{rel.as_posix()}"
+
+
+def _run_badge(args):
+    import json
+    from urllib.parse import quote
+
+    if not args.path.exists():
+        print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    context = RepositoryContext(args.path)
+
+    if args.config:
+        config_path = args.config
+        if not config_path.exists():
+            print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config_path = find_config(args.path)
+
+    if config_path:
+        try:
+            config = LinterConfig.from_file(config_path)
+        except ValueError as e:
+            print(f"Error loading config: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        config = LinterConfig.default()
+
+    # No baseline on purpose — the published grade must reflect every
+    # violation, not just the ones newer than the baseline.
+    try:
+        linter = Linter(context, config)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    rule_progress = _RuleProgress(args)
+    try:
+        violations = linter.run(progress=rule_progress)
+    finally:
+        rule_progress.clear()
+
+    from .grade import compute_grade
+
+    content_tokens = sum(b.estimate_tokens() for b in context.lint_tree.content_blocks())
+    grade = compute_grade(violations, content_tokens, config.grade)
+
+    badge_path = args.output or (context.root_path / _BADGE_FILENAME)
+    badge_path.parent.mkdir(parents=True, exist_ok=True)
+    badge_path.write_text(
+        json.dumps(grade.badge_json(_get_version()), indent=2) + "\n", encoding="utf-8"
+    )
+
+    c = _ansi_colors()
+    grade_color = (
+        c["green"]
+        if grade.letter[0] in "AB"
+        else (c["yellow"] if grade.letter[0] == "C" else c["red"])
+    )
+    print(f"Grade: {grade_color}{c['bold']}{grade.letter}{c['reset']}")
+    print(
+        f"  {grade.errors} error(s), {grade.warnings} warning(s), {grade.info} info"
+        f" across ~{grade.content_tokens:,} content tokens"
+        f" ({grade.density:.2f} weighted violations per 10k tokens)"
+    )
+    print(f"\nBadge written to {badge_path}")
+
+    raw_url = _github_raw_url(context.root_path, badge_path)
+    if raw_url is None:
+        raw_url = "<RAW_URL_TO_YOUR_BADGE_JSON>"
+        print(
+            "\nNo GitHub remote detected — replace the URL placeholder after"
+            " publishing the badge file somewhere shields.io can fetch it."
+        )
+    encoded = quote(raw_url, safe="")
+    label = quote(grade.settings.label, safe="")
+
+    print(f"\n{c['bold']}Markdown for your README:{c['reset']}")
+    print(f"\n  Dynamic JSON badge (https://shields.io/badges/dynamic-json-badge):")
+    print(
+        f"  [![skillsaw grade](https://img.shields.io/badge/dynamic/json"
+        f"?url={encoded}&query=%24.grade&label={label}&color={grade.color})]"
+        f"(https://github.com/stbenjam/skillsaw)"
+    )
+    print(f"\n  Endpoint badge (color updates with the grade automatically):")
+    print(
+        f"  [![skillsaw grade](https://img.shields.io/endpoint?url={encoded})]"
+        f"(https://github.com/stbenjam/skillsaw)"
+    )
+    print(
+        f"\nCommit {badge_path.name} and regenerate it (e.g. in CI) whenever"
+        " the repository changes."
+    )
     sys.exit(0)
 
 

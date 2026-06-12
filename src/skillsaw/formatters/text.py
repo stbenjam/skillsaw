@@ -28,6 +28,7 @@ def format_text(
     verbose: bool = False,
     baseline_suppressed: int = 0,
     duration: Optional[float] = None,
+    grade=None,
 ) -> str:
     no_color = "NO_COLOR" in os.environ
     red = "" if no_color else "\033[91m"
@@ -95,6 +96,12 @@ def format_text(
     if baseline_suppressed:
         dim = "" if no_color else "\033[2m"
         output.append(f"  {dim}Baseline: {baseline_suppressed} suppressed{reset}")
+    if grade is not None:
+        grade_color = {"A": green, "B": green, "C": yellow, "D": red, "F": red}[grade.letter[0]]
+        output.append(
+            f"  Grade:    {grade_color}{bold}{grade.letter}{reset} "
+            f"({grade.density:.2f} weighted violations per 10k tokens)"
+        )
 
     if errors == 0 and warnings == 0:
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")
