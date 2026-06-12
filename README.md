@@ -493,28 +493,26 @@ Every lint run computes a letter grade (A+ through F) summarizing
 repository quality, shown in the text summary and in the JSON report
 under `summary.grade`.
 
-**How it's calculated:** weighted warning-and-info density sets your
-letter; errors knock letters off.
+**How it's calculated:** weighted violation density sets your letter;
+errors additionally knock letters off.
 
-- **Density sets the letter.** Warnings (weight 1.0) and info-level
-  violations (weight 0.1) are counted per 10,000 estimated content
-  tokens, so a large marketplace isn't penalized for having more
-  surface area than a single skill. Each density unit costs one notch
-  (A+ → A → A- → …). Repositories smaller than 10K tokens are graded
-  as one unit.
-- **Errors knock off whole letters** regardless of repository size:
-  one error costs a letter, five or more cost two, twenty-five or more
-  cost three. A broken manifest can't be diluted by prose volume.
+- **Density sets the letter.** Errors (weight 1.0), warnings (weight
+  0.75), and info-level violations (weight 0.1) are counted per 10,000
+  estimated content tokens, so a large marketplace isn't penalized for
+  having more surface area than a single skill. A+ requires density
+  below 1.0; after that every 2.0 density units cost one notch (A < 3,
+  A- < 5, B+ < 7, … F ≥ 21 — calibrated against real-world community
+  marketplaces). Repositories smaller than 10K tokens are graded as
+  one unit.
+- **Errors also knock off whole letters** regardless of repository
+  size: one error costs a letter, five or more cost two, twenty-five
+  or more cost three. A broken manifest can't be diluted by prose
+  volume.
 - **Zero violations is an A+.**
 
-The weights are tunable in `.skillsaw.yaml`:
-
-```yaml
-grade:
-  warning-weight: 1.0
-  info-weight: 0.1
-  label: skillsaw   # badge label text
-```
+The weights and bands are deliberately **not configurable** — a
+skillsaw badge means the same thing on every repository, so a repo
+can't grade itself on a friendlier curve.
 
 ### README badge
 

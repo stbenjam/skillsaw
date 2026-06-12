@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 
-from .grade import GradeSettings
-
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
@@ -71,7 +69,6 @@ class LinterConfig:
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
     llm: LLMSettings = field(default_factory=LLMSettings)
-    grade: GradeSettings = field(default_factory=GradeSettings)
     config_dir: Optional[Path] = None
 
     @classmethod
@@ -152,11 +149,6 @@ class LinterConfig:
         else:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
-        raw_grade = data.get("grade")
-        grade_settings = (
-            GradeSettings.from_dict(raw_grade) if raw_grade is not None else GradeSettings()
-        )
-
         llm_data = data.get("llm", {})
         llm_settings = LLMSettings(
             model=llm_data.get("model", LLMSettings.model),
@@ -174,7 +166,6 @@ class LinterConfig:
             content_paths=data.get("content-paths", []),
             strict=strict,
             llm=llm_settings,
-            grade=grade_settings,
             config_dir=config_path.resolve().parent,
         )
 
