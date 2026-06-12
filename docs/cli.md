@@ -91,6 +91,15 @@ Generate or update the baseline file from current violations
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 
+## `skillsaw badge`
+
+Grade the repository and write a shields.io badge JSON file
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
+| `-o`, `--output` | Badge JSON output path (default: .skillsaw-badge.json in the repository root) |  |
+
 ## `skillsaw add`
 
 Scaffold marketplaces, plugins, skills, commands, agents, and hooks

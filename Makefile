@@ -3,7 +3,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile
+.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile badge self-lint
 
 help:
 	@echo "Available targets:"
@@ -49,7 +49,10 @@ generate-example: $(VENV)/bin/activate
 generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py
 
-self-lint: $(VENV)/bin/activate
+badge: $(VENV)/bin/activate
+	$(VENV)/bin/skillsaw badge .
+
+self-lint: $(VENV)/bin/activate badge
 	$(VENV)/bin/skillsaw lint .
 
 update: apm generate-example generate-docs generate-site-content format self-lint
