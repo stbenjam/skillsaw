@@ -64,8 +64,8 @@ def test_load_custom_rule_missing_file(valid_plugin):
     config = LinterConfig(custom_rules=["nonexistent_rule.py"])
     context = RepositoryContext(valid_plugin)
 
-    # Should raise FileNotFoundError
-    with pytest.raises(FileNotFoundError, match="Custom rule file not found"):
+    # Raises ValueError so the CLI surfaces a friendly error, not a traceback.
+    with pytest.raises(ValueError, match="Custom rule file not found"):
         Linter(context, config)
 
 
@@ -97,8 +97,8 @@ class BadImportRule(Rule):
     config = LinterConfig(custom_rules=[str(custom_rule_file)])
     context = RepositoryContext(valid_plugin)
 
-    # Should raise ModuleNotFoundError or ImportError
-    with pytest.raises((ModuleNotFoundError, ImportError)):
+    # Wrapped as ValueError (CLI-friendly); message names the offending file.
+    with pytest.raises(ValueError, match="Failed to load custom rule"):
         Linter(context, config)
 
 
@@ -129,8 +129,8 @@ class SyntaxErrorRule(Rule):
     config = LinterConfig(custom_rules=[str(custom_rule_file)])
     context = RepositoryContext(valid_plugin)
 
-    # Should raise SyntaxError
-    with pytest.raises(SyntaxError):
+    # Wrapped as ValueError so the CLI shows a friendly error, not a traceback.
+    with pytest.raises(ValueError, match="Failed to load custom rule"):
         Linter(context, config)
 
 
@@ -162,8 +162,8 @@ class MissingExportRule(Rule):
     config = LinterConfig(custom_rules=[str(custom_rule_file)])
     context = RepositoryContext(valid_plugin)
 
-    # Should raise ImportError
-    with pytest.raises(ImportError, match="cannot import name 'NonExistentClass'"):
+    # Wrapped as ValueError; the original ImportError detail is preserved.
+    with pytest.raises(ValueError, match="cannot import name 'NonExistentClass'"):
         Linter(context, config)
 
 
@@ -608,3 +608,77 @@ class MyCustomRule(Rule):
     context = RepositoryContext(valid_plugin)
     violations = Linter(context, typo_config, no_custom_rules=True).run()
     assert any(v.rule_id == "invalid-config" for v in violations)
+
+
+def _write_custom_rule(path, rule_id, since=None):
+    since_attr = f'\n    since = "{since}"' if since else ""
+    path.write_text(f"""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+
+class MyRule(Rule):{since_attr}
+    @property
+    def rule_id(self) -> str:
+        return "{rule_id}"
+
+    @property
+    def description(self) -> str:
+        return "custom"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+""")
+
+
+def test_custom_rule_is_version_gated(valid_plugin, temp_dir):
+    """A custom rule's `since` must be honored, like builtin rules (§1.10)."""
+    rule_file = temp_dir / "future_rule.py"
+    _write_custom_rule(rule_file, "future-custom-rule", since="99.0.0")
+    config = LinterConfig(version="0.1.0", custom_rules=[str(rule_file)])
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+    rule_ids = {r.rule_id for r in linter.rules}
+    assert "future-custom-rule" not in rule_ids
+
+
+def test_two_custom_rule_files_distinct_modules(valid_plugin, temp_dir):
+    """Two custom rule files must not clobber each other in sys.modules (§1.10)."""
+    a = temp_dir / "rule_a.py"
+    b = temp_dir / "rule_b.py"
+    _write_custom_rule(a, "custom-rule-a")
+    _write_custom_rule(b, "custom-rule-b")
+    config = LinterConfig(version="0.1.0", custom_rules=[str(a), str(b)])
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, config)
+    rule_ids = {r.rule_id for r in linter.rules}
+    assert "custom-rule-a" in rule_ids
+    assert "custom-rule-b" in rule_ids
+
+    # Prove module isolation: each file is registered under a distinct
+    # sys.modules key (they previously all loaded as "custom_rule").
+    import re
+    import sys
+
+    mod_a = "skillsaw_custom_" + re.sub(r"\W", "_", str(a.resolve()))
+    mod_b = "skillsaw_custom_" + re.sub(r"\W", "_", str(b.resolve()))
+    assert mod_a != mod_b
+    assert mod_a in sys.modules
+    assert mod_b in sys.modules
+    assert sys.modules[mod_a] is not sys.modules[mod_b]
+
+
+def test_unknown_skip_rule_raises(valid_plugin):
+    """A typo in --skip-rule must error, not silently leave the rule running."""
+    context = RepositoryContext(valid_plugin)
+    with pytest.raises(ValueError, match="Unknown rule.*skip-rule"):
+        Linter(context, LinterConfig.default(), skip_rule_ids={"no-such-rule-xyz"})
+
+
+def test_valid_skip_rule_accepted(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    linter = Linter(context, LinterConfig.default(), skip_rule_ids={"content-weak-language"})
+    assert "content-weak-language" not in {r.rule_id for r in linter.rules}

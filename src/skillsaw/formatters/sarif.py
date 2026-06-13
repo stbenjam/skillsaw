@@ -1,11 +1,11 @@
 """SARIF v2.1.0 output formatter."""
 
 import json
+from pathlib import PurePath
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
-from . import relative_path
 
 _SEVERITY_MAP = {
     "error": "error",
@@ -60,16 +60,26 @@ def format_sarif(
             "level": _SEVERITY_MAP.get(v.severity.value, "warning"),
             "message": {"text": v.message},
         }
-        rel = relative_path(v.file_path, context.root_path)
-        if rel is not None:
-            location = {
-                "physicalLocation": {
-                    "artifactLocation": {
-                        "uri": rel,
-                        "uriBaseId": "%SRCROOT%",
-                    },
-                },
-            }
+        if v.file_path is not None:
+            # SARIF URIs must use forward slashes; only paths under the repo
+            # root are root-relative (and may carry uriBaseId).  A relative path
+            # is already root-relative; an absolute path is root-relative only
+            # when it lives under root, otherwise it is emitted as-is without a
+            # misleading %SRCROOT% base.
+            if not v.file_path.is_absolute():
+                uri = PurePath(str(v.file_path)).as_posix()
+                under_root = True
+            else:
+                try:
+                    uri = v.file_path.relative_to(context.root_path).as_posix()
+                    under_root = True
+                except (ValueError, TypeError):
+                    uri = PurePath(str(v.file_path)).as_posix()
+                    under_root = False
+            artifact_location = {"uri": uri}
+            if under_root:
+                artifact_location["uriBaseId"] = "%SRCROOT%"
+            location = {"physicalLocation": {"artifactLocation": artifact_location}}
             fl = v.file_line
             if fl is not None and fl >= 1:
                 location["physicalLocation"]["region"] = {"startLine": fl}

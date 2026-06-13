@@ -25,6 +25,7 @@ import yaml
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import LintTarget
 from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml import YAMLError as _RuamelYAMLError
 
 from skillsaw.rules.builtin.utils import (
     _FRONTMATTER_RE,
@@ -39,6 +40,7 @@ from skillsaw.rules.builtin.utils import (
     yaml_key_lines as _yaml_key_lines_util,
     yaml_nth_key_line as _yaml_nth_key_line_util,
     yaml_nth_list_item_key_line as _yaml_nth_list_item_key_line_util,
+    yaml_node_line as _yaml_node_line_util,
 )
 
 # Markdown structure (fences, code spans, HTML comments, links, headings) is
@@ -254,40 +256,45 @@ class CodeRabbitContentBlock(ContentBlock):
         return self.body if self.body is not None else ""
 
     def write_body(self, new_body: str) -> None:
-        ruyaml = _RuamelYAML()
-        ruyaml.preserve_quotes = True
-        raw = self.path.read_text(encoding="utf-8")
-        data = ruyaml.load(raw)
-        if data is None:
-            return
-
-        parts = self.yaml_path.split(".")
-        node = data
-        for i, part in enumerate(parts[:-1]):
-            if "[" in part:
-                key = part[: part.index("[")]
-                node = node.get(key) if isinstance(node, dict) else None
-            else:
-                node = node.get(part) if isinstance(node, dict) else None
-            if node is None:
+        # ``yaml_path`` uses index-based list accessors (e.g.
+        # ``reviews.path_instructions[0].instructions``) so a path glob that
+        # itself contains dots/brackets (``**/*.py``) can never corrupt the
+        # traversal.  Any unexpected structure degrades to a no-op rather than
+        # crashing the fix run.
+        try:
+            ruyaml = _RuamelYAML()
+            ruyaml.preserve_quotes = True
+            raw = self.path.read_text(encoding="utf-8")
+            data = ruyaml.load(raw)
+            if data is None:
                 return
 
-            if isinstance(node, list) and "[" in parts[i]:
-                bracket_val = parts[i][parts[i].index("[") + 1 : parts[i].index("]")]
-                for item in node:
-                    if isinstance(item, dict):
-                        name = item.get("name") or item.get("path")
-                        if str(name) == bracket_val:
-                            node = item
-                            break
+            parts = [p for p in re.split(r"\.|(?=\[)", self.yaml_path) if p]
+            if not parts:
+                return
+            node = data
+            for part in parts[:-1]:
+                idx_match = re.fullmatch(r"\[(\d+)\]", part)
+                if idx_match:
+                    idx = int(idx_match.group(1))
+                    if not isinstance(node, list) or idx >= len(node):
+                        return
+                    node = node[idx]
+                else:
+                    if not isinstance(node, dict) or part not in node:
+                        return
+                    node = node[part]
 
-        last_key = parts[-1]
-        if isinstance(node, dict) and last_key in node:
+            last_key = parts[-1]
+            if not (isinstance(node, dict) and last_key in node):
+                return
             node[last_key] = new_body
 
-        buf = StringIO()
-        ruyaml.dump(data, buf)
-        self.path.write_text(buf.getvalue(), encoding="utf-8")
+            buf = StringIO()
+            ruyaml.dump(data, buf)
+            self.path.write_text(buf.getvalue(), encoding="utf-8")
+        except (OSError, UnicodeDecodeError, _RuamelYAMLError):
+            return
 
     def tree_label(self) -> str:
         return f"{self.yaml_path} ({self.category})"
@@ -386,11 +393,13 @@ class CodeRabbitContentBlock(ContentBlock):
                         continue
                     pi = entry.get("instructions")
                     if isinstance(pi, str) and pi.strip():
-                        path_val = entry.get("path", f"[{idx}]")
-                        line = cls._find_nth_key_line(raw, "instructions", len(results))
-                        results.append(
-                            (f"reviews.path_instructions[{path_val}].instructions", pi, line)
-                        )
+                        # Index-based path: resolves the exact list element by
+                        # position rather than by an nth-"instructions" count
+                        # over the whole document (which mis-attributed lines
+                        # when other 'instructions' keys preceded it).
+                        yaml_path = f"reviews.path_instructions[{idx}].instructions"
+                        line = _yaml_node_line_util(raw, yaml_path)
+                        results.append((yaml_path, pi, line))
 
             tools = reviews.get("tools")
             if isinstance(tools, dict):
@@ -399,36 +408,24 @@ class CodeRabbitContentBlock(ContentBlock):
                         continue
                     ti = tool_cfg.get("instructions")
                     if isinstance(ti, str) and ti.strip():
-                        tool_line = cls._find_yaml_key_line(raw, tool_name)
-                        line = None
-                        if tool_line is not None:
-                            line = cls._find_yaml_key_line_after(raw, "instructions", tool_line)
-                        results.append((f"reviews.tools.{tool_name}.instructions", ti, line))
+                        yaml_path = f"reviews.tools.{tool_name}.instructions"
+                        line = _yaml_node_line_util(raw, yaml_path)
+                        results.append((yaml_path, ti, line))
 
             pre_merge = reviews.get("pre_merge_checks")
             if isinstance(pre_merge, dict):
                 custom_checks = pre_merge.get("custom_checks")
                 if isinstance(custom_checks, list):
-                    custom_checks_line = cls._find_yaml_key_line(raw, "custom_checks") or 0
                     for idx, check in enumerate(custom_checks):
                         if not isinstance(check, dict):
                             continue
                         ci = check.get("instructions")
                         if isinstance(ci, str) and ci.strip():
-                            check_name = check.get("name", f"[{idx}]")
-                            name_line = cls._find_nth_list_item_key_line(
-                                raw, "name", idx, after_line=custom_checks_line
+                            yaml_path = (
+                                f"reviews.pre_merge_checks.custom_checks[{idx}].instructions"
                             )
-                            line = None
-                            if name_line is not None:
-                                line = cls._find_yaml_key_line_after(raw, "instructions", name_line)
-                            results.append(
-                                (
-                                    f"reviews.pre_merge_checks.custom_checks[{check_name}].instructions",
-                                    ci,
-                                    line,
-                                )
-                            )
+                            line = _yaml_node_line_util(raw, yaml_path)
+                            results.append((yaml_path, ci, line))
 
         chat = data.get("chat")
         if isinstance(chat, dict):
@@ -506,17 +503,34 @@ class PromptfooPromptBlock(ContentBlock):
             prompts = data.get("prompts")
             if not isinstance(prompts, list):
                 continue
+            raw_lines = read_text(node.path)
+            raw_lines = raw_lines.splitlines() if raw_lines else []
             for i, prompt in enumerate(prompts):
                 if not isinstance(prompt, str) or not prompt.strip():
                     continue
                 if cls._TEMPLATE_ONLY_RE.match(prompt):
                     continue
                 line = commented_item_line(prompts, i) or 0
+                # A plain one-line item (``- "text"``) has its content on the
+                # same line, so body line 1 maps to ``line`` (offset = line-1).
+                # A block scalar (``- |``) starts content on the *next* line, so
+                # offset = line.  Mirrors CodeRabbitContentBlock.gather.
+                offset = line
+                if line and 1 <= line <= len(raw_lines):
+                    item_text = raw_lines[line - 1]
+                    # Block-scalar header: ``|``/``>`` plus an optional
+                    # indentation indicator and chomping indicator in either
+                    # order (``|``, ``|-``, ``|2``, ``|2-``, ``>2+`` ...), and an
+                    # optional trailing YAML comment (``- | # system prompt``).
+                    is_block_scalar = bool(
+                        re.search(r"[|>](?:\d+[+-]?|[+-]?\d*)\s*(?:#.*)?$", item_text)
+                    )
+                    offset = line if is_block_scalar else max(line - 1, 0)
                 blocks.append(
                     cls(
                         path=node.path,
                         body=prompt,
-                        line_offset=line,
+                        line_offset=offset,
                         yaml_path=f"prompts[{i}]",
                     )
                 )

@@ -60,11 +60,11 @@ class TestCoderabbitLineNumbers:
         # reviews.instructions
         assert result[0][0] == "reviews.instructions"
         assert result[0][2] == 2
-        # path_instructions[0]
-        assert "src/**" in result[1][0]
+        # path_instructions[0] — index-based label, line points at its own key
+        assert result[1][0] == "reviews.path_instructions[0].instructions"
         assert result[1][2] == 5
         # path_instructions[1]
-        assert "tests/**" in result[2][0]
+        assert result[2][0] == "reviews.path_instructions[1].instructions"
         assert result[2][2] == 7
 
     def test_multiple_instructions_at_different_levels(self):
@@ -105,11 +105,12 @@ class TestCoderabbitLineNumbers:
         assert len(result) == 3
         assert result[0][0] == "reviews.instructions"
         assert result[0][2] == 2
-        assert "src/**" in result[1][0]
+        assert result[1][0] == "reviews.path_instructions[0].instructions"
         assert result[1][2] == 5
-        assert "docs/**" in result[2][0]
-        assert result[2][2] is not None
-        assert result[2][2] > 0
+        # docs/** is the third list entry (index 2); the empty entry at index 1
+        # is skipped but still consumes its position.
+        assert result[2][0] == "reviews.path_instructions[2].instructions"
+        assert result[2][2] == 9
 
     def test_content_rule_fires_on_coderabbit_with_file_path(self, temp_dir):
         """Content rules should fire on .coderabbit.yaml and report the file path."""
@@ -477,6 +478,7 @@ class TestCoderabbitFullIntegration:
         assert len(result) == 2
         assert result[0][0] == "reviews.instructions"
         assert result[0][2] == 2
-        assert "tests/**" in result[1][0]
-        assert result[1][2] is not None
-        assert result[1][2] > 0
+        # tests/** is the second list entry (index 1); the null entry at index 0
+        # is skipped but still consumes its position.
+        assert result[1][0] == "reviews.path_instructions[1].instructions"
+        assert result[1][2] == 7
