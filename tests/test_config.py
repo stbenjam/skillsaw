@@ -1112,6 +1112,21 @@ def test_scalar_root_config_raises_valueerror(tmp_path):
         LinterConfig.from_file(_write(tmp_path, "just a string\n"))
 
 
+def test_falsy_non_mapping_roots_raise(tmp_path):
+    """`[]`, `false`, `0` must not be silently coerced to an empty config."""
+    import pytest
+
+    for payload in ("[]\n", "false\n", "0\n"):
+        with pytest.raises(ValueError, match="must be a mapping"):
+            LinterConfig.from_file(_write(tmp_path, payload))
+
+
+def test_empty_file_is_empty_config(tmp_path):
+    """An empty document (None) is a valid empty config, not an error."""
+    config = LinterConfig.from_file(_write(tmp_path, ""))
+    assert config.rules == {}
+
+
 def test_non_mapping_llm_raises_valueerror(tmp_path):
     import pytest
 

@@ -1174,6 +1174,24 @@ def test_block_scalar_prompt_line_is_correct(temp_dir):
     assert blocks[0].file_line(1) == 3
 
 
+def test_block_scalar_with_trailing_comment_line_is_correct(temp_dir):
+    """A block-scalar header with an inline comment is still a block scalar."""
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        prompts:
+          - | # system prompt
+            Try to be helpful
+        providers:
+          - openai:gpt-4
+        """,
+    )
+    blocks = _prompt_blocks(temp_dir)
+    assert len(blocks) == 1
+    # Content starts on line 3, not the '- | # system prompt' marker line.
+    assert blocks[0].file_line(1) == 3
+
+
 # ---------------------------------------------------------------------------
 # Integration: rule coverage guard
 # ---------------------------------------------------------------------------

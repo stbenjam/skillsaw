@@ -432,9 +432,18 @@ class TestRatchetMetricDiscriminator:
         return v
 
     def test_metric_distinguishes_fingerprints(self, tmp_path):
-        file_v = self._v(tmp_path, 5000, metric="skill")
+        # The whole-file violation stays metric-less (legacy fingerprint); only
+        # the description carries a metric. They must not collide.
+        file_v = self._v(tmp_path, 5000, metric=None)
         desc_v = self._v(tmp_path, 80, metric="skill-description", line=2)
         assert fingerprint_violation(file_v, tmp_path) != fingerprint_violation(desc_v, tmp_path)
+
+    def test_whole_file_keeps_legacy_fingerprint(self, tmp_path):
+        """Backward-compat: the whole-file ratchet fingerprint is unchanged so a
+        pre-upgrade baseline keeps matching after the metric was added."""
+        file_v = self._v(tmp_path, 5000, metric=None)
+        legacy = hashlib.sha256(b"context-budget\0SKILL.md").hexdigest()[:16]
+        assert fingerprint_violation(file_v, tmp_path) == legacy
 
     def test_no_metric_keeps_legacy_fingerprint(self, tmp_path):
         """Backward-compat: an empty metric must not change the fingerprint."""
@@ -445,8 +454,9 @@ class TestRatchetMetricDiscriminator:
 
     def test_both_metrics_ratchet_independently(self, tmp_path):
         """A regression in one metric is not masked by the other's baseline."""
+        # Whole-file entry: legacy (metric-less) fingerprint.
         file_entry = BaselineEntry(
-            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md\0skill").hexdigest()[:16],
+            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md").hexdigest()[:16],
             rule_id="context-budget",
             file_path="SKILL.md",
             line=None,
@@ -455,6 +465,7 @@ class TestRatchetMetricDiscriminator:
             value=5000,
             baseline_mode="ceiling",
         )
+        # Description entry: metric-tagged fingerprint.
         desc_entry = BaselineEntry(
             fingerprint=hashlib.sha256(b"context-budget\0SKILL.md\0skill-description").hexdigest()[
                 :16
@@ -473,8 +484,8 @@ class TestRatchetMetricDiscriminator:
             generated_at="2025-01-01T00:00:00+00:00",
             violations=[file_entry, desc_entry],
         )
-        # File metric improved (suppressed), description metric regressed (kept).
-        file_v = self._v(tmp_path, 4800, metric="skill")
+        # Whole-file improved (suppressed), description regressed (kept).
+        file_v = self._v(tmp_path, 4800, metric=None)
         desc_v = self._v(tmp_path, 120, metric="skill-description", line=2)
         kept, stale = filter_baselined_violations([file_v, desc_v], baseline, tmp_path)
         assert len(kept) == 1

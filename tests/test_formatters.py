@@ -440,6 +440,26 @@ def test_sarif_uri_is_posix_and_root_relative(valid_plugin):
     assert artifact["uriBaseId"] == "%SRCROOT%"
 
 
+def test_sarif_relative_path_is_root_relative(valid_plugin):
+    """A root-relative violation path keeps uriBaseId and uses forward slashes."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="bad",
+            file_path=Path("plugins/foo/commands/bar.md"),
+            line=2,
+        ),
+    ]
+    output = format_sarif(violations, context, [], "1.0.0")
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"][
+        "artifactLocation"
+    ]
+    assert artifact["uri"] == "plugins/foo/commands/bar.md"
+    assert artifact["uriBaseId"] == "%SRCROOT%"
+
+
 def test_sarif_outside_root_omits_uribaseid(valid_plugin, tmp_path):
     """A file outside the repo root must not claim %SRCROOT% as its base."""
     context = RepositoryContext(valid_plugin)

@@ -62,14 +62,20 @@ def format_sarif(
         }
         if v.file_path is not None:
             # SARIF URIs must use forward slashes; only paths under the repo
-            # root are root-relative (and may carry uriBaseId).  Paths outside
-            # root are emitted as-is without a misleading %SRCROOT% base.
-            try:
-                uri = v.file_path.relative_to(context.root_path).as_posix()
-                under_root = True
-            except (ValueError, TypeError):
+            # root are root-relative (and may carry uriBaseId).  A relative path
+            # is already root-relative; an absolute path is root-relative only
+            # when it lives under root, otherwise it is emitted as-is without a
+            # misleading %SRCROOT% base.
+            if not v.file_path.is_absolute():
                 uri = PurePath(str(v.file_path)).as_posix()
-                under_root = False
+                under_root = True
+            else:
+                try:
+                    uri = v.file_path.relative_to(context.root_path).as_posix()
+                    under_root = True
+                except (ValueError, TypeError):
+                    uri = PurePath(str(v.file_path)).as_posix()
+                    under_root = False
             artifact_location = {"uri": uri}
             if under_root:
                 artifact_location["uriBaseId"] = "%SRCROOT%"
