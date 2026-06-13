@@ -417,6 +417,92 @@ class TestFindBaseline:
         assert find_baseline(tmp_path) is None
 
 
+class TestRatchetMetricDiscriminator:
+    """Regression: two ratchet violations on one file must not collide (§1.11)."""
+
+    def _v(self, tmp_path, value, metric=None, line=None):
+        src = tmp_path / "SKILL.md"
+        if not src.exists():
+            src.write_text("content\n")
+        v = _make_violation(
+            rule_id="context-budget", file_path=src, line=line, message=f"value={value}"
+        )
+        v.value = value
+        v.metric = metric
+        return v
+
+    def test_metric_distinguishes_fingerprints(self, tmp_path):
+        file_v = self._v(tmp_path, 5000, metric="skill")
+        desc_v = self._v(tmp_path, 80, metric="skill-description", line=2)
+        assert fingerprint_violation(file_v, tmp_path) != fingerprint_violation(desc_v, tmp_path)
+
+    def test_no_metric_keeps_legacy_fingerprint(self, tmp_path):
+        """Backward-compat: an empty metric must not change the fingerprint."""
+        v = self._v(tmp_path, 5000, metric=None)
+        rel = "SKILL.md"
+        legacy = hashlib.sha256(f"context-budget\0{rel}".encode()).hexdigest()[:16]
+        assert fingerprint_violation(v, tmp_path) == legacy
+
+    def test_both_metrics_ratchet_independently(self, tmp_path):
+        """A regression in one metric is not masked by the other's baseline."""
+        file_entry = BaselineEntry(
+            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md\0skill").hexdigest()[:16],
+            rule_id="context-budget",
+            file_path="SKILL.md",
+            line=None,
+            message="file",
+            severity="warning",
+            value=5000,
+            baseline_mode="ceiling",
+        )
+        desc_entry = BaselineEntry(
+            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md\0skill-description").hexdigest()[
+                :16
+            ],
+            rule_id="context-budget",
+            file_path="SKILL.md",
+            line=None,
+            message="desc",
+            severity="warning",
+            value=80,
+            baseline_mode="ceiling",
+        )
+        baseline = BaselineFile(
+            version="1",
+            generated_by="test",
+            generated_at="2025-01-01T00:00:00+00:00",
+            violations=[file_entry, desc_entry],
+        )
+        # File metric improved (suppressed), description metric regressed (kept).
+        file_v = self._v(tmp_path, 4800, metric="skill")
+        desc_v = self._v(tmp_path, 120, metric="skill-description", line=2)
+        kept, stale = filter_baselined_violations([file_v, desc_v], baseline, tmp_path)
+        assert len(kept) == 1
+        assert kept[0].metric == "skill-description"
+        assert stale == []
+
+
+class TestBaselineRootStability:
+    """Regression: a baseline matches when lint runs from a subdirectory (§1.3)."""
+
+    def test_fingerprint_relative_to_baseline_root(self, tmp_path):
+        # Baseline built at the repo root over skills/s/SKILL.md.
+        skill = tmp_path / "skills" / "s"
+        skill.mkdir(parents=True)
+        src = skill / "SKILL.md"
+        src.write_text("You should probably try to do it\n")
+        v = _make_violation(rule_id="weak", file_path=src, line=1, message="weak")
+        built = build_baseline([v], tmp_path, "0.14.0")
+        assert built.violations[0].file_path == "skills/s/SKILL.md"
+
+        # Filtering the same violation against the repo-root baseline (the
+        # directory that owns the baseline file) must suppress it, even though
+        # the "lint path" is the subdirectory.
+        kept, stale = filter_baselined_violations([v], built, tmp_path)
+        assert kept == []
+        assert stale == []
+
+
 class TestBuildBaseline:
     def test_builds_from_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"

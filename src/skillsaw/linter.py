@@ -7,6 +7,7 @@ from __future__ import annotations
 import fnmatch
 import importlib.util
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +51,7 @@ class Linter:
         rule_ids: Optional[Set[str]] = None,
         skip_rule_ids: Optional[Set[str]] = None,
         baseline: Optional["BaselineFile"] = None,
+        baseline_root: Optional[Path] = None,
         no_custom_rules: bool = False,
     ):
         self.context = context
@@ -57,6 +59,10 @@ class Linter:
         self._rule_ids = rule_ids
         self._skip_rule_ids = skip_rule_ids or set()
         self._baseline = baseline
+        # Fingerprints must be relative to the directory that owns the baseline
+        # file, not the current lint path — otherwise a baseline discovered in
+        # a parent directory never matches when linting a subdirectory.
+        self._baseline_root = baseline_root or context.root_path
         self._no_custom_rules = no_custom_rules
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
@@ -71,6 +77,13 @@ class Linter:
             if unknown:
                 formatted = ", ".join(sorted(unknown))
                 raise ValueError(f"Unknown rule(s): {formatted}")
+
+        # A typo in --skip-rule must not silently leave the rule running.
+        if self._skip_rule_ids:
+            unknown = self._skip_rule_ids - self._known_rule_ids
+            if unknown:
+                formatted = ", ".join(sorted(unknown))
+                raise ValueError(f"Unknown rule(s) in --skip-rule: {formatted}")
 
     def _load_rules(self):
         """Load all enabled rules"""
@@ -125,13 +138,22 @@ class Linter:
         path = path.resolve()
 
         if not path.exists():
-            raise FileNotFoundError(f"Custom rule file not found: {path}")
+            raise ValueError(f"Custom rule file not found: {path}")
 
         logger.info("Loading custom rules from %s", path)
 
-        spec = importlib.util.spec_from_file_location("custom_rule", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Unique module name per file so two custom rule files cannot clobber
+        # each other in ``sys.modules`` (they previously all loaded as
+        # ``custom_rule``).
+        module_name = "skillsaw_custom_" + re.sub(r"\W", "_", str(path))
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as e:
+            # Surface a friendly error (the CLI catches ValueError) instead of
+            # leaking a SyntaxError/ImportError traceback from the rule file.
+            raise ValueError(f"Failed to load custom rule from {path}: {e}") from e
 
         for name in dir(module):
             obj = getattr(module, name)
@@ -156,6 +178,7 @@ class Linter:
                     self.context,
                     rule_instance.repo_types,
                     rule_instance.formats,
+                    since_version=rule_instance.since,
                 ):
                     rule_instance._source = "custom"
                     self.rules.append(rule_instance)
@@ -273,7 +296,7 @@ class Linter:
             from .baseline import filter_baselined_violations
 
             before = len(kept)
-            kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
+            kept, stale = filter_baselined_violations(kept, self._baseline, self._baseline_root)
             if record_baseline:
                 self._stale_baseline_entries = stale
                 self._baseline_suppressed_count = before - len(kept)

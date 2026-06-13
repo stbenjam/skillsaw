@@ -77,10 +77,17 @@ def fingerprint_violation(
     rel_path = relative_path(violation.file_path, root_path)
     file_line = violation.file_line
 
-    # Ratchet violations use rule_id + file_path only so the fingerprint
-    # is stable across value changes (e.g. token count going up or down).
+    # Ratchet violations use rule_id + file_path (+ optional metric) only so
+    # the fingerprint is stable across value changes (e.g. token count going up
+    # or down).  The metric discriminator keeps two ratchet violations for the
+    # same file (e.g. whole-file vs description tokens) from colliding.  When no
+    # metric is set the fingerprint is unchanged, so existing baselines for
+    # single-metric ratchet rules keep matching.
     if violation.value is not None and rel_path is not None:
-        raw = f"{rule_id}\0{rel_path}"
+        if violation.metric:
+            raw = f"{rule_id}\0{rel_path}\0{violation.metric}"
+        else:
+            raw = f"{rule_id}\0{rel_path}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     if rel_path is not None and file_line is not None and violation.file_path is not None:
@@ -195,13 +202,17 @@ def load_baseline(path: Path) -> BaselineFile:
 
 
 def find_baseline(start_path: Path) -> Optional[Path]:
-    """Look for a baseline file in *start_path* and its parents."""
+    """Look for a baseline file in *start_path* and its parents.
+
+    The walk includes the start directory itself and the filesystem root, so a
+    baseline placed at ``/`` (containers that mount the repo at the root) is
+    still found.
+    """
     current = start_path.resolve()
-    while current != current.parent:
-        candidate = current / BASELINE_FILENAME
+    for directory in (current, *current.parents):
+        candidate = directory / BASELINE_FILENAME
         if candidate.exists():
             return candidate
-        current = current.parent
     return None
 
 

@@ -1128,6 +1128,53 @@ def test_threshold_exceeded_reports_line(temp_dir):
 
 
 # ---------------------------------------------------------------------------
+# Regression (§1.13): prompt line numbers for plain vs block scalars
+# ---------------------------------------------------------------------------
+
+
+def _prompt_blocks(temp_dir):
+    from skillsaw.lint_tree import build_lint_tree
+    from skillsaw.rules.builtin.content_analysis import PromptfooPromptBlock
+
+    context = RepositoryContext(temp_dir)
+    return PromptfooPromptBlock.gather_from_tree(build_lint_tree(context))
+
+
+def test_plain_scalar_prompt_line_is_correct(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        prompts:
+          - "Try to be helpful and answer"
+        providers:
+          - openai:gpt-4
+        """,
+    )
+    blocks = _prompt_blocks(temp_dir)
+    assert len(blocks) == 1
+    # The prompt content is on file line 2; file_line(1) must report 2, not 3.
+    assert blocks[0].file_line(1) == 2
+
+
+def test_block_scalar_prompt_line_is_correct(temp_dir):
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        prompts:
+          - |
+            Try to be helpful
+            across two lines
+        providers:
+          - openai:gpt-4
+        """,
+    )
+    blocks = _prompt_blocks(temp_dir)
+    assert len(blocks) == 1
+    # Block-scalar content starts on the line after the '- |' marker (line 3).
+    assert blocks[0].file_line(1) == 3
+
+
+# ---------------------------------------------------------------------------
 # Integration: rule coverage guard
 # ---------------------------------------------------------------------------
 

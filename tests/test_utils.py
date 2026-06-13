@@ -8,6 +8,7 @@ from pathlib import Path
 from skillsaw.rules.builtin.utils import (
     read_text,
     read_json,
+    extract_section,
     frontmatter_key_line,
     heading_line,
     parse_frontmatter,
@@ -20,6 +21,21 @@ from skillsaw.rules.builtin.utils import (
     yaml_nth_list_item_key_line,
     _extract_frontmatter_text,
 )
+
+
+def test_extract_section_lf():
+    content = "# T\n\n## Build\nrun make\n\n## Other\nx\n"
+    assert extract_section(content, "Build") == "run make"
+
+
+def test_extract_section_crlf():
+    """CRLF content must resolve the section the same as LF (§1.14)."""
+    content = "# T\r\n\r\n## Build\r\nrun make\r\n\r\n## Other\r\nx\r\n"
+    assert extract_section(content, "Build") == "run make"
+
+
+def test_extract_section_missing_returns_empty():
+    assert extract_section("# T\n\n## Build\nrun\n", "Nope") == ""
 
 
 def test_read_text_returns_content(temp_dir):

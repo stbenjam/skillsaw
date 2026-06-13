@@ -1084,3 +1084,96 @@ def test_save_round_trips_yaml_significant_strings(tmp_path):
     reloaded = LinterConfig.from_file(config_path)
     assert reloaded.exclude_patterns == tricky
     assert reloaded.rules["content-weak-language"]["note"] == "warning: avoid #hedging"
+
+
+# ---------------------------------------------------------------------------
+# Malformed-config handling: every mistake must raise ValueError (friendly
+# CLI error), never an unhandled traceback.
+# ---------------------------------------------------------------------------
+
+
+def _write(tmp_path, text):
+    p = tmp_path / ".skillsaw.yaml"
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_list_root_config_raises_valueerror(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="must be a mapping"):
+        LinterConfig.from_file(_write(tmp_path, "- a\n- b\n"))
+
+
+def test_scalar_root_config_raises_valueerror(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="must be a mapping"):
+        LinterConfig.from_file(_write(tmp_path, "just a string\n"))
+
+
+def test_non_mapping_llm_raises_valueerror(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'llm' must be a mapping"):
+        LinterConfig.from_file(_write(tmp_path, "llm: gpt-4\n"))
+
+
+def test_llm_field_type_validation(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'llm.max_iterations' must be an integer"):
+        LinterConfig.from_file(_write(tmp_path, "llm:\n  max_iterations: ten\n"))
+    with pytest.raises(ValueError, match="'llm.confirm' must be a boolean"):
+        LinterConfig.from_file(_write(tmp_path, "llm:\n  confirm: maybe\n"))
+
+
+def test_content_paths_string_raises_valueerror(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'content-paths' must be a list of strings"):
+        LinterConfig.from_file(_write(tmp_path, 'content-paths: "docs/*.md"\n'))
+
+
+def test_content_paths_list_of_strings_ok(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'content-paths:\n  - "docs/*.md"\n'))
+    assert config.content_paths == ["docs/*.md"]
+
+
+def test_exclude_non_string_items_raises_valueerror(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'exclude' must be a list of strings"):
+        LinterConfig.from_file(_write(tmp_path, "exclude:\n  - 42\n"))
+
+
+def test_missing_version_emits_warning(tmp_path):
+    config = LinterConfig.from_file(
+        _write(tmp_path, "rules:\n  skill-frontmatter:\n    severity: warning\n")
+    )
+    assert any("version" in w for w in config.warnings)
+
+
+def test_present_version_no_warning(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.14.0"\nrules: {}\n'))
+    assert not any("version" in w for w in config.warnings)
+
+
+def test_unknown_key_emits_warning(tmp_path):
+    config = LinterConfig.from_file(
+        _write(tmp_path, 'version: "0.14.0"\nexcludes:\n  - "**/foo/**"\n')
+    )
+    assert any("excludes" in w for w in config.warnings)
+
+
+def test_default_configs_compare_equal_despite_warnings(tmp_path):
+    # warnings field is compare=False, so loaded configs still equate by content
+    a = LinterConfig.from_file(_write(tmp_path, 'version: "0.14.0"\nrules: {}\n'))
+    b = LinterConfig.from_file(_write(tmp_path, 'version: "0.14.0"\nrules: {}\n'))
+    assert a == b
+
+
+def test_find_config_at_filesystem_walk_includes_start_dir(tmp_path):
+    # The walk must include the start directory itself.
+    (tmp_path / ".skillsaw.yaml").write_text("rules: {}\n", encoding="utf-8")
+    assert find_config(tmp_path) == tmp_path / ".skillsaw.yaml"

@@ -337,8 +337,11 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
 def extract_section(content: str, heading: str, level: int = 2) -> str:
     """Extract content under a markdown heading, up to the next heading of same or higher level."""
     prefix = "#" * level
+    # ``\r?`` must precede ``$``: in MULTILINE mode ``$`` matches before ``\n``,
+    # so on a CRLF line the ``\r`` sits before that position and the heading
+    # would never match if ``\r?`` came after ``$``.
     pattern = re.compile(
-        rf"^{prefix}[ \t]+{re.escape(heading)}[ \t]*$\r?\n?(.*?)(?=^#{{{1},{level}}}[ \t]|\Z)",
+        rf"^{prefix}[ \t]+{re.escape(heading)}[ \t]*\r?$\n?(.*?)(?=^#{{{1},{level}}}[ \t]|\Z)",
         re.MULTILINE | re.DOTALL,
     )
     m = pattern.search(content)

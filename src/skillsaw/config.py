@@ -2,6 +2,7 @@
 Configuration management for skillsaw
 """
 
+import functools
 import os
 import re
 
@@ -44,6 +45,28 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     return tuple(parts)
 
 
+def _validate_llm_fields(llm_data: Dict[str, Any]) -> None:
+    """Reject mistyped ``llm`` settings before they crash deeper in the engine.
+
+    ``bool`` is a subclass of ``int``, so the integer fields explicitly reject
+    booleans to catch ``max_iterations: true`` mistakes.
+    """
+    int_fields = ("max_iterations", "max_tokens", "max_workers")
+    for name in int_fields:
+        if name in llm_data and (
+            not isinstance(llm_data[name], int) or isinstance(llm_data[name], bool)
+        ):
+            raise ValueError(
+                f"'llm.{name}' must be an integer, got {type(llm_data[name]).__name__}"
+            )
+    if "confirm" in llm_data and not isinstance(llm_data["confirm"], bool):
+        raise ValueError(
+            f"'llm.confirm' must be a boolean, got {type(llm_data['confirm']).__name__}"
+        )
+    if "model" in llm_data and not isinstance(llm_data["model"], str):
+        raise ValueError(f"'llm.model' must be a string, got {type(llm_data['model']).__name__}")
+
+
 @dataclass
 class LLMSettings:
     model: str = ""
@@ -70,6 +93,15 @@ class LinterConfig:
     strict: bool = False
     llm: LLMSettings = field(default_factory=LLMSettings)
     config_dir: Optional[Path] = None
+    # Non-fatal problems found while loading (missing version, unknown keys).
+    # Excluded from equality so two configs loaded the same way still compare
+    # equal regardless of the advisory messages attached.
+    warnings: List[str] = field(default_factory=list, compare=False)
+
+    # Recognised top-level config keys; anything else triggers a load warning.
+    _KNOWN_KEYS = frozenset(
+        {"version", "rules", "custom-rules", "exclude", "content-paths", "strict", "llm"}
+    )
 
     @classmethod
     def from_file(cls, config_path: Path) -> "LinterConfig":
@@ -86,10 +118,32 @@ class LinterConfig:
             return cls()
 
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-        except (yaml.YAMLError, IOError) as e:
+        except (yaml.YAMLError, IOError, UnicodeDecodeError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}")
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"config root must be a mapping, got {type(data).__name__}. "
+                "Expected top-level keys like 'rules:', 'exclude:', 'version:'."
+            )
+
+        load_warnings: List[str] = []
+        unknown_keys = set(data) - cls._KNOWN_KEYS
+        if unknown_keys:
+            load_warnings.append(
+                "unknown config key(s) ignored: "
+                + ", ".join(sorted(map(str, unknown_keys)))
+                + ". Known keys: "
+                + ", ".join(sorted(cls._KNOWN_KEYS))
+            )
+        if "version" not in data:
+            load_warnings.append(
+                f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
+                "added in later versions are silently disabled. Set 'version' to your "
+                "skillsaw version to enable them."
+            )
 
         raw_rules = data.get("rules")
         raw_custom_rules = data.get("custom-rules")
@@ -138,9 +192,24 @@ class LinterConfig:
         if raw_exclude is None:
             exclude_patterns = list(_DEFAULT_EXCLUDE_PATTERNS)
         elif isinstance(raw_exclude, list):
+            if not all(isinstance(p, str) for p in raw_exclude):
+                raise ValueError("'exclude' must be a list of strings (glob patterns)")
             exclude_patterns = raw_exclude
         else:
             raise ValueError(f"'exclude' must be a list, got {type(raw_exclude).__name__}")
+
+        raw_content_paths = data.get("content-paths")
+        if raw_content_paths is None:
+            content_paths: List[str] = []
+        elif isinstance(raw_content_paths, list):
+            if not all(isinstance(p, str) for p in raw_content_paths):
+                raise ValueError("'content-paths' must be a list of strings (glob patterns)")
+            content_paths = raw_content_paths
+        else:
+            raise ValueError(
+                "'content-paths' must be a list of strings (glob patterns), "
+                f"got {type(raw_content_paths).__name__}"
+            )
 
         if raw_strict is None:
             strict = False
@@ -150,6 +219,14 @@ class LinterConfig:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
         llm_data = data.get("llm", {})
+        if llm_data is None:
+            llm_data = {}
+        if not isinstance(llm_data, dict):
+            raise ValueError(
+                f"'llm' must be a mapping, got {type(llm_data).__name__}. Example:\n"
+                "  llm:\n    model: claude-...\n    max_iterations: 10"
+            )
+        _validate_llm_fields(llm_data)
         llm_settings = LLMSettings(
             model=llm_data.get("model", LLMSettings.model),
             max_iterations=llm_data.get("max_iterations", LLMSettings.max_iterations),
@@ -163,10 +240,11 @@ class LinterConfig:
             rules=rules,
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
-            content_paths=data.get("content-paths", []),
+            content_paths=content_paths,
             strict=strict,
             llm=llm_settings,
             config_dir=config_path.resolve().parent,
+            warnings=load_warnings,
         )
 
     @classmethod
@@ -280,7 +358,7 @@ class LinterConfig:
         Returns:
             Rule configuration dict
         """
-        defaults = self.default().rules.get(rule_id, {})
+        defaults = _default_rules().get(rule_id, {})
         overrides = self.rules.get(rule_id)
         if overrides is None:
             overrides = {}
@@ -346,7 +424,7 @@ class LinterConfig:
             # wants it active.  We must NOT do this for ``enabled: "auto"``
             # rules — those rely on repo-type / format detection.
             if user_overrides:
-                default_enabled = self.default().rules.get(rule_id, {}).get("enabled", True)
+                default_enabled = _default_rules().get(rule_id, {}).get("enabled", True)
                 if default_enabled is False:
                     return True, "configured in config (overrides disabled-by-default)"
                 # For "auto" rules, non-enabled overrides don't change
@@ -406,7 +484,7 @@ class LinterConfig:
             if rule.config_schema:
                 schemas[rule.rule_id] = rule.config_schema
 
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             f.write("# skillsaw configuration\n")
             f.write("# https://github.com/stbenjam/skillsaw\n\n")
             if self.version:
@@ -517,17 +595,31 @@ def find_config(start_path: Path) -> Optional[Path]:
     """
     current = start_path.resolve()
 
-    while current != current.parent:
+    # Walk up to and *including* the filesystem root, so a config placed at
+    # ``/`` (common in containers where the repo is mounted at the root) is
+    # still found.  ``current.parents`` does not include ``current`` itself.
+    for directory in (current, *current.parents):
         for name in (
             ".skillsaw.yaml",
             ".skillsaw.yml",
             ".claudelint.yaml",
             ".claudelint.yml",
         ):
-            config_file = current / name
+            config_file = directory / name
             if config_file.exists():
                 return config_file
 
-        current = current.parent
-
     return None
+
+
+@functools.lru_cache(maxsize=1)
+def _default_rules() -> Dict[str, Dict[str, Any]]:
+    """Memoised default rule mapping for the hot read path.
+
+    ``LinterConfig.default()`` rebuilds the entire ~60-rule dict on every call,
+    and ``get_rule_config`` / ``rule_enabled_reason`` are invoked per rule and
+    once per violation during filtering.  The defaults are deterministic, so we
+    cache them.  Callers only read this mapping (``get_rule_config`` returns a
+    freshly merged dict), so sharing the instance is safe.
+    """
+    return LinterConfig.default().rules

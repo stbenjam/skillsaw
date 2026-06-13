@@ -46,6 +46,12 @@ def _get_version() -> str:
         return __version__
 
 
+def _emit_config_warnings(config) -> None:
+    """Print non-fatal config-load warnings (missing version, unknown keys)."""
+    for warning in getattr(config, "warnings", []):
+        print(f"Warning: {warning}", file=sys.stderr)
+
+
 def _build_parser():
     """Build the main argument parser with all subcommands.
 
@@ -501,6 +507,7 @@ def _run_tree(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -668,6 +675,13 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        if filepath in output_formats and output_formats[filepath] != fmt:
+            print(
+                f"Error: --output targets '{filepath}' with conflicting formats "
+                f"'{output_formats[filepath]}' and '{fmt}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         output_formats[filepath] = fmt
 
     _handle_apply_patch_for_lint(args)
@@ -726,6 +740,7 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -733,10 +748,13 @@ def _run_lint(args):
         config.strict = True
 
     baseline = None
+    baseline_root = None
     if not args.no_baseline:
         from .baseline import find_baseline, load_baseline
 
         baseline_path = find_baseline(config.config_dir or paths[0])
+        if baseline_path:
+            baseline_root = baseline_path.resolve().parent
 
         if baseline_path:
             try:
@@ -785,6 +803,7 @@ def _run_lint(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 baseline=baseline,
+                baseline_root=baseline_root,
                 no_custom_rules=args.no_custom_rules,
             )
         except ValueError as e:
@@ -1112,6 +1131,7 @@ def _run_fix(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1437,6 +1457,7 @@ def _run_baseline(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1452,12 +1473,15 @@ def _run_baseline(args):
 
     cli_version = _get_version()
     baseline_modes = {r.rule_id: r.baseline_mode for r in linter.rules if r.baseline_mode}
-    baseline = build_baseline(violations, context.root_path, cli_version, baseline_modes)
 
     if config_path:
         output_path = config_path.parent / BASELINE_FILENAME
     else:
         output_path = args.path / BASELINE_FILENAME
+
+    # Fingerprint paths relative to the directory the baseline is written to,
+    # so the baseline still matches when lint is later run from a subdirectory.
+    baseline = build_baseline(violations, output_path.resolve().parent, cli_version, baseline_modes)
 
     save_baseline(output_path, baseline)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
@@ -1531,6 +1555,7 @@ def _run_badge(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1721,6 +1746,7 @@ def _run_explain(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     if config is None:
         config = LinterConfig.default()
         config_label = "builtin defaults"
@@ -1773,6 +1799,7 @@ def _run_docs(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
     context.exclude_patterns = config.exclude_patterns

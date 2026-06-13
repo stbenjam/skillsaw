@@ -296,6 +296,10 @@ unless you bump the version or explicitly enable them. Repos **without** a
 `.skillsaw.yaml` run all rules at the latest version — you get new rules
 automatically but may occasionally fail after a skillsaw upgrade.
 
+A hand-written config that omits `version` defaults to an early version (so
+newer rules are skipped) and prints a warning on each run — set `version`
+explicitly to silence it and control which rules apply.
+
 ### Exclude Patterns
 
 Skip files and directories using glob patterns:

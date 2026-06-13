@@ -44,16 +44,22 @@ from typing import Dict, FrozenSet, List, Optional, Set
 
 # Directive patterns applied to the *text inside* an HTML comment.
 # These match the full comment body, allowing arbitrary whitespace/newlines.
+#
+# Directives are anchored to the *start* of the (whitespace-normalised) comment
+# text so that prose merely mentioning a directive — e.g.
+# ``<!-- TODO: document skillsaw-disable -->`` — is inert rather than silently
+# disabling every rule.  The ``(?![\w-])`` boundary stops ``skillsaw-disabled``
+# / ``skillsaw-disablement`` from being read as a bare ``disable`` directive.
 _DISABLE_NEXT_LINE_DIR = re.compile(
-    r"skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?",
+    r"^skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?",
     re.IGNORECASE,
 )
 _DISABLE_DIR = re.compile(
-    r"skillsaw-disable(?!-next-line)\s*([\w,\s-]*)",
+    r"^skillsaw-disable(?!-next-line)(?![\w-])\s*([\w,\s-]*)",
     re.IGNORECASE,
 )
 _ENABLE_DIR = re.compile(
-    r"skillsaw-enable\s*([\w,\s-]*)",
+    r"^skillsaw-enable(?![\w-])\s*([\w,\s-]*)",
     re.IGNORECASE,
 )
 
@@ -125,44 +131,41 @@ def _extract_html_directives(content: str) -> List[_Directive]:
     return parser.directives
 
 
-def _extract_markdown_directives(content: str) -> List[_Directive]:
-    """Extract directives from HTML comments via the markdown AST.
-
-    Unlike a raw scan, this honours markdown structure: a directive shown
-    inside a fenced or indented code block is documentation, not a directive.
-    """
-    from skillsaw.markdown_doc import MarkdownDoc
-
-    directives: List[_Directive] = []
-    for comment in MarkdownDoc(content).html_comments():
-        text = " ".join(comment.text.split())
-        directive = _classify_directive(
-            text, comment.body_line_start, end_line=comment.body_line_end
-        )
-        if directive is not None:
-            directives.append(directive)
-    return directives
-
-
-def _extract_yaml_directives(content: str) -> List[_Directive]:
+def _extract_yaml_directives(
+    content: str, skip_lines: Optional[Set[int]] = None
+) -> List[_Directive]:
     """Extract skillsaw directives from YAML ``#`` comments.
 
     Only full-line comments are matched (``#`` must be the first non-whitespace
     character).  Inline comments like ``key: value # skillsaw-disable`` are
     ignored to avoid ambiguity.
+
+    *skip_lines* is a set of 1-based line numbers to ignore — used in markdown
+    to skip ``#`` lines that fall inside fenced or indented code blocks, where a
+    directive is documentation rather than a live directive.
     """
     directives: List[_Directive] = []
     for lineno_0, raw_line in enumerate(content.splitlines()):
+        line = lineno_0 + 1  # 1-based
+        if skip_lines and line in skip_lines:
+            continue
         m = _YAML_COMMENT_RE.match(raw_line)
         if not m:
             continue
         text = m.group(1).strip()
-        line = lineno_0 + 1  # 1-based
         directive = _classify_directive(text, line, is_yaml=True)
         if directive is not None:
             directives.append(directive)
 
     return directives
+
+
+def _fence_line_set(doc) -> Set[int]:
+    """1-based body line numbers covered by fenced/indented code blocks."""
+    code_lines: Set[int] = set()
+    for fence in doc.fences():
+        code_lines.update(range(fence.body_line_start, fence.body_line_end + 1))
+    return code_lines
 
 
 def _extract_directives(content: str, *, markdown: bool = True) -> List[_Directive]:
@@ -172,13 +175,25 @@ def _extract_directives(content: str, *, markdown: bool = True) -> List[_Directi
     syntaxes don't overlap so results are simply merged by line number.
 
     When *markdown* is true, HTML comments are located through the markdown
-    AST so directives shown inside fenced code blocks are not honoured.
+    AST and ``#`` directives inside fenced/indented code blocks are ignored, so
+    a directive shown as a documentation example does not silently fire.
     """
     if markdown:
-        html = _extract_markdown_directives(content)
+        from skillsaw.markdown_doc import MarkdownDoc
+
+        doc = MarkdownDoc(content)
+        html: List[_Directive] = []
+        for comment in doc.html_comments():
+            text = " ".join(comment.text.split())
+            directive = _classify_directive(
+                text, comment.body_line_start, end_line=comment.body_line_end
+            )
+            if directive is not None:
+                html.append(directive)
+        yaml = _extract_yaml_directives(content, skip_lines=_fence_line_set(doc))
     else:
         html = _extract_html_directives(content)
-    yaml = _extract_yaml_directives(content)
+        yaml = _extract_yaml_directives(content)
     return sorted(html + yaml, key=lambda d: d.line)
 
 

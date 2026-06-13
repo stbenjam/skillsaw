@@ -109,6 +109,7 @@ class ContextBudgetRule(Rule):
                     file_path=file_path,
                     severity=Severity.ERROR,
                     value=tokens,
+                    metric=category,
                 )
             )
         elif warn_limit is not None and tokens > warn_limit:
@@ -118,6 +119,7 @@ class ContextBudgetRule(Rule):
                     file_path=file_path,
                     severity=Severity.WARNING,
                     value=tokens,
+                    metric=category,
                 )
             )
 
@@ -149,6 +151,7 @@ class ContextBudgetRule(Rule):
                             line=block.key_line("description"),
                             severity=Severity.ERROR,
                             value=tokens,
+                            metric=category,
                         )
                     )
                 elif warn_limit is not None and tokens > warn_limit:
@@ -160,6 +163,7 @@ class ContextBudgetRule(Rule):
                             line=block.key_line("description"),
                             severity=Severity.WARNING,
                             value=tokens,
+                            metric=category,
                         )
                     )
 
