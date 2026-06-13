@@ -1122,9 +1122,9 @@ def test_non_mapping_llm_raises_valueerror(tmp_path):
 def test_llm_field_type_validation(tmp_path):
     import pytest
 
-    with pytest.raises(ValueError, match="'llm.max_iterations' must be an integer"):
+    with pytest.raises(ValueError, match=r"'llm\.max_iterations' must be an integer"):
         LinterConfig.from_file(_write(tmp_path, "llm:\n  max_iterations: ten\n"))
-    with pytest.raises(ValueError, match="'llm.confirm' must be a boolean"):
+    with pytest.raises(ValueError, match=r"'llm\.confirm' must be a boolean"):
         LinterConfig.from_file(_write(tmp_path, "llm:\n  confirm: maybe\n"))
 
 
@@ -1159,6 +1159,15 @@ def test_present_version_no_warning(tmp_path):
     assert not any("version" in w for w in config.warnings)
 
 
+def test_null_version_treated_as_missing(tmp_path):
+    """`version:` (YAML null) must warn and default, not gate as 0.0.0."""
+    from skillsaw.config import _DEFAULT_VERSION
+
+    config = LinterConfig.from_file(_write(tmp_path, "version:\nrules: {}\n"))
+    assert config.version == _DEFAULT_VERSION
+    assert any("version" in w for w in config.warnings)
+
+
 def test_unknown_key_emits_warning(tmp_path):
     config = LinterConfig.from_file(
         _write(tmp_path, 'version: "0.14.0"\nexcludes:\n  - "**/foo/**"\n')
@@ -1166,10 +1175,22 @@ def test_unknown_key_emits_warning(tmp_path):
     assert any("excludes" in w for w in config.warnings)
 
 
-def test_default_configs_compare_equal_despite_warnings(tmp_path):
-    # warnings field is compare=False, so loaded configs still equate by content
+def test_custom_rules_non_string_items_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'custom-rules' must be a list of strings"):
+        LinterConfig.from_file(_write(tmp_path, "custom-rules:\n  - 42\n"))
+
+
+def test_warnings_excluded_from_equality(tmp_path):
+    # One config carries an extra warning (unknown key) but identical content;
+    # they must still compare equal because `warnings` is compare=False.
     a = LinterConfig.from_file(_write(tmp_path, 'version: "0.14.0"\nrules: {}\n'))
-    b = LinterConfig.from_file(_write(tmp_path, 'version: "0.14.0"\nrules: {}\n'))
+    b = LinterConfig.from_file(
+        _write(tmp_path, 'version: "0.14.0"\nrules: {}\nexcludes:\n  - "**/foo/**"\n')
+    )
+    assert b.warnings  # b warned about the unknown 'excludes' key
+    assert not a.warnings
     assert a == b
 
 

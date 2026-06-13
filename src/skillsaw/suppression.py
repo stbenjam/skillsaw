@@ -50,16 +50,21 @@ from typing import Dict, FrozenSet, List, Optional, Set
 # ``<!-- TODO: document skillsaw-disable -->`` — is inert rather than silently
 # disabling every rule.  The ``(?![\w-])`` boundary stops ``skillsaw-disabled``
 # / ``skillsaw-disablement`` from being read as a bare ``disable`` directive.
+#
+# The patterns are also end-anchored (``\s*$``): the directive plus its
+# optional comma-separated rule list must be the *entire* comment text, so
+# trailing punctuation (``skillsaw-disable.``) or stray suffixes
+# (``skillsaw-disable-next-line:``) are not misread as a bare suppress-all.
 _DISABLE_NEXT_LINE_DIR = re.compile(
-    r"^skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?",
+    r"^skillsaw-disable-next-line(?![\w-])(?:\s+([\w,\s-]+))?\s*$",
     re.IGNORECASE,
 )
 _DISABLE_DIR = re.compile(
-    r"^skillsaw-disable(?!-next-line)(?![\w-])\s*([\w,\s-]*)",
+    r"^skillsaw-disable(?!-next-line)(?![\w-])(?:\s+([\w,\s-]+))?\s*$",
     re.IGNORECASE,
 )
 _ENABLE_DIR = re.compile(
-    r"^skillsaw-enable(?![\w-])\s*([\w,\s-]*)",
+    r"^skillsaw-enable(?![\w-])(?:\s+([\w,\s-]+))?\s*$",
     re.IGNORECASE,
 )
 
@@ -87,15 +92,15 @@ class _Directive:
 
 def _classify_directive(text: str, line: int, **kwargs) -> Optional[_Directive]:
     """Parse a normalised comment text into a directive, if it is one."""
-    m = _DISABLE_NEXT_LINE_DIR.search(text)
+    m = _DISABLE_NEXT_LINE_DIR.match(text)
     if m:
         return _Directive("disable-next-line", _parse_rule_ids(m.group(1) or ""), line, **kwargs)
-    m = _DISABLE_DIR.search(text)
+    m = _DISABLE_DIR.match(text)
     if m:
-        return _Directive("disable", _parse_rule_ids(m.group(1).strip()), line, **kwargs)
-    m = _ENABLE_DIR.search(text)
+        return _Directive("disable", _parse_rule_ids((m.group(1) or "").strip()), line, **kwargs)
+    m = _ENABLE_DIR.match(text)
     if m:
-        return _Directive("enable", _parse_rule_ids(m.group(1).strip()), line, **kwargs)
+        return _Directive("enable", _parse_rule_ids((m.group(1) or "").strip()), line, **kwargs)
     return None
 
 

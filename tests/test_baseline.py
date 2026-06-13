@@ -495,9 +495,14 @@ class TestBaselineRootStability:
         built = build_baseline([v], tmp_path, "0.14.0")
         assert built.violations[0].file_path == "skills/s/SKILL.md"
 
-        # Filtering the same violation against the repo-root baseline (the
-        # directory that owns the baseline file) must suppress it, even though
-        # the "lint path" is the subdirectory.
+        # Failing control: fingerprinting against the subdirectory (the old
+        # buggy behavior) does NOT match — the violation would be reported.
+        lint_subdir = tmp_path / "skills" / "s"
+        kept_wrong, _ = filter_baselined_violations([v], built, lint_subdir)
+        assert len(kept_wrong) == 1
+
+        # Filtering against the directory that owns the baseline file suppresses
+        # it, even though the "lint path" is the subdirectory.
         kept, stale = filter_baselined_violations([v], built, tmp_path)
         assert kept == []
         assert stale == []

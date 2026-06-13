@@ -518,7 +518,10 @@ class PromptfooPromptBlock(ContentBlock):
                 offset = line
                 if line and 1 <= line <= len(raw_lines):
                     item_text = raw_lines[line - 1]
-                    is_block_scalar = bool(re.search(r"[|>][+-]?\d*\s*$", item_text))
+                    # Block-scalar header: ``|``/``>`` plus an optional
+                    # indentation indicator and chomping indicator in either
+                    # order (``|``, ``|-``, ``|2``, ``|2-``, ``>2+`` ...).
+                    is_block_scalar = bool(re.search(r"[|>](?:\d+[+-]?|[+-]?\d*)\s*$", item_text))
                     offset = line if is_block_scalar else max(line - 1, 0)
                 blocks.append(
                     cls(

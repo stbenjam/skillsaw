@@ -675,14 +675,17 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        if filepath in output_formats and output_formats[filepath] != fmt:
+        # Key on the resolved path so 'report.json' and './report.json' are
+        # recognised as the same target.
+        resolved_path = Path(filepath).resolve()
+        if resolved_path in output_formats and output_formats[resolved_path] != fmt:
             print(
                 f"Error: --output targets '{filepath}' with conflicting formats "
-                f"'{output_formats[filepath]}' and '{fmt}'",
+                f"'{output_formats[resolved_path]}' and '{fmt}'",
                 file=sys.stderr,
             )
             sys.exit(1)
-        output_formats[filepath] = fmt
+        output_formats[resolved_path] = fmt
 
     _handle_apply_patch_for_lint(args)
 

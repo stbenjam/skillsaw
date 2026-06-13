@@ -149,7 +149,15 @@ class Linter:
         try:
             spec = importlib.util.spec_from_file_location(module_name, path)
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            # Register before exec (the documented module_from_spec pattern) so
+            # the module is importable by name and rule classes carry a distinct
+            # __module__ — this is what keeps two rule files from colliding.
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
         except Exception as e:
             # Surface a friendly error (the CLI catches ValueError) instead of
             # leaking a SyntaxError/ImportError traceback from the rule file.

@@ -2,6 +2,7 @@
 Configuration management for skillsaw
 """
 
+import copy
 import functools
 import os
 import re
@@ -138,7 +139,10 @@ class LinterConfig:
                 + ". Known keys: "
                 + ", ".join(sorted(cls._KNOWN_KEYS))
             )
-        if "version" not in data:
+        raw_version = data.get("version")
+        if raw_version is None:
+            # Covers both a missing key and an explicit ``version:`` (None) —
+            # both would otherwise version-gate as 0.0.0 and disable newer rules.
             load_warnings.append(
                 f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
                 "added in later versions are silently disabled. Set 'version' to your "
@@ -183,6 +187,8 @@ class LinterConfig:
         if raw_custom_rules is None:
             custom_rules = []
         elif isinstance(raw_custom_rules, list):
+            if not all(isinstance(p, str) for p in raw_custom_rules):
+                raise ValueError("'custom-rules' must be a list of strings (file paths)")
             custom_rules = raw_custom_rules
         else:
             raise ValueError(
@@ -236,7 +242,7 @@ class LinterConfig:
         )
 
         return cls(
-            version=str(data.get("version", _DEFAULT_VERSION)),
+            version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
             rules=rules,
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
@@ -358,7 +364,10 @@ class LinterConfig:
         Returns:
             Rule configuration dict
         """
-        defaults = _default_rules().get(rule_id, {})
+        # Deep-copy the cached defaults so callers mutating the merged result
+        # (or its nested lists like ``recommended-fields``) cannot corrupt the
+        # shared cache.
+        defaults = copy.deepcopy(_default_rules().get(rule_id, {}))
         overrides = self.rules.get(rule_id)
         if overrides is None:
             overrides = {}

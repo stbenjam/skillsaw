@@ -487,6 +487,17 @@ class TestDirectivesInCodeAndProse:
         smap = build_suppression_map(content, markdown=True)
         assert not smap.is_suppressed("anything", 2)
 
+    def test_trailing_punctuation_not_a_directive(self):
+        """End-anchored: `skillsaw-disable.` must not parse as suppress-all."""
+        content = "<!-- skillsaw-disable. -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+
+    def test_next_line_with_trailing_colon_not_a_directive(self):
+        content = "<!-- skillsaw-disable-next-line: -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+
     def test_real_directive_still_works_after_anchoring(self):
         content = (
             "<!-- skillsaw-disable content-weak-language -->\n"

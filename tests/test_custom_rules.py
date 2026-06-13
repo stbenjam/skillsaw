@@ -658,6 +658,18 @@ def test_two_custom_rule_files_distinct_modules(valid_plugin, temp_dir):
     assert "custom-rule-a" in rule_ids
     assert "custom-rule-b" in rule_ids
 
+    # Prove module isolation: each file is registered under a distinct
+    # sys.modules key (they previously all loaded as "custom_rule").
+    import re
+    import sys
+
+    mod_a = "skillsaw_custom_" + re.sub(r"\W", "_", str(a.resolve()))
+    mod_b = "skillsaw_custom_" + re.sub(r"\W", "_", str(b.resolve()))
+    assert mod_a != mod_b
+    assert mod_a in sys.modules
+    assert mod_b in sys.modules
+    assert sys.modules[mod_a] is not sys.modules[mod_b]
+
 
 def test_unknown_skip_rule_raises(valid_plugin):
     """A typo in --skip-rule must error, not silently leave the rule running."""
