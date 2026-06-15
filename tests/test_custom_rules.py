@@ -647,28 +647,63 @@ def test_custom_rule_is_version_gated(valid_plugin, temp_dir):
 
 def test_two_custom_rule_files_distinct_modules(valid_plugin, temp_dir):
     """Two custom rule files must not clobber each other in sys.modules (§1.10)."""
-    a = temp_dir / "rule_a.py"
+    a = temp_dir / "rule-a.py"
     b = temp_dir / "rule_b.py"
     _write_custom_rule(a, "custom-rule-a")
     _write_custom_rule(b, "custom-rule-b")
     config = LinterConfig(version="0.1.0", custom_rules=[str(a), str(b)])
     context = RepositoryContext(valid_plugin)
     linter = Linter(context, config)
-    rule_ids = {r.rule_id for r in linter.rules}
+    rules = {r.rule_id: r for r in linter.rules}
+    rule_ids = set(rules)
     assert "custom-rule-a" in rule_ids
     assert "custom-rule-b" in rule_ids
 
     # Prove module isolation: each file is registered under a distinct
     # sys.modules key (they previously all loaded as "custom_rule").
-    import re
     import sys
 
-    mod_a = "skillsaw_custom_" + re.sub(r"\W", "_", str(a.resolve()))
-    mod_b = "skillsaw_custom_" + re.sub(r"\W", "_", str(b.resolve()))
+    mod_a = type(rules["custom-rule-a"]).__module__
+    mod_b = type(rules["custom-rule-b"]).__module__
     assert mod_a != mod_b
+    assert mod_a.startswith("skillsaw_custom_rule_a_")
+    assert mod_b.startswith("skillsaw_custom_rule_b_")
     assert mod_a in sys.modules
     assert mod_b in sys.modules
     assert sys.modules[mod_a] is not sys.modules[mod_b]
+
+
+def test_custom_rule_constructor_error_is_wrapped(valid_plugin, temp_dir):
+    """Errors after importing a custom rule file should still be CLI-friendly."""
+    custom_rule_file = temp_dir / "broken_constructor_rule.py"
+    custom_rule_file.write_text("""
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+
+class BrokenRule(Rule):
+    def __init__(self, config=None):
+        raise RuntimeError("constructor boom")
+
+    @property
+    def rule_id(self) -> str:
+        return "broken-custom-rule"
+
+    @property
+    def description(self) -> str:
+        return "broken"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+""")
+    config = LinterConfig(custom_rules=[str(custom_rule_file)])
+    context = RepositoryContext(valid_plugin)
+
+    with pytest.raises(ValueError, match="Failed to load custom rule.*constructor boom"):
+        Linter(context, config)
 
 
 def test_unknown_skip_rule_raises(valid_plugin):

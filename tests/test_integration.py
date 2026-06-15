@@ -1059,10 +1059,7 @@ class TestCliOverrides:
 
     def test_type_override_affects_discovery(self, tmp_path):
         """--type must influence discovery, not just rule enablement."""
-        repo = tmp_path / "repo"
-        command_dir = repo / "commands"
-        command_dir.mkdir(parents=True)
-        (command_dir / "foo.md").write_text("Missing frontmatter\n", encoding="utf-8")
+        repo = copy_fixture("cli-overrides/type-override", tmp_path)
 
         r = run_lint(repo, "--type", "single-plugin", "--rule", "command-frontmatter")
 
@@ -1072,8 +1069,7 @@ class TestCliOverrides:
         assert r["out"]["stats"]["repo_types"] == ["single-plugin"]
 
     def test_type_unknown_rejected(self, tmp_path):
-        repo = tmp_path / "repo"
-        repo.mkdir()
+        repo = copy_fixture("cli-overrides/type-unknown", tmp_path)
 
         r = run_lint(repo, "--type", "unknown")
 
