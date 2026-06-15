@@ -336,7 +336,9 @@ class CodeRabbitContentBlock(ContentBlock):
             offset = 0
             if line:
                 key_text = cr_lines[line - 1] if line <= len(cr_lines) else ""
-                is_block_scalar = bool(re.search(r":\s*[|>]", key_text))
+                is_block_scalar = bool(
+                    re.search(r":\s*[|>](?:[+-]?[1-9]|[1-9]?[+-])?\s*(?:#.*)?$", key_text)
+                )
                 offset = line if is_block_scalar else (line - 1)
             results.append(
                 CodeRabbitContentBlock(

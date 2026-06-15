@@ -42,6 +42,7 @@ class BaselineFile:
     generated_by: str
     generated_at: str
     violations: List[BaselineEntry] = field(default_factory=list)
+    root_path: Optional[Path] = None
 
 
 def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Optional[List[str]]:
@@ -139,6 +140,7 @@ def build_baseline(
         generated_by=f"skillsaw {version_string}",
         generated_at=datetime.now(timezone.utc).isoformat(),
         violations=entries,
+        root_path=root_path.resolve(),
     )
 
 
@@ -198,6 +200,7 @@ def load_baseline(path: Path) -> BaselineFile:
         generated_by=data.get("generated_by", ""),
         generated_at=data.get("generated_at", ""),
         violations=entries,
+        root_path=path.resolve().parent,
     )
 
 
@@ -248,12 +251,13 @@ def filter_baselined_violations(
         else:
             regular_budget[e.fingerprint] += 1
 
+    fingerprint_root = baseline.root_path or root_path
     file_cache: Dict[Path, Optional[List[str]]] = {}
     kept: List[RuleViolation] = []
     consumed_ratchet: set = set()
 
     for v in violations:
-        fp = fingerprint_violation(v, root_path, _file_cache=file_cache)
+        fp = fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)
 
         if fp in ratchet_entries:
             entry = ratchet_entries[fp]

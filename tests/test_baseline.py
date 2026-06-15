@@ -505,16 +505,19 @@ class TestBaselineRootStability:
         v = _make_violation(rule_id="weak", file_path=src, line=1, message="weak")
         built = build_baseline([v], tmp_path, "0.14.0")
         assert built.violations[0].file_path == "skills/s/SKILL.md"
+        assert built.root_path == tmp_path.resolve()
 
-        # Failing control: fingerprinting against the subdirectory (the old
-        # buggy behavior) does NOT match — the violation would be reported.
         lint_subdir = tmp_path / "skills" / "s"
-        kept_wrong, _ = filter_baselined_violations([v], built, lint_subdir)
-        assert len(kept_wrong) == 1
+        kept, stale = filter_baselined_violations([v], built, lint_subdir)
+        assert kept == []
+        assert stale == []
 
-        # Filtering against the directory that owns the baseline file suppresses
-        # it, even though the "lint path" is the subdirectory.
-        kept, stale = filter_baselined_violations([v], built, tmp_path)
+        baseline_path = tmp_path / BASELINE_FILENAME
+        save_baseline(baseline_path, built)
+        loaded = load_baseline(baseline_path)
+        assert loaded.root_path == tmp_path.resolve()
+
+        kept, stale = filter_baselined_violations([v], loaded, lint_subdir)
         assert kept == []
         assert stale == []
 

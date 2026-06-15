@@ -1051,6 +1051,37 @@ class TestConfigFeatures:
         assert len(docs_violations) >= 1
 
 
+# ── CLI Overrides ────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestCliOverrides:
+
+    def test_type_override_affects_discovery(self, tmp_path):
+        """--type must influence discovery, not just rule enablement."""
+        repo = tmp_path / "repo"
+        command_dir = repo / "commands"
+        command_dir.mkdir(parents=True)
+        (command_dir / "foo.md").write_text("Missing frontmatter\n", encoding="utf-8")
+
+        r = run_lint(repo, "--type", "single-plugin", "--rule", "command-frontmatter")
+
+        assert r["rc"] == 1
+        assert "command-frontmatter" in rule_ids(r)
+        assert any("foo.md" in v["file_path"] for v in by_rule(r)["command-frontmatter"])
+        assert r["out"]["stats"]["repo_types"] == ["single-plugin"]
+
+    def test_type_unknown_rejected(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        r = run_lint(repo, "--type", "unknown")
+
+        assert r["rc"] == 1
+        assert r["out"] is None
+        assert "Unknown repository type 'unknown'" in r["stderr"]
+
+
 # ── Exit Codes ───────────────────────────────────────────────────
 
 

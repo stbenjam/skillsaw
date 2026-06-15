@@ -51,7 +51,6 @@ class Linter:
         rule_ids: Optional[Set[str]] = None,
         skip_rule_ids: Optional[Set[str]] = None,
         baseline: Optional["BaselineFile"] = None,
-        baseline_root: Optional[Path] = None,
         no_custom_rules: bool = False,
     ):
         self.context = context
@@ -59,10 +58,6 @@ class Linter:
         self._rule_ids = rule_ids
         self._skip_rule_ids = skip_rule_ids or set()
         self._baseline = baseline
-        # Fingerprints must be relative to the directory that owns the baseline
-        # file, not the current lint path — otherwise a baseline discovered in
-        # a parent directory never matches when linting a subdirectory.
-        self._baseline_root = baseline_root or context.root_path
         self._no_custom_rules = no_custom_rules
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
@@ -304,7 +299,7 @@ class Linter:
             from .baseline import filter_baselined_violations
 
             before = len(kept)
-            kept, stale = filter_baselined_violations(kept, self._baseline, self._baseline_root)
+            kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
             if record_baseline:
                 self._stale_baseline_entries = stale
                 self._baseline_suppressed_count = before - len(kept)

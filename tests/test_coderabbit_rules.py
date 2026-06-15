@@ -242,6 +242,18 @@ class TestGatherContentFilesCoderabbit:
         # Body line 1 should map to file line 3 (one past the key line)
         assert cr_files[0].file_line(1) == 3
 
+    def test_line_offsets_plain_scalar_with_quoted_block_marker_text(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"  # 1
+            '  instructions: "Mention marker: | but stay on one line."\n'  # 2
+        )
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+        # The quoted ": |" belongs to the scalar value, not YAML block syntax.
+        assert cr_files[0].file_line(1) == 2
+
     def test_no_instructions_yields_nothing(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
         context = RepositoryContext(temp_dir)

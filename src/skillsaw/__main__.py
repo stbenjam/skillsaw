@@ -145,7 +145,9 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="TYPE",
         help="Override auto-detected repository type (repeatable). "
-        "Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit.",
+        "Values: "
+        + ", ".join(t.value for t in RepositoryType if t is not RepositoryType.UNKNOWN)
+        + ".",
     )
     lint_parser.add_argument(
         "--rule",
@@ -715,7 +717,7 @@ def _run_lint(args):
     # Override repo_types if --type was provided
     override_types = None
     if args.repo_types:
-        type_map = {t.value: t for t in RepositoryType}
+        type_map = {t.value: t for t in RepositoryType if t is not RepositoryType.UNKNOWN}
         override_types = set()
         for val in args.repo_types:
             if val not in type_map:
@@ -751,13 +753,10 @@ def _run_lint(args):
         config.strict = True
 
     baseline = None
-    baseline_root = None
     if not args.no_baseline:
         from .baseline import find_baseline, load_baseline
 
         baseline_path = find_baseline(config.config_dir or paths[0])
-        if baseline_path:
-            baseline_root = baseline_path.resolve().parent
 
         if baseline_path:
             try:
@@ -783,9 +782,7 @@ def _run_lint(args):
     contexts = []
     baseline_suppressed = 0
     for lint_path in paths:
-        context = RepositoryContext(lint_path)
-        if override_types:
-            context.repo_types = override_types
+        context = RepositoryContext(lint_path, repo_types=override_types)
         contexts.append(context)
 
         if context.repo_type == RepositoryType.UNKNOWN:
@@ -806,7 +803,6 @@ def _run_lint(args):
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 baseline=baseline,
-                baseline_root=baseline_root,
                 no_custom_rules=args.no_custom_rules,
             )
         except ValueError as e:
