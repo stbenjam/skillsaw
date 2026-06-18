@@ -144,9 +144,11 @@ Summary:
 ## More Commands
 
 ```bash
-# Fix content quality issues with an LLM (requires extras)
-# pip install skillsaw[llm]       — or: skillsaw[vertexai], skillsaw[bedrock]
-# uvx --from "skillsaw[llm]" skillsaw fix --llm
+# Your coding agent can fix content violations directly — just run
+# skillsaw and let the agent read the output. For detailed guidance:
+skillsaw explain content-weak-language
+
+# Or opt into built-in LLM fixes (requires extras: pip install skillsaw[llm])
 skillsaw fix --llm
 
 # Generate default config you can customize
@@ -193,4 +195,4 @@ See the [CLI Reference](cli.md) for all flags and options.
 - Browse the [Rules Reference](rules/index.md) to see what skillsaw checks
 - Set up [Configuration](configuration.md) for your project
 - Use a [Baseline](baseline.md) to adopt skillsaw without fixing everything first
-- Enable [LLM Autofixing](autofixing.md) for content quality
+- Learn about [Autofixing](autofixing.md) — deterministic fixes, coding agent workflows, and opt-in LLM fixes
