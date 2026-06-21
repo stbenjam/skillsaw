@@ -12,7 +12,7 @@ inputs:
   version:
     description: 'skillsaw version to install (e.g. "0.12.1"). Defaults to the version this action was released with.'
     required: false
-    default: '0.14.0'
+    default: '0.14.1'
   strict:
     description: 'Treat warnings as errors'
     required: false
