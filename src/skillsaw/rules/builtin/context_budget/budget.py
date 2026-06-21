@@ -102,6 +102,10 @@ class ContextBudgetRule(Rule):
             return
         tokens = _estimate_tokens(content)
 
+        # The whole-file budget violation keeps the legacy (metric-less)
+        # fingerprint so existing baselines keep matching after upgrade; only
+        # the per-description violation below carries a metric to break the
+        # collision between the two ratchet violations on one file.
         if error_limit is not None and tokens > error_limit:
             violations.append(
                 self.violation(
@@ -149,6 +153,7 @@ class ContextBudgetRule(Rule):
                             line=block.key_line("description"),
                             severity=Severity.ERROR,
                             value=tokens,
+                            metric=category,
                         )
                     )
                 elif warn_limit is not None and tokens > warn_limit:
@@ -160,6 +165,7 @@ class ContextBudgetRule(Rule):
                             line=block.key_line("description"),
                             severity=Severity.WARNING,
                             value=tokens,
+                            metric=category,
                         )
                     )
 

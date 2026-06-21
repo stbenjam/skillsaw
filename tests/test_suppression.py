@@ -434,6 +434,81 @@ class TestBuildSuppressionMap:
         assert smap.is_suppressed("promptfoo-valid", 4)
 
 
+class TestDirectivesInCodeAndProse:
+    """Regression tests: directives shown as documentation must be inert."""
+
+    def test_hash_directive_in_fenced_code_not_honored(self):
+        """A `# skillsaw-disable` inside a ``` fence is documentation, not live."""
+        content = (
+            "Instructions.\n\n"
+            "```bash\n"
+            "# skillsaw-disable\n"
+            "make build\n"
+            "```\n\n"
+            "Try to be careful always.\n"
+        )
+        smap = build_suppression_map(content, markdown=True)
+        # Line 8 is real prose after the fence — must NOT be suppressed.
+        assert not smap.is_suppressed("content-weak-language", 8)
+        assert not smap.is_suppressed("any-rule", 8)
+
+    def test_hash_directive_in_yaml_fence_not_honored(self):
+        content = (
+            "Doc.\n\n"
+            "```yaml\n"
+            "# skillsaw-disable content-weak-language\n"
+            "```\n\n"
+            "Try to handle this.\n"
+        )
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("content-weak-language", 7)
+
+    def test_hash_directive_in_indented_code_not_honored(self):
+        content = "Doc.\n\n" "    # skillsaw-disable\n\n" "Try to be careful.\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("content-weak-language", 5)
+
+    def test_hash_directive_outside_fence_still_honored(self):
+        """Non-markdown (YAML) ``#`` directives are unaffected by fence filtering."""
+        content = "# skillsaw-disable promptfoo-valid\n" "tests: 42\n"
+        smap = build_suppression_map(content, markdown=False)
+        assert smap.is_suppressed("promptfoo-valid", 2)
+
+    def test_prose_mention_in_html_comment_not_honored(self):
+        """A comment that merely mentions the directive must not disable rules."""
+        content = "<!-- TODO: document skillsaw-disable. -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+        assert not smap.is_suppressed("content-weak-language", 2)
+
+    def test_disable_word_boundary(self):
+        """``skillsaw-disabledthing`` must not parse as a bare disable."""
+        content = "<!-- skillsaw-disabledthing -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+
+    def test_trailing_punctuation_not_a_directive(self):
+        """End-anchored: `skillsaw-disable.` must not parse as suppress-all."""
+        content = "<!-- skillsaw-disable. -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+
+    def test_next_line_with_trailing_colon_not_a_directive(self):
+        content = "<!-- skillsaw-disable-next-line: -->\n" "Try to be careful\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("anything", 2)
+
+    def test_real_directive_still_works_after_anchoring(self):
+        content = (
+            "<!-- skillsaw-disable content-weak-language -->\n"
+            "Try to handle errors.\n"
+            "<!-- skillsaw-enable content-weak-language -->\n"
+        )
+        smap = build_suppression_map(content, markdown=True)
+        assert smap.is_suppressed("content-weak-language", 2)
+        assert not smap.is_suppressed("content-weak-language", 4)
+
+
 class TestBuildSuppressionMapForFile:
     def test_reads_file(self, temp_dir):
         f = temp_dir / "test.md"

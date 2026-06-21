@@ -15,6 +15,7 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_files,
     _get_body_from_cf,
     ContentFile,
+    CodeRabbitContentBlock,
 )
 from skillsaw.rules.builtin.content_rules import (
     ContentWeakLanguageRule,
@@ -241,6 +242,18 @@ class TestGatherContentFilesCoderabbit:
         # Body line 1 should map to file line 3 (one past the key line)
         assert cr_files[0].file_line(1) == 3
 
+    def test_line_offsets_plain_scalar_with_quoted_block_marker_text(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"  # 1
+            '  instructions: "Mention marker: | but stay on one line."\n'  # 2
+        )
+        context = RepositoryContext(temp_dir)
+        files = gather_all_content_files(context)
+        cr_files = [cf for cf in files if cf.category == "coderabbit"]
+        assert len(cr_files) == 1
+        # The quoted ": |" belongs to the scalar value, not YAML block syntax.
+        assert cr_files[0].file_line(1) == 2
+
     def test_no_instructions_yields_nothing(self, temp_dir):
         (temp_dir / ".coderabbit.yaml").write_text("language: en-US\n")
         context = RepositoryContext(temp_dir)
@@ -288,8 +301,14 @@ class TestExtractInstructions:
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
-        assert "src/**" in result[0][0]
-        assert "tests/**" in result[1][0]
+        # Index-based yaml_path (robust against globs containing dots/brackets).
+        assert result[0][0] == "reviews.path_instructions[0].instructions"
+        assert result[0][1] == "Check src."
+        assert result[1][0] == "reviews.path_instructions[1].instructions"
+        assert result[1][1] == "Check tests."
+        # Lines point at the correct 'instructions' key for each entry.
+        assert result[0][2] == 4
+        assert result[1][2] == 6
 
     def test_tool_instructions(self):
         raw = (
@@ -342,9 +361,9 @@ class TestExtractInstructions:
         data = yaml.safe_load(raw)
         result = _extract_instructions(data, raw)
         assert len(result) == 2
-        assert "Go Error Handling" in result[0][0]
+        assert result[0][0] == "reviews.pre_merge_checks.custom_checks[0].instructions"
         assert result[0][1] == "Check error handling."
-        assert "SQL Injection" in result[1][0]
+        assert result[1][0] == "reviews.pre_merge_checks.custom_checks[1].instructions"
         assert result[1][1] == "Prevent SQL injection."
 
     def test_custom_check_instructions_line_numbers(self):
@@ -503,3 +522,40 @@ class TestCoderabbitWriterRoundTrip:
         assert "Better review stuff." in updated
         assert "language: en-US" in updated
         assert "high_level_summary: true" in updated
+
+    def test_write_body_path_instructions_with_dotted_glob(self, temp_dir):
+        """Regression (§1.5): a path glob containing a dot must not crash write_body."""
+        yaml_content = (
+            "reviews:\n"
+            "  path_instructions:\n"
+            '    - path: "**/*.py"\n'
+            "      instructions: 'Try to be careful.'\n"
+            '    - path: "src/*.ts"\n'
+            "      instructions: 'Check the types.'\n"
+        )
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text(yaml_content)
+        context = RepositoryContext(temp_dir)
+        cr_files = [cf for cf in gather_all_content_files(context) if cf.category == "coderabbit"]
+        py_block = [cf for cf in cr_files if cf.body == "Try to be careful."][0]
+        py_block.write_body("Be precise and thorough.")
+
+        updated = yaml.safe_load(cr_path.read_text(encoding="utf-8"))
+        pis = updated["reviews"]["path_instructions"]
+        # Only the targeted entry changed; the other and its glob are intact.
+        assert pis[0]["path"] == "**/*.py"
+        assert pis[0]["instructions"] == "Be precise and thorough."
+        assert pis[1]["instructions"] == "Check the types."
+
+    def test_write_body_missing_path_is_noop(self, temp_dir):
+        """A yaml_path that no longer resolves degrades to a no-op, not a crash."""
+        cr_path = temp_dir / ".coderabbit.yaml"
+        cr_path.write_text("reviews:\n  instructions: 'Keep me.'\n")
+        block = CodeRabbitContentBlock(
+            path=cr_path,
+            category="coderabbit",
+            body="x",
+            yaml_path="reviews.path_instructions[9].instructions",
+        )
+        block.write_body("ignored")  # must not raise
+        assert "Keep me." in cr_path.read_text(encoding="utf-8")

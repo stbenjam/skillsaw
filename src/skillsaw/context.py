@@ -74,16 +74,23 @@ class RepositoryContext:
     # When .apm/ is present these are generated artifacts and should not be linted.
     APM_COMPILED_DIRS = frozenset((".claude", ".cursor", ".gemini", ".opencode", ".agents"))
 
-    def __init__(self, root_path: Path):
+    def __init__(
+        self,
+        root_path: Path,
+        repo_types: Optional[Set[RepositoryType]] = None,
+    ):
         """
         Initialize repository context
 
         Args:
             root_path: Root directory of the repository
+            repo_types: Optional explicit repository type override.
         """
         self.root_path = root_path.resolve()
         self.has_apm = self._detect_apm()
-        self.repo_types: Set[RepositoryType] = self._detect_types()
+        self.repo_types: Set[RepositoryType] = (
+            set(repo_types) if repo_types is not None else self._detect_types()
+        )
         logger.info(
             "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
         )

@@ -111,6 +111,14 @@ def test_parse_output_spec_unknown_prefix_falls_through():
     assert parse_output_spec("foo:report.json") == ("json", "foo:report.json")
 
 
+def test_parse_output_spec_empty_path_raises():
+    """`json:` (no path) must error up front, not crash after the lint."""
+    import pytest
+
+    with pytest.raises(ValueError, match="output file path missing"):
+        parse_output_spec("json:")
+
+
 def test_parse_output_spec_txt_infers_text():
     assert parse_output_spec("report.txt") == ("text", "report.txt")
 
@@ -408,6 +416,69 @@ def test_sarif_locations(valid_plugin):
     # Second violation: file_path + line
     v1_loc = results[1]["locations"][0]["physicalLocation"]
     assert v1_loc["region"]["startLine"] == 3
+
+
+def test_sarif_uri_is_posix_and_root_relative(valid_plugin):
+    """SARIF artifact URIs use forward slashes and carry uriBaseId under root."""
+    context = RepositoryContext(valid_plugin)
+    abs_path = context.root_path / "plugins" / "foo" / "commands" / "bar.md"
+    violations = [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="bad",
+            file_path=abs_path,
+            line=2,
+        ),
+    ]
+    output = format_sarif(violations, context, [], "1.0.0")
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"][
+        "artifactLocation"
+    ]
+    assert artifact["uri"] == "plugins/foo/commands/bar.md"  # forward slashes
+    assert "\\" not in artifact["uri"]
+    assert artifact["uriBaseId"] == "%SRCROOT%"
+
+
+def test_sarif_relative_path_is_root_relative(valid_plugin):
+    """A root-relative violation path keeps uriBaseId and uses forward slashes."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="bad",
+            file_path=Path("plugins/foo/commands/bar.md"),
+            line=2,
+        ),
+    ]
+    output = format_sarif(violations, context, [], "1.0.0")
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"][
+        "artifactLocation"
+    ]
+    assert artifact["uri"] == "plugins/foo/commands/bar.md"
+    assert artifact["uriBaseId"] == "%SRCROOT%"
+
+
+def test_sarif_outside_root_omits_uribaseid(valid_plugin, tmp_path):
+    """A file outside the repo root must not claim %SRCROOT% as its base."""
+    context = RepositoryContext(valid_plugin)
+    outside = tmp_path / "elsewhere" / "other.md"
+    violations = [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="bad",
+            file_path=outside,
+            line=1,
+        ),
+    ]
+    output = format_sarif(violations, context, [], "1.0.0")
+    artifact = json.loads(output)["runs"][0]["results"][0]["locations"][0]["physicalLocation"][
+        "artifactLocation"
+    ]
+    assert "uriBaseId" not in artifact
+    assert "\\" not in artifact["uri"]
 
 
 def test_sarif_line_zero_omits_region(valid_plugin):
