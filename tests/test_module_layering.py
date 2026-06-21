@@ -50,6 +50,7 @@ def test_module_importable_as_first_import(module):
         [sys.executable, "-c", f"import {module}"],
         capture_output=True,
         text=True,
+        timeout=60,
     )
     assert result.returncode == 0, f"`import {module}` failed as a first import:\n{result.stderr}"
 
@@ -134,9 +135,12 @@ def test_core_module_does_not_import_rules_package(rel_path):
     would resurrect the import cycle.
     """
     tree = ast.parse((SRC / rel_path).read_text())
-    offenders = [
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module and "rules.builtin" in node.module
-    ]
+    offenders = []
+    for node in ast.walk(tree):
+        # `from skillsaw.rules.builtin... import x`
+        if isinstance(node, ast.ImportFrom) and node.module and "rules.builtin" in node.module:
+            offenders.append(node.module)
+        # `import skillsaw.rules.builtin...`
+        elif isinstance(node, ast.Import):
+            offenders.extend(a.name for a in node.names if "rules.builtin" in a.name)
     assert not offenders, f"{rel_path} imports from the rules package: {offenders}"
