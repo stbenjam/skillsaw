@@ -190,6 +190,34 @@ def plugin_with_explicit_stdio_mcp(temp_dir):
 
 
 @pytest.fixture
+def plugin_with_streamable_http_mcp(temp_dir):
+    """Create a plugin with valid streamable-http MCP configuration"""
+    mcp_config = {
+        "mcpServers": {
+            "streamable-http-server": {
+                "type": "streamable-http",
+                "url": "https://mcp.example.com/api",
+            }
+        }
+    }
+    return _create_plugin_with_mcp(temp_dir, mcp_config)
+
+
+@pytest.fixture
+def plugin_with_streamable_http_mcp_missing_url(temp_dir):
+    """Create a plugin with streamable-http MCP missing url field"""
+    mcp_config = {
+        "mcpServers": {
+            "streamable-http-server": {
+                "type": "streamable-http"
+                # Missing "url" field
+            }
+        }
+    }
+    return _create_plugin_with_mcp(temp_dir, mcp_config)
+
+
+@pytest.fixture
 def plugin_with_http_mcp_missing_url(temp_dir):
     """Create a plugin with HTTP MCP missing url field"""
     mcp_config = {
@@ -369,6 +397,24 @@ def test_explicit_stdio_mcp_valid(plugin_with_explicit_stdio_mcp):
     rule = McpValidJsonRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+def test_streamable_http_mcp_valid(plugin_with_streamable_http_mcp):
+    """Test that valid streamable-http MCP passes validation"""
+    context = RepositoryContext(plugin_with_streamable_http_mcp)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 0
+
+
+def test_streamable_http_mcp_missing_url(plugin_with_streamable_http_mcp_missing_url):
+    """Test that streamable-http MCP missing url field is detected"""
+    context = RepositoryContext(plugin_with_streamable_http_mcp_missing_url)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "'url' field" in violations[0].message
+    assert "streamable-http" in violations[0].message
 
 
 def test_http_mcp_missing_url(plugin_with_http_mcp_missing_url):

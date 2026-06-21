@@ -53,6 +53,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 - [Builtin Rules](#builtin-rules)
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
+  - [Working with Coding Agents](#working-with-coding-agents)
   - [LLM-Powered Fixes](#llm-powered-fixes)
   - [LLM Setup](#llm-setup)
 - [Custom Rules](#custom-rules)
@@ -820,7 +821,7 @@ Validates repositories using the [APM](https://github.com/microsoft/apm) directo
 
 ## Autofixing
 
-skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Rules declare which fix type they support (see the **Autofix** column in the rules tables above).
+skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Coding agents (Claude Code, Cursor, etc.) are also fully capable of working with skillsaw directly — the lint interface is familiar, and every violation points to `skillsaw explain` which includes how-to-fix guidance. Rules declare which fix types they support (see the **Autofix** column in the rules tables above).
 
 ### Deterministic Fixes
 
@@ -837,9 +838,17 @@ Examples: adding missing frontmatter, renaming files to kebab-case, registering 
 
 Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence because simple name matching may replace occurrences that aren't actually skill name references. Use `--suggest --dry-run` to review these changes before applying them.
 
+### Working with Coding Agents
+
+If you're already working in a coding agent (Claude Code, Cursor, etc.), you don't need any extra setup — the agent can read skillsaw's lint output and fix violations directly. skillsaw is a standard linter, so agents treat it the same way they treat ESLint or ruff: run it, read the output, fix what it flags. Every violation points to `skillsaw explain <rule-id>`, which provides detailed how-to-fix guidance that agents invoke automatically.
+
+The [onboarding skill](https://skillsaw.org/getting-started/#onboard-with-ai) uses this approach end-to-end — it lints, applies deterministic fixes, then has your agent resolve the remaining violations interactively.
+
 ### LLM-Powered Fixes
 
-Most content intelligence rules support LLM-powered fixes (see the **Autofix** column above). The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
+For batch fixing without a coding agent — in CI, scripted workflows, or when you want a one-command fix pass — skillsaw includes a built-in LLM fix path via [LiteLLM](https://docs.litellm.ai/docs/providers). This is an optional dependency, not installed by default.
+
+Most content intelligence rules support these fixes (see the **Autofix** column above). The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
 
 ```bash
 skillsaw fix --llm                          # Fix with default model
@@ -858,12 +867,12 @@ skillsaw fix --llm -y                       # Auto-apply without confirmation
 **How it works:**
 
 1. skillsaw lints your repo and groups violations by file
-2. Each file is sent to an LLM agent with 5 scoped tools: `read_file`, `write_file`, `replace_section`, `lint` (re-runs skillsaw), and `diff`
-3. The LLM iteratively edits the file and re-lints until violations are resolved
+2. Each lint-tree node is sent to an LLM agent with scoped tools for reading, editing, linting, and diffing
+3. The LLM iteratively edits and re-lints until violations are resolved
 4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
 5. Files are processed in parallel with a live progress bar showing ETA
 
-The LLM never has access to arbitrary shell commands — it can only read, edit, lint, and diff within your repo. Use `--dry-run` to preview changes — because LLM output is non-deterministic, the dry-run saves a patch file (`.skillsaw-llm-patch.diff`) so you can review and then apply the exact changes with `--apply-patch`.
+Use `--dry-run` to preview changes — because LLM output is non-deterministic, the dry-run saves a patch file (`.skillsaw-llm-patch.diff`) so you can review and then apply the exact changes with `--apply-patch`.
 
 Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
 
