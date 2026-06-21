@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Protocol, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..config import LinterConfig
-    from ..rules.builtin.content_analysis import ContentBlock
+    from ..blocks import ContentBlock
 
 
 class LLMTool(Protocol):

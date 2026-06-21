@@ -8,70 +8,25 @@ from typing import Any, List, Optional, Set
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import PromptfooConfigNode
+
+# The format-detection helpers live in the dependency-light
+# ``skillsaw.formats.promptfoo`` module so core (context, lint_tree) can use
+# them without importing this rule package.  They are re-exported here under
+# their legacy underscore names for backward compatibility.
+from skillsaw.formats.promptfoo import (  # noqa: F401
+    PROMPTFOO_KEYS as _PROMPTFOO_KEYS,
+    extract_file_refs as _extract_file_refs,
+    is_promptfoo_config as _is_promptfoo_config,
+    resolve_file_ref as _resolve_file_ref,
+)
 from skillsaw.rules.builtin.utils import (
     commented_item_line,
     read_yaml_commented,
 )
 
-_PROMPTFOO_KEYS = frozenset(
-    {
-        "providers",
-        "prompts",
-        "tests",
-        "scenarios",
-        "defaultTest",
-        "evaluateOptions",
-        "redteam",
-        "targets",
-    }
-)
-
 _PROMPTFOO_REPO_TYPES = {
     RepositoryType.PROMPTFOO,
 }
-
-
-def _is_promptfoo_config(data: object) -> bool:
-    """True if data is a mapping with at least one promptfoo-specific key."""
-    return isinstance(data, dict) and bool(_PROMPTFOO_KEYS & set(data.keys()))
-
-
-def _resolve_file_ref(ref: str, config_dir: Path) -> Optional[Path]:
-    """Resolve a file:// reference relative to config_dir.
-
-    Returns the resolved path (which may or may not exist on disk).
-    Returns None for glob patterns, non-YAML extensions, and remote URLs.
-    """
-    if not ref.startswith("file://"):
-        if ref.startswith(("http://", "https://", "huggingface://")):
-            return None
-        raw = ref
-    else:
-        raw = ref[len("file://") :]
-
-    if not raw:
-        return None
-    if any(c in raw for c in ("*", "?")):
-        return None
-
-    suffix = Path(raw).suffix.lower()
-    if suffix not in (".yaml", ".yml"):
-        return None
-
-    return (config_dir / raw).resolve()
-
-
-def _extract_file_refs(data: dict) -> List[str]:
-    """Extract string file references from a parsed promptfoo config's tests field."""
-    refs: List[str] = []
-    tests = data.get("tests")
-    if isinstance(tests, str):
-        refs.append(tests)
-    elif isinstance(tests, list):
-        for entry in tests:
-            if isinstance(entry, str):
-                refs.append(entry)
-    return refs
 
 
 def _get_assertion_types(assert_list: Any) -> Set[str]:

@@ -25,7 +25,7 @@ from typing import List
 
 from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from skillsaw import AutofixResult, AutofixConfidence
-from skillsaw.rules.builtin.content_analysis import InstructionBlock
+from skillsaw.blocks import InstructionBlock
 
 
 class NoTodoInInstructionsRule(Rule):
@@ -112,12 +112,12 @@ rules:
 | Concept | What the example shows |
 |---|---|
 | **Tree discovery** | `context.lint_tree.find(InstructionBlock)` returns only instruction-file nodes — no manual glob needed. |
-| **Node types** | Import the block type you need from `skillsaw.rules.builtin.content_analysis`. Common types: `InstructionBlock`, `ClaudeMdBlock`, `CommandBlock`, `SkillBlock`, `AgentBlock`. |
+| **Node types** | Import the block type you need from `skillsaw.blocks`. Common types: `InstructionBlock`, `ClaudeMdBlock`, `CommandBlock`, `SkillBlock`, `AgentBlock`. |
 | **Reading content** | `block.read_body()` returns the file body. Use `strip_code_blocks=False` when you need the raw text. |
 | **Line numbers** | Report `line=` on every violation so users can jump to the exact location. |
 | **Autofix** | Override `fix()` and return `AutofixResult` objects. Set `autofix_confidence` on the class and match it in each result. |
 
-For the full list of node types, see `skillsaw.lint_target` (structural nodes like `PluginNode`, `SkillNode`) and `skillsaw.rules.builtin.content_analysis` (content blocks).
+For the full list of node types, see `skillsaw.lint_target` (structural nodes like `PluginNode`, `SkillNode`) and `skillsaw.blocks` (content blocks). The block types are also still re-exported from `skillsaw.rules.builtin.content_analysis` for backward compatibility.
 
 ## Configuration
 

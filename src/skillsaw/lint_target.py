@@ -88,7 +88,7 @@ class LintTarget:
         naturally excluded — content rules must not lint JSON as if it
         were instruction text.
         """
-        from .rules.builtin.content_analysis import ContentBlock
+        from .blocks import ContentBlock
 
         return self.find(ContentBlock)
 
@@ -160,7 +160,7 @@ class LintTarget:
             return node_ids[obj_id]
 
         def _color(node: "LintTarget") -> str:
-            from .rules.builtin.content_analysis import ContentBlock
+            from .blocks import ContentBlock
 
             if isinstance(node, ContentBlock):
                 return _COLORS["ContentBlock"]
