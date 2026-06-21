@@ -5,8 +5,10 @@ Main linter orchestration
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import importlib.util
 import logging
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +74,13 @@ class Linter:
                 formatted = ", ".join(sorted(unknown))
                 raise ValueError(f"Unknown rule(s): {formatted}")
 
+        # A typo in --skip-rule must not silently leave the rule running.
+        if self._skip_rule_ids:
+            unknown = self._skip_rule_ids - self._known_rule_ids
+            if unknown:
+                formatted = ", ".join(sorted(unknown))
+                raise ValueError(f"Unknown rule(s) in --skip-rule: {formatted}")
+
     def _load_rules(self):
         """Load all enabled rules"""
         self._known_rule_ids: set = set()
@@ -125,43 +134,74 @@ class Linter:
         path = path.resolve()
 
         if not path.exists():
-            raise FileNotFoundError(f"Custom rule file not found: {path}")
+            raise ValueError(f"Custom rule file not found: {path}")
 
         logger.info("Loading custom rules from %s", path)
 
-        spec = importlib.util.spec_from_file_location("custom_rule", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Unique module name per file so two custom rule files cannot clobber
+        # each other in ``sys.modules`` (they previously all loaded as
+        # ``custom_rule``).
+        safe_stem = re.sub(r"\W", "_", path.stem)
+        path_digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+        module_name = f"skillsaw_custom_{safe_stem}_{path_digest}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            # Register before exec (the documented module_from_spec pattern) so
+            # the module is importable by name and rule classes carry a distinct
+            # __module__ — this is what keeps two rule files from colliding.
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
+        except Exception as e:
+            # Surface a friendly error (the CLI catches ValueError) instead of
+            # leaking a SyntaxError/ImportError traceback from the rule file.
+            raise ValueError(f"Failed to load custom rule from {path}: {e}") from e
 
-        for name in dir(module):
-            obj = getattr(module, name)
-            if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
-                rule_instance = obj()
-                self._known_rule_ids.add(rule_instance.rule_id)
-                if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
-                    continue
-                if rule_instance.rule_id in self._skip_rule_ids:
-                    logger.info(
-                        "Rule %-30s skipped (--skip-rule, custom: %s)",
+        try:
+            for name in dir(module):
+                obj = getattr(module, name)
+                if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
+                    rule_instance = obj()
+                    self._known_rule_ids.add(rule_instance.rule_id)
+                    if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
+                        continue
+                    if rule_instance.rule_id in self._skip_rule_ids:
+                        logger.info(
+                            "Rule %-30s skipped (--skip-rule, custom: %s)",
+                            rule_instance.rule_id,
+                            path.name,
+                        )
+                        continue
+                    config = self.config.get_rule_config(rule_instance.rule_id)
+                    if config:
+                        rule_instance = obj(config)
+
+                    if self._rule_ids or self.config.is_rule_enabled(
                         rule_instance.rule_id,
-                        path.name,
-                    )
-                    continue
-                config = self.config.get_rule_config(rule_instance.rule_id)
-                if config:
-                    rule_instance = obj(config)
-
-                if self._rule_ids or self.config.is_rule_enabled(
-                    rule_instance.rule_id,
-                    self.context,
-                    rule_instance.repo_types,
-                    rule_instance.formats,
-                ):
-                    rule_instance._source = "custom"
-                    self.rules.append(rule_instance)
-                    logger.info("Rule %-30s enabled (custom: %s)", rule_instance.rule_id, path.name)
-                else:
-                    logger.info("Rule %-30s skipped (custom: %s)", rule_instance.rule_id, path.name)
+                        self.context,
+                        rule_instance.repo_types,
+                        rule_instance.formats,
+                        since_version=rule_instance.since,
+                    ):
+                        rule_instance._source = "custom"
+                        self.rules.append(rule_instance)
+                        logger.info(
+                            "Rule %-30s enabled (custom: %s)",
+                            rule_instance.rule_id,
+                            path.name,
+                        )
+                    else:
+                        logger.info(
+                            "Rule %-30s skipped (custom: %s)",
+                            rule_instance.rule_id,
+                            path.name,
+                        )
+        except Exception as e:
+            raise ValueError(f"Failed to load custom rule from {path}: {e}") from e
 
     def _validate_config(self) -> List[RuleViolation]:
         """Check for unknown rule IDs in config"""
@@ -273,7 +313,8 @@ class Linter:
             from .baseline import filter_baselined_violations
 
             before = len(kept)
-            kept, stale = filter_baselined_violations(kept, self._baseline, self.context.root_path)
+            baseline_root = self._baseline.root_path or self.context.root_path
+            kept, stale = filter_baselined_violations(kept, self._baseline, baseline_root)
             if record_baseline:
                 self._stale_baseline_entries = stale
                 self._baseline_suppressed_count = before - len(kept)

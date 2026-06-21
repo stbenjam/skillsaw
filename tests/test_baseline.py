@@ -417,6 +417,111 @@ class TestFindBaseline:
         assert find_baseline(tmp_path) is None
 
 
+class TestRatchetMetricDiscriminator:
+    """Regression: two ratchet violations on one file must not collide (§1.11)."""
+
+    def _v(self, tmp_path, value, metric=None, line=None):
+        src = tmp_path / "SKILL.md"
+        if not src.exists():
+            src.write_text("content\n")
+        v = _make_violation(
+            rule_id="context-budget", file_path=src, line=line, message=f"value={value}"
+        )
+        v.value = value
+        v.metric = metric
+        return v
+
+    def test_metric_distinguishes_fingerprints(self, tmp_path):
+        # The whole-file violation stays metric-less (legacy fingerprint); only
+        # the description carries a metric. They must not collide.
+        file_v = self._v(tmp_path, 5000, metric=None)
+        desc_v = self._v(tmp_path, 80, metric="skill-description", line=2)
+        assert fingerprint_violation(file_v, tmp_path) != fingerprint_violation(desc_v, tmp_path)
+
+    def test_whole_file_keeps_legacy_fingerprint(self, tmp_path):
+        """Backward-compat: the whole-file ratchet fingerprint is unchanged so a
+        pre-upgrade baseline keeps matching after the metric was added."""
+        file_v = self._v(tmp_path, 5000, metric=None)
+        legacy = hashlib.sha256(b"context-budget\0SKILL.md").hexdigest()[:16]
+        assert fingerprint_violation(file_v, tmp_path) == legacy
+
+    def test_no_metric_keeps_legacy_fingerprint(self, tmp_path):
+        """Backward-compat: an empty metric must not change the fingerprint."""
+        v = self._v(tmp_path, 5000, metric=None)
+        rel = "SKILL.md"
+        legacy = hashlib.sha256(f"context-budget\0{rel}".encode()).hexdigest()[:16]
+        assert fingerprint_violation(v, tmp_path) == legacy
+
+    def test_both_metrics_ratchet_independently(self, tmp_path):
+        """A regression in one metric is not masked by the other's baseline."""
+        # Whole-file entry: legacy (metric-less) fingerprint.
+        file_entry = BaselineEntry(
+            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md").hexdigest()[:16],
+            rule_id="context-budget",
+            file_path="SKILL.md",
+            line=None,
+            message="file",
+            severity="warning",
+            value=5000,
+            baseline_mode="ceiling",
+        )
+        # Description entry: metric-tagged fingerprint.
+        desc_entry = BaselineEntry(
+            fingerprint=hashlib.sha256(b"context-budget\0SKILL.md\0skill-description").hexdigest()[
+                :16
+            ],
+            rule_id="context-budget",
+            file_path="SKILL.md",
+            line=None,
+            message="desc",
+            severity="warning",
+            value=80,
+            baseline_mode="ceiling",
+        )
+        baseline = BaselineFile(
+            version="1",
+            generated_by="test",
+            generated_at="2025-01-01T00:00:00+00:00",
+            violations=[file_entry, desc_entry],
+        )
+        # Whole-file improved (suppressed), description regressed (kept).
+        file_v = self._v(tmp_path, 4800, metric=None)
+        desc_v = self._v(tmp_path, 120, metric="skill-description", line=2)
+        kept, stale = filter_baselined_violations([file_v, desc_v], baseline, tmp_path)
+        assert len(kept) == 1
+        assert kept[0].metric == "skill-description"
+        assert stale == []
+
+
+class TestBaselineRootStability:
+    """Regression: a baseline matches when lint runs from a subdirectory (§1.3)."""
+
+    def test_fingerprint_relative_to_baseline_root(self, tmp_path):
+        # Baseline built at the repo root over skills/s/SKILL.md.
+        skill = tmp_path / "skills" / "s"
+        skill.mkdir(parents=True)
+        src = skill / "SKILL.md"
+        src.write_text("You should probably try to do it\n")
+        v = _make_violation(rule_id="weak", file_path=src, line=1, message="weak")
+        built = build_baseline([v], tmp_path, "0.14.0")
+        assert built.violations[0].file_path == "skills/s/SKILL.md"
+        assert built.root_path == tmp_path.resolve()
+
+        lint_subdir = tmp_path / "skills" / "s"
+        kept, stale = filter_baselined_violations([v], built, lint_subdir)
+        assert kept == []
+        assert stale == []
+
+        baseline_path = tmp_path / BASELINE_FILENAME
+        save_baseline(baseline_path, built)
+        loaded = load_baseline(baseline_path)
+        assert loaded.root_path == tmp_path.resolve()
+
+        kept, stale = filter_baselined_violations([v], loaded, lint_subdir)
+        assert kept == []
+        assert stale == []
+
+
 class TestBuildBaseline:
     def test_builds_from_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"

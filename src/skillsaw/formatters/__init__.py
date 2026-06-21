@@ -62,7 +62,13 @@ def parse_output_spec(spec: str) -> tuple:
     if colon > 0:
         prefix = spec[:colon]
         if prefix in _FORMAT_SET:
-            return prefix, spec[colon + 1 :]
+            path = spec[colon + 1 :]
+            if not path:
+                raise ValueError(
+                    f"output file path missing after '{prefix}:' "
+                    f"(use '{prefix}:FILE', or 'FILE' to infer the format)"
+                )
+            return prefix, path
     return infer_format(spec), spec
 
 

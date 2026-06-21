@@ -622,3 +622,12 @@ def test_promptfoo_config_at_root_still_detected(temp_dir):
 
     context = RepositoryContext(temp_dir)
     assert RepositoryType.PROMPTFOO in context.repo_types
+
+
+def test_explicit_repo_type_override_drives_discovery(temp_dir):
+    """Constructor repo_types override must apply before plugin discovery."""
+    context = RepositoryContext(temp_dir, repo_types={RepositoryType.SINGLE_PLUGIN})
+
+    assert context.repo_types == {RepositoryType.SINGLE_PLUGIN}
+    assert context.repo_type == RepositoryType.SINGLE_PLUGIN
+    assert [p.resolve() for p in context.plugins] == [temp_dir.resolve()]

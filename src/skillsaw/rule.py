@@ -39,6 +39,11 @@ class RuleViolation:
     block: Optional["ContentBlock"] = field(default=None, repr=False)
     source: str = "builtin"
     value: Optional[float] = None
+    # Optional discriminator for rules that emit more than one ratchet
+    # (value-carrying) violation per file, so their baseline fingerprints
+    # don't collide. Example: context-budget emits whole-file and
+    # per-description token violations for the same SKILL.md.
+    metric: Optional[str] = None
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -186,16 +191,18 @@ class Rule(ABC):
     def violation(
         self,
         message: str,
-        file_path: Path = None,
-        line: int = None,
-        severity: Severity = None,
-        block: "ContentBlock" = None,
-        value: float = None,
+        file_path: Optional[Path] = None,
+        line: Optional[int] = None,
+        severity: Optional[Severity] = None,
+        block: Optional["ContentBlock"] = None,
+        value: Optional[float] = None,
+        metric: Optional[str] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
         Pass ``block`` for content-based violations.  ``file_path`` is
         accepted for backward compatibility and auto-wraps into a block.
+        ``metric`` disambiguates multiple ratchet violations per file.
         """
         return RuleViolation(
             rule_id=self.rule_id,
@@ -206,4 +213,5 @@ class Rule(ABC):
             block=block,
             source=self._source,
             value=value,
+            metric=metric,
         )

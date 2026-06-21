@@ -46,6 +46,12 @@ def _get_version() -> str:
         return __version__
 
 
+def _emit_config_warnings(config) -> None:
+    """Print non-fatal config-load warnings (missing version, unknown keys)."""
+    for warning in getattr(config, "warnings", []):
+        print(f"Warning: {warning}", file=sys.stderr)
+
+
 def _build_parser():
     """Build the main argument parser with all subcommands.
 
@@ -139,7 +145,9 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=[],
         metavar="TYPE",
         help="Override auto-detected repository type (repeatable). "
-        "Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit.",
+        "Values: "
+        + ", ".join(t.value for t in RepositoryType if t is not RepositoryType.UNKNOWN)
+        + ".",
     )
     lint_parser.add_argument(
         "--rule",
@@ -501,6 +509,7 @@ def _run_tree(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -668,7 +677,17 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        output_formats[filepath] = fmt
+        # Key on the resolved path so 'report.json' and './report.json' are
+        # recognised as the same target.
+        resolved_path = Path(filepath).resolve()
+        if resolved_path in output_formats and output_formats[resolved_path] != fmt:
+            print(
+                f"Error: --output targets '{filepath}' with conflicting formats "
+                f"'{output_formats[resolved_path]}' and '{fmt}'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        output_formats[resolved_path] = fmt
 
     _handle_apply_patch_for_lint(args)
 
@@ -698,7 +717,7 @@ def _run_lint(args):
     # Override repo_types if --type was provided
     override_types = None
     if args.repo_types:
-        type_map = {t.value: t for t in RepositoryType}
+        type_map = {t.value: t for t in RepositoryType if t is not RepositoryType.UNKNOWN}
         override_types = set()
         for val in args.repo_types:
             if val not in type_map:
@@ -726,6 +745,7 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -762,9 +782,7 @@ def _run_lint(args):
     contexts = []
     baseline_suppressed = 0
     for lint_path in paths:
-        context = RepositoryContext(lint_path)
-        if override_types:
-            context.repo_types = override_types
+        context = RepositoryContext(lint_path, repo_types=override_types)
         contexts.append(context)
 
         if context.repo_type == RepositoryType.UNKNOWN:
@@ -1112,6 +1130,7 @@ def _run_fix(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1437,6 +1456,7 @@ def _run_baseline(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1452,12 +1472,15 @@ def _run_baseline(args):
 
     cli_version = _get_version()
     baseline_modes = {r.rule_id: r.baseline_mode for r in linter.rules if r.baseline_mode}
-    baseline = build_baseline(violations, context.root_path, cli_version, baseline_modes)
 
     if config_path:
         output_path = config_path.parent / BASELINE_FILENAME
     else:
         output_path = args.path / BASELINE_FILENAME
+
+    # Fingerprint paths relative to the directory the baseline is written to,
+    # so the baseline still matches when lint is later run from a subdirectory.
+    baseline = build_baseline(violations, output_path.resolve().parent, cli_version, baseline_modes)
 
     save_baseline(output_path, baseline)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
@@ -1531,6 +1554,7 @@ def _run_badge(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
 
@@ -1721,6 +1745,7 @@ def _run_explain(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     if config is None:
         config = LinterConfig.default()
         config_label = "builtin defaults"
@@ -1773,6 +1798,7 @@ def _run_docs(args):
         except ValueError as e:
             print(f"Error loading config: {e}", file=sys.stderr)
             sys.exit(1)
+        _emit_config_warnings(config)
     else:
         config = LinterConfig.default()
     context.exclude_patterns = config.exclude_patterns
