@@ -151,6 +151,7 @@ _INSTRUCTION_FILE_CATEGORIES = {
     "AGENTS.md": "agents-md",
     "CLAUDE.md": "claude-md",
     "GEMINI.md": "gemini-md",
+    "pluribus.md": "pluribus-md",
 }
 
 
@@ -572,6 +573,13 @@ class GeminiMdBlock(InstructionBlock):
     """GEMINI.md instruction file."""
 
     category: str = "gemini-md"
+
+
+@dataclass(eq=False)
+class PluribusMdBlock(InstructionBlock):
+    """pluribus.md shared context file."""
+
+    category: str = "pluribus-md"
 
 
 def _parse_file_frontmatter(

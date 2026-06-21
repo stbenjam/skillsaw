@@ -37,6 +37,7 @@ HAS_GEMINI = "HAS_GEMINI"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
+HAS_PLURIBUS = "HAS_PLURIBUS"
 HAS_CODERABBIT = "HAS_CODERABBIT"
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
@@ -46,6 +47,7 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_AGENTS_MD,
         HAS_KIRO,
         HAS_CLAUDE_MD,
+        HAS_PLURIBUS,
         HAS_CODERABBIT,
     }
 )
@@ -58,7 +60,7 @@ class RepositoryContext:
     Automatically detects repository type and gathers relevant metadata.
     """
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "pluribus.md")
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -189,6 +191,8 @@ class RepositoryContext:
             formats.add(HAS_KIRO)
         if (self.root_path / "CLAUDE.md").exists():
             formats.add(HAS_CLAUDE_MD)
+        if (self.root_path / "pluribus.md").exists():
+            formats.add(HAS_PLURIBUS)
         if (self.root_path / ".coderabbit.yaml").exists():
             formats.add(HAS_CODERABBIT)
         return formats

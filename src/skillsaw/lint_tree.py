@@ -40,6 +40,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         CursorRuleBlock,
         ExtraBlock,
         GeminiMdBlock,
+        PluribusMdBlock,
         HooksBlock,
         InstructionBlock,
         McpBlock,
@@ -55,6 +56,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
         "GEMINI.md": GeminiMdBlock,
+        "pluribus.md": PluribusMdBlock,
     }
 
     root = LintTarget(path=context.root_path)

@@ -218,6 +218,21 @@ def test_tree_contains_coderabbit_node(temp_dir):
     assert len(tree.find(CodeRabbitNode)) == 1
 
 
+def test_tree_contains_pluribus_md_block(temp_dir):
+    """pluribus.md should be linted as a typed instruction content block."""
+    from skillsaw.rules.builtin.content_analysis import PluribusMdBlock
+
+    (temp_dir / "pluribus.md").write_text("# Shared context\nAvoid hidden state drift.\n")
+
+    context = RepositoryContext(temp_dir)
+    tree = context.lint_tree
+
+    blocks = tree.find(PluribusMdBlock)
+    assert len(blocks) == 1
+    assert blocks[0].path == temp_dir / "pluribus.md"
+    assert blocks[0].category == "pluribus-md"
+
+
 def test_content_blocks_returns_all_content(temp_dir):
     """content_blocks() should return all ContentBlock subclasses polymorphically."""
     (temp_dir / "CLAUDE.md").write_text("# Instructions\nBe helpful.\n")

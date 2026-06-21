@@ -16,6 +16,7 @@ from skillsaw.context import (
     HAS_AGENTS_MD,
     HAS_KIRO,
     HAS_CLAUDE_MD,
+    HAS_PLURIBUS,
     HAS_CODERABBIT,
 )
 
@@ -370,15 +371,25 @@ def test_detected_formats_claude_md(temp_dir):
     assert HAS_CLAUDE_MD in context.detected_formats
 
 
+def test_detected_formats_pluribus_md(temp_dir):
+    """Detect pluribus.md at root"""
+    (temp_dir / "pluribus.md").write_text("# Shared context")
+    context = RepositoryContext(temp_dir)
+    assert HAS_PLURIBUS in context.detected_formats
+    assert temp_dir / "pluribus.md" in context.instruction_files
+
+
 def test_detected_formats_multiple(temp_dir):
     """Detect multiple formats in the same repo"""
     (temp_dir / "CLAUDE.md").write_text("# Claude")
     (temp_dir / "AGENTS.md").write_text("# Agents")
+    (temp_dir / "pluribus.md").write_text("# Shared context")
     (temp_dir / ".cursor" / "rules").mkdir(parents=True)
     context = RepositoryContext(temp_dir)
     assert HAS_CLAUDE_MD in context.detected_formats
     assert HAS_AGENTS_MD in context.detected_formats
     assert HAS_CURSOR in context.detected_formats
+    assert HAS_PLURIBUS in context.detected_formats
     assert HAS_COPILOT not in context.detected_formats
 
 
