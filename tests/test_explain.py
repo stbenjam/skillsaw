@@ -44,8 +44,16 @@ def test_load_rule_docs_present():
     assert "## Examples" in docs
 
 
+def test_load_rule_docs_all_rules_covered():
+    """Every builtin rule should have long-form docs with a How to fix section."""
+    for rule_class in BUILTIN_RULES:
+        rule = rule_class()
+        docs = load_rule_docs(rule.rule_id)
+        assert docs is not None, f"Missing docs for {rule.rule_id}"
+        assert "## How to fix" in docs, f"Missing '## How to fix' in {rule.rule_id}"
+
+
 def test_load_rule_docs_absent():
-    assert load_rule_docs("marketplace-json-valid") is None
     assert load_rule_docs("no-such-rule") is None
 
 
@@ -78,11 +86,12 @@ def test_explain_unknown_rule_suggests_close_match(temp_dir):
     assert "content-weak-language" in result.stderr
 
 
-def test_explain_without_long_docs_still_works(temp_dir):
+def test_explain_shows_long_docs(temp_dir):
     result = run_explain("marketplace-json-valid", str(temp_dir))
     assert result.returncode == 0
     assert "marketplace-json-valid" in result.stdout
     assert "https://skillsaw.org/rules/marketplace-json-valid/" in result.stdout
+    assert "## How to fix" in result.stdout
 
 
 def test_explain_effective_disabled_by_config(temp_dir):

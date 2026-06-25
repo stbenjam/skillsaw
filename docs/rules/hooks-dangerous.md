@@ -53,6 +53,13 @@ This rule flags hook commands that:
 }
 ```
 
+## How to fix
+
+If the hook is malicious or unnecessary, remove it. If it is a
+legitimate download-and-execute pattern, refactor it to separate the
+download from the execution — fetch the script to a reviewed path in
+the repository, then execute the local copy.
+
 ## When it's a false positive
 
 Some legitimate hooks fetch data over the network (e.g. posting metrics).
