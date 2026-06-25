@@ -37,7 +37,7 @@ types are required:
 rules:
   promptfoo-assertions:
     enabled: true
-    required-assertions:
+    required-types:
       - contains
       - cost
 ```

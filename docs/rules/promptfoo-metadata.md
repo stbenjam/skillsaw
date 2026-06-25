@@ -56,7 +56,7 @@ keys are required:
 rules:
   promptfoo-metadata:
     enabled: true
-    required-metadata:
+    required-keys:
       - category
 ```
 
