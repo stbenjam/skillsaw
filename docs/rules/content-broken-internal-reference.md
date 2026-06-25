@@ -12,6 +12,34 @@ Detect markdown links where the target file does not exist
 | **Since** | v0.9.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
+## Why
+
+A markdown link pointing to a nonexistent file is a dead reference —
+the model cannot follow it to read context it was promised, and a human
+reader clicking it gets a 404. Broken links typically appear after renames
+or directory restructuring when the referencing file was not updated.
+
+## Examples
+
+**Bad:**
+
+```markdown
+See [setup guide](docs/old-setup.md) for installation steps.
+```
+
+**Good:**
+
+```markdown
+See [setup guide](docs/setup.md) for installation steps.
+```
+
+## How to fix
+
+Update the link target to the file's current path. When the violation
+includes a "did you mean" suggestion, that is a fuzzy match against the
+repository — verify it is correct and apply it. `skillsaw fix` can apply
+suggested corrections automatically.
+
 ## Configuration
 
 ```yaml
