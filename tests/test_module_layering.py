@@ -40,6 +40,7 @@ CYCLE_SENSITIVE_MODULES = [
     "skillsaw.docs.extractor",
     "skillsaw.rules.builtin.content_analysis",
     "skillsaw.rules.builtin.utils",
+    "skillsaw.cli",
 ]
 
 

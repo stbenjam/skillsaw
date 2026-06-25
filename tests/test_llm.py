@@ -23,7 +23,7 @@ from skillsaw.llm.tools import (
     DiffBlockTool,
     LintBlockTool,
 )
-from skillsaw.rules.builtin.content_analysis import FileContentBlock as ContentBlock
+from skillsaw.blocks import FileContentBlock as ContentBlock
 from skillsaw.rule import AutofixConfidence, Severity
 
 
@@ -539,7 +539,7 @@ class TestMaxIterationsCLIOverride:
         from argparse import Namespace
         from unittest.mock import patch
 
-        from skillsaw.__main__ import _run_fix
+        from skillsaw.cli._fix import _run_fix
         from skillsaw.config import LinterConfig
 
         config = LinterConfig.default()
@@ -559,10 +559,10 @@ class TestMaxIterationsCLIOverride:
         )
 
         with (
-            patch("skillsaw.__main__.RepositoryContext"),
-            patch("skillsaw.__main__.find_config", return_value=None),
-            patch("skillsaw.__main__.LinterConfig.default", return_value=config),
-            patch("skillsaw.__main__._require_llm_provider", side_effect=SystemExit(1)),
+            patch("skillsaw.cli._fix.RepositoryContext"),
+            patch("skillsaw.cli._config.find_config", return_value=None),
+            patch("skillsaw.cli._config.LinterConfig.default", return_value=config),
+            patch("skillsaw.cli._fix._require_llm_provider", side_effect=SystemExit(1)),
         ):
             try:
                 _run_fix(args)
@@ -576,7 +576,7 @@ class TestMaxIterationsCLIOverride:
         from argparse import Namespace
         from unittest.mock import patch
 
-        from skillsaw.__main__ import _run_fix
+        from skillsaw.cli._fix import _run_fix
         from skillsaw.config import LinterConfig
 
         config = LinterConfig.default()
@@ -597,10 +597,10 @@ class TestMaxIterationsCLIOverride:
         )
 
         with (
-            patch("skillsaw.__main__.RepositoryContext"),
-            patch("skillsaw.__main__.find_config", return_value=None),
-            patch("skillsaw.__main__.LinterConfig.default", return_value=config),
-            patch("skillsaw.__main__._require_llm_provider", side_effect=SystemExit(1)),
+            patch("skillsaw.cli._fix.RepositoryContext"),
+            patch("skillsaw.cli._config.find_config", return_value=None),
+            patch("skillsaw.cli._config.LinterConfig.default", return_value=config),
+            patch("skillsaw.cli._fix._require_llm_provider", side_effect=SystemExit(1)),
         ):
             try:
                 _run_fix(args)

@@ -494,7 +494,7 @@ class TestLLMFixDryRun:
         Verifies linter-level behaviour: the original file is untouched,
         result.success is False, and no files are recorded as modified.
         The CLI wrapper (_run_fix) maps this to exit-code 0 for dry-run;
-        see src/skillsaw/__main__.py."""
+        see src/skillsaw/cli/_fix.py."""
         content = "# Instructions\n\nTry to be careful when deploying.\n"
         _make_dot_claude_repo(tmp_path, content)
 
@@ -855,7 +855,7 @@ class TestLLMFixFrontmatteredBlock:
         fm_violations = [v for v in violations if v.rule_id == "skill-frontmatter"]
         assert len(fm_violations) >= 1, "Expected skill-frontmatter violation"
 
-        from skillsaw.rules.builtin.content_analysis import SkillBlock
+        from skillsaw.blocks import SkillBlock
 
         assert isinstance(
             fm_violations[0].block, SkillBlock

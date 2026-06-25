@@ -9,7 +9,7 @@ _resolve_lint_paths normalizes CLI input in a single pass:
   - Order of first appearance is preserved
 """
 
-from skillsaw.__main__ import _resolve_lint_paths
+from skillsaw.cli._helpers import _resolve_lint_paths
 
 # ── Pass 1: _resolve_lint_paths ────────────────────────────────
 
@@ -245,7 +245,7 @@ class TestEmptyAndSingleInput:
 # ── _is_subpath ────────────────────────────────────────────────
 
 
-from skillsaw.__main__ import _is_subpath
+from skillsaw.cli._helpers import _is_subpath
 
 
 class TestIsSubpath:
@@ -302,7 +302,7 @@ class TestIsSubpath:
 # ── _build_merged_context ──────────────────────────────────────
 
 
-from skillsaw.__main__ import _build_merged_context, _MergedContext
+from skillsaw.cli._helpers import _build_merged_context, _MergedContext
 from skillsaw.context import RepositoryContext, RepositoryType
 
 
@@ -381,7 +381,7 @@ class TestMergedContextRepoType:
 # ── _dedup_rules ───────────────────────────────────────────────
 
 
-from skillsaw.__main__ import _dedup_rules
+from skillsaw.cli._helpers import _dedup_rules
 
 
 class _FakeRule:
