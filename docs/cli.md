@@ -69,6 +69,7 @@ Generate documentation for a plugin, marketplace, or .claude repository
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `--format` | Output format (default: html) (choices: html, markdown) | `html` |
 | `-o`, `--output` | Output file or directory (default: skillsaw-docs/). If it ends with .html/.md, writes a single file directly. |  |
 | `--title` | Custom title for the documentation |  |

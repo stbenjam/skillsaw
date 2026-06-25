@@ -360,7 +360,7 @@ def _extract_subcommands(parser, prefix=""):
 
 def parse_cli():
     """Extract CLI subcommands and arguments by introspecting the real parsers."""
-    from skillsaw.__main__ import _build_parser
+    from skillsaw.cli._parser import _build_parser
     from skillsaw.marketplace.cli import _build_add_parser
 
     parser = _build_parser()
