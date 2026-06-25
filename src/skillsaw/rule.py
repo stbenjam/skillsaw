@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
-    from .rules.builtin.content_analysis import ContentBlock, FileContentBlock
+    from .blocks import ContentBlock
 
 
 class Severity(Enum):
@@ -47,7 +47,11 @@ class RuleViolation:
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
-            from .rules.builtin.content_analysis import FileContentBlock
+            # Lazy: importing ``skillsaw.blocks`` pulls in ``rules.builtin``
+            # (via utils), whose package __init__ imports rule modules that
+            # import this module — so the import must happen after ``rule`` is
+            # fully loaded, not at module top.
+            from .blocks import FileContentBlock
 
             self.block = FileContentBlock(path=self.file_path, category="file")
         if self.file_path is None and self.block is not None:

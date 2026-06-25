@@ -17,8 +17,7 @@ from skillsaw.docs.models import (
     RuleFileDoc,
     SkillDoc,
 )
-from skillsaw.lint_target import PluginNode, SkillNode
-from skillsaw.rules.builtin.content_analysis import (
+from skillsaw.blocks import (
     AgentBlock,
     CommandBlock,
     HooksBlock,
@@ -27,6 +26,7 @@ from skillsaw.rules.builtin.content_analysis import (
     ReadmeBlock,
     SkillBlock,
 )
+from skillsaw.lint_target import PluginNode, SkillNode
 
 
 def extract_docs(

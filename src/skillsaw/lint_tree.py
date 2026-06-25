@@ -9,8 +9,33 @@ import logging
 from pathlib import Path
 from typing import Set, TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
-
+from .blocks import (
+    AgentBlock,
+    AgentsMdBlock,
+    ChatmodeBlock,
+    ClaudeMdBlock,
+    CodeRabbitContentBlock,
+    CommandBlock,
+    ContextFileBlock,
+    CursorRuleBlock,
+    ExtraBlock,
+    GeminiMdBlock,
+    HooksBlock,
+    InstructionBlock,
+    McpBlock,
+    PluginRuleBlock,
+    PromptBlock,
+    PromptfooPromptBlock,
+    ReadmeBlock,
+    SettingsBlock,
+    SkillBlock,
+    SkillRefBlock,
+)
+from .formats.promptfoo import (
+    extract_file_refs,
+    is_promptfoo_config,
+    resolve_file_ref,
+)
 from .lint_target import (
     LintTarget,
     ApmConfigNode,
@@ -23,34 +48,14 @@ from .lint_target import (
     CodeRabbitNode,
 )
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     """Build a tree of all lintable objects in the repository."""
-    from .rules.builtin.content_analysis import (
-        AgentBlock,
-        AgentsMdBlock,
-        ChatmodeBlock,
-        ClaudeMdBlock,
-        CodeRabbitContentBlock,
-        CommandBlock,
-        ContextFileBlock,
-        CursorRuleBlock,
-        ExtraBlock,
-        GeminiMdBlock,
-        HooksBlock,
-        InstructionBlock,
-        McpBlock,
-        ReadmeBlock,
-        SettingsBlock,
-        PluginRuleBlock,
-        PromptBlock,
-        SkillBlock,
-        SkillRefBlock,
-    )
-
     _INSTRUCTION_FILE_BLOCK_TYPES = {
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
@@ -226,8 +231,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
 
     # --- Promptfoo prompt content blocks ---
-    from .rules.builtin.content_analysis import PromptfooPromptBlock
-
     for block in PromptfooPromptBlock.gather_from_tree(root):
         block_resolved = block.path.resolve()
         for node in root.find(PromptfooConfigNode):
@@ -312,12 +315,7 @@ def _build_promptfoo_nodes(
     Pass 1: find confirmed configs (promptfooconfig* naming or evals/ with promptfoo keys).
     Pass 2: resolve file:// refs from confirmed configs and add fragments as children.
     """
-    from .rules.builtin.promptfoo import (
-        _is_promptfoo_config,
-        _extract_file_refs,
-        _resolve_file_ref,
-    )
-    from .rules.builtin.utils import read_yaml
+    from .utils import read_yaml
 
     config_nodes: list[PromptfooConfigNode] = []
 
@@ -327,7 +325,7 @@ def _build_promptfoo_nodes(
             return
         if require_keys:
             data, error = read_yaml(yaml_file)
-            if error or not _is_promptfoo_config(data):
+            if error or not is_promptfoo_config(data):
                 return
         seen.add(resolved)
         node = PromptfooConfigNode(path=yaml_file)
@@ -370,8 +368,8 @@ def _build_promptfoo_nodes(
         if error or not isinstance(data, dict):
             continue
         config_dir = config_node.path.parent
-        for ref in _extract_file_refs(data):
-            resolved = _resolve_file_ref(ref, config_dir)
+        for ref in extract_file_refs(data):
+            resolved = resolve_file_ref(ref, config_dir)
             if resolved is None or resolved in seen:
                 continue
             if not resolved.exists() or _is_excluded(Path(resolved)):

@@ -12,6 +12,11 @@ import json
 import logging
 import os
 
+# Dependency-light format helper — safe to import at module top because it
+# pulls in nothing from skillsaw (importing rules.builtin here would trigger
+# that package's __init__ while ``context`` is still mid-import → cycle).
+from .formats.promptfoo import is_promptfoo_config
+
 if TYPE_CHECKING:
     from .lint_target import LintTarget
 
@@ -305,14 +310,13 @@ class RepositoryContext:
                 return True
         evals_dir = self.root_path / "evals"
         if evals_dir.is_dir():
-            from .rules.builtin.promptfoo import _is_promptfoo_config
-            from .rules.builtin.utils import read_yaml
+            from .utils import read_yaml
 
             for yaml_file in self._walk_files(evals_dir):
                 if yaml_file.suffix not in (".yaml", ".yml"):
                     continue
                 data, error = read_yaml(yaml_file)
-                if not error and _is_promptfoo_config(data):
+                if not error and is_promptfoo_config(data):
                     return True
         return False
 

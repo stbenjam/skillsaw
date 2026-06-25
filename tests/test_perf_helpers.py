@@ -158,7 +158,10 @@ class TestFrontmatterLineMap:
         f = self._write(tmp_path, content)
         fast = frontmatter_line_map_top_level(f)
 
-        from skillsaw.rules.builtin import utils
+        # Patch the core module where the implementation lives — the
+        # rules.builtin.utils shim only re-exports a binding, so patching it
+        # would not reach the call site inside skillsaw.utils.
+        from skillsaw import utils
 
         monkeypatch.setattr(utils, "_fast_top_level_key_lines", lambda text: None)
         invalidate_read_caches()
@@ -202,7 +205,10 @@ class TestFrontmatterSuppressionWithFastPath:
         from skillsaw.context import RepositoryContext
         from skillsaw.linter import Linter
         from skillsaw.config import LinterConfig
-        from skillsaw.rules.builtin import utils
+
+        # Patch core skillsaw.utils (not the rules.builtin.utils shim) so the
+        # forced ruamel-fallback actually reaches the implementation call site.
+        from skillsaw import utils
 
         skill = tmp_path / "skills" / "demo-skill"
         skill.mkdir(parents=True, exist_ok=True)
