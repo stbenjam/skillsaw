@@ -274,6 +274,33 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)
 
+    # --- Plugin tree contributors ---
+    # Contributors return pre-constructed nodes (typically ContentBlock or
+    # JsonConfigBlock subclasses), attached at the root. The ``seen`` set
+    # guards against double-linting files already discovered above, and
+    # failures are collected for the Linter to surface as violations —
+    # a broken contributor must not abort tree construction.
+    for plugin_name, contribute in context.plugin_tree_contributors:
+        try:
+            contributed = contribute(context, root)
+            blocks = list(contributed) if contributed is not None else []
+            for block in blocks:
+                if not isinstance(block, LintTarget):
+                    raise TypeError(
+                        f"contributor returned {block!r}, which is not a lint tree node"
+                    )
+        except Exception as e:
+            context.plugin_extension_errors.append(
+                f"Plugin '{plugin_name}': tree contributor failed: " f"{e.__class__.__name__}: {e}"
+            )
+            continue
+        for block in blocks:
+            resolved = block.path.resolve()
+            if resolved in seen or not block.path.exists() or _is_excluded(block.path):
+                continue
+            seen.add(resolved)
+            root.children.append(block)
+
     root.set_parents()
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))

@@ -84,11 +84,12 @@ def _is_subpath(child, parent):
 class _MergedContext:
     """Duck-typed context for formatters when linting multiple paths."""
 
-    def __init__(self, root_path, repo_types, plugins, skills):
+    def __init__(self, root_path, repo_types, plugins, skills, plugin_repo_types=frozenset()):
         self.root_path = root_path
         self.repo_types = repo_types
         self.plugins = plugins
         self.skills = skills
+        self.plugin_repo_types = set(plugin_repo_types)
 
     @property
     def repo_type(self):
@@ -96,6 +97,14 @@ class _MergedContext:
             if t in self.repo_types:
                 return t
         return RepositoryType.UNKNOWN
+
+    def repo_type_names(self, include_unknown: bool = True):
+        """Sorted names of all detected repository types, builtin and plugin."""
+        names = {t.value for t in self.repo_types}
+        if not include_unknown:
+            names.discard(RepositoryType.UNKNOWN.value)
+        names.update(self.plugin_repo_types)
+        return sorted(names)
 
 
 def _build_merged_context(contexts):
@@ -107,13 +116,15 @@ def _build_merged_context(contexts):
     except ValueError:
         root_path = contexts[0].root_path
     repo_types = set()
+    plugin_repo_types = set()
     plugins = []
     skills = []
     for ctx in contexts:
         repo_types |= ctx.repo_types
+        plugin_repo_types |= ctx.plugin_repo_types
         plugins.extend(ctx.plugins)
         skills.extend(ctx.skills)
-    return _MergedContext(root_path, repo_types, plugins, skills)
+    return _MergedContext(root_path, repo_types, plugins, skills, plugin_repo_types)
 
 
 def _dedup_rules(rules):

@@ -246,3 +246,72 @@ def test_plugins_subcommand_shows_command(tmp_path):
     r = run_cli("plugins", path_prepend=bin_dir)
     assert r["rc"] == 0
     assert "command: skillsaw no-wip" in r["stdout"]
+
+
+# ---------------------------------------------------------------------------
+# Extension points: plugin repo types and tree contributors
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_repo_type_detected_and_reported(tmp_path):
+    repo = copy_fixture("plugin-target-acme", tmp_path)
+    r = run_cli("lint", str(repo), fmt="json")
+    assert "acme" in r["out"]["stats"]["repo_types"], r["stdout"] + r["stderr"]
+
+
+def test_scoped_plugin_rule_fires_on_contributed_block(tmp_path):
+    """Detector -> repo type -> scoped rule -> contributor block, end to end."""
+    repo = copy_fixture("plugin-target-acme", tmp_path)
+    r = run_cli("lint", str(repo), fmt="json")
+    fired = plugin_violations(r, rule_id="acme-config-version")
+    assert len(fired) == 1, r["stdout"] + r["stderr"]
+    v = fired[0]
+    assert v["severity"] == "error"
+    assert v["source"] == "plugin:no-wip"
+    assert v["file_path"].endswith("config.json")
+    assert r["rc"] == 1
+
+
+def test_scoped_plugin_rule_inactive_without_repo_type(tmp_path):
+    repo = copy_fixture("plugin-target", tmp_path)  # no ACME markers
+    r = run_cli("lint", str(repo), fmt="json")
+    assert plugin_violations(r, rule_id="acme-config-version") == []
+    assert "acme" not in r["out"]["stats"]["repo_types"]
+
+
+def test_content_rules_cover_plugin_content_paths(tmp_path):
+    """Files matched by a repo type's content_paths get content-* rules."""
+    repo = copy_fixture("plugin-target-acme", tmp_path)
+    r = run_cli("lint", str(repo), fmt="json")
+    weak = [
+        v
+        for v in r["out"]["violations"]
+        if v["rule_id"] == "content-weak-language" and v["file_path"].endswith("ACME.md")
+    ]
+    assert weak, r["stdout"] + r["stderr"]
+
+
+def test_tree_shows_plugin_contributed_nodes(tmp_path):
+    repo = copy_fixture("plugin-target-acme", tmp_path)
+    r = run_cli("tree", str(repo))
+    assert r["rc"] == 0, r["stdout"] + r["stderr"]
+    assert "ACME.md" in r["stdout"]
+    assert "config.json" in r["stdout"]
+
+
+def test_plugins_subcommand_lists_extensions():
+    r = run_cli("plugins")
+    assert r["rc"] == 0, r["stdout"] + r["stderr"]
+    assert "acme — Repository configured for the ACME assistant" in r["stdout"]
+    assert "tree contributors: contribute_acme_config" in r["stdout"]
+
+
+def test_explain_shows_plugin_repo_type_scope(tmp_path):
+    import re
+
+    repo = copy_fixture("plugin-target-acme", tmp_path)
+    r = run_cli("explain", "acme-config-version", str(repo))
+    assert r["rc"] == 0, r["stdout"] + r["stderr"]
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", r["stdout"])
+    assert "Applies to repo types: acme" in plain
+    assert "detected repo type: acme" in plain

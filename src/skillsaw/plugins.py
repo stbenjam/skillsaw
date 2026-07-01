@@ -25,12 +25,15 @@ it as a ``plugin-load-error`` violation instead.
 from __future__ import annotations
 
 import functools
+import importlib
 import inspect
 import logging
+import re
 import types
 from dataclasses import dataclass, field
 from importlib import metadata
-from typing import Iterable, List, Optional, Set, Type
+from pathlib import Path
+from typing import Callable, Iterable, List, Optional, Set, Type
 
 from .rule import Rule
 
@@ -41,10 +44,58 @@ ENTRY_POINT_GROUP = "skillsaw.plugins"
 # Module attribute a plugin can set to declare its rules explicitly.
 RULES_ATTRIBUTE = "SKILLSAW_RULES"
 
+# Module attribute declaring custom repository types (list of PluginRepoType).
+REPO_TYPES_ATTRIBUTE = "SKILLSAW_REPO_TYPES"
+
+# Module attribute declaring lint tree contributors: callables invoked as
+# ``contribute(context, root)`` during tree construction, returning an
+# iterable of block/node instances to attach at the root (or None).
+TREE_CONTRIBUTORS_ATTRIBUTE = "SKILLSAW_TREE_CONTRIBUTORS"
+
+_REPO_TYPE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+@dataclass
+class PluginRepoType:
+    """A repository type contributed by a plugin.
+
+    When ``detect`` returns True for the linted repository, the type's
+    ``name`` behaves like a builtin repository type: rules (plugin, custom,
+    or builtin) can list it in ``repo_types`` to scope ``enabled: auto``
+    activation, and it appears in the lint report's detected types.
+    """
+
+    name: str
+    """Kebab-case type name (e.g. ``acme``). Must not collide with builtin
+    repository type values or other plugins' types."""
+
+    detect: Callable[[Path], bool]
+    """Called with the repository root path; True when the repo is this type."""
+
+    description: str = ""
+
+    content_paths: List[str] = field(default_factory=list)
+    """Glob patterns (relative to the repo root) pulled into content linting
+    when the type is detected — the plugin-declared equivalent of the
+    ``content-paths`` config key. Matched markdown/text files become content
+    blocks and get every ``content-*`` rule automatically."""
+
+    def validate(self) -> None:
+        if not isinstance(self.name, str) or not _REPO_TYPE_NAME_RE.match(self.name):
+            raise TypeError(f"PluginRepoType name must be a kebab-case string, got {self.name!r}")
+        if not callable(self.detect):
+            raise TypeError(f"PluginRepoType '{self.name}': detect must be callable")
+        if not isinstance(self.content_paths, (list, tuple)) or not all(
+            isinstance(p, str) for p in self.content_paths
+        ):
+            raise TypeError(
+                f"PluginRepoType '{self.name}': content_paths must be a list of glob strings"
+            )
+
 
 @dataclass
 class PluginInfo:
-    """A discovered plugin and the rule classes it provides."""
+    """A discovered plugin and the rules/extensions it provides."""
 
     name: str
     """Entry point name (the plugin's short name, e.g. ``acme-rules``)."""
@@ -60,8 +111,14 @@ class PluginInfo:
 
     rule_classes: List[Type[Rule]] = field(default_factory=list)
 
+    repo_types: List[PluginRepoType] = field(default_factory=list)
+    """Custom repository types declared via ``SKILLSAW_REPO_TYPES``."""
+
+    tree_contributors: List[Callable] = field(default_factory=list)
+    """Lint tree contributors declared via ``SKILLSAW_TREE_CONTRIBUTORS``."""
+
     error: Optional[str] = None
-    """Load failure message; when set, ``rule_classes`` is empty."""
+    """Load failure message; when set, the other collections are empty."""
 
 
 def _iter_entry_points():
@@ -176,6 +233,40 @@ def _dist_by_entry_point():
     return mapping
 
 
+def _module_attr(module_name: str, attribute: str):
+    """Read a declaration attribute from a plugin's module, tolerating
+    raising PEP 562 ``__getattr__`` implementations."""
+    module = importlib.import_module(module_name)
+    try:
+        return getattr(module, attribute, None)
+    except Exception:
+        return None
+
+
+def _resolve_repo_types(module_name: str) -> List[PluginRepoType]:
+    declared = _module_attr(module_name, REPO_TYPES_ATTRIBUTE)
+    if declared is None:
+        return []
+    if not isinstance(declared, (list, tuple)):
+        raise TypeError(f"{REPO_TYPES_ATTRIBUTE} must be a list of PluginRepoType")
+    repo_types = []
+    for item in declared:
+        if not isinstance(item, PluginRepoType):
+            raise TypeError(f"{REPO_TYPES_ATTRIBUTE} entries must be PluginRepoType, got {item!r}")
+        item.validate()
+        repo_types.append(item)
+    return repo_types
+
+
+def _resolve_tree_contributors(module_name: str) -> List[Callable]:
+    declared = _module_attr(module_name, TREE_CONTRIBUTORS_ATTRIBUTE)
+    if declared is None:
+        return []
+    if not isinstance(declared, (list, tuple)) or not all(callable(c) for c in declared):
+        raise TypeError(f"{TREE_CONTRIBUTORS_ATTRIBUTE} must be a list of callables")
+    return list(declared)
+
+
 def _entry_point_dist(ep) -> tuple:
     """(distribution name, version) for an entry point, best effort.
 
@@ -193,6 +284,91 @@ def _entry_point_dist(ep) -> tuple:
         return name, dist.version
     except Exception:  # pragma: no cover - metadata access can fail oddly
         return None, None
+
+
+@dataclass
+class ExtensionProblem:
+    """A non-fatal problem found while registering plugin extensions."""
+
+    severity: str  # "error" or "warning"
+    message: str
+
+
+def register_extensions(context, plugins: List[PluginInfo]) -> List[ExtensionProblem]:
+    """Register plugin repo types and tree contributors on a context.
+
+    Runs each declared repo type's detector (fault-isolated), records
+    detected type names in ``context.plugin_repo_types``, merges detected
+    types' ``content_paths`` into ``context.content_paths``, and hands tree
+    contributors to the context for ``build_lint_tree``. Idempotent per
+    context is not required — call once per fresh context.
+
+    Returns problems (name collisions, crashed detectors) for the caller to
+    surface; the linter maps them to violations, the CLI prints them.
+    """
+    from .context import RepositoryType
+
+    problems: List[ExtensionProblem] = []
+    builtin_type_values = {t.value for t in RepositoryType}
+    registered_types: dict = {}  # type name -> plugin name
+    contributed_paths: List[str] = []
+
+    for plugin in plugins:
+        if plugin.error:
+            continue
+        for repo_type in plugin.repo_types:
+            if repo_type.name in builtin_type_values:
+                problems.append(
+                    ExtensionProblem(
+                        "warning",
+                        f"Plugin '{plugin.name}' declares repo type "
+                        f"'{repo_type.name}', which is a builtin repository "
+                        "type — the declaration was skipped.",
+                    )
+                )
+                continue
+            if repo_type.name in registered_types:
+                problems.append(
+                    ExtensionProblem(
+                        "warning",
+                        f"Plugin '{plugin.name}' declares repo type "
+                        f"'{repo_type.name}', already provided by plugin "
+                        f"'{registered_types[repo_type.name]}' — the "
+                        "declaration was skipped.",
+                    )
+                )
+                continue
+            registered_types[repo_type.name] = plugin.name
+
+            try:
+                detected = bool(repo_type.detect(context.root_path))
+            except Exception as e:
+                problems.append(
+                    ExtensionProblem(
+                        "error",
+                        f"Plugin '{plugin.name}': repo type '{repo_type.name}' "
+                        f"detector crashed: {e.__class__.__name__}: {e}",
+                    )
+                )
+                continue
+            if detected:
+                context.plugin_repo_types.add(repo_type.name)
+                contributed_paths.extend(repo_type.content_paths)
+                logger.info("Repo type %-24s detected (plugin: %s)", repo_type.name, plugin.name)
+
+        context.plugin_tree_contributors.extend(
+            (plugin.name, contributor) for contributor in plugin.tree_contributors
+        )
+
+    if contributed_paths:
+        merged = list(context.content_paths)
+        merged.extend(p for p in contributed_paths if p not in merged)
+        context.content_paths = merged
+    if contributed_paths or context.plugin_tree_contributors:
+        # The tree is built lazily on first access, so nothing is wasted;
+        # dropping any cached tree guarantees the contributions apply.
+        context.rebuild_lint_tree()
+    return problems
 
 
 def load_plugins(disabled: Optional[Set[str]] = None) -> List[PluginInfo]:
@@ -223,10 +399,25 @@ def load_plugins(disabled: Optional[Set[str]] = None) -> List[PluginInfo]:
         try:
             obj = ep.load()
             info.rule_classes = _resolve_rule_classes(obj, ep.value)
+            # Extension declarations live as sibling attributes on the entry
+            # point's module (already imported by ep.load()), so they work
+            # for every entry point form, not just the module form.
+            module_name = ep.value.split(":", 1)[0]
+            info.repo_types = _resolve_repo_types(module_name)
+            info.tree_contributors = _resolve_tree_contributors(module_name)
         except Exception as e:
             info.error = f"{e.__class__.__name__}: {e}"
+            info.rule_classes = []
+            info.repo_types = []
+            info.tree_contributors = []
             logger.warning("Plugin %-30s failed to load: %s", ep.name, info.error)
         else:
-            logger.info("Plugin %-30s loaded (%d rule(s))", ep.name, len(info.rule_classes))
+            logger.info(
+                "Plugin %-30s loaded (%d rule(s), %d repo type(s), %d tree contributor(s))",
+                ep.name,
+                len(info.rule_classes),
+                len(info.repo_types),
+                len(info.tree_contributors),
+            )
         plugins.append(info)
     return plugins

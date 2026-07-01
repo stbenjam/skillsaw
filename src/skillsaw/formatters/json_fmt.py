@@ -19,7 +19,7 @@ def format_json(
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
-    repo_types_list = sorted(t.value for t in context.repo_types)
+    repo_types_list = context.repo_type_names()
 
     if verbose:
         stats = {
