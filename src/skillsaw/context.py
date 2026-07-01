@@ -132,9 +132,12 @@ class RepositoryContext:
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
+        # Excludes must be applied before format detection so excluded files
+        # (e.g. *.instructions.md under an excluded directory) don't flip
+        # format flags like HAS_COPILOT.
+        self.apply_excludes()
         self.detected_formats: Set[str] = self._detect_formats()
         self._lint_tree: Optional["LintTarget"] = None
-        self.apply_excludes()
 
     @property
     def lint_tree(self) -> "LintTarget":

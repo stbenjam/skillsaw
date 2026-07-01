@@ -90,6 +90,22 @@ def test_context_constructor_applies_excludes(tmp_path):
     assert "my-skill" not in skill_names
 
 
+def test_context_constructor_excludes_precede_format_detection(tmp_path):
+    """Excluded instruction files must not drive format detection."""
+    from skillsaw.context import HAS_COPILOT
+
+    vendored = tmp_path / "vendor"
+    vendored.mkdir()
+    (vendored / "coding.instructions.md").write_text("Vendored instructions\n")
+
+    context = RepositoryContext(tmp_path, exclude_patterns=["vendor/**"])
+    assert not context.instruction_files
+    assert HAS_COPILOT not in context.detected_formats
+
+    unfiltered = RepositoryContext(tmp_path)
+    assert HAS_COPILOT in unfiltered.detected_formats
+
+
 def test_severity_enum_matches():
     # default_severity() must return a Severity for every rule
     for cls in BUILTIN_RULES:
