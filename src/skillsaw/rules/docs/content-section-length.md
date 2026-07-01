@@ -29,7 +29,7 @@ dependencies, database, Docker, and CI configuration.
 
 Split long sections into focused subsections, each under its own
 heading one level deeper than the parent. Aim for roughly 10–30 lines
-per subsection. `skillsaw fix --llm` can add headings automatically.
+per subsection. A coding agent can add headings automatically.
 
 ## Tuning
 

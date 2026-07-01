@@ -32,15 +32,7 @@ Automatically fix lint violations
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the first path) |  |
-| `--llm`, `--ai` | Use LLM-powered fixes for content violations |  |
-| `--model` | Override LLM model (default: from config or claude-sonnet-4-20250514) |  |
-| `--max-iterations` | Max fix iterations per file (default: 3) |  |
-| `--all` | Include info-level violations (default: only errors and warnings) |  |
-| `-y`, `--yes` | Auto-apply changes without confirmation |  |
-| `--workers` | Number of parallel LLM workers (default: 4) |  |
 | `--dry-run` | Preview fixes without writing changes |  |
-| `--patch-file` | Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root) |  |
-| `--apply-patch` | Apply a previously saved LLM dry-run patch (use --patch-file to specify path) |  |
 | `--suggest` | Also apply suggested fixes (not just safe ones) |  |
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |

@@ -32,12 +32,12 @@
     [Research-backed](research.md) rules that catch weak language, tautological instructions,
     attention dead zones, embedded secrets, contradictions, and more.
 
--   :wrench:{ .lg .middle } **LLM Autofix**
+-   :wrench:{ .lg .middle } **Agent-Friendly Fixes**
 
     ---
 
-    Fix violations with any LLM via `skillsaw fix --llm` — parallel processing, scoped re-lint,
-    per-file rollback.
+    Deterministic autofixes via `skillsaw fix`, plus how-to-fix guidance in
+    `skillsaw explain` that coding agents use to resolve the rest.
 
 -   :mag:{ .lg .middle } **Context-Aware**
 
@@ -97,8 +97,8 @@ uvx skillsaw
 # Fix structural issues automatically
 skillsaw fix
 
-# Fix content quality issues with an LLM
-skillsaw fix --llm
+# Content quality issues? Your coding agent can fix them —
+# every violation points to `skillsaw explain` guidance
 ```
 
 [:octicons-arrow-right-24: Full installation guide](getting-started.md)

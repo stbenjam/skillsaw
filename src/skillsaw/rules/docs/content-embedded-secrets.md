@@ -26,5 +26,5 @@ files.
 Replace the hardcoded secret with an environment variable reference
 (e.g., `$API_KEY`) or a note directing the reader to a secure storage
 mechanism. Rotate the exposed credential immediately — removing it from
-the file does not remove it from git history. `skillsaw fix --llm` can
+the file does not remove it from git history. A coding agent can
 redact detected secrets automatically.

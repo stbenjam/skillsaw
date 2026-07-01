@@ -2,7 +2,7 @@
 
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -11,8 +11,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentCognitiveChunksRule(Rule):
     """Check section organization for cognitive chunking"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -27,21 +25,6 @@ class ContentCognitiveChunksRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are reorganizing AI coding assistant instruction files for "
-            "better cognitive chunking. Add section headings to organize "
-            "instructions into logical groups.\n\n"
-            "Rules:\n"
-            "- Add descriptive markdown headings to group related instructions\n"
-            "- Use ## for top-level sections, ### for subsections\n"
-            "- Group by task or domain (e.g., '## Testing', '## Code Style')\n"
-            "- Aim for 10-30 lines per section\n"
-            "- Do NOT change the content of the instructions\n"
-            "- Preserve markdown formatting"
-        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []

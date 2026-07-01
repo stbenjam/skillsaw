@@ -26,7 +26,7 @@ organized into the following categories:
 
 | Rule ID | Description | Default Severity | Autofix | Category |
 |---------|-------------|------------------|---------|----------|
-| [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm | agentskills.io |
+| [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto | agentskills.io |
 | [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto | agentskills.io |
 | [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto | agentskills.io |
 | [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - | agentskills.io |
@@ -36,15 +36,15 @@ organized into the following categories:
 | [`plugin-json-required`](plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Plugin Structure |
 | [`plugin-json-valid`](plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Plugin Structure |
 | [`plugin-naming`](plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Plugin Structure |
-| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | llm | Plugin Structure |
+| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Plugin Structure |
 | [`command-naming`](command-naming.md) | Command files should use kebab-case naming | warning | auto | Command Format |
 | [`command-frontmatter`](command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Command Format |
 | [`command-sections`](command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Command Format |
 | [`command-name-format`](command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Command Format |
 | [`marketplace-json-valid`](marketplace-json-valid.md) | Marketplace.json must be valid JSON with required fields | error (auto) | - | Marketplace |
 | [`marketplace-registration`](marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
-| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto, llm | Skills, Agents, Hooks |
-| [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto, llm | Skills, Agents, Hooks |
+| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto | Skills, Agents, Hooks |
+| [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Skills, Agents, Hooks |
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |
@@ -55,20 +55,20 @@ organized into the following categories:
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |
-| [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm | Content Intelligence |
-| [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | warning (auto) | llm | Content Intelligence |
-| [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm | Content Intelligence |
-| [`content-redundant-with-tooling`](content-redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm | Content Intelligence |
-| [`content-instruction-budget`](content-instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm | Content Intelligence |
-| [`content-negative-only`](content-negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm | Content Intelligence |
-| [`content-section-length`](content-section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | llm | Content Intelligence |
-| [`content-contradiction`](content-contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm | Content Intelligence |
-| [`content-hook-candidate`](content-hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm | Content Intelligence |
-| [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm | Content Intelligence |
-| [`content-cognitive-chunks`](content-cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm | Content Intelligence |
-| [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm | Content Intelligence |
-| [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm | Content Intelligence |
-| [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm | Content Intelligence |
+| [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | - | Content Intelligence |
+| [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | warning (auto) | - | Content Intelligence |
+| [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | - | Content Intelligence |
+| [`content-redundant-with-tooling`](content-redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | - | Content Intelligence |
+| [`content-instruction-budget`](content-instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | - | Content Intelligence |
+| [`content-negative-only`](content-negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | - | Content Intelligence |
+| [`content-section-length`](content-section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | - | Content Intelligence |
+| [`content-contradiction`](content-contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | - | Content Intelligence |
+| [`content-hook-candidate`](content-hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | - | Content Intelligence |
+| [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (auto) | - | Content Intelligence |
+| [`content-cognitive-chunks`](content-cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | - | Content Intelligence |
+| [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - | Content Intelligence |
+| [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - | Content Intelligence |
+| [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |

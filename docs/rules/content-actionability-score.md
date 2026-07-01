@@ -8,7 +8,7 @@ Score instruction files on actionability (verb density, commands, file reference
 | | |
 |---|---|
 | **Severity** | info (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
@@ -40,8 +40,7 @@ See `src/config.ts` for the project's shared configuration.
 ## How to fix
 
 Add imperative verbs, inline commands (backticked), and file path
-references. Replace descriptions with direct instructions. `skillsaw fix
---llm` can rewrite low-scoring files automatically.
+references. Replace descriptions with direct instructions. A coding agent can rewrite low-scoring files automatically.
 
 ## Configuration
 

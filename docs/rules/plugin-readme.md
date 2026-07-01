@@ -8,7 +8,7 @@ Plugin should have a README.md file
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.1.0 |
 | **Repo Types** | marketplace, single-plugin |
 | **Category** | [Plugin Structure](plugin-structure.md) |

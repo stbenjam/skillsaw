@@ -21,5 +21,5 @@ to `.claude/rules/` files that load only when relevant.
 
 Merge duplicate instructions, remove tautologies (things the model does
 by default), and move context-specific rules into scoped rule files
-(`.claude/rules/`) so they only load when relevant. `skillsaw fix --llm`
+(`.claude/rules/`) so they only load when relevant. A coding agent
 can consolidate instructions automatically.
