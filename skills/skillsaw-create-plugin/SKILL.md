@@ -164,6 +164,9 @@ Rules you must follow when writing rules:
   by its rule ID, exactly like builtin rules.
 - **Declare `repo_types`** when the rule only applies to certain repository
   types — the rule then activates only on matching repositories.
+- **Set `default_enabled`** to control activation: the base default `"auto"`
+  runs everywhere (or on matching `repo_types`/`formats` when declared);
+  `default_enabled = False` makes the rule opt-in via config.
 - Parse YAML with `read_yaml_commented()` from `skillsaw.utils` (preserves
   line numbers), never `yaml.safe_load()`.
 - Read markdown structure (links, fences, headings) from `block.markdown`

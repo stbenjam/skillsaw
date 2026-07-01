@@ -316,6 +316,7 @@ class LinterConfig:
         repo_types=None,
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
+        default_enabled: Any = None,
     ) -> bool:
         """
         Check if a rule is enabled for the given context
@@ -326,12 +327,14 @@ class LinterConfig:
             repo_types: Set of RepositoryType values the rule applies to (None = all)
             formats: Set of detected format constants the rule requires (None = all)
             since_version: Minimum config version required for this rule
+            default_enabled: Class-level default (``Rule.default_enabled``) for
+                rules outside the builtin registry — plugin rules
 
         Returns:
             True if rule should run
         """
         enabled, _reason = self.rule_enabled_reason(
-            rule_id, context, repo_types, formats, since_version
+            rule_id, context, repo_types, formats, since_version, default_enabled=default_enabled
         )
         return enabled
 
@@ -342,6 +345,7 @@ class LinterConfig:
         repo_types=None,
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
+        default_enabled: Any = None,
     ) -> Tuple[bool, str]:
         """
         Determine whether a rule is enabled and why.
@@ -350,9 +354,15 @@ class LinterConfig:
         human-readable reason — used by ``skillsaw explain`` to show the
         effective config state.
 
+        ``default_enabled`` supplies the class-level default
+        (``Rule.default_enabled``) for rules that have no entry in the
+        builtin registry — plugin rules. For builtin rules the registry
+        already carries the same value, so the parameter is unnecessary.
+
         Returns:
             Tuple of (enabled, reason)
         """
+        fallback_enabled = True if default_enabled is None else default_enabled
         user_overrides = self.rules.get(rule_id, {})
         has_explicit_enabled = "enabled" in user_overrides
         if has_explicit_enabled:
@@ -368,8 +378,10 @@ class LinterConfig:
             # wants it active.  We must NOT do this for ``enabled: "auto"``
             # rules — those rely on repo-type / format detection.
             if user_overrides:
-                default_enabled = _default_rules().get(rule_id, {}).get("enabled", True)
-                if default_enabled is False:
+                registry_default = (
+                    _default_rules().get(rule_id, {}).get("enabled", fallback_enabled)
+                )
+                if registry_default is False:
                     return True, "configured in config (overrides disabled-by-default)"
                 # For "auto" rules, non-enabled overrides don't change
                 # activation — fall through to version gate + auto logic.
@@ -386,7 +398,7 @@ class LinterConfig:
                 )
 
         rule_config = self.get_rule_config(rule_id)
-        enabled = rule_config.get("enabled", True)
+        enabled = rule_config.get("enabled", fallback_enabled)
 
         if enabled == "auto":
             if repo_types is None and formats is None:

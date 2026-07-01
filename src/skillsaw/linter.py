@@ -204,43 +204,25 @@ class Linter:
                         )
                         continue
 
-                if self._rule_ids or self._plugin_rule_enabled(rule_instance):
+                # Plugin rules have no entry in the builtin registry that
+                # LinterConfig.default() is generated from, so their
+                # class-level default (Rule.default_enabled — True, False,
+                # or "auto") is supplied directly. Semantics match builtins:
+                # "auto" follows repo_types/formats detection, False is
+                # opt-in via config.
+                if self._rule_ids or self.config.is_rule_enabled(
+                    rid,
+                    self.context,
+                    rule_instance.repo_types,
+                    rule_instance.formats,
+                    since_version=rule_instance.since,
+                    default_enabled=rule_instance.default_enabled,
+                ):
                     rule_instance._source = f"plugin:{plugin.name}"
                     self.rules.append(rule_instance)
                     logger.info("Rule %-30s enabled (plugin: %s)", rid, plugin.name)
                 else:
                     logger.info("Rule %-30s skipped (plugin: %s)", rid, plugin.name)
-
-    def _plugin_rule_enabled(self, rule_instance: Rule) -> bool:
-        """Enablement for a plugin rule.
-
-        Builtin rules get their ``enabled: auto`` default from the builtin
-        config map; plugin rules have no entry there, so a plugin rule that
-        declares ``repo_types``/``formats`` would otherwise run everywhere.
-        When the user hasn't set ``enabled`` explicitly, scoped plugin rules
-        follow the same auto-detection as builtins.
-        """
-        rid = rule_instance.rule_id
-        user_cfg = self.config.rules.get(rid) or {}
-        scoped = rule_instance.repo_types is not None or rule_instance.formats is not None
-        if "enabled" not in user_cfg and scoped:
-            return bool(
-                (
-                    rule_instance.repo_types is not None
-                    and rule_instance.repo_types & self.context.repo_types
-                )
-                or (
-                    rule_instance.formats is not None
-                    and rule_instance.formats & self.context.detected_formats
-                )
-            )
-        return self.config.is_rule_enabled(
-            rid,
-            self.context,
-            rule_instance.repo_types,
-            rule_instance.formats,
-            since_version=rule_instance.since,
-        )
 
     def _load_custom_rule(self, rule_path: str):
         """

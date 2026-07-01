@@ -359,6 +359,33 @@ def test_scoped_plugin_rule_follows_repo_type_detection(fake_plugin, repo):
     assert "plugin-marketplace-only" in {r.rule_id for r in linter.rules}
 
 
+def test_opt_in_plugin_rule_respects_default_enabled_false(fake_plugin, repo):
+    """default_enabled = False makes a plugin rule opt-in, like builtins."""
+
+    class OptInRule(AlwaysFiresRule):
+        default_enabled = False
+
+        @property
+        def rule_id(self) -> str:
+            return "plugin-opt-in"
+
+    fake_plugin("fake_optin", module_attrs={"SKILLSAW_RULES": [OptInRule]})
+    linter, _ = _lint(repo)
+    assert "plugin-opt-in" not in {r.rule_id for r in linter.rules}
+
+    config = LinterConfig.default()
+    config.rules["plugin-opt-in"] = {"enabled": True}
+    linter, _ = _lint(repo, config=config)
+    assert "plugin-opt-in" in {r.rule_id for r in linter.rules}
+
+    # A non-enabled override on a disabled-by-default rule implies opt-in,
+    # matching builtin semantics.
+    config = LinterConfig.default()
+    config.rules["plugin-opt-in"] = {"severity": "error"}
+    linter, _ = _lint(repo, config=config)
+    assert "plugin-opt-in" in {r.rule_id for r in linter.rules}
+
+
 def test_config_entry_for_unloaded_plugin_rule_not_flagged(fake_plugin, repo):
     """With plugins skipped, config entries for their rules are not typos."""
     fake_plugin("fake_lenient", module_attrs={"SKILLSAW_RULES": [AlwaysFiresRule]})
