@@ -53,6 +53,7 @@ def _run_list_rules():
 
 def _run_plugins():
     from ..plugins import load_plugins
+    from ._extensions import find_plugin_command
 
     plugins = load_plugins()
     if not plugins:
@@ -72,6 +73,9 @@ def _run_plugins():
             dist = f" ({plugin.distribution}{version})"
         print(f"  {plugin.name}{dist}")
         print(f"    source: {plugin.source}")
+        command = find_plugin_command(plugin.name)
+        if command:
+            print(f"    command: skillsaw {plugin.name} ({command})")
         if plugin.error:
             had_errors = True
             print(f"    ERROR: {plugin.error}")

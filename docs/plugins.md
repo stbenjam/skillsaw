@@ -71,6 +71,32 @@ Or skip all plugins for a single run:
 $ skillsaw lint --no-plugins
 ```
 
+### Plugin subcommands
+
+A plugin can also ship a CLI, reachable as a skillsaw subcommand. When a
+plugin package installs a console script named `skillsaw-<name>` (matching
+its entry point name), `skillsaw <name> [args...]` runs that executable with
+the remaining arguments forwarded verbatim, git-style — its exit code becomes
+skillsaw's exit code:
+
+```console
+$ skillsaw typos accept        # runs: skillsaw-typos accept
+```
+
+Dispatch rules:
+
+- Builtin subcommands always win — a plugin cannot shadow `lint`, `fix`,
+  `baseline`, etc.
+- Only **registered** plugins are eligible: the name must match an installed
+  `skillsaw.plugins` entry point. A stray `skillsaw-foo` executable on PATH
+  is never executed. The check reads package metadata only, so no plugin
+  code is imported to dispatch.
+- If the name also matches an existing file or directory, the plugin command
+  still wins and a note is printed; use `skillsaw lint <path>` to lint the
+  path instead.
+
+`skillsaw plugins` shows each plugin's command when one is installed.
+
 ### Broken plugins
 
 A plugin that fails to import (or whose rules crash on construction) never
@@ -212,6 +238,22 @@ Plugins can also ship **deterministic autofixes** by setting
 [custom rules autofix example](custom-rules.md); it works unchanged in a
 plugin. Fixes must be deterministic, scoped to the violation's exact lines,
 and idempotent.
+
+### Optional: ship a CLI
+
+Add a console script named `skillsaw-<name>` and it becomes available as
+`skillsaw <name> ...` (see [Plugin subcommands](#plugin-subcommands)):
+
+```toml
+[project.scripts]
+skillsaw-acme = "skillsaw_acme_rules.cli:main"
+```
+
+The script owns its own argument parsing (`sys.argv[1:]` is whatever
+followed `skillsaw acme`), and Python-based CLIs can `import skillsaw` to
+reuse the config loader, lint tree, and baseline machinery. Typical use: an
+`accept` command that appends currently-flagged values to the rule's
+config in `.skillsaw.yaml`.
 
 ### 4. Test it
 

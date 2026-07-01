@@ -31,6 +31,15 @@ def main():
         return _run_add_cli()
 
     if len(sys.argv) < 2 or sys.argv[1] not in _SUBCOMMANDS | {"--version", "-h", "--help"}:
+        # Plugin subcommands: `skillsaw <name> ...` runs skillsaw-<name> when
+        # <name> is a registered plugin. Builtins above always win; anything
+        # unmatched falls through to the implicit lint-path behavior.
+        if len(sys.argv) > 1:
+            from ._extensions import find_plugin_command, run_plugin_command
+
+            exe = find_plugin_command(sys.argv[1])
+            if exe is not None:
+                sys.exit(run_plugin_command(exe, sys.argv[1], sys.argv[2:]))
         sys.argv.insert(1, "lint")
 
     parser = _build_parser()

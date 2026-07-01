@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 FIXTURES = Path(__file__).parent / "fixtures"
 PLUGIN_DIST = FIXTURES / "plugin-dist"
 BROKEN_DIST = FIXTURES / "plugin-dist-broken"
@@ -27,7 +29,7 @@ def copy_fixture(name, tmp_path):
     return dst
 
 
-def run_cli(*args, dists=(PLUGIN_DIST,), fmt=None, timeout=60):
+def run_cli(*args, dists=(PLUGIN_DIST,), fmt=None, timeout=60, path_prepend=None, cwd=None):
     cmd = [sys.executable, "-m", "skillsaw", *args]
     if fmt:
         cmd.extend(["--format", fmt])
@@ -36,7 +38,9 @@ def run_cli(*args, dists=(PLUGIN_DIST,), fmt=None, timeout=60):
     if env.get("PYTHONPATH"):
         pythonpath = pythonpath + os.pathsep + env["PYTHONPATH"]
     env["PYTHONPATH"] = pythonpath
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    if path_prepend is not None:
+        env["PATH"] = str(path_prepend) + os.pathsep + env.get("PATH", "")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env, cwd=cwd)
     output = None
     if fmt == "json" and result.stdout.strip():
         output = json.loads(result.stdout)
@@ -169,3 +173,76 @@ def test_explain_plugin_rule(tmp_path):
     assert r["rc"] == 0, r["stdout"] + r["stderr"]
     assert "plugin: no-wip" in r["stdout"]
     assert "markers" in r["stdout"]  # config_schema is shown
+
+
+# ---------------------------------------------------------------------------
+# Plugin subcommands (skillsaw <name> -> skillsaw-<name>)
+# ---------------------------------------------------------------------------
+
+posix_only = pytest.mark.skipif(os.name != "posix", reason="shell-script fake executable")
+
+
+def make_command(bin_dir, name):
+    """Create a fake plugin executable that echoes its args and exits 7."""
+    bin_dir.mkdir(exist_ok=True)
+    exe = bin_dir / name
+    exe.write_text(f'#!/bin/sh\necho "{name} args: $@"\nexit 7\n', encoding="utf-8")
+    exe.chmod(0o755)
+    return exe
+
+
+@posix_only
+def test_plugin_subcommand_dispatch(tmp_path):
+    bin_dir = tmp_path / "bin"
+    make_command(bin_dir, "skillsaw-no-wip")
+    r = run_cli("no-wip", "accept", "--flag", path_prepend=bin_dir)
+    assert r["rc"] == 7, r["stdout"] + r["stderr"]
+    assert "skillsaw-no-wip args: accept --flag" in r["stdout"]
+
+
+@posix_only
+def test_unregistered_executable_is_not_dispatched(tmp_path):
+    """skillsaw-rogue on PATH without a registered plugin never runs."""
+    bin_dir = tmp_path / "bin"
+    make_command(bin_dir, "skillsaw-rogue")
+    r = run_cli("rogue", path_prepend=bin_dir, cwd=tmp_path)
+    assert r["rc"] == 1
+    assert "Path not found: rogue" in r["stderr"]
+    assert "args:" not in r["stdout"]
+
+
+def test_registered_plugin_without_executable_falls_back_to_lint(tmp_path):
+    r = run_cli("no-wip", cwd=tmp_path)
+    assert r["rc"] == 1
+    assert "Path not found: no-wip" in r["stderr"]
+
+
+@posix_only
+def test_plugin_command_wins_over_path_with_note(tmp_path):
+    bin_dir = tmp_path / "bin"
+    make_command(bin_dir, "skillsaw-no-wip")
+    (tmp_path / "no-wip").mkdir()
+    r = run_cli("no-wip", path_prepend=bin_dir, cwd=tmp_path)
+    assert r["rc"] == 7
+    assert "skillsaw-no-wip args:" in r["stdout"]
+    assert "skillsaw lint no-wip" in r["stderr"]
+
+
+@posix_only
+def test_builtin_subcommand_wins_over_plugin_command(tmp_path):
+    """A plugin named like a builtin cannot shadow it."""
+    bin_dir = tmp_path / "bin"
+    make_command(bin_dir, "skillsaw-list-rules")
+    r = run_cli("list-rules", path_prepend=bin_dir)
+    assert r["rc"] == 0
+    assert "Available builtin rules" in r["stdout"]
+    assert "args:" not in r["stdout"]
+
+
+@posix_only
+def test_plugins_subcommand_shows_command(tmp_path):
+    bin_dir = tmp_path / "bin"
+    make_command(bin_dir, "skillsaw-no-wip")
+    r = run_cli("plugins", path_prepend=bin_dir)
+    assert r["rc"] == 0
+    assert "command: skillsaw no-wip" in r["stdout"]

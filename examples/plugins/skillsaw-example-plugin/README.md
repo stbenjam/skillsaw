@@ -18,7 +18,8 @@ skillsaw-example-plugin/
 ├── src/
 │   └── skillsaw_example_plugin/
 │       ├── __init__.py                   # SKILLSAW_RULES = [...]
-│       └── rules.py                      # the Rule subclass
+│       ├── rules.py                      # the Rule subclass
+│       └── cli.py                        # optional: `skillsaw example` CLI
 └── tests/
     ├── fixture/CLAUDE.md                 # realistic test fixture
     └── test_rules.py
@@ -55,6 +56,7 @@ Installed skillsaw plugins:
 
 $ skillsaw lint            # the rule now runs automatically
 $ skillsaw fix --rule no-todo-instructions   # deterministic autofix
+$ skillsaw example rules   # dispatches to the skillsaw-example console script
 ```
 
 Users configure the rule like any other, in `.skillsaw.yaml`:

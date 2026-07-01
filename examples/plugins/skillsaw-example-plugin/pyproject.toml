@@ -20,5 +20,10 @@ dependencies = [
 [project.entry-points."skillsaw.plugins"]
 example = "skillsaw_example_plugin"
 
+# Optional plugin CLI: a console script named skillsaw-<plugin name> is
+# dispatched to as `skillsaw example [args...]` (registered plugins only).
+[project.scripts]
+skillsaw-example = "skillsaw_example_plugin.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]

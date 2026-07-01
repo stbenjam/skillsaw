@@ -939,6 +939,11 @@ from .rules import NoTodoInstructionsRule
 SKILLSAW_RULES = [NoTodoInstructionsRule]
 ```
 
+Plugins can also ship a CLI: a console script named `skillsaw-<name>` in the
+same package becomes reachable as `skillsaw <name> [args...]`, git-style —
+but only for registered plugins, never for arbitrary `skillsaw-*`
+executables on PATH.
+
 See the [plugin documentation](https://skillsaw.org/plugins/), the complete
 [`examples/plugins/skillsaw-example-plugin/`](examples/plugins/skillsaw-example-plugin/)
 package, and the `skillsaw-create-plugin` skill in [`skills/`](skills/) that

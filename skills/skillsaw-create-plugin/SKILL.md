@@ -217,6 +217,22 @@ Autofix rules:
 - Fixes must be idempotent: fixing already-fixed content produces no changes.
 - Do not build fixes on LLM hooks — plugins provide deterministic fixes only.
 
+### Optional: ship a CLI subcommand
+
+If the plugin needs its own commands (for example an `accept` command that
+appends currently-flagged values to the rule's config), add a console script
+named `skillsaw-<name>` to `pyproject.toml`:
+
+```toml
+[project.scripts]
+skillsaw-<name> = "skillsaw_<name>.cli:main"
+```
+
+skillsaw dispatches `skillsaw <name> [args...]` to that executable
+(registered plugins only), forwarding arguments and the exit code. The
+script owns its own argument parsing and can `import skillsaw` to reuse the
+config loader and lint tree.
+
 ## Step 4: Write tests
 
 In `tests/test_rules.py`, cover at minimum:
