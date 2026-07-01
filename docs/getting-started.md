@@ -163,7 +163,7 @@ skillsaw list-rules
 # Generate plugin/skill documentation
 skillsaw docs
 
-# Output in different formats (text, json, sarif, html, code-climate)
+# Output in different formats (text, json, sarif, html, code-climate, gitlab)
 skillsaw --format json
 skillsaw --format code-climate   # Code Climate / GitLab Code Quality format
 skillsaw --format gitlab          # Alias for code-climate

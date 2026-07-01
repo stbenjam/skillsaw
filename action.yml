@@ -24,7 +24,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: 'skillsaw exit code (0=pass, 1=errors, 2=strict+warnings)'
+    description: 'skillsaw exit code (0=pass, 1=errors or strict warnings)'
     value: ${{ steps.lint.outputs.exit-code }}
   errors:
     description: 'Number of errors found'

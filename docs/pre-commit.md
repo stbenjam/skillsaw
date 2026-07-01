@@ -11,7 +11,7 @@ Add skillsaw to your repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.12.1
+    rev: v0.14.1
     hooks:
       - id: skillsaw
 ```
@@ -63,7 +63,7 @@ commit SHA instead:
 
 ```yaml
   - repo: https://github.com/stbenjam/skillsaw
-    rev: 96a1b24d76bcfbb103a2f06cc0db3e0421a6b096  # v0.12.1
+    rev: 3e1188f446413e6d6818c98644d2d6a84e4038e7  # v0.14.1
     hooks:
       - id: skillsaw
 ```
