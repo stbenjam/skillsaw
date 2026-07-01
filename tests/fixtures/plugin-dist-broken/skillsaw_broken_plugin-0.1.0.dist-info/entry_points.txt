@@ -1,0 +1,2 @@
+[skillsaw.plugins]
+broken = skillsaw_broken_plugin_missing_module

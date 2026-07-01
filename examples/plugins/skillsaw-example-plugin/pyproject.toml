@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillsaw-example-plugin"
+version = "0.1.0"
+description = "Example skillsaw plugin: flags TODO/FIXME comments in instruction files"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "skillsaw>=0.14",
+]
+
+# This is what makes the package a skillsaw plugin: skillsaw scans the
+# "skillsaw.plugins" entry point group and loads the rules each entry
+# provides. The name on the left is the plugin's short name (shown in
+# `skillsaw plugins` and used in `plugins: {disable: [...]}`); the value
+# points at a module whose SKILLSAW_RULES list declares the rule classes.
+[project.entry-points."skillsaw.plugins"]
+example = "skillsaw_example_plugin"
+
+# Optional plugin CLI: a console script named skillsaw-<plugin name> is
+# dispatched to as `skillsaw example [args...]` (registered plugins only).
+[project.scripts]
+skillsaw-example = "skillsaw_example_plugin.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -163,3 +163,19 @@ content-paths:
 ```
 
 Matched files are analyzed by all `content-*` rules.
+
+## Rule Plugins
+
+Rules from installed [rule plugins](plugins.md) run automatically. The
+`plugins` key controls which plugins load:
+
+```yaml
+plugins:
+  enabled: true          # default; set false to skip all rule plugins
+  disable: [acme-rules]  # skip specific plugins by name (see `skillsaw plugins`)
+```
+
+`plugins: false` is accepted as a shorthand for `enabled: false`. The
+`--no-plugins` CLI flag skips all plugins for a single run. Individual
+plugin *rules* are configured in the normal `rules:` section by rule ID,
+exactly like builtin rules.

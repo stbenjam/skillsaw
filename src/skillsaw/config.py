@@ -56,6 +56,11 @@ class LinterConfig:
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
+    # Rule plugins (pip-installed packages exposing skillsaw.plugins entry
+    # points). ``plugins_enabled: False`` skips all of them; ``disabled_plugins``
+    # skips specific plugins by entry point name.
+    plugins_enabled: bool = True
+    disabled_plugins: List[str] = field(default_factory=list)
     config_dir: Optional[Path] = None
     # Non-fatal problems found while loading (missing version, unknown keys).
     # Excluded from equality so two configs loaded the same way still compare
@@ -64,7 +69,15 @@ class LinterConfig:
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
-        {"version", "rules", "custom-rules", "exclude", "content-paths", "strict"}
+        {
+            "version",
+            "rules",
+            "custom-rules",
+            "exclude",
+            "content-paths",
+            "strict",
+            "plugins",
+        }
     )
 
     @classmethod
@@ -192,6 +205,42 @@ class LinterConfig:
         else:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
+        raw_plugins = data.get("plugins")
+        plugins_enabled = True
+        disabled_plugins: List[str] = []
+        if raw_plugins is None:
+            pass
+        elif isinstance(raw_plugins, bool):
+            # Shorthand: ``plugins: false`` disables all rule plugins.
+            plugins_enabled = raw_plugins
+        elif isinstance(raw_plugins, dict):
+            unknown_plugin_keys = set(raw_plugins) - {"enabled", "disable"}
+            if unknown_plugin_keys:
+                load_warnings.append(
+                    "unknown 'plugins' config key(s) ignored: "
+                    + ", ".join(sorted(map(str, unknown_plugin_keys)))
+                    + ". Known keys: disable, enabled"
+                )
+            raw_enabled = raw_plugins.get("enabled")
+            if raw_enabled is not None:
+                if not isinstance(raw_enabled, bool):
+                    raise ValueError(
+                        f"'plugins.enabled' must be a boolean, got {type(raw_enabled).__name__}"
+                    )
+                plugins_enabled = raw_enabled
+            raw_disable = raw_plugins.get("disable")
+            if raw_disable is not None:
+                if not isinstance(raw_disable, list) or not all(
+                    isinstance(p, str) for p in raw_disable
+                ):
+                    raise ValueError("'plugins.disable' must be a list of strings (plugin names)")
+                disabled_plugins = raw_disable
+        else:
+            raise ValueError(
+                f"'plugins' must be a boolean or a mapping, got {type(raw_plugins).__name__}. "
+                "Example:\n  plugins:\n    disable: [some-plugin]"
+            )
+
         return cls(
             version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
             rules=rules,
@@ -199,6 +248,8 @@ class LinterConfig:
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
             strict=strict,
+            plugins_enabled=plugins_enabled,
+            disabled_plugins=disabled_plugins,
             config_dir=config_path.resolve().parent,
             warnings=load_warnings,
         )
@@ -265,6 +316,7 @@ class LinterConfig:
         repo_types=None,
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
+        default_enabled: Any = None,
     ) -> bool:
         """
         Check if a rule is enabled for the given context
@@ -275,12 +327,14 @@ class LinterConfig:
             repo_types: Set of RepositoryType values the rule applies to (None = all)
             formats: Set of detected format constants the rule requires (None = all)
             since_version: Minimum config version required for this rule
+            default_enabled: Class-level default (``Rule.default_enabled``) for
+                rules outside the builtin registry — plugin rules
 
         Returns:
             True if rule should run
         """
         enabled, _reason = self.rule_enabled_reason(
-            rule_id, context, repo_types, formats, since_version
+            rule_id, context, repo_types, formats, since_version, default_enabled=default_enabled
         )
         return enabled
 
@@ -291,6 +345,7 @@ class LinterConfig:
         repo_types=None,
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
+        default_enabled: Any = None,
     ) -> Tuple[bool, str]:
         """
         Determine whether a rule is enabled and why.
@@ -299,9 +354,15 @@ class LinterConfig:
         human-readable reason — used by ``skillsaw explain`` to show the
         effective config state.
 
+        ``default_enabled`` supplies the class-level default
+        (``Rule.default_enabled``) for rules that have no entry in the
+        builtin registry — plugin rules. For builtin rules the registry
+        already carries the same value, so the parameter is unnecessary.
+
         Returns:
             Tuple of (enabled, reason)
         """
+        fallback_enabled = True if default_enabled is None else default_enabled
         user_overrides = self.rules.get(rule_id, {})
         has_explicit_enabled = "enabled" in user_overrides
         if has_explicit_enabled:
@@ -317,8 +378,10 @@ class LinterConfig:
             # wants it active.  We must NOT do this for ``enabled: "auto"``
             # rules — those rely on repo-type / format detection.
             if user_overrides:
-                default_enabled = _default_rules().get(rule_id, {}).get("enabled", True)
-                if default_enabled is False:
+                registry_default = (
+                    _default_rules().get(rule_id, {}).get("enabled", fallback_enabled)
+                )
+                if registry_default is False:
                     return True, "configured in config (overrides disabled-by-default)"
                 # For "auto" rules, non-enabled overrides don't change
                 # activation — fall through to version gate + auto logic.
@@ -335,7 +398,7 @@ class LinterConfig:
                 )
 
         rule_config = self.get_rule_config(rule_id)
-        enabled = rule_config.get("enabled", True)
+        enabled = rule_config.get("enabled", fallback_enabled)
 
         if enabled == "auto":
             if repo_types is None and formats is None:
@@ -363,6 +426,13 @@ class LinterConfig:
         d["strict"] = self.strict
         if self.content_paths:
             d["content-paths"] = self.content_paths
+        if not self.plugins_enabled or self.disabled_plugins:
+            plugins: Dict[str, Any] = {}
+            if not self.plugins_enabled:
+                plugins["enabled"] = False
+            if self.disabled_plugins:
+                plugins["disable"] = self.disabled_plugins
+            d["plugins"] = plugins
         return d
 
     def save(self, config_path: Path):
@@ -411,6 +481,23 @@ class LinterConfig:
 
             f.write("\n# Load custom rules from these files\n")
             self._write_field(f, "custom-rules", self.custom_rules)
+            f.write(
+                "\n# Rule plugins (pip-installed packages that add rules)\n"
+                "# https://skillsaw.org/plugins/\n"
+            )
+            if not self.plugins_enabled or self.disabled_plugins:
+                self._write_field(
+                    f,
+                    "plugins",
+                    {
+                        "enabled": self.plugins_enabled,
+                        "disable": self.disabled_plugins,
+                    },
+                )
+            else:
+                f.write("# plugins:\n")
+                f.write("#     enabled: true\n")
+                f.write('#     disable: ["some-plugin-name"]\n')
             f.write("\n# Exclude patterns (glob format)\n")
             f.write("# Use exclude: [] to disable all excludes including defaults\n")
             user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]

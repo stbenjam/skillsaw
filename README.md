@@ -55,6 +55,7 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
   - [Deterministic Fixes](#deterministic-fixes)
   - [Working with Coding Agents](#working-with-coding-agents)
 - [Custom Rules](#custom-rules)
+- [Rule Plugins](#rule-plugins)
 - [Scaffolding](#scaffolding)
   - [Initialize a Marketplace](#initialize-a-marketplace)
   - [Add Components](#add-components)
@@ -905,6 +906,48 @@ rules:
 ```
 
 For a more complete example — including config schemas, promptfoo eval validation, and test fixtures — see the [`examples/custom-rules/`](examples/custom-rules/) directory.
+
+## Rule Plugins
+
+To share rules across repositories, package them as a **rule plugin** — a
+pip-installable package that registers rules through the `skillsaw.plugins`
+entry point group. Installing the package is all it takes:
+
+```bash
+pip install skillsaw-example-plugin   # rules run automatically on the next lint
+skillsaw plugins                      # list installed plugins and their rules
+```
+
+Plugin rules behave exactly like builtin rules: configure them per rule ID
+under `rules:` in `.skillsaw.yaml`, select them with `--rule`, and see their
+origin in the violation `source` field (`plugin:<name>`). Disable a plugin
+with `plugins: {disable: [<name>]}` in config, or skip all plugins for one
+run with `--no-plugins`.
+
+Publishing a plugin takes a `pyproject.toml` entry point plus a
+`SKILLSAW_RULES` list:
+
+```toml
+[project.entry-points."skillsaw.plugins"]
+example = "skillsaw_example_plugin"
+```
+
+```python
+# skillsaw_example_plugin/__init__.py
+from .rules import NoTodoInstructionsRule
+
+SKILLSAW_RULES = [NoTodoInstructionsRule]
+```
+
+Plugins can also ship a CLI: a console script named `skillsaw-<name>` in the
+same package becomes reachable as `skillsaw <name> [args...]`, git-style —
+but only for registered plugins, never for arbitrary `skillsaw-*`
+executables on PATH.
+
+See the [plugin documentation](https://skillsaw.org/plugins/), the complete
+[`examples/plugins/skillsaw-example-plugin/`](examples/plugins/skillsaw-example-plugin/)
+package, and the `skillsaw-create-plugin` skill in [`skills/`](skills/) that
+walks an AI coding assistant through building one.
 
 ## Scaffolding
 
