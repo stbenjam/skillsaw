@@ -22,12 +22,7 @@ def _run_init(args):
 
 
 def _print_rule_entry(rule):
-    fix_types = []
-    if rule.supports_autofix:
-        fix_types.append("auto")
-    if rule.llm_fix_prompt is not None:
-        fix_types.append("llm")
-    fix_label = ", ".join(fix_types) if fix_types else "none"
+    fix_label = "auto" if rule.supports_autofix else "none"
     print(f"  {rule.rule_id}")
     print(f"    {rule.description}")
     print(f"    Default severity: {rule.default_severity().value}")

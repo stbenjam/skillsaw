@@ -46,42 +46,6 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     return tuple(parts)
 
 
-def _validate_llm_fields(llm_data: Dict[str, Any]) -> None:
-    """Reject mistyped ``llm`` settings before they crash deeper in the engine.
-
-    ``bool`` is a subclass of ``int``, so the integer fields explicitly reject
-    booleans to catch ``max_iterations: true`` mistakes.
-    """
-    int_fields = ("max_iterations", "max_tokens", "max_workers")
-    for name in int_fields:
-        if name in llm_data and (
-            not isinstance(llm_data[name], int) or isinstance(llm_data[name], bool)
-        ):
-            raise ValueError(
-                f"'llm.{name}' must be an integer, got {type(llm_data[name]).__name__}"
-            )
-    if "confirm" in llm_data and not isinstance(llm_data["confirm"], bool):
-        raise ValueError(
-            f"'llm.confirm' must be a boolean, got {type(llm_data['confirm']).__name__}"
-        )
-    if "model" in llm_data and not isinstance(llm_data["model"], str):
-        raise ValueError(f"'llm.model' must be a string, got {type(llm_data['model']).__name__}")
-
-
-@dataclass
-class LLMSettings:
-    model: str = ""
-    max_iterations: int = 10
-    max_tokens: int = 500_000
-    confirm: bool = True
-    max_workers: int = 4
-
-    def __post_init__(self):
-        env_model = os.environ.get("SKILLSAW_MODEL")
-        if env_model:
-            self.model = env_model
-
-
 @dataclass
 class LinterConfig:
     """Configuration for the linter"""
@@ -92,7 +56,6 @@ class LinterConfig:
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
-    llm: LLMSettings = field(default_factory=LLMSettings)
     # Rule plugins (pip-installed packages exposing skillsaw.plugins entry
     # points). ``plugins_enabled: False`` skips all of them; ``disabled_plugins``
     # skips specific plugins by entry point name.
@@ -113,7 +76,6 @@ class LinterConfig:
             "exclude",
             "content-paths",
             "strict",
-            "llm",
             "plugins",
         }
     )
@@ -279,23 +241,6 @@ class LinterConfig:
                 "Example:\n  plugins:\n    disable: [some-plugin]"
             )
 
-        llm_data = data.get("llm", {})
-        if llm_data is None:
-            llm_data = {}
-        if not isinstance(llm_data, dict):
-            raise ValueError(
-                f"'llm' must be a mapping, got {type(llm_data).__name__}. Example:\n"
-                "  llm:\n    model: claude-...\n    max_iterations: 10"
-            )
-        _validate_llm_fields(llm_data)
-        llm_settings = LLMSettings(
-            model=llm_data.get("model", LLMSettings.model),
-            max_iterations=llm_data.get("max_iterations", LLMSettings.max_iterations),
-            max_tokens=llm_data.get("max_tokens", LLMSettings.max_tokens),
-            confirm=llm_data.get("confirm", LLMSettings.confirm),
-            max_workers=llm_data.get("max_workers", LLMSettings.max_workers),
-        )
-
         return cls(
             version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
             rules=rules,
@@ -303,7 +248,6 @@ class LinterConfig:
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
             strict=strict,
-            llm=llm_settings,
             plugins_enabled=plugins_enabled,
             disabled_plugins=disabled_plugins,
             config_dir=config_path.resolve().parent,

@@ -90,10 +90,11 @@ for plugin in context.lint_tree.find(PluginNode):
 
 ## Fix Pipeline
 
-Every violation references a tree node (ContentBlock). The fix pipeline has one
-path: group violations by block, process each with block-scoped LLM tools
-(read_block, write_block, replace_block_section, lint_block, diff_block).
-No separate file-level fix path.
+Content violations reference the ContentBlock they were found in (structural
+rules may still report against structural nodes or bare paths). Deterministic
+autofixes are grouped and applied per block; violations that need judgment are
+left for coding agents, which read the same block-scoped violation locations
+from the lint output. No separate file-level fix path.
 
 ## CLI
 

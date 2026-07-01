@@ -158,9 +158,8 @@ RULE_GROUPS = [
         "instruction files. Built on attention research "
         "([lost-in-the-middle](https://arxiv.org/abs/2307.03172), "
         "[instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) "
-        "and prompt engineering best practices. Most support LLM-powered fixes via "
-        "`skillsaw fix --llm`. See the [research page](../research.md) for the full "
-        "research basis behind each rule.",
+        "and prompt engineering best practices. See the [research page](../research.md) "
+        "for the full research basis behind each rule.",
     ),
     (
         "CodeRabbit",
@@ -231,8 +230,6 @@ def collect_rules():
         fix_types = []
         if rule.supports_autofix:
             fix_types.append("auto")
-        if rule.llm_fix_prompt is not None:
-            fix_types.append("llm")
 
         repo_types_str = ""
         if rule.repo_types:
@@ -247,7 +244,6 @@ def collect_rules():
             "config_schema": rule.config_schema,
             "since": rule.since,
             "repo_types": repo_types_str,
-            "llm_fix_prompt": rule.llm_fix_prompt,
             "enabled": enabled,
         }
     return rules

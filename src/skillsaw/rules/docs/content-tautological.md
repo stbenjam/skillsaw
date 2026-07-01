@@ -28,5 +28,4 @@ raise exceptions across crate boundaries.
 
 Delete the line, or replace it with the project-specific rule you
 actually meant. Ask: "would any competent model ever do the opposite of
-this on purpose?" If not, the instruction is a tautology. `skillsaw fix
---llm` can rewrite or remove flagged lines.
+this on purpose?" If not, the instruction is a tautology. A coding agent can rewrite or remove flagged lines.

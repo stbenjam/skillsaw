@@ -8,7 +8,7 @@ Detect hedging, vague, and non-actionable language in instruction files
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
@@ -50,7 +50,7 @@ conditions the model can evaluate.
 
 Rewrite the instruction as an imperative: state what to do, not what to
 attempt. If you cannot state it unconditionally, spell out the concrete
-condition instead of hedging. `skillsaw fix --llm` can rewrite flagged
+condition instead of hedging. A coding agent can rewrite flagged
 lines automatically.
 
 ## Configuration

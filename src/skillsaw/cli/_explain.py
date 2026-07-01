@@ -63,15 +63,10 @@ def _run_explain(args):
     default_rule = rule_class(defaults.get_rule_config(args.rule_id))
     default_enabled = defaults.get_rule_config(args.rule_id).get("enabled", True)
 
-    fix_types = []
-    if default_rule.supports_autofix:
-        fix_types.append("auto")
-    autofix_label = ", ".join(fix_types) if fix_types else "none"
-    llm_fix_label = "yes" if default_rule.llm_fix_prompt is not None else "no"
+    autofix_label = "auto" if default_rule.supports_autofix else "none"
 
     header_meta = (
-        f"{default_rule.severity.value}, autofix: {autofix_label}, "
-        f"llm-fix: {llm_fix_label}, since {default_rule.since}"
+        f"{default_rule.severity.value}, autofix: {autofix_label}, " f"since {default_rule.since}"
     )
     if plugin_name:
         header_meta += f", plugin: {plugin_name}"

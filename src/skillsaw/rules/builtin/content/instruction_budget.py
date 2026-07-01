@@ -2,7 +2,7 @@
 
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -12,8 +12,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentInstructionBudgetRule(Rule):
     """Check total instruction count across all instruction files"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -29,21 +27,6 @@ class ContentInstructionBudgetRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are reducing the instruction count in an AI coding assistant "
-            "instruction file. The number of imperative instructions in this "
-            "file exceeds the recommended budget.\n\n"
-            "Rules:\n"
-            "- Merge duplicate or near-duplicate instructions\n"
-            "- Remove tautological instructions the model follows by default\n"
-            "- Consolidate related instructions into fewer, more precise ones\n"
-            "- Prefer removing vague instructions over specific ones\n"
-            "- Do NOT remove project-specific constraints or requirements\n"
-            "- Preserve markdown formatting"
-        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         content_files = gather_all_content_blocks(context)

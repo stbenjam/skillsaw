@@ -335,7 +335,7 @@ def test_tree_all_rules_use_tree(temp_dir):
 def test_all_lint_targets_are_hashable():
     """Every LintTarget subclass must be hashable (usable as a dict key).
 
-    llm_fix groups violations by block via dict.setdefault(block, []).
+    Violations are grouped by block via dict.setdefault(block, []).
     If a LintTarget subclass is decorated with bare @dataclass (without
     eq=False), Python generates __eq__ and sets __hash__ = None, making
     it unhashable. Regression guard for GH-245.

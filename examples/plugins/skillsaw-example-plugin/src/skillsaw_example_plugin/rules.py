@@ -60,7 +60,7 @@ class NoTodoInstructionsRule(Rule):
                     )
         return violations
 
-    def fix(self, context, violations, *, provider=None) -> List[AutofixResult]:
+    def fix(self, context, violations) -> List[AutofixResult]:
         by_file = {}
         for v in violations:
             by_file.setdefault(v.file_path, []).append(v)

@@ -181,7 +181,7 @@ from skillsaw import AutofixConfidence, AutofixResult
 class MyFirstRule(Rule):
     autofix_confidence = AutofixConfidence.SAFE  # or SUGGEST
 
-    def fix(self, context, violations, *, provider=None) -> List[AutofixResult]:
+    def fix(self, context, violations) -> List[AutofixResult]:
         by_file = {}
         for v in violations:
             by_file.setdefault(v.file_path, []).append(v)

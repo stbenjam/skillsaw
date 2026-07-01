@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import Callable, List, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -24,7 +24,6 @@ class Severity(Enum):
 class AutofixConfidence(Enum):
     SAFE = "safe"
     SUGGEST = "suggest"
-    LLM = "llm"
 
 
 @dataclass
@@ -88,6 +87,10 @@ class AutofixResult:
     description: str
     violations_fixed: List[RuleViolation] = field(default_factory=list)
     rename_from: Optional[Path] = None
+    # Side effect to run only when the fix is actually applied (never on
+    # dry-run). Rules must not mutate repository state inside fix() itself —
+    # fix() is also called for previews.
+    on_apply: Optional[Callable[[], None]] = field(default=None, repr=False, compare=False)
 
 
 class Rule(ABC):
@@ -169,28 +172,13 @@ class Rule(ABC):
         self,
         context: "RepositoryContext",
         violations: List[RuleViolation],
-        *,
-        provider: Any = None,
     ) -> List[AutofixResult]:
-        """Attempt to fix violations.
-
-        Override in subclasses.  ``provider`` is an optional
-        ``CompletionProvider`` for LLM-assisted fixes.
-        """
+        """Attempt to fix violations.  Override in subclasses."""
         return []
 
     @property
     def supports_autofix(self) -> bool:
         return type(self).fix is not Rule.fix
-
-    @property
-    def llm_fix_prompt(self) -> Optional[str]:
-        return None
-
-    @property
-    def llm_fix_frontmatter(self) -> bool:
-        """When True, LLM fix operates on frontmatter YAML only (not the body)."""
-        return False
 
     def violation(
         self,

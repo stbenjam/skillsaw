@@ -8,7 +8,7 @@ Detect prohibitions without a positive alternative (agent has no path forward)
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
@@ -39,7 +39,7 @@ Create a feature branch and open a PR — never commit directly to main.
 
 Keep the prohibition and add what to do instead. If the alternative is
 obvious from context, state it explicitly anyway — what is obvious to
-you may not be the model's first choice. `skillsaw fix --llm` can add
+you may not be the model's first choice. A coding agent can add
 positive alternatives automatically.
 
 ## Configuration

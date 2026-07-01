@@ -2,7 +2,7 @@
 
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -11,8 +11,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentSectionLengthRule(Rule):
     """Warn about overly long markdown sections"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -39,20 +37,6 @@ class ContentSectionLengthRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are reorganizing AI coding assistant instruction files. "
-            "Long sections should be broken into smaller, "
-            "focused subsections.\n\n"
-            "Rules:\n"
-            "- Split long sections into smaller subsections with descriptive headings\n"
-            "- Group related instructions under the same subsection\n"
-            "- Use one heading level deeper than the parent section\n"
-            "- Do NOT change the content of the instructions\n"
-            "- Preserve markdown formatting"
-        )
 
     @classmethod
     def _estimate_tokens(cls, text: str) -> int:

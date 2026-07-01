@@ -49,19 +49,6 @@ class AgentSkillValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing SKILL.md files for agentskills.io skills.\n\n"
-            "Rules:\n"
-            "- The frontmatter must have 'name' and 'description' fields\n"
-            "- 'name' should be the directory name in lowercase kebab-case\n"
-            "- 'description' should be a concise one-line summary of what the skill does, "
-            "derived from reading the SKILL.md body content\n"
-            "- Preserve existing frontmatter fields\n"
-            "- Preserve the SKILL.md body content"
-        )
-
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
     ) -> List[AutofixResult]:

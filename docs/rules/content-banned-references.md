@@ -8,7 +8,7 @@ Detect banned or deprecated model names, APIs, and custom patterns
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
@@ -39,8 +39,7 @@ Call the `/v1/messages` endpoint.
 
 Replace deprecated model names with their current equivalents and update
 retired API endpoints. Custom banned patterns configured via the `banned`
-list should be replaced per the message in the violation. `skillsaw fix
---llm` can update flagged references automatically.
+list should be replaced per the message in the violation. A coding agent can update flagged references automatically.
 
 ## Tuning
 

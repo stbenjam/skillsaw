@@ -162,8 +162,7 @@ content-paths:
   - "docs/runbooks/*.txt"
 ```
 
-Matched files are analyzed by all `content-*` rules and support LLM-powered
-fixes via `skillsaw fix --llm`.
+Matched files are analyzed by all `content-*` rules.
 
 ## Rule Plugins
 

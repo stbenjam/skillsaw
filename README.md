@@ -54,8 +54,6 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 - [Autofixing](#autofixing)
   - [Deterministic Fixes](#deterministic-fixes)
   - [Working with Coding Agents](#working-with-coding-agents)
-  - [LLM-Powered Fixes](#llm-powered-fixes)
-  - [LLM Setup](#llm-setup)
 - [Custom Rules](#custom-rules)
 - [Rule Plugins](#rule-plugins)
 - [Scaffolding](#scaffolding)
@@ -430,8 +428,7 @@ content-paths:
   - "docs/runbooks/*.txt"
 ```
 
-Matched files are analyzed by all content-\* rules and support LLM-powered
-fixes via `skillsaw fix --llm`.
+Matched files are analyzed by all content-\* rules.
 
 ## Baseline
 
@@ -588,7 +585,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
+| `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto |
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
 | `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
@@ -603,6 +600,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `required-fields` | Additional frontmatter fields to require (name and description are always required) | `[]` |
 | `required-metadata` | Keys that must be present inside the metadata mapping | `[]` |
 
+**`agentskill-rename-refs` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |
@@ -616,7 +619,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `plugin-json-required` | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
 | `plugin-json-valid` | plugin.json must be valid JSON with required fields | error (auto) | - |
 | `plugin-naming` | Plugin names should use kebab-case | warning (auto) | - |
-| `plugin-readme` | Plugin should have a README.md file | warning (auto) | llm |
+| `plugin-readme` | Plugin should have a README.md file | warning (auto) | - |
 
 **`plugin-json-valid` parameters:**
 
@@ -646,8 +649,8 @@ Validates skill/agent frontmatter and hook configuration. The security rules sca
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto, llm |
-| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto, llm |
+| `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto |
+| `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 | `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
 | `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
@@ -731,24 +734,24 @@ Warns when instruction and configuration files exceed recommended token limits. 
 
 ### Content Intelligence
 
-Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. Most support LLM-powered fixes via `skillsaw fix --llm`. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
+Rules that go beyond structural validation to analyze the *quality* of instruction files. Built on attention research ([lost-in-the-middle](https://arxiv.org/abs/2307.03172), [instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) and prompt engineering best practices. See [docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) for the full research basis behind each rule.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | llm |
-| `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | llm |
-| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | llm |
-| `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | llm |
-| `content-instruction-budget` | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | llm |
-| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | llm |
-| `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | llm |
-| `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | llm |
-| `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | llm |
-| `content-actionability-score` | Score instruction files on actionability (verb density, commands, file references) | info (auto) | llm |
-| `content-cognitive-chunks` | Check that instruction files are organized into cognitive chunks with headings | info (auto) | llm |
-| `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | llm |
-| `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | llm |
-| `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | llm |
+| `content-weak-language` | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | - |
+| `content-tautological` | Detect tautological instructions that the model already follows by default | warning (auto) | - |
+| `content-critical-position` | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | - |
+| `content-redundant-with-tooling` | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | - |
+| `content-instruction-budget` | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | - |
+| `content-negative-only` | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | - |
+| `content-section-length` | Warn about markdown sections longer than ~500 tokens | info (auto) | - |
+| `content-contradiction` | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | - |
+| `content-hook-candidate` | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | - |
+| `content-actionability-score` | Score instruction files on actionability (verb density, commands, file references) | info (auto) | - |
+| `content-cognitive-chunks` | Check that instruction files are organized into cognitive chunks with headings | info (auto) | - |
+| `content-embedded-secrets` | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - |
+| `content-banned-references` | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - |
+| `content-inconsistent-terminology` | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - |
 | `content-broken-internal-reference` | Detect markdown links where the target file does not exist | warning (auto) | auto |
 | `content-unlinked-internal-reference` | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto |
 | `content-placeholder-text` | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - |
@@ -822,7 +825,7 @@ Validates repositories using the [APM](https://github.com/microsoft/apm) directo
 
 ## Autofixing
 
-skillsaw supports two levels of autofixing — deterministic fixes for structural issues and LLM-powered fixes for content quality. Coding agents (Claude Code, Cursor, etc.) are also fully capable of working with skillsaw directly — the lint interface is familiar, and every violation points to `skillsaw explain` which includes how-to-fix guidance. Rules declare which fix types they support (see the **Autofix** column in the rules tables above).
+skillsaw applies deterministic fixes for structural issues. Content-quality violations that need judgment are fixed by coding agents (Claude Code, Cursor, etc.) — the lint interface is familiar, and every violation points to `skillsaw explain` which includes how-to-fix guidance. Rules declare whether they support deterministic autofix (see the **Autofix** column in the rules tables above).
 
 ### Deterministic Fixes
 
@@ -845,67 +848,14 @@ If you're already working in a coding agent (Claude Code, Cursor, etc.), you don
 
 The [onboarding skill](https://skillsaw.org/getting-started/#onboard-with-ai) uses this approach end-to-end — it lints, applies deterministic fixes, then has your agent resolve the remaining violations interactively.
 
-### LLM-Powered Fixes
+For an agent workflow focused purely on fixing, use the [`skillsaw-fix` skill](skills/skillsaw-fix/SKILL.md): it runs `skillsaw fix` for the deterministic fixes, then walks the remaining violations one by one, consulting `skillsaw explain <rule-id>` for the how-to-fix guidance on each rule and re-linting after every change.
 
-For batch fixing without a coding agent — in CI, scripted workflows, or when you want a one-command fix pass — skillsaw includes a built-in LLM fix path via [LiteLLM](https://docs.litellm.ai/docs/providers). This is an optional dependency, not installed by default.
+Check `skillsaw list-rules` to see which rules support deterministic autofix.
 
-Most content intelligence rules support these fixes (see the **Autofix** column above). The LLM reads your instruction files, rewrites violations, and re-lints in a loop until the file is clean — or rolls back if it made things worse.
-
-```bash
-skillsaw fix --llm                          # Fix with default model
-skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-skillsaw fix --llm --model openrouter/minimax/minimax-m1
-skillsaw fix --llm --all                    # Include info-level violations
-skillsaw fix --llm --workers 8              # Parallel workers (default: 4)
-skillsaw fix --llm --max-iterations 10      # Max iterations per file
-skillsaw fix --llm --dry-run                # Preview changes and save patch
-skillsaw fix --apply-patch                  # Apply the saved patch
-skillsaw fix --llm --dry-run --patch-file p.diff  # Custom patch path
-skillsaw fix --apply-patch --patch-file p.diff    # Apply from custom path
-skillsaw fix --llm -y                       # Auto-apply without confirmation
-```
-
-**How it works:**
-
-1. skillsaw lints your repo and groups violations by file
-2. Each lint-tree node is sent to an LLM agent with scoped tools for reading, editing, linting, and diffing
-3. The LLM iteratively edits and re-lints until violations are resolved
-4. After the LLM finishes, skillsaw compares violation counts — if a file got worse, it's rolled back to the original
-5. Files are processed in parallel with a live progress bar showing ETA
-
-Use `--dry-run` to preview changes — because LLM output is non-deterministic, the dry-run saves a patch file (`.skillsaw-llm-patch.diff`) so you can review and then apply the exact changes with `--apply-patch`.
-
-Check `skillsaw list-rules` to see which rules support `auto`, `llm`, or both fix types.
-
-> **Note:** `skillsaw lint --fix` is deprecated and will be removed in 1.0. Use `skillsaw fix` instead.
-
-### LLM Setup
-
-skillsaw uses [LiteLLM](https://docs.litellm.ai/docs/providers) under the hood, so any LiteLLM-compatible model works. Install the extras for your provider:
-
-```bash
-# pip
-pip install 'skillsaw[llm]'       # Any LiteLLM-compatible model
-pip install 'skillsaw[vertexai]'  # Vertex AI (includes google-cloud-aiplatform)
-pip install 'skillsaw[bedrock]'   # AWS Bedrock (includes boto3)
-
-# uvx (no install required)
-uvx --with 'skillsaw[llm]' skillsaw fix --llm
-uvx --with 'skillsaw[vertexai]' skillsaw fix --llm --model vertex_ai/claude-sonnet-4-6
-```
-
-Set the environment variables for your provider:
-
-| Provider | Environment Variables |
-|----------|----------------------|
-| Anthropic | `ANTHROPIC_API_KEY` |
-| OpenAI | `OPENAI_API_KEY` |
-| Vertex AI | `VERTEXAI_PROJECT`, `VERTEXAI_LOCATION` (+ `gcloud auth application-default login`) |
-| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME` |
-
-You can also set `SKILLSAW_MODEL` to override the default model via environment variable, or `llm.model` in your `.skillsaw.yaml` config.
-
-See the [LiteLLM provider documentation](https://docs.litellm.ai/docs/providers) for the full list of supported providers and their required environment variables.
+> **Breaking changes (0.15):**
+>
+> - The built-in LLM fix path (`skillsaw fix --llm`, the `llm` config section, and the `skillsaw[llm]` extras) was removed. Non-deterministic fixes are now the job of coding agents — use the `skillsaw-fix` skill above.
+> - The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.
 
 ## Custom Rules
 

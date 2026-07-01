@@ -8,7 +8,7 @@ Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig 
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
@@ -40,7 +40,7 @@ Or simply remove the line entirely.
 
 Delete the redundant instruction. If you want the model to be aware
 of the setting, reference the config file instead of restating its
-contents. `skillsaw fix --llm` can remove flagged lines automatically.
+contents. A coding agent can remove flagged lines automatically.
 
 ## Configuration
 
