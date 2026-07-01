@@ -124,8 +124,7 @@ RULE_GROUPS = [
         "instruction files. Built on attention research "
         "([lost-in-the-middle](https://arxiv.org/abs/2307.03172), "
         "[instruction-following limits](https://openreview.net/forum?id=R6q67CDBCH)) "
-        "and prompt engineering best practices. Most support LLM-powered fixes via "
-        "`skillsaw fix --llm`. See "
+        "and prompt engineering best practices. See "
         "[docs/designs/content-rules-research.md](docs/designs/content-rules-research.md) "
         "for the full research basis behind each rule.",
     ),
@@ -265,12 +264,7 @@ def main():
             else:
                 severity_str = severity
 
-            fix_types = []
-            if rule.supports_autofix:
-                fix_types.append("auto")
-            if rule.llm_fix_prompt is not None:
-                fix_types.append("llm")
-            fix_str = ", ".join(fix_types) if fix_types else "-"
+            fix_str = "auto" if rule.supports_autofix else "-"
 
             lines.append(
                 f"| `{rule_id}` | {_table_cell(rule.description)} | {severity_str} | {fix_str} |"

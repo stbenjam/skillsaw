@@ -8,7 +8,7 @@ SKILL.md files should have frontmatter with name and description
 | | |
 |---|---|
 | **Severity** | warning |
-| **Autofix** | auto, llm |
+| **Autofix** | auto |
 | **Since** | v0.1.0 |
 | **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
 

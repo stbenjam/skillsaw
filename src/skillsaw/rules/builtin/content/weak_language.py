@@ -2,7 +2,7 @@
 
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -13,8 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentWeakLanguageRule(Rule):
     """Detect hedging, vague, and non-actionable language in instruction files"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -29,23 +27,6 @@ class ContentWeakLanguageRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are a technical writing assistant fixing AI coding assistant "
-            "instruction files. Your job is to replace weak, hedging language "
-            "with direct, actionable instructions.\n\n"
-            "Rules:\n"
-            "- Replace 'try to X' with 'X'\n"
-            "- Replace 'consider doing X' with 'do X' or remove the line\n"
-            "- Replace 'if possible' with explicit conditions\n"
-            "- Replace vague adverbs (properly, correctly, appropriately) "
-            "with specific behavior\n"
-            "- Do NOT change the meaning or intent of the instruction\n"
-            "- Do NOT add new instructions\n"
-            "- Preserve markdown formatting"
-        )
 
     _REFERENCE_BLOCK_TYPES = (SkillRefBlock,)
 

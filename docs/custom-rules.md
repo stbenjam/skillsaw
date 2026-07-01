@@ -116,6 +116,7 @@ rules:
 | **Reading content** | `block.read_body()` returns the file body. Use `strip_code_blocks=False` when you need the raw text. |
 | **Line numbers** | Report `line=` on every violation so users can jump to the exact location. |
 | **Autofix** | Override `fix()` and return `AutofixResult` objects. Set `autofix_confidence` on the class and match it in each result. |
+| **Side effects in fixes** | `fix()` also runs for previews (`fix --dry-run`), so it must not mutate repository state itself. Put any state change (writing manifests, registries, etc.) in `AutofixResult.on_apply` — a callback invoked only when the fix is actually applied. |
 
 For the full list of node types, see `skillsaw.lint_target` (structural nodes like `PluginNode`, `SkillNode`) and `skillsaw.blocks` (content blocks). The block types are also still re-exported from `skillsaw.rules.builtin.content_analysis` for backward compatibility.
 

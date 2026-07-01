@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     _required_literal,
@@ -15,8 +15,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentInconsistentTerminologyRule(Rule):
     """Detect inconsistent terminology across instruction files"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -66,19 +64,6 @@ class ContentInconsistentTerminologyRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files that use "
-            "inconsistent terminology. Standardize on one term per concept "
-            "across all files.\n\n"
-            "Rules:\n"
-            "- Pick the most common term and use it consistently\n"
-            "- Prefer technical terms over informal ones (e.g., 'directory' over 'folder')\n"
-            "- Update all occurrences to use the chosen term\n"
-            "- Preserve markdown formatting"
-        )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         content_files = gather_all_content_blocks(context)

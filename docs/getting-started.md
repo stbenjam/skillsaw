@@ -148,9 +148,6 @@ Summary:
 # skillsaw and let the agent read the output. For detailed guidance:
 skillsaw explain content-weak-language
 
-# Or opt into built-in LLM fixes (requires extras: pip install skillsaw[llm])
-skillsaw fix --llm
-
 # Generate default config you can customize
 skillsaw init
 
@@ -195,4 +192,4 @@ See the [CLI Reference](cli.md) for all flags and options.
 - Browse the [Rules Reference](rules/index.md) to see what skillsaw checks
 - Set up [Configuration](configuration.md) for your project
 - Use a [Baseline](baseline.md) to adopt skillsaw without fixing everything first
-- Learn about [Autofixing](autofixing.md) — deterministic fixes, coding agent workflows, and opt-in LLM fixes
+- Learn about [Autofixing](autofixing.md) — deterministic fixes and coding agent workflows

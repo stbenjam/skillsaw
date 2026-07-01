@@ -32,26 +32,6 @@ class SkillFrontmatterRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing YAML frontmatter for a SKILL.md file.\n\n"
-            "The block you are editing is the raw YAML between the --- delimiters.\n"
-            "Do NOT include the --- delimiters in your output.\n\n"
-            "Rules:\n"
-            "- Must have 'name' and 'description' fields\n"
-            "- 'name' should be the skill directory name\n"
-            "- 'description' should be imperative and tell the model when to invoke it, "
-            "e.g. 'Use when the user asks to deploy a service' — "
-            "derive it from the body content, keep it under 200 tokens\n"
-            "- If the YAML is malformed, fix the syntax\n"
-            "- Preserve any other existing frontmatter fields"
-        )
-
-    @property
-    def llm_fix_frontmatter(self) -> bool:
-        return True
-
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 

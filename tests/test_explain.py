@@ -65,7 +65,6 @@ def test_explain_known_rule(temp_dir):
     assert result.returncode == 0
     assert "content-weak-language" in result.stdout
     assert "Detect hedging" in result.stdout
-    assert "llm-fix: yes" in result.stdout
     assert "since 0.7.0" in result.stdout
     assert "https://skillsaw.org/rules/content-weak-language/" in result.stdout
     # Long-form docs are included

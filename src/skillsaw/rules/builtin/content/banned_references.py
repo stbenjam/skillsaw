@@ -3,7 +3,7 @@
 import re
 from typing import List, Tuple
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -13,8 +13,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentBannedReferencesRule(Rule):
     """Detect banned or deprecated references in instruction files"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -57,19 +55,6 @@ class ContentBannedReferencesRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files that reference "
-            "banned or deprecated models, APIs, or tooling.\n\n"
-            "Rules:\n"
-            "- Replace deprecated model names with current equivalents\n"
-            "- Update retired API endpoints to current versions\n"
-            "- Remove or replace banned references per the violation message\n"
-            "- Preserve the intent of the instruction\n"
-            "- Preserve markdown formatting"
-        )
 
     def _get_patterns(self) -> List[Tuple[re.Pattern, str]]:
         patterns: List[Tuple[re.Pattern, str]] = []

@@ -3,7 +3,7 @@
 import re
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -15,25 +15,8 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentEmbeddedSecretsRule(Rule):
     """Detect potential secrets embedded in instruction files"""
 
-    autofix_confidence = AutofixConfidence.LLM
-
     formats = None
     since = "0.7.0"
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files that contain "
-            "embedded secrets (API keys, tokens, passwords). Replace secrets "
-            "with environment variable references.\n\n"
-            "Rules:\n"
-            "- Replace hardcoded secrets with environment variable references\n"
-            "- Example: 'api_key = \"sk-abc123\"' → 'api_key = os.environ[\"API_KEY\"]'\n"
-            "- For instruction prose, replace with placeholder like '$API_KEY'\n"
-            "- Add a note about storing secrets in .env or environment variables\n"
-            "- Do NOT remove the instruction, just redact the secret\n"
-            "- Preserve markdown formatting"
-        )
 
     _PATTERNS = [
         (re.compile(p), desc)

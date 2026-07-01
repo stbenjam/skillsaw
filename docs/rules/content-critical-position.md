@@ -8,7 +8,7 @@ Detect critical instructions in the middle of files where LLM attention is lowes
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 

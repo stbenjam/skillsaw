@@ -3,7 +3,7 @@
 import re
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -14,25 +14,8 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentHookCandidateRule(Rule):
     """Detect instructions that should be automated hooks"""
 
-    autofix_confidence = AutofixConfidence.LLM
-
     formats = None
     since = "0.7.0"
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files. Replace "
-            "prose instructions that describe automated workflows with a note "
-            "to configure the appropriate hook instead.\n\n"
-            "Rules:\n"
-            "- Replace 'always run X before committing' with a comment suggesting "
-            "a pre-commit hook\n"
-            "- Replace 'run tests before push' with a suggestion for a pre-push hook\n"
-            "- Replace 'after every change, do X' with a PostToolUse hook suggestion\n"
-            "- Keep the instruction but rewrite it as a hook configuration reminder\n"
-            "- Preserve markdown formatting"
-        )
 
     _HOOK_PATTERNS = [
         (

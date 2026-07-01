@@ -38,5 +38,5 @@ Deploy with `make deploy`.
 
 Add markdown headings (`##`) to group related instructions by topic.
 Aim for 10–30 lines per section. If the file has only one heading,
-break it into task-oriented subsections. `skillsaw fix --llm` can add
+break it into task-oriented subsections. A coding agent can add
 headings automatically.

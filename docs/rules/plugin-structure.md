@@ -8,5 +8,5 @@
 | [`plugin-json-required`](plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
 | [`plugin-json-valid`](plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - |
 | [`plugin-naming`](plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - |
-| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | llm |
+| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - |
 

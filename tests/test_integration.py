@@ -790,23 +790,6 @@ class TestFixMultiplePaths:
         assert "Path not found" in result.stderr
         assert (repo / "CLAUDE.md").read_text() == before
 
-    def test_fix_llm_rejects_multiple_paths(self, tmp_path):
-        """--llm runs an interactive session against a single repository."""
-        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
-        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
-
-        result = self._run_fix("--llm", repo1, repo2)
-        assert result.returncode == 1
-        assert "--llm accepts a single path" in result.stderr
-
-    def test_fix_apply_patch_rejects_multiple_paths(self, tmp_path):
-        repo1 = copy_fixture("autofix/unlinked-ref-multiple-paths", tmp_path)
-        repo2 = copy_fixture("autofix/unlinked-ref-duplicate-paths", tmp_path)
-
-        result = self._run_fix("--apply-patch", repo1, repo2)
-        assert result.returncode == 1
-        assert "--apply-patch accepts a single path" in result.stderr
-
 
 # ── Dot-Claude ───────────────────────────────────────────────────
 
@@ -1763,8 +1746,8 @@ class TestSafeAutofixIdempotency:
 
         Fixes may introduce new violations (e.g. adding frontmatter with an
         empty description triggers agentskill-valid).  Those are expected and
-        need LLM fixes — we only assert that the violations that existed
-        BEFORE the fix are resolved.
+        need manual or agent-assisted fixes — we only assert that the
+        violations that existed BEFORE the fix are resolved.
         """
         repo = copy_fixture(self.FIXTURE, tmp_path)
         safe_rules = _discover_safe_autofix_rule_ids()
@@ -2053,25 +2036,32 @@ class TestBaseline:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 0
 
-    def test_lint_fix_matches_lint_baseline_accounting(self, tmp_path):
-        """Regression for issue #258 (Bug A): `lint --fix` filtered the
+    def test_fix_matches_lint_baseline_accounting(self, tmp_path):
+        """Regression for issue #258 (Bug A): Linter.fix() filtered the
         baseline once per rule, overwriting stale/suppressed accounting, so
         the last rule's view won and every other rule's entries were falsely
-        reported stale — prompting users to destroy a correct baseline."""
+        reported stale — prompting users to destroy a correct baseline.
+
+        The `lint --fix` CLI path that originally exposed this is gone, but
+        Linter.fix() with a baseline must still account exactly as run().
+        """
+        from skillsaw.baseline import find_baseline, load_baseline
+        from skillsaw.context import RepositoryContext
+        from skillsaw.linter import Linter
+
         repo = copy_fixture(self.FIXTURE, tmp_path)
         run_baseline(repo)
+        baseline = load_baseline(find_baseline(repo))
 
-        lint_r = run_lint(repo, fmt="text", verbose=False)
-        fix_r = run_lint(repo, "--fix", fmt="text", verbose=False)
+        lint_linter = Linter(RepositoryContext(repo), baseline=baseline)
+        lint_linter.run()
 
-        assert "stale" not in lint_r["stdout"].lower()
-        assert "stale" not in fix_r["stdout"].lower()
+        fix_linter = Linter(RepositoryContext(repo), baseline=baseline)
+        fix_linter.fix()
 
-        def suppressed_lines(r):
-            return [ln.strip() for ln in r["stdout"].splitlines() if "suppressed" in ln]
-
-        assert suppressed_lines(lint_r)  # baseline suppressed something
-        assert suppressed_lines(fix_r) == suppressed_lines(lint_r)
+        assert lint_linter.baseline_suppressed_count > 0  # baseline suppressed something
+        assert fix_linter.baseline_suppressed_count == lint_linter.baseline_suppressed_count
+        assert fix_linter.stale_baseline_entries == lint_linter.stale_baseline_entries
 
     def test_corrupt_baseline_warns_and_continues(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -2079,246 +2069,6 @@ class TestBaseline:
         r = run_lint(repo)
         assert "Failed to load baseline" in r["stderr"]
         assert summary(r)["warnings"] > 0
-
-
-class TestApplyPatch:
-    """Tests for --dry-run patch save and --apply-patch."""
-
-    FIXTURE = "autofix/safe-idempotency"
-
-    def test_apply_patch_missing_file_errors(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "fix",
-            "--apply-patch",
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode != 0
-        assert "not found" in result.stderr
-
-    def test_apply_patch_empty_file_errors(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        patch_path = repo / ".skillsaw-llm-patch.diff"
-        patch_path.write_text("")
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "fix",
-            "--apply-patch",
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode != 0
-        assert "empty" in result.stderr
-
-    def test_apply_patch_applies_and_removes_patch(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
-        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"],
-            cwd=str(repo),
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_AUTHOR_NAME": "test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-            },
-        )
-        target = repo / "CLAUDE.md"
-        original = target.read_text()
-        patch_content = (
-            "--- a/CLAUDE.md\n"
-            "+++ b/CLAUDE.md\n"
-            "@@ -1,3 +1,3 @@\n"
-            "-" + original.splitlines()[0] + "\n"
-            "+" + original.splitlines()[0] + " (patched)\n"
-            " " + original.splitlines()[1] + "\n"
-            " " + original.splitlines()[2] + "\n"
-        )
-        patch_path = repo / ".skillsaw-llm-patch.diff"
-        patch_path.write_text(patch_content)
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "fix",
-            "--apply-patch",
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode == 0
-        assert "applied successfully" in result.stdout
-        assert "(patched)" in target.read_text()
-        assert not patch_path.exists()
-
-    def test_apply_patch_custom_path(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
-        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"],
-            cwd=str(repo),
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_AUTHOR_NAME": "test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-            },
-        )
-        target = repo / "CLAUDE.md"
-        original = target.read_text()
-        patch_content = (
-            "--- a/CLAUDE.md\n"
-            "+++ b/CLAUDE.md\n"
-            "@@ -1,3 +1,3 @@\n"
-            "-" + original.splitlines()[0] + "\n"
-            "+" + original.splitlines()[0] + " (custom)\n"
-            " " + original.splitlines()[1] + "\n"
-            " " + original.splitlines()[2] + "\n"
-        )
-        custom_patch = tmp_path / "my-patch.diff"
-        custom_patch.write_text(patch_content)
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "fix",
-            "--apply-patch",
-            "--patch-file",
-            str(custom_patch),
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode == 0
-        assert "applied successfully" in result.stdout
-        assert "(custom)" in target.read_text()
-        assert not custom_patch.exists()
-
-    def test_apply_patch_bad_diff_errors(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
-        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"],
-            cwd=str(repo),
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_AUTHOR_NAME": "test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-            },
-        )
-        patch_path = repo / ".skillsaw-llm-patch.diff"
-        patch_path.write_text(
-            "--- a/CLAUDE.md\n"
-            "+++ b/CLAUDE.md\n"
-            "@@ -1,3 +1,3 @@\n"
-            "-this line does not exist in the file\n"
-            "+replaced\n"
-            " also not real\n"
-            " nope\n"
-        )
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "fix",
-            "--apply-patch",
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode != 0
-        assert "does not apply cleanly" in result.stderr
-
-    def test_apply_patch_via_lint_subcommand(self, tmp_path):
-        repo = copy_fixture(self.FIXTURE, tmp_path)
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True)
-        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"],
-            cwd=str(repo),
-            capture_output=True,
-            env={
-                **os.environ,
-                "GIT_AUTHOR_NAME": "test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-            },
-        )
-        target = repo / "CLAUDE.md"
-        original = target.read_text()
-        patch_content = (
-            "--- a/CLAUDE.md\n"
-            "+++ b/CLAUDE.md\n"
-            "@@ -1,3 +1,3 @@\n"
-            "-" + original.splitlines()[0] + "\n"
-            "+" + original.splitlines()[0] + " (lint-path)\n"
-            " " + original.splitlines()[1] + "\n"
-            " " + original.splitlines()[2] + "\n"
-        )
-        patch_path = repo / ".skillsaw-llm-patch.diff"
-        patch_path.write_text(patch_content)
-        args = [
-            sys.executable,
-            "-m",
-            "skillsaw",
-            "lint",
-            "--apply-patch",
-            str(repo),
-        ]
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
-        assert result.returncode == 0
-        assert "applied successfully" in result.stdout
-        assert "(lint-path)" in target.read_text()
 
 
 # ── Rule crash handling (GH-263) ─────────────────────────────────
@@ -2475,3 +2225,72 @@ class TestJsonConfigNotContent:
         r = run_lint(repo)
         flagged = [v for v in violations(r) if "settings.local.json" in v["file_path"]]
         assert flagged, "settings rules no longer see settings files"
+
+
+# ── agentskill-rename-refs autofix corruption (GH-283) ───────────
+
+
+@pytest.mark.integration
+class TestRenameRefsAutofix:
+    """Regression tests for GH-283: the rename-refs autofix must match whole
+    names only, apply exactly once per run, converge (idempotent), and
+    ``fix --dry-run`` must not write ``.skillsaw-renames.json``."""
+
+    FIXTURE = "autofix/rename-refs-substring"
+
+    def test_substring_matches_not_corrupted(self, tmp_path):
+        """'metadata-parser'/'data-parser-staging' must survive a rename of 'data-parser'."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before_lines = _snapshot_line_counts(repo)
+
+        _run_fix(repo, "--suggest")
+
+        skill_md = (repo / "data-parser-v2" / "SKILL.md").read_text()
+        assert "name: data-parser-v2" in skill_md
+
+        claude_md = (repo / "CLAUDE.md").read_text()
+        assert "Prefer rapid iteration" in claude_md
+        assert "metadata-parser is separate" in claude_md
+        assert "data-parser-staging" in claude_md
+        assert "using the data-parser-v2 skill" in claude_md
+        assert "Run the data-parser-v2 skill" in claude_md
+        assert "`data-parser-v2` skill must be used" in claude_md
+        assert "metadata-parser-extended" in claude_md
+        # The corruption signature: the suffix applied more than once.
+        assert "-v2-v2" not in claude_md
+
+        after_lines = _snapshot_line_counts(repo)
+        for f in before_lines:
+            if f.endswith(".md"):
+                assert before_lines[f] == after_lines.get(f), f"line count changed in {f}"
+
+    def test_fix_converges_and_is_idempotent(self, tmp_path):
+        """A second (and third) fix run must be byte-identical, and re-lint
+        must show zero remaining rename-refs violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--suggest")
+        baseline = _snapshot_contents(repo)
+
+        for i in range(2):
+            _run_fix(repo, "--suggest")
+            current = _snapshot_contents(repo)
+            assert current == baseline, f"fix run {i + 2} changed content (not idempotent)"
+
+        r = run_lint(repo)
+        stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
+        assert stale == [], f"rename-refs violations remain after fix: {stale}"
+
+    def test_dry_run_is_side_effect_free(self, tmp_path):
+        """``fix --dry-run`` must not write the renames manifest or modify any
+        file, and a subsequent lint must not report phantom stale references."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+
+        _run_fix(repo, "--suggest", "--dry-run")
+
+        assert not (repo / ".skillsaw-renames.json").exists()
+        assert _snapshot_contents(repo) == before, "dry-run modified files"
+
+        r = run_lint(repo)
+        stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
+        assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"

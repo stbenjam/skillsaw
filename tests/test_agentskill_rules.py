@@ -1257,8 +1257,116 @@ def test_rename_refs_cleanup_keeps_active_entries(temp_dir):
     assert data["renames"][0]["old"] == "Eat-Potato"
 
 
-def test_name_fix_writes_manifest(temp_dir):
-    """AgentSkillNameRule.fix() writes .skillsaw-renames.json"""
+def test_rename_refs_no_substring_matches(temp_dir):
+    """GH-283: 'api' must not match inside 'rapid', 'Therapists', or 'api-v2'."""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "api-v2"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: api-v2\ndescription: A skill\n---\n")
+    (repo / "CLAUDE.md").write_text(
+        "Prefer rapid iteration with the api-v2 skill.\n" "Therapists maintain their own docs.\n"
+    )
+
+    manifest = {"renames": [{"old": "api", "new": "api-v2"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    violations = AgentSkillRenameRefsRule().check(context)
+    assert violations == []
+    # No stale references left -> manifest entry pruned
+    assert not (repo / RENAMES_MANIFEST).exists()
+
+
+def test_rename_refs_one_violation_per_line_single_fix_per_file(temp_dir):
+    """GH-283: every stale line is reported, but the fix is a single result
+    per file that rewrites each whole-name occurrence exactly once."""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "api-client-v2"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: api-client-v2\ndescription: A skill\n---\n")
+    (repo / "CLAUDE.md").write_text(
+        "Use the api-client skill for rapid calls; api-client is preferred.\n"
+        "\n"
+        "The api-client skill needs auth.\n"
+    )
+
+    manifest = {"renames": [{"old": "api-client", "new": "api-client-v2"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+    claude_violations = [v for v in violations if v.file_path.name == "CLAUDE.md"]
+    assert sorted(v.line for v in claude_violations) == [1, 3]
+
+    fixes = rule.fix(context, violations)
+    claude_fixes = [f for f in fixes if f.file_path.name == "CLAUDE.md"]
+    assert len(claude_fixes) == 1
+    fixed = claude_fixes[0].fixed_content
+    assert fixed == (
+        "Use the api-client-v2 skill for rapid calls; api-client-v2 is preferred.\n"
+        "\n"
+        "The api-client-v2 skill needs auth.\n"
+    )
+
+
+def test_rename_refs_fix_is_idempotent(temp_dir):
+    """GH-283: after applying the fix, check() finds nothing and a second
+    fix() produces no results (running fix twice is byte-identical)."""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "api-client-v2"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: api-client-v2\ndescription: A skill\n---\n")
+    claude = repo / "CLAUDE.md"
+    claude.write_text("Prefer rapid iteration when using the api-client skill.\n")
+
+    manifest = {"renames": [{"old": "api-client", "new": "api-client-v2"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    fixes = rule.fix(context, rule.check(context))
+    assert len(fixes) == 1
+    claude.write_text(fixes[0].fixed_content)
+    assert claude.read_text() == "Prefer rapid iteration when using the api-client-v2 skill.\n"
+
+    # Manifest survives the first check (reference was still stale then);
+    # a fresh check now finds nothing and a second fix changes nothing.
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+    context2 = RepositoryContext(repo)
+    violations2 = rule.check(context2)
+    assert violations2 == []
+    assert rule.fix(context2, violations2) == []
+
+
+def test_rename_refs_fix_skips_single_word_names(temp_dir):
+    """Single-word old names are too ambiguous for autofix; check() reports
+    them but fix() produces no results (default autofix-min-segments=2)."""
+    repo = temp_dir / "repo"
+    repo.mkdir()
+    skill = repo / "api-v2"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: api-v2\ndescription: A skill\n---\n")
+    (repo / "CLAUDE.md").write_text("Use the api skill for calls.\n")
+
+    manifest = {"renames": [{"old": "api", "new": "api-v2"}]}
+    (repo / RENAMES_MANIFEST).write_text(json.dumps(manifest))
+
+    context = RepositoryContext(repo)
+    rule = AgentSkillRenameRefsRule()
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    fixes = rule.fix(context, violations)
+    assert fixes == []
+
+
+def test_name_fix_defers_manifest_to_apply(temp_dir):
+    """AgentSkillNameRule.fix() must not write .skillsaw-renames.json itself —
+    the manifest is recorded via on_apply, so dry-run stays side-effect free."""
     repo = temp_dir / "repo"
     repo.mkdir()
     skill = repo / "eat-potato"
@@ -1274,6 +1382,11 @@ def test_name_fix_writes_manifest(temp_dir):
     assert len(fixes) >= 1
 
     manifest_path = repo / RENAMES_MANIFEST
+    assert not manifest_path.exists()
+
+    assert fixes[0].on_apply is not None
+    fixes[0].on_apply()
+
     assert manifest_path.exists()
     data = json.loads(manifest_path.read_text())
     assert len(data["renames"]) == 1

@@ -34,6 +34,7 @@ rules:
   agentskill-rename-refs:
     enabled: auto
     severity: warning
+    # autofix-min-segments: 2
 
   # Skill directories should only contain recognized subdirectories (stricter than spec)
   agentskill-structure:

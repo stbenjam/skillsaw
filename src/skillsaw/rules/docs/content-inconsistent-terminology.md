@@ -29,5 +29,5 @@ Put test fixtures in the `tests/` directory.
 
 Pick the most common term across your instruction files and use it
 everywhere. Prefer technical terms over informal ones (e.g., "directory"
-over "folder", "repository" over "codebase"). `skillsaw fix --llm` can
+over "folder", "repository" over "codebase"). A coding agent can
 standardize terminology automatically.

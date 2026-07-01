@@ -1136,20 +1136,10 @@ def test_empty_file_is_empty_config(tmp_path):
     assert config.rules == {}
 
 
-def test_non_mapping_llm_raises_valueerror(tmp_path):
-    import pytest
-
-    with pytest.raises(ValueError, match="'llm' must be a mapping"):
-        LinterConfig.from_file(_write(tmp_path, "llm: gpt-4\n"))
-
-
-def test_llm_field_type_validation(tmp_path):
-    import pytest
-
-    with pytest.raises(ValueError, match=r"'llm\.max_iterations' must be an integer"):
-        LinterConfig.from_file(_write(tmp_path, "llm:\n  max_iterations: ten\n"))
-    with pytest.raises(ValueError, match=r"'llm\.confirm' must be a boolean"):
-        LinterConfig.from_file(_write(tmp_path, "llm:\n  confirm: maybe\n"))
+def test_removed_llm_key_warns_as_unknown(tmp_path):
+    """The ``llm`` key (removed with the LLM fix engine) is ignored with a warning."""
+    config = LinterConfig.from_file(_write(tmp_path, "llm:\n  model: gpt-4\n"))
+    assert any("unknown config key" in w and "llm" in w for w in config.warnings)
 
 
 def test_content_paths_string_raises_valueerror(tmp_path):
