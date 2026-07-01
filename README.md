@@ -151,6 +151,13 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 - uses: stbenjam/skillsaw@v0
   with:
     strict: true
+
+# With plugins
+- uses: stbenjam/skillsaw@v0
+  with:
+    strict: true
+    plugins: |
+      skillsaw-typos==0.1.0
 ```
 
 ```yaml
