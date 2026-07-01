@@ -2218,3 +2218,72 @@ class TestJsonConfigNotContent:
         r = run_lint(repo)
         flagged = [v for v in violations(r) if "settings.local.json" in v["file_path"]]
         assert flagged, "settings rules no longer see settings files"
+
+
+# ── agentskill-rename-refs autofix corruption (GH-283) ───────────
+
+
+@pytest.mark.integration
+class TestRenameRefsAutofix:
+    """Regression tests for GH-283: the rename-refs autofix must match whole
+    names only, apply exactly once per run, converge (idempotent), and
+    ``fix --dry-run`` must not write ``.skillsaw-renames.json``."""
+
+    FIXTURE = "autofix/rename-refs-substring"
+
+    def test_substring_matches_not_corrupted(self, tmp_path):
+        """'metadata-parser'/'data-parser-staging' must survive a rename of 'data-parser'."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before_lines = _snapshot_line_counts(repo)
+
+        _run_fix(repo, "--suggest")
+
+        skill_md = (repo / "data-parser-v2" / "SKILL.md").read_text()
+        assert "name: data-parser-v2" in skill_md
+
+        claude_md = (repo / "CLAUDE.md").read_text()
+        assert "Prefer rapid iteration" in claude_md
+        assert "metadata-parser is separate" in claude_md
+        assert "data-parser-staging" in claude_md
+        assert "using the data-parser-v2 skill" in claude_md
+        assert "Run the data-parser-v2 skill" in claude_md
+        assert "`data-parser-v2` skill must be used" in claude_md
+        assert "metadata-parser-extended" in claude_md
+        # The corruption signature: the suffix applied more than once.
+        assert "-v2-v2" not in claude_md
+
+        after_lines = _snapshot_line_counts(repo)
+        for f in before_lines:
+            if f.endswith(".md"):
+                assert before_lines[f] == after_lines.get(f), f"line count changed in {f}"
+
+    def test_fix_converges_and_is_idempotent(self, tmp_path):
+        """A second (and third) fix run must be byte-identical, and re-lint
+        must show zero remaining rename-refs violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--suggest")
+        baseline = _snapshot_contents(repo)
+
+        for i in range(2):
+            _run_fix(repo, "--suggest")
+            current = _snapshot_contents(repo)
+            assert current == baseline, f"fix run {i + 2} changed content (not idempotent)"
+
+        r = run_lint(repo)
+        stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
+        assert stale == [], f"rename-refs violations remain after fix: {stale}"
+
+    def test_dry_run_is_side_effect_free(self, tmp_path):
+        """``fix --dry-run`` must not write the renames manifest or modify any
+        file, and a subsequent lint must not report phantom stale references."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+
+        _run_fix(repo, "--suggest", "--dry-run")
+
+        assert not (repo / ".skillsaw-renames.json").exists()
+        assert _snapshot_contents(repo) == before, "dry-run modified files"
+
+        r = run_lint(repo)
+        stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
+        assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"

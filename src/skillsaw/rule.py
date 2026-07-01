@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import Callable, List, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -87,6 +87,10 @@ class AutofixResult:
     description: str
     violations_fixed: List[RuleViolation] = field(default_factory=list)
     rename_from: Optional[Path] = None
+    # Side effect to run only when the fix is actually applied (never on
+    # dry-run). Rules must not mutate repository state inside fix() itself —
+    # fix() is also called for previews.
+    on_apply: Optional[Callable[[], None]] = field(default=None, repr=False, compare=False)
 
 
 class Rule(ABC):

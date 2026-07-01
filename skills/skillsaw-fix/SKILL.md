@@ -42,9 +42,13 @@ kebab-case names, plugin registration, and similar).
 
 Then preview the suggested tier with `skillsaw fix --suggest --dry-run`.
 Suggested fixes (e.g. updating stale references after a rename) are
-mechanically derived but may over-match. Review the diff output; if the
-changes are correct, apply them with `skillsaw fix --suggest`. If any look
-wrong, skip this tier and handle those violations manually in Step 5.
+mechanically derived but may over-match. Evaluate each hunk in the diff
+individually: for a stale-reference rewrite, decide whether the flagged text
+is really a reference to the skill or just the same word used generically —
+"the `data-parser` skill" is a reference; "our data parser" is not. If every
+hunk is correct, apply the tier with `skillsaw fix --suggest`. If any hunk is
+wrong, skip the tier entirely and handle those violations manually in Step 5,
+applying only the edits you judged correct.
 
 Re-run `skillsaw` and report how many violations the autofixer resolved.
 
@@ -82,6 +86,11 @@ Common cases:
   replace them with the specific, actionable instruction the author meant.
 <!-- skillsaw-enable content-weak-language, content-tautological -->
 - **content-negative-only**: keep the prohibition, add what to do instead.
+- **agentskill-rename-refs**: single-word skill names are flagged but never
+  rewritten automatically — the word is too ambiguous. Check each flagged
+  line yourself: rewrite it only if the mention actually refers to the skill
+  (`/name` invocations, `skills/name/` paths, "the name skill"), and leave
+  generic uses of the word unchanged.
 - **Missing or invalid frontmatter fields**: derive names from directory
   names and descriptions from the body content.
 - **content-embedded-secrets**: replace the secret with an environment
@@ -101,7 +110,17 @@ so only new violations fail future lints, and remind them to commit
 
 ## Step 7: Verify and summarize
 
-Run `skillsaw` one final time. Report:
+Run the repository's own lint entry point if it defines one — check the
+Makefile (or equivalent task runner) for a skillsaw target such as `lint` or
+`lint-fix` and use that, since it may pin a version or pass flags like
+`--strict`. Otherwise run `skillsaw` directly.
+
+If the repository has a grade badge (`.skillsaw-badge.json` exists, or the
+lint target depends on a `badge` target), refresh it: run `make badge` if
+defined, else `skillsaw badge`. The badge reflects committed state, so
+include the updated `.skillsaw-badge.json` in the files to commit.
+
+Report:
 
 - Violations fixed automatically (Step 3)
 - Violations fixed by edits (Step 5)

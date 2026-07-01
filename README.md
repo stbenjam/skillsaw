@@ -599,6 +599,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `required-fields` | Additional frontmatter fields to require (name and description are always required) | `[]` |
 | `required-metadata` | Keys that must be present inside the metadata mapping | `[]` |
 
+**`agentskill-rename-refs` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |
