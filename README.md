@@ -954,7 +954,8 @@ executables on PATH.
 Beyond rules, plugins can extend skillsaw itself: declare custom
 **repository types** (`SKILLSAW_REPO_TYPES`) with their own detection and
 content paths, and **contribute nodes to the lint tree**
-(`SKILLSAW_TREE_CONTRIBUTORS`) so plugin rules can lint file formats
+(`SKILLSAW_TREE_CONTRIBUTORS`) — prose content blocks, structured config
+blocks, or any other lint-tree nodes — so plugin rules can lint things
 skillsaw doesn't know about.
 
 See the [plugin documentation](https://skillsaw.org/plugins/), the complete

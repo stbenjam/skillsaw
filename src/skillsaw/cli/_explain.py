@@ -113,7 +113,12 @@ def _run_explain(args):
     if config.plugins_enabled:
         from ..plugins import load_plugins, register_extensions
 
-        register_extensions(context, load_plugins(disabled=set(config.disabled_plugins)))
+        # A crashed or colliding detector would otherwise silently read as
+        # "no matching repo type detected" — surface it like `skillsaw tree`.
+        for problem in register_extensions(
+            context, load_plugins(disabled=set(config.disabled_plugins))
+        ):
+            print(f"Warning: {problem.message}", file=sys.stderr)
 
     enabled, reason = config.rule_enabled_reason(
         args.rule_id,

@@ -282,6 +282,23 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # guards against double-linting files already discovered above, and
     # failures are collected for the Linter to surface as violations —
     # a broken contributor must not abort tree construction.
+    def _admit_contributed_node(block) -> bool:
+        """Validate/dedupe a contributed node and its whole subtree.
+
+        Contributors may return nodes with children; every descendant gets
+        the same guards as top-level discovery (type check, ``seen`` dedupe,
+        exclude patterns), with rejected descendants pruned in place.
+        Returns False when the node itself must not be attached.
+        """
+        if not isinstance(block, LintTarget):
+            raise TypeError(f"contributor returned {block!r}, which is not a lint tree node")
+        resolved = block.path.resolve()
+        if resolved in seen or not block.path.exists() or _is_excluded(block.path):
+            return False
+        seen.add(resolved)
+        block.children = [child for child in block.children if _admit_contributed_node(child)]
+        return True
+
     for plugin_name, contribute in context.plugin_tree_contributors:
         try:
             contributed = contribute(context, root)
@@ -290,15 +307,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # (None, or resolve() raising an OSError) must be reported like
             # any other contributor failure, not crash tree construction.
             for block in blocks:
-                if not isinstance(block, LintTarget):
-                    raise TypeError(
-                        f"contributor returned {block!r}, which is not a lint tree node"
-                    )
-                resolved = block.path.resolve()
-                if resolved in seen or not block.path.exists() or _is_excluded(block.path):
-                    continue
-                seen.add(resolved)
-                root.children.append(block)
+                if _admit_contributed_node(block):
+                    root.children.append(block)
         except Exception as e:
             context.plugin_extension_errors.append(
                 f"Plugin '{plugin_name}': tree contributor failed: " f"{e.__class__.__name__}: {e}"

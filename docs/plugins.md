@@ -287,8 +287,10 @@ When `detect(root_path)` returns True for the linted repository:
 
 Type names must be kebab-case and must not collide with builtin type values
 or other plugins' types — colliding declarations are skipped with a warning
-(first plugin wins). A crashing detector becomes a `plugin-load-error`
-violation and the type is treated as not detected; the lint continues.
+(first plugin wins). A malformed declaration (non-kebab-case `name`,
+non-callable `detect`, invalid `content_paths`) fails the whole plugin at
+load time, and a crashing detector becomes a `plugin-load-error` violation
+with the type treated as not detected; either way the lint continues.
 
 ### Optional: contribute nodes to the lint tree
 

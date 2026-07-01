@@ -710,3 +710,30 @@ def test_register_extensions_is_idempotent(fake_plugin, acme_repo):
     # Plugin content paths survive the second Linter's config reset.
     tree_paths = {node.path.name for node in context.lint_tree.walk()}
     assert "ACME.md" in tree_paths
+
+
+def test_tree_contributor_subtree_is_validated_recursively(fake_plugin, acme_repo):
+    """Children of a contributed node get the same dedupe/exclude guards."""
+    (acme_repo / "notes.txt").write_text("Deployment notes.\n", encoding="utf-8")
+    (acme_repo / "child.txt").write_text("Child notes.\n", encoding="utf-8")
+
+    def contribute(context, root):
+        parent = FileContentBlock(path=context.root_path / "notes.txt", category="notes")
+        parent.children.append(
+            # Duplicate of a node already in the tree: must be pruned.
+            FileContentBlock(path=context.root_path / "CLAUDE.md", category="dup")
+        )
+        parent.children.append(
+            FileContentBlock(path=context.root_path / "child.txt", category="child")
+        )
+        return [parent]
+
+    fake_plugin(
+        "fake_contrib_subtree",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    names = [node.path.name for node in linter.context.lint_tree.walk()]
+    assert names.count("CLAUDE.md") == 1
+    assert "notes.txt" in names and "child.txt" in names
+    assert "plugin-load-error" not in {v.rule_id for v in violations}
