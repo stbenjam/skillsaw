@@ -269,7 +269,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         root.children.append(apm_node)
 
     # --- Extra content paths from config ---
-    for glob_pattern in context.content_paths:
+    # User-configured content paths plus globs contributed by detected
+    # plugin repo types; the ``seen`` set dedupes any overlap.
+    for glob_pattern in [*context.content_paths, *context.plugin_content_paths]:
         for extra in sorted(context.root_path.glob(glob_pattern)):
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)
@@ -284,22 +286,24 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         try:
             contributed = contribute(context, root)
             blocks = list(contributed) if contributed is not None else []
+            # Attachment stays inside the try: a node with a broken path
+            # (None, or resolve() raising an OSError) must be reported like
+            # any other contributor failure, not crash tree construction.
             for block in blocks:
                 if not isinstance(block, LintTarget):
                     raise TypeError(
                         f"contributor returned {block!r}, which is not a lint tree node"
                     )
+                resolved = block.path.resolve()
+                if resolved in seen or not block.path.exists() or _is_excluded(block.path):
+                    continue
+                seen.add(resolved)
+                root.children.append(block)
         except Exception as e:
             context.plugin_extension_errors.append(
                 f"Plugin '{plugin_name}': tree contributor failed: " f"{e.__class__.__name__}: {e}"
             )
             continue
-        for block in blocks:
-            resolved = block.path.resolve()
-            if resolved in seen or not block.path.exists() or _is_excluded(block.path):
-                continue
-            seen.add(resolved)
-            root.children.append(block)
 
     root.set_parents()
     nodes = list(root.walk())

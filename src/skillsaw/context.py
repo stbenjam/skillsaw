@@ -139,8 +139,16 @@ class RepositoryContext:
         # (plugin name, callable) pairs, and errors raised by contributors
         # during tree construction (surfaced as violations by the Linter).
         self.plugin_repo_types: Set[str] = set()
+        # Content globs contributed by detected plugin repo types. Kept
+        # separate from ``content_paths`` (user config), which the Linter
+        # overwrites on construction — a shared context must not lose
+        # plugin contributions to that reset.
+        self.plugin_content_paths: List[str] = []
         self.plugin_tree_contributors: List[tuple] = []
         self.plugin_extension_errors: List[str] = []
+        # Set by skillsaw.plugins.register_extensions so repeated calls on a
+        # shared context (e.g. two Linters over one context) are no-ops.
+        self._plugin_extensions_registered = False
         self._lint_tree: Optional["LintTarget"] = None
         # Filters discovery results and computes detected_formats — excludes
         # must be applied before format detection so excluded files (e.g.

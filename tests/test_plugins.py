@@ -671,3 +671,42 @@ def test_invalid_tree_contributors_declaration_fails_plugin(fake_plugin):
     (plugin,) = load_plugins()
     assert plugin.error is not None
     assert "SKILLSAW_TREE_CONTRIBUTORS" in plugin.error
+
+
+def test_tree_contributor_with_broken_path_surfaces_violation(fake_plugin, acme_repo):
+    """A contributed node whose path is unusable is a reported failure, not a crash."""
+
+    def contribute(context, root):
+        return [FileContentBlock(path=None, category="broken")]
+
+    fake_plugin(
+        "fake_contrib_nopath",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "tree contributor failed" in errors[0].message
+
+
+def test_register_extensions_is_idempotent(fake_plugin, acme_repo):
+    """Two Linters sharing one context must not duplicate registrations."""
+
+    def contribute(context, root):
+        return []
+
+    fake_plugin(
+        "fake_reg_twice",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type()],
+            "SKILLSAW_TREE_CONTRIBUTORS": [contribute],
+        },
+    )
+    context = RepositoryContext(acme_repo)
+    Linter(context, LinterConfig.default())
+    Linter(context, LinterConfig.default())
+    assert len(context.plugin_tree_contributors) == 1
+    assert context.plugin_content_paths == ["ACME.md"]
+    # Plugin content paths survive the second Linter's config reset.
+    tree_paths = {node.path.name for node in context.lint_tree.walk()}
+    assert "ACME.md" in tree_paths

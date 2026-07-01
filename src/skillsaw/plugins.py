@@ -298,15 +298,22 @@ def register_extensions(context, plugins: List[PluginInfo]) -> List[ExtensionPro
     """Register plugin repo types and tree contributors on a context.
 
     Runs each declared repo type's detector (fault-isolated), records
-    detected type names in ``context.plugin_repo_types``, merges detected
-    types' ``content_paths`` into ``context.content_paths``, and hands tree
-    contributors to the context for ``build_lint_tree``. Idempotent per
-    context is not required — call once per fresh context.
+    detected type names in ``context.plugin_repo_types``, collects detected
+    types' ``content_paths`` into ``context.plugin_content_paths``, and hands
+    tree contributors to the context for ``build_lint_tree``.
+
+    Idempotent per context: repeated calls (e.g. two Linters sharing one
+    context) are no-ops, so contributors never accumulate duplicates and
+    problems are reported once.
 
     Returns problems (name collisions, crashed detectors) for the caller to
     surface; the linter maps them to violations, the CLI prints them.
     """
     from .context import RepositoryType
+
+    if getattr(context, "_plugin_extensions_registered", False):
+        return []
+    context._plugin_extensions_registered = True
 
     problems: List[ExtensionProblem] = []
     builtin_type_values = {t.value for t in RepositoryType}
@@ -361,9 +368,12 @@ def register_extensions(context, plugins: List[PluginInfo]) -> List[ExtensionPro
         )
 
     if contributed_paths:
-        merged = list(context.content_paths)
-        merged.extend(p for p in contributed_paths if p not in merged)
-        context.content_paths = merged
+        # Separate from context.content_paths (user config): the Linter
+        # resets that attribute on construction, and plugin contributions
+        # must survive a shared context being reused.
+        context.plugin_content_paths.extend(
+            p for p in contributed_paths if p not in context.plugin_content_paths
+        )
     if contributed_paths or context.plugin_tree_contributors:
         # The tree is built lazily on first access, so nothing is wasted;
         # dropping any cached tree guarantees the contributions apply.
