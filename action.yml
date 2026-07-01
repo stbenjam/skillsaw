@@ -61,10 +61,12 @@ runs:
           pip install -q "skillsaw==$SKILLSAW_VERSION"
         fi
         if [ -n "$SKILLSAW_PLUGINS" ]; then
-          echo "$SKILLSAW_PLUGINS" | while IFS= read -r plugin; do
+          while IFS= read -r plugin; do
             plugin=$(echo "$plugin" | xargs)
-            [ -n "$plugin" ] && pip install -q "$plugin"
-          done
+            if [ -n "$plugin" ]; then
+              pip install -q "$plugin"
+            fi
+          done <<< "$SKILLSAW_PLUGINS"
         fi
 
     - name: Run skillsaw
