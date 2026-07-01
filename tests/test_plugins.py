@@ -75,6 +75,13 @@ class ShadowsBuiltinRule(AlwaysFiresRule):
         return "skill-frontmatter"  # collides with a builtin
 
 
+@pytest.fixture(autouse=True)
+def _clear_dist_fallback_cache():
+    plugins_mod._dist_by_entry_point.cache_clear()
+    yield
+    plugins_mod._dist_by_entry_point.cache_clear()
+
+
 @pytest.fixture
 def fake_plugin(monkeypatch):
     """Install a fake plugin module and register entry points for it.
@@ -153,6 +160,51 @@ def test_entry_point_targets_factory(fake_plugin):
     )
     (plugin,) = load_plugins()
     assert plugin.rule_classes == [AlwaysFiresRule]
+
+
+def test_entry_point_targets_abstract_class(fake_plugin):
+    """An abstract class must produce a clear error, not get instantiated."""
+    fake_plugin(
+        "fake_abs:AbstractIntermediate",
+        module_attrs={"AbstractIntermediate": AbstractIntermediate},
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is not None
+    assert "not a concrete" in plugin.error
+
+
+def test_module_scan_survives_raising_getattr(fake_plugin):
+    """A PEP 562 module __getattr__ raising for a dir()-listed name is skipped."""
+
+    def _raise(name):
+        raise RuntimeError("boom")
+
+    fake_plugin(
+        "fake_raising",
+        module_attrs={
+            "AlwaysFiresRule": AlwaysFiresRule,
+            "__getattr__": _raise,
+            "__dir__": lambda: ["phantom_name", "AlwaysFiresRule"],
+        },
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is None
+    assert plugin.rule_classes == [AlwaysFiresRule]
+
+
+def test_dist_fallback_when_entry_point_lacks_dist(fake_plugin, monkeypatch):
+    """Python 3.9 EntryPoints carry no dist; the distributions() scan recovers it."""
+    fake_plugin("fake_distless", module_attrs={"SKILLSAW_RULES": [AlwaysFiresRule]})
+
+    class FakeDist:
+        version = "9.9.9"
+        metadata = {"Name": "skillsaw-fake"}
+        entry_points = [EntryPoint("testplug", "fake_distless", plugins_mod.ENTRY_POINT_GROUP)]
+
+    monkeypatch.setattr(plugins_mod.metadata, "distributions", lambda: [FakeDist()])
+    (plugin,) = load_plugins()
+    assert plugin.distribution == "skillsaw-fake"
+    assert plugin.version == "9.9.9"
 
 
 def test_entry_point_targets_garbage(fake_plugin):

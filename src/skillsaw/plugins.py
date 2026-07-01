@@ -24,6 +24,7 @@ it as a ``plugin-load-error`` violation instead.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import types
@@ -112,7 +113,12 @@ def _rules_from_sequence(seq: Iterable, source: str) -> List[Type[Rule]]:
 def _resolve_rule_classes(obj: object, source: str) -> List[Type[Rule]]:
     """Extract rule classes from whatever the entry point resolved to."""
     if isinstance(obj, types.ModuleType):
-        declared = getattr(obj, RULES_ATTRIBUTE, None)
+        try:
+            declared = getattr(obj, RULES_ATTRIBUTE, None)
+        except Exception:
+            # A module-level __getattr__ (PEP 562) raising something other
+            # than AttributeError escapes getattr's default handling.
+            declared = None
         if declared is not None:
             return _rules_from_sequence(declared, f"{source}:{RULES_ATTRIBUTE}")
         # No explicit declaration: collect every concrete Rule subclass in
@@ -120,13 +126,25 @@ def _resolve_rule_classes(obj: object, source: str) -> List[Type[Rule]]:
         seen: Set[type] = set()
         found = []
         for name in dir(obj):
-            attr = getattr(obj, name)
+            try:
+                attr = getattr(obj, name)
+            except Exception:
+                # A module-level __getattr__ (PEP 562) may raise for names
+                # dir() reported; skip those rather than failing the plugin.
+                continue
             if _is_concrete_rule(attr) and attr not in seen:
                 seen.add(attr)
                 found.append(attr)
         return found
-    if _is_concrete_rule(obj):
-        return [obj]  # type: ignore[list-item]
+    if isinstance(obj, type):
+        # Classes are callable; reject non-rule/abstract classes here so
+        # they don't fall into the callable branch and get instantiated.
+        if _is_concrete_rule(obj):
+            return [obj]
+        raise TypeError(
+            f"entry point '{source}' references class {obj.__name__}, "
+            "which is not a concrete skillsaw.Rule subclass"
+        )
     if isinstance(obj, (list, tuple)):
         return _rules_from_sequence(obj, source)
     if callable(obj):
@@ -138,6 +156,26 @@ def _resolve_rule_classes(obj: object, source: str) -> List[Type[Rule]]:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _dist_by_entry_point():
+    """Map (entry point name, value) -> Distribution, for Python 3.9.
+
+    On 3.9 ``EntryPoint`` objects carry no ``dist`` back-reference, so the
+    owning distribution must be recovered by scanning installed
+    distributions' declared entry points. Built lazily and cached — it is
+    only consulted when ``ep.dist`` is unavailable.
+    """
+    mapping = {}
+    for dist in metadata.distributions():
+        try:
+            for ep in dist.entry_points:
+                if ep.group == ENTRY_POINT_GROUP:
+                    mapping[(ep.name, ep.value)] = dist
+        except Exception:  # pragma: no cover - malformed dist metadata
+            continue
+    return mapping
+
+
 def _entry_point_dist(ep) -> tuple:
     """(distribution name, version) for an entry point, best effort.
 
@@ -146,9 +184,13 @@ def _entry_point_dist(ep) -> tuple:
     """
     dist = getattr(ep, "dist", None)
     if dist is None:
+        dist = _dist_by_entry_point().get((ep.name, ep.value))
+    if dist is None:
         return None, None
     try:
-        return dist.name, dist.version
+        # Distribution.name is also 3.10+; fall back to the metadata field.
+        name = getattr(dist, "name", None) or dist.metadata["Name"]
+        return name, dist.version
     except Exception:  # pragma: no cover - metadata access can fail oddly
         return None, None
 
