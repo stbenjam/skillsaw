@@ -14,6 +14,8 @@ from skillsaw.rules.builtin.utils import read_json
 class McpProhibitedRule(Rule):
     """Check that the repository does not enable non-allowlisted MCP servers"""
 
+    default_enabled = False
+
     config_schema = {
         "allowlist": {
             "type": "list",

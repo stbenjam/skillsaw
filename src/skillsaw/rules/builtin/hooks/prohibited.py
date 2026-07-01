@@ -19,6 +19,8 @@ from skillsaw.rules.builtin.content_analysis import (
 class HooksProhibitedRule(Rule):
     """Check that projects do not define non-allowlisted hooks."""
 
+    default_enabled = False
+
     since = "0.12.0"
 
     config_schema = {

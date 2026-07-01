@@ -10,6 +10,8 @@ from skillsaw.rules.builtin.utils import insert_frontmatter_fields
 class CommandFrontmatterRule(Rule):
     """Check that command files have valid frontmatter"""
 
+    default_enabled = True
+
     autofix_confidence = AutofixConfidence.SAFE
 
     @property

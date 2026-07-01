@@ -260,93 +260,27 @@ class LinterConfig:
 
     @classmethod
     def default(cls) -> "LinterConfig":
-        """Create default configuration with all builtin rules enabled"""
-        from . import __version__
+        """Create the default configuration, generated from the rule registry.
 
+        Each rule's defaults come from its class (``Rule.default_enabled``
+        and ``Rule.default_severity``) so there is no second hand-maintained
+        copy that can drift. Tunable parameters are not materialized here —
+        rules fall back to their ``config_schema`` defaults in code.
+        """
+        from . import __version__
+        from .rules.builtin import BUILTIN_RULES
+
+        rules: Dict[str, Dict[str, Any]] = {}
+        for rule_class in BUILTIN_RULES:
+            rule = rule_class()
+            rules[rule.rule_id] = {
+                "enabled": rule.default_enabled,
+                "severity": rule.default_severity().value,
+            }
         return cls(
             version=__version__,
             exclude_patterns=list(_DEFAULT_EXCLUDE_PATTERNS),
-            rules={
-                # Plugin structure rules (auto-enabled for plugin/marketplace repos)
-                "plugin-json-required": {"enabled": "auto", "severity": "error"},
-                "plugin-json-valid": {
-                    "enabled": "auto",
-                    "severity": "error",
-                    "recommended-fields": ["description", "version", "author"],
-                },
-                "plugin-naming": {"enabled": "auto", "severity": "warning"},
-                # Command format rules
-                "command-naming": {"enabled": True, "severity": "warning"},
-                "command-frontmatter": {"enabled": True, "severity": "error"},
-                "command-sections": {"enabled": False, "severity": "warning"},
-                "command-name-format": {"enabled": False, "severity": "warning"},
-                # Marketplace rules (auto-enabled for marketplace repos)
-                "marketplace-json-valid": {"enabled": "auto", "severity": "error"},
-                "marketplace-registration": {"enabled": "auto", "severity": "error"},
-                # Documentation rules
-                "plugin-readme": {"enabled": "auto", "severity": "warning"},
-                # Skills rules
-                "skill-frontmatter": {"enabled": True, "severity": "warning"},
-                # Agents rules
-                "agent-frontmatter": {"enabled": True, "severity": "error"},
-                # Hooks rules
-                "hooks-json-valid": {"enabled": True, "severity": "error"},
-                "hooks-dangerous": {"enabled": "auto", "severity": "error"},
-                "hooks-prohibited": {"enabled": False, "severity": "error"},
-                # MCP rules
-                "mcp-valid-json": {"enabled": True, "severity": "error"},
-                "mcp-prohibited": {"enabled": False, "severity": "error"},
-                # Rules directory
-                "rules-valid": {"enabled": "auto", "severity": "error"},
-                # Agentskills rules (auto-enabled for agentskills repos)
-                "agentskill-valid": {"enabled": "auto", "severity": "error"},
-                "agentskill-name": {"enabled": "auto", "severity": "error"},
-                "agentskill-rename-refs": {"enabled": "auto", "severity": "warning"},
-                "agentskill-description": {"enabled": "auto", "severity": "warning"},
-                "agentskill-structure": {"enabled": False, "severity": "warning"},
-                "agentskill-evals-required": {"enabled": False, "severity": "warning"},
-                "agentskill-evals": {"enabled": "auto", "severity": "warning"},
-                # Openclaw metadata
-                "openclaw-metadata": {"enabled": "auto", "severity": "warning"},
-                # Instruction file validation (auto-enabled when instruction files detected)
-                "instruction-file-valid": {"enabled": "auto", "severity": "warning"},
-                "instruction-imports-valid": {"enabled": "auto", "severity": "warning"},
-                # Context budget (opt-in; checks token limits across skills/commands/files)
-                "context-budget": {"enabled": "auto", "severity": "warning"},
-                # Content intelligence rules (auto-enabled when instruction files detected)
-                "content-weak-language": {"enabled": "auto", "severity": "warning"},
-                "content-tautological": {"enabled": "auto", "severity": "warning"},
-                "content-critical-position": {
-                    "enabled": "auto",
-                    "severity": "warning",
-                    "min-lines": 50,
-                },
-                "content-redundant-with-tooling": {"enabled": "auto", "severity": "warning"},
-                "content-instruction-budget": {"enabled": "auto", "severity": "warning"},
-                "content-negative-only": {"enabled": "auto", "severity": "warning"},
-                "content-section-length": {"enabled": "auto", "severity": "info"},
-                "content-contradiction": {"enabled": "auto", "severity": "warning"},
-                "content-hook-candidate": {"enabled": "auto", "severity": "info"},
-                "content-actionability-score": {"enabled": "auto", "severity": "info"},
-                "content-cognitive-chunks": {"enabled": "auto", "severity": "info"},
-                "content-embedded-secrets": {"enabled": "auto", "severity": "error"},
-                "content-banned-references": {"enabled": "auto", "severity": "warning"},
-                "content-inconsistent-terminology": {"enabled": "auto", "severity": "info"},
-                "content-broken-internal-reference": {"enabled": "auto", "severity": "warning"},
-                "content-unlinked-internal-reference": {"enabled": "auto", "severity": "info"},
-                "content-placeholder-text": {"enabled": "auto", "severity": "warning"},
-                # Settings validation
-                "settings-dangerous": {"enabled": "auto", "severity": "error"},
-                # Promptfoo eval validation
-                "promptfoo-valid": {"enabled": "auto", "severity": "error"},
-                "promptfoo-assertions": {"enabled": False, "severity": "warning"},
-                "promptfoo-metadata": {"enabled": False, "severity": "warning"},
-                # CodeRabbit config
-                "coderabbit-yaml-valid": {"enabled": "auto", "severity": "error"},
-                # APM (Agent Package Manager) rules
-                "apm-yaml-valid": {"enabled": "auto", "severity": "error"},
-                "apm-structure-valid": {"enabled": "auto", "severity": "warning"},
-            },
+            rules=rules,
         )
 
     @classmethod

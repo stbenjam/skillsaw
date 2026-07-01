@@ -16,6 +16,8 @@ from skillsaw.rules.builtin.utils import frontmatter_text, insert_frontmatter_fi
 class AgentFrontmatterRule(Rule):
     """Check that agent .md files have valid frontmatter"""
 
+    default_enabled = True
+
     autofix_confidence = AutofixConfidence.SAFE
 
     @property

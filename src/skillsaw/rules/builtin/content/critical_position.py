@@ -37,7 +37,7 @@ class ContentCriticalPositionRule(Rule):
         return "Detect critical instructions in the middle of files where LLM attention is lowest"
 
     def default_severity(self) -> Severity:
-        return Severity.INFO
+        return Severity.WARNING
 
     @property
     def llm_fix_prompt(self):

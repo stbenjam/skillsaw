@@ -1,240 +1,82 @@
 """
 Builtin linting rules for Claude Code plugins
+
+Rules are discovered automatically: every concrete ``Rule`` subclass defined
+in a module under this package is registered in ``BUILTIN_RULES``. Adding a
+new rule only requires writing the class — there is no import block, list,
+or config dict to update. Rule defaults (enabled mode, severity) live on the
+class itself (``Rule.default_enabled`` / ``Rule.default_severity``) and
+``LinterConfig.default()`` is generated from this registry.
 """
 
-from .plugins import (
-    PluginJsonRequiredRule,
-    PluginJsonValidRule,
-    PluginNamingRule,
-    PluginReadmeRule,
-)
+import importlib
+import inspect
+import pkgutil
 
-from .command_format import (
-    CommandNamingRule,
-    CommandFrontmatterRule,
-    CommandSectionsRule,
-    CommandNameFormatRule,
-)
+from ...rule import Rule
 
-from .marketplace import (
-    MarketplaceJsonValidRule,
-    MarketplaceRegistrationRule,
-)
 
-from .skills import (
-    SkillFrontmatterRule,
-)
+def _reraise(_name):
+    # pkgutil.walk_packages swallows ImportErrors from subpackages unless an
+    # onerror hook is given — a broken rule package must fail loudly, not
+    # silently drop its rules from the registry.
+    raise
 
-from .agents import (
-    AgentFrontmatterRule,
-)
 
-from .hooks import (
-    HooksJsonValidRule,
-    HooksDangerousRule,
-    HooksProhibitedRule,
-)
+def _discover_rule_classes():
+    """Import every module in this package and collect Rule subclasses."""
+    classes = []
+    seen = set()
+    prefix = __name__ + "."
+    for modinfo in pkgutil.walk_packages(__path__, prefix, onerror=_reraise):
+        module = importlib.import_module(modinfo.name)
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, Rule)
+                and not inspect.isabstract(obj)
+                and obj.__module__.startswith(prefix)
+                and obj not in seen
+            ):
+                seen.add(obj)
+                classes.append(obj)
+    return classes
 
-from .mcp import (
-    McpValidJsonRule,
-    McpProhibitedRule,
-)
 
-from .rules_dir import (
-    RulesValidRule,
-)
+def _build_registry():
+    """Map rule_id -> rule class, sorted by rule_id, rejecting duplicates."""
+    by_id = {}
+    for cls in _discover_rule_classes():
+        rule_id = cls().rule_id
+        existing = by_id.get(rule_id)
+        if existing is not None and existing is not cls:
+            raise RuntimeError(
+                f"Duplicate rule_id {rule_id!r}: "
+                f"{existing.__module__}.{existing.__qualname__} and "
+                f"{cls.__module__}.{cls.__qualname__}"
+            )
+        by_id[rule_id] = cls
+    return dict(sorted(by_id.items()))
 
-from .agentskills import (
-    AgentSkillValidRule,
-    AgentSkillNameRule,
-    AgentSkillRenameRefsRule,
-    AgentSkillDescriptionRule,
-    AgentSkillStructureRule,
-    AgentSkillEvalsRequiredRule,
-    AgentSkillEvalsRule,
-)
 
-from .openclaw import (
-    OpenclawMetadataRule,
-)
+#: rule_id -> rule class for every builtin rule, sorted by rule_id.
+BUILTIN_RULE_REGISTRY = _build_registry()
 
-from .instructions import (
-    InstructionFileValidRule,
-    InstructionImportsValidRule,
-)
+#: All builtin rule classes, sorted by rule_id.
+BUILTIN_RULES = list(BUILTIN_RULE_REGISTRY.values())
 
-from .context_budget import (
-    ContextBudgetRule,
-)
 
-from .content import (
-    ContentWeakLanguageRule,
-    ContentTautologicalRule,
-    ContentCriticalPositionRule,
-    ContentRedundantWithToolingRule,
-    ContentInstructionBudgetRule,
-    ContentNegativeOnlyRule,
-    ContentSectionLengthRule,
-    ContentContradictionRule,
-    ContentHookCandidateRule,
-    ContentActionabilityScoreRule,
-    ContentCognitiveChunksRule,
-    ContentEmbeddedSecretsRule,
-    ContentBannedReferencesRule,
-    ContentInconsistentTerminologyRule,
-    ContentBrokenInternalReferenceRule,
-    ContentUnlinkedInternalReferenceRule,
-    ContentPlaceholderTextRule,
-)
-
-from .coderabbit import (
-    CoderabbitYamlValidRule,
-)
-
-from .promptfoo import (
-    PromptfooValidRule,
-    PromptfooAssertionsRule,
-    PromptfooMetadataRule,
-)
-
-from .settings import (
-    SettingsDangerousRule,
-)
-
-from .apm import (
-    ApmYamlValidRule,
-    ApmStructureValidRule,
-)
-
-# All builtin rules
-BUILTIN_RULES = [
-    # Plugin structure
-    PluginJsonRequiredRule,
-    PluginJsonValidRule,
-    PluginNamingRule,
-    PluginReadmeRule,
-    # Command format
-    CommandNamingRule,
-    CommandFrontmatterRule,
-    CommandSectionsRule,
-    CommandNameFormatRule,
-    # Marketplace
-    MarketplaceJsonValidRule,
-    MarketplaceRegistrationRule,
-    # Skills
-    SkillFrontmatterRule,
-    # Agents
-    AgentFrontmatterRule,
-    # Hooks
-    HooksJsonValidRule,
-    HooksDangerousRule,
-    HooksProhibitedRule,
-    # MCP
-    McpValidJsonRule,
-    McpProhibitedRule,
-    # Rules directory
-    RulesValidRule,
-    # Agentskills
-    AgentSkillValidRule,
-    AgentSkillNameRule,
-    AgentSkillRenameRefsRule,
-    AgentSkillDescriptionRule,
-    AgentSkillStructureRule,
-    AgentSkillEvalsRequiredRule,
-    AgentSkillEvalsRule,
-    # Openclaw
-    OpenclawMetadataRule,
-    # Instruction files
-    InstructionFileValidRule,
-    InstructionImportsValidRule,
-    # Context budget
-    ContextBudgetRule,
-    # Content intelligence
-    ContentWeakLanguageRule,
-    ContentTautologicalRule,
-    ContentCriticalPositionRule,
-    ContentRedundantWithToolingRule,
-    ContentInstructionBudgetRule,
-    ContentNegativeOnlyRule,
-    ContentSectionLengthRule,
-    ContentContradictionRule,
-    ContentHookCandidateRule,
-    ContentActionabilityScoreRule,
-    ContentCognitiveChunksRule,
-    ContentEmbeddedSecretsRule,
-    ContentBannedReferencesRule,
-    ContentInconsistentTerminologyRule,
-    ContentBrokenInternalReferenceRule,
-    ContentUnlinkedInternalReferenceRule,
-    ContentPlaceholderTextRule,
-    # CodeRabbit
-    CoderabbitYamlValidRule,
-    # Promptfoo eval validation
-    PromptfooValidRule,
-    PromptfooAssertionsRule,
-    PromptfooMetadataRule,
-    # Settings
-    SettingsDangerousRule,
-    # APM (Agent Package Manager)
-    ApmYamlValidRule,
-    ApmStructureValidRule,
-]
+def __getattr__(name):
+    # Keep ``from skillsaw.rules.builtin import SkillFrontmatterRule`` working
+    # without a hand-maintained re-export block (PEP 562).
+    for cls in BUILTIN_RULES:
+        if cls.__name__ == name:
+            return cls
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "BUILTIN_RULES",
-    # Export individual rules too
-    "PluginJsonRequiredRule",
-    "PluginJsonValidRule",
-    "PluginNamingRule",
-    "PluginReadmeRule",
-    "CommandNamingRule",
-    "CommandFrontmatterRule",
-    "CommandSectionsRule",
-    "CommandNameFormatRule",
-    "MarketplaceJsonValidRule",
-    "MarketplaceRegistrationRule",
-    "SkillFrontmatterRule",
-    "AgentFrontmatterRule",
-    "HooksJsonValidRule",
-    "HooksDangerousRule",
-    "HooksProhibitedRule",
-    "McpValidJsonRule",
-    "McpProhibitedRule",
-    "RulesValidRule",
-    "AgentSkillValidRule",
-    "AgentSkillNameRule",
-    "AgentSkillRenameRefsRule",
-    "AgentSkillDescriptionRule",
-    "AgentSkillStructureRule",
-    "AgentSkillEvalsRequiredRule",
-    "AgentSkillEvalsRule",
-    "OpenclawMetadataRule",
-    "InstructionFileValidRule",
-    "InstructionImportsValidRule",
-    "ContextBudgetRule",
-    "ContentWeakLanguageRule",
-    "ContentTautologicalRule",
-    "ContentCriticalPositionRule",
-    "ContentRedundantWithToolingRule",
-    "ContentInstructionBudgetRule",
-    "ContentNegativeOnlyRule",
-    "ContentSectionLengthRule",
-    "ContentContradictionRule",
-    "ContentHookCandidateRule",
-    "ContentActionabilityScoreRule",
-    "ContentCognitiveChunksRule",
-    "ContentEmbeddedSecretsRule",
-    "ContentBannedReferencesRule",
-    "ContentInconsistentTerminologyRule",
-    "ContentBrokenInternalReferenceRule",
-    "ContentUnlinkedInternalReferenceRule",
-    "ContentPlaceholderTextRule",
-    "CoderabbitYamlValidRule",
-    "PromptfooValidRule",
-    "PromptfooAssertionsRule",
-    "PromptfooMetadataRule",
-    "SettingsDangerousRule",
-    "ApmYamlValidRule",
-    "ApmStructureValidRule",
+    "BUILTIN_RULE_REGISTRY",
+    *sorted(cls.__name__ for cls in BUILTIN_RULES),
 ]

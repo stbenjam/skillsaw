@@ -57,7 +57,7 @@ class ContentNegativeOnlyRule(Rule):
         return "Detect prohibitions without a positive alternative (agent has no path forward)"
 
     def default_severity(self) -> Severity:
-        return Severity.INFO
+        return Severity.WARNING
 
     @property
     def llm_fix_prompt(self):

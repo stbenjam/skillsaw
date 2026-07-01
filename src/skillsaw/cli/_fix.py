@@ -58,7 +58,11 @@ def _run_fix(args):
         applied = []
         suggested = []
         for fix_path in paths:
-            context = RepositoryContext(fix_path)
+            context = RepositoryContext(
+                fix_path,
+                exclude_patterns=config.exclude_patterns,
+                content_paths=config.content_paths,
+            )
             try:
                 linter = Linter(
                     context,
@@ -80,7 +84,11 @@ def _run_fix(args):
                 rule_progress.clear()
 
             if not dry_run and any(f.rule_id == "agentskill-name" for f in path_applied):
-                context = RepositoryContext(fix_path)
+                context = RepositoryContext(
+                    fix_path,
+                    exclude_patterns=config.exclude_patterns,
+                    content_paths=config.content_paths,
+                )
                 linter = Linter(
                     context,
                     config,
@@ -144,7 +152,11 @@ def _run_fix(args):
         print("Error: --llm accepts a single path", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(paths[0])
+    context = RepositoryContext(
+        paths[0],
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
     try:
         linter = Linter(
             context,

@@ -153,10 +153,11 @@ class LintTool:
         from ..rule import Rule
 
         invalidate_read_caches(resolved)
-        context = RepositoryContext(self._root)
-        context.content_paths = self._config.content_paths
-        context.exclude_patterns = self._config.exclude_patterns
-        context.apply_excludes()
+        context = RepositoryContext(
+            self._root,
+            exclude_patterns=self._config.exclude_patterns,
+            content_paths=self._config.content_paths,
+        )
 
         violations = []
         for rule_class in BUILTIN_RULES:
@@ -325,10 +326,11 @@ class LintBlockTool:
         from ..rules.builtin.utils import invalidate_read_caches
 
         invalidate_read_caches(block.path)
-        context = RepositoryContext(self._root)
-        context.content_paths = self._config.content_paths
-        context.exclude_patterns = self._config.exclude_patterns
-        context.apply_excludes()
+        context = RepositoryContext(
+            self._root,
+            exclude_patterns=self._config.exclude_patterns,
+            content_paths=self._config.content_paths,
+        )
 
         violations = []
         target_block = self._state.block

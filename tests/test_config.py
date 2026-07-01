@@ -202,6 +202,12 @@ def test_auto_agentskills_fires_on_all_skill_repo_types(temp_dir):
 def test_save_no_trailing_whitespace(tmp_path):
     """Test that saved config has no trailing whitespace and is valid YAML"""
     config = LinterConfig.default()
+    # Explicit list value exercises block-style list serialization
+    config.rules["plugin-json-valid"]["recommended-fields"] = [
+        "description",
+        "version",
+        "author",
+    ]
     config_path = tmp_path / ".skillsaw.yaml"
     config.save(config_path)
 
@@ -966,18 +972,21 @@ def test_save_includes_config_schema_as_comments(tmp_path):
 def test_save_does_not_duplicate_existing_config_keys(tmp_path):
     """Config keys already in the rule config should not also appear as comments"""
     config = LinterConfig.for_init()
+    config.rules["content-critical-position"]["min-lines"] = 50
     config_path = tmp_path / ".skillsaw.yaml"
     config.save(config_path)
 
     content = config_path.read_text()
 
-    # content-critical-position already has min-lines: 50 in its default config.
-    # It should NOT also appear as a commented-out option.
+    # min-lines is set explicitly in the rule config, so it must be written
+    # once as a real key — NOT also as a commented-out option.
     assert "    min-lines: 50\n" in content
     assert "    # min-lines:" not in content
 
-    # plugin-json-valid already has recommended-fields in its default config
-    assert "    # recommended-fields:" not in content
+    # Schema params not present in the config are written commented-out
+    # (generated defaults no longer materialize tunable params).
+    assert "    # recommended-fields:" in content
+    assert "\n    recommended-fields:" not in content
 
 
 def test_save_no_schema_comments_for_rules_without_schema(tmp_path):

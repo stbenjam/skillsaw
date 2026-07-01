@@ -10,6 +10,8 @@ from skillsaw.lint_target import SkillNode
 class AgentSkillEvalsRequiredRule(Rule):
     """Require evals/evals.json in each skill"""
 
+    default_enabled = False
+
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
@@ -26,7 +28,7 @@ class AgentSkillEvalsRequiredRule(Rule):
         return "Require evals/evals.json for each skill (opt-in)"
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []

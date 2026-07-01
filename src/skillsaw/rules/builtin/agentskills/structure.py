@@ -12,6 +12,8 @@ from ._helpers import DEFAULT_ALLOWED_DIRS
 class AgentSkillStructureRule(Rule):
     """Validate skill directory structure (stricter than spec)"""
 
+    default_enabled = False
+
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,

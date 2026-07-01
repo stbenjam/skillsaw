@@ -429,10 +429,13 @@ def test_evals_required_disabled_by_default(temp_dir):
     assert config.get_rule_config("agentskill-evals-required").get("enabled") is False
 
 
-def test_evals_required_default_severity_is_error():
+def test_evals_required_default_severity_is_warning():
+    # Matches the effective default severity (generated config used to
+    # override the class-level ERROR with warning; the class is now the
+    # single source of truth).
     rule = AgentSkillEvalsRequiredRule()
-    assert rule.default_severity() == Severity.ERROR
-    assert rule.severity == Severity.ERROR
+    assert rule.default_severity() == Severity.WARNING
+    assert rule.severity == Severity.WARNING
 
 
 def test_evals_required_fails_when_missing(temp_dir):
@@ -462,10 +465,10 @@ def test_evals_required_passes_when_present(temp_dir):
 # --- agentskill-evals ---
 
 
-def test_evals_default_severity_is_error():
+def test_evals_default_severity_is_warning():
     rule = AgentSkillEvalsRule()
-    assert rule.default_severity() == Severity.ERROR
-    assert rule.severity == Severity.ERROR
+    assert rule.default_severity() == Severity.WARNING
+    assert rule.severity == Severity.WARNING
 
 
 def test_evals_valid_passes(temp_dir):

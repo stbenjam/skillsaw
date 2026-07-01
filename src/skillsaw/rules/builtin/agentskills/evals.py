@@ -28,7 +28,7 @@ class AgentSkillEvalsRule(Rule):
         return "Validate evals/evals.json format when present"
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
