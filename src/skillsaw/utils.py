@@ -311,6 +311,25 @@ def prepend_frontmatter_fields(content: str, additions: List[str]) -> Optional[s
     return content[: m.start(1)] + insert + content[m.start(1) :]
 
 
+def replace_frontmatter_field(content: str, key: str, replacement_line: str) -> Optional[str]:
+    """Replace an existing top-level ``key:`` line inside the frontmatter.
+
+    Returns the new content, or ``None`` when *content* has no parseable
+    frontmatter block or no top-level ``key:`` line to replace.  Only the
+    first occurrence is replaced, and the line ending is preserved.
+    """
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return None
+    key_re = re.compile(rf"^{re.escape(key)}[ \t]*:[^\r\n]*", re.MULTILINE)
+    km = key_re.search(m.group(1))
+    if km is None:
+        return None
+    start = m.start(1) + km.start()
+    end = m.start(1) + km.end()
+    return content[:start] + replacement_line + content[end:]
+
+
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:
     """Parse YAML frontmatter from markdown content.
 

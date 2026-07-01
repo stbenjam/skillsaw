@@ -7,6 +7,7 @@ from pathlib import Path
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
+from skillsaw.utils import invalidate_read_caches
 from skillsaw.rules.builtin.agentskills import (
     RENAMES_MANIFEST,
     AgentSkillValidRule,
@@ -182,6 +183,62 @@ def test_missing_name_fails(temp_dir):
     assert any("name" in v.message for v in violations)
     v = [v for v in violations if "name" in v.message][0]
     assert v.line is None
+
+
+def test_fix_missing_name_prepends_field(temp_dir):
+    """A truly absent name key is added by the fix."""
+    skill = temp_dir / "no-name-skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\ndescription: Has description only\n---\n\n# Body\n")
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule()
+    fixes = rule.fix(context, rule.check(context))
+    assert len(fixes) == 1
+    fixed = fixes[0].fixed_content
+    assert "name: no-name-skill" in fixed
+    assert fixed.count("name:") == 1
+
+
+def test_fix_empty_name_replaces_in_place(temp_dir):
+    """Regression for #321: `name: ""` must be replaced, not prepended as a duplicate key."""
+    skill = temp_dir / "empty-name-skill"
+    skill.mkdir()
+    original = '---\nname: ""\ndescription: Does things.\n---\n\n# Body\n'
+    (skill / "SKILL.md").write_text(original)
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule()
+    fixes = rule.fix(context, rule.check(context))
+    assert len(fixes) == 1
+    fixed = fixes[0].fixed_content
+    assert "name: empty-name-skill" in fixed
+    assert 'name: ""' not in fixed
+    assert fixed.count("name:") == 1
+    assert len(fixed.splitlines()) == len(original.splitlines())
+
+    # Converges: re-check of the fixed content finds no name violation
+    (skill / "SKILL.md").write_text(fixed)
+    invalidate_read_caches(skill / "SKILL.md")
+    violations = AgentSkillValidRule().check(RepositoryContext(skill))
+    assert not any("name" in v.message for v in violations)
+
+
+def test_fix_null_name_replaces_in_place(temp_dir):
+    """Regression for #321: a null `name:` value must be replaced in place."""
+    skill = temp_dir / "null-name-skill"
+    skill.mkdir()
+    original = "---\nname:\ndescription: Does things.\n---\n\n# Body\n"
+    (skill / "SKILL.md").write_text(original)
+
+    context = RepositoryContext(skill)
+    rule = AgentSkillValidRule()
+    fixes = rule.fix(context, rule.check(context))
+    assert len(fixes) == 1
+    fixed = fixes[0].fixed_content
+    assert "name: null-name-skill" in fixed
+    assert fixed.count("name:") == 1
+    assert len(fixed.splitlines()) == len(original.splitlines())
 
 
 def test_missing_description_fails(temp_dir):

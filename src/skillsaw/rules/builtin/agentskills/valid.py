@@ -6,7 +6,7 @@ from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence,
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import prepend_frontmatter_fields
+from skillsaw.rules.builtin.utils import prepend_frontmatter_fields, replace_frontmatter_field
 
 from ._helpers import NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH, COMPATIBILITY_MAX_LENGTH, _to_kebab
 
@@ -61,7 +61,11 @@ class AgentSkillValidRule(Rule):
             original = v.file_path.read_text(encoding="utf-8")
             dir_name = v.file_path.parent.name
             kebab_name = _to_kebab(dir_name)
-            fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
+            # An empty/null value still has a `name:` key line — replace it in
+            # place; prepending would produce a duplicate key on every run.
+            fixed = replace_frontmatter_field(original, "name", f"name: {kebab_name}")
+            if fixed is None:
+                fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
             if fixed is not None:
                 results.append(
                     AutofixResult(
@@ -70,7 +74,7 @@ class AgentSkillValidRule(Rule):
                         confidence=AutofixConfidence.SAFE,
                         original_content=original,
                         fixed_content=fixed,
-                        description=f"Added name '{kebab_name}' from directory name",
+                        description=f"Set name '{kebab_name}' from directory name",
                         violations_fixed=[v],
                     )
                 )
