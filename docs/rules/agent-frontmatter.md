@@ -8,7 +8,7 @@ Agent files must have valid frontmatter with name and description
 | | |
 |---|---|
 | **Severity** | error |
-| **Autofix** | auto, llm |
+| **Autofix** | auto |
 | **Since** | v0.1.0 |
 | **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
 

@@ -8,7 +8,7 @@ Score instruction files on actionability (verb density, commands, file reference
 | | |
 |---|---|
 | **Severity** | info (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 

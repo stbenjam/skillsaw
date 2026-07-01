@@ -7,7 +7,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto, llm |
+| [`agentskill-valid`](agentskill-valid.md) | SKILL.md must have valid frontmatter with name and description | error (auto) | auto |
 | [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
 | [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto |
 | [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - |

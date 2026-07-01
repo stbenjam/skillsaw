@@ -66,18 +66,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     # Deprecated: use `skillsaw fix` instead. Hidden from --help.
     lint_parser.add_argument("--fix", action="store_true", help=argparse.SUPPRESS)
     lint_parser.add_argument(
-        "--llm", "--ai", action="store_true", dest="use_llm", help=argparse.SUPPRESS
-    )
-    lint_parser.add_argument(
-        "--dry-run", action="store_true", dest="dry_run", help=argparse.SUPPRESS
-    )
-    lint_parser.add_argument(
-        "--patch-file", type=Path, default=None, dest="patch_file", help=argparse.SUPPRESS
-    )
-    lint_parser.add_argument(
-        "--apply-patch", action="store_true", dest="apply_patch", help=argparse.SUPPRESS
-    )
-    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
@@ -163,57 +151,10 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Path to .skillsaw.yaml config file (default: auto-discover from the first path)",
     )
     fix_parser.add_argument(
-        "--llm",
-        "--ai",
-        action="store_true",
-        dest="use_llm",
-        help="Use LLM-powered fixes for content violations",
-    )
-    fix_parser.add_argument(
-        "--model",
-        help="Override LLM model (default: from config or claude-sonnet-4-20250514)",
-    )
-    fix_parser.add_argument(
-        "--max-iterations",
-        type=int,
-        help="Max fix iterations per file (default: 3)",
-    )
-    fix_parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Include info-level violations (default: only errors and warnings)",
-    )
-    fix_parser.add_argument(
-        "-y",
-        "--yes",
-        action="store_true",
-        help="Auto-apply changes without confirmation",
-    )
-    fix_parser.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        help="Number of parallel LLM workers (default: 4)",
-    )
-    fix_parser.add_argument(
         "--dry-run",
         action="store_true",
         dest="dry_run",
         help="Preview fixes without writing changes",
-    )
-    fix_parser.add_argument(
-        "--patch-file",
-        type=Path,
-        default=None,
-        dest="patch_file",
-        metavar="FILE",
-        help="Path for the saved LLM patch file (default: .skillsaw-llm-patch.diff in repo root)",
-    )
-    fix_parser.add_argument(
-        "--apply-patch",
-        action="store_true",
-        dest="apply_patch",
-        help="Apply a previously saved LLM dry-run patch (use --patch-file to specify path)",
     )
     fix_parser.add_argument(
         "--suggest",

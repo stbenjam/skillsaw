@@ -10,103 +10,13 @@ from pathlib import Path
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
-from ..rule import Severity
 from ._config import _get_version, load_config
 from ._helpers import (
     _RuleProgress,
-    _ansi_colors,
-    _apply_llm_patch,
     _build_merged_context,
     _dedup_rules,
-    _print_colored_diff,
-    _print_token_usage,
-    _require_llm_provider,
     _resolve_lint_paths,
-    _resolve_patch_path,
-    _save_llm_patch,
 )
-
-
-def _handle_apply_patch_for_lint(args):
-    if not getattr(args, "apply_patch", False):
-        return
-    paths = _resolve_lint_paths(args.path)
-    if not paths:
-        print("Error: No path provided for --apply-patch", file=sys.stderr)
-        sys.exit(1)
-    if len(paths) > 1:
-        print("Error: --apply-patch accepts a single path", file=sys.stderr)
-        sys.exit(1)
-    if not paths[0].exists():
-        print(f"Error: Path not found: {paths[0]}", file=sys.stderr)
-        sys.exit(1)
-    root_path = paths[0].resolve()
-    patch_path = _resolve_patch_path(args, root_path)
-    _apply_llm_patch(patch_path, root_path)
-    sys.exit(0)
-
-
-def _run_llm_fix_inline(args, linter, config):
-    """Handle --fix --llm from the lint subcommand."""
-    c = _ansi_colors()
-    provider = _require_llm_provider(config)
-    dry_run = getattr(args, "dry_run", False)
-
-    import time as time_mod
-
-    start_time = time_mod.monotonic()
-
-    def _on_event(event_type, **kw):
-        if event_type == "progress":
-            elapsed = time_mod.monotonic() - start_time
-            print(
-                f"{c['dim']}  [{kw['completed']}/{kw['file_count']} files,"
-                f" {int(elapsed)}s]{c['reset']}",
-                file=sys.stderr,
-            )
-        elif event_type == "file_start":
-            print(
-                f"  {c['bold']}{kw['rel_path']}{c['reset']}"
-                f"  {c['dim']}{kw['num_violations']} violation(s){c['reset']}",
-                file=sys.stderr,
-            )
-        elif event_type == "file_done":
-            remaining = kw.get("remaining", 0)
-            changed = kw.get("changed", False)
-            if not changed:
-                print(f"    {c['yellow']}no changes{c['reset']}", file=sys.stderr)
-            elif remaining == 0:
-                print(
-                    f"    {c['green']}✓ all {kw['num_violations']}"
-                    f" violation(s) fixed{c['reset']}",
-                    file=sys.stderr,
-                )
-            else:
-                fixed = kw["num_violations"] - remaining
-                print(
-                    f"    {c['red']}{fixed} fixed, {remaining} failed{c['reset']}",
-                    file=sys.stderr,
-                )
-
-    result = linter.llm_fix(
-        provider,
-        callback=_on_event,
-        min_severity=Severity.WARNING,
-        max_workers=config.llm.max_workers,
-        dry_run=dry_run,
-    )
-
-    _print_colored_diff(result.diffs, c, header="LLM Changes")
-
-    if dry_run:
-        print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
-        if result.diffs:
-            patch_path = _resolve_patch_path(args, linter.context.root_path)
-            _save_llm_patch(result.diffs, patch_path)
-            print(f"{c['cyan']}Patch saved to {patch_path}{c['reset']}")
-            print(f"\n{c['bold']}To apply:{c['reset']}" f" skillsaw fix --apply-patch")
-
-    _print_token_usage(result.total_usage, c)
 
 
 def _run_lint(args):
@@ -141,8 +51,6 @@ def _run_lint(args):
             )
             sys.exit(1)
         output_formats[resolved_path] = fmt
-
-    _handle_apply_patch_for_lint(args)
 
     missing_count = 0
     valid_raw_paths = []
@@ -246,10 +154,9 @@ def _run_lint(args):
         if args.fix:
             import warnings
 
-            fix_cmd = "skillsaw fix --llm" if args.use_llm else "skillsaw fix"
             msg = (
-                f"`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
-                f"Use `{fix_cmd}` instead."
+                "`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
+                "Use `skillsaw fix` instead."
             )
             warnings.warn(msg, DeprecationWarning, stacklevel=1)
             print(f"Warning: {msg}", file=sys.stderr)
@@ -266,8 +173,6 @@ def _run_lint(args):
                 for fix in suggested:
                     print(f"  ? [{fix.file_path}] {fix.description}")
                 print()
-            if args.use_llm:
-                _run_llm_fix_inline(args, linter, config)
         else:
             rule_progress = _RuleProgress(args)
             try:

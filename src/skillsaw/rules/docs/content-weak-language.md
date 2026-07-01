@@ -36,5 +36,5 @@ conditions the model can evaluate.
 
 Rewrite the instruction as an imperative: state what to do, not what to
 attempt. If you cannot state it unconditionally, spell out the concrete
-condition instead of hedging. `skillsaw fix --llm` can rewrite flagged
+condition instead of hedging. A coding agent can rewrite flagged
 lines automatically.

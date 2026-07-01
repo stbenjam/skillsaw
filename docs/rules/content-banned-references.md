@@ -8,7 +8,7 @@ Detect banned or deprecated model names, APIs, and custom patterns
 | | |
 |---|---|
 | **Severity** | warning (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 

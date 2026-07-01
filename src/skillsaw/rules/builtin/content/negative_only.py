@@ -3,7 +3,7 @@
 import re
 from typing import List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -12,8 +12,6 @@ from skillsaw.rules.builtin.content_analysis import (
 
 class ContentNegativeOnlyRule(Rule):
     """Detect 'never/don't/avoid X' without a positive alternative"""
-
-    autofix_confidence = AutofixConfidence.LLM
 
     formats = None
     since = "0.7.0"
@@ -58,22 +56,6 @@ class ContentNegativeOnlyRule(Rule):
 
     def default_severity(self) -> Severity:
         return Severity.INFO
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are fixing AI coding assistant instruction files. Rewrite "
-            'negative-only instructions ("don\'t do X", "never use X", '
-            '"avoid X") to include a positive alternative.\n\n'
-            "Rules:\n"
-            "- Keep the prohibition but add what to do instead\n"
-            "- Example: 'Don't use var' → 'Use const or let instead of var'\n"
-            "- Example: 'Never commit secrets' → 'Store secrets in environment "
-            "variables, never commit them to the repository'\n"
-            "- Infer the positive alternative from context\n"
-            "- Do NOT change the meaning of the prohibition\n"
-            "- Preserve markdown formatting"
-        )
 
     def _has_positive_alternative(self, line, lines, line_idx):
         neg_match = self._NEGATIVE_RE.search(line)

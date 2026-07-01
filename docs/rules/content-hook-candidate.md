@@ -8,7 +8,7 @@ Detect instructions that should be automated as hooks instead of prose instructi
 | | |
 |---|---|
 | **Severity** | info (auto) |
-| **Autofix** | llm |
+| **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 

@@ -24,7 +24,6 @@ class Severity(Enum):
 class AutofixConfidence(Enum):
     SAFE = "safe"
     SUGGEST = "suggest"
-    LLM = "llm"
 
 
 @dataclass
@@ -169,28 +168,13 @@ class Rule(ABC):
         self,
         context: "RepositoryContext",
         violations: List[RuleViolation],
-        *,
-        provider: Any = None,
     ) -> List[AutofixResult]:
-        """Attempt to fix violations.
-
-        Override in subclasses.  ``provider`` is an optional
-        ``CompletionProvider`` for LLM-assisted fixes.
-        """
+        """Attempt to fix violations.  Override in subclasses."""
         return []
 
     @property
     def supports_autofix(self) -> bool:
         return type(self).fix is not Rule.fix
-
-    @property
-    def llm_fix_prompt(self) -> Optional[str]:
-        return None
-
-    @property
-    def llm_fix_frontmatter(self) -> bool:
-        """When True, LLM fix operates on frontmatter YAML only (not the body)."""
-        return False
 
     def violation(
         self,

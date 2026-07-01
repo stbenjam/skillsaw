@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from typing import Dict, List
 
-from skillsaw.rule import AutofixConfidence, Rule, RuleViolation, Severity
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
@@ -14,26 +14,9 @@ from skillsaw.rules.builtin.content_analysis import (
 class ContentActionabilityScoreRule(Rule):
     """Compute an actionability score for instruction files"""
 
-    autofix_confidence = AutofixConfidence.LLM
-
     formats = None
     since = "0.7.0"
     baseline_mode = "floor"
-
-    @property
-    def llm_fix_prompt(self):
-        return (
-            "You are improving AI coding assistant instruction files that have "
-            "low actionability scores. Make instructions more actionable by "
-            "adding specific commands, file paths, and concrete actions.\n\n"
-            "Rules:\n"
-            "- Replace vague prose with imperative instructions\n"
-            "- Add specific commands (e.g., `npm test`, `make lint`)\n"
-            "- Add file paths where relevant (e.g., `src/config.ts`)\n"
-            "- Convert descriptions into action items\n"
-            "- Do NOT add instructions that don't match the project\n"
-            "- Preserve markdown formatting"
-        )
 
     _VERB_WORDS = frozenset(
         "use run create add remove check set write read call return throw "

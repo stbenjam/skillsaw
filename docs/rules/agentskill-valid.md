@@ -8,7 +8,7 @@ SKILL.md must have valid frontmatter with name and description
 | | |
 |---|---|
 | **Severity** | error (auto) |
-| **Autofix** | auto, llm |
+| **Autofix** | auto |
 | **Since** | v0.1.0 |
 | **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
