@@ -2036,25 +2036,32 @@ class TestBaseline:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 0
 
-    def test_lint_fix_matches_lint_baseline_accounting(self, tmp_path):
-        """Regression for issue #258 (Bug A): `lint --fix` filtered the
+    def test_fix_matches_lint_baseline_accounting(self, tmp_path):
+        """Regression for issue #258 (Bug A): Linter.fix() filtered the
         baseline once per rule, overwriting stale/suppressed accounting, so
         the last rule's view won and every other rule's entries were falsely
-        reported stale — prompting users to destroy a correct baseline."""
+        reported stale — prompting users to destroy a correct baseline.
+
+        The `lint --fix` CLI path that originally exposed this is gone, but
+        Linter.fix() with a baseline must still account exactly as run().
+        """
+        from skillsaw.baseline import find_baseline, load_baseline
+        from skillsaw.context import RepositoryContext
+        from skillsaw.linter import Linter
+
         repo = copy_fixture(self.FIXTURE, tmp_path)
         run_baseline(repo)
+        baseline = load_baseline(find_baseline(repo))
 
-        lint_r = run_lint(repo, fmt="text", verbose=False)
-        fix_r = run_lint(repo, "--fix", fmt="text", verbose=False)
+        lint_linter = Linter(RepositoryContext(repo), baseline=baseline)
+        lint_linter.run()
 
-        assert "stale" not in lint_r["stdout"].lower()
-        assert "stale" not in fix_r["stdout"].lower()
+        fix_linter = Linter(RepositoryContext(repo), baseline=baseline)
+        fix_linter.fix()
 
-        def suppressed_lines(r):
-            return [ln.strip() for ln in r["stdout"].splitlines() if "suppressed" in ln]
-
-        assert suppressed_lines(lint_r)  # baseline suppressed something
-        assert suppressed_lines(fix_r) == suppressed_lines(lint_r)
+        assert lint_linter.baseline_suppressed_count > 0  # baseline suppressed something
+        assert fix_linter.baseline_suppressed_count == lint_linter.baseline_suppressed_count
+        assert fix_linter.stale_baseline_entries == lint_linter.stale_baseline_entries
 
     def test_corrupt_baseline_warns_and_continues(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)

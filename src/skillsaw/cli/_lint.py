@@ -151,34 +151,11 @@ def _run_lint(args):
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
-        if args.fix:
-            import warnings
-
-            msg = (
-                "`skillsaw lint --fix` is deprecated and will be removed in 1.0. "
-                "Use `skillsaw fix` instead."
-            )
-            warnings.warn(msg, DeprecationWarning, stacklevel=1)
-            print(f"Warning: {msg}", file=sys.stderr)
-            violations, fixes = linter.fix()
-            applied = linter.apply_fixes(fixes)
-            if applied and args.fmt == "text":
-                print(f"Fixed {len(applied)} issue(s):")
-                for fix in applied:
-                    print(f"  ✓ [{fix.file_path}] {fix.description}")
-                print()
-            suggested = [f for f in fixes if f not in applied]
-            if suggested and args.fmt == "text":
-                print(f"Suggested fixes ({len(suggested)} — review before applying):")
-                for fix in suggested:
-                    print(f"  ? [{fix.file_path}] {fix.description}")
-                print()
-        else:
-            rule_progress = _RuleProgress(args)
-            try:
-                violations = linter.run(progress=rule_progress)
-            finally:
-                rule_progress.clear()
+        rule_progress = _RuleProgress(args)
+        try:
+            violations = linter.run(progress=rule_progress)
+        finally:
+            rule_progress.clear()
 
         all_violations.extend(violations)
         all_rules.extend(linter.rules)

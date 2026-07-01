@@ -17,8 +17,8 @@ Examples: adding missing frontmatter, renaming files to kebab-case, registering 
 
 Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence because simple name matching may replace occurrences that aren't actually skill name references. Use `--suggest --dry-run` to review these changes before applying them.
 
-!!! warning "Deprecation"
-    `skillsaw lint --fix` is deprecated and will be removed in 1.0. Use `skillsaw fix` instead.
+!!! note "Removed in 0.15"
+    The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.
 
 ## Working with Coding Agents
 
@@ -38,5 +38,5 @@ For an agent workflow focused purely on fixing, install the [`skillsaw-fix` skil
 
 To use it with Claude Code, copy the skill directory into your repo (e.g. `.claude/skills/skillsaw-fix/`) or reference it from a marketplace, then ask the agent to "fix the skillsaw violations".
 
-!!! note "Breaking change (0.15)"
-    Earlier releases shipped a built-in LLM fix path (`skillsaw fix --llm`, the `llm` config section, and the `skillsaw[llm]` extras) powered by LiteLLM. It was removed in 0.15 — coding agents already handle non-deterministic fixes better, with review built into the workflow. An existing `llm:` section in `.skillsaw.yaml` is now ignored with a warning.
+!!! note "Breaking changes (0.15)"
+    Earlier releases shipped a built-in LLM fix path (`skillsaw fix --llm`, the `llm` config section, and the `skillsaw[llm]` extras) powered by LiteLLM. It was removed in 0.15 — coding agents already handle non-deterministic fixes better, with review built into the workflow. An existing `llm:` section in `.skillsaw.yaml` is now ignored with a warning. The long-deprecated `skillsaw lint --fix` flag was removed in the same release.

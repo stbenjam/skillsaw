@@ -63,8 +63,6 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         action="store_true",
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
-    # Deprecated: use `skillsaw fix` instead. Hidden from --help.
-    lint_parser.add_argument("--fix", action="store_true", help=argparse.SUPPRESS)
     lint_parser.add_argument(
         "--format",
         dest="fmt",
