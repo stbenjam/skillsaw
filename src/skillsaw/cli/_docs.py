@@ -15,7 +15,11 @@ def _run_docs(args):
         sys.exit(1)
 
     config, _config_path = load_config(args, args.path)
-    context = RepositoryContext(args.path, exclude_patterns=config.exclude_patterns)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
 
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)

@@ -75,7 +75,9 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = [
+# Computed on purpose — the registry is the source of truth, so the export
+# list can't drift from it. Ruff's PLE0604 only accepts string literals.
+__all__ = [  # noqa: PLE0604
     "BUILTIN_RULES",
     "BUILTIN_RULE_REGISTRY",
     *sorted(cls.__name__ for cls in BUILTIN_RULES),

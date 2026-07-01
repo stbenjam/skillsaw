@@ -132,12 +132,13 @@ class RepositoryContext:
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
-        # Excludes must be applied before format detection so excluded files
-        # (e.g. *.instructions.md under an excluded directory) don't flip
-        # format flags like HAS_COPILOT.
-        self.apply_excludes()
-        self.detected_formats: Set[str] = self._detect_formats()
+        self.detected_formats: Set[str] = set()
         self._lint_tree: Optional["LintTarget"] = None
+        # Filters discovery results and computes detected_formats — excludes
+        # must be applied before format detection so excluded files (e.g.
+        # *.instructions.md under an excluded directory) don't flip format
+        # flags like HAS_COPILOT.
+        self.apply_excludes()
 
     @property
     def lint_tree(self) -> "LintTarget":
@@ -188,15 +189,23 @@ class RepositoryContext:
         return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
     def apply_excludes(self) -> None:
-        """Filter plugins, skills, and instruction_files by exclude_patterns.
+        """Filter discovery results by exclude_patterns and refresh derived state.
 
-        Must be called after exclude_patterns is set (e.g. from config).
+        Filters plugins, skills, and instruction_files, then recomputes
+        ``detected_formats`` and drops any cached lint tree so state derived
+        from the (now filtered) lists cannot go stale. Called by the
+        constructor; legacy callers that mutate ``exclude_patterns`` after
+        construction must call it again. Filtering only narrows — previously
+        excluded paths are not rediscovered.
         """
-        if not self.exclude_patterns:
-            return
-        self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
-        self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
-        self.instruction_files = [p for p in self.instruction_files if not self.is_path_excluded(p)]
+        if self.exclude_patterns:
+            self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
+            self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
+            self.instruction_files = [
+                p for p in self.instruction_files if not self.is_path_excluded(p)
+            ]
+        self.detected_formats = self._detect_formats()
+        self._lint_tree = None
 
     def _discover_instruction_files(self) -> List[Path]:
         """Discover instruction files at the repo root and named .instructions.md files.
@@ -226,23 +235,28 @@ class RepositoryContext:
 
     def _detect_formats(self) -> Set[str]:
         formats: Set[str] = set()
-        if (self.root_path / ".cursor" / "rules").is_dir() or (
-            self.root_path / ".cursorrules"
-        ).exists():
+
+        def marker(*parts: str, is_dir: bool = False) -> bool:
+            # Excluded marker files must not flip format flags — the lint
+            # tree skips them, so format-gated rules would fire for nothing.
+            p = self.root_path.joinpath(*parts)
+            if self.is_path_excluded(p):
+                return False
+            return p.is_dir() if is_dir else p.exists()
+
+        if marker(".cursor", "rules", is_dir=True) or marker(".cursorrules"):
             formats.add(HAS_CURSOR)
-        if (
-            self.root_path / ".github" / "copilot-instructions.md"
-        ).exists() or self._has_instructions_md():
+        if marker(".github", "copilot-instructions.md") or self._has_instructions_md():
             formats.add(HAS_COPILOT)
-        if (self.root_path / "GEMINI.md").exists():
+        if marker("GEMINI.md"):
             formats.add(HAS_GEMINI)
-        if (self.root_path / "AGENTS.md").exists():
+        if marker("AGENTS.md"):
             formats.add(HAS_AGENTS_MD)
-        if (self.root_path / ".kiro").is_dir():
+        if marker(".kiro", is_dir=True):
             formats.add(HAS_KIRO)
-        if (self.root_path / "CLAUDE.md").exists():
+        if marker("CLAUDE.md"):
             formats.add(HAS_CLAUDE_MD)
-        if (self.root_path / ".coderabbit.yaml").exists():
+        if marker(".coderabbit.yaml"):
             formats.add(HAS_CODERABBIT)
         return formats
 

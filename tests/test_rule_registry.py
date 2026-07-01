@@ -106,6 +106,34 @@ def test_context_constructor_excludes_precede_format_detection(tmp_path):
     assert HAS_COPILOT in unfiltered.detected_formats
 
 
+def test_excluded_root_marker_does_not_set_format(tmp_path):
+    """Excluded root marker files must not flip format flags."""
+    from skillsaw.context import HAS_CLAUDE_MD
+
+    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
+
+    context = RepositoryContext(tmp_path, exclude_patterns=["CLAUDE.md"])
+    assert HAS_CLAUDE_MD not in context.detected_formats
+
+    unfiltered = RepositoryContext(tmp_path)
+    assert HAS_CLAUDE_MD in unfiltered.detected_formats
+
+
+def test_apply_excludes_refreshes_detected_formats(tmp_path):
+    """Legacy callers mutating exclude_patterns get recomputed formats."""
+    from skillsaw.context import HAS_CLAUDE_MD
+
+    (tmp_path / "CLAUDE.md").write_text("# Project instructions\n")
+
+    context = RepositoryContext(tmp_path)
+    assert HAS_CLAUDE_MD in context.detected_formats
+
+    context.exclude_patterns = ["CLAUDE.md"]
+    context.apply_excludes()
+    assert HAS_CLAUDE_MD not in context.detected_formats
+    assert not context.instruction_files
+
+
 def test_severity_enum_matches():
     # default_severity() must return a Severity for every rule
     for cls in BUILTIN_RULES:
