@@ -9,6 +9,7 @@ import importlib.util
 import logging
 import re
 import sys
+import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -285,6 +286,10 @@ class Linter:
         if not path.exists():
             raise ValueError(f"Custom rule file not found: {path}")
 
+        warnings.warn(
+            f"Loading custom rule file: {path} — use --no-custom-rules to skip",
+            stacklevel=2,
+        )
         logger.info("Loading custom rules from %s", path)
 
         # Unique module name per file so two custom rule files cannot clobber

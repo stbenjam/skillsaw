@@ -1948,6 +1948,79 @@ class TestNoCustomRulesRenameBypass:
         )
 
 
+# ── --no-custom-rules on lint (GH-317) ───────────────────────────
+
+
+class TestNoCustomRulesLint:
+    """--no-custom-rules blocks custom rule loading on lint."""
+
+    FIXTURE = "custom-rule-rename-bypass"
+
+    def test_no_custom_rules_blocks_import_on_lint(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "lint",
+            "--no-custom-rules",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert not sentinel.exists(), "Custom rule was imported despite --no-custom-rules on lint"
+
+    def test_custom_rules_loaded_on_lint_without_flag(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "lint",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert sentinel.exists(), "Custom rule was NOT imported without --no-custom-rules on lint"
+
+    def test_warning_emitted_when_custom_rules_loaded(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "lint",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert result.returncode in (0, 1), f"lint crashed: {result.stderr}"
+        assert (
+            "Loading custom rule file" in result.stderr
+        ), "Expected a warning about custom rule loading on stderr"
+
+    def test_no_warning_when_custom_rules_skipped(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "lint",
+            "--no-custom-rules",
+            str(repo),
+        ]
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        assert result.returncode in (0, 1), f"lint crashed: {result.stderr}"
+        assert (
+            "Loading custom rule file" not in result.stderr
+        ), "Warning should not appear when --no-custom-rules is used"
+
+
 # ── Baseline ─────────────────────────────────────────────────────
 
 
