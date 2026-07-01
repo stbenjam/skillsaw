@@ -130,7 +130,14 @@ class Linter:
         """
         from .plugins import load_plugins
 
-        for plugin in load_plugins(disabled=set(self.config.disabled_plugins)):
+        plugins = load_plugins(disabled=set(self.config.disabled_plugins))
+
+        # Extensions (repo types, tree contributors) must register before any
+        # rule's enablement is evaluated: a plugin rule scoped to its own
+        # plugin's repo type needs the detector to have run already.
+        self._register_plugin_extensions(plugins)
+
+        for plugin in plugins:
             if plugin.error:
                 self._plugin_load_violations.append(
                     RuleViolation(
@@ -223,6 +230,44 @@ class Linter:
                     logger.info("Rule %-30s enabled (plugin: %s)", rid, plugin.name)
                 else:
                     logger.info("Rule %-30s skipped (plugin: %s)", rid, plugin.name)
+
+    def _register_plugin_extensions(self, plugins) -> None:
+        """Register plugin-declared repo types and lint tree contributors.
+
+        Delegates to :func:`skillsaw.plugins.register_extensions` (shared
+        with the ``tree`` and ``explain`` commands) and maps the problems it
+        reports to ``plugin-load-error`` violations: crashed detectors are
+        errors, skipped duplicate/builtin-colliding declarations warnings.
+        """
+        from .plugins import register_extensions
+
+        for problem in register_extensions(self.context, plugins):
+            self._plugin_load_violations.append(
+                RuleViolation(
+                    rule_id="plugin-load-error",
+                    severity=Severity.ERROR if problem.severity == "error" else Severity.WARNING,
+                    message=problem.message,
+                )
+            )
+
+    def _plugin_extension_error_violations(self) -> List[RuleViolation]:
+        """Violations for tree-contributor failures collected during tree build.
+
+        Contributors run inside ``build_lint_tree`` (lazily, on first tree
+        access), so their errors surface after the rule loop rather than at
+        load time. Consumes the collected errors so repeated runs on the same
+        Linter don't duplicate them.
+        """
+        errors = self.context.plugin_extension_errors
+        self.context.plugin_extension_errors = []
+        return [
+            RuleViolation(
+                rule_id="plugin-load-error",
+                severity=Severity.ERROR,
+                message=message,
+            )
+            for message in errors
+        ]
 
     def _load_custom_rule(self, rule_path: str):
         """
@@ -481,6 +526,10 @@ class Linter:
                 print(f"Error running rule {rule.rule_id}: {e}", file=sys.stderr)
                 violations.append(self._crash_violation(rule, e))
 
+        # Tree contributors run lazily inside build_lint_tree (triggered by
+        # the rule checks above), so their failures are only known now.
+        violations.extend(self._plugin_extension_error_violations())
+
         return self._filter_violations(violations)
 
     @staticmethod
@@ -539,6 +588,8 @@ class Linter:
                     all_violations.extend(visible)
             else:
                 all_violations.extend(visible)
+
+        all_violations.extend(self._plugin_extension_error_violations())
 
         # Baseline stale/suppressed accounting must consider all rules'
         # violations together, exactly as run() does — the per-rule calls

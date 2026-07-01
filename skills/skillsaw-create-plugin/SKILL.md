@@ -102,139 +102,31 @@ class the plugin provides goes in this list.
 
 ## Step 3: Write the rules
 
-Each rule subclasses `skillsaw.Rule` in `src/skillsaw_<name>/rules.py`:
+Read `references/rule-authoring.md` in this skill's directory for the full
+rule template, the requirements every rule must meet (lint tree discovery,
+line numbers, `config_schema`, `repo_types`, `default_enabled`, YAML and
+markdown parsing rules), and the deterministic-autofix template with its
+scoping and idempotency requirements. Follow it exactly — the requirements
+match what skillsaw's own review process enforces.
 
-```python
-from typing import List
+In short: each rule subclasses `skillsaw.Rule` in
+`src/skillsaw_<name>/rules.py`, discovers files with
+`context.lint_tree.find(NodeType)`, reports violations via
+`self.violation(message, block=block, line=i)`, and exposes tunable settings
+through `config_schema`.
 
-from skillsaw import RepositoryContext, Rule, RuleViolation, Severity
-from skillsaw.blocks import InstructionBlock
+### Optional capabilities
 
+Read `references/extensions.md` when the plugin needs any of:
 
-class MyFirstRule(Rule):
-    """One-line summary of what this enforces."""
-
-    config_schema = {
-        "patterns": {
-            "type": "list",
-            "default": ["TODO"],
-            "description": "Patterns to flag",
-        },
-    }
-
-    @property
-    def rule_id(self) -> str:
-        return "my-rule-id"
-
-    @property
-    def description(self) -> str:
-        return "Instruction files should not contain TODO markers"
-
-    def default_severity(self) -> Severity:
-        return Severity.WARNING
-
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        violations = []
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
-        for block in context.lint_tree.find(InstructionBlock):
-            content = block.read_body(strip_code_blocks=False)
-            if content is None:
-                continue
-            for i, line in enumerate(content.splitlines(), start=1):
-                if any(p in line for p in patterns):
-                    violations.append(
-                        self.violation(f"Found marker: {line.strip()}", block=block, line=i)
-                    )
-        return violations
-```
-
-Rules you must follow when writing rules:
-
-- **Discover files through the lint tree** (`context.lint_tree.find(NodeType)`),
-  never by walking the filesystem. Common block types from `skillsaw.blocks`:
-  `InstructionBlock` (CLAUDE.md, AGENTS.md, …), `SkillBlock`, `CommandBlock`,
-  `AgentBlock`, `ClaudeMdBlock`. Run `skillsaw tree` on a target repo to see
-  its nodes.
-- **Report a line number** on every violation traceable to a line; never
-  fabricate one when it is not.
-- **Pass `block=`** to `self.violation()` for content violations — line
-  numbers then map to the right file lines even for YAML-embedded bodies.
-- **Expose tunable settings through `config_schema`** and read them from
-  `self.config`. Users configure the rule in `.skillsaw.yaml` under `rules:`
-  by its rule ID, exactly like builtin rules.
-- **Declare `repo_types`** when the rule only applies to certain repository
-  types — the rule then activates only on matching repositories.
-- **Set `default_enabled`** to control activation: the base default `"auto"`
-  runs everywhere (or on matching `repo_types`/`formats` when declared);
-  `default_enabled = False` makes the rule opt-in via config.
-- Parse YAML with `read_yaml_commented()` from `skillsaw.utils` (preserves
-  line numbers), never `yaml.safe_load()`.
-- Read markdown structure (links, fences, headings) from `block.markdown`
-  accessors, never hand-rolled regexes.
-
-### Optional: deterministic autofix
-
-To make violations fixable by `skillsaw fix`, set `autofix_confidence` and
-override `fix()`:
-
-```python
-from skillsaw import AutofixConfidence, AutofixResult
-
-
-class MyFirstRule(Rule):
-    autofix_confidence = AutofixConfidence.SAFE  # or SUGGEST
-
-    def fix(self, context, violations) -> List[AutofixResult]:
-        by_file = {}
-        for v in violations:
-            by_file.setdefault(v.file_path, []).append(v)
-
-        results = []
-        for path, file_violations in by_file.items():
-            original = path.read_text(encoding="utf-8")
-            lines = original.splitlines(keepends=True)
-            remove = {v.file_line for v in file_violations if v.file_line}
-            fixed = "".join(ln for i, ln in enumerate(lines, start=1) if i not in remove)
-            if fixed != original:
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description="Removed marker lines",
-                        violations_fixed=file_violations,
-                    )
-                )
-        return results
-```
-
-Autofix rules:
-
-- Fixes must be **deterministic and scoped to the violation's exact location**
-  (use `v.file_line`; never `str.replace()` across the whole file — it can
-  match the wrong occurrence).
-- Use `AutofixConfidence.SAFE` only when the fix cannot change meaning;
-  otherwise use `SUGGEST` (applied only with `skillsaw fix --suggest`).
-- Fixes must be idempotent: fixing already-fixed content produces no changes.
-- Do not build fixes on LLM hooks — plugins provide deterministic fixes only.
-
-### Optional: ship a CLI subcommand
-
-If the plugin needs its own commands (for example an `accept` command that
-appends currently-flagged values to the rule's config), add a console script
-named `skillsaw-<name>` to `pyproject.toml`:
-
-```toml
-[project.scripts]
-skillsaw-<name> = "skillsaw_<name>.cli:main"
-```
-
-skillsaw dispatches `skillsaw <name> [args...]` to that executable
-(registered plugins only), forwarding arguments and the exit code. The
-script owns its own argument parsing and can `import skillsaw` to reuse the
-config loader and lint tree.
+- **A CLI subcommand** — a `skillsaw-<name>` console script, dispatched as
+  `skillsaw <name> [args...]` (registered plugins only).
+- **A custom repository type** — `SKILLSAW_REPO_TYPES` declares a detector;
+  detected types scope rules (string entries in `repo_types`) and pull the
+  type's `content_paths` into content linting.
+- **Lint tree nodes** — `SKILLSAW_TREE_CONTRIBUTORS` attaches plugin-defined
+  blocks (`ContentBlock` for prose, `JsonConfigBlock` for machine config)
+  that the plugin's rules find with `lint_tree.find()`.
 
 ## Step 4: Write tests
 

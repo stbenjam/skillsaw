@@ -11,6 +11,13 @@ automatically — no `.skillsaw.yaml` changes needed.
     the Claude Code plugins (`.claude-plugin/plugin.json`) that skillsaw
     *lints* — those are content skillsaw checks, not extensions to skillsaw.
 
+!!! tip "When to plugin, when to upstream"
+    For common, popular formats it is recommended to contribute repository
+    types, rules, and tree support back to skillsaw itself — builtin support
+    reaches every user with zero installs. Plugins are the right home for
+    private/organization-specific conventions and for incubating ideas
+    before proposing them upstream.
+
 ## Using plugins
 
 Install a plugin into the same environment as skillsaw and its rules are
@@ -240,6 +247,98 @@ Plugins can also ship **deterministic autofixes** by setting
 [custom rules autofix example](custom-rules.md); it works unchanged in a
 plugin. Fixes must be deterministic, scoped to the violation's exact lines,
 and idempotent.
+
+### Optional: declare a repository type
+
+Plugins can teach skillsaw to recognize repository layouts it doesn't know
+about — for example a new AI assistant's config format. Declare types in a
+`SKILLSAW_REPO_TYPES` list on the plugin module:
+
+```python
+from skillsaw.plugins import PluginRepoType
+
+SKILLSAW_REPO_TYPES = [
+    PluginRepoType(
+        name="acme",
+        description="Repository configured for the ACME assistant",
+        detect=lambda root: (root / "ACME.md").exists() or (root / ".acme").is_dir(),
+        content_paths=["ACME.md", ".acme/rules/*.md"],
+    ),
+]
+```
+
+When `detect(root_path)` returns True for the linted repository:
+
+- The type name appears in the lint report's detected repository types and
+  in `skillsaw plugins` output.
+- Rules can scope to it by listing the name as a **string** in `repo_types`
+  (mixing freely with builtin `RepositoryType` members) — with the default
+  `enabled: auto`, such rules activate only on matching repositories:
+
+  ```python
+  class AcmeConfigRule(Rule):
+      repo_types = {"acme"}
+  ```
+
+- The type's `content_paths` globs are pulled into content linting, exactly
+  like the user-side [`content-paths`](configuration.md#content-paths)
+  config key: matched files become content blocks and every `content-*`
+  rule covers them automatically.
+
+Type names must be kebab-case and must not collide with builtin type values
+or other plugins' types — colliding declarations are skipped with a warning
+(first plugin wins). A malformed declaration (non-kebab-case `name`,
+non-callable `detect`, invalid `content_paths`) fails the whole plugin at
+load time, and a crashing detector becomes a `plugin-load-error` violation
+with the type treated as not detected; either way the lint continues.
+
+### Optional: contribute nodes to the lint tree
+
+For files that need *dedicated* rules (rather than the generic content
+rules), a plugin can add its own nodes to the [lint tree](lint-tree.md).
+Declare contributor callables in `SKILLSAW_TREE_CONTRIBUTORS`; each is
+invoked as `contribute(context, root)` during tree construction and returns
+an iterable of node instances to attach at the root (or None):
+
+```python
+from dataclasses import dataclass
+
+from skillsaw.blocks import JsonConfigBlock
+
+
+@dataclass(eq=False)
+class AcmeConfigBlock(JsonConfigBlock):
+    """.acme/config.json — machine config, never linted as prose."""
+
+    category: str = "acme-config"
+
+
+def contribute_acme_config(context, root):
+    config_path = context.root_path / ".acme" / "config.json"
+    if config_path.exists():
+        return [AcmeConfigBlock(path=config_path)]
+    return []
+
+
+SKILLSAW_TREE_CONTRIBUTORS = [contribute_acme_config]
+```
+
+The plugin's rules then discover the nodes the standard way —
+`context.lint_tree.find(AcmeConfigBlock)` — and the nodes show up in
+`skillsaw tree` like any builtin node.
+
+Contract and guarantees:
+
+- **Choose the right base class.** Prose destined for an agent's context
+  window subclasses `ContentBlock` (or `FileContentBlock`) and gets every
+  content-quality rule automatically; structured machine config subclasses
+  `JsonConfigBlock` so content rules never lint JSON as instruction text.
+- **skillsaw applies its own guards**: contributed nodes pointing at files
+  already in the tree are dropped (no double-linting), and `exclude`
+  patterns from config apply to contributed nodes too.
+- **Fault isolation**: a contributor that raises (or returns non-node
+  values) produces a `plugin-load-error` violation; tree construction and
+  the rest of the lint continue.
 
 ### Optional: ship a CLI
 

@@ -951,6 +951,13 @@ same package becomes reachable as `skillsaw <name> [args...]`, git-style —
 but only for registered plugins, never for arbitrary `skillsaw-*`
 executables on PATH.
 
+Beyond rules, plugins can extend skillsaw itself: declare custom
+**repository types** (`SKILLSAW_REPO_TYPES`) with their own detection and
+content paths, and **contribute nodes to the lint tree**
+(`SKILLSAW_TREE_CONTRIBUTORS`) — prose content blocks, structured config
+blocks, or any other lint-tree nodes — so plugin rules can lint things
+skillsaw doesn't know about.
+
 See the [plugin documentation](https://skillsaw.org/plugins/), the complete
 [`examples/plugins/skillsaw-example-plugin/`](examples/plugins/skillsaw-example-plugin/)
 package, and the `skillsaw-create-plugin` skill in [`skills/`](skills/) that

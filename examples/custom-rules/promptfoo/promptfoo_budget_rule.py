@@ -80,7 +80,9 @@ class PromptfooBudgetRule(Rule):
         budget_data, error, error_line = read_yaml_commented(budget_path)
         if error:
             violations.append(
-                self.violation(f"Budget file error: {error}", file_path=budget_path, line=error_line)
+                self.violation(
+                    f"Budget file error: {error}", file_path=budget_path, line=error_line
+                )
             )
             return violations
 
@@ -104,7 +106,9 @@ class PromptfooBudgetRule(Rule):
             if err or not isinstance(data, dict):
                 continue
 
-            default_test = data.get("defaultTest") if isinstance(data.get("defaultTest"), dict) else None
+            default_test = (
+                data.get("defaultTest") if isinstance(data.get("defaultTest"), dict) else None
+            )
             tests = _collect_tests(node, context)
 
             entity = self._entity_name(context, node)
@@ -301,7 +305,9 @@ class PromptfooBudgetRule(Rule):
             s_latency = smaller_def.get("max-latency")
 
             cost_fits = test_cost is None or (s_cost is not None and test_cost <= s_cost)
-            latency_fits = test_latency is None or (s_latency is not None and test_latency <= s_latency)
+            latency_fits = test_latency is None or (
+                s_latency is not None and test_latency <= s_latency
+            )
 
             if cost_fits and latency_fits:
                 violations.append(
