@@ -4,6 +4,12 @@ Optional capabilities beyond rules. Read this when the plugin needs a CLI,
 a custom repository type, or its own lint tree nodes. Full documentation:
 https://skillsaw.org/plugins/
 
+Guidance to share with the user first: for common, popular formats,
+contribute repository types and rules back to skillsaw itself (builtin
+support reaches every user). Plugins are the right home for
+private/organization-specific conventions and for incubating ideas before
+proposing them upstream.
+
 ## CLI subcommand
 
 If the plugin needs its own commands (for example an `accept` command that

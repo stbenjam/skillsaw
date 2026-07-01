@@ -101,9 +101,9 @@ class _MergedContext:
     def repo_type_names(self, include_unknown: bool = True):
         """Sorted names of all detected repository types, builtin and plugin."""
         names = {t.value for t in self.repo_types}
-        if not include_unknown:
-            names.discard(RepositoryType.UNKNOWN.value)
         names.update(self.plugin_repo_types)
+        if not include_unknown or len(names) > 1:
+            names.discard(RepositoryType.UNKNOWN.value)
         return sorted(names)
 
 

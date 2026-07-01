@@ -11,6 +11,13 @@ automatically — no `.skillsaw.yaml` changes needed.
     the Claude Code plugins (`.claude-plugin/plugin.json`) that skillsaw
     *lints* — those are content skillsaw checks, not extensions to skillsaw.
 
+!!! tip "When to plugin, when to upstream"
+    For common, popular formats it is recommended to contribute repository
+    types, rules, and tree support back to skillsaw itself — builtin support
+    reaches every user with zero installs. Plugins are the right home for
+    private/organization-specific conventions and for incubating ideas
+    before proposing them upstream.
+
 ## Using plugins
 
 Install a plugin into the same environment as skillsaw and its rules are

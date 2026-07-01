@@ -176,11 +176,15 @@ class RepositoryContext:
         return RepositoryType.UNKNOWN
 
     def repo_type_names(self, include_unknown: bool = True) -> List[str]:
-        """Sorted names of all detected repository types, builtin and plugin."""
+        """Sorted names of all detected repository types, builtin and plugin.
+
+        ``unknown`` is a sentinel for "nothing detected"; when a plugin type
+        matched, the repository *is* recognized, so the sentinel is dropped.
+        """
         names = {t.value for t in self.repo_types}
-        if not include_unknown:
-            names.discard(RepositoryType.UNKNOWN.value)
         names.update(self.plugin_repo_types)
+        if not include_unknown or len(names) > 1:
+            names.discard(RepositoryType.UNKNOWN.value)
         return sorted(names)
 
     def is_path_excluded(self, path: Path) -> bool:
