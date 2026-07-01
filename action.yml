@@ -17,6 +17,10 @@ inputs:
     description: 'Treat warnings as errors'
     required: false
     default: 'false'
+  plugins:
+    description: 'Newline-separated list of plugin packages to install (e.g. skillsaw-typos==0.1.0)'
+    required: false
+    default: ''
   verbose:
     description: 'Include info-level violations'
     required: false
@@ -49,11 +53,18 @@ runs:
       env:
         SKILLSAW_VERSION: ${{ inputs.version }}
         ACTION_PATH: ${{ github.action_path }}
+        SKILLSAW_PLUGINS: ${{ inputs.plugins }}
       run: |
         if [ -f "$ACTION_PATH/pyproject.toml" ]; then
           pip install -q "$ACTION_PATH"
         else
           pip install -q "skillsaw==$SKILLSAW_VERSION"
+        fi
+        if [ -n "$SKILLSAW_PLUGINS" ]; then
+          reqs=$(mktemp)
+          printf '%s\n' "$SKILLSAW_PLUGINS" > "$reqs"
+          pip install -q -r "$reqs"
+          rm "$reqs"
         fi
 
     - name: Run skillsaw

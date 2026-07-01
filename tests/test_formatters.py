@@ -546,7 +546,7 @@ def test_sarif_builtin_rules_have_help_uri(valid_plugin):
     """Builtin rule descriptors link to their documentation page."""
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
-    linter = Linter(context, config)
+    linter = Linter(context, config, no_plugins=True)
     violations = linter.run()
 
     output = format_sarif(violations, context, linter.rules, "1.0.0")

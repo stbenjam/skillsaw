@@ -69,7 +69,7 @@ def test_linter_respects_disabled_rules(valid_plugin):
     for rule_id in config.rules:
         config.rules[rule_id]["enabled"] = False
 
-    linter = Linter(context, config)
+    linter = Linter(context, config, no_plugins=True)
 
     # Should have no rules loaded
     assert len(linter.rules) == 0

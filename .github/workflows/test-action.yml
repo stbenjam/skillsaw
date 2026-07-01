@@ -21,3 +21,5 @@ jobs:
       - uses: ./
         with:
           strict: true
+          plugins: |
+            skillsaw-typos==0.1.0
