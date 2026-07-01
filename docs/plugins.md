@@ -85,8 +85,10 @@ $ skillsaw typos accept        # runs: skillsaw-typos accept
 
 Dispatch rules:
 
-- Builtin subcommands always win — a plugin cannot shadow `lint`, `fix`,
-  `baseline`, etc.
+- Plugin commands are namespaced by the plugin's name: a plugin gets exactly
+  one subcommand, `skillsaw <name>`, and everything under it belongs to the
+  plugin's own CLI. Builtin subcommands take precedence, so a plugin that
+  names itself after one (`lint`, `fix`, …) is simply unreachable this way.
 - Only **registered** plugins are eligible: the name must match an installed
   `skillsaw.plugins` entry point. A stray `skillsaw-foo` executable on PATH
   is never executed. The check reads package metadata only, so no plugin
