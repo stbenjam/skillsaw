@@ -11,6 +11,8 @@ from skillsaw.rules.builtin.utils import read_text
 class CommandSectionsRule(Rule):
     """Check that command files have recommended sections"""
 
+    default_enabled = False
+
     @property
     def rule_id(self) -> str:
         return "command-sections"

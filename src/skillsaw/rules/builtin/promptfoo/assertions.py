@@ -23,6 +23,8 @@ from ._helpers import (
 class PromptfooAssertionsRule(Rule):
     """Require specific assertion types in promptfoo eval tests"""
 
+    default_enabled = False
+
     repo_types = _PROMPTFOO_REPO_TYPES
 
     config_schema = {

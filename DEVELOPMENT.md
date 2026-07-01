@@ -70,10 +70,14 @@ The `verify-update` CI check will fail if generated files are stale.
 
 ## Writing new rules
 
-See `.claude/rules/new-linter-rules.md` for the full guide. Key points:
+See `.claude/rules/development.md` for the full guide. Key points:
 
-- Subclass `Rule` in `src/skillsaw/rules/builtin/`
-- Register in `src/skillsaw/rules/builtin/__init__.py`
+- Subclass `Rule` in `src/skillsaw/rules/builtin/` — rules are discovered
+  automatically; there is nothing to register (no import block, list, or
+  config dict to edit)
+- Defaults live on the class: `default_enabled` (`"auto"` by default, or
+  `False` for opt-in; never `True` for new rules) and `default_severity()`.
+  `LinterConfig.default()` is generated from these
 - Set `repo_types` to control when `enabled: auto` fires
 - Set `since` to the next release version so existing configs aren't surprised
 - Report line numbers in violations whenever possible

@@ -23,6 +23,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
+    """True if *path*, made relative to *root*, matches any fnmatch pattern.
+
+    The single exclusion predicate shared by the context, the lint tree, and
+    the linter's per-rule excludes. *root* must be resolved; paths outside
+    *root* never match.
+    """
+    if not patterns:
+        return False
+    try:
+        rel = str(path.resolve().relative_to(root))
+    except ValueError:
+        return False
+    return any(fnmatch.fnmatch(rel, pat) for pat in patterns)
+
+
 class RepositoryType(Enum):
     """Type of repository"""
 
@@ -83,6 +99,8 @@ class RepositoryContext:
         self,
         root_path: Path,
         repo_types: Optional[Set[RepositoryType]] = None,
+        exclude_patterns: Optional[List[str]] = None,
+        content_paths: Optional[List[str]] = None,
     ):
         """
         Initialize repository context
@@ -90,9 +108,18 @@ class RepositoryContext:
         Args:
             root_path: Root directory of the repository
             repo_types: Optional explicit repository type override.
+            exclude_patterns: Glob patterns (from config) filtering discovered
+                plugins/skills/instruction files. Prefer passing them here so
+                discovery results are filtered from the start, rather than
+                mutating the attribute and calling :meth:`apply_excludes`.
+            content_paths: Extra content glob patterns (from config) picked up
+                by the lint tree.
         """
         self.root_path = root_path.resolve()
+        self.content_paths: List[str] = list(content_paths) if content_paths else []
+        self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self.has_apm = self._detect_apm()
+        self._apm_compiled_roots: Optional[Set[Path]] = None
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
         )
@@ -105,10 +132,13 @@ class RepositoryContext:
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
-        self.detected_formats: Set[str] = self._detect_formats()
-        self.content_paths: List[str] = []
-        self.exclude_patterns: List[str] = []
+        self.detected_formats: Set[str] = set()
         self._lint_tree: Optional["LintTarget"] = None
+        # Filters discovery results and computes detected_formats — excludes
+        # must be applied before format detection so excluded files (e.g.
+        # *.instructions.md under an excluded directory) don't flip format
+        # flags like HAS_COPILOT.
+        self.apply_excludes()
 
     @property
     def lint_tree(self) -> "LintTarget":
@@ -131,24 +161,51 @@ class RepositoryContext:
 
     def is_path_excluded(self, path: Path) -> bool:
         """Check if a path matches any exclude pattern."""
-        if not self.exclude_patterns:
+        return path_matches_patterns(path, self.root_path, self.exclude_patterns)
+
+    def apm_compiled_roots(self) -> Set[Path]:
+        """Resolved compiled-output directories to skip when APM is present.
+
+        APM compiles ``.apm/`` sources into these directories; the generated
+        artifacts must not be linted or drive discovery. Computed once per
+        context (the predicate runs in per-node discovery loops).
+        """
+        if self._apm_compiled_roots is None:
+            roots: Set[Path] = set()
+            if self.has_apm:
+                for compiled_dir_name in self.APM_COMPILED_DIRS:
+                    compiled_path = (self.root_path / compiled_dir_name).resolve()
+                    if compiled_path.is_dir():
+                        roots.add(compiled_path)
+            self._apm_compiled_roots = roots
+        return self._apm_compiled_roots
+
+    def in_apm_compiled_dir(self, path: Path) -> bool:
+        """Check if *path* is inside an APM compiled-output directory."""
+        roots = self.apm_compiled_roots()
+        if not roots:
             return False
-        try:
-            rel = str(path.resolve().relative_to(self.root_path))
-        except ValueError:
-            return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in self.exclude_patterns)
+        resolved = path.resolve()
+        return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
     def apply_excludes(self) -> None:
-        """Filter plugins, skills, and instruction_files by exclude_patterns.
+        """Filter discovery results by exclude_patterns and refresh derived state.
 
-        Must be called after exclude_patterns is set (e.g. from config).
+        Filters plugins, skills, and instruction_files, then recomputes
+        ``detected_formats`` and drops any cached lint tree so state derived
+        from the (now filtered) lists cannot go stale. Called by the
+        constructor; legacy callers that mutate ``exclude_patterns`` after
+        construction must call it again. Filtering only narrows — previously
+        excluded paths are not rediscovered.
         """
-        if not self.exclude_patterns:
-            return
-        self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
-        self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
-        self.instruction_files = [p for p in self.instruction_files if not self.is_path_excluded(p)]
+        if self.exclude_patterns:
+            self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
+            self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
+            self.instruction_files = [
+                p for p in self.instruction_files if not self.is_path_excluded(p)
+            ]
+        self.detected_formats = self._detect_formats()
+        self._lint_tree = None
 
     def _discover_instruction_files(self) -> List[Path]:
         """Discover instruction files at the repo root and named .instructions.md files.
@@ -178,23 +235,28 @@ class RepositoryContext:
 
     def _detect_formats(self) -> Set[str]:
         formats: Set[str] = set()
-        if (self.root_path / ".cursor" / "rules").is_dir() or (
-            self.root_path / ".cursorrules"
-        ).exists():
+
+        def marker(*parts: str, is_dir: bool = False) -> bool:
+            # Excluded marker files must not flip format flags — the lint
+            # tree skips them, so format-gated rules would fire for nothing.
+            p = self.root_path.joinpath(*parts)
+            if self.is_path_excluded(p):
+                return False
+            return p.is_dir() if is_dir else p.exists()
+
+        if marker(".cursor", "rules", is_dir=True) or marker(".cursorrules"):
             formats.add(HAS_CURSOR)
-        if (
-            self.root_path / ".github" / "copilot-instructions.md"
-        ).exists() or self._has_instructions_md():
+        if marker(".github", "copilot-instructions.md") or self._has_instructions_md():
             formats.add(HAS_COPILOT)
-        if (self.root_path / "GEMINI.md").exists():
+        if marker("GEMINI.md"):
             formats.add(HAS_GEMINI)
-        if (self.root_path / "AGENTS.md").exists():
+        if marker("AGENTS.md"):
             formats.add(HAS_AGENTS_MD)
-        if (self.root_path / ".kiro").is_dir():
+        if marker(".kiro", is_dir=True):
             formats.add(HAS_KIRO)
-        if (self.root_path / "CLAUDE.md").exists():
+        if marker("CLAUDE.md"):
             formats.add(HAS_CLAUDE_MD)
-        if (self.root_path / ".coderabbit.yaml").exists():
+        if marker(".coderabbit.yaml"):
             formats.add(HAS_CODERABBIT)
         return formats
 
@@ -651,14 +713,6 @@ class RepositoryContext:
         skills: List[Path] = []
         discovered: Set[Path] = set()
 
-        # Build set of compiled output directories to skip when APM is present
-        apm_excluded_roots: Set[Path] = set()
-        if self.has_apm:
-            for compiled_dir_name in self.APM_COMPILED_DIRS:
-                compiled_path = (self.root_path / compiled_dir_name).resolve()
-                if compiled_path.is_dir():
-                    apm_excluded_roots.add(compiled_path)
-
         if RepositoryType.AGENTSKILLS in self.repo_types:
             # Single skill at root
             if (self.root_path / "SKILL.md").exists():
@@ -679,10 +733,7 @@ class RepositoryContext:
                 if not skills_path.is_dir():
                     continue
                 # Skip compiled output dirs when APM is present
-                if any(
-                    skills_path.resolve() == excl or skills_path.resolve().is_relative_to(excl)
-                    for excl in apm_excluded_roots
-                ):
+                if self.in_apm_compiled_dir(skills_path):
                     continue
                 self._discover_skills_in_dir(skills_path, skills, discovered)
 

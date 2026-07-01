@@ -124,7 +124,12 @@ def _run_lint(args):
     contexts = []
     baseline_suppressed = 0
     for lint_path in paths:
-        context = RepositoryContext(lint_path, repo_types=override_types)
+        context = RepositoryContext(
+            lint_path,
+            repo_types=override_types,
+            exclude_patterns=config.exclude_patterns,
+            content_paths=config.content_paths,
+        )
         contexts.append(context)
 
         if context.repo_type == RepositoryType.UNKNOWN:

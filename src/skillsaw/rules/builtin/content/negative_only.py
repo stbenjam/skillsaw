@@ -55,7 +55,7 @@ class ContentNegativeOnlyRule(Rule):
         return "Detect prohibitions without a positive alternative (agent has no path forward)"
 
     def default_severity(self) -> Severity:
-        return Severity.INFO
+        return Severity.WARNING
 
     def _has_positive_alternative(self, line, lines, line_idx):
         neg_match = self._NEGATIVE_RE.search(line)

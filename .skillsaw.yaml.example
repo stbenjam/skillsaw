@@ -5,109 +5,25 @@ version: "0.14.1"
 
 rules:
 
-  # Plugin must have .claude-plugin/plugin.json
-  plugin-json-required:
-    enabled: auto
-    severity: error
-
-  # plugin.json must be valid JSON with required fields
-  plugin-json-valid:
-    enabled: auto
-    severity: error
-    recommended-fields:
-    - description
-    - version
-    - author
-
-  # Plugin names should use kebab-case
-  plugin-naming:
-    enabled: auto
-    severity: warning
-
-  # Command files should use kebab-case naming
-  command-naming:
-    enabled: true
-    severity: warning
-
-  # Command files must have valid frontmatter with description
-  command-frontmatter:
-    enabled: true
-    severity: error
-
-  # Command files should have Name, Synopsis, Description, and Implementation sections
-  command-sections:
-    enabled: false
-    severity: warning
-
-  # Command Name section should be 'plugin-name:command-name'
-  command-name-format:
-    enabled: false
-    severity: warning
-
-  # Marketplace.json must be valid JSON with required fields
-  marketplace-json-valid:
-    enabled: auto
-    severity: error
-
-  # Plugins must be registered in marketplace.json
-  marketplace-registration:
-    enabled: auto
-    severity: error
-
-  # Plugin should have a README.md file
-  plugin-readme:
-    enabled: auto
-    severity: warning
-
-  # SKILL.md files should have frontmatter with name and description
-  skill-frontmatter:
-    enabled: true
-    severity: warning
-
   # Agent files must have valid frontmatter with name and description
   agent-frontmatter:
     enabled: true
     severity: error
 
-  # hooks.json must be valid JSON with proper hook configuration structure
-  hooks-json-valid:
-    enabled: true
-    severity: error
-
-  # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
-  hooks-dangerous:
+  # Skill description should be meaningful and within length limits
+  agentskill-description:
     enabled: auto
-    severity: error
-    # allowlist: []
+    severity: warning
 
-  # All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project
-  hooks-prohibited:
+  # Validate evals/evals.json format when present
+  agentskill-evals:
+    enabled: auto
+    severity: warning
+
+  # Require evals/evals.json for each skill (opt-in)
+  agentskill-evals-required:
     enabled: false
-    severity: error
-    # allowlist: []
-
-  # MCP configuration must be valid JSON with proper mcpServers structure
-  mcp-valid-json:
-    enabled: true
-    severity: error
-
-  # Repository should not enable non-allowlisted MCP servers
-  mcp-prohibited:
-    enabled: false
-    severity: error
-    # allowlist: []
-
-  # .claude/rules/ files must be markdown with valid optional paths frontmatter
-  rules-valid:
-    enabled: auto
-    severity: error
-
-  # SKILL.md must have valid frontmatter with name and description
-  agentskill-valid:
-    enabled: auto
-    severity: error
-    # required-fields: []
-    # required-metadata: []
+    severity: warning
 
   # Skill name must be lowercase with hyphens and match directory name
   agentskill-name:
@@ -120,11 +36,6 @@ rules:
     severity: warning
     # autofix-min-segments: 2
 
-  # Skill description should be meaningful and within length limits
-  agentskill-description:
-    enabled: auto
-    severity: warning
-
   # Skill directories should only contain recognized subdirectories (stricter than spec)
   agentskill-structure:
     enabled: false
@@ -135,28 +46,137 @@ rules:
     #   - references
     #   - scripts
 
-  # Require evals/evals.json for each skill (opt-in)
-  agentskill-evals-required:
+  # SKILL.md must have valid frontmatter with name and description
+  agentskill-valid:
+    enabled: auto
+    severity: error
+    # required-fields: []
+    # required-metadata: []
+
+  # .apm/ directory must contain skills/ or instructions/ with valid structure
+  apm-structure-valid:
+    enabled: auto
+    severity: warning
+
+  # apm.yml must exist with valid YAML and required fields (name, version, description)
+  apm-yaml-valid:
+    enabled: auto
+    severity: error
+
+  # .coderabbit.yaml must be valid YAML
+  coderabbit-yaml-valid:
+    enabled: auto
+    severity: error
+
+  # Command files must have valid frontmatter with description
+  command-frontmatter:
+    enabled: true
+    severity: error
+
+  # Command Name section should be 'plugin-name:command-name'
+  command-name-format:
     enabled: false
     severity: warning
 
-  # Validate evals/evals.json format when present
-  agentskill-evals:
+  # Command files should use kebab-case naming
+  command-naming:
+    enabled: true
+    severity: warning
+
+  # Command files should have Name, Synopsis, Description, and Implementation sections
+  command-sections:
+    enabled: false
+    severity: warning
+
+  # Score instruction files on actionability (verb density, commands, file references)
+  content-actionability-score:
+    enabled: auto
+    severity: info
+
+  # Detect banned or deprecated model names, APIs, and custom patterns
+  content-banned-references:
+    enabled: auto
+    severity: warning
+    # banned: []
+    # skip-builtins: false
+
+  # Detect markdown links where the target file does not exist
+  content-broken-internal-reference:
     enabled: auto
     severity: warning
 
-  # Validate metadata.openclaw fields against the openclaw spec
-  openclaw-metadata:
+  # Check that instruction files are organized into cognitive chunks with headings
+  content-cognitive-chunks:
+    enabled: auto
+    severity: info
+
+  # Detect likely contradictions within instruction files using keyword-pair heuristics
+  content-contradiction:
     enabled: auto
     severity: warning
 
-  # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
-  instruction-file-valid:
+  # Detect critical instructions in the middle of files where LLM attention is lowest
+  content-critical-position:
+    enabled: auto
+    severity: warning
+    # min-lines: 50
+
+  # Detect potential API keys, tokens, and passwords in instruction files
+  content-embedded-secrets:
+    enabled: auto
+    severity: error
+
+  # Detect instructions that should be automated as hooks instead of prose instructions
+  content-hook-candidate:
+    enabled: auto
+    severity: info
+
+  # Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')
+  content-inconsistent-terminology:
+    enabled: auto
+    severity: info
+
+  # Check if instruction count in a file exceeds LLM instruction budget (~150)
+  content-instruction-budget:
     enabled: auto
     severity: warning
 
-  # Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files
-  instruction-imports-valid:
+  # Detect prohibitions without a positive alternative (agent has no path forward)
+  content-negative-only:
+    enabled: auto
+    severity: warning
+
+  # Detect TODO markers, bracket placeholders, and unfilled template text
+  content-placeholder-text:
+    enabled: auto
+    severity: warning
+
+  # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
+  content-redundant-with-tooling:
+    enabled: auto
+    severity: warning
+
+  # Warn about markdown sections longer than ~500 tokens
+  content-section-length:
+    enabled: auto
+    severity: info
+    # max-tokens: 500
+
+  # Detect tautological instructions that the model already follows by default
+  content-tautological:
+    enabled: auto
+    severity: warning
+
+  # Detect bare path-like strings not wrapped in markdown link syntax
+  content-unlinked-internal-reference:
+    enabled: auto
+    severity: info
+    # patterns:
+    #   - ./**/*.*
+    #   - references/**/*.md
+
+  # Detect hedging, vague, and non-actionable language in instruction files
+  content-weak-language:
     enabled: auto
     severity: warning
 
@@ -196,109 +216,82 @@ rules:
     #     warn: 200
     #     error: 500
 
-  # Detect hedging, vague, and non-actionable language in instruction files
-  content-weak-language:
+  # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
+  hooks-dangerous:
+    enabled: auto
+    severity: error
+    # allowlist: []
+
+  # hooks.json must be valid JSON with proper hook configuration structure
+  hooks-json-valid:
+    enabled: true
+    severity: error
+
+  # All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project
+  hooks-prohibited:
+    enabled: false
+    severity: error
+    # allowlist: []
+
+  # Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty
+  instruction-file-valid:
     enabled: auto
     severity: warning
 
-  # Detect tautological instructions that the model already follows by default
-  content-tautological:
+  # Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files
+  instruction-imports-valid:
     enabled: auto
     severity: warning
 
-  # Detect critical instructions in the middle of files where LLM attention is lowest
-  content-critical-position:
-    enabled: auto
-    severity: warning
-    min-lines: 50
-
-  # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
-  content-redundant-with-tooling:
-    enabled: auto
-    severity: warning
-
-  # Check if instruction count in a file exceeds LLM instruction budget (~150)
-  content-instruction-budget:
-    enabled: auto
-    severity: warning
-
-  # Detect prohibitions without a positive alternative (agent has no path forward)
-  content-negative-only:
-    enabled: auto
-    severity: warning
-
-  # Warn about markdown sections longer than ~500 tokens
-  content-section-length:
-    enabled: auto
-    severity: info
-    # max-tokens: 500
-
-  # Detect likely contradictions within instruction files using keyword-pair heuristics
-  content-contradiction:
-    enabled: auto
-    severity: warning
-
-  # Detect instructions that should be automated as hooks instead of prose instructions
-  content-hook-candidate:
-    enabled: auto
-    severity: info
-
-  # Score instruction files on actionability (verb density, commands, file references)
-  content-actionability-score:
-    enabled: auto
-    severity: info
-
-  # Check that instruction files are organized into cognitive chunks with headings
-  content-cognitive-chunks:
-    enabled: auto
-    severity: info
-
-  # Detect potential API keys, tokens, and passwords in instruction files
-  content-embedded-secrets:
+  # Marketplace.json must be valid JSON with required fields
+  marketplace-json-valid:
     enabled: auto
     severity: error
 
-  # Detect banned or deprecated model names, APIs, and custom patterns
-  content-banned-references:
-    enabled: auto
-    severity: warning
-    # banned: []
-    # skip-builtins: false
-
-  # Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder')
-  content-inconsistent-terminology:
-    enabled: auto
-    severity: info
-
-  # Detect markdown links where the target file does not exist
-  content-broken-internal-reference:
-    enabled: auto
-    severity: warning
-
-  # Detect bare path-like strings not wrapped in markdown link syntax
-  content-unlinked-internal-reference:
-    enabled: auto
-    severity: info
-    # patterns:
-    #   - ./**/*.*
-    #   - references/**/*.md
-
-  # Detect TODO markers, bracket placeholders, and unfilled template text
-  content-placeholder-text:
-    enabled: auto
-    severity: warning
-
-  # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
-  settings-dangerous:
+  # Plugins must be registered in marketplace.json
+  marketplace-registration:
     enabled: auto
     severity: error
-    # allow_command_exec_keys: []
-    # allow_env_vars: []
 
-  # Validate promptfoo eval YAML config structure and file references
-  promptfoo-valid:
+  # Repository should not enable non-allowlisted MCP servers
+  mcp-prohibited:
+    enabled: false
+    severity: error
+    # allowlist: []
+
+  # MCP configuration must be valid JSON with proper mcpServers structure
+  mcp-valid-json:
+    enabled: true
+    severity: error
+
+  # Validate metadata.openclaw fields against the openclaw spec
+  openclaw-metadata:
+    enabled: auto
+    severity: warning
+
+  # Plugin must have .claude-plugin/plugin.json
+  plugin-json-required:
     enabled: auto
     severity: error
+
+  # plugin.json must be valid JSON with required fields
+  plugin-json-valid:
+    enabled: auto
+    severity: error
+    # recommended-fields:
+    #   - description
+    #   - version
+    #   - author
+
+  # Plugin names should use kebab-case
+  plugin-naming:
+    enabled: auto
+    severity: warning
+
+  # Plugin should have a README.md file
+  plugin-readme:
+    enabled: auto
+    severity: warning
 
   # Require specific assertion types in all promptfoo eval tests
   promptfoo-assertions:
@@ -313,19 +306,26 @@ rules:
     severity: warning
     # required-keys: []
 
-  # .coderabbit.yaml must be valid YAML
-  coderabbit-yaml-valid:
+  # Validate promptfoo eval YAML config structure and file references
+  promptfoo-valid:
     enabled: auto
     severity: error
 
-  # apm.yml must exist with valid YAML and required fields (name, version, description)
-  apm-yaml-valid:
+  # .claude/rules/ files must be markdown with valid optional paths frontmatter
+  rules-valid:
     enabled: auto
     severity: error
 
-  # .apm/ directory must contain skills/ or instructions/ with valid structure
-  apm-structure-valid:
+  # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
+  settings-dangerous:
     enabled: auto
+    severity: error
+    # allow_command_exec_keys: []
+    # allow_env_vars: []
+
+  # SKILL.md files should have frontmatter with name and description
+  skill-frontmatter:
+    enabled: true
     severity: warning
 
 # Load custom rules from these files

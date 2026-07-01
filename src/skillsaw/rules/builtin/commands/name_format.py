@@ -12,6 +12,8 @@ from skillsaw.rules.builtin.utils import read_text, heading_line
 class CommandNameFormatRule(Rule):
     """Check that command Name section uses correct format"""
 
+    default_enabled = False
+
     @property
     def rule_id(self) -> str:
         return "command-name-format"

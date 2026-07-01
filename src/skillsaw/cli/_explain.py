@@ -79,8 +79,12 @@ def _run_explain(args):
         else:
             print(f"      {param_name}: {default_val}  # {desc}")
 
-    context = RepositoryContext(args.path)
     config, config_path = load_config(args, args.path)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
     config_label = str(config_path) if config_path else "builtin defaults"
 
     enabled, reason = config.rule_enabled_reason(
