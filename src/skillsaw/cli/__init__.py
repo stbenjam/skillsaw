@@ -22,6 +22,16 @@ _SUBCOMMANDS = {
 
 
 def main():
+    # `--llm` was removed in 0.15 (#310); leave a breadcrumb before argparse
+    # rejects it so users know where the functionality went.
+    if "--llm" in sys.argv[1:]:
+        print(
+            "note: --llm was removed. Run `skillsaw fix` for deterministic "
+            "fixes; non-deterministic fixes now go through a coding agent "
+            "(e.g. the skillsaw-fix skill). See https://skillsaw.org/autofixing/",
+            file=sys.stderr,
+        )
+
     # When no subcommand is given (or the first arg looks like a path/flag),
     # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
     # `add` has its own argparse — dispatch before the main parser sees the args.
