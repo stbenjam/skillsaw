@@ -269,10 +269,51 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         root.children.append(apm_node)
 
     # --- Extra content paths from config ---
-    for glob_pattern in context.content_paths:
+    # User-configured content paths plus globs contributed by detected
+    # plugin repo types; the ``seen`` set dedupes any overlap.
+    for glob_pattern in [*context.content_paths, *context.plugin_content_paths]:
         for extra in sorted(context.root_path.glob(glob_pattern)):
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)
+
+    # --- Plugin tree contributors ---
+    # Contributors return pre-constructed nodes (typically ContentBlock or
+    # JsonConfigBlock subclasses), attached at the root. The ``seen`` set
+    # guards against double-linting files already discovered above, and
+    # failures are collected for the Linter to surface as violations —
+    # a broken contributor must not abort tree construction.
+    def _admit_contributed_node(block) -> bool:
+        """Validate/dedupe a contributed node and its whole subtree.
+
+        Contributors may return nodes with children; every descendant gets
+        the same guards as top-level discovery (type check, ``seen`` dedupe,
+        exclude patterns), with rejected descendants pruned in place.
+        Returns False when the node itself must not be attached.
+        """
+        if not isinstance(block, LintTarget):
+            raise TypeError(f"contributor returned {block!r}, which is not a lint tree node")
+        resolved = block.path.resolve()
+        if resolved in seen or not block.path.exists() or _is_excluded(block.path):
+            return False
+        seen.add(resolved)
+        block.children = [child for child in block.children if _admit_contributed_node(child)]
+        return True
+
+    for plugin_name, contribute in context.plugin_tree_contributors:
+        try:
+            contributed = contribute(context, root)
+            blocks = list(contributed) if contributed is not None else []
+            # Attachment stays inside the try: a node with a broken path
+            # (None, or resolve() raising an OSError) must be reported like
+            # any other contributor failure, not crash tree construction.
+            for block in blocks:
+                if _admit_contributed_node(block):
+                    root.children.append(block)
+        except Exception as e:
+            context.plugin_extension_errors.append(
+                f"Plugin '{plugin_name}': tree contributor failed: " f"{e.__class__.__name__}: {e}"
+            )
+            continue
 
     root.set_parents()
     nodes = list(root.walk())

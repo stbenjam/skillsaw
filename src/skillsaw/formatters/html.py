@@ -205,7 +205,7 @@ def format_html(
   <section class="stats">
     <article class="stat-card">
       <div class="label">Repo Type</div>
-      <div class="value">{html.escape(", ".join(sorted(t.value for t in context.repo_types if t.value != "unknown")) or "unknown")}</div>
+      <div class="value">{html.escape(", ".join(context.repo_type_names(include_unknown=False)) or "unknown")}</div>
     </article>
     <article class="stat-card">
       <div class="label">Plugins</div>

@@ -403,9 +403,17 @@ class LinterConfig:
         if enabled == "auto":
             if repo_types is None and formats is None:
                 return True, "enabled: auto (applies to all repo types)"
-            if repo_types is not None and repo_types & context.repo_types:
-                matched = sorted(t.value for t in repo_types & context.repo_types)
-                return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
+            if repo_types is not None:
+                # ``repo_types`` may mix RepositoryType members with string
+                # names of plugin-contributed types (see skillsaw.plugins.
+                # PluginRepoType); strings match against the plugin set.
+                plugin_types = getattr(context, "plugin_repo_types", set())
+                matched_types = {
+                    t for t in repo_types if t in context.repo_types or t in plugin_types
+                }
+                if matched_types:
+                    matched = sorted(getattr(t, "value", t) for t in matched_types)
+                    return True, f"enabled: auto — detected repo type: {', '.join(matched)}"
             if formats is not None and formats & context.detected_formats:
                 matched = sorted(formats & context.detected_formats)
                 return True, f"enabled: auto — detected format: {', '.join(matched)}"

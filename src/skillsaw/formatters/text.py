@@ -80,7 +80,7 @@ def format_text(
             output.append(f"  {rule_doc_url(rule_id)}")
 
     output.append(f"\n{bold}Scanned:{reset}")
-    repo_types_str = ", ".join(sorted(t.value for t in context.repo_types if t.value != "unknown"))
+    repo_types_str = ", ".join(context.repo_type_names(include_unknown=False))
     output.append(f"  Repo type: {repo_types_str or 'unknown'}")
     output.append(f"  Plugins:   {len(context.plugins)}")
     output.append(f"  Skills:    {len(context.skills)}")

@@ -132,17 +132,6 @@ def _run_lint(args):
         )
         contexts.append(context)
 
-        if context.repo_type == RepositoryType.UNKNOWN:
-            print(
-                "Warning: Directory doesn't appear to be a recognized repository",
-                file=sys.stderr,
-            )
-            print(
-                "Expected: .claude-plugin/plugin.json, plugins/ directory,"
-                " or SKILL.md (agentskills.io)\n",
-                file=sys.stderr,
-            )
-
         try:
             linter = Linter(
                 context,
@@ -156,6 +145,19 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+
+        # After Linter construction plugin repo type detectors have run, so
+        # a repository recognized only by a plugin is not warned about.
+        if context.repo_type == RepositoryType.UNKNOWN and not context.plugin_repo_types:
+            print(
+                "Warning: Directory doesn't appear to be a recognized repository",
+                file=sys.stderr,
+            )
+            print(
+                "Expected: .claude-plugin/plugin.json, plugins/ directory,"
+                " or SKILL.md (agentskills.io)\n",
+                file=sys.stderr,
+            )
 
         rule_progress = _RuleProgress(args)
         try:

@@ -79,17 +79,26 @@ def _run_plugins():
         if plugin.error:
             had_errors = True
             print(f"    ERROR: {plugin.error}")
-        elif not plugin.rule_classes:
-            print("    rules: (none)")
         else:
-            print("    rules:")
-            for rule_class in plugin.rule_classes:
-                try:
-                    rule = rule_class()
-                    print(f"      {rule.rule_id} — {rule.description}")
-                except Exception as e:
-                    had_errors = True
-                    print(f"      {rule_class.__name__}: failed to instantiate ({e})")
+            if not plugin.rule_classes:
+                print("    rules: (none)")
+            else:
+                print("    rules:")
+                for rule_class in plugin.rule_classes:
+                    try:
+                        rule = rule_class()
+                        print(f"      {rule.rule_id} — {rule.description}")
+                    except Exception as e:
+                        had_errors = True
+                        print(f"      {rule_class.__name__}: failed to instantiate ({e})")
+            if plugin.repo_types:
+                print("    repo types:")
+                for repo_type in plugin.repo_types:
+                    desc = f" — {repo_type.description}" if repo_type.description else ""
+                    print(f"      {repo_type.name}{desc}")
+            if plugin.tree_contributors:
+                names = ", ".join(getattr(c, "__name__", repr(c)) for c in plugin.tree_contributors)
+                print(f"    tree contributors: {names}")
         print()
 
     print("Disable a plugin with `plugins: {disable: [<name>]}` in .skillsaw.yaml,")

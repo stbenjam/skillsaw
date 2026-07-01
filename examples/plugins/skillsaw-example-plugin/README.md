@@ -17,8 +17,9 @@ skillsaw-example-plugin/
 ├── pyproject.toml                        # entry point registration
 ├── src/
 │   └── skillsaw_example_plugin/
-│       ├── __init__.py                   # SKILLSAW_RULES = [...]
+│       ├── __init__.py                   # SKILLSAW_* declarations
 │       ├── rules.py                      # the Rule subclass
+│       ├── extensions.py                 # repo type + lint tree contributor
 │       └── cli.py                        # optional: `skillsaw example` CLI
 └── tests/
     ├── fixture/CLAUDE.md                 # realistic test fixture
@@ -34,13 +35,19 @@ The two pieces that make it a plugin:
    example = "skillsaw_example_plugin"
    ```
 
-2. **The rule declaration** in `src/skillsaw_example_plugin/__init__.py`:
+2. **The declarations** in `src/skillsaw_example_plugin/__init__.py`:
 
    ```python
-   from .rules import NoTodoInstructionsRule
-
-   SKILLSAW_RULES = [NoTodoInstructionsRule]
+   SKILLSAW_RULES = [NoTodoInstructionsRule, AcmeConfigVersionRule]
+   SKILLSAW_REPO_TYPES = [ACME_REPO_TYPE]
+   SKILLSAW_TREE_CONTRIBUTORS = [contribute_acme_config]
    ```
+
+`extensions.py` demonstrates the extension points with a fictional "ACME"
+assistant: a `PluginRepoType` whose detector recognizes ACME repositories
+(scoping `acme-config-version` to them and pulling `ACME.md` /
+`.acme/rules/*.md` into content linting), and a tree contributor that
+attaches `.acme/config.json` as a `JsonConfigBlock` for the rule to lint.
 
 ## Try it
 
