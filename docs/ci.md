@@ -97,6 +97,8 @@ jobs:
 | `version` | Specific skillsaw version to install | latest |
 | `strict` | Treat warnings as errors | `false` |
 | `verbose` | Include info-level violations | `false` |
+| `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
+| `plugins` | Newline-separated list of plugin packages to install | `''` |
 
 ### Outputs
 
