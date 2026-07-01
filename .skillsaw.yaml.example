@@ -330,6 +330,12 @@ rules:
 # Load custom rules from these files
 custom-rules: []
 
+# Rule plugins (pip-installed packages that add rules)
+# https://skillsaw.org/plugins/
+# plugins:
+#     enabled: true
+#     disable: ["some-plugin-name"]
+
 # Exclude patterns (glob format)
 # Use exclude: [] to disable all excludes including defaults
 exclude:

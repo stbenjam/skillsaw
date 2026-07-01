@@ -1,6 +1,10 @@
 # Custom Rules
 
 Create custom validation rules by extending the `Rule` base class.
+Custom rules live as `.py` files inside one repository — to share the
+same rules across many repositories (or publish them on PyPI), package
+them as a [rule plugin](plugins.md) instead; the rule-writing API is
+identical.
 Custom rules use the **lint tree** — the same typed data structure that
 built-in rules operate on — to discover files instead of walking the
 filesystem directly.  Run `skillsaw tree` to see what nodes your repo

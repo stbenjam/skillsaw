@@ -91,6 +91,7 @@ nav:
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md
     - Custom Rules: custom-rules.md
+    - Rule Plugins: plugins.md
     - Scaffolding: scaffolding.md
     - Lint Tree: lint-tree.md
     - Supply Chain Protection: supply-chain-protection.md

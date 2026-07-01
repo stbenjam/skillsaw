@@ -1,0 +1,2 @@
+[skillsaw.plugins]
+no-wip = skillsaw_no_wip

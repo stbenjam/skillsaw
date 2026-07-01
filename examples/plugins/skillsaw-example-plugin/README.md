@@ -1,0 +1,74 @@
+# skillsaw-example-plugin
+
+A complete, minimal example of a **skillsaw rule plugin** — a pip-installable
+package that adds lint rules to [skillsaw](https://github.com/stbenjam/skillsaw).
+It packages the `no-todo-instructions` rule from the
+[custom rules documentation](https://skillsaw.org/custom-rules/) so the same
+rule can be shared across every repository in an organization instead of
+being copied into each one.
+
+See the [plugin documentation](https://skillsaw.org/plugins/) for the full
+authoring guide.
+
+## Layout
+
+```
+skillsaw-example-plugin/
+├── pyproject.toml                        # entry point registration
+├── src/
+│   └── skillsaw_example_plugin/
+│       ├── __init__.py                   # SKILLSAW_RULES = [...]
+│       └── rules.py                      # the Rule subclass
+└── tests/
+    ├── fixture/CLAUDE.md                 # realistic test fixture
+    └── test_rules.py
+```
+
+The two pieces that make it a plugin:
+
+1. **The entry point** in `pyproject.toml`:
+
+   ```toml
+   [project.entry-points."skillsaw.plugins"]
+   example = "skillsaw_example_plugin"
+   ```
+
+2. **The rule declaration** in `src/skillsaw_example_plugin/__init__.py`:
+
+   ```python
+   from .rules import NoTodoInstructionsRule
+
+   SKILLSAW_RULES = [NoTodoInstructionsRule]
+   ```
+
+## Try it
+
+```console
+$ pip install ./examples/plugins/skillsaw-example-plugin
+$ skillsaw plugins
+Installed skillsaw plugins:
+
+  example (skillsaw-example-plugin 0.1.0)
+    source: skillsaw_example_plugin
+    rules:
+      no-todo-instructions — Instruction files should not contain TODO/FIXME comments
+
+$ skillsaw lint            # the rule now runs automatically
+$ skillsaw fix --rule no-todo-instructions   # deterministic autofix
+```
+
+Users configure the rule like any other, in `.skillsaw.yaml`:
+
+```yaml
+rules:
+  no-todo-instructions:
+    severity: error
+    patterns: ["TODO", "FIXME", "HACK"]
+```
+
+## Run the tests
+
+```console
+$ python -m venv .venv && .venv/bin/pip install -e . pytest
+$ .venv/bin/pytest
+```

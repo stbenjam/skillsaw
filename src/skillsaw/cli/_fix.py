@@ -66,6 +66,7 @@ def _run_fix(args):
                     rule_ids=rule_ids,
                     skip_rule_ids=skip_rule_ids,
                     no_custom_rules=args.no_custom_rules,
+                    no_plugins=args.no_plugins,
                 )
             except ValueError as e:
                 print(f"Error: {e}", file=sys.stderr)
@@ -87,6 +88,7 @@ def _run_fix(args):
                     rule_ids=rule_ids,
                     skip_rule_ids=skip_rule_ids,
                     no_custom_rules=args.no_custom_rules,
+                    no_plugins=args.no_plugins,
                 )
                 rename_applied, rename_suggested = linter.fix_and_apply(confidence)
                 path_applied.extend(rename_applied)
@@ -152,6 +154,7 @@ def _run_fix(args):
             rule_ids=rule_ids,
             skip_rule_ids=skip_rule_ids,
             no_custom_rules=args.no_custom_rules,
+            no_plugins=args.no_plugins,
         )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)

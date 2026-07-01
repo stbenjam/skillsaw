@@ -136,6 +136,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
     lint_parser.add_argument(
+        "--no-plugins",
+        action="store_true",
+        dest="no_plugins",
+        help="Skip rules from installed plugin packages (skillsaw.plugins entry points)",
+    )
+    lint_parser.add_argument(
         "--no-progress",
         action="store_true",
         dest="no_progress",
@@ -243,6 +249,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
     fix_parser.add_argument(
+        "--no-plugins",
+        action="store_true",
+        dest="no_plugins",
+        help="Skip rules from installed plugin packages (skillsaw.plugins entry points)",
+    )
+    fix_parser.add_argument(
         "--no-progress",
         action="store_true",
         dest="no_progress",
@@ -263,7 +275,16 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     )
 
     # --- list-rules ---
-    subparsers.add_parser("list-rules", help="List all available builtin rules")
+    subparsers.add_parser("list-rules", help="List all available builtin and plugin rules")
+
+    # --- plugins ---
+    subparsers.add_parser(
+        "plugins",
+        help="List installed rule plugins and the rules they provide",
+        description="List rule plugins installed as Python packages "
+        "(skillsaw.plugins entry points), the rules each provides, and any "
+        "plugins that failed to load.",
+    )
 
     # --- explain ---
     explain_parser = subparsers.add_parser(

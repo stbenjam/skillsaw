@@ -93,6 +93,11 @@ class LinterConfig:
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
     llm: LLMSettings = field(default_factory=LLMSettings)
+    # Rule plugins (pip-installed packages exposing skillsaw.plugins entry
+    # points). ``plugins_enabled: False`` skips all of them; ``disabled_plugins``
+    # skips specific plugins by entry point name.
+    plugins_enabled: bool = True
+    disabled_plugins: List[str] = field(default_factory=list)
     config_dir: Optional[Path] = None
     # Non-fatal problems found while loading (missing version, unknown keys).
     # Excluded from equality so two configs loaded the same way still compare
@@ -101,7 +106,16 @@ class LinterConfig:
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
-        {"version", "rules", "custom-rules", "exclude", "content-paths", "strict", "llm"}
+        {
+            "version",
+            "rules",
+            "custom-rules",
+            "exclude",
+            "content-paths",
+            "strict",
+            "llm",
+            "plugins",
+        }
     )
 
     @classmethod
@@ -229,6 +243,42 @@ class LinterConfig:
         else:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
+        raw_plugins = data.get("plugins")
+        plugins_enabled = True
+        disabled_plugins: List[str] = []
+        if raw_plugins is None:
+            pass
+        elif isinstance(raw_plugins, bool):
+            # Shorthand: ``plugins: false`` disables all rule plugins.
+            plugins_enabled = raw_plugins
+        elif isinstance(raw_plugins, dict):
+            unknown_plugin_keys = set(raw_plugins) - {"enabled", "disable"}
+            if unknown_plugin_keys:
+                load_warnings.append(
+                    "unknown 'plugins' config key(s) ignored: "
+                    + ", ".join(sorted(map(str, unknown_plugin_keys)))
+                    + ". Known keys: disable, enabled"
+                )
+            raw_enabled = raw_plugins.get("enabled")
+            if raw_enabled is not None:
+                if not isinstance(raw_enabled, bool):
+                    raise ValueError(
+                        f"'plugins.enabled' must be a boolean, got {type(raw_enabled).__name__}"
+                    )
+                plugins_enabled = raw_enabled
+            raw_disable = raw_plugins.get("disable")
+            if raw_disable is not None:
+                if not isinstance(raw_disable, list) or not all(
+                    isinstance(p, str) for p in raw_disable
+                ):
+                    raise ValueError("'plugins.disable' must be a list of strings (plugin names)")
+                disabled_plugins = raw_disable
+        else:
+            raise ValueError(
+                f"'plugins' must be a boolean or a mapping, got {type(raw_plugins).__name__}. "
+                "Example:\n  plugins:\n    disable: [some-plugin]"
+            )
+
         llm_data = data.get("llm", {})
         if llm_data is None:
             llm_data = {}
@@ -254,6 +304,8 @@ class LinterConfig:
             content_paths=content_paths,
             strict=strict,
             llm=llm_settings,
+            plugins_enabled=plugins_enabled,
+            disabled_plugins=disabled_plugins,
             config_dir=config_path.resolve().parent,
             warnings=load_warnings,
         )
@@ -484,6 +536,13 @@ class LinterConfig:
         d["strict"] = self.strict
         if self.content_paths:
             d["content-paths"] = self.content_paths
+        if not self.plugins_enabled or self.disabled_plugins:
+            plugins: Dict[str, Any] = {}
+            if not self.plugins_enabled:
+                plugins["enabled"] = False
+            if self.disabled_plugins:
+                plugins["disable"] = self.disabled_plugins
+            d["plugins"] = plugins
         return d
 
     def save(self, config_path: Path):
@@ -532,6 +591,23 @@ class LinterConfig:
 
             f.write("\n# Load custom rules from these files\n")
             self._write_field(f, "custom-rules", self.custom_rules)
+            f.write(
+                "\n# Rule plugins (pip-installed packages that add rules)\n"
+                "# https://skillsaw.org/plugins/\n"
+            )
+            if not self.plugins_enabled or self.disabled_plugins:
+                self._write_field(
+                    f,
+                    "plugins",
+                    {
+                        "enabled": self.plugins_enabled,
+                        "disable": self.disabled_plugins,
+                    },
+                )
+            else:
+                f.write("# plugins:\n")
+                f.write("#     enabled: true\n")
+                f.write('#     disable: ["some-plugin-name"]\n')
             f.write("\n# Exclude patterns (glob format)\n")
             f.write("# Use exclude: [] to disable all excludes including defaults\n")
             user_excludes = [p for p in self.exclude_patterns if p not in _DEFAULT_EXCLUDE_PATTERNS]

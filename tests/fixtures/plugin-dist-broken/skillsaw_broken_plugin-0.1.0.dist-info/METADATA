@@ -1,0 +1,4 @@
+Metadata-Version: 2.1
+Name: skillsaw-broken-plugin
+Version: 0.1.0
+Summary: skillsaw plugin whose module is missing (load-error fixture)

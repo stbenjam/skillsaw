@@ -53,6 +53,7 @@ class Linter:
         skip_rule_ids: Optional[Set[str]] = None,
         baseline: Optional["BaselineFile"] = None,
         no_custom_rules: bool = False,
+        no_plugins: bool = False,
     ):
         self.context = context
         self.config = config or LinterConfig.default()
@@ -60,6 +61,8 @@ class Linter:
         self._skip_rule_ids = skip_rule_ids or set()
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
+        self._no_plugins = no_plugins
+        self._plugin_load_violations: List[RuleViolation] = []
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
         self.context.content_paths = self.config.content_paths
@@ -87,6 +90,9 @@ class Linter:
 
         # Load builtin rules
         self._load_builtin_rules()
+
+        if not self._no_plugins and self.config.plugins_enabled:
+            self._load_plugin_rules()
 
         if not self._no_custom_rules:
             for custom_rule_path in self.config.custom_rules:
@@ -119,6 +125,129 @@ class Linter:
                 logger.info("Rule %-30s enabled", rule_instance.rule_id)
             else:
                 logger.info("Rule %-30s skipped (not applicable)", rule_instance.rule_id)
+
+    def _load_plugin_rules(self):
+        """Load rules from installed plugin packages (skillsaw.plugins entry points).
+
+        A broken plugin must not abort the lint — installing a bad package
+        would otherwise brick skillsaw for every repo on the machine.  Load
+        failures become ``plugin-load-error`` violations instead, so they
+        are visible (and, for errors, affect the exit code) while remaining
+        recoverable via ``--no-plugins`` or ``plugins.disable`` in config.
+        """
+        from .plugins import load_plugins
+
+        for plugin in load_plugins(disabled=set(self.config.disabled_plugins)):
+            if plugin.error:
+                self._plugin_load_violations.append(
+                    RuleViolation(
+                        rule_id="plugin-load-error",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Plugin '{plugin.name}' ({plugin.source}) failed to load: "
+                            f"{plugin.error}. Uninstall the package, or skip it with "
+                            f"--no-plugins or 'plugins: {{disable: [{plugin.name}]}}' "
+                            "in .skillsaw.yaml."
+                        ),
+                    )
+                )
+                continue
+
+            for rule_class in plugin.rule_classes:
+                try:
+                    rule_instance = rule_class()
+                except Exception as e:
+                    self._plugin_load_violations.append(
+                        RuleViolation(
+                            rule_id="plugin-load-error",
+                            severity=Severity.ERROR,
+                            message=(
+                                f"Plugin '{plugin.name}': rule class "
+                                f"{rule_class.__name__} could not be instantiated: "
+                                f"{e.__class__.__name__}: {e}"
+                            ),
+                        )
+                    )
+                    continue
+
+                rid = rule_instance.rule_id
+                if rid in self._known_rule_ids:
+                    # First loader wins (builtins, then earlier plugins); a
+                    # shadowing rule would silently change what a rule ID means.
+                    self._plugin_load_violations.append(
+                        RuleViolation(
+                            rule_id="plugin-load-error",
+                            severity=Severity.WARNING,
+                            message=(
+                                f"Plugin '{plugin.name}' provides rule '{rid}', which "
+                                "already exists — the plugin's version was skipped. "
+                                "Plugin rule IDs must not collide with builtin rules "
+                                "or other plugins."
+                            ),
+                        )
+                    )
+                    continue
+
+                self._known_rule_ids.add(rid)
+                if self._rule_ids and rid not in self._rule_ids:
+                    continue
+                if rid in self._skip_rule_ids:
+                    logger.info("Rule %-30s skipped (--skip-rule, plugin: %s)", rid, plugin.name)
+                    continue
+                config = self.config.get_rule_config(rid)
+                if config:
+                    try:
+                        rule_instance = rule_class(config)
+                    except Exception as e:
+                        self._plugin_load_violations.append(
+                            RuleViolation(
+                                rule_id="plugin-load-error",
+                                severity=Severity.ERROR,
+                                message=(
+                                    f"Plugin '{plugin.name}': rule '{rid}' rejected its "
+                                    f"configuration: {e.__class__.__name__}: {e}"
+                                ),
+                            )
+                        )
+                        continue
+
+                if self._rule_ids or self._plugin_rule_enabled(rule_instance):
+                    rule_instance._source = f"plugin:{plugin.name}"
+                    self.rules.append(rule_instance)
+                    logger.info("Rule %-30s enabled (plugin: %s)", rid, plugin.name)
+                else:
+                    logger.info("Rule %-30s skipped (plugin: %s)", rid, plugin.name)
+
+    def _plugin_rule_enabled(self, rule_instance: Rule) -> bool:
+        """Enablement for a plugin rule.
+
+        Builtin rules get their ``enabled: auto`` default from the builtin
+        config map; plugin rules have no entry there, so a plugin rule that
+        declares ``repo_types``/``formats`` would otherwise run everywhere.
+        When the user hasn't set ``enabled`` explicitly, scoped plugin rules
+        follow the same auto-detection as builtins.
+        """
+        rid = rule_instance.rule_id
+        user_cfg = self.config.rules.get(rid) or {}
+        scoped = rule_instance.repo_types is not None or rule_instance.formats is not None
+        if "enabled" not in user_cfg and scoped:
+            return bool(
+                (
+                    rule_instance.repo_types is not None
+                    and rule_instance.repo_types & self.context.repo_types
+                )
+                or (
+                    rule_instance.formats is not None
+                    and rule_instance.formats & self.context.detected_formats
+                )
+            )
+        return self.config.is_rule_enabled(
+            rid,
+            self.context,
+            rule_instance.repo_types,
+            rule_instance.formats,
+            since_version=rule_instance.since,
+        )
 
     def _load_custom_rule(self, rule_path: str):
         """
@@ -209,7 +338,15 @@ class Linter:
         # are unknowable without executing them — exactly what the flag
         # forbids. Don't flag config entries as typos in that case.
         skip_unknown = self._no_custom_rules and bool(self.config.custom_rules)
-        warnings = []
+        # Same reasoning when installed plugins were skipped (--no-plugins or
+        # config): their rule IDs are unknowable without loading them.
+        if not skip_unknown and (
+            self._no_plugins or not self.config.plugins_enabled or self.config.disabled_plugins
+        ):
+            from .plugins import installed_plugin_names
+
+            skip_unknown = bool(installed_plugin_names())
+        warnings = list(self._plugin_load_violations)
         for rule_id in self.config.rules:
             if rule_id not in self._known_rule_ids:
                 if skip_unknown:

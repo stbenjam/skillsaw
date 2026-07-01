@@ -30,6 +30,24 @@ def _run_explain(args):
             rule_class = candidate
             break
 
+    plugin_name = None
+    if rule_class is None:
+        from ..plugins import load_plugins
+
+        for plugin in load_plugins():
+            for candidate in plugin.rule_classes:
+                try:
+                    rule = candidate()
+                except Exception:
+                    continue
+                known_ids.append(rule.rule_id)
+                if rule.rule_id == args.rule_id:
+                    rule_class = candidate
+                    plugin_name = plugin.name
+                    break
+            if rule_class is not None:
+                break
+
     if rule_class is None:
         print(f"Error: Unknown rule '{args.rule_id}'", file=sys.stderr)
         import difflib
@@ -55,6 +73,8 @@ def _run_explain(args):
         f"{default_rule.severity.value}, autofix: {autofix_label}, "
         f"llm-fix: {llm_fix_label}, since {default_rule.since}"
     )
+    if plugin_name:
+        header_meta += f", plugin: {plugin_name}"
     print(f"{c['bold']}{args.rule_id}{c['reset']} ({header_meta})")
     print()
     print(default_rule.description)
@@ -108,6 +128,8 @@ def _run_explain(args):
     if enabled:
         print(f"  severity: {effective_severity}")
 
-    print()
-    print(f"{c['bold']}Docs:{c['reset']} {rule_doc_url(args.rule_id)}")
+    if plugin_name is None:
+        # Plugin rules have no page on the skillsaw documentation site.
+        print()
+        print(f"{c['bold']}Docs:{c['reset']} {rule_doc_url(args.rule_id)}")
     sys.exit(0)

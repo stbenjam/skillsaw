@@ -17,6 +17,7 @@ _SUBCOMMANDS = {
     "baseline",
     "explain",
     "badge",
+    "plugins",
 }
 
 
@@ -51,6 +52,10 @@ def main():
         from ._simple import _run_list_rules
 
         _run_list_rules()
+    elif args.command == "plugins":
+        from ._simple import _run_plugins
+
+        _run_plugins()
     elif args.command == "explain":
         from ._explain import _run_explain
 
