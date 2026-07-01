@@ -47,3 +47,23 @@ def test_version_rule_fires_on_contributed_block(tmp_path):
     assert len(violations) == 1
     assert "version" in violations[0].message
     assert violations[0].file_path.name == "config.json"
+
+
+def test_version_rule_passes_on_valid_config(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / ".acme" / "config.json").write_text(
+        '{"model": "acme-large", "version": "1.0"}\n', encoding="utf-8"
+    )
+    context = RepositoryContext(repo)
+    context.plugin_tree_contributors.append(("example", contribute_acme_config))
+    assert AcmeConfigVersionRule().check(context) == []
+
+
+def test_version_rule_reports_invalid_json(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / ".acme" / "config.json").write_text("{not json", encoding="utf-8")
+    context = RepositoryContext(repo)
+    context.plugin_tree_contributors.append(("example", contribute_acme_config))
+    violations = AcmeConfigVersionRule().check(context)
+    assert len(violations) == 1
+    assert "Invalid JSON" in violations[0].message
