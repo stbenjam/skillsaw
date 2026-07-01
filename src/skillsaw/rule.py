@@ -100,6 +100,12 @@ class Rule(ABC):
     formats = None
     config_schema = {}
     since = "0.1.0"
+    # Default activation when the user config doesn't mention the rule:
+    # True (always on), False (opt-in), or "auto" (on when repo_types /
+    # formats match the repository). ``LinterConfig.default()`` is generated
+    # from this, so the class is the single source of truth. Per project
+    # policy new rules must use "auto" or False — never True.
+    default_enabled: Any = "auto"
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"

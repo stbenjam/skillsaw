@@ -4,7 +4,6 @@ Main linter orchestration
 
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import importlib.util
 import logging
@@ -49,9 +48,19 @@ class Linter:
         self._plugin_load_violations: List[RuleViolation] = []
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
-        self.context.content_paths = self.config.content_paths
-        self.context.exclude_patterns = self.config.exclude_patterns
-        self.context.apply_excludes()
+        # Prefer contexts constructed with the config's filters (see
+        # RepositoryContext.__init__); only reconfigure when a legacy caller
+        # passed a bare context that disagrees with the config.
+        # apply_excludes() refreshes derived state (detected_formats, cached
+        # lint tree), so this path cannot leave the context stale — but it
+        # only narrows: it won't rediscover paths an earlier filter removed.
+        if (
+            self.context.content_paths != self.config.content_paths
+            or self.context.exclude_patterns != self.config.exclude_patterns
+        ):
+            self.context.content_paths = self.config.content_paths
+            self.context.exclude_patterns = self.config.exclude_patterns
+            self.context.apply_excludes()
         self.rules: List[Rule] = []
         self._load_rules()
 
@@ -359,15 +368,12 @@ class Linter:
         """Check if a file path matches a rule's per-rule excludes patterns."""
         if file_path is None:
             return False
-        rule_config = self.config.get_rule_config(rule_id)
-        exclude = rule_config.get("exclude")
+        exclude = self.config.get_rule_config(rule_id).get("exclude")
         if not exclude:
             return False
-        try:
-            rel = str(file_path.resolve().relative_to(self.context.root_path))
-        except ValueError:
-            return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
+        from .context import path_matches_patterns
+
+        return path_matches_patterns(file_path, self.context.root_path, exclude)
 
     def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
         """Get or build a suppression map for a file, with caching."""

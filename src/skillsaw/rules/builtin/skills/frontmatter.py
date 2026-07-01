@@ -17,6 +17,8 @@ from skillsaw.rules.builtin.utils import frontmatter_text, insert_frontmatter_fi
 class SkillFrontmatterRule(Rule):
     """Check that SKILL.md files have frontmatter"""
 
+    default_enabled = True
+
     autofix_confidence = AutofixConfidence.SAFE
 
     @property

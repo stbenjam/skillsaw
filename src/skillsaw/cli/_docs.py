@@ -14,7 +14,12 @@ def _run_docs(args):
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(args.path)
+    config, _config_path = load_config(args, args.path)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
 
     if context.repo_type == RepositoryType.UNKNOWN:
         print("Warning: Directory doesn't appear to be a recognized repository", file=sys.stderr)
@@ -22,10 +27,6 @@ def _run_docs(args):
             "Expected: .claude-plugin/plugin.json, plugins/ directory, or SKILL.md (agentskills.io)\n",
             file=sys.stderr,
         )
-
-    config, _config_path = load_config(args, args.path)
-    context.exclude_patterns = config.exclude_patterns
-    context.apply_excludes()
 
     from ..docs import extract_docs, render_html, render_markdown
     from ..docs.html_renderer import COLOR_THEMES

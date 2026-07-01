@@ -101,6 +101,8 @@ def _format_type_name(expected_type):
 class HooksJsonValidRule(Rule):
     """Check that hooks.json is valid JSON with proper structure"""
 
+    default_enabled = True
+
     @property
     def rule_id(self) -> str:
         return "hooks-json-valid"

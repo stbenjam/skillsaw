@@ -10,6 +10,8 @@ from skillsaw.context import RepositoryContext
 class CommandNamingRule(Rule):
     """Check that command files use kebab-case naming"""
 
+    default_enabled = True
+
     autofix_confidence = AutofixConfidence.SUGGEST
 
     @property

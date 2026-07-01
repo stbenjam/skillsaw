@@ -64,26 +64,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     root = LintTarget(path=context.root_path)
     seen: Set[Path] = set()
-    exclude = getattr(context, "exclude_patterns", [])
-    resolved_root = context.root_path.resolve()
 
-    apm_compiled_roots: Set[Path] = set()
-    if context.has_apm:
-        from .context import RepositoryContext as _RC
-
-        for compiled_dir_name in _RC.APM_COMPILED_DIRS:
-            compiled_path = (context.root_path / compiled_dir_name).resolve()
-            if compiled_path.is_dir():
-                apm_compiled_roots.add(compiled_path)
-
-    def _is_excluded(p: Path) -> bool:
-        if not exclude:
-            return False
-        try:
-            rel = str(p.resolve().relative_to(resolved_root))
-        except ValueError:
-            return False
-        return any(fnmatch.fnmatch(rel, pat) for pat in exclude)
+    _is_excluded = context.is_path_excluded
+    _is_in_compiled_dir = context.in_apm_compiled_dir
 
     apm_source_root = (context.root_path / ".apm").resolve() if context.has_apm else None
 
@@ -92,12 +75,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return False
         resolved = p.resolve()
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
-
-    def _is_in_compiled_dir(p: Path) -> bool:
-        if not apm_compiled_roots:
-            return False
-        resolved = p.resolve()
-        return any(resolved == excl or resolved.is_relative_to(excl) for excl in apm_compiled_roots)
 
     def _add_block(
         parent: LintTarget,
@@ -292,7 +269,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         root.children.append(apm_node)
 
     # --- Extra content paths from config ---
-    for glob_pattern in getattr(context, "content_paths", []):
+    for glob_pattern in context.content_paths:
         for extra in sorted(context.root_path.glob(glob_pattern)):
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)

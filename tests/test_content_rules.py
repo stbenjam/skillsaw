@@ -143,7 +143,7 @@ class TestContentCriticalPositionRule:
     def test_rule_metadata(self):
         rule = ContentCriticalPositionRule()
         assert rule.rule_id == "content-critical-position"
-        assert rule.default_severity() == Severity.INFO
+        assert rule.default_severity() == Severity.WARNING
 
     def test_critical_in_middle_flagged(self, temp_dir):
         lines = [f"Line {i}" for i in range(1, 51)]
@@ -228,7 +228,7 @@ class TestContentNegativeOnlyRule:
     def test_rule_metadata(self):
         rule = ContentNegativeOnlyRule()
         assert rule.rule_id == "content-negative-only"
-        assert rule.default_severity() == Severity.INFO
+        assert rule.default_severity() == Severity.WARNING
 
     def test_detects_negative_without_alternative(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Never use var in JavaScript.\n")

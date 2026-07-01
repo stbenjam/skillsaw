@@ -18,6 +18,8 @@ from ._helpers import _PROMPTFOO_REPO_TYPES, _collect_tests
 class PromptfooMetadataRule(Rule):
     """Require specific metadata keys on promptfoo eval tests"""
 
+    default_enabled = False
+
     repo_types = _PROMPTFOO_REPO_TYPES
 
     config_schema = {

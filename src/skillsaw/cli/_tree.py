@@ -13,12 +13,12 @@ def _run_tree(args):
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(args.path)
     config, _config_path = load_config(args, args.path)
-
-    context.content_paths = config.content_paths
-    context.exclude_patterns = config.exclude_patterns
-    context.apply_excludes()
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
 
     tree = context.lint_tree
     if args.fmt == "dot":

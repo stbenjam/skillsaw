@@ -15,6 +15,8 @@ from skillsaw.rules.builtin.utils import read_json
 class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
+    default_enabled = True
+
     VALID_MCP_TYPES = ("stdio", "http", "sse", "streamable-http")
     REQUIRED_FIELDS_BY_TYPE = {
         "stdio": "command",

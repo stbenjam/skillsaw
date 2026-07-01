@@ -15,8 +15,12 @@ def _run_baseline(args):
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
 
-    context = RepositoryContext(args.path)
     config, config_path = load_config(args, args.path)
+    context = RepositoryContext(
+        args.path,
+        exclude_patterns=config.exclude_patterns,
+        content_paths=config.content_paths,
+    )
 
     try:
         linter = Linter(context, config)
