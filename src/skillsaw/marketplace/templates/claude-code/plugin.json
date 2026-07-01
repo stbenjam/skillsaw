@@ -1,6 +1,6 @@
 {
   "name": "{{PLUGIN_NAME}}",
-  "description": "TODO: Add description",
+  "description": "{{PLUGIN_NAME}} plugin for Claude Code",
   "version": "0.0.1",
   "author": {
     "name": "{{OWNER_NAME}}"
