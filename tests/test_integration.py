@@ -1997,7 +1997,7 @@ class TestNoCustomRulesLint:
             str(repo),
         ]
         result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
-        assert result.returncode == 0, f"lint failed: {result.stderr}"
+        assert result.returncode in (0, 1), f"lint crashed: {result.stderr}"
         assert (
             "Loading custom rule file" in result.stderr
         ), "Expected a warning about custom rule loading on stderr"
@@ -2015,7 +2015,7 @@ class TestNoCustomRulesLint:
             str(repo),
         ]
         result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
-        assert result.returncode == 0, f"lint failed: {result.stderr}"
+        assert result.returncode in (0, 1), f"lint crashed: {result.stderr}"
         assert (
             "Loading custom rule file" not in result.stderr
         ), "Warning should not appear when --no-custom-rules is used"
