@@ -852,7 +852,7 @@ For an agent workflow focused purely on fixing, use the [`skillsaw-fix` skill](s
 Check `skillsaw list-rules` to see which rules support deterministic autofix.
 
 > **Note:** `skillsaw lint --fix` is deprecated and will be removed in 1.0. Use `skillsaw fix` instead.
-
+>
 > **Breaking change (0.15):** the built-in LLM fix path (`skillsaw fix --llm`, the `llm` config section, and the `skillsaw[llm]` extras) was removed. Non-deterministic fixes are now the job of coding agents — use the `skillsaw-fix` skill above.
 
 ## Custom Rules

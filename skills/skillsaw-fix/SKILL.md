@@ -56,7 +56,7 @@ Re-run `skillsaw` and report how many violations the autofixer resolved.
 
 For every rule ID still in the inventory, run:
 
-```
+```sh
 skillsaw explain <rule-id>
 ```
 

@@ -39,8 +39,7 @@ API boundaries over internal helpers.
 
 Resolve the contradiction by choosing the more specific instruction, or
 merge both into a single statement with appropriate context. If both are
-valid in different situations, add explicit conditions. `skillsaw fix
---llm` can rewrite contradictory pairs automatically.
+valid in different situations, add explicit conditions. A coding agent can rewrite contradictory pairs automatically.
 
 ## Configuration
 
