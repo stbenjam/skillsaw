@@ -17,7 +17,9 @@ All hook commands are prohibited unless explicitly allowlisted; catches new or u
 Hooks execute arbitrary shell commands with no human review on every
 matching event. In high-security environments, any hook that was not
 explicitly reviewed and allowlisted represents an uncontrolled
-execution vector — even legitimate hooks should be inventoried.
+execution vector — even legitimate hooks should be inventoried. This
+rule inventories hooks in plugin `hooks/hooks.json`, `.claude/settings*.json`,
+and **skill/agent frontmatter** (`hooks:` key).
 
 ## Examples
 
