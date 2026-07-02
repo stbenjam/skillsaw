@@ -1,6 +1,7 @@
 """Tests for content intelligence rules."""
 
 import json
+import os
 import pytest
 from pathlib import Path
 import tempfile
@@ -931,6 +932,98 @@ class TestContentBrokenInternalReferenceRule:
         context = RepositoryContext(temp_dir)
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
+
+    def test_percent_encoded_link_to_existing_file(self, temp_dir):
+        """Regression for #322: a %20 link to a real file is not broken."""
+        refs = temp_dir / "references"
+        refs.mkdir()
+        (refs / "style guide.md").write_text("# Style Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Follow [the style guide](references/style%20guide.md) for docs.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_percent_encoded_link_to_missing_file(self, temp_dir):
+        """A genuinely broken %20 link still fires, keeping the original
+        destination text in the message."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Follow [the style guide](references/style%20guide.md) for docs.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "references/style%20guide.md" in violations[0].message
+
+    def test_percent_encoded_link_with_anchor(self, temp_dir):
+        (temp_dir / "style guide.md").write_text("# Style Guide\n## Voice\n")
+        (temp_dir / "CLAUDE.md").write_text("See [voice](style%20guide.md#voice).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_literal_percent_sequence_in_filename_linked_verbatim(self, temp_dir):
+        """A file whose literal name contains %XX, linked verbatim, linted
+        clean before decoding existed — decoding must not break it."""
+        refs = temp_dir / "refs"
+        refs.mkdir()
+        (refs / "x%20y.md").write_text("# Literal percent\n")
+        (temp_dir / "CLAUDE.md").write_text("See [notes](refs/x%20y.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_double_encoded_link_to_literal_percent_filename(self, temp_dir):
+        """%2520 decodes once to %20, matching a literal %20 in the name."""
+        (temp_dir / "x%20y.md").write_text("# Literal percent\n")
+        (temp_dir / "CLAUDE.md").write_text("See [notes](x%2520y.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_literal_percent_not_a_valid_escape(self, temp_dir):
+        """A bare % that is not a valid escape (50%.md, w%zz.md) passes
+        through unquote unchanged and resolves literally."""
+        (temp_dir / "50%.md").write_text("# Fifty\n")
+        (temp_dir / "w%zz.md").write_text("# Malformed escape\n")
+        (temp_dir / "CLAUDE.md").write_text("See [fifty](50%.md) and [malformed](w%zz.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_undecodable_destination_reports_broken(self, temp_dir):
+        """An embedded %00 decodes to NUL, which cannot resolve — report
+        broken instead of crashing."""
+        (temp_dir / "CLAUDE.md").write_text("See [bad](refs%00/x.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "refs%00/x.md" in violations[0].message
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+    def test_circular_symlink_reports_broken_not_crash(self, temp_dir):
+        """A self-referential symlink cannot resolve — Path.resolve()
+        raises RuntimeError on Python <= 3.12; report broken instead of
+        crashing."""
+        loop = temp_dir / "loop.md"
+        loop.symlink_to(loop)
+        (temp_dir / "CLAUDE.md").write_text("See [loop](loop.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "does not exist" in violations[0].message
+
+    @pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+    def test_literal_backslash_filename_suggestion_preserved(self, temp_dir):
+        """On POSIX a literal backslash is part of the file name — the
+        Windows separator normalization (as_posix) must not rewrite it."""
+        (temp_dir / "style\\guide.md").write_text("# Style\n")
+        (temp_dir / "CLAUDE.md").write_text("See [style](style-guide.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "did you mean 'style\\guide.md'?" in violations[0].message
 
 
 class TestContentUnlinkedInternalReferenceRule:
