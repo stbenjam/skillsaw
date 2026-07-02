@@ -667,7 +667,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Skills, Agents, Hooks
 
-Validates skill/agent frontmatter and hook configuration. The security rules scan hooks in `hooks.json`, `settings.json`, and skill/agent frontmatter (`hooks:` key) for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
+Validates skill/agent frontmatter and hook configuration. The security rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent frontmatter (`hooks:` key) for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
