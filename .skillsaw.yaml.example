@@ -134,6 +134,8 @@ rules:
   content-embedded-secrets:
     enabled: auto
     severity: error
+    # entropy-threshold: 3.5
+    # additional-placeholders: []
 
   # Detect instructions that should be automated as hooks instead of prose instructions
   content-hook-candidate:
