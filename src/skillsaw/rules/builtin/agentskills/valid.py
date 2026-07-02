@@ -6,7 +6,7 @@ from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence,
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import prepend_frontmatter_fields
+from skillsaw.rules.builtin.utils import prepend_frontmatter_fields, read_text
 
 from ._helpers import NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH, COMPATIBILITY_MAX_LENGTH, _to_kebab
 
@@ -58,7 +58,11 @@ class AgentSkillValidRule(Rule):
                 continue
             if "Missing required 'name'" not in v.message:
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
+            # Read BOM-stripped so prepend_frontmatter_fields can match the
+            # opening ``---``; the BOM/line endings are restored on write.
+            original = read_text(v.file_path)
+            if original is None:
+                continue
             dir_name = v.file_path.parent.name
             kebab_name = _to_kebab(dir_name)
             fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])

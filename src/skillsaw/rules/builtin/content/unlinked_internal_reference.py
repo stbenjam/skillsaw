@@ -11,6 +11,7 @@ from skillsaw.markdown_doc import MarkdownCodeSpan, MarkdownDoc, file_span, spli
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
+from skillsaw.utils import read_text
 
 _IMPORT_LINE_RE = re.compile(r"^\s*@\S")
 
@@ -145,9 +146,12 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
         results: List[AutofixResult] = []
         for fpath, replacements in fixes_by_file.items():
-            try:
-                content = fpath.read_text(encoding="utf-8")
-            except OSError:
+            # Read through utils.read_text so the splice source matches the
+            # coordinate system of the MarkdownDoc used to locate spans: both
+            # are BOM-stripped and LF-normalized.  The file's original BOM and
+            # line endings are restored when the fix is written.
+            content = read_text(fpath)
+            if content is None:
                 continue
             edits = []
             violations_fixed = []

@@ -622,6 +622,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 |-----------|-------------|---------|
 | `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
 
+**`agentskill-description` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max_length` | Maximum description length in characters (spec limit 1024; consider 256 to keep routing context lean) | `1024` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |
