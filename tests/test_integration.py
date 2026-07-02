@@ -1489,6 +1489,82 @@ class TestRequiredFieldsConfig:
         assert len(vs) == 0, f"Should have no required-field violations without config: {vs}"
 
 
+@pytest.mark.integration
+class TestDescriptionMaxLengthConfig:
+    """End-to-end tests for the configurable agentskill-description max_length.
+
+    The fixture contains four skills: deploy-staging (343-char
+    description), release-notes (exactly 256 chars), incident-handoff
+    (folded multiline description, 303 chars parsed), and
+    incident-investigator (1334 chars — above the spec's 1024 default).
+    Its .skillsaw.yaml sets max_length: 256; .skillsaw-relaxed.yaml
+    sets max_length: 2000.
+    """
+
+    FIXTURE = "config/description-max-length"
+
+    def _rule_violations(self, r):
+        return [v for v in violations(r) if v["rule_id"] == "agentskill-description"]
+
+    def test_default_behavior_unchanged(self, tmp_path):
+        """Without config only the spec's 1024 limit fires, with the
+        original message — a 343-char description passes."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        (repo / ".skillsaw-relaxed.yaml").unlink()
+        r = run_lint(repo)
+        vs = self._rule_violations(r)
+        assert len(vs) == 1
+        assert "incident-investigator" in vs[0]["file_path"]
+        assert vs[0]["message"] == "Description exceeds 1024 characters (1334)"
+
+    def test_configured_max_length_fires(self, tmp_path):
+        """max_length: 256 makes a 343-char description warn with the
+        actual length, the configured limit, and the key's line."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "deploy-staging" in v["file_path"]]
+        assert len(vs) == 1
+        assert "343" in vs[0]["message"]
+        assert "256" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert vs[0]["line"] == 3  # the description key line
+
+    def test_exactly_at_max_length_passes(self, tmp_path):
+        """Boundary: a description of exactly 256 characters does not fire."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "release-notes" in v["file_path"]]
+        assert vs == []
+
+    def test_folded_multiline_description(self, tmp_path):
+        """Folded YAML descriptions are measured on the parsed string value."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "incident-handoff" in v["file_path"]]
+        assert len(vs) == 1
+        assert "303" in vs[0]["message"]
+        # Line number points at the description key, not the folded lines
+        assert vs[0]["line"] == 3
+
+    def test_max_length_above_spec_limit_honored(self, tmp_path):
+        """max_length: 2000 lets a 1334-char description pass — the
+        configured value wins over the spec's 1024 default."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw-relaxed.yaml")
+        assert self._rule_violations(r) == []
+
+    def test_single_violation_per_description(self, tmp_path):
+        """A description over both the configured and spec limits still
+        produces exactly one agentskill-description violation."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "incident-investigator" in v["file_path"]]
+        assert len(vs) == 1
+        assert "1334" in vs[0]["message"]
+        assert "256" in vs[0]["message"]
+
+
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 
