@@ -17,12 +17,13 @@ class McpValidJsonRule(Rule):
 
     default_enabled = True
 
-    VALID_MCP_TYPES = ("stdio", "http", "sse", "streamable-http")
+    VALID_MCP_TYPES = ("stdio", "http", "sse", "streamable-http", "ws")
     REQUIRED_FIELDS_BY_TYPE = {
         "stdio": "command",
         "http": "url",
         "sse": "url",
         "streamable-http": "url",
+        "ws": "url",
     }
 
     @property
@@ -197,16 +198,17 @@ class McpValidJsonRule(Rule):
                     )
                 )
 
-            if "startupTimeout" in server_config:
-                val = server_config["startupTimeout"]
-                is_valid_number = isinstance(val, (int, float)) and not isinstance(val, bool)
-                if not is_valid_number:
-                    violations.append(
-                        self.violation(
-                            f"MCP server '{server_name}' 'startupTimeout' must be a number",
-                            file_path=file_path,
+            for timeout_field in ("startupTimeout", "timeout"):
+                if timeout_field in server_config:
+                    val = server_config[timeout_field]
+                    is_valid_number = isinstance(val, (int, float)) and not isinstance(val, bool)
+                    if not is_valid_number:
+                        violations.append(
+                            self.violation(
+                                f"MCP server '{server_name}' '{timeout_field}' must be a number",
+                                file_path=file_path,
+                            )
                         )
-                    )
 
             if "headersHelper" in server_config and not isinstance(
                 server_config["headersHelper"], str
