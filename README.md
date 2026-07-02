@@ -11,7 +11,11 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 </td>
 </tr></table>
 
-[![skillsaw demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif)](https://asciinema.org/a/uQ9xfM5S1SXcd777)
+[![Watch the skillsaw onboarding demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/onboarding-demo.png)](https://asciinema.org/a/1259880)
+
+<p align="center">▶️ <b><a href="https://asciinema.org/a/1259880">Easy onboarding with AI!</a></b> — watch an AI agent grade, fix, and configure a repo from scratch.</p>
+
+---
 
 **[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
