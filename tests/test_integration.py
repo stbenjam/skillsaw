@@ -255,6 +255,23 @@ class TestSupplyChainHooks:
         assert any("dotfile directory" in v["message"] for v in sc)
         assert any("downloads and executes" in v["message"] for v in sc)
 
+    def test_frontmatter_hooks_malicious_detected(self, tmp_path):
+        """Hooks declared in SKILL.md frontmatter are scanned by hooks-dangerous."""
+        repo = copy_fixture("frontmatter-hooks/malicious", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "hooks-dangerous" in rule_ids(r)
+        sc = by_rule(r)["hooks-dangerous"]
+        assert any("downloads and executes" in v["message"] for v in sc)
+        assert any("dotfile directory" in v["message"] for v in sc)
+        # Line points at the frontmatter hooks: key, not the whole file.
+        assert all(v["line"] for v in sc)
+
+    def test_frontmatter_hooks_clean_pass(self, tmp_path):
+        repo = copy_fixture("frontmatter-hooks/clean", tmp_path)
+        r = run_lint(repo)
+        assert "hooks-dangerous" not in rule_ids(r)
+
 
 # ── Root-Level MCP ─────────────────────────────────────────────
 
