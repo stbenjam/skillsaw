@@ -75,7 +75,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext, RepositoryType, _pattern_variants
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
@@ -125,7 +125,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
             "default": [],
             "description": (
                 "Additional glob patterns (matched against skill-relative "
-                "paths and bare file names) exempt from dead-file detection; "
+                "paths and bare file names; a leading `**/` also matches at "
+                "the skill root) exempt from dead-file detection; "
                 "extends the built-in exclusions (SKILL.md, README.md, "
                 "CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, "
                 "testdata/, hidden files)"
@@ -241,8 +242,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
         if "testdata" in rel.split("/")[:-1]:
             return True
         for pattern in extra_patterns:
-            if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(name, pattern):
-                return True
+            # Same gitignore-style leading-**/ expansion as the global and
+            # per-rule excludes (see context._pattern_variants, issue #322):
+            # **/generated/** must also match a top-level generated/ dir.
+            for variant in _pattern_variants(pattern):
+                if fnmatch.fnmatch(rel, variant) or fnmatch.fnmatch(name, variant):
+                    return True
         return False
 
     # -- reachability --------------------------------------------------------

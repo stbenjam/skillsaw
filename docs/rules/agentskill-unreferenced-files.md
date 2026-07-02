@@ -113,7 +113,7 @@ rules:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
-| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names; a leading `**/` also matches at the skill root) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 
 *Run `skillsaw explain agentskill-unreferenced-files` to see this documentation and the rule's effective configuration in your terminal.*
