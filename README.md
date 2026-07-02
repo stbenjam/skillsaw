@@ -678,6 +678,13 @@ Validates skill/agent frontmatter and hook configuration. The security rules sca
 | `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
 | `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
 
+**`agent-frontmatter-values` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowed_values` | Extra allowed values per enum field, merged with the documented sets (e.g. {color: [teal]}) | `{}` |
+| `allowed_plugin_fields` | Plugin-prohibited fields (hooks, mcpServers, permissionMode) to permit on plugin-shipped agents anyway | `[]` |
+
 **`hooks-dangerous` parameters:**
 
 | Parameter | Description | Default |

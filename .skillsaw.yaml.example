@@ -14,6 +14,8 @@ rules:
   agent-frontmatter-values:
     enabled: auto
     severity: warning
+    # allowed_values: {}
+    # allowed_plugin_fields: []
 
   # Skill description should be meaningful and within length limits
   agentskill-description:

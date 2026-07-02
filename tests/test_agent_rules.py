@@ -360,6 +360,46 @@ def test_values_project_agents_allow_prohibited_fields(temp_dir):
     assert violations == []
 
 
+def test_values_apm_agents_allow_prohibited_fields(temp_dir):
+    """APM agents follow APM's trust model, not Claude Code's plugin rules."""
+    repo = temp_dir / "project"
+    agents_dir = repo / ".apm" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "my-agent.agent.md").write_text(
+        "---\n"
+        "name: my-agent\n"
+        "description: Helper\n"
+        "permissionMode: plan\n"
+        "mcpServers:\n  - github\n"
+        "---\n\n# Agent\n"
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(repo))
+    assert violations == []
+
+
+def test_values_allowed_values_config_extends_enums(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\ndescription: Helper\nmemory: global\ncolor: teal",
+    )
+    rule = AgentFrontmatterValuesRule({"allowed_values": {"color": ["teal"]}})
+    violations = rule.check(RepositoryContext(plugin_dir))
+    messages = [v.message for v in violations]
+    assert any("'memory: global'" in m for m in messages)
+    assert not any("'color: teal'" in m for m in messages)
+
+
+def test_values_allowed_plugin_fields_config(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\ndescription: Helper\nmcpServers:\n  - github\nhooks:\n  PreToolUse: []",
+    )
+    rule = AgentFrontmatterValuesRule({"allowed_plugin_fields": ["mcpServers"]})
+    violations = rule.check(RepositoryContext(plugin_dir))
+    flagged = {v.message.split("'")[1] for v in violations}
+    assert flagged == {"hooks"}
+
+
 def test_values_no_frontmatter_skipped(temp_dir):
     """Files without frontmatter are agent-frontmatter's problem, not ours."""
     plugin_dir = temp_dir / "test-plugin"

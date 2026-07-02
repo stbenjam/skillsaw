@@ -188,6 +188,7 @@ class TestSinglePlugin:
         assert "command-naming" in ids
         assert "command-frontmatter" in ids
         assert "agent-frontmatter" in ids
+        assert "agent-frontmatter-values" in ids
 
         s = summary(r)
         assert s["errors"] >= 4

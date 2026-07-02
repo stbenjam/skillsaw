@@ -10,6 +10,7 @@ Agent frontmatter enum fields (permissionMode, memory, effort, isolation, color)
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.15.0 |
+| **Repo Types** | apm, dot-claude, marketplace, single-plugin |
 | **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
 
 ## Why
@@ -63,6 +64,11 @@ rules:
     enabled: auto  # true | false | auto
     severity: warning
 ```
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `allowed_values` | Extra allowed values per enum field, merged with the documented sets (e.g. {color: [teal]}) | `{}` |
+| `allowed_plugin_fields` | Plugin-prohibited fields (hooks, mcpServers, permissionMode) to permit on plugin-shipped agents anyway | `[]` |
 
 
 *Run `skillsaw explain agent-frontmatter-values` to see this documentation and the rule's effective configuration in your terminal.*

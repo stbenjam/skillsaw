@@ -10,7 +10,8 @@ ignores for security reasons (hooks, mcpServers, permissionMode).
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.content_analysis import AgentBlock
 
 # Documented value sets for enum-valued agent frontmatter fields.
@@ -38,6 +39,32 @@ class AgentFrontmatterValuesRule(Rule):
 
     since = "0.15.0"
 
+    repo_types = {
+        RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.MARKETPLACE,
+        RepositoryType.DOT_CLAUDE,
+        RepositoryType.APM,
+    }
+
+    config_schema = {
+        "allowed_values": {
+            "type": "dict",
+            "default": {},
+            "description": (
+                "Extra allowed values per enum field, merged with the "
+                "documented sets (e.g. {color: [teal]})"
+            ),
+        },
+        "allowed_plugin_fields": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Plugin-prohibited fields (hooks, mcpServers, permissionMode) "
+                "to permit on plugin-shipped agents anyway"
+            ),
+        },
+    }
+
     @property
     def rule_id(self) -> str:
         return "agent-frontmatter-values"
@@ -56,11 +83,21 @@ class AgentFrontmatterValuesRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
+        extra_values = self.config.get("allowed_values") or {}
+        allowed_plugin_fields = set(self.config.get("allowed_plugin_fields") or [])
+
+        enum_fields = {}
+        for field_name, valid_values in _ENUM_FIELDS.items():
+            extra = extra_values.get(field_name, [])
+            if isinstance(extra, str):
+                extra = [extra]
+            enum_fields[field_name] = valid_values | {str(v) for v in extra}
+
         for block in context.lint_tree.find(AgentBlock):
             if block.frontmatter_error or not block.has_frontmatter:
                 continue
 
-            for field_name, valid_values in _ENUM_FIELDS.items():
+            for field_name, valid_values in enum_fields.items():
                 value = block.field_value(field_name)
                 if value is None:
                     continue
@@ -96,12 +133,17 @@ class AgentFrontmatterValuesRule(Rule):
                     )
                 )
 
-            # Agents inside .claude/ are project agents; everything else
-            # discovered by the lint tree ships with a plugin, where these
-            # fields are ignored for security reasons.
-            if ".claude" in block.path.parts:
+            # The prohibited-fields check only applies to plugin-shipped
+            # agents. Agents under a .claude/ plugin node are project agents
+            # where these fields work, and APM agents (.apm/agents/) have no
+            # PluginNode ancestor and follow APM's trust model, not Claude
+            # Code's plugin restrictions.
+            plugin_node = context.lint_tree.find_parent(block, PluginNode)
+            if plugin_node is None or plugin_node.path.name == ".claude":
                 continue
             for field_name in _PLUGIN_PROHIBITED_FIELDS:
+                if field_name in allowed_plugin_fields:
+                    continue
                 if block.field(field_name) is not None:
                     violations.append(
                         self.violation(
