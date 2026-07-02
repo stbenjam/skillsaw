@@ -19,6 +19,24 @@ multiple agents and users. A hardcoded API key, token, or password in an
 instruction file is a credential leak — it is visible in the git history
 even after removal and may be harvested by automated scanners.
 
+## Detection
+
+Two classes of match are handled differently:
+
+- **Structured token formats** (`AKIA…`, `ghp_…`, `sk-ant-…`, private-key
+  blocks, JWTs, …) are high-confidence and always reported.
+- **Generic credential assignments** (`password = "…"`, `api_key: "…"`,
+  `secret_key`, `access_token`) are gated to avoid flagging documentation
+  examples:
+    - *Placeholder allowlist*: values containing obvious placeholder
+      markers (`example`, `placeholder`, `dummy`, `changeme`, `your-…`,
+      `hunter2`, …), template syntax (`<your-key>`, `${VAR}`,
+      `{{ var }}`), or a single repeated character are skipped. Extend
+      the list with `additional-placeholders`.
+    - *Entropy gating*: the value's Shannon entropy must reach
+      `entropy-threshold` (default 3.5 bits/char). Real random secrets
+      pass; English-ish placeholder strings do not.
+
 ## Examples
 
 **Bad:**
@@ -51,6 +69,11 @@ rules:
     enabled: auto  # true | false | auto
     severity: error
 ```
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `entropy-threshold` | Minimum Shannon entropy (bits/char) a generic key = "value" match must reach to be reported; structured tokens (AKIA…, ghp_…, private keys) are always reported | `3.5` |
+| `additional-placeholders` | Extra case-insensitive substrings that mark a generic credential value as a placeholder (suppressing the violation) | `[]` |
 
 ## Research Basis
 

@@ -801,6 +801,13 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |-----------|-------------|---------|
 | `max-tokens` | Maximum estimated tokens per section before triggering a warning | `500` |
 
+**`content-embedded-secrets` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `entropy-threshold` | Minimum Shannon entropy (bits/char) a generic key = "value" match must reach to be reported; structured tokens (AKIA…, ghp_…, private keys) are always reported | `3.5` |
+| `additional-placeholders` | Extra case-insensitive substrings that mark a generic credential value as a placeholder (suppressing the violation) | `[]` |
+
 **`content-banned-references` parameters:**
 
 | Parameter | Description | Default |

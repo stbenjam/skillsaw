@@ -218,6 +218,10 @@ class TestSinglePlugin:
         assert len(secrets) >= 1
         assert secrets[0]["line"] is not None
         assert "setup.md" in secrets[0]["file_path"]
+        # The fixture's "Configuration examples" placeholders (template
+        # vars, hunter2placeholder, <paste-…>) must not fire — only the
+        # real structured token line is a violation (issue #322).
+        assert len(secrets) == 1
 
 
 # ── Hooks JSON ──────────────────────────────────────────────────
