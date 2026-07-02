@@ -19,6 +19,7 @@ rules:
   agentskill-description:
     enabled: auto
     severity: warning
+    # max_length: 1024
 
   # Validate evals/evals.json format when present
   agentskill-evals:

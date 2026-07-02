@@ -48,6 +48,85 @@ def test_read_text_returns_none_on_missing(temp_dir):
     assert read_text(temp_dir / "missing.txt") is None
 
 
+def test_read_text_strips_utf8_bom(temp_dir):
+    """A leading UTF-8 BOM must not survive into the returned text, else
+    ``startswith('---')`` frontmatter detection breaks (issue #315)."""
+    f = temp_dir / "bom.md"
+    f.write_bytes(b"\xef\xbb\xbf---\nname: foo\n---\nbody\n")
+    content = read_text(f)
+    assert content is not None
+    assert not content.startswith("\ufeff")
+    assert content.startswith("---")
+
+
+def test_write_text_preserving_keeps_crlf(temp_dir):
+    """A CRLF file round-trips as CRLF even though the content is LF."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "crlf.md"
+    f.write_bytes(b"one\r\ntwo\r\n")
+    invalidate_read_caches()
+    # Content the fix engine produces is always LF-normalized.
+    write_text_preserving(f, "one\r\nEDITED\r\n".replace("\r\n", "\n"))
+    raw = f.read_bytes()
+    assert raw == b"one\r\nEDITED\r\n"
+
+
+def test_write_text_preserving_keeps_lf(temp_dir):
+    """An LF file stays LF (no spurious CRLF introduced)."""
+    from skillsaw.utils import write_text_preserving
+
+    f = temp_dir / "lf.md"
+    f.write_bytes(b"one\ntwo\n")
+    write_text_preserving(f, "one\nEDITED\n")
+    assert f.read_bytes() == b"one\nEDITED\n"
+
+
+def test_write_text_preserving_restores_bom(temp_dir):
+    """A file that had a BOM keeps it; content is passed BOM-free."""
+    from skillsaw.utils import write_text_preserving
+
+    f = temp_dir / "bom.md"
+    f.write_bytes(b"\xef\xbb\xbf---\nname: foo\n---\n")
+    write_text_preserving(f, "---\nname: bar\n---\n")
+    raw = f.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert raw == b"\xef\xbb\xbf---\nname: bar\n---\n"
+
+
+def test_write_text_preserving_new_file_defaults_to_lf(temp_dir):
+    """Writing a path that does not yet exist uses plain LF, no BOM."""
+    from skillsaw.utils import write_text_preserving
+
+    f = temp_dir / "new.md"
+    write_text_preserving(f, "hello\nworld\n")
+    assert f.read_bytes() == b"hello\nworld\n"
+
+
+def test_write_text_preserving_no_double_bom(temp_dir):
+    """If a fix path leaves a BOM in the content, the writer must not add a
+    second one (idempotent BOM handling)."""
+    from skillsaw.utils import write_text_preserving
+
+    f = temp_dir / "dbom.md"
+    f.write_bytes(b"\xef\xbb\xbfhello\n")
+    # Caller's content still carries the BOM (read with plain utf-8).
+    write_text_preserving(f, "\ufeffhello world\n")
+    raw = f.read_bytes()
+    assert raw == b"\xef\xbb\xbfhello world\n"
+    assert raw.count(b"\xef\xbb\xbf") == 1
+
+
+def test_write_text_preserving_bom_and_crlf(temp_dir):
+    """BOM + CRLF are both restored together."""
+    from skillsaw.utils import write_text_preserving
+
+    f = temp_dir / "both.md"
+    f.write_bytes(b"\xef\xbb\xbfone\r\ntwo\r\n")
+    write_text_preserving(f, "one\nEDITED\n")
+    assert f.read_bytes() == b"\xef\xbb\xbfone\r\nEDITED\r\n"
+
+
 def test_read_json_parses_valid(temp_dir):
     f = temp_dir / "data.json"
     f.write_text('{"key": "value"}', encoding="utf-8")

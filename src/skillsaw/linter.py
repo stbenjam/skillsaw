@@ -19,6 +19,7 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
+from .utils import write_text_preserving
 
 if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
@@ -747,11 +748,14 @@ class Linter:
                         continue
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     src.rename(dst)
-                    # If the content also changed, write the updated content
+                    # If the content also changed, write the updated content.
+                    # write_text_preserving restores the file's original BOM
+                    # and CRLF/LF line endings (see utils) so an autofix only
+                    # changes the span it targeted, not the whole file.
                     if fix.fixed_content != fix.original_content:
-                        dst.write_text(fix.fixed_content, encoding="utf-8")
+                        write_text_preserving(dst, fix.fixed_content)
                 else:
-                    fix.file_path.write_text(fix.fixed_content, encoding="utf-8")
+                    write_text_preserving(fix.file_path, fix.fixed_content)
             except OSError as exc:
                 logger.warning(
                     "Failed to apply fix for %s on %s: %s",
