@@ -69,6 +69,7 @@ def main():
     head_results = load_results(args.head)
 
     sections = []
+    clean = []
     for repo in sorted(set(base_results) | set(head_results)):
         base = base_results.get(repo)
         head = head_results.get(repo)
@@ -82,6 +83,7 @@ def main():
         new = violation_keys(head) - violation_keys(base)
         resolved = violation_keys(base) - violation_keys(head)
         if not new and not resolved:
+            clean.append(repo)
             continue
 
         lines = [f"### {repo}", ""]
@@ -111,10 +113,14 @@ def main():
         "see once the rules reach them."
     )
     print()
+    clean_list = ", ".join(f"`{repo}`" for repo in clean)
     if sections:
         print("\n\n".join(sections))
+        if clean:
+            print()
+            print(f"Also checked, no differences: {clean_list}.")
     else:
-        print("**No rule-impact differences.**")
+        print(f"**No rule-impact differences.** Checked: {clean_list}.")
 
 
 if __name__ == "__main__":
