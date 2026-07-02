@@ -335,6 +335,20 @@ class TestMarketplace:
         assert "plugin-json-required" not in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 3
 
+    def test_marketplace_plugin_root_prefixed_sources_resolve(self, tmp_path):
+        """Sources that already include the pluginRoot prefix still resolve.
+
+        Regression: real marketplaces (jeremylongshore/claude-code-plugins-
+        plus-skills) set pluginRoot while their sources are full root-relative
+        paths; strict spec composition dropped every plugin (0 discovered).
+        """
+        repo = copy_fixture("marketplace/plugin-root-prefixed", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert len(r["out"]["stats"]["plugins"]) == 2
+
     def test_marketplace_plugin_root_traversal_rejected(self, tmp_path):
         """A pluginRoot escaping the repository is flagged and never resolved."""
         repo = copy_fixture("marketplace/plugin-root-escape", tmp_path)
@@ -1379,6 +1393,7 @@ CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
     "marketplace/plugin-root",
+    "marketplace/plugin-root-prefixed",
     "agentskills/clean",
     "agentskills/unreferenced-clean",
     "dot-claude/clean",

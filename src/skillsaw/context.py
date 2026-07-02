@@ -490,16 +490,21 @@ class RepositoryContext:
 
         # Handle relative path strings
         if isinstance(source, str):
-            base = self.root_path
+            candidate = (self.root_path / source).resolve()
             plugin_root = self.marketplace_plugin_root()
             if plugin_root and not Path(source).is_absolute():
                 # metadata.pluginRoot is prepended to relative sources (both
-                # bare names and ./-prefixed paths). The containment check
-                # below still rejects any composed path that escapes the
-                # repository, so a traversing pluginRoot cannot smuggle a
-                # source outside the root.
-                base = base / plugin_root
-            candidate = (base / source).resolve()
+                # bare names and ./-prefixed paths). Real-world marketplaces
+                # (e.g. jeremylongshore/claude-code-plugins-plus-skills) set
+                # pluginRoot while their sources already include that prefix,
+                # so prefer the spec composition but fall back to the
+                # root-relative path when only the latter exists. The
+                # containment check below still rejects any candidate that
+                # escapes the repository, so a traversing pluginRoot cannot
+                # smuggle a source outside the root.
+                composed = (self.root_path / plugin_root / source).resolve()
+                if composed.exists() or not candidate.exists():
+                    candidate = composed
 
             # Disallow escaping the repo with .. paths
             try:

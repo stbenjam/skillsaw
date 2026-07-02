@@ -272,6 +272,70 @@ def test_plugin_root_strict_false_metadata(temp_dir):
     assert metadata["version"] == "2.0.0"
 
 
+def test_plugin_root_sources_already_prefixed(temp_dir):
+    """Sources that already include the pluginRoot prefix still resolve.
+
+    Real marketplaces (e.g. jeremylongshore/claude-code-plugins-plus-skills)
+    set metadata.pluginRoot while their sources are full root-relative paths
+    like "./plugins/name". The spec composition ("plugins/plugins/name")
+    doesn't exist there, so resolution must fall back to the root-relative
+    path instead of dropping every plugin.
+    """
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [
+                    {"name": "alpha", "source": "./plugins/alpha"},
+                    {"name": "beta", "source": "plugins/beta"},
+                ],
+            },
+            f,
+        )
+
+    for name in ("alpha", "beta"):
+        plugin_dir = temp_dir / "plugins" / name / ".claude-plugin"
+        plugin_dir.mkdir(parents=True)
+        with open(plugin_dir / "plugin.json", "w") as f:
+            json.dump({"name": name, "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 2
+    names = sorted(context.get_plugin_name(p) for p in context.plugins)
+    assert names == ["alpha", "beta"]
+
+
+def test_plugin_root_composed_path_wins_when_both_exist(temp_dir):
+    """When both the composed and root-relative paths exist, spec composition wins."""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [{"name": "plugins", "source": "plugins"}],
+            },
+            f,
+        )
+
+    # A plugin literally named "plugins" under pluginRoot: root-relative
+    # "plugins" (the pluginRoot dir itself) also exists, but the composed
+    # path plugins/plugins must win.
+    plugin_dir = temp_dir / "plugins" / "plugins" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    with open(plugin_dir / "plugin.json", "w") as f:
+        json.dump({"name": "plugins", "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert len(context.plugins) == 1
+    assert context.plugins[0].resolve() == (temp_dir / "plugins" / "plugins").resolve()
+
+
 def test_plugin_root_traversal_rejected(temp_dir, caplog):
     """A traversing pluginRoot must not let sources escape the repo root"""
     import logging

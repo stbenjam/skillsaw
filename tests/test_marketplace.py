@@ -869,6 +869,18 @@ class TestMalformedMarketplaceJson:
         resolved = _resolve_plugin_dir(root, "formatter")
         assert resolved == plugin_dir.resolve()
 
+    def test_resolve_plugin_dir_plugin_root_prefixed_source(self, temp_dir):
+        """Sources already including the pluginRoot prefix fall back to
+        root-relative resolution (real-world marketplaces do this)."""
+        root = self._make_plugin_root_marketplace(
+            temp_dir, "./plugins", [{"name": "formatter", "source": "./plugins/formatter"}]
+        )
+        plugin_dir = root / "plugins" / "formatter"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "formatter")
+        assert resolved == plugin_dir.resolve()
+
     def test_resolve_plugin_dir_traversing_plugin_root_ignored(self, temp_dir):
         """A pluginRoot escaping the repo is ignored, never composed."""
         root = self._make_plugin_root_marketplace(

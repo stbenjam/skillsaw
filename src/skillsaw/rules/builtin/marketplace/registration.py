@@ -8,6 +8,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
+from skillsaw.rules.builtin.marketplace.json_valid import is_absolute_path
 
 
 class MarketplaceRegistrationRule(Rule):
@@ -86,12 +87,20 @@ class MarketplaceRegistrationRule(Rule):
 
         # metadata.pluginRoot is prepended to relative sources when Claude
         # Code resolves them, so generated sources must be relative to it.
+        # Absolute or traversing pluginRoots are invalid (marketplace-json-valid
+        # flags them) and are ignored here. Resolve the base because
+        # plugin_node.path is fully resolved and relative_to() compares
+        # lexically.
         source_base = context.root_path
         metadata = data.get("metadata")
         if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
             plugin_root = metadata["pluginRoot"]
-            if plugin_root and ".." not in plugin_root.replace("\\", "/").split("/"):
-                source_base = context.root_path / plugin_root
+            if (
+                plugin_root
+                and not is_absolute_path(plugin_root)
+                and ".." not in plugin_root.replace("\\", "/").split("/")
+            ):
+                source_base = (context.root_path / plugin_root).resolve()
 
         fixed_violations = []
         for v in violations:

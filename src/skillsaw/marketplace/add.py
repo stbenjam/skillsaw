@@ -244,11 +244,15 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
                     "cannot resolve a local plugin directory"
                 )
             # metadata.pluginRoot is prepended to relative sources, matching
-            # RepositoryContext._resolve_plugin_source.
-            base = root
+            # RepositoryContext._resolve_plugin_source: prefer the composed
+            # path, but fall back to the root-relative one when only it
+            # exists (real marketplaces set pluginRoot while their sources
+            # already include that prefix).
+            resolved = (root / source).resolve()
             if plugin_root and not Path(source).is_absolute():
-                base = root / plugin_root
-            resolved = (base / source).resolve()
+                composed = (root / plugin_root / source).resolve()
+                if composed.exists() or not resolved.exists():
+                    resolved = composed
             if not resolved.is_relative_to(root.resolve()):
                 raise ValueError(f"Plugin source {source!r} resolves outside marketplace root")
             return resolved

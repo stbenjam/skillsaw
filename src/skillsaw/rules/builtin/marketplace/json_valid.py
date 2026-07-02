@@ -3,6 +3,7 @@ Rule: marketplace-json-valid
 """
 
 import re
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -11,6 +12,12 @@ from skillsaw.lint_target import MarketplaceConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def is_absolute_path(path: str) -> bool:
+    """True for POSIX-absolute (/x) or Windows-absolute (C:\\x, \\\\share) paths."""
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+
 
 # Required fields for each object source type per the plugin-marketplaces
 # docs; unknown types get a warning rather than an error so a new source
@@ -116,6 +123,15 @@ class MarketplaceJsonValidRule(Rule):
                             file_path=marketplace_file,
                         )
                     )
+                elif is_absolute_path(plugin_root):
+                    violations.append(
+                        self.violation(
+                            f"metadata.pluginRoot: absolute path '{plugin_root}' — "
+                            "the plugin root must be a relative path inside the "
+                            "marketplace repository",
+                            file_path=marketplace_file,
+                        )
+                    )
 
         if "plugins" not in marketplace:
             violations.append(self.violation("Missing 'plugins' array", file_path=marketplace_file))
@@ -174,6 +190,15 @@ class MarketplaceJsonValidRule(Rule):
         violations = []
 
         if isinstance(source, str):
+            if is_absolute_path(source):
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source: absolute path '{source}' — sources "
+                        "must be relative paths inside the marketplace repository",
+                        file_path=marketplace_file,
+                    )
+                )
+                return violations
             parts = source.replace("\\", "/").split("/")
             if ".." in parts:
                 violations.append(
