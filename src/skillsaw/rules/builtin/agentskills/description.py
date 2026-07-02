@@ -11,13 +11,31 @@ from ._helpers import DESCRIPTION_MAX_LENGTH
 
 
 class AgentSkillDescriptionRule(Rule):
-    """Validate skill description quality"""
+    """Validate skill description quality.
+
+    The length limit defaults to the agentskills.io spec's 1024
+    characters, and is configurable via ``max_length``. A tighter
+    budget such as ``max_length: 256`` is recommended: descriptions
+    are permanent context loaded into every prompt for skill routing,
+    so every character is paid on every request, and some ecosystems
+    rank or route on only a prefix of the description. Values above
+    1024 are honored as configured — the spec limit itself is
+    validated by the ecosystem at publish time.
+    """
 
     repo_types = {
         RepositoryType.AGENTSKILLS,
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.MARKETPLACE,
         RepositoryType.DOT_CLAUDE,
+    }
+
+    config_schema = {
+        "max_length": {
+            "type": "int",
+            "default": DESCRIPTION_MAX_LENGTH,
+            "description": "Maximum description length in characters (spec limit 1024; consider 256 to keep routing context lean)",
+        },
     }
 
     @property
@@ -32,6 +50,12 @@ class AgentSkillDescriptionRule(Rule):
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        # Fall back to the spec limit when the configured value isn't a
+        # positive integer (a blank key parses as None; bool is an int
+        # subclass — reject it) so a bad config can't crash the lint.
+        max_length = self.config.get("max_length")
+        if isinstance(max_length, bool) or not isinstance(max_length, int) or max_length <= 0:
+            max_length = DESCRIPTION_MAX_LENGTH
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
@@ -58,10 +82,10 @@ class AgentSkillDescriptionRule(Rule):
                 )
                 continue
 
-            if len(stripped) > DESCRIPTION_MAX_LENGTH:
+            if len(stripped) > max_length:
                 violations.append(
                     self.violation(
-                        f"Description exceeds {DESCRIPTION_MAX_LENGTH} characters ({len(stripped)})",
+                        f"Description exceeds {max_length} characters ({len(stripped)})",
                         file_path=block.path,
                         line=desc_line,
                     )

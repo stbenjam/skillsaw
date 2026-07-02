@@ -910,6 +910,35 @@ class TestContentUnlinkedInternalReferenceRule:
         assert len(violations) == 1
         assert "./scripts/build.sh" in violations[0].message
 
+    def test_path_abutting_close_paren_not_flagged(self, temp_dir):
+        """Regression for #321: `scripts/test.pyc)` must not backtrack to a
+        truncated `scripts/test.py` match."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run the helper (e.g. scripts/test.pyc) before committing.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_path_abutting_open_paren_not_mangled(self, temp_dir):
+        """Regression for #321: `(docs/guide.md)` must not produce a mangled
+        `ocs/guide.md`-style match one character in."""
+        (temp_dir / "CLAUDE.md").write_text("See the guide (docs/guide.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_dot_slash_path_does_not_swallow_sentence_period(self, temp_dir):
+        """Regression for #321: `./docs/guide.md.` at the end of a sentence
+        must match `./docs/guide.md`, not include the period."""
+        (temp_dir / "CLAUDE.md").write_text("See ./docs/guide.md. Then continue.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "'./docs/guide.md'" in violations[0].message
+
     def test_code_blocks_skipped(self, temp_dir):
         content = "# Rules\n```\nsrc/config/settings.yaml\n```\n"
         (temp_dir / "CLAUDE.md").write_text(content)
@@ -1162,6 +1191,28 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SAFE
         assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_content
+
+    def test_autofix_preserves_paren_adjacent_and_period_adjacent_paths(self, temp_dir):
+        """Regression for #321: fix must not corrupt `scripts/test.pyc)` and
+        must keep a sentence-ending period outside the link."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run the helper (e.g. scripts/test.pyc) before committing.\n"
+            "See ./docs/guide.md. Then run scripts/test.py to validate.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "(e.g. scripts/test.pyc)" in fixed
+        assert "See [./docs/guide.md](./docs/guide.md)." in fixed
+        assert "run [scripts/test.py](scripts/test.py) to validate" in fixed
+        assert len(fixed.splitlines()) == 2
 
     def test_no_autofix_for_nonexistent_path(self, temp_dir):
         """Bare paths to nonexistent files should not be autofixed."""

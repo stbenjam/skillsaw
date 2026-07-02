@@ -10,9 +10,11 @@ from typing import Dict, List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    AgentBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
+    SkillBlock,
 )
 
 
@@ -53,6 +55,7 @@ class HooksProhibitedRule(Rule):
         self,
         events: Dict[str, List[HookEventConfig]],
         file_path,
+        line=None,
     ) -> List[RuleViolation]:
         violations = []
         allowlist = self.config.get("allowlist", [])
@@ -71,6 +74,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {event_type}: non-allowlisted command — "
                                 f"{handler.command!r}",
                                 file_path=file_path,
+                                line=line,
                             )
                         )
                     else:
@@ -79,6 +83,7 @@ class HooksProhibitedRule(Rule):
                                 f"Hook {event_type}: hooks are prohibited — "
                                 f"{handler.command!r}",
                                 file_path=file_path,
+                                line=line,
                             )
                         )
         return violations
@@ -95,5 +100,15 @@ class HooksProhibitedRule(Rule):
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.hooks_events, block.path))
+
+        # Skill and agent frontmatter can declare hooks with the same schema.
+        for block in context.lint_tree.find(SkillBlock) + context.lint_tree.find(AgentBlock):
+            if block.frontmatter_error:
+                continue
+            events = block.hooks_events
+            if events:
+                violations.extend(
+                    self._check_events(events, block.path, line=block.key_line("hooks"))
+                )
 
         return violations

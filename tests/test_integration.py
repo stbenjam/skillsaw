@@ -255,6 +255,23 @@ class TestSupplyChainHooks:
         assert any("dotfile directory" in v["message"] for v in sc)
         assert any("downloads and executes" in v["message"] for v in sc)
 
+    def test_frontmatter_hooks_malicious_detected(self, tmp_path):
+        """Hooks declared in SKILL.md frontmatter are scanned by hooks-dangerous."""
+        repo = copy_fixture("frontmatter-hooks/malicious", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "hooks-dangerous" in rule_ids(r)
+        sc = by_rule(r)["hooks-dangerous"]
+        assert any("downloads and executes" in v["message"] for v in sc)
+        assert any("dotfile directory" in v["message"] for v in sc)
+        # Line points at the frontmatter hooks: key, not the whole file.
+        assert all(v["line"] for v in sc)
+
+    def test_frontmatter_hooks_clean_pass(self, tmp_path):
+        repo = copy_fixture("frontmatter-hooks/clean", tmp_path)
+        r = run_lint(repo)
+        assert "hooks-dangerous" not in rule_ids(r)
+
 
 # ── Root-Level MCP ─────────────────────────────────────────────
 
@@ -337,6 +354,106 @@ class TestAgentskills:
         stats = r["out"]["stats"]
         assert "agentskills" in stats["repo_types"]
         assert len(stats["skills"]) == 4
+
+
+# ── Unreferenced Skill Files ─────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestUnreferencedSkillFiles:
+    """End-to-end coverage for agentskill-unreferenced-files."""
+
+    RULE = "agentskill-unreferenced-files"
+
+    def test_unreferenced_files_flagged(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        r = run_lint(repo)
+        vs = by_rule(r).get(self.RULE, [])
+        flagged = {v["file_path"] for v in vs}
+        assert flagged == {
+            "log-analyzer/scripts/upload.py",
+            "log-analyzer/references/unused-notes.md",
+        }
+        # Whole-file violations must not fabricate line numbers.
+        assert all(v["line"] is None for v in vs)
+        assert all(v["severity"] == "warning" for v in vs)
+
+    def test_fenced_code_block_reference_counts(self, tmp_path):
+        """scripts/analyze.py is only invoked inside a fenced code block."""
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        r = run_lint(repo)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "log-analyzer/scripts/analyze.py" not in flagged
+
+    def test_transitive_reference_counts(self, tmp_path):
+        """SKILL.md links references/guide.md, which mentions release-weeks.md."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/references/release-weeks.md" not in flagged
+
+    def test_directory_mention_covers_contents(self, tmp_path):
+        """assets/theme.css is only covered by the `assets/` directory mention."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        assert self.RULE not in rule_ids(r)
+
+    def test_directory_mention_covers_disabled(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
+        )
+        r = run_lint(repo, config=config)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert flagged == {"report-builder/assets/theme.css"}
+
+    def test_file_read_by_referenced_script_counts(self, tmp_path):
+        """assets/shell.html is read by scripts/build.py, which SKILL.md invokes.
+
+        Even with directory mentions disabled, the SKILL.md -> build.py ->
+        shell.html chain keeps the template referenced (regression for the
+        script-as-reference-source semantics).
+        """
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
+        )
+        r = run_lint(repo, config=config)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/assets/shell.html" not in flagged
+
+    def test_default_exclusions_never_flagged(self, tmp_path):
+        """README.md, LICENSE, evals/, tests/, and dotfiles are exempt by default."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        skill = repo / "report-builder"
+        assert (skill / "README.md").is_file()
+        assert (skill / "LICENSE").is_file()
+        assert (skill / "evals" / "evals.json").is_file()
+        assert (skill / "tests" / "evals.json").is_file()
+        assert (skill / "assets" / ".gitkeep").is_file()
+        r = run_lint(repo)
+        assert self.RULE not in rule_ids(r)
+
+    def test_exclude_glob_suppresses_violation(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n"
+            "  agentskill-unreferenced-files:\n"
+            "    exclude:\n"
+            '      - "scripts/upload.py"\n'
+            '      - "references/*.md"\n'
+        )
+        r = run_lint(repo, config=config)
+        assert self.RULE not in rule_ids(r)
+
+    def test_fully_referenced_skill_passes(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE not in rule_ids(r)
 
 
 # ── File Path Argument ──────────────────────────────────────────
@@ -1228,6 +1345,7 @@ BROKEN_FIXTURES = [
     "single-plugin/context-budget",
     "marketplace/broken",
     "agentskills/broken",
+    "agentskills/unreferenced-broken",
     "dot-claude/broken",
     "dot-claude/agents-imports-broken",
     "coderabbit/broken",
@@ -1241,6 +1359,7 @@ CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
     "agentskills/clean",
+    "agentskills/unreferenced-clean",
     "dot-claude/clean",
     "dot-claude/agents-imports-clean",
     "coderabbit/clean",
@@ -1386,6 +1505,82 @@ class TestRequiredFieldsConfig:
             or "Missing required metadata key" in v["message"]
         ]
         assert len(vs) == 0, f"Should have no required-field violations without config: {vs}"
+
+
+@pytest.mark.integration
+class TestDescriptionMaxLengthConfig:
+    """End-to-end tests for the configurable agentskill-description max_length.
+
+    The fixture contains four skills: deploy-staging (343-char
+    description), release-notes (exactly 256 chars), incident-handoff
+    (folded multiline description, 303 chars parsed), and
+    incident-investigator (1334 chars — above the spec's 1024 default).
+    Its .skillsaw.yaml sets max_length: 256; .skillsaw-relaxed.yaml
+    sets max_length: 2000.
+    """
+
+    FIXTURE = "config/description-max-length"
+
+    def _rule_violations(self, r):
+        return [v for v in violations(r) if v["rule_id"] == "agentskill-description"]
+
+    def test_default_behavior_unchanged(self, tmp_path):
+        """Without config only the spec's 1024 limit fires, with the
+        original message — a 343-char description passes."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        (repo / ".skillsaw-relaxed.yaml").unlink()
+        r = run_lint(repo)
+        vs = self._rule_violations(r)
+        assert len(vs) == 1
+        assert "incident-investigator" in vs[0]["file_path"]
+        assert vs[0]["message"] == "Description exceeds 1024 characters (1334)"
+
+    def test_configured_max_length_fires(self, tmp_path):
+        """max_length: 256 makes a 343-char description warn with the
+        actual length, the configured limit, and the key's line."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "deploy-staging" in v["file_path"]]
+        assert len(vs) == 1
+        assert "343" in vs[0]["message"]
+        assert "256" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert vs[0]["line"] == 3  # the description key line
+
+    def test_exactly_at_max_length_passes(self, tmp_path):
+        """Boundary: a description of exactly 256 characters does not fire."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "release-notes" in v["file_path"]]
+        assert vs == []
+
+    def test_folded_multiline_description(self, tmp_path):
+        """Folded YAML descriptions are measured on the parsed string value."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "incident-handoff" in v["file_path"]]
+        assert len(vs) == 1
+        assert "303" in vs[0]["message"]
+        # Line number points at the description key, not the folded lines
+        assert vs[0]["line"] == 3
+
+    def test_max_length_above_spec_limit_honored(self, tmp_path):
+        """max_length: 2000 lets a 1334-char description pass — the
+        configured value wins over the spec's 1024 default."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw-relaxed.yaml")
+        assert self._rule_violations(r) == []
+
+    def test_single_violation_per_description(self, tmp_path):
+        """A description over both the configured and spec limits still
+        produces exactly one agentskill-description violation."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "incident-investigator" in v["file_path"]]
+        assert len(vs) == 1
+        assert "1334" in vs[0]["message"]
+        assert "256" in vs[0]["message"]
 
 
 class TestUnlinkedInternalReferenceAutofix:
@@ -1618,6 +1813,85 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
 
 
 @pytest.mark.integration
+class TestEncodingPreservingAutofix:
+    """Autofix must not rewrite a file's byte shape (issue #315).
+
+    Files are built programmatically with byte-exact CRLF / BOM content
+    rather than committed as fixtures, since git line-ending normalization
+    would defeat the point of the test.
+    """
+
+    def test_crlf_file_keeps_crlf_after_fix(self, tmp_path):
+        repo = tmp_path / "crlf"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "docs").mkdir()
+        (repo / "scripts" / "build.sh").touch()
+        (repo / "docs" / "setup.md").touch()
+        target = repo / "CLAUDE.md"
+        target.write_bytes(
+            b"Run the script at scripts/build.sh to compile.\r\n"
+            b"Also see docs/setup.md for details.\r\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        # The fix fired (paths are now wrapped in link syntax) ...
+        assert b"[scripts/build.sh](scripts/build.sh)" in raw
+        # ... but every line ending is still CRLF and none were dropped.
+        assert raw.count(b"\r\n") == 2
+        assert raw.count(b"\r") == raw.count(b"\r\n")
+        assert b"\n\n" not in raw.replace(b"\r\n", b"")
+
+    def test_crlf_fix_is_idempotent(self, tmp_path):
+        repo = tmp_path / "crlf-idem"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts" / "build.sh").touch()
+        target = repo / "CLAUDE.md"
+        target.write_bytes(b"See scripts/build.sh here.\r\n")
+
+        _run_fix(repo)
+        first = target.read_bytes()
+        _run_fix(repo)
+        second = target.read_bytes()
+        assert first == second
+        assert b"\r\n" in first
+
+    def test_bom_skill_not_flagged_missing_frontmatter(self, tmp_path):
+        repo = tmp_path / "bom"
+        skill_dir = repo / ".claude" / "skills" / "foo"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(
+            b"\xef\xbb\xbf---\nname: foo\n" b"description: valid skill for bom test\n---\nbody\n"
+        )
+        r = run_lint(repo, "--rule", "agentskill-valid")
+        assert r["rc"] == 0
+        assert "agentskill-valid" not in rule_ids(r)
+
+    def test_bom_missing_name_fix_preserves_bom_and_converges(self, tmp_path):
+        repo = tmp_path / "bom-fix"
+        skill_dir = repo / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / "SKILL.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf---\ndescription: a skill missing its name field"
+            b" for testing purposes\n---\nbody\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")  # BOM preserved
+        assert b"name: my-skill" in raw
+        # Exactly one frontmatter block (no duplicate injection).
+        assert raw.count(b"---\n") == 2
+        # Converges: re-lint is clean for the rule.
+        r = run_lint(repo, "--rule", "agentskill-valid")
+        assert r["rc"] == 0
+        assert "agentskill-valid" not in rule_ids(r)
+
+
+@pytest.mark.integration
 class TestSafeAutofixIdempotency:
     """Comprehensive idempotency and correctness suite for all SAFE autofixes.
 
@@ -1636,9 +1910,9 @@ class TestSafeAutofixIdempotency:
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
         "agentskill-name": 3,
-        "agentskill-valid": 2,
+        "agentskill-valid": 4,
         "command-frontmatter": 3,
-        "content-unlinked-internal-reference": 22,
+        "content-unlinked-internal-reference": 23,
         "skill-frontmatter": 2,
     }
 

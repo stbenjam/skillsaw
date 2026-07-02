@@ -104,3 +104,19 @@ markdown structure.
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.
+
+## Autofix invariants
+
+- **No negative lookarounds around backtrackable quantifiers** in patterns
+  that feed autofixes. A trailing `(?!\))` after `\.\w{1,10}` doesn't reject
+  the match — the engine backtracks into a *truncated* match and the fix
+  splices a corrupted span (issue #321). Match greedily, then reject by
+  inspecting the characters adjacent to the full match in code.
+- **Fixes that add a frontmatter field must guard against the key already
+  existing** — `check()` may report "missing" for an empty/null value while
+  the `key:` line is still present. Use `replace_frontmatter_field()` first
+  and fall back to `prepend_frontmatter_fields()`, or the fix prepends a
+  duplicate key on every run and never converges (issue #321).
+- New SAFE-autofix edge cases belong in the `tests/fixtures/autofix/safe-idempotency`
+  fixture so `TestSafeAutofixIdempotency` guards them; update
+  `EXPECTED_SAFE_VIOLATIONS` when the fixture grows.
