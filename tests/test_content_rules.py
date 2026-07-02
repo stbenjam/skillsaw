@@ -630,7 +630,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 0
 
     def test_reports_line_number(self, temp_dir):
-        content = "Line 1\nLine 2\nPassword: password='supersecretpassword123'\nLine 4\n"
+        content = "Line 1\nLine 2\nPassword: password='xK9$mQ2vLp8#nR4zW7@j'\nLine 4\n"
         (temp_dir / "CLAUDE.md").write_text(content)
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
@@ -703,6 +703,189 @@ class TestContentEmbeddedSecretsRule:
     def test_no_false_positive_on_short_placeholder(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "Use sk-YOUR_KEY as the token.\n" "Set password = 'short'\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'password="hunter2placeholder"',
+            "password = 'your-password-here'",
+            'password: "aaaaaaaaaaaaaaaa"',
+            'password = "dummy-value-123"',
+            'api_key = "<your-api-key-goes-here>"',
+            'api_key = "${MY_API_KEY_FROM_ENV}"',
+            'api_key = "EXAMPLE_KEY_1234567890"',
+            'api_key = "abababababababab"',
+            'secret_key = "{{ secrets.PRODUCTION_KEY }}"',
+            'access_token = "insert-real-value-here"',
+            'password = "$DB_PASSWORD"',
+            'password = "helloworld"',
+            # "password"/"token" inside the value: gitleaks-stopword parity;
+            # these exact shapes appear as placeholders in real skill repos
+            # (auth0/agent-skills) and pass the entropy gate.
+            'password = "securePassword123"',
+            'access_token = "my-oauth-token-12345"',
+        ],
+        ids=[
+            "hunter2",
+            "your-word",
+            "all-same-char",
+            "dummy-word",
+            "angle-bracket-template",
+            "shell-template-var",
+            "example-word",
+            "low-entropy",
+            "jinja-template",
+            "insert-word",
+            "bare-env-var",
+            "english-short",
+            "password-word-realworld",
+            "token-word",
+        ],
+    )
+    def test_no_false_positive_on_placeholder_values(self, temp_dir, line):
+        """Generic credential assignments with obvious placeholder or
+        low-entropy values are documentation examples, not leaks (issue #322)."""
+        (temp_dir / "CLAUDE.md").write_text(f"Configure it like this: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) == 0
+
+    @pytest.mark.parametrize(
+        "line,expected_desc",
+        [
+            ('password = "xK9$mQ2vLp8#nR4z"', "Hardcoded password"),
+            ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),
+            ('secret_key = "kJ8vQz3mN9pL2wXyRb5cDf7g"', "Hardcoded secret key"),
+        ],
+        ids=["random-password", "hex-api-key", "mixed-secret-key"],
+    )
+    def test_high_entropy_generic_values_still_fire(self, temp_dir, line, expected_desc):
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert expected_desc in violations[0].message
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            # Shannon per-char entropy of an n-char string is capped at
+            # log2(n) — a raw 3.5 threshold silently exempts every 8-11 char
+            # password.  Length normalization must keep these reportable.
+            'password = "k9x2m4qp"',
+            'password = "xK9#mQ2$vL"',
+            'password = "Tr0ub4dor&3"',
+            # $ followed by uppercase inside a random value is not an
+            # env-var reference and must not suppress the finding.
+            'password = "xK9$MQ2vLp8#nR4z"',
+            # Incidental <..> punctuation inside a random value is not an
+            # angle-bracket placeholder.
+            'password = "k<9x>Km2#pQzW4vT"',
+        ],
+        ids=[
+            "short-random-8",
+            "short-random-10",
+            "short-random-11",
+            "dollar-upper-inside",
+            "angle-punct-inside",
+        ],
+    )
+    def test_realistic_secrets_not_suppressed_by_gating(self, temp_dir, line):
+        """False-negative regressions: real-shaped secrets must fire despite
+        the placeholder/entropy gates."""
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert "Hardcoded password" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "line,expected_desc",
+        [
+            # "secret" and "passwd" are not in gitleaks/detect-secrets
+            # stoplists and plausibly occur inside real credential values —
+            # they must not act as placeholder markers.
+            ('api_key = "app-secret-x8K2mQ9zL4vN"', "Hardcoded API key"),
+            ('password = "xK2passwd9QmZ4vN"', "Hardcoded password"),
+        ],
+        ids=["secret-substring", "passwd-substring"],
+    )
+    def test_credential_noun_substrings_not_suppressed(self, temp_dir, line, expected_desc):
+        """False-negative regressions: high-entropy values containing
+        'secret'/'passwd' are real-secret-shaped, not placeholders."""
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert expected_desc in violations[0].message
+
+    def test_structured_tokens_not_entropy_gated(self, temp_dir):
+        """High-confidence token formats fire even for low-entropy bodies."""
+        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert "GitHub personal access token" in violations[0].message
+
+    def test_entropy_threshold_configurable(self, temp_dir):
+        # Distinct repo dirs: the utils read cache is keyed by path, so
+        # rewriting the same file within a test would read stale content.
+        repo_raise = temp_dir / "raise"
+        repo_lower = temp_dir / "lower"
+        repo_raise.mkdir()
+        repo_lower.mkdir()
+        (repo_raise / "CLAUDE.md").write_text(
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+        )
+        # Raising the threshold above the value's entropy suppresses it
+        rule = ContentEmbeddedSecretsRule({"entropy-threshold": 5.0})
+        assert rule.check(RepositoryContext(repo_raise)) == []
+        # Lowering it lets low-entropy values through
+        (repo_lower / "CLAUDE.md").write_text('Config: api_key = "abababababababab"\n')
+        rule = ContentEmbeddedSecretsRule({"entropy-threshold": 0.5})
+        assert len(rule.check(RepositoryContext(repo_lower))) == 1
+
+    def test_entropy_threshold_invalid_config_uses_default(self, temp_dir):
+        """An unparseable threshold falls back to the 3.5 default: values on
+        either side of the default must behave exactly as with no config
+        (marker-free values, so the entropy gate alone decides)."""
+        rule = ContentEmbeddedSecretsRule({"entropy-threshold": "nonsense"})
+        # Distinct repo dirs: the utils read cache is keyed by path, so
+        # rewriting the same file within a test would read stale content.
+        repo_low = temp_dir / "low"
+        repo_high = temp_dir / "high"
+        repo_low.mkdir()
+        repo_high.mkdir()
+        # Below the default threshold (1.0 bits/char): suppressed.
+        (repo_low / "CLAUDE.md").write_text('Config: api_key = "abababababababab"\n')
+        assert rule.check(RepositoryContext(repo_low)) == []
+        # Above it (hex, ~4.0 bits/char): still fires.
+        (repo_high / "CLAUDE.md").write_text(
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+        )
+        assert len(rule.check(RepositoryContext(repo_high))) == 1
+
+    def test_additional_placeholders_configurable(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text('Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n')
+        context = RepositoryContext(temp_dir)
+        # Fires by default (high entropy, no builtin placeholder marker)
+        assert len(ContentEmbeddedSecretsRule().check(context)) == 1
+        # Suppressed once the marker is allowlisted
+        rule = ContentEmbeddedSecretsRule({"additional-placeholders": ["staging-key"]})
+        assert rule.check(context) == []
+
+    def test_no_false_positive_on_placeholder_in_frontmatter(self, temp_dir):
+        skill = temp_dir / "skills" / "demo"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            'description: Set password = "your-password-here" before running\n'
+            "---\n\n# Demo\n\nA demo skill.\n"
         )
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)

@@ -25,3 +25,15 @@ Use the following API key for the staging environment:
 ANTHROPIC_API_KEY=sk-ant-api03-reallyLongFakeKeyThatLooksLikeARealOne1234567890abcdefghijklmnop
 
 Always use this key when running integration tests against staging.
+
+## Configuration examples
+
+These are documentation placeholders and must not be flagged as secrets:
+
+```bash
+export DB_PASSWORD="your-password-here"
+api_key = "${STAGING_API_KEY}"
+secret_key = "{{ secrets.PRODUCTION_KEY }}"
+password = "hunter2placeholder"
+access_token = "<paste-access-token-here>"
+```
