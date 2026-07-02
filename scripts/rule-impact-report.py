@@ -46,15 +46,24 @@ def repo_label(stem, link=True):
 
 
 def violation_keys(data):
+    # message is part of the identity: two whole-file violations from the
+    # same rule on the same file (both line=None) must not collapse.
     return {
-        (v.get("rule_id", "?"), v.get("file_path", "?"), v.get("line"))
+        (v.get("rule_id", "?"), v.get("file_path", "?"), v.get("line"), v.get("message", "?"))
         for v in data.get("violations", [])
     }
 
 
+def _sample_order(key):
+    # line can be None (whole-file violations) or an int — never compare
+    # them directly: sort None first within a (rule, file) group.
+    rule_id, file_path, line, message = key
+    return (rule_id, file_path, line is not None, line or 0, message)
+
+
 def format_sample(keys):
     lines = []
-    for rule_id, file_path, line in sorted(keys)[:SAMPLE_LIMIT]:
+    for rule_id, file_path, line, _message in sorted(keys, key=_sample_order)[:SAMPLE_LIMIT]:
         location = f"{file_path}:{line}" if line else file_path
         lines.append(f"- `{rule_id}` — {location}")
     if len(keys) > SAMPLE_LIMIT:
@@ -64,7 +73,7 @@ def format_sample(keys):
 
 def rule_counts(keys):
     counts = {}
-    for rule_id, _, _ in keys:
+    for rule_id, *_ in keys:
         counts[rule_id] = counts.get(rule_id, 0) + 1
     return counts
 
