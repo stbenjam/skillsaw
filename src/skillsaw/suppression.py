@@ -173,6 +173,47 @@ def _fence_line_set(doc) -> Set[int]:
     return code_lines
 
 
+def _frontmatter_last_line(content: str) -> int:
+    """1-based line number of the closing ``---`` of a leading frontmatter block.
+
+    Returns 0 when *content* has no parseable frontmatter.  Used to keep
+    ``#`` comment directives inside YAML frontmatter live even though
+    markdown-it (which is unaware of frontmatter) parses those ``#`` lines as
+    ATX headings.
+    """
+    from skillsaw.utils import _FRONTMATTER_RE
+
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return 0
+    matched = m.group(0)
+    if matched.endswith("\n"):
+        return matched.count("\n")
+    return matched.count("\n") + 1
+
+
+def _heading_line_set(doc, content: str) -> Set[int]:
+    """1-based body line numbers occupied by ATX/setext heading constructs.
+
+    An ATX heading (``# skillsaw-disable``) starts with ``#`` and would
+    otherwise be misread by the YAML ``#``-comment scanner as a live
+    suppress-all directive.  Excluding heading lines keeps a docs page *about*
+    skillsaw — whose H1 might literally be ``# skillsaw-disable`` — from
+    silently switching off linting for everything below it.
+
+    Lines inside a leading YAML frontmatter block are *not* excluded: a ``#``
+    comment there is a real directive, even though markdown-it parses it as a
+    heading.
+    """
+    fm_last = _frontmatter_last_line(content)
+    heading_lines: Set[int] = set()
+    for heading in doc.headings():
+        for line in range(heading.body_line, heading.body_line_end):
+            if line > fm_last:
+                heading_lines.add(line)
+    return heading_lines
+
+
 def _extract_directives(content: str, *, markdown: bool = True) -> List[_Directive]:
     """Extract all skillsaw directives from *content*.
 
@@ -195,7 +236,9 @@ def _extract_directives(content: str, *, markdown: bool = True) -> List[_Directi
             )
             if directive is not None:
                 html.append(directive)
-        yaml = _extract_yaml_directives(content, skip_lines=_fence_line_set(doc))
+        skip = _fence_line_set(doc)
+        skip |= _heading_line_set(doc, content)
+        yaml = _extract_yaml_directives(content, skip_lines=skip)
     else:
         html = _extract_html_directives(content)
         yaml = _extract_yaml_directives(content)

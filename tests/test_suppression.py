@@ -339,6 +339,12 @@ class TestBuildSuppressionMap:
         assert not smap.is_suppressed("content-tautological", 8)
 
     # -- YAML hash-comment directives ----------------------------------------
+    #
+    # ``#`` directives are a YAML-file feature (``markdown=False``); in
+    # markdown a line-leading ``#`` is a heading, not a comment, so these
+    # tests use the same flag that ``build_suppression_map_for_file`` picks
+    # for a real ``.yaml`` file.  See ``TestDirectivesInCodeAndProse`` for the
+    # markdown-mode behaviour (issue #319).
 
     def test_yaml_disable_enable_pair(self):
         content = (
@@ -348,7 +354,7 @@ class TestBuildSuppressionMap:
             "# skillsaw-enable promptfoo-valid\n"
             "prompts:\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 3)
         assert not smap.is_suppressed("promptfoo-valid", 5)
         assert not smap.is_suppressed("other-rule", 3)
@@ -360,7 +366,7 @@ class TestBuildSuppressionMap:
             "tests: 42\n"
             "scenarios: also-bad\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 3)
         assert not smap.is_suppressed("promptfoo-valid", 4)
 
@@ -369,14 +375,14 @@ class TestBuildSuppressionMap:
         content = (
             "providers:\n" "# skillsaw-disable-next-line\n" "tests: 42\n" "scenarios: also-bad\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 3)
         assert smap.is_suppressed("any-other-rule", 3)
         assert not smap.is_suppressed("promptfoo-valid", 4)
 
     def test_yaml_disable_all(self):
         content = "# skillsaw-disable\n" "tests: 42\n" "# skillsaw-enable\n" "tests: 42\n"
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("any-rule", 2)
         assert not smap.is_suppressed("any-rule", 4)
 
@@ -387,13 +393,13 @@ class TestBuildSuppressionMap:
             "  tests: 42\n"
             "  tests: also-bad\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 3)
         assert not smap.is_suppressed("promptfoo-valid", 4)
 
     def test_yaml_inline_comment_not_matched(self):
         content = "tests: 42  # skillsaw-disable promptfoo-valid\n" "scenarios: bad\n"
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert not smap.is_suppressed("promptfoo-valid", 1)
         assert not smap.is_suppressed("promptfoo-valid", 2)
 
@@ -406,7 +412,7 @@ class TestBuildSuppressionMap:
             "tests: 42\n"
             "other: content\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("content-weak-language", 2)
         assert not smap.is_suppressed("content-weak-language", 5)
         assert smap.is_suppressed("promptfoo-valid", 5)
@@ -419,7 +425,7 @@ class TestBuildSuppressionMap:
             "# skillsaw-enable\n"
             "tests: ok\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 2)
         assert smap.is_suppressed("promptfoo-assertions", 2)
         assert not smap.is_suppressed("promptfoo-valid", 4)
@@ -429,7 +435,7 @@ class TestBuildSuppressionMap:
         content = (
             "providers:\n" "# skillsaw-disable promptfoo-valid\n" "tests: 42\n" "scenarios: bad\n"
         )
-        smap = build_suppression_map(content)
+        smap = build_suppression_map(content, markdown=False)
         assert smap.is_suppressed("promptfoo-valid", 3)
         assert smap.is_suppressed("promptfoo-valid", 4)
 
@@ -492,6 +498,41 @@ class TestDirectivesInCodeAndProse:
         content = "<!-- skillsaw-disable. -->\n" "Try to be careful\n"
         smap = build_suppression_map(content, markdown=True)
         assert not smap.is_suppressed("anything", 2)
+
+    def test_h1_heading_not_a_suppress_all_directive(self):
+        """A markdown H1 `# skillsaw-disable` must not disable rules (issue #319)."""
+        content = "# skillsaw-disable\n\nYou should probably try to do the thing.\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("content-weak-language", 3)
+        assert not smap.is_suppressed("anything", 3)
+
+    def test_h1_heading_with_rule_id_not_a_directive(self):
+        """`# skillsaw-disable some-rule` as a heading must not disable that rule."""
+        content = "# skillsaw-disable some-rule\n\nTry to be careful.\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("some-rule", 3)
+
+    def test_deeper_heading_not_a_directive(self):
+        """An H2/H3 heading whose text is the directive is also inert."""
+        content = "# Title\n\n## skillsaw-disable\n\nTry to be careful.\n"
+        smap = build_suppression_map(content, markdown=True)
+        assert not smap.is_suppressed("content-weak-language", 5)
+
+    def test_frontmatter_hash_directive_still_honored(self):
+        """A `#` directive inside YAML frontmatter of a markdown file stays live.
+
+        markdown-it (unaware of frontmatter) parses the ``#`` line as a
+        heading, but heading exclusion must not reach into the frontmatter.
+        """
+        content = (
+            "---\n"
+            "# skillsaw-disable content-weak-language\n"
+            "title: foo\n"
+            "---\n\n"
+            "Try to be careful.\n"
+        )
+        smap = build_suppression_map(content, markdown=True)
+        assert smap.is_suppressed("content-weak-language", 6)
 
     def test_next_line_with_trailing_colon_not_a_directive(self):
         content = "<!-- skillsaw-disable-next-line: -->\n" "Try to be careful\n"
