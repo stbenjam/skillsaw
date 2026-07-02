@@ -12,9 +12,11 @@ from typing import Dict, List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    AgentBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
+    SkillBlock,
 )
 
 _INTERPRETERS = r"(?:node|bun|deno|python[23]?|ruby|perl|php|bash|sh|zsh|dash)"
@@ -123,6 +125,7 @@ class HooksDangerousRule(Rule):
         self,
         events: Dict[str, List[HookEventConfig]],
         file_path,
+        line=None,
     ) -> List[RuleViolation]:
         violations = []
         for event_type, configs in events.items():
@@ -130,13 +133,19 @@ class HooksDangerousRule(Rule):
                 for handler in cfg.handlers:
                     if handler.type != "command" or not handler.command:
                         continue
-                    if self._is_allowed(handler.command):
+                    # Exec-form hooks split the invocation across command +
+                    # args; scan the joined form so patterns can't hide in args.
+                    command = handler.command
+                    if isinstance(handler.args, list):
+                        command = " ".join([command, *(str(a) for a in handler.args)])
+                    if self._is_allowed(handler.command) or self._is_allowed(command):
                         continue
-                    for message in _check_dangerous(handler.command):
+                    for message in _check_dangerous(command):
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: {message} — " f"command: {handler.command!r}",
+                                f"Hook {event_type}: {message} — " f"command: {command!r}",
                                 file_path=file_path,
+                                line=line,
                             )
                         )
         return violations
@@ -153,5 +162,16 @@ class HooksDangerousRule(Rule):
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.hooks_events, block.path))
+
+        # Skill and agent frontmatter can declare hooks with the same schema —
+        # a checked-in, shareable command-execution vector.
+        for block in context.lint_tree.find(SkillBlock) + context.lint_tree.find(AgentBlock):
+            if block.frontmatter_error:
+                continue
+            events = block.hooks_events
+            if events:
+                violations.extend(
+                    self._check_events(events, block.path, line=block.key_line("hooks"))
+                )
 
         return violations

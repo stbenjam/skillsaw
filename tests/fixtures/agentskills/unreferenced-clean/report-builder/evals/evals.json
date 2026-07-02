@@ -1,0 +1,13 @@
+{
+  "skill_name": "report-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build a weekly status report for this repository",
+      "assertions": [
+        "Runs scripts/build.py to collect git history",
+        "Applies the formatting rules from references/guide.md"
+      ]
+    }
+  ]
+}

@@ -140,11 +140,52 @@ def invalidate_read_caches(file_path: Optional[Path] = None):
 
 @_file_cache.cached
 def read_text(file_path: Path) -> Optional[str]:
-    """Cached file read. Returns None on I/O or encoding errors."""
+    """Cached file read. Returns None on I/O or encoding errors.
+
+    Uses ``utf-8-sig`` so a leading UTF-8 BOM is stripped from the returned
+    text — otherwise the stray ``\\ufeff`` prevents ``^---`` frontmatter
+    detection and every ``startswith("---")`` check.  Newlines are left in
+    universal-newline form (CRLF collapses to ``\\n`` in the returned text);
+    the original line-ending style is restored at write time by
+    :func:`write_text_preserving`.
+    """
     try:
-        return file_path.read_text(encoding="utf-8")
+        return file_path.read_text(encoding="utf-8-sig")
     except (IOError, UnicodeDecodeError):
         return None
+
+
+def write_text_preserving(file_path: Path, content: str) -> None:
+    """Write *content*, restoring the file's original BOM and line endings.
+
+    ``read_text`` normalizes a file to BOM-free, ``\\n``-delimited text for
+    analysis, so ``content`` (spliced from that normalized text) is always
+    LF and BOM-free.  A naive ``write_text`` would therefore silently rewrite
+    a CRLF file to LF and drop a UTF-8 BOM on every autofix.  This reads the
+    on-disk bytes *before* overwriting, detects the original BOM and dominant
+    line ending, and re-applies them so an autofix only changes the span it
+    meant to.
+    """
+    try:
+        original = file_path.read_bytes()
+    except OSError:
+        original = b""
+
+    has_bom = original.startswith(b"\xef\xbb\xbf")
+    sample = original[3:] if has_bom else original
+    uses_crlf = b"\r\n" in sample
+
+    # Normalize whatever the caller produced back to BOM-free LF first, so
+    # re-applying the original shape is idempotent even when a fix path read
+    # the file with plain utf-8 (leaving a BOM) or newline="" (leaving CRLF).
+    normalized = content.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    if uses_crlf:
+        normalized = normalized.replace("\n", "\r\n")
+
+    data = normalized.encode("utf-8")
+    if has_bom:
+        data = b"\xef\xbb\xbf" + data
+    file_path.write_bytes(data)
 
 
 @_file_cache.cached
@@ -309,6 +350,25 @@ def prepend_frontmatter_fields(content: str, additions: List[str]) -> Optional[s
     newline = _frontmatter_newline(m.group(0))
     insert = "".join(line + newline for line in additions)
     return content[: m.start(1)] + insert + content[m.start(1) :]
+
+
+def replace_frontmatter_field(content: str, key: str, replacement_line: str) -> Optional[str]:
+    """Replace an existing top-level ``key:`` line inside the frontmatter.
+
+    Returns the new content, or ``None`` when *content* has no parseable
+    frontmatter block or no top-level ``key:`` line to replace.  Only the
+    first occurrence is replaced, and the line ending is preserved.
+    """
+    m = _FRONTMATTER_RE.match(content)
+    if not m:
+        return None
+    key_re = re.compile(rf"^{re.escape(key)}[ \t]*:[^\r\n]*", re.MULTILINE)
+    km = key_re.search(m.group(1))
+    if km is None:
+        return None
+    start = m.start(1) + km.start()
+    end = m.start(1) + km.end()
+    return content[:start] + replacement_line + content[end:]
 
 
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:

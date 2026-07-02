@@ -14,6 +14,7 @@ rules:
   agentskill-description:
     enabled: auto
     severity: warning
+    # max_length: 1024
 
   # Validate evals/evals.json format when present
   agentskill-evals:
@@ -45,6 +46,13 @@ rules:
     #   - evals
     #   - references
     #   - scripts
+
+  # Every bundled skill file should be referenced from SKILL.md, directly or transitively
+  agentskill-unreferenced-files:
+    enabled: auto
+    severity: warning
+    # directory_mention_covers: true
+    # exclude: []
 
   # SKILL.md must have valid frontmatter with name and description
   agentskill-valid:
