@@ -11,6 +11,7 @@ from skillsaw.markdown_doc import MarkdownCodeSpan, MarkdownDoc, file_span, spli
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
+from skillsaw.utils import read_text
 
 _IMPORT_LINE_RE = re.compile(r"^\s*@\S")
 
@@ -33,14 +34,18 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     }
 
     # Match path-like strings: contain / and a file extension, or start with ./
+    # No paren lookarounds here: a failing `(?!\))` makes the engine backtrack
+    # into a truncated match (`scripts/test.pyc)` -> `scripts/test.py`) and a
+    # failing `(?<!\()` makes it retry one char in (`(docs/guide.md` ->
+    # `ocs/guide.md`). Paren adjacency is checked on the full greedy match in
+    # _candidates instead. The ./ branch must not swallow a sentence-ending
+    # period, so its final character excludes `.`.
     _PATH_LIKE_RE = re.compile(
-        r"(?<!\()"  # not preceded by ( (would be inside link syntax)
         r"(?:"
-        r"\./[\w./_-]+"  # starts with ./
+        r"\./[\w./_-]*[\w/_-]"  # starts with ./
         r"|"
         r"[\w._-]+(?:/[\w._-]+)+\.[\w]{1,10}"  # contains / and has extension
         r")"
-        r"(?!\))"  # not followed by ) (would be inside link syntax)
     )
 
     # Detect URLs so we can skip path-like fragments inside them
@@ -93,6 +98,11 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 continue
             for match in self._PATH_LIKE_RE.finditer(seg.text):
                 path_str = match.group(0)
+                # Skip paths abutting parens (link syntax / parentheticals).
+                if match.start() > 0 and seg.text[match.start() - 1] == "(":
+                    continue
+                if match.end() < len(seg.text) and seg.text[match.end()] == ")":
+                    continue
                 if self._is_inside_url(seg.text, match.start(), match.end()):
                     continue
                 if not any(PurePath(path_str).match(p) for p in patterns):
@@ -145,9 +155,12 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
         results: List[AutofixResult] = []
         for fpath, replacements in fixes_by_file.items():
-            try:
-                content = fpath.read_text(encoding="utf-8")
-            except OSError:
+            # Read through utils.read_text so the splice source matches the
+            # coordinate system of the MarkdownDoc used to locate spans: both
+            # are BOM-stripped and LF-normalized.  The file's original BOM and
+            # line endings are restored when the fix is written.
+            content = read_text(fpath)
+            if content is None:
                 continue
             edits = []
             violations_fixed = []

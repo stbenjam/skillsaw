@@ -56,6 +56,7 @@ from .json_config import (
     McpServerConfig,
     SettingsBlock,
     _parse_json_file,
+    parse_hooks_events,
 )
 from .coderabbit import (
     CodeRabbitContentBlock,
@@ -111,6 +112,7 @@ __all__ = [
     "McpBlock",
     "SettingsBlock",
     "_parse_json_file",
+    "parse_hooks_events",
     # coderabbit
     "CodeRabbitContentBlock",
     "_CODERABBIT_FILENAME",

@@ -36,7 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
     "mkdocs-material>=9.0",
-    "mkdocs-redirects>=1.2",
+    "mkdocs-redirects>=1.2,<1.2.3",
 ]
 dev = [
     "pytest>=7.0",
@@ -44,6 +44,7 @@ dev = [
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
+    "skillsaw-typos==0.1.0",
 ]
 
 [project.urls]

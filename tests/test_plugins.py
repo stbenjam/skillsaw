@@ -439,3 +439,301 @@ def test_config_plugins_unknown_subkey_warns(tmp_path):
     cfg.write_text('version: "1.0"\nplugins:\n  bogus: true\n', encoding="utf-8")
     config = LinterConfig.from_file(cfg)
     assert any("plugins" in w and "bogus" in w for w in config.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Extension points: repo types and tree contributors
+# ---------------------------------------------------------------------------
+
+from skillsaw.blocks import FileContentBlock  # noqa: E402
+from skillsaw.plugins import PluginRepoType  # noqa: E402
+
+
+def acme_repo_type(**overrides):
+    kwargs = dict(
+        name="acme",
+        description="ACME assistant repository",
+        detect=lambda root: (root / "ACME.md").exists(),
+        content_paths=["ACME.md"],
+    )
+    kwargs.update(overrides)
+    return PluginRepoType(**kwargs)
+
+
+@pytest.fixture
+def acme_repo(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text(
+        "# Project\n\nRun `make test` before pushing changes.\n", encoding="utf-8"
+    )
+    (tmp_path / "ACME.md").write_text(
+        "# ACME instructions\n\nRun `make build` before deploying.\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_repo_type_declared_and_detected(fake_plugin, acme_repo):
+    fake_plugin(
+        "fake_rt",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_REPO_TYPES": [acme_repo_type()]},
+    )
+    linter, violations = _lint(acme_repo)
+    assert "acme" in linter.context.plugin_repo_types
+    assert "acme" in linter.context.repo_type_names()
+    assert "plugin-load-error" not in {v.rule_id for v in violations}
+
+
+def test_repo_type_not_detected_without_marker(fake_plugin, repo):
+    fake_plugin(
+        "fake_rt_nomark",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_REPO_TYPES": [acme_repo_type()]},
+    )
+    linter, _ = _lint(repo)
+    assert "acme" not in linter.context.plugin_repo_types
+
+
+def test_repo_type_content_paths_pull_files_into_tree(fake_plugin, acme_repo):
+    fake_plugin(
+        "fake_rt_content",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_REPO_TYPES": [acme_repo_type()]},
+    )
+    linter, _ = _lint(acme_repo)
+    tree_paths = {node.path.name for node in linter.context.lint_tree.walk()}
+    assert "ACME.md" in tree_paths
+
+
+def test_rule_scoped_to_plugin_repo_type(fake_plugin, acme_repo, tmp_path_factory):
+    class AcmeOnlyRule(AlwaysFiresRule):
+        repo_types = {"acme"}
+
+        @property
+        def rule_id(self) -> str:
+            return "plugin-acme-only"
+
+    fake_plugin(
+        "fake_rt_scoped",
+        module_attrs={
+            "SKILLSAW_RULES": [AcmeOnlyRule],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type()],
+        },
+    )
+    linter, _ = _lint(acme_repo)
+    assert "plugin-acme-only" in {r.rule_id for r in linter.rules}
+
+    plain = tmp_path_factory.mktemp("plain-repo")  # no ACME.md marker
+    (plain / "CLAUDE.md").write_text(
+        "# Project\n\nRun `make test` before pushing changes.\n", encoding="utf-8"
+    )
+    linter, _ = _lint(plain)
+    assert "plugin-acme-only" not in {r.rule_id for r in linter.rules}
+
+
+def test_repo_type_colliding_with_builtin_is_skipped(fake_plugin, acme_repo):
+    fake_plugin(
+        "fake_rt_builtin",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type(name="apm", detect=lambda root: True)],
+        },
+    )
+    linter, violations = _lint(acme_repo)
+    assert "apm" not in linter.context.plugin_repo_types
+    warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert warnings and "builtin repository type" in warnings[0].message
+
+
+def test_repo_type_duplicate_across_plugins_first_wins(fake_plugin, monkeypatch, acme_repo):
+    import types as types_mod
+    from importlib.metadata import EntryPoint
+
+    mod_b = types_mod.ModuleType("fake_rt_dup_b")
+    mod_b.SKILLSAW_RULES = []
+    mod_b.SKILLSAW_REPO_TYPES = [acme_repo_type(description="duplicate")]
+    monkeypatch.setitem(sys.modules, "fake_rt_dup_b", mod_b)
+    extra = EntryPoint("secondplug", "fake_rt_dup_b", plugins_mod.ENTRY_POINT_GROUP)
+
+    fake_plugin(
+        "fake_rt_dup_a",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_REPO_TYPES": [acme_repo_type()]},
+        extra_eps=[extra],
+    )
+    linter, violations = _lint(acme_repo)
+    assert "acme" in linter.context.plugin_repo_types
+    warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert warnings and "already provided by plugin 'testplug'" in warnings[0].message
+
+
+def test_detector_crash_is_isolated(fake_plugin, acme_repo):
+    def boom(root):
+        raise RuntimeError("boom")
+
+    fake_plugin(
+        "fake_rt_crash",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type(detect=boom)],
+        },
+    )
+    linter, violations = _lint(acme_repo)
+    assert "acme" not in linter.context.plugin_repo_types
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "detector crashed" in errors[0].message
+    # Builtin rules still ran.
+    assert any(getattr(r, "_source", "") == "builtin" for r in linter.rules)
+
+
+def test_invalid_repo_type_declaration_fails_plugin(fake_plugin, acme_repo):
+    fake_plugin(
+        "fake_rt_invalid",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_REPO_TYPES": "nope"},
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is not None
+    assert "SKILLSAW_REPO_TYPES" in plugin.error
+
+
+def test_invalid_repo_type_name_fails_plugin(fake_plugin):
+    fake_plugin(
+        "fake_rt_badname",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type(name="Not Kebab")],
+        },
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is not None
+    assert "kebab-case" in plugin.error
+
+
+def test_tree_contributor_adds_block(fake_plugin, acme_repo):
+    (acme_repo / "notes.txt").write_text("Deployment notes for the agent.\n", encoding="utf-8")
+
+    def contribute(context, root):
+        return [FileContentBlock(path=context.root_path / "notes.txt", category="acme-notes")]
+
+    fake_plugin(
+        "fake_contrib",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    tree_paths = {node.path.name for node in linter.context.lint_tree.walk()}
+    assert "notes.txt" in tree_paths
+    assert "plugin-load-error" not in {v.rule_id for v in violations}
+
+
+def test_tree_contributor_cannot_duplicate_existing_nodes(fake_plugin, acme_repo):
+    def contribute(context, root):
+        # CLAUDE.md is already in the tree; the seen-set must reject this.
+        return [FileContentBlock(path=context.root_path / "CLAUDE.md", category="dup")]
+
+    fake_plugin(
+        "fake_contrib_dup",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, _ = _lint(acme_repo)
+    claude_nodes = [n for n in linter.context.lint_tree.walk() if n.path.name == "CLAUDE.md"]
+    assert len(claude_nodes) == 1
+
+
+def test_tree_contributor_crash_surfaces_violation(fake_plugin, acme_repo):
+    def contribute(context, root):
+        raise RuntimeError("kaboom")
+
+    fake_plugin(
+        "fake_contrib_crash",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "tree contributor failed" in errors[0].message
+    # The error is consumed: a second run must not duplicate it.
+    second = [v for v in linter.run() if v.rule_id == "plugin-load-error"]
+    assert second == []
+
+
+def test_tree_contributor_returning_non_node_surfaces_violation(fake_plugin, acme_repo):
+    def contribute(context, root):
+        return [42]
+
+    fake_plugin(
+        "fake_contrib_garbage",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "not a lint tree node" in errors[0].message
+
+
+def test_invalid_tree_contributors_declaration_fails_plugin(fake_plugin):
+    fake_plugin(
+        "fake_contrib_invalid",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [42]},
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is not None
+    assert "SKILLSAW_TREE_CONTRIBUTORS" in plugin.error
+
+
+def test_tree_contributor_with_broken_path_surfaces_violation(fake_plugin, acme_repo):
+    """A contributed node whose path is unusable is a reported failure, not a crash."""
+
+    def contribute(context, root):
+        return [FileContentBlock(path=None, category="broken")]
+
+    fake_plugin(
+        "fake_contrib_nopath",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "tree contributor failed" in errors[0].message
+
+
+def test_register_extensions_is_idempotent(fake_plugin, acme_repo):
+    """Two Linters sharing one context must not duplicate registrations."""
+
+    def contribute(context, root):
+        return []
+
+    fake_plugin(
+        "fake_reg_twice",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type()],
+            "SKILLSAW_TREE_CONTRIBUTORS": [contribute],
+        },
+    )
+    context = RepositoryContext(acme_repo)
+    Linter(context, LinterConfig.default())
+    Linter(context, LinterConfig.default())
+    assert len(context.plugin_tree_contributors) == 1
+    assert context.plugin_content_paths == ["ACME.md"]
+    # Plugin content paths survive the second Linter's config reset.
+    tree_paths = {node.path.name for node in context.lint_tree.walk()}
+    assert "ACME.md" in tree_paths
+
+
+def test_tree_contributor_subtree_is_validated_recursively(fake_plugin, acme_repo):
+    """Children of a contributed node get the same dedupe/exclude guards."""
+    (acme_repo / "notes.txt").write_text("Deployment notes.\n", encoding="utf-8")
+    (acme_repo / "child.txt").write_text("Child notes.\n", encoding="utf-8")
+
+    def contribute(context, root):
+        parent = FileContentBlock(path=context.root_path / "notes.txt", category="notes")
+        parent.children.append(
+            # Duplicate of a node already in the tree: must be pruned.
+            FileContentBlock(path=context.root_path / "CLAUDE.md", category="dup")
+        )
+        parent.children.append(
+            FileContentBlock(path=context.root_path / "child.txt", category="child")
+        )
+        return [parent]
+
+    fake_plugin(
+        "fake_contrib_subtree",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+    names = [node.path.name for node in linter.context.lint_tree.walk()]
+    assert names.count("CLAUDE.md") == 1
+    assert "notes.txt" in names and "child.txt" in names
+    assert "plugin-load-error" not in {v.rule_id for v in violations}

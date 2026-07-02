@@ -22,6 +22,7 @@ class HookHandler:
 
     type: str
     command: Optional[str] = None
+    args: Optional[List[str]] = None
     url: Optional[str] = None
     headers: Optional[Dict[str, Any]] = None
     server: Optional[str] = None
@@ -43,6 +44,7 @@ class HookHandler:
         return cls(
             type=d.get("type", ""),
             command=d.get("command"),
+            args=d.get("args"),
             url=d.get("url"),
             headers=d.get("headers"),
             server=d.get("server"),
@@ -80,6 +82,35 @@ class HookEventConfig:
             matcher=d.get("matcher", ".*"),
             handlers=handlers,
         )
+
+
+def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
+    """Parse a ``hooks`` object into event configs.
+
+    Supports both the nested (hooks.json / settings.json) format
+    ``{ EventType: [{ matcher, hooks: [{type, command}] }] }`` and the flat
+    settings shorthand ``{ EventType: [{ type, command, matcher? }] }``.  The
+    same schema is accepted in skill/agent frontmatter ``hooks:`` keys.
+    """
+    if not isinstance(hooks_obj, dict):
+        return {}
+    result: Dict[str, List[HookEventConfig]] = {}
+    for event_type, configs in hooks_obj.items():
+        if not isinstance(configs, list):
+            continue
+        entries: List[HookEventConfig] = []
+        for cfg in configs:
+            if not isinstance(cfg, dict):
+                continue
+            if "hooks" in cfg:
+                entries.append(HookEventConfig.from_dict(cfg))
+            elif "type" in cfg:
+                handler = HookHandler.from_dict(cfg)
+                matcher = cfg.get("matcher", ".*")
+                entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
+        if entries:
+            result[event_type] = entries
+    return result
 
 
 def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
@@ -166,6 +197,7 @@ class McpServerConfig:
     headers: Optional[Dict[str, Any]] = None
     headers_helper: Optional[str] = None
     startup_timeout: Optional[float] = None
+    timeout: Optional[float] = None
     always_load: Optional[bool] = None
     oauth: Optional[Dict[str, Any]] = None
 
@@ -182,6 +214,7 @@ class McpServerConfig:
             headers=d.get("headers"),
             headers_helper=d.get("headersHelper"),
             startup_timeout=d.get("startupTimeout"),
+            timeout=d.get("timeout"),
             always_load=d.get("alwaysLoad"),
             oauth=d.get("oauth"),
         )
@@ -228,23 +261,4 @@ class SettingsBlock(JsonConfigBlock):
         data = self.raw_data
         if data is None:
             return {}
-        hooks_obj = data.get("hooks", {})
-        if not isinstance(hooks_obj, dict):
-            return {}
-        result: Dict[str, List[HookEventConfig]] = {}
-        for event_type, configs in hooks_obj.items():
-            if not isinstance(configs, list):
-                continue
-            entries: List[HookEventConfig] = []
-            for cfg in configs:
-                if not isinstance(cfg, dict):
-                    continue
-                if "hooks" in cfg:
-                    entries.append(HookEventConfig.from_dict(cfg))
-                elif "type" in cfg:
-                    handler = HookHandler.from_dict(cfg)
-                    matcher = cfg.get("matcher", ".*")
-                    entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
-            if entries:
-                result[event_type] = entries
-        return result
+        return parse_hooks_events(data.get("hooks", {}))
