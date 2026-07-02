@@ -330,6 +330,12 @@ exclude:
   - "node_modules/**"
 ```
 
+Patterns match against the file path relative to the lint root using
+Python `fnmatch` syntax, where `*` also crosses `/`. A leading `**/`
+additionally matches at the root of the repository, so `**/templates/**`
+excludes both a top-level `templates/` directory and any nested
+`a/templates/`.
+
 By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
 `**/_template/**` directories. These defaults are replaced when you specify
 your own `exclude` list.

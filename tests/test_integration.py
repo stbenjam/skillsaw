@@ -1118,6 +1118,25 @@ class TestConfigFeatures:
         violated_files = {v["file_path"] for v in violations(r)}
         assert not any("generated.md" in f for f in violated_files)
 
+    def test_default_exclude_covers_top_level_templates(self, tmp_path):
+        """Default **/templates/** must exclude a templates/ dir at the repo
+        root, not just nested ones (issue #322)."""
+        repo = copy_fixture("config/default-exclude-templates", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        violated_files = {v["file_path"] for v in violations(r)}
+        assert not any("templates/" in f for f in violated_files)
+
+    def test_top_level_templates_linted_when_defaults_overridden(self, tmp_path):
+        """Sanity check: the fixture's templates/ skill does violate rules,
+        so the previous test's empty result is due to the default excludes."""
+        repo = copy_fixture("config/default-exclude-templates", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nexclude:\n  - "nonexistent/**"\n')
+        r = run_lint(repo)
+        assert r["out"] is not None
+        violated_files = {v["file_path"] for v in violations(r)}
+        assert any("templates/" in f for f in violated_files)
+
     def test_per_rule_exclude(self, tmp_path):
         """Per-rule exclude suppresses one file but not another."""
         repo = copy_fixture("config/per-rule-exclude", tmp_path)
