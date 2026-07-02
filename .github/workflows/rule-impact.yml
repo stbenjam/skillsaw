@@ -1,0 +1,125 @@
+name: Rule Impact
+
+# The integration job in test.yml lints real repos WITH their version pins in
+# place, exactly as their users would — so a PR that adds or modifies a rule
+# never exercises the change there until those repos bump their pin. This job
+# maps the PR's changed files to the builtin rules they affect, force-runs
+# exactly those rules (--rule bypasses version gating) against the real repos
+# with both the PR head and its merge base, and comments the difference on
+# the PR: reviewers see what real repos would experience from this PR's rule
+# changes, and nothing else.
+
+on:
+  pull_request:
+    paths:
+      - "src/skillsaw/rules/builtin/**"
+
+permissions:
+  contents: read
+
+jobs:
+  rule-impact:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PR head and merge base
+        run: |
+          python -m venv /tmp/head-venv
+          /tmp/head-venv/bin/pip install --quiet .
+
+          merge_base=$(git merge-base "origin/${BASE_REF}" HEAD)
+          echo "merge_base=$merge_base" >> "$GITHUB_ENV"
+          git worktree add /tmp/base-src "$merge_base"
+          python -m venv /tmp/base-venv
+          /tmp/base-venv/bin/pip install --quiet /tmp/base-src
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+
+      - name: Identify changed rules
+        id: changed
+        run: |
+          git diff --name-only "$merge_base" HEAD -- src/skillsaw/rules/builtin/ \
+            | /tmp/head-venv/bin/python scripts/changed-rules.py > /tmp/changed-rules.txt
+          echo "Changed rules:"
+          cat /tmp/changed-rules.txt
+          if [ -s /tmp/changed-rules.txt ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Lint real repos with the changed rules
+        if: ${{ steps.changed.outputs.any == 'true' }}
+        run: |
+          head_args=""
+          while read -r rule; do head_args="$head_args --rule $rule"; done < /tmp/changed-rules.txt
+
+          # The merge base may not know rules this PR introduces — --rule
+          # errors on unknown ids, so restrict the base run to ids it has.
+          /tmp/base-venv/bin/skillsaw list-rules | awk '/^  [a-z]/ {print $1}' > /tmp/base-known.txt
+          base_args=""
+          while read -r rule; do
+            grep -qx "$rule" /tmp/base-known.txt && base_args="$base_args --rule $rule"
+          done < /tmp/changed-rules.txt
+
+          mkdir -p /tmp/repos /tmp/out/base /tmp/out/head
+          for r in openshift-eng/ai-helpers auth0/agent-skills \
+                   opendatahub-io/agent-eval-harness kubernetes-sigs/maintainer-tools \
+                   RedHatProductSecurity/prodsec-skills; do
+            name=$(basename "$r")
+            git clone --quiet --depth 1 "https://github.com/$r.git" "/tmp/repos/$name"
+
+            # Findings exit 1 — only rc > 1 (crash) is fatal.
+            rc=0
+            /tmp/head-venv/bin/skillsaw lint --format json --no-custom-rules $head_args \
+              "/tmp/repos/$name" > "/tmp/out/head/$name.json" || rc=$?
+            [ "$rc" -le 1 ] || { echo "head skillsaw crashed on $name (rc=$rc)"; exit 1; }
+
+            if [ -n "$base_args" ]; then
+              rc=0
+              /tmp/base-venv/bin/skillsaw lint --format json --no-custom-rules $base_args \
+                "/tmp/repos/$name" > "/tmp/out/base/$name.json" || rc=$?
+              [ "$rc" -le 1 ] || { echo "base skillsaw crashed on $name (rc=$rc)"; exit 1; }
+            else
+              echo '{"violations": []}' > "/tmp/out/base/$name.json"
+            fi
+          done
+
+          /tmp/head-venv/bin/python scripts/rule-impact-report.py \
+            --base /tmp/out/base --head /tmp/out/head \
+            --rules "$(tr '\n' ' ' < /tmp/changed-rules.txt)" > /tmp/report.md
+          cat /tmp/report.md
+
+      - name: Comment on PR
+        if: ${{ steps.changed.outputs.any == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- rule-impact-report -->'
+          existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)
+          if [ -n "$existing" ]; then
+            # Keep an existing report current even when the delta drops to zero.
+            gh api --silent -X PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@/tmp/report.md
+          elif grep -q "No rule-impact differences" /tmp/report.md; then
+            echo "No impact and no prior report comment — nothing to post."
+          else
+            gh api --silent -X POST "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@/tmp/report.md
+          fi
