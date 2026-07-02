@@ -8,6 +8,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
+from skillsaw.rules.builtin.marketplace.json_valid import is_valid_plugin_root
 
 
 class MarketplaceRegistrationRule(Rule):
@@ -84,6 +85,19 @@ class MarketplaceRegistrationRule(Rule):
         if not isinstance(data["plugins"], list):
             return results
 
+        # metadata.pluginRoot is prepended to relative sources when Claude
+        # Code resolves them, so generated sources must be relative to it.
+        # Absolute or traversing pluginRoots are invalid (marketplace-json-valid
+        # flags them) and are ignored here. Resolve the base because
+        # plugin_node.path is fully resolved and relative_to() compares
+        # lexically.
+        source_base = context.root_path
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
+            plugin_root = metadata["pluginRoot"]
+            if is_valid_plugin_root(plugin_root):
+                source_base = (context.root_path / plugin_root).resolve()
+
         fixed_violations = []
         for v in violations:
             if "not registered" not in v.message:
@@ -98,10 +112,18 @@ class MarketplaceRegistrationRule(Rule):
             for plugin_node in context.lint_tree.find(PluginNode):
                 if context.get_plugin_name(plugin_node.path) == plugin_name:
                     try:
-                        rel_source = str(plugin_node.path.relative_to(context.root_path))
+                        rel_source = str(plugin_node.path.relative_to(source_base))
                     except ValueError:
-                        pass
+                        # The plugin lives outside metadata.pluginRoot. Spec
+                        # consumers resolve every relative source under
+                        # pluginRoot and '..' is forbidden in sources, so no
+                        # correct relative source exists — skip rather than
+                        # register an entry that resolves to the wrong
+                        # location.
+                        rel_source = None
                     break
+            if rel_source is None:
+                continue
             # Relative sources must start with ./ per the marketplace spec.
             data["plugins"].append({"name": plugin_name, "source": f"./{rel_source}"})
             fixed_violations.append(v)

@@ -1,0 +1,6 @@
+{
+  "name": "deploy-helper",
+  "description": "Deploy services to staging and production environments",
+  "version": "1.4.0",
+  "author": {"name": "Platform Team"}
+}

@@ -10,6 +10,7 @@ from pathlib import Path
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
+    path_matches_patterns,
     HAS_CURSOR,
     HAS_COPILOT,
     HAS_GEMINI,
@@ -205,6 +206,158 @@ def test_disallow_parent_traversal(temp_dir, caplog):
     assert len(context.plugins) == 0
 
     # Check that warning was logged
+    assert any("escapes repository root" in record.message for record in caplog.records)
+
+
+def test_plugin_root_prepended_to_relative_sources(temp_dir):
+    """metadata.pluginRoot is prepended to bare and ./-prefixed relative sources"""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./tools"},
+                "plugins": [
+                    {"name": "bare-plugin", "source": "bare-plugin"},
+                    {"name": "dotted-plugin", "source": "./dotted-plugin"},
+                ],
+            },
+            f,
+        )
+
+    for name in ("bare-plugin", "dotted-plugin"):
+        plugin_dir = temp_dir / "tools" / name / ".claude-plugin"
+        plugin_dir.mkdir(parents=True)
+        with open(plugin_dir / "plugin.json", "w") as f:
+            json.dump({"name": name, "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 2
+    names = [context.get_plugin_name(p) for p in context.plugins]
+    assert "bare-plugin" in names
+    assert "dotted-plugin" in names
+
+
+def test_plugin_root_strict_false_metadata(temp_dir):
+    """strict: false metadata is found for plugins resolved through pluginRoot"""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [
+                    {
+                        "name": "no-manifest-plugin",
+                        "source": "no-manifest-plugin",
+                        "version": "2.0.0",
+                        "strict": False,
+                    }
+                ],
+            },
+            f,
+        )
+
+    commands = temp_dir / "plugins" / "no-manifest-plugin" / "commands"
+    commands.mkdir(parents=True)
+    (commands / "hello.md").write_text("# Hello\n\nSay hello.\n")
+
+    context = RepositoryContext(temp_dir)
+    assert len(context.plugins) == 1
+    metadata = context.get_plugin_metadata(context.plugins[0])
+    assert metadata is not None
+    assert metadata["name"] == "no-manifest-plugin"
+    assert metadata["version"] == "2.0.0"
+
+
+def test_plugin_root_sources_already_prefixed(temp_dir):
+    """Sources that already include the pluginRoot prefix still resolve.
+
+    Real marketplaces (e.g. jeremylongshore/claude-code-plugins-plus-skills)
+    set metadata.pluginRoot while their sources are full root-relative paths
+    like "./plugins/name". The spec composition ("plugins/plugins/name")
+    doesn't exist there, so resolution must fall back to the root-relative
+    path instead of dropping every plugin.
+    """
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [
+                    {"name": "alpha", "source": "./plugins/alpha"},
+                    {"name": "beta", "source": "plugins/beta"},
+                ],
+            },
+            f,
+        )
+
+    for name in ("alpha", "beta"):
+        plugin_dir = temp_dir / "plugins" / name / ".claude-plugin"
+        plugin_dir.mkdir(parents=True)
+        with open(plugin_dir / "plugin.json", "w") as f:
+            json.dump({"name": name, "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 2
+    names = sorted(context.get_plugin_name(p) for p in context.plugins)
+    assert names == ["alpha", "beta"]
+
+
+def test_plugin_root_composed_path_wins_when_both_exist(temp_dir):
+    """When both the composed and root-relative paths exist, spec composition wins."""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [{"name": "plugins", "source": "plugins"}],
+            },
+            f,
+        )
+
+    # A plugin literally named "plugins" under pluginRoot: root-relative
+    # "plugins" (the pluginRoot dir itself) also exists, but the composed
+    # path plugins/plugins must win.
+    plugin_dir = temp_dir / "plugins" / "plugins" / ".claude-plugin"
+    plugin_dir.mkdir(parents=True)
+    with open(plugin_dir / "plugin.json", "w") as f:
+        json.dump({"name": "plugins", "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert len(context.plugins) == 1
+    assert context.plugins[0].resolve() == (temp_dir / "plugins" / "plugins").resolve()
+
+
+def test_plugin_root_traversal_rejected(temp_dir, caplog):
+    """A traversing pluginRoot must not let sources escape the repo root"""
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "../../shared"},
+                "plugins": [{"name": "evil-plugin", "source": "formatter"}],
+            },
+            f,
+        )
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
     assert any("escapes repository root" in record.message for record in caplog.records)
 
 
@@ -631,3 +784,51 @@ def test_explicit_repo_type_override_drives_discovery(temp_dir):
     assert context.repo_types == {RepositoryType.SINGLE_PLUGIN}
     assert context.repo_type == RepositoryType.SINGLE_PLUGIN
     assert [p.resolve() for p in context.plugins] == [temp_dir.resolve()]
+
+
+class TestPathMatchesPatterns:
+    """gitignore-style ``**/`` semantics on top of fnmatch (issue #322)."""
+
+    def _match(self, temp_dir, rel, patterns):
+        root = temp_dir.resolve()
+        return path_matches_patterns(root / rel, root, patterns)
+
+    def test_leading_star_star_matches_top_level_dir(self, temp_dir):
+        """**/templates/** must exclude a templates/ dir at the repo root."""
+        assert self._match(temp_dir, "templates/x/SKILL.md", ["**/templates/**"])
+
+    def test_leading_star_star_matches_nested_dir(self, temp_dir):
+        assert self._match(temp_dir, "a/templates/x/SKILL.md", ["**/templates/**"])
+        assert self._match(temp_dir, "a/b/templates/x/SKILL.md", ["**/templates/**"])
+
+    def test_leading_star_star_requires_whole_component(self, temp_dir):
+        """The stripped variant must not turn into a substring match."""
+        assert not self._match(temp_dir, "mytemplates/x/SKILL.md", ["**/templates/**"])
+        assert not self._match(temp_dir, "templatesx/SKILL.md", ["**/templates/**"])
+        assert not self._match(temp_dir, "other/x/SKILL.md", ["**/templates/**"])
+
+    def test_trailing_star_star_matches_contents_at_any_depth(self, temp_dir):
+        assert self._match(temp_dir, "templates/SKILL.md", ["**/templates/**"])
+        assert self._match(temp_dir, "templates/deep/nested/file.md", ["**/templates/**"])
+
+    def test_default_excludes_cover_top_level_dirs(self, temp_dir):
+        from skillsaw.config import LinterConfig
+
+        patterns = LinterConfig.default().exclude_patterns
+        for d in ("template", "templates", "_template"):
+            assert self._match(temp_dir, f"{d}/starter/SKILL.md", patterns)
+
+    def test_plain_star_still_crosses_slashes(self, temp_dir):
+        """Backward compat: existing fnmatch patterns keep matching."""
+        assert self._match(temp_dir, "a/b/generated.md", ["*generated.md"])
+        assert self._match(temp_dir, "vendor/deep/file.md", ["vendor/*"])
+        assert self._match(temp_dir, "commands/generated.md", ["commands/generated.md"])
+
+    def test_no_patterns_never_matches(self, temp_dir):
+        assert not self._match(temp_dir, "templates/x/SKILL.md", [])
+
+    def test_path_outside_root_never_matches(self, temp_dir):
+        root = (temp_dir / "repo").resolve()
+        root.mkdir()
+        outside = temp_dir / "templates" / "x" / "SKILL.md"
+        assert not path_matches_patterns(outside, root, ["**/templates/**"])

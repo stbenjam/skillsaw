@@ -5,9 +5,10 @@ Repository context detection and management
 from __future__ import annotations
 
 import fnmatch
+import functools
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Optional, List, Dict, Any, Set, TYPE_CHECKING
+from typing import Iterator, Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
 import json
 import logging
 import os
@@ -23,8 +24,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@functools.lru_cache(maxsize=None)
+def _pattern_variants(pattern: str) -> Tuple[str, ...]:
+    """Expand *pattern* into the fnmatch patterns it is tried as.
+
+    :mod:`fnmatch` has no special handling for ``**`` — it behaves exactly
+    like ``*`` (which already crosses ``/``) — so a leading ``**/`` demands
+    at least one directory before the rest of the pattern and never matches
+    at the start of a relative path: ``**/templates/**`` misses a top-level
+    ``templates/``. To honor gitignore-style semantics where ``**/`` also
+    matches zero leading directories, a variant with the ``**/`` prefix
+    stripped is tried as well. A trailing ``/**`` needs no variant: ``*``
+    crosses ``/``, so it already matches the directory's contents at any
+    depth. The original pattern is always kept, making the expansion a
+    strict superset of plain fnmatch — every path a pattern matched before
+    still matches.
+    """
+    variants = [pattern]
+    if pattern.startswith("**/"):
+        variants.append(pattern[3:])
+    return tuple(variants)
+
+
 def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
     """True if *path*, made relative to *root*, matches any fnmatch pattern.
+
+    Patterns use :mod:`fnmatch` syntax where ``*`` crosses ``/``, extended
+    with one gitignore-style rule via :func:`_pattern_variants`: a leading
+    ``**/`` also matches at the start of the relative path, so
+    ``**/templates/**`` excludes both a top-level ``templates/`` and a
+    nested ``a/templates/``.
 
     The single exclusion predicate shared by the context, the lint tree, and
     the linter's per-rule excludes. *root* must be resolved; paths outside
@@ -36,7 +65,9 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
         rel = str(path.resolve().relative_to(root))
     except ValueError:
         return False
-    return any(fnmatch.fnmatch(rel, pat) for pat in patterns)
+    return any(
+        fnmatch.fnmatch(rel, variant) for pat in patterns for variant in _pattern_variants(pat)
+    )
 
 
 class RepositoryType(Enum):
@@ -451,12 +482,33 @@ class RepositoryContext:
         except (json.JSONDecodeError, IOError):
             return None
 
+    def marketplace_plugin_root(self) -> Optional[str]:
+        """
+        Return metadata.pluginRoot from marketplace.json, if set
+
+        Per the plugin-marketplaces spec, ``metadata.pluginRoot`` is a base
+        directory prepended to relative plugin source paths (e.g.
+        ``"./plugins"`` lets entries use ``"source": "formatter"`` instead
+        of ``"./plugins/formatter"``).
+        """
+        if not self.marketplace_data:
+            return None
+        metadata = self.marketplace_data.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        plugin_root = metadata.get("pluginRoot")
+        if isinstance(plugin_root, str) and plugin_root:
+            return plugin_root
+        return None
+
     def _resolve_plugin_source(self, source: Any, plugin_entry: Dict[str, Any]) -> Optional[Path]:
         """
         Resolve a plugin source from marketplace.json to a local path
 
         Handles relative paths (e.g., "./", "./custom/path") and remote sources
-        (GitHub repos, git URLs). Remote sources are logged but skipped for local validation.
+        (GitHub repos, git URLs). Remote sources are logged but skipped for local
+        validation. Relative paths are resolved under metadata.pluginRoot when
+        the marketplace declares one.
 
         Args:
             source: Plugin source (string path or dict with source type)
@@ -470,6 +522,20 @@ class RepositoryContext:
         # Handle relative path strings
         if isinstance(source, str):
             candidate = (self.root_path / source).resolve()
+            plugin_root = self.marketplace_plugin_root()
+            if plugin_root and not Path(source).is_absolute():
+                # metadata.pluginRoot is prepended to relative sources (both
+                # bare names and ./-prefixed paths). Real-world marketplaces
+                # (e.g. jeremylongshore/claude-code-plugins-plus-skills) set
+                # pluginRoot while their sources already include that prefix,
+                # so prefer the spec composition but fall back to the
+                # root-relative path when only the latter exists. The
+                # containment check below still rejects any candidate that
+                # escapes the repository, so a traversing pluginRoot cannot
+                # smuggle a source outside the root.
+                composed = (self.root_path / plugin_root / source).resolve()
+                if composed.exists() or not candidate.exists():
+                    candidate = composed
 
             # Disallow escaping the repo with .. paths
             try:
@@ -629,6 +695,15 @@ class RepositoryContext:
             # Always store marketplace entry data for metadata merging
             self.marketplace_entries[resolved_path] = plugin_entry
 
+            # Store metadata for strict: false plugins without plugin.json.
+            # This must happen before the duplicate skip below so plugins the
+            # plugins/ dir scan already discovered still get their metadata.
+            is_strict = plugin_entry.get("strict", True)
+            has_plugin_json = (plugin_path / ".claude-plugin" / "plugin.json").exists()
+
+            if not is_strict and not has_plugin_json:
+                self.plugin_metadata[resolved_path] = plugin_entry
+
             # Skip duplicates for plugin discovery
             if resolved_path in discovered_paths:
                 continue
@@ -639,13 +714,6 @@ class RepositoryContext:
 
             plugins.append(plugin_path)
             discovered_paths.add(resolved_path)
-
-            # Store metadata for strict: false plugins without plugin.json
-            is_strict = plugin_entry.get("strict", True)
-            has_plugin_json = (plugin_path / ".claude-plugin" / "plugin.json").exists()
-
-            if not is_strict and not has_plugin_json:
-                self.plugin_metadata[resolved_path] = plugin_entry
 
     def get_plugin_name(self, plugin_path: Path) -> str:
         """

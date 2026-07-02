@@ -387,7 +387,7 @@ def _build_promptfoo_nodes(
             continue
         config_dir = config_node.path.parent
         for ref in extract_file_refs(data):
-            resolved = resolve_file_ref(ref, config_dir)
+            resolved = resolve_file_ref(ref, config_dir, root=context.root_path)
             if resolved is None or resolved in seen:
                 continue
             if not resolved.exists() or _is_excluded(Path(resolved)):

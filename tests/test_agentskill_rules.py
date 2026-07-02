@@ -1801,6 +1801,22 @@ def test_exclude_glob_extends_defaults(temp_dir):
     assert rule.check(RepositoryContext(skill)) == []
 
 
+def test_exclude_glob_leading_star_star_matches_skill_root(temp_dir):
+    """A leading **/ exclude must also match a top-level directory of the
+    skill, mirroring the global exclude semantics (issue #322)."""
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "generated").mkdir()
+    (skill / "generated" / "out.md").write_text("machine output\n")
+    (skill / "nested" / "generated").mkdir(parents=True)
+    (skill / "nested" / "generated" / "deep.md").write_text("machine output\n")
+
+    # Without the exclude both files are dead weight.
+    assert len(AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))) == 2
+
+    rule = AgentSkillUnreferencedFilesRule({"exclude": ["**/generated/**"]})
+    assert rule.check(RepositoryContext(skill)) == []
+
+
 def test_skill_without_extra_files_passes(temp_dir):
     skill = _make_skill(temp_dir, body="This skill bundles no extra files.")
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []

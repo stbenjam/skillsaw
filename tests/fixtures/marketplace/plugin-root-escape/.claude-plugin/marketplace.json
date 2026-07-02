@@ -1,0 +1,8 @@
+{
+  "name": "escape-tools",
+  "owner": {"name": "ACME Corp"},
+  "metadata": {"pluginRoot": "../../shared-plugins"},
+  "plugins": [
+    {"name": "formatter", "source": "formatter", "description": "Format source files"}
+  ]
+}

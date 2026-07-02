@@ -1,0 +1,9 @@
+{
+  "name": "acme-prefixed-tools",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "metadata": {"pluginRoot": "./plugins"},
+  "plugins": [
+    {"name": "deploy-helper", "source": "./plugins/deploy-helper", "description": "Deploy services to staging and production"},
+    {"name": "doc-checker", "source": "plugins/doc-checker", "description": "Check documentation for broken references"}
+  ]
+}

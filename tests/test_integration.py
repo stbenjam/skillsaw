@@ -327,6 +327,40 @@ class TestMarketplace:
         assert "marketplace" in stats["repo_types"]
         assert len(stats["plugins"]) == 3
 
+    def test_marketplace_plugin_root_resolves_local_sources(self, tmp_path):
+        """metadata.pluginRoot is prepended to relative plugin sources (issue #343)."""
+        repo = copy_fixture("marketplace/plugin-root", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        # The strict: false plugin resolved through pluginRoot must not be
+        # flagged for a missing plugin.json.
+        assert "plugin-json-required" not in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 3
+
+    def test_marketplace_plugin_root_prefixed_sources_resolve(self, tmp_path):
+        """Sources that already include the pluginRoot prefix still resolve.
+
+        Regression: real marketplaces (jeremylongshore/claude-code-plugins-
+        plus-skills) set pluginRoot while their sources are full root-relative
+        paths; strict spec composition dropped every plugin (0 discovered).
+        """
+        repo = copy_fixture("marketplace/plugin-root-prefixed", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert len(r["out"]["stats"]["plugins"]) == 2
+
+    def test_marketplace_plugin_root_traversal_rejected(self, tmp_path):
+        """A pluginRoot escaping the repository is flagged and never resolved."""
+        repo = copy_fixture("marketplace/plugin-root-escape", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "marketplace-json-valid" in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 0
+
 
 # ── Agentskills ──────────────────────────────────────────────────
 
@@ -1122,6 +1156,25 @@ class TestConfigFeatures:
         violated_files = {v["file_path"] for v in violations(r)}
         assert not any("generated.md" in f for f in violated_files)
 
+    def test_default_exclude_covers_top_level_templates(self, tmp_path):
+        """Default **/templates/** must exclude a templates/ dir at the repo
+        root, not just nested ones (issue #322)."""
+        repo = copy_fixture("config/default-exclude-templates", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        violated_files = {v["file_path"] for v in violations(r)}
+        assert not any("templates/" in f for f in violated_files)
+
+    def test_top_level_templates_linted_when_defaults_overridden(self, tmp_path):
+        """Sanity check: the fixture's templates/ skill does violate rules,
+        so the previous test's empty result is due to the default excludes."""
+        repo = copy_fixture("config/default-exclude-templates", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\nexclude:\n  - "nonexistent/**"\n')
+        r = run_lint(repo)
+        assert r["out"] is not None
+        violated_files = {v["file_path"] for v in violations(r)}
+        assert any("templates/" in f for f in violated_files)
+
     def test_per_rule_exclude(self, tmp_path):
         """Per-rule exclude suppresses one file but not another."""
         repo = copy_fixture("config/per-rule-exclude", tmp_path)
@@ -1362,6 +1415,8 @@ BROKEN_FIXTURES = [
 CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
+    "marketplace/plugin-root",
+    "marketplace/plugin-root-prefixed",
     "agentskills/clean",
     "agentskills/unreferenced-clean",
     "dot-claude/clean",
@@ -1894,6 +1949,29 @@ class TestEncodingPreservingAutofix:
         assert r["rc"] == 0
         assert "agentskill-valid" not in rule_ids(r)
 
+    def test_bom_name_fix_applies_and_preserves_bom(self, tmp_path):
+        """agentskill-name's fix must read via the BOM-stripping utils
+        reader: a raw utf-8 read keeps U+FEFF, parse_frontmatter's anchored
+        ^--- match fails, and the fix silently skips BOM files while the
+        violation stays reported."""
+        repo = tmp_path / "bom-name"
+        skill_dir = repo / ".claude" / "skills" / "deploy-service"
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / "SKILL.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf---\nname: Deploy_Service # legacy\n"
+            b"description: a deploy skill for bom testing purposes\n---\nbody\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")  # BOM preserved
+        assert b"name: deploy-service # legacy" in raw  # fixed, comment kept
+        # Converges: re-lint is clean for the rule.
+        r = run_lint(repo, "--rule", "agentskill-name")
+        assert "agentskill-name" not in rule_ids(r)
+
 
 @pytest.mark.integration
 class TestSafeAutofixIdempotency:
@@ -1913,7 +1991,7 @@ class TestSafeAutofixIdempotency:
 
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
-        "agentskill-name": 3,
+        "agentskill-name": 4,
         "agentskill-valid": 4,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
@@ -2096,6 +2174,10 @@ class TestSafeAutofixIdempotency:
                 len(name_lines) == 1
             ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"
             name_val = name_lines[0].split(":", 1)[1].strip()
+            # The fixed line may keep the user's inline YAML comment (GH-322);
+            # post-fix names are plain kebab-case scalars, so a simple split
+            # is safe here.
+            name_val = name_val.split(" #", 1)[0].strip()
             assert (
                 name_val == skill_dir.name
             ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
@@ -2524,6 +2606,37 @@ class TestMarkdownAstRegressions:
         ]
         assert flagged == [], f"indented code lines were scanned as prose: {flagged}"
 
+    def test_percent_encoded_link_resolves_and_fix_stays_parseable(self, tmp_path):
+        """Regression for #322: a %20 link to a real file must not be
+        flagged, and the suggest fixer must percent-encode the destination
+        it emits — a raw space inside `](...)` silently destroys the link."""
+        repo = copy_fixture("regression/broken-ref-percent-encoding", tmp_path)
+        r = run_lint(repo)
+        broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+        # Only the genuinely broken link fires; the working %20 link does not.
+        assert len(broken) == 1
+        assert "references/naming%20rles.md" in broken[0]["message"]
+        assert "did you mean" in broken[0]["message"]
+
+        before_lines = len((repo / "CLAUDE.md").read_text().splitlines())
+        _run_fix(repo, "--suggest")
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert "[the naming rules](references/naming%20rules.md)" in fixed
+        assert "](references/naming rules.md)" not in fixed
+        # The working links are untouched — including the file whose
+        # literal name contains %20 and is linked verbatim.
+        assert "[the style guide](references/style%20guide.md)" in fixed
+        assert "[API notes](references/api%20notes.md)" in fixed
+        assert len(fixed.splitlines()) == before_lines
+        # Idempotent: second fix is byte-identical.
+        _run_fix(repo, "--suggest")
+        assert (repo / "CLAUDE.md").read_text() == fixed
+        # Re-lint: the emitted destination parses and resolves.
+        r2 = run_lint(repo)
+        assert not [
+            v for v in violations(r2) if v["rule_id"] == "content-broken-internal-reference"
+        ]
+
     def test_suppression_directive_inside_fence_not_honored(self, tmp_path):
         """A directive shown inside a fenced code block is documentation,
         not a directive — later violations must still be reported."""
@@ -2645,3 +2758,138 @@ class TestRenameRefsAutofix:
         r = run_lint(repo)
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"
+
+
+# ── agentskill-name autofix vs inline YAML comments (GH-322) ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixInlineComment:
+    """Regression tests for GH-322: the agentskill-name autofix must record
+    the parsed YAML value of ``name`` in the rename manifest — never a raw
+    line slice that folds an inline comment into the old name — and must
+    preserve the user's inline comment on the rewritten line."""
+
+    FIXTURE = "autofix/name-inline-comment"
+
+    def test_rename_manifest_records_parsed_name(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert (
+            renames.get("Deploy_Service") == "deploy-service"
+        ), f"manifest must key on the parsed YAML name, got: {renames}"
+        assert not any(
+            "legacy" in old or " #" in old for old in renames
+        ), f"inline comment text leaked into the rename manifest: {renames}"
+
+    def test_inline_comment_preserved_on_rewritten_line(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "deploy-service" / "SKILL.md").read_text()
+        assert "name: deploy-service # legacy name kept for docs" in skill_md
+
+    def test_hash_inside_quoted_value_is_not_a_comment(self, tmp_path):
+        """A ``#`` inside a quoted scalar is part of the value: the manifest
+        must record ``release#tagger`` and the trailing comment must survive."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "release-tagger" / "SKILL.md").read_text()
+        assert "name: release-tagger # hash is part of the quoted value, not a comment" in skill_md
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert renames.get("release#tagger") == "release-tagger"
+
+    def test_manifest_enables_stale_reference_detection(self, tmp_path):
+        """With a clean manifest key, rename-refs can now see the stale
+        ``Deploy_Service`` reference in CLAUDE.md (the polluted key never
+        matched anything)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        r = run_lint(repo)
+        stale = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "agentskill-rename-refs" and "Deploy_Service" in v["message"]
+        ]
+        assert stale, "rename-refs should detect the stale Deploy_Service reference"
+
+    def test_fix_is_idempotent_and_converges(self, tmp_path):
+        """Fix twice: byte-identical content, and re-lint shows zero
+        remaining agentskill-name violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+
+        r = run_lint(repo)
+        remaining = [v for v in violations(r) if v["rule_id"] == "agentskill-name"]
+        assert remaining == [], f"agentskill-name violations remain after fix: {remaining}"
+
+
+# ── agentskill-name autofix vs multi-line scalars & duplicate keys ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixMultilineScalar:
+    """The one-line ``name:`` rewrite is only safe when the whole value lives
+    on that line.  Block scalars (``name: >-``), values on the following
+    line, and duplicate ``name:`` keys must be skipped verbatim — rewriting
+    just the key line merges the leftover continuation lines into the new
+    plain scalar, and the fix loop then re-kebabs the merged value on every
+    pass, growing the name unboundedly and poisoning the rename manifest."""
+
+    FIXTURE = "autofix/name-multiline-scalar"
+
+    def test_exotic_scalars_are_left_byte_identical(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+
+        _run_fix(repo)
+
+        after = _snapshot_contents(repo)
+        skills = [k for k in before if k.endswith("SKILL.md")]
+        assert skills, "fixture must contain SKILL.md files"
+        changed = [k for k in skills if before[k] != after.get(k)]
+        assert changed == [], f"fixer rewrote multi-line/duplicate name scalars: {changed}"
+
+    def test_no_manifest_entries_for_skipped_fixes(self, tmp_path):
+        """A skipped fix must not record a rename — especially not one whose
+        old name is a runaway concatenation of continuation lines."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest_path = repo / ".skillsaw-renames.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            olds = [r["old"] for r in manifest.get("renames", [])]
+            assert olds == [], f"skipped fixes recorded renames: {olds}"
+
+    def test_fix_converges_and_violations_still_reported(self, tmp_path):
+        """Skipped shapes stay skipped: a second fix run changes nothing, and
+        the violations remain for the user to resolve manually."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        result = _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+        assert "No auto-fixable violations found" in result.stdout
+
+        r = run_lint(repo)
+        remaining = {v["file_path"] for v in violations(r) if v["rule_id"] == "agentskill-name"}
+        assert any("folded-name" in f for f in remaining)
+        assert any("next-line" in f for f in remaining)
+        assert any("dup-keys" in f for f in remaining)

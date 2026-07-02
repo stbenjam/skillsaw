@@ -279,6 +279,8 @@ marketplace/
 
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
 
+When marketplace.json sets `metadata.pluginRoot` (e.g. `"./plugins"`), it is prepended to relative plugin sources, so entries can use bare names like `"source": "formatter"` per the spec.
+
 ### `.claude/` Directory
 
 Repositories with a `.claude/` directory containing commands, skills, hooks, agents, or rules. When APM is present, `.claude/` is treated as compiled output and this type is not detected.
@@ -329,6 +331,12 @@ exclude:
   - "generated/**"
   - "node_modules/**"
 ```
+
+Patterns match against the file path relative to the lint root using
+Python `fnmatch` syntax, where `*` also crosses `/`. A leading `**/`
+additionally matches at the root of the repository, so `**/templates/**`
+excludes both a top-level `templates/` directory and any nested
+`a/templates/`.
 
 By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
 `**/_template/**` directories. These defaults are replaced when you specify
@@ -643,7 +651,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
-| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names; a leading `**/` also matches at the skill root) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 ### Plugin Structure
 
@@ -1030,7 +1038,7 @@ skillsaw add hook PreToolUse
 
 skillsaw automatically detects your repo type and places files in the right location:
 
-- **Marketplace** — components go under `plugins/<name>/`
+- **Marketplace** — components go under `plugins/<name>/`, or under `metadata.pluginRoot` when marketplace.json sets one
 - **Single-plugin repo** — components go in the repo root
 - **`.claude/` repo** — components go under `.claude/`
 
