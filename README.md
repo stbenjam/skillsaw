@@ -1025,7 +1025,7 @@ skillsaw add hook PreToolUse
 
 skillsaw automatically detects your repo type and places files in the right location:
 
-- **Marketplace** — components go under `plugins/<name>/`
+- **Marketplace** — components go under `plugins/<name>/`, or under `metadata.pluginRoot` when marketplace.json sets one
 - **Single-plugin repo** — components go in the repo root
 - **`.claude/` repo** — components go under `.claude/`
 

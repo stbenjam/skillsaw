@@ -178,6 +178,34 @@ def _marketplace_type(root: Path) -> str:
     return DEFAULT_MARKETPLACE_TYPE
 
 
+def _marketplace_plugin_root(root: Path) -> Optional[str]:
+    """Return metadata.pluginRoot from marketplace.json, if set and usable.
+
+    Mirrors ``RepositoryContext.marketplace_plugin_root()``: pluginRoot is a
+    base directory prepended to relative plugin source paths. A pluginRoot
+    that escapes the marketplace repository is ignored (marketplace-json-valid
+    flags it), so scaffolding never composes paths outside the root.
+    """
+    mp_path = root / ".claude-plugin" / "marketplace.json"
+    if not mp_path.exists():
+        return None
+    try:
+        data = json.loads(mp_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    plugin_root = metadata.get("pluginRoot")
+    if not isinstance(plugin_root, str) or not plugin_root:
+        return None
+    if not (root / plugin_root).resolve().is_relative_to(root.resolve()):
+        return None
+    return plugin_root
+
+
 def _register_plugin(root: Path, name: str, source: str, description: str) -> None:
     """Add a plugin entry to marketplace.json."""
     mp_path = root / ".claude-plugin" / "marketplace.json"
@@ -203,12 +231,24 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
     plugins = data.get("plugins", [])
     if not isinstance(plugins, list):
         raise ValueError("Invalid marketplace.json: 'plugins' must be a list.")
+    plugin_root = _marketplace_plugin_root(root)
     for entry in plugins:
         if not isinstance(entry, dict):
             continue
         if entry.get("name") == plugin_name:
-            source = entry.get("source", f"./plugins/{plugin_name}")
-            resolved = (root / source).resolve()
+            default_source = f"./{plugin_name}" if plugin_root else f"./plugins/{plugin_name}"
+            source = entry.get("source", default_source)
+            if not isinstance(source, str):
+                raise ValueError(
+                    f"Plugin {plugin_name!r} uses a remote source; "
+                    "cannot resolve a local plugin directory"
+                )
+            # metadata.pluginRoot is prepended to relative sources, matching
+            # RepositoryContext._resolve_plugin_source.
+            base = root
+            if plugin_root and not Path(source).is_absolute():
+                base = root / plugin_root
+            resolved = (base / source).resolve()
             if not resolved.is_relative_to(root.resolve()):
                 raise ValueError(f"Plugin source {source!r} resolves outside marketplace root")
             return resolved
@@ -227,7 +267,16 @@ def add_plugin(
     """Create a new plugin with scaffold structure and register it."""
     _validate_kebab(name, "Plugin name")
     root = _find_marketplace_root(path or Path.cwd())
-    plugin_dir = root / "plugins" / name
+    # Scaffold under metadata.pluginRoot when the marketplace declares one,
+    # and register a source relative to it so the entry resolves per the
+    # plugin-marketplaces spec (pluginRoot is prepended to relative sources).
+    plugin_root = _marketplace_plugin_root(root)
+    if plugin_root:
+        plugin_dir = root / plugin_root / name
+        source = f"./{name}"
+    else:
+        plugin_dir = root / "plugins" / name
+        source = f"./plugins/{name}"
     if plugin_dir.exists():
         raise FileExistsError(f"Plugin directory already exists: {plugin_dir}")
 
@@ -256,7 +305,7 @@ def add_plugin(
     readme = apply_replacements(read_template("readme.md", mp_type), replacements)
     (plugin_dir / "README.md").write_text(readme, encoding="utf-8")
 
-    _register_plugin(root, name, f"./plugins/{name}", f"{name} plugin for Claude Code")
+    _register_plugin(root, name, source, f"{name} plugin for Claude Code")
 
     print(f"Created plugin: {name}")
     print(f"  {plugin_dir}/")
