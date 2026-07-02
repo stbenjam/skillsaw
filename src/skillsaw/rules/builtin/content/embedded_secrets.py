@@ -21,6 +21,16 @@ _DEFAULT_ENTROPY_THRESHOLD = 3.5
 
 # Case-insensitive substrings that mark a generic credential value as an
 # obvious placeholder (inspired by gitleaks/detect-secrets allowlists).
+#
+# Substring matching is deliberately aggressive (gitleaks stoplists the same
+# way), so every word here is a false-negative surface: a real secret that
+# happens to contain it is suppressed.  Only words with demonstrated
+# real-world placeholder value belong in this list — "password" and "token"
+# are in gitleaks' DefaultStopWords and suppress documented placeholder
+# values in real repos (e.g. password = "securePassword123"), while
+# "secret"/"passwd" were dropped because they are in neither gitleaks nor
+# detect-secrets stoplists and plausibly appear inside real credential
+# values (api_key = "app-secret-…").
 _PLACEHOLDER_MARKERS = (
     "example",
     "placeholder",
@@ -33,8 +43,6 @@ _PLACEHOLDER_MARKERS = (
     "your_",
     "hunter2",
     "password",
-    "passwd",
-    "secret",
     "token",
     "test",
     "fake",

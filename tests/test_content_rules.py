@@ -722,6 +722,11 @@ class TestContentEmbeddedSecretsRule:
             'access_token = "insert-real-value-here"',
             'password = "$DB_PASSWORD"',
             'password = "helloworld"',
+            # "password"/"token" inside the value: gitleaks-stopword parity;
+            # these exact shapes appear as placeholders in real skill repos
+            # (auth0/agent-skills) and pass the entropy gate.
+            'password = "securePassword123"',
+            'access_token = "my-oauth-token-12345"',
         ],
         ids=[
             "hunter2",
@@ -736,6 +741,8 @@ class TestContentEmbeddedSecretsRule:
             "insert-word",
             "bare-env-var",
             "english-short",
+            "password-word-realworld",
+            "token-word",
         ],
     )
     def test_no_false_positive_on_placeholder_values(self, temp_dir, line):
@@ -794,6 +801,26 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert "Hardcoded password" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "line,expected_desc",
+        [
+            # "secret" and "passwd" are not in gitleaks/detect-secrets
+            # stoplists and plausibly occur inside real credential values —
+            # they must not act as placeholder markers.
+            ('api_key = "app-secret-x8K2mQ9zL4vN"', "Hardcoded API key"),
+            ('password = "xK2passwd9QmZ4vN"', "Hardcoded password"),
+        ],
+        ids=["secret-substring", "passwd-substring"],
+    )
+    def test_credential_noun_substrings_not_suppressed(self, temp_dir, line, expected_desc):
+        """False-negative regressions: high-entropy values containing
+        'secret'/'passwd' are real-secret-shaped, not placeholders."""
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert expected_desc in violations[0].message
 
     def test_structured_tokens_not_entropy_gated(self, temp_dir):
         """High-confidence token formats fire even for low-entropy bodies."""
