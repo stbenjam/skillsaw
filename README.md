@@ -279,6 +279,8 @@ marketplace/
 
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
 
+When marketplace.json sets `metadata.pluginRoot` (e.g. `"./plugins"`), it is prepended to relative plugin sources, so entries can use bare names like `"source": "formatter"` per the spec.
+
 ### `.claude/` Directory
 
 Repositories with a `.claude/` directory containing commands, skills, hooks, agents, or rules. When APM is present, `.claude/` is treated as compiled output and this type is not detected.
@@ -1023,7 +1025,7 @@ skillsaw add hook PreToolUse
 
 skillsaw automatically detects your repo type and places files in the right location:
 
-- **Marketplace** — components go under `plugins/<name>/`
+- **Marketplace** — components go under `plugins/<name>/`, or under `metadata.pluginRoot` when marketplace.json sets one
 - **Single-plugin repo** — components go in the repo root
 - **`.claude/` repo** — components go under `.claude/`
 

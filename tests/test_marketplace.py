@@ -280,6 +280,38 @@ class TestAddPlugin:
         with pytest.raises(ValueError, match="kebab-case"):
             add_plugin("MyPlugin", path=root)
 
+    def test_add_plugin_honors_plugin_root(self, temp_dir):
+        """Scaffolds under metadata.pluginRoot and registers a pluginRoot-relative source."""
+        root = self._init_mp(temp_dir)
+        mp_path = root / ".claude-plugin" / "marketplace.json"
+        data = json.loads(mp_path.read_text())
+        data["metadata"] = {"pluginRoot": "./pkgs"}
+        mp_path.write_text(json.dumps(data, indent=2) + "\n")
+
+        result = add_plugin("rooted-plugin", path=root)
+
+        assert result == root / "pkgs" / "rooted-plugin"
+        assert (result / ".claude-plugin" / "plugin.json").exists()
+        mp = json.loads(mp_path.read_text())
+        entry = next(p for p in mp["plugins"] if p["name"] == "rooted-plugin")
+        # ./rooted-plugin resolves as <root>/pkgs/rooted-plugin via pluginRoot
+        assert entry["source"] == "./rooted-plugin"
+
+    def test_add_plugin_traversing_plugin_root_falls_back(self, temp_dir):
+        """A pluginRoot escaping the repo is ignored; scaffold stays under plugins/."""
+        root = self._init_mp(temp_dir)
+        mp_path = root / ".claude-plugin" / "marketplace.json"
+        data = json.loads(mp_path.read_text())
+        data["metadata"] = {"pluginRoot": "../../escape"}
+        mp_path.write_text(json.dumps(data, indent=2) + "\n")
+
+        result = add_plugin("safe-plugin", path=root)
+
+        assert result == root / "plugins" / "safe-plugin"
+        mp = json.loads(mp_path.read_text())
+        entry = next(p for p in mp["plugins"] if p["name"] == "safe-plugin")
+        assert entry["source"] == "./plugins/safe-plugin"
+
     def test_add_plugin_sets_owner_from_config(self, temp_dir):
         root = self._init_mp(temp_dir)
         result = add_plugin("owned-plugin", path=root)
@@ -310,6 +342,33 @@ class TestAddComponents:
         content = skill_md.read_text()
         assert 'name: "my-skill"' in content
         assert "# My Skill" in content
+
+    def test_add_skill_honors_plugin_root(self, temp_dir):
+        """Skills land inside the pluginRoot-resolved plugin dir (issue #343)."""
+        root = temp_dir / "mp"
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-mp",
+                    "owner": {"name": "testuser"},
+                    "metadata": {"pluginRoot": "./pkgs"},
+                    "plugins": [{"name": "formatter", "source": "formatter"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        plugin_dir = root / "pkgs" / "formatter" / ".claude-plugin"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "plugin.json").write_text(
+            json.dumps({"name": "formatter", "description": "Formats", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+
+        result = add_skill("my-skill", "formatter", path=root)
+
+        assert result == root / "pkgs" / "formatter" / "skills" / "my-skill"
+        assert (result / "SKILL.md").exists()
 
     def test_add_command(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
@@ -771,6 +830,76 @@ class TestMalformedMarketplaceJson:
         root = self._make_marketplace(temp_dir, "not-a-list")
         with pytest.raises(ValueError, match="must be a list"):
             _resolve_plugin_dir(root, "any-plugin")
+
+    def _make_plugin_root_marketplace(self, temp_dir, plugin_root, plugins_value):
+        """Create a minimal marketplace declaring metadata.pluginRoot."""
+        root = temp_dir / "mp"
+        root.mkdir()
+        (root / ".claude-plugin").mkdir()
+        data = {
+            "name": "test-mp",
+            "owner": {"name": "testuser"},
+            "metadata": {"pluginRoot": plugin_root},
+            "plugins": plugins_value,
+        }
+        (root / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps(data), encoding="utf-8"
+        )
+        return root
+
+    def test_resolve_plugin_dir_honors_plugin_root(self, temp_dir):
+        """Bare-name sources resolve under metadata.pluginRoot (issue #343)."""
+        root = self._make_plugin_root_marketplace(
+            temp_dir, "./pkgs", [{"name": "formatter", "source": "formatter"}]
+        )
+        plugin_dir = root / "pkgs" / "formatter"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "formatter")
+        assert resolved == plugin_dir.resolve()
+
+    def test_resolve_plugin_dir_plugin_root_dotted_source(self, temp_dir):
+        """./-prefixed sources also resolve under metadata.pluginRoot."""
+        root = self._make_plugin_root_marketplace(
+            temp_dir, "./pkgs", [{"name": "formatter", "source": "./formatter"}]
+        )
+        plugin_dir = root / "pkgs" / "formatter"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "formatter")
+        assert resolved == plugin_dir.resolve()
+
+    def test_resolve_plugin_dir_plugin_root_prefixed_source(self, temp_dir):
+        """Sources already including the pluginRoot prefix fall back to
+        root-relative resolution (real-world marketplaces do this)."""
+        root = self._make_plugin_root_marketplace(
+            temp_dir, "./plugins", [{"name": "formatter", "source": "./plugins/formatter"}]
+        )
+        plugin_dir = root / "plugins" / "formatter"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "formatter")
+        assert resolved == plugin_dir.resolve()
+
+    def test_resolve_plugin_dir_traversing_plugin_root_ignored(self, temp_dir):
+        """A pluginRoot escaping the repo is ignored, never composed."""
+        root = self._make_plugin_root_marketplace(
+            temp_dir, "../../escape", [{"name": "formatter", "source": "./plugins/formatter"}]
+        )
+        plugin_dir = root / "plugins" / "formatter"
+        plugin_dir.mkdir(parents=True)
+
+        resolved = _resolve_plugin_dir(root, "formatter")
+        assert resolved == plugin_dir.resolve()
+
+    def test_resolve_plugin_dir_remote_source_raises(self, temp_dir):
+        """A remote object source cannot resolve to a local directory."""
+        root = self._make_marketplace(
+            temp_dir,
+            [{"name": "remote", "source": {"source": "github", "repo": "acme/remote"}}],
+        )
+        with pytest.raises(ValueError, match="remote source"):
+            _resolve_plugin_dir(root, "remote")
 
 
 # ---------------------------------------------------------------------------
