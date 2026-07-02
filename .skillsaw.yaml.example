@@ -107,6 +107,7 @@ rules:
     severity: warning
     # banned: []
     # skip-builtins: false
+    # regex-timeout: 2.0
 
   # Detect markdown links where the target file does not exist
   content-broken-internal-reference:
