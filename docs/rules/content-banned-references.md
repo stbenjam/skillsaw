@@ -67,6 +67,7 @@ rules:
 |-----------|-------------|---------|
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
+| `regex-timeout` | Per-pattern wall-clock budget (seconds) for custom banned patterns; guards against catastrophic-backtracking regexes (clamped to 10s max) | `2.0` |
 
 ## Research Basis
 

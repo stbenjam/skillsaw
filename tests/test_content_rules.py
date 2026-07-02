@@ -737,6 +737,59 @@ class TestContentBannedReferencesRule:
         violations = ContentBannedReferencesRule().check(context)
         assert len(violations) == 0
 
+    def test_custom_banned_pattern_fires(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Please use the forbidden-term here.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {"banned": [{"pattern": "forbidden-term", "message": "no forbidden terms"}]}
+        )
+        violations = rule.check(context)
+        assert any("no forbidden terms" in v.message for v in violations)
+
+    def test_literal_less_pattern_still_fires(self, temp_dir):
+        """A banned pattern with no extractable literal must not be silently
+        skipped by the prefilter (issue #316 secondary claim)."""
+        (temp_dir / "CLAUDE.md").write_text("Release date 2024-01-15 is hardcoded.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {
+                "skip-builtins": True,
+                "banned": [{"pattern": r"\d{4}-\d{2}-\d{2}", "message": "no dates"}],
+            }
+        )
+        violations = rule.check(context)
+        assert any("no dates" in v.message for v in violations)
+
+    def test_catastrophic_pattern_times_out_instead_of_hanging(self, temp_dir):
+        """A config-supplied ReDoS pattern must be bounded, not hang lint
+        (issue #316). A tiny budget keeps the test fast."""
+        import time
+
+        body = "evilprefix" + "a" * 40 + "!\n"
+        (temp_dir / "CLAUDE.md").write_text(body)
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {
+                "skip-builtins": True,
+                "regex-timeout": 0.3,
+                "banned": [{"pattern": "evilprefix(a+)+$", "message": "boom"}],
+            }
+        )
+        start = time.perf_counter()
+        violations = rule.check(context)
+        elapsed = time.perf_counter() - start
+        # Bounded well under a naive run (which measures tens of seconds).
+        assert elapsed < 5.0
+        assert any("Skipped banned pattern" in v.message for v in violations)
+
+    def test_timeout_is_clamped_and_zero_disables(self, temp_dir):
+        rule = ContentBannedReferencesRule({"regex-timeout": 999})
+        assert rule._regex_timeout() == 10.0
+        rule = ContentBannedReferencesRule({"regex-timeout": 0})
+        assert rule._regex_timeout() == 0.0
+        rule = ContentBannedReferencesRule({"regex-timeout": "nonsense"})
+        assert rule._regex_timeout() == 2.0
+
 
 class TestContentInconsistentTerminologyRule:
     def test_rule_metadata(self):
@@ -909,6 +962,35 @@ class TestContentUnlinkedInternalReferenceRule:
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) == 1
         assert "./scripts/build.sh" in violations[0].message
+
+    def test_path_abutting_close_paren_not_flagged(self, temp_dir):
+        """Regression for #321: `scripts/test.pyc)` must not backtrack to a
+        truncated `scripts/test.py` match."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run the helper (e.g. scripts/test.pyc) before committing.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_path_abutting_open_paren_not_mangled(self, temp_dir):
+        """Regression for #321: `(docs/guide.md)` must not produce a mangled
+        `ocs/guide.md`-style match one character in."""
+        (temp_dir / "CLAUDE.md").write_text("See the guide (docs/guide.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_dot_slash_path_does_not_swallow_sentence_period(self, temp_dir):
+        """Regression for #321: `./docs/guide.md.` at the end of a sentence
+        must match `./docs/guide.md`, not include the period."""
+        (temp_dir / "CLAUDE.md").write_text("See ./docs/guide.md. Then continue.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "'./docs/guide.md'" in violations[0].message
 
     def test_code_blocks_skipped(self, temp_dir):
         content = "# Rules\n```\nsrc/config/settings.yaml\n```\n"
@@ -1162,6 +1244,28 @@ class TestContentUnlinkedInternalReferenceAutofix:
         assert len(fixes) == 1
         assert fixes[0].confidence == AutofixConfidence.SAFE
         assert "[docs/guide.md](docs/guide.md)" in fixes[0].fixed_content
+
+    def test_autofix_preserves_paren_adjacent_and_period_adjacent_paths(self, temp_dir):
+        """Regression for #321: fix must not corrupt `scripts/test.pyc)` and
+        must keep a sentence-ending period outside the link."""
+        (temp_dir / "scripts").mkdir()
+        (temp_dir / "scripts" / "test.py").write_text("# test\n")
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Run the helper (e.g. scripts/test.pyc) before committing.\n"
+            "See ./docs/guide.md. Then run scripts/test.py to validate.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnlinkedInternalReferenceRule()
+        violations = rule.check(context)
+        fixes = rule.fix(context, violations)
+        assert len(fixes) == 1
+        fixed = fixes[0].fixed_content
+        assert "(e.g. scripts/test.pyc)" in fixed
+        assert "See [./docs/guide.md](./docs/guide.md)." in fixed
+        assert "run [scripts/test.py](scripts/test.py) to validate" in fixed
+        assert len(fixed.splitlines()) == 2
 
     def test_no_autofix_for_nonexistent_path(self, temp_dir):
         """Bare paths to nonexistent files should not be autofixed."""

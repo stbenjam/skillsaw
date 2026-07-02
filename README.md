@@ -608,6 +608,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
+| `agentskill-unreferenced-files` | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - |
 
 **`agentskill-valid` parameters:**
 
@@ -622,11 +623,24 @@ These rules validate skills against the [agentskills.io specification](https://a
 |-----------|-------------|---------|
 | `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
 
+**`agentskill-description` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max_length` | Maximum description length in characters (spec limit 1024; consider 256 to keep routing context lean) | `1024` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
+
+**`agentskill-unreferenced-files` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 ### Plugin Structure
 
@@ -661,7 +675,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 ### Skills, Agents, Hooks
 
-Validates skill/agent frontmatter and hook configuration. The security rules scan hooks in both `hooks.json` and `settings.json` for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
+Validates skill/agent frontmatter and hook configuration. The security rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent frontmatter (`hooks:` key) for supply-chain attack patterns (inspired by the [Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
@@ -790,6 +804,7 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |-----------|-------------|---------|
 | `banned` | Additional banned patterns as list of {pattern, message} dicts | `[]` |
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
+| `regex-timeout` | Per-pattern wall-clock budget (seconds) for custom banned patterns; guards against catastrophic-backtracking regexes (clamped to 10s max) | `2.0` |
 
 **`content-unlinked-internal-reference` parameters:**
 
