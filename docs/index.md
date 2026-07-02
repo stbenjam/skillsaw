@@ -14,10 +14,8 @@
 </div>
 
 <div style="text-align: center; padding: 1rem 0;">
-<a href="https://asciinema.org/a/1259880" title="Watch the skillsaw onboarding demo">
-<img src="images/onboarding-demo.png" alt="Watch the skillsaw onboarding demo" style="max-width: 100%; border-radius: 8px;">
-</a>
-<p markdown>▶️ **[Watch the onboarding demo](https://asciinema.org/a/1259880)** — see skillsaw grade, fix, and configure a repo from scratch.</p>
+<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
+<noscript><p markdown>▶️ **[Watch the onboarding demo](https://asciinema.org/a/1259880)** — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
 </div>
 
 ---
