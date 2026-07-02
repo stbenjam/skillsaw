@@ -43,7 +43,9 @@ code blocks (`python scripts/run.py`), and plain prose:
 Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
 NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
 and `tests/` (eval/test scaffolding is consumed by external harnesses
-by convention, not referenced from the skill text), hidden files or
+by convention, not referenced from the skill text), `test_*.py` files
+and anything under a `testdata/` directory at any depth (bundled
+scripts routinely ship self-tests and fixtures), hidden files or
 directories, and symlinks (which are also never followed). The
 `exclude` option adds glob patterns on top of these defaults.
 

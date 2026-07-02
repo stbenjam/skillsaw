@@ -32,6 +32,19 @@ def load_results(directory):
     return results
 
 
+def repo_label(stem, link=True):
+    """Render a result-file stem as markdown.
+
+    The workflow encodes ``org/repo`` as ``org__repo`` in file names; stems
+    without the separator (e.g. hand-run local results) render as plain code.
+    """
+    if "__" not in stem:
+        return f"`{stem}`"
+    slug = stem.replace("__", "/")
+    label = f"[{slug}](https://github.com/{slug})"
+    return label if link else slug
+
+
 def violation_keys(data):
     return {
         (v.get("rule_id", "?"), v.get("file_path", "?"), v.get("line"))
@@ -77,7 +90,7 @@ def main():
             which = " and ".join(
                 side for side, data in (("base", base), ("head", head)) if data is None
             )
-            sections.append(f"### {repo}\n\n⚠️ {which} run produced no parseable JSON.")
+            sections.append(f"### {repo_label(repo)}\n\n⚠️ {which} run produced no parseable JSON.")
             continue
 
         new = violation_keys(head) - violation_keys(base)
@@ -86,7 +99,7 @@ def main():
             clean.append(repo)
             continue
 
-        lines = [f"### {repo}", ""]
+        lines = [f"### {repo_label(repo)}", ""]
         summary = []
         if new:
             summary.append(f"**{len(new)} new**")
@@ -113,7 +126,7 @@ def main():
         "see once the rules reach them."
     )
     print()
-    clean_list = ", ".join(f"`{repo}`" for repo in clean)
+    clean_list = ", ".join(repo_label(repo) for repo in clean)
     if sections:
         print("\n\n".join(sections))
         if clean:

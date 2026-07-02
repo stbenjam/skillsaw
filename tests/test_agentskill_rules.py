@@ -1716,6 +1716,10 @@ def test_default_exclusions(temp_dir):
     (skill / "tests").mkdir()
     (skill / "tests" / "evals.json").write_text(json.dumps({"evals": [{"prompt": "p"}]}))
     (skill / "tests" / "graders.ts").write_text("export const graders = [];\n")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "test_validate.py").write_text("def test_ok():\n    assert True\n")
+    (skill / "scripts" / "testdata").mkdir()
+    (skill / "scripts" / "testdata" / "valid.json").write_text('{"rows": []}\n')
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
 

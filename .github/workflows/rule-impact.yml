@@ -80,21 +80,22 @@ jobs:
                    opendatahub-io/agent-eval-harness kubernetes-sigs/maintainer-tools \
                    RedHatProductSecurity/prodsec-skills; do
             name=$(basename "$r")
+            slug=${r//\//__}  # encode org/repo into the filename for the report
             git clone --quiet --depth 1 "https://github.com/$r.git" "/tmp/repos/$name"
 
             # Findings exit 1 — only rc > 1 (crash) is fatal.
             rc=0
             /tmp/head-venv/bin/skillsaw lint --format json --no-custom-rules $head_args \
-              "/tmp/repos/$name" > "/tmp/out/head/$name.json" || rc=$?
+              "/tmp/repos/$name" > "/tmp/out/head/$slug.json" || rc=$?
             [ "$rc" -le 1 ] || { echo "head skillsaw crashed on $name (rc=$rc)"; exit 1; }
 
             if [ -n "$base_args" ]; then
               rc=0
               /tmp/base-venv/bin/skillsaw lint --format json --no-custom-rules $base_args \
-                "/tmp/repos/$name" > "/tmp/out/base/$name.json" || rc=$?
+                "/tmp/repos/$name" > "/tmp/out/base/$slug.json" || rc=$?
               [ "$rc" -le 1 ] || { echo "base skillsaw crashed on $name (rc=$rc)"; exit 1; }
             else
-              echo '{"violations": []}' > "/tmp/out/base/$name.json"
+              echo '{"violations": []}' > "/tmp/out/base/$slug.json"
             fi
           done
 
