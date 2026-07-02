@@ -23,4 +23,4 @@ jobs:
           strict: true
           no-custom-rules: false
           plugins: |
-            skillsaw-typos==0.1.0
+            skillsaw-runbooks==0.1.0

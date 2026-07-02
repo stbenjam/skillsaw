@@ -87,7 +87,9 @@ the remaining arguments forwarded verbatim, git-style — its exit code becomes
 skillsaw's exit code:
 
 ```console
-$ skillsaw typos accept        # runs: skillsaw-typos accept
+$ skillsaw runbooks list       # runs: skillsaw-runbooks list
+runbooks/db-failover.md: Database failover to the replica — storage-team
+runbooks/cache-flush.md: Flush the Redis cache — payments-team
 ```
 
 Dispatch rules:

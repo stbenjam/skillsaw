@@ -18,7 +18,7 @@ inputs:
     required: false
     default: 'false'
   plugins:
-    description: 'Newline-separated list of plugin packages to install (e.g. skillsaw-typos==0.1.0)'
+    description: 'Newline-separated list of plugin packages to install (e.g. skillsaw-runbooks==0.1.0)'
     required: false
     default: ''
   verbose:

@@ -44,7 +44,7 @@ dev = [
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
-    "skillsaw-typos==0.1.0",
+    "skillsaw-runbooks==0.1.0",
 ]
 
 [project.urls]
