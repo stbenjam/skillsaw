@@ -84,6 +84,15 @@ class MarketplaceRegistrationRule(Rule):
         if not isinstance(data["plugins"], list):
             return results
 
+        # metadata.pluginRoot is prepended to relative sources when Claude
+        # Code resolves them, so generated sources must be relative to it.
+        source_base = context.root_path
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
+            plugin_root = metadata["pluginRoot"]
+            if plugin_root and ".." not in plugin_root.replace("\\", "/").split("/"):
+                source_base = context.root_path / plugin_root
+
         fixed_violations = []
         for v in violations:
             if "not registered" not in v.message:
@@ -98,9 +107,12 @@ class MarketplaceRegistrationRule(Rule):
             for plugin_node in context.lint_tree.find(PluginNode):
                 if context.get_plugin_name(plugin_node.path) == plugin_name:
                     try:
-                        rel_source = str(plugin_node.path.relative_to(context.root_path))
+                        rel_source = str(plugin_node.path.relative_to(source_base))
                     except ValueError:
-                        pass
+                        try:
+                            rel_source = str(plugin_node.path.relative_to(context.root_path))
+                        except ValueError:
+                            pass
                     break
             # Relative sources must start with ./ per the marketplace spec.
             data["plugins"].append({"name": plugin_name, "source": f"./{rel_source}"})

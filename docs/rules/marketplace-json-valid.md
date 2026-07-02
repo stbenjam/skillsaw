@@ -51,6 +51,11 @@ with `..`. An object source declares its type via the `source` field
 required fields (`repo`, `url`, `url` + `path`, or `package`
 respectively).
 
+When `metadata.pluginRoot` is set, it is prepended to relative
+sources, so bare names like `"formatter"` are valid and the `./`
+style nudge does not apply. The plugin root itself must be a string
+and, like sources, must not escape the repository with `..`.
+
 ## Configuration
 
 ```yaml

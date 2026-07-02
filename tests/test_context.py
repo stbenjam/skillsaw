@@ -208,6 +208,94 @@ def test_disallow_parent_traversal(temp_dir, caplog):
     assert any("escapes repository root" in record.message for record in caplog.records)
 
 
+def test_plugin_root_prepended_to_relative_sources(temp_dir):
+    """metadata.pluginRoot is prepended to bare and ./-prefixed relative sources"""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./tools"},
+                "plugins": [
+                    {"name": "bare-plugin", "source": "bare-plugin"},
+                    {"name": "dotted-plugin", "source": "./dotted-plugin"},
+                ],
+            },
+            f,
+        )
+
+    for name in ("bare-plugin", "dotted-plugin"):
+        plugin_dir = temp_dir / "tools" / name / ".claude-plugin"
+        plugin_dir.mkdir(parents=True)
+        with open(plugin_dir / "plugin.json", "w") as f:
+            json.dump({"name": name, "description": "A test plugin", "version": "1.0.0"}, f)
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 2
+    names = [context.get_plugin_name(p) for p in context.plugins]
+    assert "bare-plugin" in names
+    assert "dotted-plugin" in names
+
+
+def test_plugin_root_strict_false_metadata(temp_dir):
+    """strict: false metadata is found for plugins resolved through pluginRoot"""
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [
+                    {
+                        "name": "no-manifest-plugin",
+                        "source": "no-manifest-plugin",
+                        "version": "2.0.0",
+                        "strict": False,
+                    }
+                ],
+            },
+            f,
+        )
+
+    commands = temp_dir / "plugins" / "no-manifest-plugin" / "commands"
+    commands.mkdir(parents=True)
+    (commands / "hello.md").write_text("# Hello\n\nSay hello.\n")
+
+    context = RepositoryContext(temp_dir)
+    assert len(context.plugins) == 1
+    metadata = context.get_plugin_metadata(context.plugins[0])
+    assert metadata is not None
+    assert metadata["name"] == "no-manifest-plugin"
+    assert metadata["version"] == "2.0.0"
+
+
+def test_plugin_root_traversal_rejected(temp_dir, caplog):
+    """A traversing pluginRoot must not let sources escape the repo root"""
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    claude = temp_dir / ".claude-plugin"
+    claude.mkdir()
+    with open(claude / "marketplace.json", "w") as f:
+        json.dump(
+            {
+                "name": "test-marketplace",
+                "metadata": {"pluginRoot": "../../shared"},
+                "plugins": [{"name": "evil-plugin", "source": "formatter"}],
+            },
+            f,
+        )
+
+    context = RepositoryContext(temp_dir)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
+    assert any("escapes repository root" in record.message for record in caplog.records)
+
+
 def test_dot_claude_detection(temp_dir):
     """Test detection of .claude/ directory with commands"""
     claude_dir = temp_dir / ".claude"

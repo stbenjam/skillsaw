@@ -323,6 +323,26 @@ class TestMarketplace:
         assert "marketplace" in stats["repo_types"]
         assert len(stats["plugins"]) == 3
 
+    def test_marketplace_plugin_root_resolves_local_sources(self, tmp_path):
+        """metadata.pluginRoot is prepended to relative plugin sources (issue #343)."""
+        repo = copy_fixture("marketplace/plugin-root", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        # The strict: false plugin resolved through pluginRoot must not be
+        # flagged for a missing plugin.json.
+        assert "plugin-json-required" not in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 3
+
+    def test_marketplace_plugin_root_traversal_rejected(self, tmp_path):
+        """A pluginRoot escaping the repository is flagged and never resolved."""
+        repo = copy_fixture("marketplace/plugin-root-escape", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert "marketplace-json-valid" in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 0
+
 
 # ── Agentskills ──────────────────────────────────────────────────
 
@@ -1358,6 +1378,7 @@ BROKEN_FIXTURES = [
 CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
+    "marketplace/plugin-root",
     "agentskills/clean",
     "agentskills/unreferenced-clean",
     "dot-claude/clean",

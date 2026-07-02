@@ -97,6 +97,26 @@ class MarketplaceJsonValidRule(Rule):
                 self.violation("'owner' must have a 'name' field", file_path=marketplace_file)
             )
 
+        plugin_root = None
+        metadata = marketplace.get("metadata")
+        if isinstance(metadata, dict) and "pluginRoot" in metadata:
+            if not isinstance(metadata["pluginRoot"], str):
+                violations.append(
+                    self.violation(
+                        "'metadata.pluginRoot' must be a string", file_path=marketplace_file
+                    )
+                )
+            else:
+                plugin_root = metadata["pluginRoot"]
+                if ".." in plugin_root.replace("\\", "/").split("/"):
+                    violations.append(
+                        self.violation(
+                            "metadata.pluginRoot: path contains '..' — the plugin "
+                            "root must stay within the marketplace repository",
+                            file_path=marketplace_file,
+                        )
+                    )
+
         if "plugins" not in marketplace:
             violations.append(self.violation("Missing 'plugins' array", file_path=marketplace_file))
         elif not isinstance(marketplace["plugins"], list):
@@ -143,11 +163,13 @@ class MarketplaceJsonValidRule(Rule):
                         )
                     )
                 else:
-                    violations.extend(self._check_source(entry["source"], idx, marketplace_file))
+                    violations.extend(
+                        self._check_source(entry["source"], idx, marketplace_file, plugin_root)
+                    )
 
         return violations
 
-    def _check_source(self, source, idx: int, marketplace_file) -> List[RuleViolation]:
+    def _check_source(self, source, idx: int, marketplace_file, plugin_root) -> List[RuleViolation]:
         """Validate a plugin entry's source (relative path or typed object)."""
         violations = []
 
@@ -161,7 +183,9 @@ class MarketplaceJsonValidRule(Rule):
                         file_path=marketplace_file,
                     )
                 )
-            elif not source.startswith("./"):
+            elif not source.startswith("./") and not plugin_root:
+                # With metadata.pluginRoot set, bare names (e.g. "formatter")
+                # are the documented form, so no style nudge applies.
                 violations.append(
                     self.violation(
                         f"plugins[{idx}].source: relative path '{source}' should "

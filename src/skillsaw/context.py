@@ -451,12 +451,33 @@ class RepositoryContext:
         except (json.JSONDecodeError, IOError):
             return None
 
+    def marketplace_plugin_root(self) -> Optional[str]:
+        """
+        Return metadata.pluginRoot from marketplace.json, if set
+
+        Per the plugin-marketplaces spec, ``metadata.pluginRoot`` is a base
+        directory prepended to relative plugin source paths (e.g.
+        ``"./plugins"`` lets entries use ``"source": "formatter"`` instead
+        of ``"./plugins/formatter"``).
+        """
+        if not self.marketplace_data:
+            return None
+        metadata = self.marketplace_data.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        plugin_root = metadata.get("pluginRoot")
+        if isinstance(plugin_root, str) and plugin_root:
+            return plugin_root
+        return None
+
     def _resolve_plugin_source(self, source: Any, plugin_entry: Dict[str, Any]) -> Optional[Path]:
         """
         Resolve a plugin source from marketplace.json to a local path
 
         Handles relative paths (e.g., "./", "./custom/path") and remote sources
-        (GitHub repos, git URLs). Remote sources are logged but skipped for local validation.
+        (GitHub repos, git URLs). Remote sources are logged but skipped for local
+        validation. Relative paths are resolved under metadata.pluginRoot when
+        the marketplace declares one.
 
         Args:
             source: Plugin source (string path or dict with source type)
@@ -469,7 +490,16 @@ class RepositoryContext:
 
         # Handle relative path strings
         if isinstance(source, str):
-            candidate = (self.root_path / source).resolve()
+            base = self.root_path
+            plugin_root = self.marketplace_plugin_root()
+            if plugin_root and not Path(source).is_absolute():
+                # metadata.pluginRoot is prepended to relative sources (both
+                # bare names and ./-prefixed paths). The containment check
+                # below still rejects any composed path that escapes the
+                # repository, so a traversing pluginRoot cannot smuggle a
+                # source outside the root.
+                base = base / plugin_root
+            candidate = (base / source).resolve()
 
             # Disallow escaping the repo with .. paths
             try:
@@ -629,6 +659,15 @@ class RepositoryContext:
             # Always store marketplace entry data for metadata merging
             self.marketplace_entries[resolved_path] = plugin_entry
 
+            # Store metadata for strict: false plugins without plugin.json.
+            # This must happen before the duplicate skip below so plugins the
+            # plugins/ dir scan already discovered still get their metadata.
+            is_strict = plugin_entry.get("strict", True)
+            has_plugin_json = (plugin_path / ".claude-plugin" / "plugin.json").exists()
+
+            if not is_strict and not has_plugin_json:
+                self.plugin_metadata[resolved_path] = plugin_entry
+
             # Skip duplicates for plugin discovery
             if resolved_path in discovered_paths:
                 continue
@@ -639,13 +678,6 @@ class RepositoryContext:
 
             plugins.append(plugin_path)
             discovered_paths.add(resolved_path)
-
-            # Store metadata for strict: false plugins without plugin.json
-            is_strict = plugin_entry.get("strict", True)
-            has_plugin_json = (plugin_path / ".claude-plugin" / "plugin.json").exists()
-
-            if not is_strict and not has_plugin_json:
-                self.plugin_metadata[resolved_path] = plugin_entry
 
     def get_plugin_name(self, plugin_path: Path) -> str:
         """
