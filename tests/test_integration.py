@@ -339,6 +339,89 @@ class TestAgentskills:
         assert len(stats["skills"]) == 4
 
 
+# ── Unreferenced Skill Files ─────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestUnreferencedSkillFiles:
+    """End-to-end coverage for agentskill-unreferenced-files."""
+
+    RULE = "agentskill-unreferenced-files"
+
+    def test_unreferenced_files_flagged(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        r = run_lint(repo)
+        vs = by_rule(r).get(self.RULE, [])
+        flagged = {v["file_path"] for v in vs}
+        assert flagged == {
+            "log-analyzer/scripts/upload.py",
+            "log-analyzer/references/unused-notes.md",
+        }
+        # Whole-file violations must not fabricate line numbers.
+        assert all(v["line"] is None for v in vs)
+        assert all(v["severity"] == "warning" for v in vs)
+
+    def test_fenced_code_block_reference_counts(self, tmp_path):
+        """scripts/analyze.py is only invoked inside a fenced code block."""
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        r = run_lint(repo)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "log-analyzer/scripts/analyze.py" not in flagged
+
+    def test_transitive_reference_counts(self, tmp_path):
+        """SKILL.md links references/guide.md, which mentions release-weeks.md."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/references/release-weeks.md" not in flagged
+
+    def test_directory_mention_covers_contents(self, tmp_path):
+        """assets/shell.html is only covered by the `assets/` directory mention."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        assert self.RULE not in rule_ids(r)
+
+    def test_directory_mention_covers_disabled(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
+        )
+        r = run_lint(repo, config=config)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert flagged == {"report-builder/assets/shell.html"}
+
+    def test_default_exclusions_never_flagged(self, tmp_path):
+        """README.md, LICENSE, evals/, and dotfiles are exempt by default."""
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        skill = repo / "report-builder"
+        assert (skill / "README.md").is_file()
+        assert (skill / "LICENSE").is_file()
+        assert (skill / "evals" / "evals.json").is_file()
+        assert (skill / "assets" / ".gitkeep").is_file()
+        r = run_lint(repo)
+        assert self.RULE not in rule_ids(r)
+
+    def test_exclude_glob_suppresses_violation(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-broken", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n"
+            "  agentskill-unreferenced-files:\n"
+            "    exclude:\n"
+            '      - "scripts/upload.py"\n'
+            '      - "references/*.md"\n'
+        )
+        r = run_lint(repo, config=config)
+        assert self.RULE not in rule_ids(r)
+
+    def test_fully_referenced_skill_passes(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert self.RULE not in rule_ids(r)
+
+
 # ── File Path Argument ──────────────────────────────────────────
 
 
@@ -1228,6 +1311,7 @@ BROKEN_FIXTURES = [
     "single-plugin/context-budget",
     "marketplace/broken",
     "agentskills/broken",
+    "agentskills/unreferenced-broken",
     "dot-claude/broken",
     "dot-claude/agents-imports-broken",
     "coderabbit/broken",
@@ -1241,6 +1325,7 @@ CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
     "agentskills/clean",
+    "agentskills/unreferenced-clean",
     "dot-claude/clean",
     "dot-claude/agents-imports-clean",
     "coderabbit/clean",
