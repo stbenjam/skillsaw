@@ -47,8 +47,35 @@ _PLACEHOLDER_MARKERS = (
 )
 
 # Template/variable syntax anywhere in the value marks it as a placeholder:
-# <your-key>, ${API_KEY}, {{ secrets.KEY }}, $VAR interpolation.
-_TEMPLATE_SYNTAX = re.compile(r"<[^>]*>|\$\{[^}]*\}|\{\{[^}]*\}\}|\$[A-Z_][A-Z0-9_]*")
+# <your-key>, ${API_KEY}, {{ secrets.KEY }}.  The angle-bracket form requires
+# word-like placeholder content (<your-api-key>, <API_KEY>, <paste token
+# here>) so that incidental <..> punctuation inside a random secret
+# ("k<9x>Km2#pQz") does not suppress it.
+_TEMPLATE_SYNTAX = re.compile(r"<[A-Za-z][A-Za-z0-9 _./-]{2,}>|\$\{[^}]*\}|\{\{[^}]*\}\}")
+
+# Bare $VAR env-var interpolation.  Matched greedily and confirmed in code:
+# the character after the match must not be a lowercase letter, otherwise
+# "$MQ2vLp8" inside a random password would be mistaken for a variable
+# reference.  A trailing negative lookahead cannot express this — the engine
+# would backtrack into a truncated accepted match (see CLAUDE.md, issue #321).
+_ENV_VAR_SYNTAX = re.compile(r"\$[A-Z_][A-Z0-9_]{2,}")
+
+
+def _has_env_var_reference(value: str) -> bool:
+    """True when *value* contains a $VAR-style env-var reference."""
+    for m in _ENV_VAR_SYNTAX.finditer(value):
+        end = m.end()
+        if end >= len(value) or not value[end].islower():
+            return True
+    return False
+
+
+# Shannon entropy per character of an n-char string is capped at log2(n),
+# so short values can never reach a threshold tuned for long ones (a fully
+# random 10-char password measures at most 3.32 bits/char).  Values shorter
+# than 16 chars are normalized to this 16-char reference (log2(16) = 4.0
+# bits) so the threshold discriminates uniformly across lengths.
+_REFERENCE_MAX_BITS = 4.0
 
 
 def _shannon_entropy(value: str) -> float:
@@ -60,6 +87,24 @@ def _shannon_entropy(value: str) -> float:
     for ch in value:
         counts[ch] = counts.get(ch, 0) + 1
     return -sum((n / length) * math.log2(n / length) for n in counts.values())
+
+
+def _length_adjusted_entropy(value: str) -> float:
+    """Shannon entropy normalized for short samples.
+
+    For values shorter than 16 characters the raw per-char entropy is scaled
+    up by ``4.0 / log2(len)`` — the ratio between the 16-char reference
+    ceiling and the value's own ceiling — so a fully random 8-char password
+    (raw max 3.0 bits/char) is comparable against the same threshold as a
+    32-char one.  Longer values are returned unscaled.
+    """
+    raw = _shannon_entropy(value)
+    if len(value) < 2:
+        return raw
+    max_bits = math.log2(len(value))
+    if max_bits >= _REFERENCE_MAX_BITS:
+        return raw
+    return raw * (_REFERENCE_MAX_BITS / max_bits)
 
 
 class ContentEmbeddedSecretsRule(Rule):
@@ -180,7 +225,9 @@ class ContentEmbeddedSecretsRule(Rule):
         if len(set(value)) <= 1:
             return True  # all-same-character: ********, aaaaaaaa
         if _TEMPLATE_SYNTAX.search(value):
-            return True  # <your-key>, ${API_KEY}, {{ secrets.KEY }}, $VAR
+            return True  # <your-key>, ${API_KEY}, {{ secrets.KEY }}
+        if _has_env_var_reference(value):
+            return True  # $API_KEY interpolation
         lowered = value.lower()
         return any(marker in lowered for marker in markers)
 
@@ -193,7 +240,7 @@ class ContentEmbeddedSecretsRule(Rule):
             return False
         if self._is_placeholder(value, markers):
             return False
-        return _shannon_entropy(value) >= threshold
+        return _length_adjusted_entropy(value) >= threshold
 
     def _scan_text(self, text: str, threshold: float, markers: Tuple[str, ...]):
         """Yield ``(line_num, desc)`` for at most one violation per line."""

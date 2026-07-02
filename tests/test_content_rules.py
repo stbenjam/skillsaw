@@ -720,6 +720,8 @@ class TestContentEmbeddedSecretsRule:
             'api_key = "abababababababab"',
             'secret_key = "{{ secrets.PRODUCTION_KEY }}"',
             'access_token = "insert-real-value-here"',
+            'password = "$DB_PASSWORD"',
+            'password = "helloworld"',
         ],
         ids=[
             "hunter2",
@@ -732,6 +734,8 @@ class TestContentEmbeddedSecretsRule:
             "low-entropy",
             "jinja-template",
             "insert-word",
+            "bare-env-var",
+            "english-short",
         ],
     )
     def test_no_false_positive_on_placeholder_values(self, temp_dir, line):
@@ -757,6 +761,39 @@ class TestContentEmbeddedSecretsRule:
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
         assert expected_desc in violations[0].message
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            # Shannon per-char entropy of an n-char string is capped at
+            # log2(n) — a raw 3.5 threshold silently exempts every 8-11 char
+            # password.  Length normalization must keep these reportable.
+            'password = "k9x2m4qp"',
+            'password = "xK9#mQ2$vL"',
+            'password = "Tr0ub4dor&3"',
+            # $ followed by uppercase inside a random value is not an
+            # env-var reference and must not suppress the finding.
+            'password = "xK9$MQ2vLp8#nR4z"',
+            # Incidental <..> punctuation inside a random value is not an
+            # angle-bracket placeholder.
+            'password = "k<9x>Km2#pQzW4vT"',
+        ],
+        ids=[
+            "short-random-8",
+            "short-random-10",
+            "short-random-11",
+            "dollar-upper-inside",
+            "angle-punct-inside",
+        ],
+    )
+    def test_realistic_secrets_not_suppressed_by_gating(self, temp_dir, line):
+        """False-negative regressions: real-shaped secrets must fire despite
+        the placeholder/entropy gates."""
+        (temp_dir / "CLAUDE.md").write_text(f"Config: {line}\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentEmbeddedSecretsRule().check(context)
+        assert len(violations) >= 1
+        assert "Hardcoded password" in violations[0].message
 
     def test_structured_tokens_not_entropy_gated(self, temp_dir):
         """High-confidence token formats fire even for low-entropy bodies."""

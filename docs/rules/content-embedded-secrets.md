@@ -35,7 +35,11 @@ Two classes of match are handled differently:
       the list with `additional-placeholders`.
     - *Entropy gating*: the value's Shannon entropy must reach
       `entropy-threshold` (default 3.5 bits/char). Real random secrets
-      pass; English-ish placeholder strings do not.
+      pass; English-ish placeholder strings do not. Values shorter than
+      16 characters are length-normalized before comparison (per-char
+      Shannon entropy of an n-char string is capped at log2(n), so a
+      fully random 10-char password measures only ~3.3 bits/char raw —
+      short random passwords still fire).
 
 ## Examples
 
