@@ -54,3 +54,13 @@ Files that are already linked (should not be touched):
 - See [docs/architecture.md](docs/architecture.md) for details
 - See [src/utils.py](src/utils.py) for details
 - See [config/settings.yaml](config/settings.yaml) for details
+
+## Punctuation Edge Cases
+
+Paths abutting parentheses must never be flagged or rewritten:
+
+- Compiled bytecode files (e.g. scripts/test.pyc) should never be committed
+- The build entry point (scripts/build.sh) is invoked by CI
+
+A sentence can end right after a path like ./docs/api.md. The period stays
+outside the link when the path is wrapped.

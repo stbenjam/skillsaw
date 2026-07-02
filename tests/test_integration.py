@@ -1893,9 +1893,9 @@ class TestSafeAutofixIdempotency:
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
         "agentskill-name": 3,
-        "agentskill-valid": 2,
+        "agentskill-valid": 4,
         "command-frontmatter": 3,
-        "content-unlinked-internal-reference": 22,
+        "content-unlinked-internal-reference": 23,
         "skill-frontmatter": 2,
     }
 
