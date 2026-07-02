@@ -26,6 +26,19 @@ if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
 
 
+class CustomRuleWarning(UserWarning):
+    """Emitted just before skillsaw executes a custom rule file from the repo.
+
+    Carries ``path`` so the CLI can render the notice as a readable colored
+    line instead of the stock ``warnings`` traceback format; library callers
+    still get a normal ``UserWarning`` they can filter.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        super().__init__(f"Loading custom rule file: {path} — use --no-custom-rules to skip")
+
+
 class Linter:
     """
     Main linter that orchestrates rule checking
@@ -288,10 +301,7 @@ class Linter:
         if not path.exists():
             raise ValueError(f"Custom rule file not found: {path}")
 
-        warnings.warn(
-            f"Loading custom rule file: {path} — use --no-custom-rules to skip",
-            stacklevel=2,
-        )
+        warnings.warn(CustomRuleWarning(path), stacklevel=2)
         logger.info("Loading custom rules from %s", path)
 
         # Unique module name per file so two custom rule files cannot clobber

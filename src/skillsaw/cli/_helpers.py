@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from pathlib import Path
 
 from ..context import RepositoryContext, RepositoryType
@@ -155,3 +156,35 @@ def _ansi_colors():
         "reset": "" if no_color else "\033[0m",
         "no_color": no_color,
     }
+
+
+# ---------------------------------------------------------------------------
+# Warning display
+# ---------------------------------------------------------------------------
+
+
+def install_warning_display() -> None:
+    """Render skillsaw's own warnings as one readable line on stderr.
+
+    The stock ``warnings`` formatter prints the emitting source location and
+    code line (``linter.py:95: UserWarning: ...``), which reads like a crash.
+    Skillsaw warning categories get a compact colored line instead; every
+    other warning keeps the default rendering.
+    """
+    from ..linter import CustomRuleWarning
+
+    default_showwarning = warnings.showwarning
+
+    def _showwarning(message, category, filename, lineno, file=None, line=None):
+        if isinstance(message, CustomRuleWarning):
+            c = _ansi_colors()
+            print(
+                f"{c['yellow']}⚠ Loading custom rule file:{c['reset']} "
+                f"{c['bold']}{message.path}{c['reset']} "
+                f"{c['dim']}(use --no-custom-rules to skip){c['reset']}",
+                file=sys.stderr,
+            )
+        else:
+            default_showwarning(message, category, filename, lineno, file, line)
+
+    warnings.showwarning = _showwarning

@@ -22,6 +22,10 @@ _SUBCOMMANDS = {
 
 
 def main():
+    from ._helpers import install_warning_display
+
+    install_warning_display()
+
     # When no subcommand is given (or the first arg looks like a path/flag),
     # default to "lint" so bare `skillsaw` and `skillsaw /path` keep working.
     # `add` has its own argparse — dispatch before the main parser sees the args.
