@@ -18,6 +18,7 @@ consume the marketplace cannot list or install plugins.
 {
   "name": "my-marketplace",
   "description": "Internal plugin marketplace",
+  "owner": {"name": "platform-team"},
   "plugins": []
 }
 ```
