@@ -737,6 +737,59 @@ class TestContentBannedReferencesRule:
         violations = ContentBannedReferencesRule().check(context)
         assert len(violations) == 0
 
+    def test_custom_banned_pattern_fires(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Please use the forbidden-term here.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {"banned": [{"pattern": "forbidden-term", "message": "no forbidden terms"}]}
+        )
+        violations = rule.check(context)
+        assert any("no forbidden terms" in v.message for v in violations)
+
+    def test_literal_less_pattern_still_fires(self, temp_dir):
+        """A banned pattern with no extractable literal must not be silently
+        skipped by the prefilter (issue #316 secondary claim)."""
+        (temp_dir / "CLAUDE.md").write_text("Release date 2024-01-15 is hardcoded.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {
+                "skip-builtins": True,
+                "banned": [{"pattern": r"\d{4}-\d{2}-\d{2}", "message": "no dates"}],
+            }
+        )
+        violations = rule.check(context)
+        assert any("no dates" in v.message for v in violations)
+
+    def test_catastrophic_pattern_times_out_instead_of_hanging(self, temp_dir):
+        """A config-supplied ReDoS pattern must be bounded, not hang lint
+        (issue #316). A tiny budget keeps the test fast."""
+        import time
+
+        body = "evilprefix" + "a" * 40 + "!\n"
+        (temp_dir / "CLAUDE.md").write_text(body)
+        context = RepositoryContext(temp_dir)
+        rule = ContentBannedReferencesRule(
+            {
+                "skip-builtins": True,
+                "regex-timeout": 0.3,
+                "banned": [{"pattern": "evilprefix(a+)+$", "message": "boom"}],
+            }
+        )
+        start = time.perf_counter()
+        violations = rule.check(context)
+        elapsed = time.perf_counter() - start
+        # Bounded well under a naive run (which measures tens of seconds).
+        assert elapsed < 5.0
+        assert any("Skipped banned pattern" in v.message for v in violations)
+
+    def test_timeout_is_clamped_and_zero_disables(self, temp_dir):
+        rule = ContentBannedReferencesRule({"regex-timeout": 999})
+        assert rule._regex_timeout() == 10.0
+        rule = ContentBannedReferencesRule({"regex-timeout": 0})
+        assert rule._regex_timeout() == 0.0
+        rule = ContentBannedReferencesRule({"regex-timeout": "nonsense"})
+        assert rule._regex_timeout() == 2.0
+
 
 class TestContentInconsistentTerminologyRule:
     def test_rule_metadata(self):

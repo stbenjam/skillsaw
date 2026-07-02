@@ -6,9 +6,18 @@ from typing import List, Tuple
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
+    RegexTimeout,
     gather_all_content_blocks,
     patterns_matching_anywhere,
+    regex_timeout,
 )
+
+# Wall-clock budget for a single config-supplied pattern against one file body.
+# Untrusted ``.skillsaw.yaml`` patterns run with the backtracking ``re`` engine,
+# so an unbounded search can hang lint (issue #316).  Clamped so a hostile or
+# careless config can't raise the ceiling to something useless.
+_DEFAULT_REGEX_TIMEOUT = 2.0
+_MAX_REGEX_TIMEOUT = 10.0
 
 
 class ContentBannedReferencesRule(Rule):
@@ -43,6 +52,15 @@ class ContentBannedReferencesRule(Rule):
             "default": False,
             "description": "Disable built-in deprecated model/API checks",
         },
+        "regex-timeout": {
+            "type": "float",
+            "default": _DEFAULT_REGEX_TIMEOUT,
+            "description": (
+                "Per-pattern wall-clock budget (seconds) for custom banned "
+                "patterns; guards against catastrophic-backtracking regexes "
+                f"(clamped to {_MAX_REGEX_TIMEOUT:g}s max)"
+            ),
+        },
     }
 
     @property
@@ -56,11 +74,17 @@ class ContentBannedReferencesRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.WARNING
 
-    def _get_patterns(self) -> List[Tuple[re.Pattern, str]]:
+    def _builtin_patterns(self) -> List[Tuple[re.Pattern, str]]:
+        """Trusted, curated patterns — safe to run without a time budget."""
+        if self.config.get("skip-builtins", False):
+            return []
+        return [
+            (re.compile(regex_str, re.IGNORECASE), msg) for regex_str, msg in self._BUILTIN_PATTERNS
+        ]
+
+    def _config_patterns(self) -> List[Tuple[re.Pattern, str]]:
+        """Untrusted patterns from ``.skillsaw.yaml`` — run under a time budget."""
         patterns: List[Tuple[re.Pattern, str]] = []
-        if not self.config.get("skip-builtins", False):
-            for regex_str, msg in self._BUILTIN_PATTERNS:
-                patterns.append((re.compile(regex_str, re.IGNORECASE), msg))
         for entry in self.config.get("banned", []):
             if isinstance(entry, dict) and "pattern" in entry:
                 msg = entry.get("message", f"Banned reference: matches '{entry['pattern']}'")
@@ -70,26 +94,53 @@ class ContentBannedReferencesRule(Rule):
                     pass
         return patterns
 
-    def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        patterns = self._get_patterns()
-        if not patterns:
+    def _regex_timeout(self) -> float:
+        try:
+            value = float(self.config.get("regex-timeout", _DEFAULT_REGEX_TIMEOUT))
+        except (TypeError, ValueError):
+            value = _DEFAULT_REGEX_TIMEOUT
+        if value <= 0:
+            return 0.0
+        return min(value, _MAX_REGEX_TIMEOUT)
+
+    def _scan(self, cf, body: str, patterns: List[Tuple[re.Pattern, str]]) -> List[RuleViolation]:
+        active = patterns_matching_anywhere(body, patterns)
+        if not active:
             return []
-        violations = []
+        out: List[RuleViolation] = []
+        for line_num, line in enumerate(body.splitlines(), 1):
+            for pattern, msg in active:
+                if pattern.search(line):
+                    out.append(self.violation(f"Banned reference: {msg}", block=cf, line=line_num))
+        return out
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        builtin = self._builtin_patterns()
+        config = self._config_patterns()
+        if not builtin and not config:
+            return []
+        timeout = self._regex_timeout()
+        violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
-            active = patterns_matching_anywhere(body, patterns)
-            if not active:
-                continue
-            for line_num, line in enumerate(body.splitlines(), 1):
-                for pattern, msg in active:
-                    if pattern.search(line):
-                        violations.append(
-                            self.violation(
-                                f"Banned reference: {msg}",
-                                block=cf,
-                                line=line_num,
-                            )
+            # Trusted built-ins run without a budget.
+            violations.extend(self._scan(cf, body, builtin))
+            # Each untrusted config pattern is bounded independently so one
+            # catastrophic-backtracking regex can't hang lint (issue #316) and
+            # so the offending pattern can be named in the diagnostic.
+            for pat, msg in config:
+                try:
+                    with regex_timeout(timeout):
+                        violations.extend(self._scan(cf, body, [(pat, msg)]))
+                except RegexTimeout:
+                    violations.append(
+                        self.violation(
+                            "Skipped banned pattern (exceeded "
+                            f"{timeout:g}s budget — possible catastrophic backtracking): "
+                            f"{pat.pattern!r}",
+                            block=cf,
                         )
+                    )
         return violations
