@@ -99,7 +99,7 @@ jobs:
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 100
-            --model claude-opus-4-6
+            --model claude-opus-4-8
 
       - name: Save last run timestamp
         if: always()
