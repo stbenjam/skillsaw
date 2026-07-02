@@ -30,6 +30,7 @@ prefixes and lazy continuations (the "column glue").
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -279,16 +280,22 @@ class _ContentMap:
                 col = 0
             self.entries.append((pos, body_line0, col))
             pos += len(content_line) + 1
+        # ``entries`` is sorted by its first field (line-start offset), which is
+        # strictly increasing.  Keep a parallel list of just those offsets so
+        # ``locate`` can binary-search instead of scanning linearly — the scan
+        # was O(n) per call and ``locate`` is called ~once per content line, so
+        # a large single paragraph made lint O(n^2) (see issue #318).
+        self._starts: List[int] = [e[0] for e in self.entries]
 
     def locate(self, content_pos: int) -> Tuple[int, Optional[int]]:
         """Return (body_line_0based, raw_col or None) for a content offset."""
-        entry = self.entries[0]
-        for candidate in self.entries:
-            if candidate[0] <= content_pos:
-                entry = candidate
-            else:
-                break
-        line_start, body_line0, raw_col = entry
+        # Rightmost entry whose start offset is <= content_pos.  ``_starts[0]``
+        # is always 0, so the index never goes negative for a valid offset;
+        # clamp defensively anyway.
+        idx = bisect.bisect_right(self._starts, content_pos) - 1
+        if idx < 0:
+            idx = 0
+        line_start, body_line0, raw_col = self.entries[idx]
         if raw_col is None:
             return body_line0, None
         return body_line0, raw_col + (content_pos - line_start)

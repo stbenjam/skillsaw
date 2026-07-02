@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import yaml
 
@@ -25,6 +25,7 @@ from skillsaw.utils import (
 )
 
 from .base import ContentBlock
+from .json_config import HookEventConfig, parse_hooks_events
 
 
 def _parse_file_frontmatter(
@@ -189,6 +190,17 @@ class FrontmatteredBlock(LintTarget):
         """Return the value of the named frontmatter field, or *default*."""
         fld = self.field(name)
         return fld.value if fld is not None else default
+
+    @property
+    def hooks_events(self) -> Dict[str, List[HookEventConfig]]:
+        """Parse a frontmatter ``hooks:`` key into event configs.
+
+        Skill and agent frontmatter may declare hooks using the same schema as
+        settings hooks (nested or flat), giving a checked-in, shareable vector
+        for command execution.  Security rules scan these alongside settings
+        and plugin ``hooks.json`` hooks.
+        """
+        return parse_hooks_events(self.field_value("hooks"))
 
     @property
     def has_frontmatter(self) -> bool:

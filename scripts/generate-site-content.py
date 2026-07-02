@@ -58,6 +58,7 @@ RULE_GROUPS = [
             "agentskill-structure",
             "agentskill-evals",
             "agentskill-evals-required",
+            "agentskill-unreferenced-files",
         ],
         "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable for agentskills "
@@ -93,7 +94,8 @@ RULE_GROUPS = [
             "hooks-prohibited",
         ],
         "Validates skill/agent frontmatter and hook configuration. The security "
-        "rules scan hooks in both `hooks.json` and `settings.json` for supply-chain "
+        "rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent "
+        "frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),

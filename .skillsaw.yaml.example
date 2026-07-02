@@ -54,6 +54,13 @@ rules:
     #   - references
     #   - scripts
 
+  # Every bundled skill file should be referenced from SKILL.md, directly or transitively
+  agentskill-unreferenced-files:
+    enabled: auto
+    severity: warning
+    # directory_mention_covers: true
+    # exclude: []
+
   # SKILL.md must have valid frontmatter with name and description
   agentskill-valid:
     enabled: auto

@@ -14,4 +14,5 @@ These rules validate skills against the [agentskills.io specification](https://a
 | [`agentskill-structure`](agentskill-structure.md) | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
+| [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - |
 
