@@ -80,7 +80,8 @@ def _run_explain(args):
         print(long_docs)
 
     if default_rule.repo_types:
-        repo_types_str = ", ".join(sorted(t.value for t in default_rule.repo_types))
+        # repo_types may mix RepositoryType members with plugin type names.
+        repo_types_str = ", ".join(sorted(getattr(t, "value", t) for t in default_rule.repo_types))
         print()
         print(f"{c['bold']}Applies to repo types:{c['reset']} {repo_types_str}")
 
@@ -107,12 +108,27 @@ def _run_explain(args):
     )
     config_label = str(config_path) if config_path else "builtin defaults"
 
+    # Plugin-contributed repo types must be detected for the effective state
+    # to match a real lint run (rules may scope to them via string entries).
+    if config.plugins_enabled:
+        from ..plugins import load_plugins, register_extensions
+
+        # A crashed or colliding detector would otherwise silently read as
+        # "no matching repo type detected" — surface it like `skillsaw tree`.
+        for problem in register_extensions(
+            context, load_plugins(disabled=set(config.disabled_plugins))
+        ):
+            print(f"Warning: {problem.message}", file=sys.stderr)
+
     enabled, reason = config.rule_enabled_reason(
         args.rule_id,
         context,
         default_rule.repo_types,
         default_rule.formats,
         since_version=default_rule.since,
+        # Plugin rules have no entry in the builtin defaults registry; their
+        # class-level default drives activation (None for builtins).
+        default_enabled=default_rule.default_enabled if plugin_name else None,
     )
     try:
         effective_rule = rule_class(config.get_rule_config(args.rule_id))

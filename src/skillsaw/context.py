@@ -133,6 +133,22 @@ class RepositoryContext:
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
         self.detected_formats: Set[str] = set()
+        # Plugin-contributed extension state, registered by the Linter after
+        # plugin loading (see Linter._register_plugin_extensions):
+        # detected custom repository type names, lint tree contributors as
+        # (plugin name, callable) pairs, and errors raised by contributors
+        # during tree construction (surfaced as violations by the Linter).
+        self.plugin_repo_types: Set[str] = set()
+        # Content globs contributed by detected plugin repo types. Kept
+        # separate from ``content_paths`` (user config), which the Linter
+        # overwrites on construction — a shared context must not lose
+        # plugin contributions to that reset.
+        self.plugin_content_paths: List[str] = []
+        self.plugin_tree_contributors: List[tuple] = []
+        self.plugin_extension_errors: List[str] = []
+        # Set by skillsaw.plugins.register_extensions so repeated calls on a
+        # shared context (e.g. two Linters over one context) are no-ops.
+        self._plugin_extensions_registered = False
         self._lint_tree: Optional["LintTarget"] = None
         # Filters discovery results and computes detected_formats — excludes
         # must be applied before format detection so excluded files (e.g.
@@ -158,6 +174,18 @@ class RepositoryContext:
             if t in self.repo_types:
                 return t
         return RepositoryType.UNKNOWN
+
+    def repo_type_names(self, include_unknown: bool = True) -> List[str]:
+        """Sorted names of all detected repository types, builtin and plugin.
+
+        ``unknown`` is a sentinel for "nothing detected"; when a plugin type
+        matched, the repository *is* recognized, so the sentinel is dropped.
+        """
+        names = {t.value for t in self.repo_types}
+        names.update(self.plugin_repo_types)
+        if not include_unknown or len(names) > 1:
+            names.discard(RepositoryType.UNKNOWN.value)
+        return sorted(names)
 
     def is_path_excluded(self, path: Path) -> bool:
         """Check if a path matches any exclude pattern."""

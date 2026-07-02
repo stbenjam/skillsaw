@@ -27,6 +27,7 @@ RULE_GROUPS = [
             "agentskill-structure",
             "agentskill-evals",
             "agentskill-evals-required",
+            "agentskill-unreferenced-files",
         ],
         "These rules validate skills against the [agentskills.io specification]"
         "(https://agentskills.io/specification). They auto-enable for agentskills "

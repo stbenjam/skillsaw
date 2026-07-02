@@ -17,6 +17,7 @@ from skillsaw.rules.builtin.agentskills import (
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
     AgentSkillEvalsRule,
+    AgentSkillUnreferencedFilesRule,
 )
 
 # --- Detection tests ---
@@ -313,6 +314,27 @@ def test_name_single_char_passes(temp_dir):
     assert len(violations) == 0
 
 
+def test_name_digit_leading_passes(temp_dir):
+    """Spec allows names starting with a digit, e.g. 3d-printing."""
+    skill = temp_dir / "3d-printing"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: 3d-printing\ndescription: 3D printing\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillNameRule().check(context)
+    assert len(violations) == 0
+
+
+def test_name_leading_hyphen_fails(temp_dir):
+    skill = temp_dir / "-bad"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: -bad\ndescription: Leading hyphen\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillNameRule().check(context)
+    assert len(violations) >= 1
+
+
 def test_name_uppercase_fails(temp_dir):
     skill = temp_dir / "Bad-Name"
     skill.mkdir()
@@ -408,6 +430,97 @@ def test_description_over_limit_warns(temp_dir):
     violations = AgentSkillDescriptionRule().check(context)
     assert any("exceeds" in v.message for v in violations)
     assert violations[0].line == 3
+
+
+def test_description_default_max_length_unchanged(temp_dir):
+    """Backward compatibility: at default config a 400-char description
+    passes and only the spec's 1024 limit fires, with the same message."""
+    skill = temp_dir / "longish"
+    skill.mkdir()
+    desc_400 = "x" * 400
+    (skill / "SKILL.md").write_text(f"---\nname: longish\ndescription: {desc_400}\n---\n")
+    assert AgentSkillDescriptionRule().check(RepositoryContext(skill)) == []
+
+    over = temp_dir / "over-spec"
+    over.mkdir()
+    desc_1100 = "x" * 1100
+    (over / "SKILL.md").write_text(f"---\nname: over-spec\ndescription: {desc_1100}\n---\n")
+    violations = AgentSkillDescriptionRule().check(RepositoryContext(over))
+    assert len(violations) == 1
+    assert violations[0].message == "Description exceeds 1024 characters (1100)"
+
+
+def test_description_configured_max_length_warns(temp_dir):
+    """max_length: 256 makes a 400-char description warn with both numbers."""
+    skill = temp_dir / "budgeted"
+    skill.mkdir()
+    desc_400 = "x" * 400
+    (skill / "SKILL.md").write_text(f"---\nname: budgeted\ndescription: {desc_400}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert len(violations) == 1
+    assert "400" in violations[0].message
+    assert "256" in violations[0].message
+    assert violations[0].line == 3
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_description_exactly_at_max_length_passes(temp_dir):
+    """Boundary: a description of exactly max_length characters is fine."""
+    skill = temp_dir / "boundary"
+    skill.mkdir()
+    exact_desc = "x" * 256
+    (skill / "SKILL.md").write_text(f"---\nname: boundary\ndescription: {exact_desc}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert violations == []
+
+
+def test_description_folded_multiline_max_length(temp_dir):
+    """Folded YAML descriptions are measured on the parsed string value,
+    and the line number points at the description key."""
+    skill = temp_dir / "folded"
+    skill.mkdir()
+    words = ("word " * 70).strip()  # 349 chars parsed
+    (skill / "SKILL.md").write_text(f"---\nname: folded\ndescription: >\n  {words}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert len(violations) == 1
+    assert "349" in violations[0].message
+    assert violations[0].line == 3
+
+
+def test_description_max_length_invalid_values_fall_back(temp_dir):
+    """A blank key (None), non-integer, bool, or non-positive max_length
+    falls back to the spec's 1024 default instead of crashing."""
+    skill = temp_dir / "resilient"
+    skill.mkdir()
+    desc_1100 = "x" * 1100
+    (skill / "SKILL.md").write_text(f"---\nname: resilient\ndescription: {desc_1100}\n---\n")
+
+    context = RepositoryContext(skill)
+    for bad_value in [None, "not-a-number", True, 2.5, 0, -1]:
+        violations = AgentSkillDescriptionRule(config={"max_length": bad_value}).check(context)
+        assert len(violations) == 1, f"max_length={bad_value!r} should fall back to 1024"
+        assert "1024" in violations[0].message
+
+
+def test_description_max_length_above_spec_limit_honored(temp_dir):
+    """A configured max_length above 1024 wins: a 1500-char description
+    does not warn at max_length 2000. The spec's own limit is validated
+    by the ecosystem at publish time."""
+    skill = temp_dir / "relaxed"
+    skill.mkdir()
+    desc_1500 = "x" * 1500
+    (skill / "SKILL.md").write_text(f"---\nname: relaxed\ndescription: {desc_1500}\n---\n")
+
+    context = RepositoryContext(skill)
+    assert AgentSkillDescriptionRule(config={"max_length": 2000}).check(context) == []
+    # sanity: the same description warns at defaults
+    assert len(AgentSkillDescriptionRule().check(context)) == 1
 
 
 # --- agentskill-structure ---
@@ -1449,3 +1562,312 @@ def test_name_fix_defers_manifest_to_apply(temp_dir):
     assert len(data["renames"]) == 1
     assert data["renames"][0]["old"] == "Eat-Potato"
     assert data["renames"][0]["new"] == "eat-potato"
+
+
+# --- Unreferenced files rule ---
+
+
+def _make_skill(root: Path, name: str = "demo-skill", body: str = "") -> Path:
+    skill = root / name
+    skill.mkdir(parents=True, exist_ok=True)
+    (skill / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: A demo skill\n---\n\n# Demo\n\n{body}\n"
+    )
+    return skill
+
+
+def test_unreferenced_file_flagged(temp_dir):
+    skill = _make_skill(temp_dir, body="Run the tool as described below.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("print('never mentioned')\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert len(violations) == 1
+    assert violations[0].file_path == skill / "scripts" / "orphan.py"
+    assert "scripts/orphan.py" in violations[0].message
+    assert violations[0].line is None  # whole-file violation, no fabricated line
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_fenced_code_block_reference(temp_dir):
+    skill = _make_skill(temp_dir, body="Run:\n\n```bash\npython scripts/run.py --all\n```")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "run.py").write_text("print('hi')\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_code_span_reference(temp_dir):
+    skill = _make_skill(temp_dir, body="Use `scripts/helper.sh` to prepare the workspace.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "helper.sh").write_text("#!/bin/sh\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_markdown_link_reference(temp_dir):
+    skill = _make_skill(temp_dir, body="See [the guide](references/guide.md) for details.")
+    (skill / "references").mkdir()
+    (skill / "references" / "guide.md").write_text("# Guide\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_bare_filename_mention_counts(temp_dir):
+    skill = _make_skill(temp_dir, body="Run helper.py from the scripts directory.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "helper.py").write_text("print('hi')\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_embedded_token_is_not_a_mention(temp_dir):
+    """`deploy.sh` must not be considered mentioned by `redeploy.shell`."""
+    skill = _make_skill(temp_dir, body="Use the redeploy.shell workflow for rollouts.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "deploy.sh").write_text("#!/bin/sh\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "scripts" / "deploy.sh"]
+
+
+def test_transitive_reference(temp_dir):
+    skill = _make_skill(temp_dir, body="Start with [the guide](references/guide.md).")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "guide.md").write_text("# Guide\n\nFor edge cases read detail.md too.\n")
+    (refs / "detail.md").write_text("# Detail\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_transitive_relative_path_from_reference(temp_dir):
+    """references/guide.md can mention img/chart.png relative to itself."""
+    skill = _make_skill(temp_dir, body="Start with [the guide](references/guide.md).")
+    refs = skill / "references"
+    (refs / "img").mkdir(parents=True)
+    (refs / "guide.md").write_text("# Guide\n\nEmbed img/chart.png in the report.\n")
+    (refs / "img" / "chart.png").write_text("png")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_data_file_referenced_by_referenced_script(temp_dir):
+    """SKILL.md -> script -> data file: the data file is not dead."""
+    skill = _make_skill(temp_dir, body="Run `scripts/check_repos.py` before merging.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "check_repos.py").write_text(
+        "import os\n\n"
+        "SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))\n"
+        'ALLOWED_REPOS_FILE = os.path.join(SCRIPT_DIR, "allowed-repos.txt")\n'
+    )
+    (skill / "scripts" / "allowed-repos.txt").write_text("org/repo\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_data_file_mentioned_only_by_unreferenced_script_is_flagged(temp_dir):
+    """Mentions inside a script that is itself unreferenced do not count."""
+    skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text('DATA = "config/settings.json"\n')
+    (skill / "config").mkdir()
+    (skill / "config" / "settings.json").write_text("{}\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    flagged = {v.file_path for v in violations}
+    assert flagged == {skill / "scripts" / "orphan.py", skill / "config" / "settings.json"}
+
+
+def test_binary_referenced_file_is_not_a_traversal_source(temp_dir):
+    """Bytes inside a referenced binary must not propagate references."""
+    skill = _make_skill(temp_dir, body="The logo lives at assets/logo.bin.")
+    (skill / "assets").mkdir()
+    (skill / "assets" / "logo.bin").write_bytes(b"\x00\x01 hidden.txt \x02")
+    (skill / "hidden.txt").write_text("secret\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "hidden.txt"]
+
+
+def test_oversized_referenced_file_is_not_a_traversal_source(temp_dir):
+    """Referenced files over the 1 MiB source cap must not propagate references."""
+    skill = _make_skill(temp_dir, body="Ship the payload in `assets/blob.txt`.")
+    (skill / "assets").mkdir()
+    (skill / "assets" / "blob.txt").write_text(("padding\n" * 150_000) + "big-secret.txt\n")
+    (skill / "big-secret.txt").write_text("x\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "big-secret.txt"]
+
+
+def test_unreachable_markdown_is_not_a_traversal_source(temp_dir):
+    """Mentions inside an unreferenced markdown file do not count."""
+    skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "orphan.md").write_text("# Orphan\n\nMentions data.csv here.\n")
+    (refs / "data.csv").write_text("a,b\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    flagged = {v.file_path for v in violations}
+    assert flagged == {refs / "orphan.md", refs / "data.csv"}
+
+
+def test_directory_mention_covers_contents(temp_dir):
+    skill = _make_skill(temp_dir, body="Read the files in `references/` before starting.")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "a.md").write_text("# A\n")
+    (refs / "b.md").write_text("# B\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_directory_mention_covers_disabled(temp_dir):
+    skill = _make_skill(temp_dir, body="Read the files in `references/` before starting.")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "a.md").write_text("# A\n")
+
+    rule = AgentSkillUnreferencedFilesRule({"directory_mention_covers": False})
+    violations = rule.check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [refs / "a.md"]
+
+
+def test_prose_word_is_not_a_directory_mention(temp_dir):
+    """The English word 'references' (no trailing slash) covers nothing."""
+    skill = _make_skill(temp_dir, body="Add references for every claim in the report.")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "a.md").write_text("# A\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [refs / "a.md"]
+
+
+def test_file_path_is_not_a_directory_mention(temp_dir):
+    """Mentioning references/a.md does not cover references/b.md."""
+    skill = _make_skill(temp_dir, body="See `references/a.md` for the details.")
+    refs = skill / "references"
+    refs.mkdir()
+    (refs / "a.md").write_text("# A\n")
+    (refs / "b.md").write_text("# B\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [refs / "b.md"]
+
+
+def test_default_exclusions(temp_dir):
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "README.md").write_text("# demo-skill\n\nA demo skill.\n")
+    (skill / "LICENSE").write_text("MIT\n")
+    (skill / "LICENSE.APACHE").write_text("Apache-2.0\n")
+    (skill / "evals").mkdir()
+    (skill / "evals" / "evals.json").write_text(
+        json.dumps({"skill_name": "demo-skill", "evals": [{"id": 1, "prompt": "p"}]})
+    )
+    (skill / ".hidden-notes.txt").write_text("hidden\n")
+    (skill / ".ci").mkdir()
+    (skill / ".ci" / "pipeline.yaml").write_text("steps: []\n")
+    (skill / "tests").mkdir()
+    (skill / "tests" / "evals.json").write_text(json.dumps({"evals": [{"prompt": "p"}]}))
+    (skill / "tests" / "graders.ts").write_text("export const graders = [];\n")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "test_validate.py").write_text("def test_ok():\n    assert True\n")
+    (skill / "scripts" / "testdata").mkdir()
+    (skill / "scripts" / "testdata" / "valid.json").write_text('{"rows": []}\n')
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_exclude_glob_config(temp_dir):
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "assets").mkdir()
+    (skill / "assets" / "logo.png").write_text("png")
+    (skill / "notes.txt").write_text("scratch\n")
+
+    rule = AgentSkillUnreferencedFilesRule({"exclude": ["assets/*", "*.txt"]})
+    assert rule.check(RepositoryContext(skill)) == []
+
+
+def test_exclude_glob_extends_defaults(temp_dir):
+    """User globs add to the built-in exclusions instead of replacing them."""
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "README.md").write_text("# demo-skill\n\nA demo skill.\n")
+    (skill / "notes.txt").write_text("scratch\n")
+
+    rule = AgentSkillUnreferencedFilesRule({"exclude": ["*.txt"]})
+    assert rule.check(RepositoryContext(skill)) == []
+
+
+def test_skill_without_extra_files_passes(temp_dir):
+    skill = _make_skill(temp_dir, body="This skill bundles no extra files.")
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_rule_registered_in_default_config(temp_dir):
+    from skillsaw.config import LinterConfig
+
+    rules = LinterConfig.default().rules
+    assert "agentskill-unreferenced-files" in rules
+    assert rules["agentskill-unreferenced-files"]["enabled"] == "auto"
+    assert rules["agentskill-unreferenced-files"]["severity"] == "warning"
+
+
+def test_readme_is_a_reference_root(temp_dir):
+    """Files documented only in the skill's README.md are not flagged."""
+    skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")
+    (skill / "README.md").write_text(
+        "# demo-skill\n\nDeveloper notes: regenerate fixtures with scripts/gen.py.\n"
+    )
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "gen.py").write_text("print('gen')\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_changelog_and_notice_excluded(temp_dir):
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "CHANGELOG.md").write_text("# Changelog\n\n## 1.0\n\n- Initial release.\n")
+    (skill / "NOTICE").write_text("Copyright notice.\n")
+    (skill / "NOTICE.txt").write_text("Copyright notice.\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_license_and_notice_prefix_variants_excluded(temp_dir):
+    """LICENSE-MIT / NOTICE-THIRD-PARTY style names match the documented
+    LICENSE* / NOTICE* exclusions (regression: only exact or dot-suffixed
+    names were excluded)."""
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "LICENSE-MIT").write_text("MIT License\n")
+    (skill / "NOTICE-THIRD-PARTY").write_text("Third-party notices.\n")
+    (skill / "LICENSES").write_text("SPDX list.\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_symlink_escaping_skill_dir_is_ignored(temp_dir):
+    """Symlinks are neither flagged, followed, nor used as traversal sources
+    (regression: a link escaping the skill root crashed relative_to(), and a
+    referenced symlinked markdown file could be read from outside the repo)."""
+    outside = temp_dir / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("out-of-tree\n")
+    (outside / "notes.md").write_text("# Notes\n\nMentions scripts/orphan.py here.\n")
+
+    skill = _make_skill(temp_dir / "repo", body="See linked-notes.md for background.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("print('never mentioned')\n")
+    (skill / "escape.txt").symlink_to(outside / "secret.txt")
+    (skill / "linked-notes.md").symlink_to(outside / "notes.md")
+    (skill / "outside-dir").symlink_to(outside, target_is_directory=True)
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+
+    flagged = {v.file_path for v in violations}
+    # No crash, symlinks are never flagged, and the symlinked markdown —
+    # although mentioned by SKILL.md — is not read: the out-of-tree mention
+    # of scripts/orphan.py must not mark it referenced.
+    assert flagged == {skill / "scripts" / "orphan.py"}

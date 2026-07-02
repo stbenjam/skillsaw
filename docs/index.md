@@ -14,9 +14,8 @@
 </div>
 
 <div style="text-align: center; padding: 1rem 0;">
-<a href="https://asciinema.org/a/uQ9xfM5S1SXcd777">
-<img src="images/demo.gif" alt="skillsaw demo" style="max-width: 100%; border-radius: 8px;">
-</a>
+<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
+<noscript><p markdown>▶️ **[Watch the onboarding demo](https://asciinema.org/a/1259880)** — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
 </div>
 
 ---

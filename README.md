@@ -11,7 +11,11 @@ Keep your skills sharp. 40+ rules catch weak language, contradictions, attention
 </td>
 </tr></table>
 
-[![skillsaw demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/demo.gif)](https://asciinema.org/a/uQ9xfM5S1SXcd777)
+[![Watch the skillsaw onboarding demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/onboarding-demo.png)](https://asciinema.org/a/1259880)
+
+<p align="center">▶️ <b><a href="https://asciinema.org/a/1259880">Easy onboarding with AI!</a></b> — watch an AI agent grade, fix, and configure a repo from scratch.</p>
+
+---
 
 **[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
@@ -158,6 +162,11 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
     strict: true
     plugins: |
       skillsaw-typos==0.1.0
+
+# Allow custom rules (disabled by default for security — see THREAT_MODEL.md T1)
+- uses: stbenjam/skillsaw@v0
+  with:
+    no-custom-rules: false
 ```
 
 ```yaml
@@ -599,6 +608,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
+| `agentskill-unreferenced-files` | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - |
 
 **`agentskill-valid` parameters:**
 
@@ -613,11 +623,24 @@ These rules validate skills against the [agentskills.io specification](https://a
 |-----------|-------------|---------|
 | `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
 
+**`agentskill-description` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max_length` | Maximum description length in characters (spec limit 1024; consider 256 to keep routing context lean) | `1024` |
+
 **`agentskill-structure` parameters:**
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
+
+**`agentskill-unreferenced-files` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 ### Plugin Structure
 
@@ -950,6 +973,13 @@ Plugins can also ship a CLI: a console script named `skillsaw-<name>` in the
 same package becomes reachable as `skillsaw <name> [args...]`, git-style —
 but only for registered plugins, never for arbitrary `skillsaw-*`
 executables on PATH.
+
+Beyond rules, plugins can extend skillsaw itself: declare custom
+**repository types** (`SKILLSAW_REPO_TYPES`) with their own detection and
+content paths, and **contribute nodes to the lint tree**
+(`SKILLSAW_TREE_CONTRIBUTORS`) — prose content blocks, structured config
+blocks, or any other lint-tree nodes — so plugin rules can lint things
+skillsaw doesn't know about.
 
 See the [plugin documentation](https://skillsaw.org/plugins/), the complete
 [`examples/plugins/skillsaw-example-plugin/`](examples/plugins/skillsaw-example-plugin/)
