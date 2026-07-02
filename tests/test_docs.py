@@ -11,6 +11,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.html_renderer import render_html, COLOR_THEMES
 from skillsaw.docs.markdown_renderer import render_markdown
+from skillsaw.docs.models import DocsOutput, MarketplaceDoc, PluginDoc
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -201,6 +202,94 @@ class TestExtractor:
         plugin = docs.plugins[0]
         assert isinstance(plugin.version, str)
         assert plugin.version == ""
+
+    def test_render_numeric_plugin_name_does_not_crash(self, temp_dir):
+        """A numeric plugin name (e.g. ``"name": 123``) must not crash the
+        docs renderers, which sort plugins by ``name.lower()`` (issue #322).
+        ``lint`` tolerates this input, so ``docs`` must too.
+        """
+        plugin_dir = temp_dir / "numeric-name"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": 123, "description": "d", "version": "1.0"})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+
+        # Neither renderer should raise AttributeError on the int name.
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
+        md_pages = render_markdown(docs)
+        assert md_pages
+
+    def test_render_numeric_marketplace_plugin_name_does_not_crash(self, temp_dir):
+        """A numeric plugin name in marketplace.json must not crash the docs
+        renderers either: the marketplace markdown path derives per-plugin
+        page filenames from ``plugin.name`` string methods (issue #322).
+        """
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-marketplace",
+                    "owner": {"name": "Owner"},
+                    "plugins": [
+                        {
+                            "name": "alpha",
+                            "source": "./plugins/alpha",
+                            "description": "A well-formed plugin",
+                        },
+                        {
+                            "name": 123,
+                            "source": "./plugins/beta",
+                            "description": "Numeric name",
+                        },
+                    ],
+                }
+            )
+        )
+        for dirname, name in (("alpha", "alpha"), ("beta", 123)):
+            plugin_dir = temp_dir / "plugins" / dirname / ".claude-plugin"
+            plugin_dir.mkdir(parents=True)
+            (plugin_dir / "plugin.json").write_text(
+                json.dumps({"name": name, "description": "d", "version": "1.0"})
+            )
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
+        md_pages = render_markdown(docs)
+        assert "README.md" in md_pages
+        # The numeric-named plugin still gets a per-plugin page.
+        assert "123.md" in md_pages
+
+    def test_render_falsy_plugin_name_preserved(self):
+        """A falsy-but-valid plugin name (``0``) must be preserved by the
+        renderers' name coercion, not collapsed to ``""`` the way
+        ``str(name or "")`` would (review feedback on issue #322 fixes).
+        Constructed directly because the extractor's name-resolution chain
+        substitutes a fallback before falsy names reach the renderers.
+        """
+        plugin = PluginDoc(name=0, path=Path("plugins/zero"), description="d")
+        docs = DocsOutput(
+            repo_type=RepositoryType.MARKETPLACE,
+            title="t",
+            marketplace=MarketplaceDoc(name="m", plugins=[plugin]),
+            plugins=[plugin],
+        )
+        md_pages = render_markdown(docs)
+        # Preserved as "0", not collapsed to "" (which would yield ".md").
+        assert "0.md" in md_pages
+        assert ".md" not in md_pages
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
 
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
