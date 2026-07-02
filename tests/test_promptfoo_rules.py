@@ -144,6 +144,17 @@ def test_resolve_file_ref_symlink_escape_rejected_with_root(tmp_path):
     assert _resolve_file_ref("file://link.yaml", root, root=root) is None
 
 
+def test_resolve_file_ref_symlink_loop_does_not_crash(tmp_path):
+    # Path.resolve() raises RuntimeError/OSError on symlink loops before
+    # Python 3.13; a broken ref must be skipped, never crash the linter.
+    root = tmp_path / "repo"
+    root.mkdir()
+    loop = root / "loop.yaml"
+    loop.symlink_to(loop)
+    result = _resolve_file_ref("file://loop.yaml", root, root=root)
+    assert result is None or result.is_relative_to(root)
+
+
 def test_resolve_file_ref_inside_root_still_resolves(tmp_path):
     root = tmp_path / "repo"
     (root / "evals").mkdir(parents=True)
