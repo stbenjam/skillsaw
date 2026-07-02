@@ -116,7 +116,7 @@ For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 > ```
 > Then type `/skillsaw-onboard` — it installs skillsaw, lints your repo, autofixes what it can, walks you through manual fixes, sets up CI, and creates a baseline.
 >
-> **Other agents** — see the [Getting Started guide](https://skillsaw.org/getting-started/#onboarding-with-ai).
+> **Other agents** — see the [Getting Started guide](https://skillsaw.org/getting-started/#onboard-with-ai).
 
 ## Installation
 
@@ -173,15 +173,18 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 # GitLab CI — outputs Code Quality JSON for MR widgets
 skillsaw:
   script:
-    - pip install skillsaw==0.11.0
+    - pip install skillsaw==0.14.1
     - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
       codequality: gl-code-quality-report.json
 ```
 
-For PR review comments, the secure two-workflow pattern, and full configuration
-options, see the [CI Integration guide](https://skillsaw.org/ci/).
+Output formats for `--format` / `--output`: `text`, `json`, `sarif`, `html`,
+`code-climate`, and `gitlab`.
+
+For PR review comments, the secure two-workflow pattern, and full
+configuration options, see the [CI Integration guide](https://skillsaw.org/ci/).
 
 ### Pre-commit
 
@@ -191,7 +194,7 @@ repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.12.1  # or pin a full commit SHA
+    rev: v0.14.1  # or pin a full commit SHA
     hooks:
       - id: skillsaw
 ```

@@ -1,10 +1,11 @@
 # {{PLUGIN_NAME}}
 
-TODO: Add plugin description.
+Describe the {{PLUGIN_NAME}} plugin here: what it provides and who it is
+for.
 
 ## Commands
 
-TODO: List available commands.
+- `/{{PLUGIN_NAME}}:{{COMMAND_NAME}}` — describe what this command does
 
 ## Installation
 

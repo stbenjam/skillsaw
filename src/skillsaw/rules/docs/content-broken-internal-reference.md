@@ -23,5 +23,7 @@ See [setup guide](docs/setup.md) for installation steps.
 
 Update the link target to the file's current path. When the violation
 includes a "did you mean" suggestion, that is a fuzzy match against the
-repository — verify it is correct and apply it. `skillsaw fix` can apply
-suggested corrections automatically.
+repository — verify it is correct and apply it. The autofix is
+suggest-confidence: a plain `skillsaw fix` skips it, so run
+`skillsaw fix --suggest` to apply the suggested corrections, and review
+the result before committing.

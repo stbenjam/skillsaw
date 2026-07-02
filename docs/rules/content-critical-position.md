@@ -20,8 +20,10 @@ An instruction marked CRITICAL, IMPORTANT, or MUST that sits in the
 middle of a long file is the one most likely to be silently dropped —
 the emphasis signals it matters, but its position works against it.
 
-This rule only activates on files longer than `min-lines` lines (default
-50); short files do not exhibit a meaningful middle.
+This rule only activates on files with at least `min-lines` lines (default
+50); short files do not exhibit a meaningful middle. An emphasized
+instruction is flagged when it falls between the first 20% and the last
+20% of the file.
 
 ## Examples
 
@@ -41,7 +43,7 @@ This rule only activates on files longer than `min-lines` lines (default
 
 ## How to fix
 
-Move emphasized instructions into the first or last 25% of the file —
+Move emphasized instructions into the first or last 20% of the file —
 typically a "Rules" or "Critical" section at the top. If everything is
 marked critical, nothing is: demote emphasis on lines that are merely
 informative.

@@ -256,7 +256,7 @@ def add_plugin(
     readme = apply_replacements(read_template("readme.md", mp_type), replacements)
     (plugin_dir / "README.md").write_text(readme, encoding="utf-8")
 
-    _register_plugin(root, name, f"./plugins/{name}", "TODO: Add description")
+    _register_plugin(root, name, f"./plugins/{name}", f"{name} plugin for Claude Code")
 
     print(f"Created plugin: {name}")
     print(f"  {plugin_dir}/")

@@ -104,7 +104,7 @@ jobs:
 
 | Output | Description |
 |--------|-------------|
-| `exit-code` | skillsaw exit code (0=pass, 1=errors, 2=strict+warnings) |
+| `exit-code` | skillsaw exit code (0=pass, 1=errors or strict warnings) |
 | `errors` | Number of errors found |
 | `warnings` | Number of warnings found |
 | `report-file` | Path to JSON report file |
@@ -133,3 +133,26 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 - Comments are deduplicated across re-runs using content fingerprinting
 - When a violation is fixed, its comment thread is automatically resolved
 - Comments with human replies are preserved
+
+## Other output formats
+
+skillsaw supports several machine-readable output formats — `--format`
+(stdout) and `--output` (file) accept `text`, `json`, `sarif`, `html`,
+`code-climate`, and `gitlab` — including [SARIF
+2.1.0](https://sarifweb.azurewebsites.net/) for tools that ingest it.
+See the [CLI reference](cli.md) for details.
+
+## GitLab CI
+
+For GitLab merge-request widgets, use the `gitlab` output format (a Code
+Quality report, available since skillsaw 0.11.3):
+
+```yaml
+skillsaw:
+  script:
+    - pip install skillsaw==0.14.1
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```

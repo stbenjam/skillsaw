@@ -57,14 +57,17 @@ check out your branch, then `make benchmark-compare`.
 ## Regenerating generated files
 
 ```bash
-make update       # regenerate everything: APM, example config, README docs, .claude/README.md
+make update       # regenerate everything: APM, example config, README docs, site content
 ```
 
 **Always run `make update` before opening a PR.** This regenerates:
 - `.skillsaw.yaml.example` — example config from builtin rules
 - README.md — rule documentation table and Content Intelligence section
-- `.claude/README.md` — `skillsaw docs` output for Claude Code
-- `.claude/`, `.cursor/`, `.gemini/`, `.opencode/` — APM-compiled instructions and skills
+- `docs/index.md`, `docs/rules/`, `docs/cli.md`, `docs/research.md` — site
+  content from rule metadata and long-form rule docs
+  (`scripts/generate-site-content.py`)
+- `.claude/`, `.cursor/`, `.opencode/`, and `AGENTS.md` (codex) — APM-compiled
+  instructions and skills for the targets in `apm.yml`
 
 The `verify-update` CI check will fail if generated files are stale.
 
