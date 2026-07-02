@@ -8,7 +8,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
-from skillsaw.rules.builtin.marketplace.json_valid import is_absolute_path
+from skillsaw.rules.builtin.marketplace.json_valid import is_valid_plugin_root
 
 
 class MarketplaceRegistrationRule(Rule):
@@ -95,11 +95,7 @@ class MarketplaceRegistrationRule(Rule):
         metadata = data.get("metadata")
         if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
             plugin_root = metadata["pluginRoot"]
-            if (
-                plugin_root
-                and not is_absolute_path(plugin_root)
-                and ".." not in plugin_root.replace("\\", "/").split("/")
-            ):
+            if is_valid_plugin_root(plugin_root):
                 source_base = (context.root_path / plugin_root).resolve()
 
         fixed_violations = []
@@ -118,11 +114,16 @@ class MarketplaceRegistrationRule(Rule):
                     try:
                         rel_source = str(plugin_node.path.relative_to(source_base))
                     except ValueError:
-                        try:
-                            rel_source = str(plugin_node.path.relative_to(context.root_path))
-                        except ValueError:
-                            pass
+                        # The plugin lives outside metadata.pluginRoot. Spec
+                        # consumers resolve every relative source under
+                        # pluginRoot and '..' is forbidden in sources, so no
+                        # correct relative source exists — skip rather than
+                        # register an entry that resolves to the wrong
+                        # location.
+                        rel_source = None
                     break
+            if rel_source is None:
+                continue
             # Relative sources must start with ./ per the marketplace spec.
             data["plugins"].append({"name": plugin_name, "source": f"./{rel_source}"})
             fixed_violations.append(v)

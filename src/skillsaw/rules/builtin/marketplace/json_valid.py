@@ -19,6 +19,21 @@ def is_absolute_path(path: str) -> bool:
     return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
 
 
+def has_parent_traversal(path: str) -> bool:
+    """True when the path contains a '..' component."""
+    return ".." in path.replace("\\", "/").split("/")
+
+
+def is_valid_plugin_root(plugin_root: str) -> bool:
+    """True when metadata.pluginRoot is safe to compose with plugin sources:
+    a non-empty relative path with no '..' components."""
+    return (
+        bool(plugin_root)
+        and not is_absolute_path(plugin_root)
+        and not has_parent_traversal(plugin_root)
+    )
+
+
 # Required fields for each object source type per the plugin-marketplaces
 # docs; unknown types get a warning rather than an error so a new source
 # type added upstream never breaks existing marketplaces.
@@ -115,7 +130,7 @@ class MarketplaceJsonValidRule(Rule):
                 )
             else:
                 plugin_root = metadata["pluginRoot"]
-                if ".." in plugin_root.replace("\\", "/").split("/"):
+                if has_parent_traversal(plugin_root):
                     violations.append(
                         self.violation(
                             "metadata.pluginRoot: path contains '..' — the plugin "
@@ -199,8 +214,7 @@ class MarketplaceJsonValidRule(Rule):
                     )
                 )
                 return violations
-            parts = source.replace("\\", "/").split("/")
-            if ".." in parts:
+            if has_parent_traversal(source):
                 violations.append(
                     self.violation(
                         f"plugins[{idx}].source: path contains '..' — sources must "

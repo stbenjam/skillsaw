@@ -39,5 +39,6 @@ respectively).
 When `metadata.pluginRoot` is set, it is prepended to relative
 sources, so bare names like `"formatter"` are valid and the `./`
 style nudge does not apply. The plugin root itself must be a string
-and, like sources, must be a relative path that does not escape the
-repository with `..`.
+and, like sources, must not be an absolute path (values like
+`/tmp/plugins` are invalid) and must not escape the repository with
+`..`.

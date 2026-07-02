@@ -876,7 +876,46 @@ def test_marketplace_registration_fix_honors_plugin_root(temp_dir):
 
     fixes[0].file_path.write_text(fixes[0].fixed_content)
     invalidate_read_caches()
-    assert rule.check(RepositoryContext(repo)) == []
+    recheck_context = RepositoryContext(repo)
+    assert rule.check(recheck_context) == []
+    # Idempotency: a second fix pass has nothing to change.
+    assert rule.fix(recheck_context, rule.check(recheck_context)) == []
+    assert json.loads(fixes[0].file_path.read_text()) == data
+
+
+def test_marketplace_registration_fix_skips_plugin_outside_plugin_root(temp_dir):
+    """fix() must not register a plugin that lives outside metadata.pluginRoot.
+
+    Relative sources are resolved under pluginRoot by spec consumers and '..'
+    is forbidden, so no correct relative source exists for such a plugin —
+    writing a root-relative source would produce an entry that resolves to
+    the wrong location.
+    """
+    import json
+
+    repo = _marketplace_with_raw_json(
+        temp_dir,
+        json.dumps(
+            {
+                "name": "m",
+                "owner": {"name": "o"},
+                # The unregistered plugin lives at plugins/plugin-one,
+                # outside this pluginRoot.
+                "metadata": {"pluginRoot": "./pkgs"},
+                "plugins": [],
+            }
+        ),
+    )
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    # No autofix is offered rather than a broken entry being written.
+    assert rule.fix(context, violations) == []
+    mp = json.loads((repo / ".claude-plugin" / "marketplace.json").read_text())
+    assert mp["plugins"] == []
 
 
 def test_marketplace_registration_fix_plugins_not_list(temp_dir):
