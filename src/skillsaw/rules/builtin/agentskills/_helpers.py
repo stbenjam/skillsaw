@@ -9,8 +9,10 @@ NAME_MAX_LENGTH = 64
 DESCRIPTION_MAX_LENGTH = 1024
 COMPATIBILITY_MAX_LENGTH = 500
 # Spec: lowercase alphanumerics and hyphens, must not start or end with a
-# hyphen — digit-leading names like "3d-printing" are valid.
-NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# hyphen — digit-leading names like "3d-printing" are valid. The lookahead
+# requires at least one letter: purely numeric names fail the reference
+# validator's lowercase check ("123".islower() is False).
+NAME_PATTERN = re.compile(r"^(?=.*[a-z])[a-z0-9][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
 DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 

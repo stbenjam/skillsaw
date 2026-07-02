@@ -1413,3 +1413,15 @@ def test_name_fix_defers_manifest_to_apply(temp_dir):
     assert len(data["renames"]) == 1
     assert data["renames"][0]["old"] == "Eat-Potato"
     assert data["renames"][0]["new"] == "eat-potato"
+
+
+def test_name_purely_numeric_fails(temp_dir):
+    """Digit-only names have no lowercase letter and fail the reference
+    validator's islower() check."""
+    skill = temp_dir / "123"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: '123'\ndescription: Numbers only\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillNameRule().check(context)
+    assert len(violations) >= 1
