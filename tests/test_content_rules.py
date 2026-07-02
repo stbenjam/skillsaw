@@ -831,24 +831,42 @@ class TestContentEmbeddedSecretsRule:
         assert "GitHub personal access token" in violations[0].message
 
     def test_entropy_threshold_configurable(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text(
+        # Distinct repo dirs: the utils read cache is keyed by path, so
+        # rewriting the same file within a test would read stale content.
+        repo_raise = temp_dir / "raise"
+        repo_lower = temp_dir / "lower"
+        repo_raise.mkdir()
+        repo_lower.mkdir()
+        (repo_raise / "CLAUDE.md").write_text(
             'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
         )
-        context = RepositoryContext(temp_dir)
         # Raising the threshold above the value's entropy suppresses it
         rule = ContentEmbeddedSecretsRule({"entropy-threshold": 5.0})
-        assert rule.check(context) == []
+        assert rule.check(RepositoryContext(repo_raise)) == []
         # Lowering it lets low-entropy values through
-        (temp_dir / "CLAUDE.md").write_text('Config: api_key = "abababababababab"\n')
-        context = RepositoryContext(temp_dir)
+        (repo_lower / "CLAUDE.md").write_text('Config: api_key = "abababababababab"\n')
         rule = ContentEmbeddedSecretsRule({"entropy-threshold": 0.5})
-        assert len(rule.check(context)) == 1
+        assert len(rule.check(RepositoryContext(repo_lower))) == 1
 
     def test_entropy_threshold_invalid_config_uses_default(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text('Config: password = "hunter2placeholder"\n')
-        context = RepositoryContext(temp_dir)
+        """An unparseable threshold falls back to the 3.5 default: values on
+        either side of the default must behave exactly as with no config
+        (marker-free values, so the entropy gate alone decides)."""
         rule = ContentEmbeddedSecretsRule({"entropy-threshold": "nonsense"})
-        assert rule.check(context) == []
+        # Distinct repo dirs: the utils read cache is keyed by path, so
+        # rewriting the same file within a test would read stale content.
+        repo_low = temp_dir / "low"
+        repo_high = temp_dir / "high"
+        repo_low.mkdir()
+        repo_high.mkdir()
+        # Below the default threshold (1.0 bits/char): suppressed.
+        (repo_low / "CLAUDE.md").write_text('Config: api_key = "abababababababab"\n')
+        assert rule.check(RepositoryContext(repo_low)) == []
+        # Above it (hex, ~4.0 bits/char): still fires.
+        (repo_high / "CLAUDE.md").write_text(
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+        )
+        assert len(rule.check(RepositoryContext(repo_high))) == 1
 
     def test_additional_placeholders_configurable(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text('Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n')
