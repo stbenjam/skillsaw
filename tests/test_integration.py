@@ -1890,6 +1890,29 @@ class TestEncodingPreservingAutofix:
         assert r["rc"] == 0
         assert "agentskill-valid" not in rule_ids(r)
 
+    def test_bom_name_fix_applies_and_preserves_bom(self, tmp_path):
+        """agentskill-name's fix must read via the BOM-stripping utils
+        reader: a raw utf-8 read keeps U+FEFF, parse_frontmatter's anchored
+        ^--- match fails, and the fix silently skips BOM files while the
+        violation stays reported."""
+        repo = tmp_path / "bom-name"
+        skill_dir = repo / ".claude" / "skills" / "deploy-service"
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / "SKILL.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf---\nname: Deploy_Service # legacy\n"
+            b"description: a deploy skill for bom testing purposes\n---\nbody\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")  # BOM preserved
+        assert b"name: deploy-service # legacy" in raw  # fixed, comment kept
+        # Converges: re-lint is clean for the rule.
+        r = run_lint(repo, "--rule", "agentskill-name")
+        assert "agentskill-name" not in rule_ids(r)
+
 
 @pytest.mark.integration
 class TestSafeAutofixIdempotency:

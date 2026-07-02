@@ -11,7 +11,12 @@ from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence,
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.utils import frontmatter_text, parse_frontmatter, replace_frontmatter_field
+from skillsaw.utils import (
+    frontmatter_text,
+    parse_frontmatter,
+    read_text,
+    replace_frontmatter_field,
+)
 
 from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
 
@@ -135,7 +140,14 @@ class AgentSkillNameRule(Rule):
         for v in violations:
             if not v.file_path or not v.file_path.exists():
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
+            # utils.read_text strips a UTF-8 BOM (utf-8-sig); a raw
+            # read_text(encoding="utf-8") would keep the stray U+FEFF, which
+            # prevents parse_frontmatter's anchored ^--- match and silently
+            # skips the fix for BOM files.  write_text_preserving restores
+            # the BOM at apply time.
+            original = read_text(v.file_path)
+            if original is None:
+                continue
             # The old name must be the parsed YAML value the violation was
             # raised against — a raw-line slice would fold an inline comment
             # (``name: Deploy_Service # legacy``) into the rename manifest
