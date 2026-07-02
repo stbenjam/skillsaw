@@ -10,6 +10,11 @@ rules:
     enabled: true
     severity: error
 
+  # Agent frontmatter enum fields (permissionMode, memory, effort, isolation, color) must use documented values, and plugin-shipped agents must not declare hooks, mcpServers, or permissionMode
+  agent-frontmatter-values:
+    enabled: auto
+    severity: warning
+
   # Skill description should be meaningful and within length limits
   agentskill-description:
     enabled: auto

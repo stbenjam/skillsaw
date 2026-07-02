@@ -5,7 +5,8 @@ Tests for agent validation rules
 import pytest
 from pathlib import Path
 
-from skillsaw.rules.builtin.agents import AgentFrontmatterRule
+from skillsaw.rules.builtin.agents import AgentFrontmatterRule, AgentFrontmatterValuesRule
+from skillsaw.rule import Severity
 from skillsaw.context import RepositoryContext
 
 
@@ -254,3 +255,127 @@ def test_rule_metadata():
     assert rule.rule_id == "agent-frontmatter"
     assert "agent" in rule.description.lower()
     assert rule.default_severity().value == "error"
+
+
+# --- agent-frontmatter-values ---
+
+
+def _plugin_with_agent(temp_dir, frontmatter):
+    """Create a plugin containing one agent with the given frontmatter body."""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+    agents_dir = plugin_dir / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "my-agent.md").write_text(f"---\n{frontmatter}\n---\n\n# Agent\n")
+    return plugin_dir
+
+
+def _dot_claude_with_agent(temp_dir, frontmatter):
+    """Create a .claude/ project containing one agent."""
+    repo = temp_dir / "project"
+    agents_dir = repo / ".claude" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "my-agent.md").write_text(f"---\n{frontmatter}\n---\n\n# Agent\n")
+    return repo
+
+
+def test_values_valid_enums_pass(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\n"
+        "description: Helper\n"
+        "memory: project\n"
+        "effort: high\n"
+        "isolation: worktree\n"
+        "color: cyan\n"
+        "background: true\n"
+        "maxTurns: 10",
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    assert violations == []
+
+
+def test_values_invalid_enum_flagged(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\ndescription: Helper\nmemory: global\ncolor: teal",
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    messages = [v.message for v in violations]
+    assert any("'memory: global'" in m for m in messages)
+    assert any("'color: teal'" in m for m in messages)
+    assert all(v.severity == Severity.WARNING for v in violations)
+    # line numbers point at the offending keys
+    assert all(v.line is not None for v in violations)
+
+
+def test_values_background_must_be_boolean(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        'name: my-agent\ndescription: Helper\nbackground: "yes"',
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    assert len(violations) == 1
+    assert "must be a boolean" in violations[0].message
+
+
+def test_values_max_turns_must_be_integer(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\ndescription: Helper\nmaxTurns: ten",
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    assert len(violations) == 1
+    assert "must be an integer" in violations[0].message
+
+
+def test_values_plugin_prohibited_fields_flagged(temp_dir):
+    plugin_dir = _plugin_with_agent(
+        temp_dir,
+        "name: my-agent\n"
+        "description: Helper\n"
+        "permissionMode: plan\n"
+        "mcpServers:\n  - github\n"
+        "hooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: echo hi",
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    prohibited = [v for v in violations if "silently ignored" in v.message]
+    flagged = {v.message.split("'")[1] for v in prohibited}
+    assert flagged == {"hooks", "mcpServers", "permissionMode"}
+
+
+def test_values_project_agents_allow_prohibited_fields(temp_dir):
+    """Agents in .claude/agents/ legitimately use hooks/mcpServers/permissionMode."""
+    repo = _dot_claude_with_agent(
+        temp_dir,
+        "name: my-agent\n"
+        "description: Helper\n"
+        "permissionMode: plan\n"
+        "mcpServers:\n  - github",
+    )
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(repo))
+    assert violations == []
+
+
+def test_values_no_frontmatter_skipped(temp_dir):
+    """Files without frontmatter are agent-frontmatter's problem, not ours."""
+    plugin_dir = temp_dir / "test-plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text('{"name": "test-plugin"}')
+    agents_dir = plugin_dir / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "bare.md").write_text("# Just markdown\n")
+    violations = AgentFrontmatterValuesRule().check(RepositoryContext(plugin_dir))
+    assert violations == []
+
+
+def test_values_rule_metadata():
+    rule = AgentFrontmatterValuesRule()
+    assert rule.rule_id == "agent-frontmatter-values"
+    assert rule.default_severity() == Severity.WARNING
+    assert rule.since == "0.15.0"

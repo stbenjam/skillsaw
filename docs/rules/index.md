@@ -3,14 +3,14 @@
 
 # Rules Reference
 
-skillsaw includes **53** builtin rules 
+skillsaw includes **54** builtin rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (7 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
-- [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
+- [Skills, Agents, Hooks](skills-agents-hooks.md) (6 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
@@ -45,6 +45,7 @@ organized into the following categories:
 | [`marketplace-registration`](marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto | Skills, Agents, Hooks |
 | [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Skills, Agents, Hooks |
+| [`agent-frontmatter-values`](agent-frontmatter-values.md) | Agent frontmatter enum fields (permissionMode, memory, effort, isolation, color) must use documented values, and plugin-shipped agents must not declare hooks, mcpServers, or permissionMode | warning (auto) | - | Skills, Agents, Hooks |
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |

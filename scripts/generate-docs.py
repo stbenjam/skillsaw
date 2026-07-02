@@ -52,6 +52,7 @@ RULE_GROUPS = [
         [
             "skill-frontmatter",
             "agent-frontmatter",
+            "agent-frontmatter-values",
             "hooks-json-valid",
             "hooks-dangerous",
             "hooks-prohibited",

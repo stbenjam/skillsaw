@@ -667,6 +667,7 @@ Validates skill/agent frontmatter and hook configuration. The security rules sca
 |---------|-------------|------------------|---------|
 | `skill-frontmatter` | SKILL.md files should have frontmatter with name and description | warning | auto |
 | `agent-frontmatter` | Agent files must have valid frontmatter with name and description | error | auto |
+| `agent-frontmatter-values` | Agent frontmatter enum fields (permissionMode, memory, effort, isolation, color) must use documented values, and plugin-shipped agents must not declare hooks, mcpServers, or permissionMode | warning (auto) | - |
 | `hooks-json-valid` | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 | `hooks-dangerous` | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |
 | `hooks-prohibited` | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - |
