@@ -11,6 +11,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.html_renderer import render_html, COLOR_THEMES
 from skillsaw.docs.markdown_renderer import render_markdown
+from skillsaw.docs.models import DocsOutput, MarketplaceDoc, PluginDoc
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -268,6 +269,27 @@ class TestExtractor:
         assert "README.md" in md_pages
         # The numeric-named plugin still gets a per-plugin page.
         assert "123.md" in md_pages
+
+    def test_render_falsy_plugin_name_preserved(self):
+        """A falsy-but-valid plugin name (``0``) must be preserved by the
+        renderers' name coercion, not collapsed to ``""`` the way
+        ``str(name or "")`` would (review feedback on issue #322 fixes).
+        Constructed directly because the extractor's name-resolution chain
+        substitutes a fallback before falsy names reach the renderers.
+        """
+        plugin = PluginDoc(name=0, path=Path("plugins/zero"), description="d")
+        docs = DocsOutput(
+            repo_type=RepositoryType.MARKETPLACE,
+            title="t",
+            marketplace=MarketplaceDoc(name="m", plugins=[plugin]),
+            plugins=[plugin],
+        )
+        md_pages = render_markdown(docs)
+        # Preserved as "0", not collapsed to "" (which would yield ".md").
+        assert "0.md" in md_pages
+        assert ".md" not in md_pages
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
 
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
