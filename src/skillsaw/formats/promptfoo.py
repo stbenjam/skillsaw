@@ -33,11 +33,15 @@ def is_promptfoo_config(data: object) -> bool:
     return isinstance(data, dict) and bool(PROMPTFOO_KEYS & set(data.keys()))
 
 
-def resolve_file_ref(ref: str, config_dir: Path) -> Optional[Path]:
+def resolve_file_ref(ref: str, config_dir: Path, root: Optional[Path] = None) -> Optional[Path]:
     """Resolve a file:// reference relative to config_dir.
 
     Returns the resolved path (which may or may not exist on disk).
     Returns None for glob patterns, non-YAML extensions, and remote URLs.
+
+    When ``root`` is given, refs whose resolved path (symlinks followed)
+    falls outside of it are rejected and None is returned — a config must
+    not pull files from outside the repository into the lint tree.
     """
     if not ref.startswith("file://"):
         if ref.startswith(("http://", "https://", "huggingface://")):
@@ -55,7 +59,13 @@ def resolve_file_ref(ref: str, config_dir: Path) -> Optional[Path]:
     if suffix not in (".yaml", ".yml"):
         return None
 
-    return (config_dir / raw).resolve()
+    resolved = (config_dir / raw).resolve()
+
+    # Disallow escaping the repo root (mirrors context._resolve_plugin_source)
+    if root is not None and not resolved.is_relative_to(root.resolve()):
+        return None
+
+    return resolved
 
 
 def extract_file_refs(data: dict) -> List[str]:

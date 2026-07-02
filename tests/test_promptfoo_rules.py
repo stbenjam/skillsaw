@@ -117,6 +117,42 @@ def test_resolve_file_ref_remote_skipped(tmp_path):
     assert _resolve_file_ref("huggingface://datasets/foo", tmp_path) is None
 
 
+def test_resolve_file_ref_relative_escape_rejected_with_root(tmp_path):
+    root = tmp_path / "repo"
+    (root / "evals").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secrets.yaml").write_text("password: hunter2")
+    result = _resolve_file_ref("file://../../outside/secrets.yaml", root / "evals", root=root)
+    assert result is None
+
+
+def test_resolve_file_ref_absolute_escape_rejected_with_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secrets.yaml"
+    outside.write_text("password: hunter2")
+    assert _resolve_file_ref(f"file://{outside}", root, root=root) is None
+
+
+def test_resolve_file_ref_symlink_escape_rejected_with_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "secrets.yaml"
+    outside.write_text("password: hunter2")
+    (root / "link.yaml").symlink_to(outside)
+    assert _resolve_file_ref("file://link.yaml", root, root=root) is None
+
+
+def test_resolve_file_ref_inside_root_still_resolves(tmp_path):
+    root = tmp_path / "repo"
+    (root / "evals").mkdir(parents=True)
+    target = root / "evals" / "tests.yaml"
+    target.write_text("[]")
+    result = _resolve_file_ref("file://tests.yaml", root / "evals", root=root)
+    assert result == target.resolve()
+
+
 def test_extract_file_refs_string_tests():
     assert _extract_file_refs({"tests": "file://tests.yaml"}) == ["file://tests.yaml"]
 
@@ -290,6 +326,60 @@ def test_fragment_node_as_child_of_config(temp_dir):
     assert len(configs) == 1
     assert len(fragments) == 1
     assert fragments[0].parent is configs[0]
+
+
+def test_fragment_escaping_repo_root_not_in_tree(temp_dir):
+    """A file:// ref with .. escaping the repo root must not become a fragment."""
+    outside = temp_dir / "outside"
+    _write_yaml(outside / "secrets.yaml", [{"description": "leaked", "vars": {"prompt": "hi"}}])
+    repo = temp_dir / "repo"
+    _write_yaml(
+        repo / "evals" / "promptfooconfig.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": ["file://../../outside/secrets.yaml"],
+        },
+    )
+    context = RepositoryContext(repo)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert len([n for n in nodes if not n.is_fragment]) == 1
+    assert [n for n in nodes if n.is_fragment] == []
+
+
+def test_fragment_absolute_path_outside_repo_not_in_tree(temp_dir):
+    """An absolute file:// ref pointing outside the repo must not become a fragment."""
+    outside = temp_dir / "secrets.yaml"
+    _write_yaml(outside, [{"description": "leaked", "vars": {"prompt": "hi"}}])
+    repo = temp_dir / "repo"
+    _write_yaml(
+        repo / "evals" / "promptfooconfig.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": [f"file://{outside}"],
+        },
+    )
+    context = RepositoryContext(repo)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert [n for n in nodes if n.is_fragment] == []
+
+
+def test_fragment_symlink_escaping_repo_root_not_in_tree(temp_dir):
+    """A symlink inside the repo pointing outside must not become a fragment."""
+    outside = temp_dir / "secrets.yaml"
+    _write_yaml(outside, [{"description": "leaked", "vars": {"prompt": "hi"}}])
+    repo = temp_dir / "repo"
+    (repo / "evals").mkdir(parents=True)
+    (repo / "evals" / "link.yaml").symlink_to(outside)
+    _write_yaml(
+        repo / "evals" / "promptfooconfig.yaml",
+        {
+            "providers": [{"id": "test"}],
+            "tests": ["file://link.yaml"],
+        },
+    )
+    context = RepositoryContext(repo)
+    nodes = context.lint_tree.find(PromptfooConfigNode)
+    assert [n for n in nodes if n.is_fragment] == []
 
 
 def test_non_promptfoo_yaml_not_in_tree(temp_dir):
