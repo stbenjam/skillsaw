@@ -16,9 +16,13 @@ from skillsaw.utils import frontmatter_text, parse_frontmatter, replace_frontmat
 from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
 
 
-def _inline_comment(name_line: str) -> str:
-    """Return the inline YAML comment on a raw ``name: ...`` line (with its
-    leading whitespace), or ``""`` when there is none.
+def _parse_name_line(name_line: str):
+    """Parse a raw ``name: ...`` line into ``(value, comment_suffix)``.
+
+    ``value`` is the scalar parsed from the line alone (``None`` when the
+    line is not a one-line ``name`` mapping — e.g. a block-scalar indicator
+    like ``name: >-`` or an empty ``name:``).  ``comment_suffix`` is the
+    inline YAML comment with its leading whitespace, or ``""``.
 
     A ``#`` inside a quoted scalar (``name: "a#b"``) is part of the value,
     so the line is parsed as YAML rather than regex-split on ``#``.
@@ -28,20 +32,21 @@ def _inline_comment(name_line: str) -> str:
     try:
         data = ry.load(name_line)
     except _RuamelYAMLError:
-        return ""
+        return None, ""
     if not isinstance(data, CommentedMap):
-        return ""
+        return None, ""
+    value = data.get("name")
     tokens = data.ca.items.get("name")
     comment = tokens[2] if tokens and len(tokens) > 2 else None
     if comment is None:
-        return ""
+        return value, ""
     start = comment.start_mark.column
     while start > 0 and name_line[start - 1] in " \t":
         start -= 1
     suffix = name_line[start:]
     if suffix and suffix[0] not in " \t":
         suffix = " " + suffix
-    return suffix
+    return value, suffix
 
 
 class AgentSkillNameRule(Rule):
@@ -147,9 +152,27 @@ class AgentSkillNameRule(Rule):
                 continue
             fm_text = frontmatter_text(original) or ""
             line_match = re.search(r"^name[ \t]*:[^\r\n]*", fm_text, re.MULTILINE)
-            comment = _inline_comment(line_match.group(0)) if line_match else ""
+            if not line_match:
+                continue
+            line_value, comment = _parse_name_line(line_match.group(0))
+            # The rewrite replaces exactly one line, so it is only safe when
+            # the whole value lives on that line.  A block scalar
+            # (``name: >-``), a value on the following line, or a duplicate
+            # ``name:`` key (PyYAML is last-wins, the regex is first-match)
+            # all make the line value differ from the parsed value — rewriting
+            # the key line would merge the leftover continuation lines into
+            # the new scalar and corrupt the frontmatter.  Skip those.
+            if line_value != old_name:
+                continue
             fixed = replace_frontmatter_field(original, "name", f"name: {new_name}{comment}")
             if fixed is None:
+                continue
+            # Convergence guard: the rewritten frontmatter must actually
+            # parse to the new name (duplicate identical ``name:`` keys pass
+            # the line-value check above but PyYAML still resolves to the
+            # untouched later key, so the fix would churn forever).
+            new_fm, _new_body, _new_err = parse_frontmatter(fixed)
+            if not new_fm or new_fm.get("name") != new_name:
                 continue
 
             def _record_rename(root=context.root_path, old=old_name, new=new_name):

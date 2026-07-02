@@ -2723,3 +2723,60 @@ class TestNameAutofixInlineComment:
         r = run_lint(repo)
         remaining = [v for v in violations(r) if v["rule_id"] == "agentskill-name"]
         assert remaining == [], f"agentskill-name violations remain after fix: {remaining}"
+
+
+# ── agentskill-name autofix vs multi-line scalars & duplicate keys ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixMultilineScalar:
+    """The one-line ``name:`` rewrite is only safe when the whole value lives
+    on that line.  Block scalars (``name: >-``), values on the following
+    line, and duplicate ``name:`` keys must be skipped verbatim — rewriting
+    just the key line merges the leftover continuation lines into the new
+    plain scalar, and the fix loop then re-kebabs the merged value on every
+    pass, growing the name unboundedly and poisoning the rename manifest."""
+
+    FIXTURE = "autofix/name-multiline-scalar"
+
+    def test_exotic_scalars_are_left_byte_identical(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+
+        _run_fix(repo)
+
+        after = _snapshot_contents(repo)
+        skills = [k for k in before if k.endswith("SKILL.md")]
+        assert skills, "fixture must contain SKILL.md files"
+        changed = [k for k in skills if before[k] != after.get(k)]
+        assert changed == [], f"fixer rewrote multi-line/duplicate name scalars: {changed}"
+
+    def test_no_manifest_entries_for_skipped_fixes(self, tmp_path):
+        """A skipped fix must not record a rename — especially not one whose
+        old name is a runaway concatenation of continuation lines."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest_path = repo / ".skillsaw-renames.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            olds = [r["old"] for r in manifest.get("renames", [])]
+            assert olds == [], f"skipped fixes recorded renames: {olds}"
+
+    def test_fix_converges_and_violations_still_reported(self, tmp_path):
+        """Skipped shapes stay skipped: a second fix run changes nothing, and
+        the violations remain for the user to resolve manually."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        result = _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+        assert "No auto-fixable violations found" in result.stdout
+
+        r = run_lint(repo)
+        remaining = {v["file_path"] for v in violations(r) if v["rule_id"] == "agentskill-name"}
+        assert any("folded-name" in f for f in remaining)
+        assert any("next-line" in f for f in remaining)
+        assert any("dup-keys" in f for f in remaining)
