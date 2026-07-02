@@ -1890,6 +1890,29 @@ class TestEncodingPreservingAutofix:
         assert r["rc"] == 0
         assert "agentskill-valid" not in rule_ids(r)
 
+    def test_bom_name_fix_applies_and_preserves_bom(self, tmp_path):
+        """agentskill-name's fix must read via the BOM-stripping utils
+        reader: a raw utf-8 read keeps U+FEFF, parse_frontmatter's anchored
+        ^--- match fails, and the fix silently skips BOM files while the
+        violation stays reported."""
+        repo = tmp_path / "bom-name"
+        skill_dir = repo / ".claude" / "skills" / "deploy-service"
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / "SKILL.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf---\nname: Deploy_Service # legacy\n"
+            b"description: a deploy skill for bom testing purposes\n---\nbody\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")  # BOM preserved
+        assert b"name: deploy-service # legacy" in raw  # fixed, comment kept
+        # Converges: re-lint is clean for the rule.
+        r = run_lint(repo, "--rule", "agentskill-name")
+        assert "agentskill-name" not in rule_ids(r)
+
 
 @pytest.mark.integration
 class TestSafeAutofixIdempotency:
@@ -1909,7 +1932,7 @@ class TestSafeAutofixIdempotency:
 
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
-        "agentskill-name": 3,
+        "agentskill-name": 4,
         "agentskill-valid": 4,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
@@ -2092,6 +2115,10 @@ class TestSafeAutofixIdempotency:
                 len(name_lines) == 1
             ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"
             name_val = name_lines[0].split(":", 1)[1].strip()
+            # The fixed line may keep the user's inline YAML comment (GH-322);
+            # post-fix names are plain kebab-case scalars, so a simple split
+            # is safe here.
+            name_val = name_val.split(" #", 1)[0].strip()
             assert (
                 name_val == skill_dir.name
             ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
@@ -2672,3 +2699,138 @@ class TestRenameRefsAutofix:
         r = run_lint(repo)
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"
+
+
+# ── agentskill-name autofix vs inline YAML comments (GH-322) ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixInlineComment:
+    """Regression tests for GH-322: the agentskill-name autofix must record
+    the parsed YAML value of ``name`` in the rename manifest — never a raw
+    line slice that folds an inline comment into the old name — and must
+    preserve the user's inline comment on the rewritten line."""
+
+    FIXTURE = "autofix/name-inline-comment"
+
+    def test_rename_manifest_records_parsed_name(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert (
+            renames.get("Deploy_Service") == "deploy-service"
+        ), f"manifest must key on the parsed YAML name, got: {renames}"
+        assert not any(
+            "legacy" in old or " #" in old for old in renames
+        ), f"inline comment text leaked into the rename manifest: {renames}"
+
+    def test_inline_comment_preserved_on_rewritten_line(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "deploy-service" / "SKILL.md").read_text()
+        assert "name: deploy-service # legacy name kept for docs" in skill_md
+
+    def test_hash_inside_quoted_value_is_not_a_comment(self, tmp_path):
+        """A ``#`` inside a quoted scalar is part of the value: the manifest
+        must record ``release#tagger`` and the trailing comment must survive."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "release-tagger" / "SKILL.md").read_text()
+        assert "name: release-tagger # hash is part of the quoted value, not a comment" in skill_md
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert renames.get("release#tagger") == "release-tagger"
+
+    def test_manifest_enables_stale_reference_detection(self, tmp_path):
+        """With a clean manifest key, rename-refs can now see the stale
+        ``Deploy_Service`` reference in CLAUDE.md (the polluted key never
+        matched anything)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        r = run_lint(repo)
+        stale = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "agentskill-rename-refs" and "Deploy_Service" in v["message"]
+        ]
+        assert stale, "rename-refs should detect the stale Deploy_Service reference"
+
+    def test_fix_is_idempotent_and_converges(self, tmp_path):
+        """Fix twice: byte-identical content, and re-lint shows zero
+        remaining agentskill-name violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+
+        r = run_lint(repo)
+        remaining = [v for v in violations(r) if v["rule_id"] == "agentskill-name"]
+        assert remaining == [], f"agentskill-name violations remain after fix: {remaining}"
+
+
+# ── agentskill-name autofix vs multi-line scalars & duplicate keys ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixMultilineScalar:
+    """The one-line ``name:`` rewrite is only safe when the whole value lives
+    on that line.  Block scalars (``name: >-``), values on the following
+    line, and duplicate ``name:`` keys must be skipped verbatim — rewriting
+    just the key line merges the leftover continuation lines into the new
+    plain scalar, and the fix loop then re-kebabs the merged value on every
+    pass, growing the name unboundedly and poisoning the rename manifest."""
+
+    FIXTURE = "autofix/name-multiline-scalar"
+
+    def test_exotic_scalars_are_left_byte_identical(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        before = _snapshot_contents(repo)
+
+        _run_fix(repo)
+
+        after = _snapshot_contents(repo)
+        skills = [k for k in before if k.endswith("SKILL.md")]
+        assert skills, "fixture must contain SKILL.md files"
+        changed = [k for k in skills if before[k] != after.get(k)]
+        assert changed == [], f"fixer rewrote multi-line/duplicate name scalars: {changed}"
+
+    def test_no_manifest_entries_for_skipped_fixes(self, tmp_path):
+        """A skipped fix must not record a rename — especially not one whose
+        old name is a runaway concatenation of continuation lines."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest_path = repo / ".skillsaw-renames.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            olds = [r["old"] for r in manifest.get("renames", [])]
+            assert olds == [], f"skipped fixes recorded renames: {olds}"
+
+    def test_fix_converges_and_violations_still_reported(self, tmp_path):
+        """Skipped shapes stay skipped: a second fix run changes nothing, and
+        the violations remain for the user to resolve manually."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        result = _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+        assert "No auto-fixable violations found" in result.stdout
+
+        r = run_lint(repo)
+        remaining = {v["file_path"] for v in violations(r) if v["rule_id"] == "agentskill-name"}
+        assert any("folded-name" in f for f in remaining)
+        assert any("next-line" in f for f in remaining)
+        assert any("dup-keys" in f for f in remaining)
