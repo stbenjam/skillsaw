@@ -887,7 +887,10 @@ class TestRegexTimeout:
         import re
         import time
 
-        pat = re.compile(r"evilprefix(a+)+$")
+        # Intentionally catastrophic-backtracking fixture: this test exists to
+        # prove regex_timeout interrupts exactly such a pattern. The scanner
+        # alert is expected here, so suppress it rather than dismiss in the UI.
+        pat = re.compile(r"evilprefix(a+)+$")  # codeql[py/redos]
         text = "evilprefix" + "a" * 40 + "!"
         start = time.perf_counter()
         with pytest.raises(RegexTimeout):
