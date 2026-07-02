@@ -30,7 +30,8 @@ def _assert_lints_clean(root):
     assert (
         report["violations"] == []
     ), "scaffold should lint clean, found violations:\n" + "\n".join(
-        f"  {v.get('rule_id')} [{v.get('file_path')}]: {v.get('message')}" for v in report["violations"]
+        f"  {v.get('rule_id')} [{v.get('file_path')}]: {v.get('message')}"
+        for v in report["violations"]
     )
 
 
