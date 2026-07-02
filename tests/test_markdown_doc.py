@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from skillsaw.markdown_doc import MarkdownDoc, splice
+from skillsaw.markdown_doc import _ContentMap
 
 
 def _doc(body: str, **kwargs) -> MarkdownDoc:
@@ -341,6 +342,57 @@ class TestSplice:
 
     def test_no_edits_returns_content(self):
         assert splice("abc\n", []) == "abc\n"
+
+
+class TestContentMapLocate:
+    """The bisect-based ``locate`` (issue #318) must be identical to the old
+    linear scan and must not scale super-linearly."""
+
+    @staticmethod
+    def _linear_locate(cmap, content_pos):
+        entry = cmap.entries[0]
+        for candidate in cmap.entries:
+            if candidate[0] <= content_pos:
+                entry = candidate
+            else:
+                break
+        line_start, body_line0, raw_col = entry
+        if raw_col is None:
+            return body_line0, None
+        return body_line0, raw_col + (content_pos - line_start)
+
+    def test_matches_linear_scan(self):
+        body = "\n".join(f"Line {i} has a ref src/file_{i}.py here." for i in range(200))
+        content = body
+        cmap = _ContentMap(body.split("\n"), 0, content)
+        for pos in range(0, len(content) + 5):
+            assert cmap.locate(pos) == self._linear_locate(cmap, pos), pos
+
+    def test_offset_before_first_entry_clamps(self):
+        cmap = _ContentMap(["only line"], 0, "only line")
+        # A negative offset resolves to the first entry's line, never IndexError.
+        body_line, _col = cmap.locate(-1)
+        assert body_line == 0
+
+    def test_scales_sub_quadratically(self):
+        # A single large paragraph used to make locate O(n^2) (issue #318).
+        # Building the map plus locating every line start must stay near-linear;
+        # a generous ceiling still catches a quadratic regression.
+        import time
+
+        def elapsed(n):
+            body = "\n".join(f"path src/file_{i}.py" for i in range(n))
+            cmap = _ContentMap(body.split("\n"), 0, body)
+            t = time.perf_counter()
+            for start, _line, _col in cmap.entries:
+                cmap.locate(start)
+            return time.perf_counter() - t
+
+        small = elapsed(2000)
+        large = elapsed(8000)
+        # 4x the lines under quadratic scaling would be ~16x the time; require
+        # well under that so a reintroduced linear scan fails loudly.
+        assert large < (small + 1e-4) * 8
 
 
 class TestCrlf:
