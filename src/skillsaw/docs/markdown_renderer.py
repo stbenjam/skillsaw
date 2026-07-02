@@ -53,7 +53,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     assert mp is not None
     pages: Dict[str, str] = {}
 
-    sorted_plugins = sorted(mp.plugins, key=lambda p: p.name.lower())
+    sorted_plugins = sorted(mp.plugins, key=lambda p: str(p.name or "").lower())
 
     # Index
     lines: List[str] = [f"# {mp.name or docs.title}", ""]
@@ -193,7 +193,7 @@ def _append_command(lines: List[str], cmd: CommandDoc) -> None:
 def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
-    for skill in sorted(skills, key=lambda s: s.name.lower()):
+    for skill in sorted(skills, key=lambda s: str(s.name or "").lower()):
         lines.append(f"### {skill.name}")
         lines.append("")
         if skill.description:

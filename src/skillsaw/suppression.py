@@ -292,7 +292,20 @@ def build_suppression_map(
         line_directives = directive_at.get(content_line, [])
         for d in line_directives:
             if d.kind == "disable-next-line":
-                next_line_rules = d.rule_ids
+                # Stacked ``disable-next-line`` directives on consecutive
+                # lines all target the same next content line, so merge them
+                # rather than letting the last one overwrite the earlier ones
+                # (ESLint accumulates directives the same way). An empty rule
+                # list means "all rules"; if either directive suppresses
+                # everything, so does the merged suppression.
+                if next_line_rules is None:
+                    next_line_rules = list(d.rule_ids)
+                elif not next_line_rules or not d.rule_ids:
+                    next_line_rules = []
+                else:
+                    for rid in d.rule_ids:
+                        if rid not in next_line_rules:
+                            next_line_rules.append(rid)
             elif d.kind == "disable":
                 if d.rule_ids:
                     disabled.update(d.rule_ids)

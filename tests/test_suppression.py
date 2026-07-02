@@ -131,6 +131,38 @@ class TestBuildSuppressionMap:
         assert not smap.is_suppressed("content-weak-language", 3)
         assert not smap.is_suppressed("content-tautological", 3)
 
+    def test_stacked_disable_next_line_merges_rules(self):
+        """Consecutive disable-next-line directives accumulate onto the next
+        content line rather than the last overwriting the earlier (issue #322).
+        """
+        content = (
+            "<!-- skillsaw-disable-next-line content-weak-language -->\n"
+            "<!-- skillsaw-disable-next-line content-tautological -->\n"
+            "Try to write clean code.\n"
+            "Try to write clean code again.\n"
+        )
+        smap = build_suppression_map(content)
+        # Both rules are suppressed on line 3 (the next content line).
+        assert smap.is_suppressed("content-weak-language", 3)
+        assert smap.is_suppressed("content-tautological", 3)
+        # Line 4 is unaffected.
+        assert not smap.is_suppressed("content-weak-language", 4)
+        assert not smap.is_suppressed("content-tautological", 4)
+
+    def test_stacked_disable_next_line_bare_suppresses_all(self):
+        """A bare disable-next-line stacked with a specific one still suppresses
+        everything on the next line (empty rule list means 'all rules')."""
+        content = (
+            "<!-- skillsaw-disable-next-line content-weak-language -->\n"
+            "<!-- skillsaw-disable-next-line -->\n"
+            "Try to write clean code.\n"
+            "Try to write clean code again.\n"
+        )
+        smap = build_suppression_map(content)
+        assert smap.is_suppressed("content-weak-language", 3)
+        assert smap.is_suppressed("content-tautological", 3)
+        assert not smap.is_suppressed("content-weak-language", 4)
+
     def test_disable_next_line_no_rules_suppresses_all(self):
         """Bare <!-- skillsaw-disable-next-line --> suppresses all rules on the next line."""
         content = (

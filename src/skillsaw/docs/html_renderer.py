@@ -419,7 +419,10 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
     """Build the data structure for embedding as JSON."""
     plugins_data: List[Dict[str, Any]] = []
 
-    sorted_plugins = sorted(docs.plugins, key=lambda p: p.name.lower())
+    # ``p.name`` is manifest-derived and may be a non-string (e.g. a numeric
+    # ``"name": 123`` in plugin.json); coerce before ``.lower()`` so ``docs``
+    # doesn't crash on inputs ``lint`` tolerates.
+    sorted_plugins = sorted(docs.plugins, key=lambda p: str(p.name or "").lower())
 
     for plugin in sorted_plugins:
         p: Dict[str, Any] = {

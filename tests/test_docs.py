@@ -202,6 +202,29 @@ class TestExtractor:
         assert isinstance(plugin.version, str)
         assert plugin.version == ""
 
+    def test_render_numeric_plugin_name_does_not_crash(self, temp_dir):
+        """A numeric plugin name (e.g. ``"name": 123``) must not crash the
+        docs renderers, which sort plugins by ``name.lower()`` (issue #322).
+        ``lint`` tolerates this input, so ``docs`` must too.
+        """
+        plugin_dir = temp_dir / "numeric-name"
+        plugin_dir.mkdir()
+        claude_dir = plugin_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": 123, "description": "d", "version": "1.0"})
+        )
+
+        ctx = RepositoryContext(plugin_dir)
+        docs = extract_docs(ctx)
+        assert len(docs.plugins) == 1
+
+        # Neither renderer should raise AttributeError on the int name.
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
+        md_pages = render_markdown(docs)
+        assert md_pages
+
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
         docs = extract_docs(ctx, title="My Custom Title")
