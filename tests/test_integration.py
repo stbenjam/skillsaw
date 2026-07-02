@@ -1972,6 +1972,37 @@ class TestEncodingPreservingAutofix:
         r = run_lint(repo, "--rule", "agentskill-name")
         assert "agentskill-name" not in rule_ids(r)
 
+    def test_bom_crlf_command_missing_frontmatter_fix_single_bom(self, tmp_path):
+        """command-frontmatter's missing-frontmatter fix must read via the
+        BOM-stripping utils reader: a raw utf-8 read keeps U+FEFF, and
+        prepending the frontmatter block embeds a second BOM mid-file
+        (``\\ufeff# Deploy``) that breaks heading parsing on later lints."""
+        repo = tmp_path / "bom-cmd"
+        cmd_dir = repo / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        target = cmd_dir / "deploy.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf# Deploy\r\n\r\n" b"Deploy the application to production.\r\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        # Exactly one BOM, at offset 0 — never a second one mid-file.
+        assert raw.startswith(b"\xef\xbb\xbf")
+        assert raw.count(b"\xef\xbb\xbf") == 1
+        # Frontmatter was prepended directly after the BOM.
+        assert raw[3:].startswith(b"---\r\n")
+        assert b"description:" in raw
+        # Every line ending is still CRLF (no bare LF introduced).
+        assert raw.count(b"\n") == raw.count(b"\r\n")
+        # Idempotent: a second fix run changes nothing.
+        _run_fix(repo)
+        assert target.read_bytes() == raw
+        # Converges: the missing-frontmatter violation is gone.
+        r = run_lint(repo, "--rule", "command-frontmatter")
+        assert not any("Missing frontmatter" in v.get("message", "") for v in violations(r))
+
 
 @pytest.mark.integration
 class TestSafeAutofixIdempotency:
@@ -1992,10 +2023,10 @@ class TestSafeAutofixIdempotency:
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
         "agentskill-name": 4,
-        "agentskill-valid": 4,
+        "agentskill-valid": 6,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
-        "skill-frontmatter": 2,
+        "skill-frontmatter": 3,
     }
 
     def test_fixture_violation_counts(self, tmp_path):
@@ -2062,6 +2093,10 @@ class TestSafeAutofixIdempotency:
             "no-desc-",
             "no-name-",
             "missing-name/",
+            # Replacing a multi-line falsy ``name:`` value collapses the
+            # continuation line; inserting a missing top-level name adds one.
+            "multiline-name/",
+            "flow-name/",
             ".skillsaw-renames.json",
         }
         changed: List[str] = []
@@ -2169,7 +2204,17 @@ class TestSafeAutofixIdempotency:
                 "\n---\n" in content[4:]
             ), f"SKILL.md in {skill_dir.name} missing closing frontmatter delimiter"
             lines = content.splitlines()
-            name_lines = [line for line in lines if line.startswith("name:")]
+            # Count only genuine top-level ``name:`` key lines inside the
+            # frontmatter: a column-0 continuation line of a flow mapping
+            # (skills/flow-name fixture) also starts with ``name:`` but is
+            # part of another key's value, not a duplicate key.
+            fm_end = lines[1:].index("---") + 1
+            flow_depth = 0
+            name_lines = []
+            for line in lines[1:fm_end]:
+                if flow_depth == 0 and line.startswith("name:"):
+                    name_lines.append(line)
+                flow_depth += line.count("{") + line.count("[") - line.count("}") - line.count("]")
             assert (
                 len(name_lines) == 1
             ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"

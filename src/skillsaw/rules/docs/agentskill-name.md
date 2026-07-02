@@ -26,5 +26,6 @@ name: deploy-staging
 ## How to fix
 
 Rename the `name` field in SKILL.md frontmatter to match the skill's
-directory name, using lowercase letters and hyphens. `skillsaw fix`
+directory name, using lowercase letters, numbers, and hyphens (a
+leading digit is allowed, e.g. `1password`). `skillsaw fix`
 can correct the name automatically.

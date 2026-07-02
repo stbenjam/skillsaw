@@ -1,0 +1,2 @@
+[skillsaw.plugins]
+abspath = skillsaw_abspath

@@ -20,6 +20,8 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 PLUGIN_DIST = FIXTURES / "plugin-dist"
 BROKEN_DIST = FIXTURES / "plugin-dist-broken"
+RAISING_ID_DIST = FIXTURES / "plugin-dist-raising-id"
+ABSPATH_DIST = FIXTURES / "plugin-dist-abspath"
 
 
 def copy_fixture(name, tmp_path):
@@ -137,6 +139,49 @@ def test_broken_plugin_reports_error_but_lint_completes(tmp_path):
     assert "broken" in errors[0]["message"]
     assert r["rc"] == 1
     # The healthy plugin still ran alongside the broken one.
+    assert len(plugin_violations(r)) == 1
+
+
+def test_plugin_rule_with_raising_rule_id_reports_error_not_traceback(tmp_path):
+    """A plugin rule whose rule_id property raises must not crash the lint."""
+    repo = copy_fixture("plugin-target", tmp_path)
+    r = run_cli("lint", str(repo), dists=(PLUGIN_DIST, RAISING_ID_DIST), fmt="json")
+    assert r["out"] is not None, r["stdout"] + r["stderr"]
+    assert "Traceback" not in r["stderr"]
+    errors = [v for v in r["out"]["violations"] if v["rule_id"] == "plugin-load-error"]
+    assert len(errors) == 1
+    assert "RaisingIdRule" in errors[0]["message"]
+    assert "rule_id exploded" in errors[0]["message"]
+    assert r["rc"] == 1  # the load error is an error-severity violation
+    # The healthy plugin still ran alongside the broken one.
+    assert len(plugin_violations(r)) == 1
+
+
+def test_plugin_absolute_content_paths_single_load_error(tmp_path):
+    """An absolute content_paths glob is one plugin-load-error, not 28 crashes."""
+    repo = copy_fixture("plugin-target", tmp_path)
+    r = run_cli("lint", str(repo), dists=(ABSPATH_DIST,), fmt="json")
+    assert r["out"] is not None, r["stdout"] + r["stderr"]
+    assert "Traceback" not in r["stderr"]
+    load_errors = [v for v in r["out"]["violations"] if v["rule_id"] == "plugin-load-error"]
+    exec_errors = [v for v in r["out"]["violations"] if v["rule_id"] == "rule-execution-error"]
+    assert len(load_errors) == 1
+    assert "absolute" in load_errors[0]["message"]
+    assert exec_errors == []
+
+
+def test_user_config_absolute_content_path_does_not_crash(tmp_path):
+    """An absolute glob in user config content-paths is skipped gracefully."""
+    repo = copy_fixture("plugin-target", tmp_path)
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "1.0"\ncontent-paths: ["/etc/*.conf"]\n', encoding="utf-8"
+    )
+    r = run_cli("lint", str(repo), fmt="json")
+    assert r["out"] is not None, r["stdout"] + r["stderr"]
+    assert "Traceback" not in r["stderr"]
+    exec_errors = [v for v in r["out"]["violations"] if v["rule_id"] == "rule-execution-error"]
+    assert exec_errors == []
+    # Linting still worked: the healthy plugin rule fired as usual.
     assert len(plugin_violations(r)) == 1
 
 

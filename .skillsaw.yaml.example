@@ -26,7 +26,7 @@ rules:
     enabled: false
     severity: warning
 
-  # Skill name must be lowercase with hyphens and match directory name
+  # Skill name must be lowercase letters, numbers, and hyphens and match directory name
   agentskill-name:
     enabled: auto
     severity: error

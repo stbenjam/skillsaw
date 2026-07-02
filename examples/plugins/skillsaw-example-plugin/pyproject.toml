@@ -9,7 +9,7 @@ description = "Example skillsaw plugin: flags TODO/FIXME comments in instruction
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "skillsaw>=0.14",
+    "skillsaw>=0.15",
 ]
 
 # This is what makes the package a skillsaw plugin: skillsaw scans the

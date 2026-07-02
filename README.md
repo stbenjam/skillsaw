@@ -613,7 +613,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | `agentskill-valid` | SKILL.md must have valid frontmatter with name and description | error (auto) | auto |
-| `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
+| `agentskill-name` | Skill name must be lowercase letters, numbers, and hyphens and match directory name | error (auto) | auto |
 | `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
@@ -650,7 +650,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
+| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`, `./canvas-fonts`, or `assets/fonts` when the directory exists) as referencing every file under it | `true` |
 | `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names; a leading `**/` also matches at the skill root) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 ### Plugin Structure

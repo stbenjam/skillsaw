@@ -35,6 +35,11 @@ scripts/run.py``) rather than linked:
   ``text_segments()`` accessor surfaces (and additionally covers YAML
   frontmatter), with no per-line markdown parsing.
 
+**Matching is case-insensitive.**  SKILL.md saying ``FORMS.md`` covers a
+``forms.md`` on disk: such references work on case-insensitive
+filesystems, so flagging them would be false positives.  Each source
+blob is lowered once and scanned with lowered needles.
+
 **Bare filenames count.**  A mention of ``run.py`` anywhere marks
 ``scripts/run.py`` as referenced.  Skills routinely refer to bundled
 scripts by name alone ("run helper.py from the scripts directory"), so
@@ -46,9 +51,29 @@ warning-severity hygiene rule.
 **Directory mentions cover their contents** (``directory_mention_covers``,
 default true): when SKILL.md says "read the files in ``references/``",
 every file under ``references/`` counts as referenced.  Prose/code
-directory mentions require the trailing slash (so the English word
-"references" is not a directory mention); links may target the bare
-directory path.
+directory mentions must be path-ish: a trailing slash (``references/``),
+a ``./`` prefix (``./canvas-fonts``), or an interior ``/``
+(``assets/fonts``) — and slash-less forms only count when they resolve
+to a directory that actually exists in the skill.  A bare word with no
+path markers (the English word "references") is never a directory
+mention.  Links may target the bare directory path.
+
+**Python imports are followed.**  When a reachable file is a ``.py``
+file, its imports are parsed (``ast.parse``, with a line-based regex
+fallback for sources the parser rejects) and dotted module paths are
+resolved to files within the skill — relative to the skill root and to
+the importing file's directory, including relative imports (``from .
+import x``, ``from ..pkg import y``).  ``from a.b import c`` marks
+``a/b/c.py`` when it exists, otherwise the ``a.b`` module itself;
+package ``__init__.py`` files along the dotted path are marked too.
+Imported modules join the traversal, so their own text mentions and
+imports are followed in turn (SKILL.md -> ``scripts/recalc.py`` ->
+``from office.soffice import ...`` -> ``scripts/office/soffice.py`` ->
+``schemas/foo.xsd``).  Imports inside python-labeled (or unlabeled)
+fenced code blocks of reachable markdown files are followed the same
+way — instructional SKILL.md fences like ``from core.gif_builder
+import GIFBuilder`` reference the module as surely as a script's own
+import does.
 
 Built-in exclusions (never flagged): SKILL.md itself, README.md,
 CHANGELOG.md, LICENSE* / NOTICE* (any suffix), everything under evals/
@@ -67,9 +92,11 @@ SKILL.md: it is standard human-facing documentation, so a bundled file
 documented there is neither dead weight nor hidden from review.
 """
 
+import ast
 import fnmatch
 import os
 import re
+import textwrap
 from collections import deque
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
@@ -92,12 +119,30 @@ _FILE_AFTER = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 # of the whole references/ directory.  "references/*" or "references/`"
 # still count.
 _DIR_AFTER = r"(?![A-Za-z0-9_.-])"
+# A slash-less directory mention ("./canvas-fonts", "assets/fonts") must
+# not be followed by more path characters either — "./canvas-fonts/x.ttf"
+# is a file mention, and "assets/fonts/extra" mentions a subdirectory, not
+# assets/fonts.
+_DIR_BARE_AFTER = r"(?![A-Za-z0-9_./-])"
 
 _EXTERNAL_LINK_PREFIXES = ("http://", "https://", "#", "mailto:")
 
 # Referenced files above this size never become traversal sources — a
 # multi-megabyte data blob mentioning a filename is not documentation.
 _SOURCE_SIZE_LIMIT = 1024 * 1024
+
+# Fallback import-line scan for Python sources ast.parse rejects (e.g.
+# Python 2 scripts).  Matches "import a.b, c" and "from .pkg import x as y, z".
+_IMPORT_LINE_RE = re.compile(
+    r"^[ \t]*(?:from[ \t]+([.\w]+)[ \t]+import[ \t]+([^\n#;]+)" r"|import[ \t]+([\w. \t,]+))",
+    re.MULTILINE,
+)
+
+# Fenced code blocks whose info string (first word, lowercased) is one of
+# these get import parsing.  Unlabeled fences are included: instructional
+# markdown frequently omits the language tag, and non-Python fence content
+# simply yields no resolvable imports.
+_PY_FENCE_INFOS = {"", "python", "py", "python3"}
 
 
 class AgentSkillUnreferencedFilesRule(Rule):
@@ -116,8 +161,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
             "type": "bool",
             "default": True,
             "description": (
-                "Treat a mention of a directory (e.g. `references/`) as "
-                "referencing every file under it"
+                "Treat a mention of a directory (e.g. `references/`, "
+                "`./canvas-fonts`, or `assets/fonts` when the directory "
+                "exists) as referencing every file under it"
             ),
         },
         "exclude": {
@@ -262,7 +308,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
     ) -> Set[Path]:
         """Files referenced from the roots, following every referenced local file."""
         skill_resolved = skill_path.resolve()
-        rel_of = {f: f.resolve().relative_to(skill_resolved).as_posix() for f in all_files}
+        resolved_of = {f: f.resolve() for f in all_files}
+        resolved_files = set(resolved_of.values())
+        rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
         all_dirs = self._candidate_dirs(rel_of.values())
         block_by_path = {block.path.resolve(): block for block in skill_node.find(ContentBlock)}
 
@@ -281,24 +329,43 @@ class AgentSkillUnreferencedFilesRule(Rule):
             text = read_text(source)
             if text is None or "\0" in text:
                 continue  # unreadable or binary content is never a source
+            # Mention matching is case-insensitive (SKILL.md saying FORMS.md
+            # covers forms.md — such references work on case-insensitive
+            # filesystems).  The blob is lowered once per source, outside
+            # the per-candidate loop.
+            text_lower = text.lower()
 
             newly_referenced: List[Path] = []
 
             # Markdown links, resolved relative to the linking file.  Link
             # syntax only means anything in markdown sources; scripts and
-            # data files contribute raw-text mentions below.
-            link_files: Set[Path] = set()
-            if source.suffix.lower() == ".md":
+            # data files contribute raw-text mentions below.  Python sources
+            # additionally reference the modules they import.
+            direct_targets: Set[Path] = set()
+            suffix = source.suffix.lower()
+            if suffix == ".md":
                 block = block_by_path.get(resolved_source)
                 doc = block.markdown if block is not None else MarkdownDoc(text)
                 link_files, link_dirs = self._link_targets(doc, source.parent, skill_resolved)
+                direct_targets.update(link_files)
                 if directory_covers:
                     covered_dirs.update(link_dirs)
+                direct_targets.update(
+                    self._fence_import_targets(
+                        doc, text, resolved_source.parent, skill_resolved, resolved_files
+                    )
+                )
+            elif suffix == ".py":
+                direct_targets.update(
+                    self._python_import_targets(
+                        text, resolved_source.parent, skill_resolved, resolved_files
+                    )
+                )
             for candidate in all_files:
                 if candidate in referenced:
                     continue
-                if candidate.resolve() in link_files or self._text_mentions(
-                    text, candidate, rel_of[candidate], source.parent, skill_resolved
+                if resolved_of[candidate] in direct_targets or self._text_mentions(
+                    text_lower, candidate, rel_of[candidate], source.parent, skill_resolved
                 ):
                     referenced.add(candidate)
                     newly_referenced.append(candidate)
@@ -306,7 +373,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # Directory mentions in prose/code cover their contents.
             if directory_covers:
                 for rel_dir in all_dirs - covered_dirs:
-                    if self._dir_mentioned(text, rel_dir, source.parent, skill_resolved):
+                    if self._dir_mentioned(text_lower, rel_dir, source.parent, skill_resolved):
                         covered_dirs.add(rel_dir)
                 for candidate in all_files:
                     if candidate in referenced:
@@ -321,7 +388,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # (SKILL.md -> check.py -> allowed-repos.txt).  Oversized files
             # are skipped; binary content is rejected when dequeued.
             for candidate in newly_referenced:
-                if candidate.resolve() in processed:
+                if resolved_of[candidate] in processed:
                     continue
                 try:
                     if candidate.stat().st_size > _SOURCE_SIZE_LIMIT:
@@ -367,31 +434,200 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 files.add(resolved)
         return files, dirs
 
-    def _text_mentions(
+    # -- python imports -------------------------------------------------------
+
+    def _fence_import_targets(
+        self,
+        doc: MarkdownDoc,
+        text: str,
+        source_dir: Path,
+        skill_resolved: Path,
+        resolved_files: Set[Path],
+    ) -> Set[Path]:
+        """Imports taught inside python (or unlabeled) fenced code blocks.
+
+        Instructional markdown routinely shows agents how to use bundled
+        modules via fences (```` ```python\\nfrom core.gif_builder import
+        GIFBuilder ````), which references the module as surely as a
+        script's own import does.  Fence spans come from the markdown-it
+        AST (:meth:`MarkdownDoc.fences`); the content is sliced from the
+        raw file text via the fence's file line range.
+        """
+        targets: Set[Path] = set()
+        lines: Optional[List[str]] = None
+        for fence in doc.fences():
+            lang = fence.info.split()[0].lower() if fence.info else ""
+            if lang not in _PY_FENCE_INFOS:
+                continue
+            if lines is None:  # split the blob once, only when needed
+                lines = text.split("\n")
+            if fence.indented:
+                start, end = fence.file_line_start - 1, fence.file_line_end
+            else:  # fenced ranges include the ``` delimiter lines
+                start, end = fence.file_line_start, fence.file_line_end - 1
+            body = textwrap.dedent("\n".join(lines[start:end]))
+            if not body.strip():
+                continue
+            targets.update(
+                self._python_import_targets(body, source_dir, skill_resolved, resolved_files)
+            )
+        return targets
+
+    def _python_import_targets(
         self,
         text: str,
+        source_dir: Path,
+        skill_resolved: Path,
+        resolved_files: Set[Path],
+    ) -> Set[Path]:
+        """Bundled files reachable through this Python source's imports.
+
+        Dotted module paths are resolved within the skill relative to the
+        skill root and to the importing file's directory (bundled scripts
+        are invoked from either); relative imports resolve against the
+        importing file's package.  Containment is enforced by membership
+        in *resolved_files* — modules outside the skill are never marked.
+        """
+        targets: Set[Path] = set()
+        for module, names, level in self._parse_imports(text):
+            parts = module.split(".") if module else []
+            if level:
+                base = source_dir
+                for _ in range(level - 1):
+                    base = base.parent
+                bases = [base]
+            else:
+                bases = [skill_resolved]
+                if source_dir != skill_resolved:
+                    bases.append(source_dir)
+            for base in bases:
+                self._mark_module(base, parts, names, resolved_files, targets)
+        return targets
+
+    @staticmethod
+    def _parse_imports(text: str) -> List[Tuple[str, List[str], int]]:
+        """(module, imported names, relative level) for every import in *text*.
+
+        Uses ``ast.parse``; sources the parser rejects (Python 2 scripts,
+        templates) fall back to a line-based scan of import statements.
+        """
+        imports: List[Tuple[str, List[str], int]] = []
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            for match in _IMPORT_LINE_RE.finditer(text):
+                if match.group(3) is not None:  # import a.b, c
+                    for module in match.group(3).split(","):
+                        module = module.strip()
+                        if module:
+                            imports.append((module, [], 0))
+                else:  # from [.]a.b import c as d, e
+                    module = match.group(1)
+                    level = len(module) - len(module.lstrip("."))
+                    names = [
+                        name.strip().split(" as ")[0].strip() for name in match.group(2).split(",")
+                    ]
+                    imports.append(
+                        (module.lstrip("."), [n for n in names if n.isidentifier()], level)
+                    )
+            return imports
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append((alias.name, [], 0))
+            elif isinstance(node, ast.ImportFrom):
+                imports.append((node.module or "", [a.name for a in node.names], node.level))
+        return imports
+
+    @staticmethod
+    def _mark_module(
+        base: Path,
+        parts: List[str],
+        names: List[str],
+        resolved_files: Set[Path],
+        targets: Set[Path],
+    ) -> None:
+        """Mark the bundled files a dotted import resolves to under *base*.
+
+        ``import a.b`` marks ``a/b.py`` or ``a/b/__init__.py``; ``from a.b
+        import c`` marks ``a/b/c.py`` when it exists, else the ``a.b``
+        module itself.  Package ``__init__.py`` files along the dotted
+        path execute on import, so they are marked too.  Pure set
+        membership — no filesystem access.
+        """
+
+        def mark(prefix: Path) -> bool:
+            module = prefix.parent / (prefix.name + ".py")
+            if module in resolved_files:
+                targets.add(module)
+                return True
+            init = prefix / "__init__.py"
+            if init in resolved_files:
+                targets.add(init)
+                return True
+            return False
+
+        prefix = base
+        for part in parts:
+            prefix = prefix / part
+            init = prefix / "__init__.py"
+            if init in resolved_files:
+                targets.add(init)
+
+        if not names:
+            mark(prefix)
+            return
+        for name in names:
+            # `from a.b import c`: c may be a submodule or a symbol in a.b.
+            if not mark(prefix / name):
+                mark(prefix)
+
+    def _text_mentions(
+        self,
+        text_lower: str,
         candidate: Path,
         rel: str,
         source_dir: Path,
         skill_resolved: Path,
     ) -> bool:
-        needles = {rel, candidate.name}
+        """Whether the (pre-lowered) source text mentions *candidate*.
+
+        Matching is case-insensitive: needles are lowered against the
+        caller's once-per-source lowered blob, so ``FORMS.md`` in prose
+        covers ``forms.md`` on disk.
+        """
+        needles = {rel.lower(), candidate.name.lower()}
         source_rel = self._relative_needle(candidate, source_dir, skill_resolved)
         if source_rel:
-            needles.add(source_rel)
+            needles.add(source_rel.lower())
         return any(
-            needle in text and self._pattern(needle, _FILE_AFTER).search(text) for needle in needles
+            needle in text_lower and self._pattern(needle, _FILE_AFTER).search(text_lower)
+            for needle in needles
         )
 
     def _dir_mentioned(
-        self, text: str, rel_dir: str, source_dir: Path, skill_resolved: Path
+        self, text_lower: str, rel_dir: str, source_dir: Path, skill_resolved: Path
     ) -> bool:
-        needles = {rel_dir + "/"}
+        """Whether the (pre-lowered) source text mentions the directory.
+
+        Case-insensitive, like ``_text_mentions``.
+        """
+        rels = {rel_dir.lower()}
         source_rel = self._relative_needle(skill_resolved / rel_dir, source_dir, skill_resolved)
         if source_rel:
-            needles.add(source_rel + "/")
+            rels.add(source_rel.lower())
+        needles: Set[Tuple[str, str]] = set()
+        for rel in rels:
+            needles.add((rel + "/", _DIR_AFTER))
+            # Slash-less path-ish forms of an existing directory also count:
+            # "Search the ./canvas-fonts directory" or a nested "assets/fonts".
+            # A bare word with no path markers ("data") never covers data/.
+            needles.add(("./" + rel, _DIR_BARE_AFTER))
+            if "/" in rel:
+                needles.add((rel, _DIR_BARE_AFTER))
         return any(
-            needle in text and self._pattern(needle, _DIR_AFTER).search(text) for needle in needles
+            needle in text_lower and self._pattern(needle, after).search(text_lower)
+            for needle, after in needles
         )
 
     @staticmethod

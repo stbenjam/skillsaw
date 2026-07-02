@@ -9,7 +9,10 @@ from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence,
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import splice
-from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
+from skillsaw.rules.builtin.content_analysis import (
+    gather_all_content_blocks,
+    patterns_matching_anywhere,
+)
 
 from ._helpers import (
     _read_renames_manifest,
@@ -64,6 +67,7 @@ class AgentSkillRenameRefsRule(Rule):
         violations = []
         old_names = {r["old"] for r in renames}
         patterns = {r["old"]: _name_pattern(r["old"]) for r in renames}
+        pattern_specs = [(patterns[r["old"]], r) for r in renames]
         referenced_olds: set[str] = set()
 
         for block in gather_all_content_blocks(context):
@@ -71,10 +75,15 @@ class AgentSkillRenameRefsRule(Rule):
                 content = block.path.read_text(encoding="utf-8")
             except OSError:
                 continue
+            # Whole-text prefilter (C-speed literal check) so the per-line
+            # regex loop only runs for renames actually present in the block;
+            # results-identical to scanning every line with every pattern.
+            active = patterns_matching_anywhere(content, pattern_specs)
+            if not active:
+                continue
             lines = content.splitlines()
-            for rename in renames:
+            for pattern, rename in active:
                 old, new = rename["old"], rename["new"]
-                pattern = patterns[old]
                 for line_no, line in enumerate(lines, 1):
                     if not pattern.search(line):
                         continue

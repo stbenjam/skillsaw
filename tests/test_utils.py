@@ -127,6 +127,67 @@ def test_write_text_preserving_bom_and_crlf(temp_dir):
     assert f.read_bytes() == b"\xef\xbb\xbfone\r\nEDITED\r\n"
 
 
+def test_write_text_preserving_mixed_endings_lf_dominant(temp_dir):
+    """A single stray CRLF in an otherwise-LF file must not flip the whole
+    file to CRLF — the DOMINANT line ending wins."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "mixed.md"
+    f.write_bytes(b"l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nstray\r\n")
+    invalidate_read_caches()
+    write_text_preserving(f, "l1\nEDITED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nstray\n")
+    raw = f.read_bytes()
+    assert b"\r" not in raw
+    assert raw == b"l1\nEDITED\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nstray\n"
+
+
+def test_write_text_preserving_mixed_endings_crlf_dominant(temp_dir):
+    """Majority-CRLF files keep CRLF even with a stray bare LF."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "mixedcrlf.md"
+    f.write_bytes(b"l1\r\nl2\r\nl3\r\nstray\n")
+    invalidate_read_caches()
+    write_text_preserving(f, "l1\nEDITED\nl3\nstray\n")
+    assert f.read_bytes() == b"l1\r\nEDITED\r\nl3\r\nstray\r\n"
+
+
+def test_write_text_preserving_mixed_endings_tie_goes_to_lf(temp_dir):
+    """An exact CRLF/LF tie normalizes to LF."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "tie.md"
+    f.write_bytes(b"a\r\nb\n")
+    invalidate_read_caches()
+    write_text_preserving(f, "a\nEDITED\n")
+    assert f.read_bytes() == b"a\nEDITED\n"
+
+
+def test_write_text_preserving_lone_cr_becomes_lf(temp_dir):
+    """Classic-Mac lone-CR files normalize to LF (no CRLF majority)."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "cr.md"
+    f.write_bytes(b"one\rtwo\r")
+    invalidate_read_caches()
+    write_text_preserving(f, "one\nEDITED\n")
+    assert f.read_bytes() == b"one\nEDITED\n"
+
+
+def test_write_text_preserving_mixed_endings_idempotent(temp_dir):
+    """Writing the same content twice through the mixed-ending path is stable."""
+    from skillsaw.utils import write_text_preserving, invalidate_read_caches
+
+    f = temp_dir / "idem.md"
+    f.write_bytes(b"l1\nl2\nl3\nstray\r\n")
+    invalidate_read_caches()
+    write_text_preserving(f, "l1\nl2\nl3\nstray\n")
+    first = f.read_bytes()
+    invalidate_read_caches()
+    write_text_preserving(f, "l1\nl2\nl3\nstray\n")
+    assert f.read_bytes() == first
+
+
 def test_read_json_parses_valid(temp_dir):
     f = temp_dir / "data.json"
     f.write_text('{"key": "value"}', encoding="utf-8")
@@ -556,3 +617,104 @@ class TestFrontmatterHelpers:
         assert err is None
         assert fm == {"name": "x"}
         assert body == "body text\r\n"
+
+
+class TestReplaceFrontmatterField:
+    """replace_frontmatter_field must only splice genuine top-level keys and
+    never orphan continuation lines (agentskill-valid SAFE-fix corruption)."""
+
+    def test_replaces_single_line_value(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        out = replace_frontmatter_field("---\nname: old\nd: x\n---\nbody\n", "name", "name: new")
+        assert out == "---\nname: new\nd: x\n---\nbody\n"
+
+    def test_replaces_empty_null_value_in_place(self):
+        """An empty/null value still has a ``name:`` key line — replacing it
+        in place (not prepending a duplicate) is the issue #321 invariant."""
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        out = replace_frontmatter_field("---\nname:\nd: x\n---\n", "name", "name: new")
+        assert out == "---\nname: new\nd: x\n---\n"
+        out = replace_frontmatter_field('---\nname: ""\nd: x\n---\n', "name", "name: new")
+        assert out == "---\nname: new\nd: x\n---\n"
+
+    def test_missing_key_returns_none(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        assert replace_frontmatter_field("---\nd: x\n---\n", "name", "name: new") is None
+
+    def test_no_frontmatter_returns_none(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        assert replace_frontmatter_field("# heading\n", "name", "name: new") is None
+
+    def test_multiline_falsy_value_replaced_without_orphaned_continuation(self):
+        """``name:\\n  []`` — replacing only the key line used to orphan the
+        ``[]`` continuation line, corrupting the value.  The whole value
+        span must be replaced instead."""
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field, parse_frontmatter
+
+        content = "---\nname:\n  []\ndescription: d\n---\nbody\n"
+        out = replace_frontmatter_field(content, "name", "name: my-skill")
+        assert out == "---\nname: my-skill\ndescription: d\n---\nbody\n"
+        fm, _body, err = parse_frontmatter(out)
+        assert err is None
+        assert fm == {"name": "my-skill", "description": "d"}
+
+    def test_flow_mapping_continuation_line_not_replaced(self):
+        """A column-0 continuation line of a flow mapping matches a naive
+        ``^name:`` regex but is NOT a top-level key — replacing it destroyed
+        the closing ``}`` and made valid frontmatter unparseable."""
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field, parse_frontmatter
+
+        content = "---\nmetadata: {tags: [x],\nname: legacy-tag}\ndescription: d\n---\nbody\n"
+        out = replace_frontmatter_field(content, "name", "name: my-skill")
+        # No genuine top-level ``name`` key: callers fall back to inserting
+        # the field, which is safe here.
+        assert out is None
+        # The documented fallback path must produce valid YAML.
+        from skillsaw.rules.builtin.utils import prepend_frontmatter_fields
+
+        fixed = prepend_frontmatter_fields(content, ["name: my-skill"])
+        fm, _body, err = parse_frontmatter(fixed)
+        assert err is None
+        assert fm["name"] == "my-skill"
+        assert fm["metadata"] == {"tags": ["x"], "name": "legacy-tag"}
+
+    def test_block_scalar_value_fully_replaced(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        content = "---\nname: >-\n  Foo Bar\nd: x\n---\n"
+        out = replace_frontmatter_field(content, "name", "name: new")
+        assert out == "---\nname: new\nd: x\n---\n"
+
+    def test_multiline_plain_scalar_fully_replaced(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        content = "---\nname: foo\n  bar\nd: x\n---\n"
+        out = replace_frontmatter_field(content, "name", "name: new")
+        assert out == "---\nname: new\nd: x\n---\n"
+
+    def test_crlf_multiline_value(self):
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        content = "---\r\nname:\r\n  []\r\nd: x\r\n---\r\n"
+        out = replace_frontmatter_field(content, "name", "name: new")
+        assert out == "---\r\nname: new\r\nd: x\r\n---\r\n"
+
+    def test_flow_style_top_level_mapping_is_noop(self):
+        """A flow-style top-level mapping has no key *line* to splice —
+        the content must come back untouched rather than corrupted."""
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        content = "---\n{name: x, d: y}\n---\n"
+        assert replace_frontmatter_field(content, "name", "name: new") == content
+
+    def test_duplicate_keys_are_noop(self):
+        """Duplicate top-level keys are undeterminable (ruamel rejects them);
+        the content must come back untouched rather than half-replaced."""
+        from skillsaw.rules.builtin.utils import replace_frontmatter_field
+
+        content = "---\nname: a\nname: b\n---\n"
+        assert replace_frontmatter_field(content, "name", "name: new") == content

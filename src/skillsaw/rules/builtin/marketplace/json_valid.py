@@ -173,7 +173,15 @@ class MarketplaceJsonValidRule(Rule):
                             file_path=marketplace_file,
                         )
                     )
-                elif isinstance(entry["name"], str):
+                elif not isinstance(entry["name"], str):
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}] plugin name must be a string, "
+                            f"got {entry['name']!r}",
+                            file_path=marketplace_file,
+                        )
+                    )
+                else:
                     name = entry["name"]
                     if name in seen_names:
                         violations.append(

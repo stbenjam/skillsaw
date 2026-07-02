@@ -1,0 +1,4 @@
+Metadata-Version: 2.1
+Name: skillsaw-raising-id
+Version: 0.1.0
+Summary: skillsaw plugin fixture with a rule whose rule_id property raises

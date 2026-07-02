@@ -1,0 +1,6 @@
+{
+  "name": "report-builder",
+  "description": "Generate analytics reports from collected metrics",
+  "version": "1.4.0",
+  "author": {"name": "Analytics Team"}
+}
