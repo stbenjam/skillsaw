@@ -2361,6 +2361,35 @@ class TestNoCustomRulesLint:
         assert (
             "Loading custom rule file" in result.stderr
         ), "Expected a warning about custom rule loading on stderr"
+        # The CLI renders the notice itself — the stock warnings format
+        # (source path, "UserWarning:", echoed code line) must not leak.
+        assert (
+            "UserWarning" not in result.stderr
+        ), "Custom-rule notice should be human-readable, not the warnings-module format"
+        assert "_load_custom_rule" not in result.stderr
+
+    def test_custom_rule_warning_colors_respect_no_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        sentinel = tmp_path / "sentinel.txt"
+        base_env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        args = [sys.executable, "-m", "skillsaw", "lint", str(repo)]
+
+        env = {k: v for k, v in base_env.items() if k != "NO_COLOR"}
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+        colored = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
+        assert colored, f"missing custom-rule notice on stderr: {result.stderr}"
+        assert "\x1b[" in colored[0], "Notice should be colored when NO_COLOR is unset"
+
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={**base_env, "NO_COLOR": "1"},
+        )
+        plain = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
+        assert plain, f"missing custom-rule notice on stderr: {result.stderr}"
+        assert "\x1b[" not in plain[0], "Notice must not contain ANSI codes under NO_COLOR"
 
     def test_no_warning_when_custom_rules_skipped(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
