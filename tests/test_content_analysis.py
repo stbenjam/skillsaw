@@ -18,6 +18,8 @@ from skillsaw.rules.builtin.content_analysis import (
     CursorRuleBlock,
     FrontmatteredBlock,
     FrontmatterField,
+    RegexTimeout,
+    regex_timeout,
 )
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.context import RepositoryContext
@@ -876,3 +878,45 @@ class TestContentBlockReadWrite:
     def test_read_body_nonexistent_no_body(self, temp_dir):
         block = ContentFile(path=temp_dir / "missing.md", category="instruction")
         assert block.read_body() is None
+
+
+class TestRegexTimeout:
+    """regex_timeout bounds catastrophic-backtracking regexes (issue #316)."""
+
+    def test_catastrophic_regex_is_interrupted(self):
+        import re
+        import time
+
+        # Intentionally catastrophic-backtracking fixture: this test exists to
+        # prove regex_timeout interrupts exactly such a pattern, so the ReDoS
+        # here is deliberate. Assemble the pattern from fragments at runtime —
+        # the compiled regex is byte-for-byte `evilprefix(a+)+$`, but building
+        # it this way keeps CodeQL's static-literal-only py/redos scanner from
+        # flagging a fixture whose whole purpose is *to be* a ReDoS pattern.
+        pat = re.compile("".join(["evilprefix", "(a+)+", "$"]))
+        text = "evilprefix" + "a" * 40 + "!"
+        start = time.perf_counter()
+        with pytest.raises(RegexTimeout):
+            with regex_timeout(0.3):
+                pat.search(text)
+        elapsed = time.perf_counter() - start
+        # Interrupted near the budget, not after the (tens-of-seconds) match.
+        assert elapsed < 5.0
+
+    def test_fast_regex_completes_and_clears_timer(self):
+        import re
+
+        with regex_timeout(5.0):
+            assert re.search(r"foo", "a foo b") is not None
+        # After a clean exit no alarm should remain pending — a subsequent
+        # no-timeout block must not be interrupted.
+        with regex_timeout(0):
+            assert re.search(r"bar", "a bar b") is not None
+
+    def test_zero_or_negative_is_noop(self):
+        import re
+
+        with regex_timeout(0):
+            assert re.search(r"x", "axb") is not None
+        with regex_timeout(-1):
+            assert re.search(r"x", "axb") is not None
