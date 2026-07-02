@@ -35,10 +35,11 @@ code blocks (`python scripts/run.py`), and plain prose:
   referenced. Prose and code mentions need the trailing slash; links
   may target the bare directory.
 
-Never flagged: SKILL.md itself, README.md, CHANGELOG.md,
-LICENSE / LICENSE.*, NOTICE / NOTICE.*, files under `evals/`, and
-hidden files or directories. The `exclude` option adds glob patterns
-on top of these defaults.
+Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
+NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`,
+hidden files or directories, and symlinks (which are also never
+followed). The `exclude` option adds glob patterns on top of these
+defaults.
 
 ## Examples
 

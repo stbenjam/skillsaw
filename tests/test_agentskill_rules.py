@@ -1630,3 +1630,40 @@ def test_changelog_and_notice_excluded(temp_dir):
     (skill / "NOTICE.txt").write_text("Copyright notice.\n")
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_license_and_notice_prefix_variants_excluded(temp_dir):
+    """LICENSE-MIT / NOTICE-THIRD-PARTY style names match the documented
+    LICENSE* / NOTICE* exclusions (regression: only exact or dot-suffixed
+    names were excluded)."""
+    skill = _make_skill(temp_dir, body="Nothing else is mentioned.")
+    (skill / "LICENSE-MIT").write_text("MIT License\n")
+    (skill / "NOTICE-THIRD-PARTY").write_text("Third-party notices.\n")
+    (skill / "LICENSES").write_text("SPDX list.\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_symlink_escaping_skill_dir_is_ignored(temp_dir):
+    """Symlinks are neither flagged, followed, nor used as traversal sources
+    (regression: a link escaping the skill root crashed relative_to(), and a
+    referenced symlinked markdown file could be read from outside the repo)."""
+    outside = temp_dir / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("out-of-tree\n")
+    (outside / "notes.md").write_text("# Notes\n\nMentions scripts/orphan.py here.\n")
+
+    skill = _make_skill(temp_dir / "repo", body="See linked-notes.md for background.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("print('never mentioned')\n")
+    (skill / "escape.txt").symlink_to(outside / "secret.txt")
+    (skill / "linked-notes.md").symlink_to(outside / "notes.md")
+    (skill / "outside-dir").symlink_to(outside, target_is_directory=True)
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+
+    flagged = {v.file_path for v in violations}
+    # No crash, symlinks are never flagged, and the symlinked markdown —
+    # although mentioned by SKILL.md — is not read: the out-of-tree mention
+    # of scripts/orphan.py must not mark it referenced.
+    assert flagged == {skill / "scripts" / "orphan.py"}

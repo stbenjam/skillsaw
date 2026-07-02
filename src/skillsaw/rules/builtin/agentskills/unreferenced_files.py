@@ -44,9 +44,10 @@ directory mentions require the trailing slash (so the English word
 directory path.
 
 Built-in exclusions (never flagged): SKILL.md itself, README.md,
-CHANGELOG.md, LICENSE / LICENSE.*, NOTICE / NOTICE.*, everything under
-evals/, and hidden files or directories.  The ``exclude`` config option
-adds glob patterns on top of (not replacing) these defaults.
+CHANGELOG.md, LICENSE* / NOTICE* (any suffix), everything under evals/,
+hidden files or directories, and symlinks (which are also never
+followed).  The ``exclude`` config option adds glob patterns on top of
+(not replacing) these defaults.
 
 A skill-root README.md additionally counts as a reference root alongside
 SKILL.md: it is standard human-facing documentation, so a bundled file
@@ -178,20 +179,31 @@ class AgentSkillUnreferencedFilesRule(Rule):
 
     @staticmethod
     def _bundled_files(skill_path: Path) -> List[Path]:
-        """All non-hidden files under the skill, skipping nested skill dirs."""
+        """All non-hidden, non-symlink files under the skill.
+
+        Nested skill directories are pruned, and symlinks are neither
+        followed nor listed: a link escaping the skill root would make
+        ``resolve().relative_to()`` raise, and a symlinked markdown file
+        must never pull out-of-tree content into the reference traversal.
+        """
         files: List[Path] = []
         try:
             for dirpath, dirnames, filenames in os.walk(skill_path):
+                base = Path(dirpath)
                 dirnames[:] = sorted(
                     d
                     for d in dirnames
-                    if not d.startswith(".") and not (Path(dirpath) / d / "SKILL.md").is_file()
+                    if not d.startswith(".")
+                    and not (base / d).is_symlink()
+                    and not (base / d / "SKILL.md").is_file()
                 )
-                base = Path(dirpath)
                 for name in sorted(filenames):
                     if name.startswith("."):
                         continue
-                    files.append(base / name)
+                    path = base / name
+                    if path.is_symlink():
+                        continue
+                    files.append(path)
         except OSError:
             pass
         return files
@@ -202,7 +214,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             return True
         if name in ("README.md", "CHANGELOG.md"):
             return True
-        if name in ("LICENSE", "NOTICE") or name.startswith(("LICENSE.", "NOTICE.")):
+        if name.startswith(("LICENSE", "NOTICE")):
             return True
         if rel.startswith("evals/"):
             return True
