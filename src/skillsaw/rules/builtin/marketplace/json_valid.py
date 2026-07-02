@@ -3,6 +3,7 @@ Rule: marketplace-json-valid
 """
 
 import re
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -11,6 +12,12 @@ from skillsaw.lint_target import MarketplaceConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def is_absolute_path(path: str) -> bool:
+    """True for POSIX-absolute (/x) or Windows-absolute (C:\\x, \\\\share) paths."""
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+
 
 # Required fields for each object source type per the plugin-marketplaces
 # docs; unknown types get a warning rather than an error so a new source
@@ -97,6 +104,35 @@ class MarketplaceJsonValidRule(Rule):
                 self.violation("'owner' must have a 'name' field", file_path=marketplace_file)
             )
 
+        plugin_root = None
+        metadata = marketplace.get("metadata")
+        if isinstance(metadata, dict) and "pluginRoot" in metadata:
+            if not isinstance(metadata["pluginRoot"], str):
+                violations.append(
+                    self.violation(
+                        "'metadata.pluginRoot' must be a string", file_path=marketplace_file
+                    )
+                )
+            else:
+                plugin_root = metadata["pluginRoot"]
+                if ".." in plugin_root.replace("\\", "/").split("/"):
+                    violations.append(
+                        self.violation(
+                            "metadata.pluginRoot: path contains '..' — the plugin "
+                            "root must stay within the marketplace repository",
+                            file_path=marketplace_file,
+                        )
+                    )
+                elif is_absolute_path(plugin_root):
+                    violations.append(
+                        self.violation(
+                            f"metadata.pluginRoot: absolute path '{plugin_root}' — "
+                            "the plugin root must be a relative path inside the "
+                            "marketplace repository",
+                            file_path=marketplace_file,
+                        )
+                    )
+
         if "plugins" not in marketplace:
             violations.append(self.violation("Missing 'plugins' array", file_path=marketplace_file))
         elif not isinstance(marketplace["plugins"], list):
@@ -143,15 +179,26 @@ class MarketplaceJsonValidRule(Rule):
                         )
                     )
                 else:
-                    violations.extend(self._check_source(entry["source"], idx, marketplace_file))
+                    violations.extend(
+                        self._check_source(entry["source"], idx, marketplace_file, plugin_root)
+                    )
 
         return violations
 
-    def _check_source(self, source, idx: int, marketplace_file) -> List[RuleViolation]:
+    def _check_source(self, source, idx: int, marketplace_file, plugin_root) -> List[RuleViolation]:
         """Validate a plugin entry's source (relative path or typed object)."""
         violations = []
 
         if isinstance(source, str):
+            if is_absolute_path(source):
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source: absolute path '{source}' — sources "
+                        "must be relative paths inside the marketplace repository",
+                        file_path=marketplace_file,
+                    )
+                )
+                return violations
             parts = source.replace("\\", "/").split("/")
             if ".." in parts:
                 violations.append(
@@ -161,7 +208,9 @@ class MarketplaceJsonValidRule(Rule):
                         file_path=marketplace_file,
                     )
                 )
-            elif not source.startswith("./"):
+            elif not source.startswith("./") and not plugin_root:
+                # With metadata.pluginRoot set, bare names (e.g. "formatter")
+                # are the documented form, so no style nudge applies.
                 violations.append(
                     self.violation(
                         f"plugins[{idx}].source: relative path '{source}' should "

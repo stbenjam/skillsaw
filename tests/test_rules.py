@@ -5,6 +5,8 @@ Tests for builtin rules
 import sys
 from pathlib import Path
 
+import pytest
+
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
@@ -486,6 +488,68 @@ def test_marketplace_source_missing_dot_slash_info(temp_dir):
     assert style[0].severity == Severity.INFO
 
 
+def test_marketplace_plugin_root_bare_source_no_style_nudge(temp_dir):
+    """With metadata.pluginRoot set, bare source names are the documented form."""
+    repo = _marketplace_with(
+        temp_dir,
+        metadata={"pluginRoot": "./plugins"},
+        plugins=[{"name": "my-plugin", "source": "my-plugin"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert not any("start with './'" in v.message for v in violations)
+
+
+def test_marketplace_plugin_root_traversal_fails(temp_dir):
+    """A pluginRoot containing '..' must be rejected."""
+    repo = _marketplace_with(
+        temp_dir,
+        metadata={"pluginRoot": "../../shared"},
+        plugins=[{"name": "my-plugin", "source": "my-plugin"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    traversal = [
+        v for v in violations if "metadata.pluginRoot" in v.message and "'..'" in v.message
+    ]
+    assert len(traversal) == 1
+    assert traversal[0].severity == Severity.ERROR
+
+
+def test_marketplace_plugin_root_wrong_type_fails(temp_dir):
+    repo = _marketplace_with(temp_dir, metadata={"pluginRoot": 42})
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert any("'metadata.pluginRoot' must be a string" in v.message for v in violations)
+
+
+@pytest.mark.parametrize("plugin_root", ["/opt/plugins", "C:\\plugins"])
+def test_marketplace_plugin_root_absolute_fails(temp_dir, plugin_root):
+    """An absolute pluginRoot must be rejected — it can escape the repository."""
+    repo = _marketplace_with(
+        temp_dir,
+        metadata={"pluginRoot": plugin_root},
+        plugins=[{"name": "my-plugin", "source": "my-plugin"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    absolute = [
+        v for v in violations if "metadata.pluginRoot" in v.message and "absolute" in v.message
+    ]
+    assert len(absolute) == 1
+    assert absolute[0].severity == Severity.ERROR
+
+
+@pytest.mark.parametrize("source", ["/etc/passwd", "C:\\plugins\\tool"])
+def test_marketplace_source_absolute_path_fails(temp_dir, source):
+    """Absolute source paths are flagged, with or without pluginRoot set."""
+    repo = _marketplace_with(
+        temp_dir,
+        metadata={"pluginRoot": "./plugins"},
+        plugins=[{"name": "my-plugin", "source": source}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    absolute = [v for v in violations if "absolute path" in v.message and ".source" in v.message]
+    assert len(absolute) == 1
+    assert absolute[0].severity == Severity.ERROR
+
+
 def test_marketplace_source_object_required_fields(temp_dir):
     """Each typed source object must carry its required fields."""
     repo = _marketplace_with(
@@ -778,6 +842,41 @@ def test_marketplace_registration_fix_registers_plugin(marketplace_repo):
     fix.file_path.write_text(fix.fixed_content)
     invalidate_read_caches()
     assert rule.check(RepositoryContext(marketplace_repo)) == []
+
+
+def test_marketplace_registration_fix_honors_plugin_root(temp_dir):
+    """fix() writes sources relative to metadata.pluginRoot when set, so the
+    generated entry round-trips through pluginRoot-aware source resolution."""
+    import json
+
+    from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+    repo = _marketplace_with_raw_json(
+        temp_dir,
+        json.dumps(
+            {
+                "name": "m",
+                "owner": {"name": "o"},
+                "metadata": {"pluginRoot": "./plugins"},
+                "plugins": [],
+            }
+        ),
+    )
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+
+    fixes = rule.fix(context, violations)
+    assert len(fixes) == 1
+
+    data = json.loads(fixes[0].fixed_content)
+    assert data["plugins"] == [{"name": "plugin-one", "source": "./plugin-one"}]
+
+    fixes[0].file_path.write_text(fixes[0].fixed_content)
+    invalidate_read_caches()
+    assert rule.check(RepositoryContext(repo)) == []
 
 
 def test_marketplace_registration_fix_plugins_not_list(temp_dir):
