@@ -1,0 +1,10 @@
+{
+  "skill_name": "report-builder",
+  "evals": [
+    {
+      "id": "weekly-report-basic",
+      "prompt": "Build a weekly status report for the current repository",
+      "expected_behavior": "Runs scripts/build.py and applies the style guide"
+    }
+  ]
+}

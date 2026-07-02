@@ -608,6 +608,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
+| `agentskill-unreferenced-files` | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - |
 
 **`agentskill-valid` parameters:**
 
@@ -633,6 +634,13 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
+
+**`agentskill-unreferenced-files` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 ### Plugin Structure
 
