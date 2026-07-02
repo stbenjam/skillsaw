@@ -78,8 +78,10 @@ class ContentBrokenInternalReferenceRule(Rule):
                 # Resolve relative to the file containing the link
                 try:
                     resolved = (cf.path.parent / fs_path).resolve()
-                except (ValueError, OSError):
-                    # Undecodable path (e.g. an embedded %00) cannot exist.
+                except (ValueError, OSError, RuntimeError):
+                    # Undecodable path (e.g. an embedded %00) cannot exist;
+                    # resolve() raises RuntimeError on circular symlinks on
+                    # Python <= 3.12.
                     violations.append(
                         self.violation(
                             f"Broken internal link: [{link.text}]({target}) — target does not exist",
@@ -117,7 +119,7 @@ class ContentBrokenInternalReferenceRule(Rule):
             resolved = (link_dir / rel_path).resolve()
             resolved.relative_to(root)
             return resolved.exists()
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             return False
 
     def _collect_repo_paths(self, root: Path) -> List[str]:
@@ -152,16 +154,24 @@ class ContentBrokenInternalReferenceRule(Rule):
         return self._fuzzy_name_cache[target_name]
 
     def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> Optional[str]:
-        """Find a similar file path in the repo using fuzzy matching."""
+        """Find a similar file path in the repo using fuzzy matching.
+
+        Suggestions are markdown destinations, so they always use forward
+        slashes: ``as_posix()`` converts the ``\\`` separators that
+        ``os.path.relpath`` / ``relative_to`` produce on Windows (a raw
+        ``\\`` would be percent-encoded as ``%5C`` by the fixer). On POSIX
+        it is a no-op — a literal ``\\`` there is part of the file name and
+        must be preserved.
+        """
         index = self._path_index(root)
         target_name = Path(target_path).name
         candidates = index.get(target_name, [])
         if len(candidates) == 1:
             try:
-                return str(Path(candidates[0]).relative_to(link_dir.relative_to(root)))
+                return Path(candidates[0]).relative_to(link_dir.relative_to(root)).as_posix()
             except ValueError:
                 rel = os.path.relpath(root / candidates[0], link_dir)
-                return rel
+                return Path(rel).as_posix()
         if not candidates:
             close = self._close_name(index, target_name)
             if close is not None:
@@ -169,9 +179,9 @@ class ContentBrokenInternalReferenceRule(Rule):
         if candidates:
             try:
                 rel = os.path.relpath(root / candidates[0], link_dir)
-                return rel
+                return Path(rel).as_posix()
             except ValueError:
-                return candidates[0]
+                return Path(candidates[0]).as_posix()
         return None
 
     def fix(

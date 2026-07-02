@@ -1,6 +1,7 @@
 """Tests for content intelligence rules."""
 
 import json
+import os
 import pytest
 from pathlib import Path
 import tempfile
@@ -999,6 +1000,30 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 1
         assert "refs%00/x.md" in violations[0].message
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink semantics")
+    def test_circular_symlink_reports_broken_not_crash(self, temp_dir):
+        """A self-referential symlink cannot resolve — Path.resolve()
+        raises RuntimeError on Python <= 3.12; report broken instead of
+        crashing."""
+        loop = temp_dir / "loop.md"
+        loop.symlink_to(loop)
+        (temp_dir / "CLAUDE.md").write_text("See [loop](loop.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "does not exist" in violations[0].message
+
+    @pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
+    def test_literal_backslash_filename_suggestion_preserved(self, temp_dir):
+        """On POSIX a literal backslash is part of the file name — the
+        Windows separator normalization (as_posix) must not rewrite it."""
+        (temp_dir / "style\\guide.md").write_text("# Style\n")
+        (temp_dir / "CLAUDE.md").write_text("See [style](style-guide.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "did you mean 'style\\guide.md'?" in violations[0].message
 
 
 class TestContentUnlinkedInternalReferenceRule:
