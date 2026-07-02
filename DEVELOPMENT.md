@@ -63,8 +63,9 @@ make update       # regenerate everything: APM, example config, README docs, sit
 **Always run `make update` before opening a PR.** This regenerates:
 - `.skillsaw.yaml.example` — example config from builtin rules
 - README.md — rule documentation table and Content Intelligence section
-- `docs/rules/`, `docs/cli.md`, `docs/research.md` — site content from rule
-  metadata and long-form rule docs (`scripts/generate-site-content.py`)
+- `docs/index.md`, `docs/rules/`, `docs/cli.md`, `docs/research.md` — site
+  content from rule metadata and long-form rule docs
+  (`scripts/generate-site-content.py`)
 - `.claude/`, `.cursor/`, `.opencode/`, and `AGENTS.md` (codex) — APM-compiled
   instructions and skills for the targets in `apm.yml`
 

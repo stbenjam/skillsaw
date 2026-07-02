@@ -7,7 +7,7 @@ argument-hint: "[args]"
 `{{PLUGIN_NAME}}:{{COMMAND_NAME}}`
 
 ## Synopsis
-```
+```text
 /{{PLUGIN_NAME}}:{{COMMAND_NAME}} [args]
 ```
 
@@ -29,7 +29,7 @@ command does and when to run it.
 ## Examples
 
 1. **Basic usage** — run `/{{PLUGIN_NAME}}:{{COMMAND_NAME}}` with no arguments:
-   ```
+   ```text
    /{{PLUGIN_NAME}}:{{COMMAND_NAME}}
    ```
 

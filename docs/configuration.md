@@ -75,9 +75,14 @@ Each rule's `enabled` key accepts three values:
 
 | Value | Meaning |
 |-------|---------|
-| `true` | Always run the rule |
+| `true` | Always run the rule, unconditionally |
 | `false` | Never run the rule |
-| `auto` | Run the rule only when its repository type or file format is detected (e.g. plugin rules only run in plugin repos) |
+| `auto` | Run the rule where it applies: when the rule declares repository types or file formats, only where those are detected (e.g. plugin rules only run in plugin repos); rules with no such gating run everywhere |
+
+`auto` also respects the config `version` gate: a rule newer than the
+pinned `version` stays off until you bump it. `enabled: true` bypasses
+that gate and turns the rule on unconditionally — so prefer `auto` unless
+you deliberately want a rule regardless of version or repo detection.
 
 Most rules default to `auto`, so they activate only where they make sense.
 `skillsaw explain <rule-id>` shows whether a rule is active in your

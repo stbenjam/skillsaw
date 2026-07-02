@@ -25,7 +25,7 @@ Update this list with the tools the agent uses:
 
 ## How to Use
 
-```
+```text
 Use the Task tool to launch this agent:
 - subagent_type: "{{AGENT_ID}}"
 - prompt: Detailed task description
@@ -34,7 +34,7 @@ Use the Task tool to launch this agent:
 ## Examples
 
 ### Example 1: Run a Basic Task
-```
+```yaml
 subagent_type: "{{AGENT_ID}}"
 prompt: "Describe the task for the agent to perform"
 ```

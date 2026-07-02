@@ -180,20 +180,11 @@ skillsaw:
       codequality: gl-code-quality-report.json
 ```
 
-```yaml
-# GitHub Code Scanning — upload SARIF so violations appear as alerts
-- run: skillsaw lint --format sarif --output results.sarif .
-  continue-on-error: true
-- uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: results.sarif
-```
-
 Output formats for `--format` / `--output`: `text`, `json`, `sarif`, `html`,
 `code-climate`, and `gitlab`.
 
-For PR review comments, the secure two-workflow pattern, SARIF uploads, and
-full configuration options, see the [CI Integration guide](https://skillsaw.org/ci/).
+For PR review comments, the secure two-workflow pattern, and full
+configuration options, see the [CI Integration guide](https://skillsaw.org/ci/).
 
 ### Pre-commit
 

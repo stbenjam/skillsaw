@@ -2641,17 +2641,3 @@ class TestRenameRefsAutofix:
         r = run_lint(repo)
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"
-
-
-# ── Removed --llm flag breadcrumb ─────────────────────────────────
-
-
-class TestRemovedLlmFlagHint:
-    """`--llm` was removed (#310); the CLI should say where it went."""
-
-    def test_llm_flag_prints_removal_note(self, tmp_path):
-        args = [sys.executable, "-m", "skillsaw", "lint", "--llm", str(tmp_path)]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=60)
-        assert result.returncode != 0
-        assert "--llm was removed" in result.stderr
-        assert "unrecognized arguments: --llm" in result.stderr
