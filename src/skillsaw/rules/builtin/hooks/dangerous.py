@@ -130,12 +130,17 @@ class HooksDangerousRule(Rule):
                 for handler in cfg.handlers:
                     if handler.type != "command" or not handler.command:
                         continue
-                    if self._is_allowed(handler.command):
+                    # Exec-form hooks split the invocation across command +
+                    # args; scan the joined form so patterns can't hide in args.
+                    command = handler.command
+                    if isinstance(handler.args, list):
+                        command = " ".join([command, *(str(a) for a in handler.args)])
+                    if self._is_allowed(handler.command) or self._is_allowed(command):
                         continue
-                    for message in _check_dangerous(handler.command):
+                    for message in _check_dangerous(command):
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: {message} — " f"command: {handler.command!r}",
+                                f"Hook {event_type}: {message} — " f"command: {command!r}",
                                 file_path=file_path,
                             )
                         )

@@ -256,6 +256,27 @@ def test_name_single_char_passes(temp_dir):
     assert len(violations) == 0
 
 
+def test_name_digit_leading_passes(temp_dir):
+    """Spec allows names starting with a digit, e.g. 3d-printing."""
+    skill = temp_dir / "3d-printing"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: 3d-printing\ndescription: 3D printing\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillNameRule().check(context)
+    assert len(violations) == 0
+
+
+def test_name_leading_hyphen_fails(temp_dir):
+    skill = temp_dir / "-bad"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: -bad\ndescription: Leading hyphen\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillNameRule().check(context)
+    assert len(violations) >= 1
+
+
 def test_name_uppercase_fails(temp_dir):
     skill = temp_dir / "Bad-Name"
     skill.mkdir()
