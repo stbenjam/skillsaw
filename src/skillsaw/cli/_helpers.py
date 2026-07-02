@@ -182,7 +182,7 @@ def install_warning_display() -> None:
                 f"{c['yellow']}⚠ Loading custom rule file:{c['reset']} "
                 f"{c['bold']}{message.path}{c['reset']} "
                 f"{c['dim']}(use --no-custom-rules to skip){c['reset']}",
-                file=sys.stderr,
+                file=sys.stderr if file is None else file,
             )
         else:
             default_showwarning(message, category, filename, lineno, file, line)
