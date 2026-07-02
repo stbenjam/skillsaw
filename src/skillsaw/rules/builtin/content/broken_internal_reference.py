@@ -5,6 +5,7 @@ import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import quote, unquote
 
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -64,8 +65,22 @@ class ContentBrokenInternalReferenceRule(Rule):
                 target_path = target.split("#")[0]
                 if not target_path:
                     continue
+                # Decode percent-escapes (%20 etc.) for the filesystem
+                # lookup only — messages keep the original destination text.
+                fs_path = unquote(target_path)
                 # Resolve relative to the file containing the link
-                resolved = (cf.path.parent / target_path).resolve()
+                try:
+                    resolved = (cf.path.parent / fs_path).resolve()
+                except (ValueError, OSError):
+                    # Undecodable path (e.g. an embedded %00) cannot exist.
+                    violations.append(
+                        self.violation(
+                            f"Broken internal link: [{link.text}]({target}) — target does not exist",
+                            block=cf,
+                            line=link.body_line,
+                        )
+                    )
+                    continue
                 # Ensure the resolved path is within the repo root
                 try:
                     resolved.relative_to(root)
@@ -79,7 +94,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     )
                     continue
                 if not resolved.exists():
-                    suggestion = self._find_similar(root, cf.path.parent, target_path)
+                    suggestion = self._find_similar(root, cf.path.parent, fs_path)
                     msg = f"Broken internal link: [{link.text}]({target}) — target does not exist"
                     if suggestion:
                         msg += f" (did you mean '{suggestion}'?)"
@@ -189,7 +204,13 @@ class ContentBrokenInternalReferenceRule(Rule):
                     if key in used_spans:
                         continue
                     used_spans.add(key)
-                    edits.append((link.dest_file_line, span[0], span[1], suggestion + anchor))
+                    # Percent-encode the emitted destination: suggestions are
+                    # raw filesystem paths, and a raw space (or paren) inside
+                    # `](...)` is not parseable markdown — the link would be
+                    # silently destroyed. Paths without special characters
+                    # pass through unchanged.
+                    dest = quote(suggestion, safe="/")
+                    edits.append((link.dest_file_line, span[0], span[1], dest + anchor))
                     violations_fixed.append(v)
                     break
             fixed = splice(content, edits)

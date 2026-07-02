@@ -932,6 +932,36 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
 
+    def test_percent_encoded_link_to_existing_file(self, temp_dir):
+        """Regression for #322: a %20 link to a real file is not broken."""
+        refs = temp_dir / "references"
+        refs.mkdir()
+        (refs / "style guide.md").write_text("# Style Guide\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Follow [the style guide](references/style%20guide.md) for docs.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_percent_encoded_link_to_missing_file(self, temp_dir):
+        """A genuinely broken %20 link still fires, keeping the original
+        destination text in the message."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Follow [the style guide](references/style%20guide.md) for docs.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "references/style%20guide.md" in violations[0].message
+
+    def test_percent_encoded_link_with_anchor(self, temp_dir):
+        (temp_dir / "style guide.md").write_text("# Style Guide\n## Voice\n")
+        (temp_dir / "CLAUDE.md").write_text("See [voice](style%20guide.md#voice).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
 
 class TestContentUnlinkedInternalReferenceRule:
     def test_rule_metadata(self):
