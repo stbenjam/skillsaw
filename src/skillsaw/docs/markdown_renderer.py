@@ -15,6 +15,7 @@ from skillsaw.docs.models import (
     PluginDoc,
     RuleFileDoc,
     SkillDoc,
+    name_str,
 )
 
 
@@ -53,7 +54,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     assert mp is not None
     pages: Dict[str, str] = {}
 
-    sorted_plugins = sorted(mp.plugins, key=lambda p: p.name.lower())
+    sorted_plugins = sorted(mp.plugins, key=lambda p: name_str(p.name).lower())
 
     # Index
     lines: List[str] = [f"# {mp.name or docs.title}", ""]
@@ -193,7 +194,7 @@ def _append_command(lines: List[str], cmd: CommandDoc) -> None:
 def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
-    for skill in sorted(skills, key=lambda s: s.name.lower()):
+    for skill in sorted(skills, key=lambda s: name_str(s.name).lower()):
         lines.append(f"### {skill.name}")
         lines.append("")
         if skill.description:
@@ -256,5 +257,8 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
 
 
 def _plugin_filename(plugin: PluginDoc) -> str:
-    safe = plugin.name.replace("/", "-").replace(" ", "-")
+    # ``plugin.name`` is manifest-derived and may be a non-string (e.g. a
+    # numeric ``"name": 123`` in marketplace.json); coerce before calling
+    # string methods so ``docs`` doesn't crash on inputs ``lint`` tolerates.
+    safe = name_str(plugin.name).replace("/", "-").replace(" ", "-")
     return f"{safe}.md"

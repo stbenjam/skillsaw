@@ -706,6 +706,60 @@ class BrokenRule(Rule):
         Linter(context, config)
 
 
+def test_abstract_helper_rule_does_not_abort_file(valid_plugin, temp_dir):
+    """An abstract helper Rule subclass in a custom-rules file must be skipped,
+    not instantiated — otherwise the whole file is dropped (issue #322).
+
+    The builtin and plugin loaders already skip ``inspect.isabstract`` classes;
+    the custom-rule path must match, so a concrete rule sharing the file still
+    loads and runs.
+    """
+    custom_rule_file = temp_dir / "abstract_helper_rule.py"
+    custom_rule_file.write_text("""
+from abc import abstractmethod
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+
+class BaseHelperRule(Rule):
+    # Abstract helper: subclasses share this scaffolding. Instantiating it
+    # would raise TypeError, which previously aborted the entire file.
+    @abstractmethod
+    def targets(self) -> List[str]:
+        ...
+
+    @property
+    def description(self) -> str:
+        return "shared helper description"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return [self.violation("helper violation")]
+
+
+class ConcreteHelperRule(BaseHelperRule):
+    @property
+    def rule_id(self) -> str:
+        return "concrete-helper-rule"
+
+    def targets(self) -> List[str]:
+        return ["*.md"]
+""")
+
+    config = LinterConfig(custom_rules=[str(custom_rule_file)])
+    context = RepositoryContext(valid_plugin)
+
+    linter = Linter(context, config)
+
+    rule_ids = [rule.rule_id for rule in linter.rules]
+    assert "concrete-helper-rule" in rule_ids
+
+    violations = linter.run()
+    assert any(v.rule_id == "concrete-helper-rule" for v in violations)
+
+
 def test_unknown_skip_rule_raises(valid_plugin):
     """A typo in --skip-rule must error, not silently leave the rule running."""
     context = RepositoryContext(valid_plugin)

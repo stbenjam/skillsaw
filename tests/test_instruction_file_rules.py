@@ -167,6 +167,23 @@ class TestInstructionImportsValidRule:
         assert len(violations) == 1
         assert "escapes" in violations[0].message.lower()
 
+    def test_home_import_not_checked(self, temp_dir):
+        # Claude Code's ``@~/.claude/...`` memory syntax points at
+        # machine-local files that aren't in the repo. Existence checking
+        # them is always noise in CI, so they must be skipped (issue #322).
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@~/.claude/my-file.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_home_import_skipped_but_relative_still_fails(self, temp_dir):
+        content = "# Instructions\n@~/.claude/env-specific.md\n@docs/missing.md\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "missing.md" in violations[0].message
+
     def test_import_with_leading_whitespace(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("  @nonexistent.md\n")
         context = RepositoryContext(temp_dir)
