@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import logging
 import re
 import sys
@@ -319,7 +320,12 @@ class Linter:
         try:
             for name in dir(module):
                 obj = getattr(module, name)
-                if isinstance(obj, type) and issubclass(obj, Rule) and obj is not Rule:
+                if (
+                    isinstance(obj, type)
+                    and issubclass(obj, Rule)
+                    and obj is not Rule
+                    and not inspect.isabstract(obj)
+                ):
                     rule_instance = obj()
                     self._known_rule_ids.add(rule_instance.rule_id)
                     if self._rule_ids and rule_instance.rule_id not in self._rule_ids:

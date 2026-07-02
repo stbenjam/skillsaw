@@ -5,6 +5,7 @@ import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import quote, unquote
 
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -64,8 +65,31 @@ class ContentBrokenInternalReferenceRule(Rule):
                 target_path = target.split("#")[0]
                 if not target_path:
                     continue
+                # Decode percent-escapes (%20 etc.) for the filesystem
+                # lookup only — messages keep the original destination text.
+                fs_path = unquote(target_path)
+                # A file whose literal name contains %XX sequences and is
+                # linked verbatim (e.g. `refs/x%20y.md` exists on disk)
+                # linted clean before decoding existed — keep accepting it.
+                if fs_path != target_path and self._exists_in_repo(
+                    root, cf.path.parent, target_path
+                ):
+                    continue
                 # Resolve relative to the file containing the link
-                resolved = (cf.path.parent / target_path).resolve()
+                try:
+                    resolved = (cf.path.parent / fs_path).resolve()
+                except (ValueError, OSError, RuntimeError):
+                    # Undecodable path (e.g. an embedded %00) cannot exist;
+                    # resolve() raises RuntimeError on circular symlinks on
+                    # Python <= 3.12.
+                    violations.append(
+                        self.violation(
+                            f"Broken internal link: [{link.text}]({target}) — target does not exist",
+                            block=cf,
+                            line=link.body_line,
+                        )
+                    )
+                    continue
                 # Ensure the resolved path is within the repo root
                 try:
                     resolved.relative_to(root)
@@ -79,7 +103,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     )
                     continue
                 if not resolved.exists():
-                    suggestion = self._find_similar(root, cf.path.parent, target_path)
+                    suggestion = self._find_similar(root, cf.path.parent, fs_path)
                     msg = f"Broken internal link: [{link.text}]({target}) — target does not exist"
                     if suggestion:
                         msg += f" (did you mean '{suggestion}'?)"
@@ -87,6 +111,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                         msg += " (reference-style link — fix the definition manually)"
                     violations.append(self.violation(msg, block=cf, line=link.body_line))
         return violations
+
+    @staticmethod
+    def _exists_in_repo(root: Path, link_dir: Path, rel_path: str) -> bool:
+        """True when ``rel_path`` resolves inside ``root`` and exists."""
+        try:
+            resolved = (link_dir / rel_path).resolve()
+            resolved.relative_to(root)
+            return resolved.exists()
+        except (ValueError, OSError, RuntimeError):
+            return False
 
     def _collect_repo_paths(self, root: Path) -> List[str]:
         """Collect all file paths in the repo, relative to root."""
@@ -120,16 +154,24 @@ class ContentBrokenInternalReferenceRule(Rule):
         return self._fuzzy_name_cache[target_name]
 
     def _find_similar(self, root: Path, link_dir: Path, target_path: str) -> Optional[str]:
-        """Find a similar file path in the repo using fuzzy matching."""
+        """Find a similar file path in the repo using fuzzy matching.
+
+        Suggestions are markdown destinations, so they always use forward
+        slashes: ``as_posix()`` converts the ``\\`` separators that
+        ``os.path.relpath`` / ``relative_to`` produce on Windows (a raw
+        ``\\`` would be percent-encoded as ``%5C`` by the fixer). On POSIX
+        it is a no-op — a literal ``\\`` there is part of the file name and
+        must be preserved.
+        """
         index = self._path_index(root)
         target_name = Path(target_path).name
         candidates = index.get(target_name, [])
         if len(candidates) == 1:
             try:
-                return str(Path(candidates[0]).relative_to(link_dir.relative_to(root)))
+                return Path(candidates[0]).relative_to(link_dir.relative_to(root)).as_posix()
             except ValueError:
                 rel = os.path.relpath(root / candidates[0], link_dir)
-                return rel
+                return Path(rel).as_posix()
         if not candidates:
             close = self._close_name(index, target_name)
             if close is not None:
@@ -137,9 +179,9 @@ class ContentBrokenInternalReferenceRule(Rule):
         if candidates:
             try:
                 rel = os.path.relpath(root / candidates[0], link_dir)
-                return rel
+                return Path(rel).as_posix()
             except ValueError:
-                return candidates[0]
+                return Path(candidates[0]).as_posix()
         return None
 
     def fix(
@@ -189,7 +231,13 @@ class ContentBrokenInternalReferenceRule(Rule):
                     if key in used_spans:
                         continue
                     used_spans.add(key)
-                    edits.append((link.dest_file_line, span[0], span[1], suggestion + anchor))
+                    # Percent-encode the emitted destination: suggestions are
+                    # raw filesystem paths, and a raw space (or paren) inside
+                    # `](...)` is not parseable markdown — the link would be
+                    # silently destroyed. Paths without special characters
+                    # pass through unchanged.
+                    dest = quote(suggestion, safe="/")
+                    edits.append((link.dest_file_line, span[0], span[1], dest + anchor))
                     violations_fixed.append(v)
                     break
             fixed = splice(content, edits)
