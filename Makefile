@@ -24,7 +24,7 @@ help:
 
 $(VENV)/bin/activate: pyproject.toml
 	test -d $(VENV) || python3 -m venv $(VENV)
-	$(PIP) install -e '.[dev,docs,vertexai,bedrock]'
+	$(PIP) install -e '.[dev,docs]'
 	touch $(VENV)/bin/activate
 
 venv: $(VENV)/bin/activate
