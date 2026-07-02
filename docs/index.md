@@ -14,9 +14,10 @@
 </div>
 
 <div style="text-align: center; padding: 1rem 0;">
-<a href="https://asciinema.org/a/uQ9xfM5S1SXcd777">
-<img src="images/demo.gif" alt="skillsaw demo" style="max-width: 100%; border-radius: 8px;">
+<a href="https://asciinema.org/a/1259880" title="Watch the skillsaw onboarding demo">
+<img src="images/onboarding-demo.png" alt="Watch the skillsaw onboarding demo" style="max-width: 100%; border-radius: 8px;">
 </a>
+<p markdown>▶️ **[Watch the onboarding demo](https://asciinema.org/a/1259880)** — see skillsaw grade, fix, and configure a repo from scratch.</p>
 </div>
 
 ---
