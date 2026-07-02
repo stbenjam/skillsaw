@@ -3,12 +3,45 @@
 import re
 from typing import List
 
+from ruamel.yaml import YAML as _RuamelYAML
+from ruamel.yaml import YAMLError as _RuamelYAMLError
+from ruamel.yaml.comments import CommentedMap
+
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
+from skillsaw.utils import frontmatter_text, parse_frontmatter, replace_frontmatter_field
 
 from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
+
+
+def _inline_comment(name_line: str) -> str:
+    """Return the inline YAML comment on a raw ``name: ...`` line (with its
+    leading whitespace), or ``""`` when there is none.
+
+    A ``#`` inside a quoted scalar (``name: "a#b"``) is part of the value,
+    so the line is parsed as YAML rather than regex-split on ``#``.
+    """
+    ry = _RuamelYAML()
+    ry.preserve_quotes = True
+    try:
+        data = ry.load(name_line)
+    except _RuamelYAMLError:
+        return ""
+    if not isinstance(data, CommentedMap):
+        return ""
+    tokens = data.ca.items.get("name")
+    comment = tokens[2] if tokens and len(tokens) > 2 else None
+    if comment is None:
+        return ""
+    start = comment.start_mark.column
+    while start > 0 and name_line[start - 1] in " \t":
+        start -= 1
+    suffix = name_line[start:]
+    if suffix and suffix[0] not in " \t":
+        suffix = " " + suffix
+    return suffix
 
 
 class AgentSkillNameRule(Rule):
@@ -98,17 +131,26 @@ class AgentSkillNameRule(Rule):
             if not v.file_path or not v.file_path.exists():
                 continue
             original = v.file_path.read_text(encoding="utf-8")
-            match = re.search(r"^name:\s*(.+)$", original, re.MULTILINE)
-            if not match:
+            # The old name must be the parsed YAML value the violation was
+            # raised against — a raw-line slice would fold an inline comment
+            # (``name: Deploy_Service # legacy``) into the rename manifest
+            # and the kebab-cased replacement (issue #322).
+            fm, _body, _err = parse_frontmatter(original)
+            old_name = fm.get("name") if fm else None
+            if not isinstance(old_name, str) or not old_name:
                 continue
-            old_name = match.group(1).strip()
             if "does not match directory" in v.message:
                 new_name = v.file_path.parent.name
             else:
                 new_name = _to_kebab(old_name)
             if new_name == old_name or not NAME_PATTERN.match(new_name):
                 continue
-            fixed = original[: match.start()] + f"name: {new_name}" + original[match.end() :]
+            fm_text = frontmatter_text(original) or ""
+            line_match = re.search(r"^name[ \t]*:[^\r\n]*", fm_text, re.MULTILINE)
+            comment = _inline_comment(line_match.group(0)) if line_match else ""
+            fixed = replace_frontmatter_field(original, "name", f"name: {new_name}{comment}")
+            if fixed is None:
+                continue
 
             def _record_rename(root=context.root_path, old=old_name, new=new_name):
                 _add_rename(root, old, new)

@@ -1909,7 +1909,7 @@ class TestSafeAutofixIdempotency:
 
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
-        "agentskill-name": 3,
+        "agentskill-name": 4,
         "agentskill-valid": 4,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
@@ -2092,6 +2092,10 @@ class TestSafeAutofixIdempotency:
                 len(name_lines) == 1
             ), f"SKILL.md in {skill_dir.name} has {len(name_lines)} name: lines"
             name_val = name_lines[0].split(":", 1)[1].strip()
+            # The fixed line may keep the user's inline YAML comment (GH-322);
+            # post-fix names are plain kebab-case scalars, so a simple split
+            # is safe here.
+            name_val = name_val.split(" #", 1)[0].strip()
             assert (
                 name_val == skill_dir.name
             ), f"SKILL.md name '{name_val}' does not match dir '{skill_dir.name}'"
@@ -2641,3 +2645,81 @@ class TestRenameRefsAutofix:
         r = run_lint(repo)
         stale = [v for v in violations(r) if v["rule_id"] == "agentskill-rename-refs"]
         assert stale == [], f"phantom rename-refs violations after dry-run: {stale}"
+
+
+# ── agentskill-name autofix vs inline YAML comments (GH-322) ─────
+
+
+@pytest.mark.integration
+class TestNameAutofixInlineComment:
+    """Regression tests for GH-322: the agentskill-name autofix must record
+    the parsed YAML value of ``name`` in the rename manifest — never a raw
+    line slice that folds an inline comment into the old name — and must
+    preserve the user's inline comment on the rewritten line."""
+
+    FIXTURE = "autofix/name-inline-comment"
+
+    def test_rename_manifest_records_parsed_name(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert (
+            renames.get("Deploy_Service") == "deploy-service"
+        ), f"manifest must key on the parsed YAML name, got: {renames}"
+        assert not any(
+            "legacy" in old or " #" in old for old in renames
+        ), f"inline comment text leaked into the rename manifest: {renames}"
+
+    def test_inline_comment_preserved_on_rewritten_line(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "deploy-service" / "SKILL.md").read_text()
+        assert "name: deploy-service # legacy name kept for docs" in skill_md
+
+    def test_hash_inside_quoted_value_is_not_a_comment(self, tmp_path):
+        """A ``#`` inside a quoted scalar is part of the value: the manifest
+        must record ``release#tagger`` and the trailing comment must survive."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        skill_md = (repo / "release-tagger" / "SKILL.md").read_text()
+        assert "name: release-tagger # hash is part of the quoted value, not a comment" in skill_md
+        manifest = json.loads((repo / ".skillsaw-renames.json").read_text())
+        renames = {r["old"]: r["new"] for r in manifest["renames"]}
+        assert renames.get("release#tagger") == "release-tagger"
+
+    def test_manifest_enables_stale_reference_detection(self, tmp_path):
+        """With a clean manifest key, rename-refs can now see the stale
+        ``Deploy_Service`` reference in CLAUDE.md (the polluted key never
+        matched anything)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        _run_fix(repo)
+
+        r = run_lint(repo)
+        stale = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "agentskill-rename-refs" and "Deploy_Service" in v["message"]
+        ]
+        assert stale, "rename-refs should detect the stale Deploy_Service reference"
+
+    def test_fix_is_idempotent_and_converges(self, tmp_path):
+        """Fix twice: byte-identical content, and re-lint shows zero
+        remaining agentskill-name violations."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        baseline = _snapshot_contents(repo)
+
+        _run_fix(repo)
+        assert _snapshot_contents(repo) == baseline, "second fix run changed content"
+
+        r = run_lint(repo)
+        remaining = [v for v in violations(r) if v["rule_id"] == "agentskill-name"]
+        assert remaining == [], f"agentskill-name violations remain after fix: {remaining}"
