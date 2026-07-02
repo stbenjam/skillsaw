@@ -68,6 +68,13 @@ class ContentBrokenInternalReferenceRule(Rule):
                 # Decode percent-escapes (%20 etc.) for the filesystem
                 # lookup only — messages keep the original destination text.
                 fs_path = unquote(target_path)
+                # A file whose literal name contains %XX sequences and is
+                # linked verbatim (e.g. `refs/x%20y.md` exists on disk)
+                # linted clean before decoding existed — keep accepting it.
+                if fs_path != target_path and self._exists_in_repo(
+                    root, cf.path.parent, target_path
+                ):
+                    continue
                 # Resolve relative to the file containing the link
                 try:
                     resolved = (cf.path.parent / fs_path).resolve()
@@ -102,6 +109,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                         msg += " (reference-style link — fix the definition manually)"
                     violations.append(self.violation(msg, block=cf, line=link.body_line))
         return violations
+
+    @staticmethod
+    def _exists_in_repo(root: Path, link_dir: Path, rel_path: str) -> bool:
+        """True when ``rel_path`` resolves inside ``root`` and exists."""
+        try:
+            resolved = (link_dir / rel_path).resolve()
+            resolved.relative_to(root)
+            return resolved.exists()
+        except (ValueError, OSError):
+            return False
 
     def _collect_repo_paths(self, root: Path) -> List[str]:
         """Collect all file paths in the repo, relative to root."""

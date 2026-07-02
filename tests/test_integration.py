@@ -2537,8 +2537,10 @@ class TestMarkdownAstRegressions:
         fixed = (repo / "CLAUDE.md").read_text()
         assert "[the naming rules](references/naming%20rules.md)" in fixed
         assert "](references/naming rules.md)" not in fixed
-        # The working link is untouched.
+        # The working links are untouched — including the file whose
+        # literal name contains %20 and is linked verbatim.
         assert "[the style guide](references/style%20guide.md)" in fixed
+        assert "[API notes](references/api%20notes.md)" in fixed
         assert len(fixed.splitlines()) == before_lines
         # Idempotent: second fix is byte-identical.
         _run_fix(repo, "--suggest")

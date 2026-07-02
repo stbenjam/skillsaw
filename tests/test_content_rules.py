@@ -962,6 +962,44 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert violations == []
 
+    def test_literal_percent_sequence_in_filename_linked_verbatim(self, temp_dir):
+        """A file whose literal name contains %XX, linked verbatim, linted
+        clean before decoding existed — decoding must not break it."""
+        refs = temp_dir / "refs"
+        refs.mkdir()
+        (refs / "x%20y.md").write_text("# Literal percent\n")
+        (temp_dir / "CLAUDE.md").write_text("See [notes](refs/x%20y.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_double_encoded_link_to_literal_percent_filename(self, temp_dir):
+        """%2520 decodes once to %20, matching a literal %20 in the name."""
+        (temp_dir / "x%20y.md").write_text("# Literal percent\n")
+        (temp_dir / "CLAUDE.md").write_text("See [notes](x%2520y.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_literal_percent_not_a_valid_escape(self, temp_dir):
+        """A bare % that is not a valid escape (50%.md, w%zz.md) passes
+        through unquote unchanged and resolves literally."""
+        (temp_dir / "50%.md").write_text("# Fifty\n")
+        (temp_dir / "w%zz.md").write_text("# Malformed escape\n")
+        (temp_dir / "CLAUDE.md").write_text("See [fifty](50%.md) and [malformed](w%zz.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_undecodable_destination_reports_broken(self, temp_dir):
+        """An embedded %00 decodes to NUL, which cannot resolve — report
+        broken instead of crashing."""
+        (temp_dir / "CLAUDE.md").write_text("See [bad](refs%00/x.md).\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "refs%00/x.md" in violations[0].message
+
 
 class TestContentUnlinkedInternalReferenceRule:
     def test_rule_metadata(self):
