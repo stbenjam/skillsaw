@@ -161,7 +161,7 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
   with:
     strict: true
     plugins: |
-      skillsaw-typos==0.1.0
+      skillsaw-runbooks==0.1.0
 
 # Allow custom rules (disabled by default for security — see THREAT_MODEL.md T1)
 - uses: stbenjam/skillsaw@v0

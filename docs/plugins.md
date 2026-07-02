@@ -87,7 +87,7 @@ the remaining arguments forwarded verbatim, git-style — its exit code becomes
 skillsaw's exit code:
 
 ```console
-$ skillsaw typos accept        # runs: skillsaw-typos accept
+$ skillsaw runbooks list       # runs: skillsaw-runbooks list
 ```
 
 Dispatch rules:
