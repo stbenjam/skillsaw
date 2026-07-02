@@ -11,6 +11,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
 | [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto |
 | [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - |
+| [`agentskill-description-length`](agentskill-description-length.md) | Skill description should stay within a soft budget of 256 characters (opt-in) | warning (disabled) | - |
 | [`agentskill-structure`](agentskill-structure.md) | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |

@@ -1255,6 +1255,7 @@ OPT_IN_RULES = {
     "command-name-format",
     "mcp-prohibited",
     "agentskill-structure",
+    "agentskill-description-length",
     "agentskill-evals-required",
     "promptfoo-assertions",
     "promptfoo-metadata",
@@ -1386,6 +1387,91 @@ class TestRequiredFieldsConfig:
             or "Missing required metadata key" in v["message"]
         ]
         assert len(vs) == 0, f"Should have no required-field violations without config: {vs}"
+
+
+@pytest.mark.integration
+class TestDescriptionLengthConfig:
+    """End-to-end tests for the opt-in agentskill-description-length rule.
+
+    The fixture contains four skills: deploy-staging (343-char
+    description), review-pr (136 chars), release-notes (exactly 256
+    chars), and incident-handoff (folded multiline description, 303
+    chars parsed).
+    """
+
+    FIXTURE = "config/description-length"
+
+    def _rule_violations(self, r):
+        return [v for v in violations(r) if v["rule_id"] == "agentskill-description-length"]
+
+    def test_silent_by_default(self, tmp_path):
+        """Opt-in: a 343-char description produces no violation without config."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        (repo / ".skillsaw-strict.yaml").unlink()
+        r = run_lint(repo)
+        assert self._rule_violations(r) == []
+
+    def test_fires_when_enabled(self, tmp_path):
+        """Enabled at defaults: warns with actual length, threshold, and key line."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "deploy-staging" in v["file_path"]]
+        assert len(vs) == 1
+        assert "343" in vs[0]["message"]
+        assert "256" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert vs[0]["line"] == 3  # the description key line
+
+    def test_exactly_at_budget_passes(self, tmp_path):
+        """Boundary: a description of exactly 256 characters does not fire."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "release-notes" in v["file_path"]]
+        assert vs == []
+
+    def test_max_length_override_changes_firing_point(self, tmp_path):
+        """A 136-char description fires at max_length 100 but not at default 256."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+
+        r_default = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert [v for v in self._rule_violations(r_default) if "review-pr" in v["file_path"]] == []
+
+        r_strict = run_lint(repo, config=repo / ".skillsaw-strict.yaml")
+        vs = [v for v in self._rule_violations(r_strict) if "review-pr" in v["file_path"]]
+        assert len(vs) == 1
+        assert "136" in vs[0]["message"]
+        assert "100" in vs[0]["message"]
+        assert vs[0]["line"] == 3
+
+    def test_folded_multiline_description(self, tmp_path):
+        """Folded YAML descriptions are measured on the parsed string value."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [v for v in self._rule_violations(r) if "incident-handoff" in v["file_path"]]
+        assert len(vs) == 1
+        assert "303" in vs[0]["message"]
+        # Line number points at the description key, not the folded lines
+        assert vs[0]["line"] == 3
+
+    def test_no_duplicate_reporting_with_sibling_rules(self, tmp_path):
+        """The over-budget skill gets exactly one description violation.
+
+        agentskill-valid (spec required fields) and agentskill-description
+        (spec 1024 limit / empty check) must not also fire for the same
+        description.
+        """
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = [
+            v
+            for v in violations(r)
+            if "deploy-staging" in v["file_path"]
+            and v["rule_id"]
+            in {"agentskill-valid", "agentskill-description", "agentskill-description-length"}
+        ]
+        assert len(vs) == 1
+        assert vs[0]["rule_id"] == "agentskill-description-length"
 
 
 class TestUnlinkedInternalReferenceAutofix:

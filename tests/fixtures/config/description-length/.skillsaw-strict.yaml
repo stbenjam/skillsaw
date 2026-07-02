@@ -1,0 +1,5 @@
+version: "99.0.0"
+rules:
+  agentskill-description-length:
+    enabled: true
+    max_length: 100

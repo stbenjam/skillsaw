@@ -3,10 +3,10 @@
 
 # Rules Reference
 
-skillsaw includes **53** builtin rules 
+skillsaw includes **54** builtin rules 
 organized into the following categories:
 
-- [agentskills.io](agentskills.md) (7 rules)
+- [agentskills.io](agentskills.md) (8 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
@@ -30,6 +30,7 @@ organized into the following categories:
 | [`agentskill-name`](agentskill-name.md) | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto | agentskills.io |
 | [`agentskill-rename-refs`](agentskill-rename-refs.md) | Update stale skill name references after a rename | warning (auto) | auto | agentskills.io |
 | [`agentskill-description`](agentskill-description.md) | Skill description should be meaningful and within length limits | warning (auto) | - | agentskills.io |
+| [`agentskill-description-length`](agentskill-description-length.md) | Skill description should stay within a soft budget of 256 characters (opt-in) | warning (disabled) | - | agentskills.io |
 | [`agentskill-structure`](agentskill-structure.md) | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - | agentskills.io |
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - | agentskills.io |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - | agentskills.io |

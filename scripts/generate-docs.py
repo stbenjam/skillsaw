@@ -24,6 +24,7 @@ RULE_GROUPS = [
             "agentskill-name",
             "agentskill-rename-refs",
             "agentskill-description",
+            "agentskill-description-length",
             "agentskill-structure",
             "agentskill-evals",
             "agentskill-evals-required",

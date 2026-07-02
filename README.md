@@ -605,6 +605,7 @@ These rules validate skills against the [agentskills.io specification](https://a
 | `agentskill-name` | Skill name must be lowercase with hyphens and match directory name | error (auto) | auto |
 | `agentskill-rename-refs` | Update stale skill name references after a rename | warning (auto) | auto |
 | `agentskill-description` | Skill description should be meaningful and within length limits | warning (auto) | - |
+| `agentskill-description-length` | Skill description should stay within a soft budget of 256 characters (opt-in) | warning (disabled) | - |
 | `agentskill-structure` | Skill directories should only contain recognized subdirectories (stricter than spec) | warning (disabled) | - |
 | `agentskill-evals` | Validate evals/evals.json format when present | warning (auto) | - |
 | `agentskill-evals-required` | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - |
@@ -621,6 +622,12 @@ These rules validate skills against the [agentskills.io specification](https://a
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `autofix-min-segments` | Minimum hyphen-separated segments in the old name for autofix to apply (single-word names are too ambiguous to fix safely) | `2` |
+
+**`agentskill-description-length` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `max_length` | Soft budget for description length in characters | `256` |
 
 **`agentskill-structure` parameters:**
 

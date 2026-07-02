@@ -1,0 +1,50 @@
+## Why
+
+Skill descriptions are permanent context. Every agent that can route
+to a skill loads its description into every prompt, so each character
+in a description is paid for on every single request — a shorter
+description is materially cheaper. Some ecosystems also rank or route
+skills on only a prefix of the description, and truncation of long
+descriptions has been claimed for some routers, so front-loading the
+essentials into a compact description makes routing more reliable.
+
+The agentskills.io spec's hard 1024-character limit is spec parity and
+is enforced separately (as a warning by `agentskill-description`).
+This rule is an opinionated soft budget (default 256 characters) kept
+in its own opt-in rule so you can tune or disable the budget without
+losing spec validation.
+
+## Examples
+
+**Bad:**
+
+```yaml
+---
+name: deploy-staging
+description: This comprehensive skill handles the complete deployment
+  workflow for the staging environment, including building the
+  application artifacts, running the pre-deployment validation suite,
+  uploading the artifacts to the staging bucket, rolling the staging
+  cluster, verifying the health checks pass afterwards, and posting a
+  summary of the deployment to the team channel when finished.
+---
+```
+
+**Good:**
+
+```yaml
+---
+name: deploy-staging
+description: Deploy the application to staging. Use when the user asks
+  to deploy, ship, or release to the staging environment.
+---
+```
+
+## How to fix
+
+Cut the description down to what the agent needs for a routing
+decision: what the skill does and when to use it, with the trigger
+phrases a user might say. Move workflow details into the skill body —
+they are only loaded after the skill is selected. If your team prefers
+a different budget, set `max_length` in the rule's config or disable
+the rule.

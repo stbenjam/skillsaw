@@ -15,6 +15,12 @@ rules:
     enabled: auto
     severity: warning
 
+  # Skill description should stay within a soft budget of 256 characters (opt-in)
+  agentskill-description-length:
+    enabled: false
+    severity: warning
+    # max_length: 256
+
   # Validate evals/evals.json format when present
   agentskill-evals:
     enabled: auto

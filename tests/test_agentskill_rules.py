@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.agentskills import (
     AgentSkillNameRule,
     AgentSkillRenameRefsRule,
     AgentSkillDescriptionRule,
+    AgentSkillDescriptionLengthRule,
     AgentSkillStructureRule,
     AgentSkillEvalsRequiredRule,
     AgentSkillEvalsRule,
@@ -372,6 +373,103 @@ def test_description_over_limit_warns(temp_dir):
     violations = AgentSkillDescriptionRule().check(context)
     assert any("exceeds" in v.message for v in violations)
     assert violations[0].line == 3
+
+
+# --- agentskill-description-length ---
+
+
+def test_description_length_under_budget_passes(temp_dir):
+    skill = temp_dir / "concise"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: concise\ndescription: Extracts data from PDFs. Use when working with PDF files.\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionLengthRule().check(context)
+    assert len(violations) == 0
+
+
+def test_description_length_over_default_budget_warns(temp_dir):
+    skill = temp_dir / "verbose"
+    skill.mkdir()
+    long_desc = "x" * 400
+    (skill / "SKILL.md").write_text(f"---\nname: verbose\ndescription: {long_desc}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionLengthRule().check(context)
+    assert len(violations) == 1
+    assert "400" in violations[0].message
+    assert "256" in violations[0].message
+    assert violations[0].line == 3
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_description_length_exactly_at_budget_passes(temp_dir):
+    """Boundary: a description of exactly max_length characters is fine."""
+    skill = temp_dir / "boundary"
+    skill.mkdir()
+    exact_desc = "x" * 256
+    (skill / "SKILL.md").write_text(f"---\nname: boundary\ndescription: {exact_desc}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionLengthRule().check(context)
+    assert len(violations) == 0
+
+
+def test_description_length_custom_max_length(temp_dir):
+    """A configured max_length changes the firing point."""
+    skill = temp_dir / "tunable"
+    skill.mkdir()
+    mid_desc = "y" * 150
+    (skill / "SKILL.md").write_text(f"---\nname: tunable\ndescription: {mid_desc}\n---\n")
+
+    context = RepositoryContext(skill)
+    assert len(AgentSkillDescriptionLengthRule().check(context)) == 0
+
+    violations = AgentSkillDescriptionLengthRule({"max_length": 100}).check(context)
+    assert len(violations) == 1
+    assert "150" in violations[0].message
+    assert "100" in violations[0].message
+    assert violations[0].line == 3
+
+
+def test_description_length_folded_multiline(temp_dir):
+    """Folded YAML descriptions are measured on the parsed string value."""
+    skill = temp_dir / "folded"
+    skill.mkdir()
+    words = ("word " * 70).strip()
+    (skill / "SKILL.md").write_text(
+        f"---\nname: folded\ndescription: >\n  {words}\n  and more trailing text\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionLengthRule().check(context)
+    assert len(violations) == 1
+    # Line number points at the description key, not the folded lines
+    assert violations[0].line == 3
+
+
+def test_description_length_missing_or_non_string_ignored(temp_dir):
+    """Missing/non-string descriptions are other rules' job."""
+    missing = temp_dir / "missing-desc"
+    missing.mkdir()
+    (missing / "SKILL.md").write_text("---\nname: missing-desc\n---\n")
+    assert len(AgentSkillDescriptionLengthRule().check(RepositoryContext(missing))) == 0
+
+    non_string = temp_dir / "non-string-desc"
+    non_string.mkdir()
+    (non_string / "SKILL.md").write_text("---\nname: non-string-desc\ndescription: 42\n---\n")
+    assert len(AgentSkillDescriptionLengthRule().check(RepositoryContext(non_string))) == 0
+
+
+def test_description_length_disabled_by_default():
+    """Opt-in rule: never enabled unless the user asks for it."""
+    from skillsaw.config import LinterConfig
+
+    assert AgentSkillDescriptionLengthRule.default_enabled is False
+    default = LinterConfig.default().rules["agentskill-description-length"]
+    assert default["enabled"] is False
 
 
 # --- agentskill-structure ---
