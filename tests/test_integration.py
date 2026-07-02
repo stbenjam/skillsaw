@@ -1703,6 +1703,85 @@ def _snapshot_contents(repo: Path) -> Dict[str, str]:
 
 
 @pytest.mark.integration
+class TestEncodingPreservingAutofix:
+    """Autofix must not rewrite a file's byte shape (issue #315).
+
+    Files are built programmatically with byte-exact CRLF / BOM content
+    rather than committed as fixtures, since git line-ending normalization
+    would defeat the point of the test.
+    """
+
+    def test_crlf_file_keeps_crlf_after_fix(self, tmp_path):
+        repo = tmp_path / "crlf"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "docs").mkdir()
+        (repo / "scripts" / "build.sh").touch()
+        (repo / "docs" / "setup.md").touch()
+        target = repo / "CLAUDE.md"
+        target.write_bytes(
+            b"Run the script at scripts/build.sh to compile.\r\n"
+            b"Also see docs/setup.md for details.\r\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        # The fix fired (paths are now wrapped in link syntax) ...
+        assert b"[scripts/build.sh](scripts/build.sh)" in raw
+        # ... but every line ending is still CRLF and none were dropped.
+        assert raw.count(b"\r\n") == 2
+        assert raw.count(b"\r") == raw.count(b"\r\n")
+        assert b"\n\n" not in raw.replace(b"\r\n", b"")
+
+    def test_crlf_fix_is_idempotent(self, tmp_path):
+        repo = tmp_path / "crlf-idem"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts" / "build.sh").touch()
+        target = repo / "CLAUDE.md"
+        target.write_bytes(b"See scripts/build.sh here.\r\n")
+
+        _run_fix(repo)
+        first = target.read_bytes()
+        _run_fix(repo)
+        second = target.read_bytes()
+        assert first == second
+        assert b"\r\n" in first
+
+    def test_bom_skill_not_flagged_missing_frontmatter(self, tmp_path):
+        repo = tmp_path / "bom"
+        skill_dir = repo / ".claude" / "skills" / "foo"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(
+            b"\xef\xbb\xbf---\nname: foo\n" b"description: valid skill for bom test\n---\nbody\n"
+        )
+        r = run_lint(repo, "--rule", "agentskill-valid")
+        assert r["rc"] == 0
+        assert "agentskill-valid" not in rule_ids(r)
+
+    def test_bom_missing_name_fix_preserves_bom_and_converges(self, tmp_path):
+        repo = tmp_path / "bom-fix"
+        skill_dir = repo / ".claude" / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        target = skill_dir / "SKILL.md"
+        target.write_bytes(
+            b"\xef\xbb\xbf---\ndescription: a skill missing its name field"
+            b" for testing purposes\n---\nbody\n"
+        )
+
+        _run_fix(repo)
+
+        raw = target.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf")  # BOM preserved
+        assert b"name: my-skill" in raw
+        # Exactly one frontmatter block (no duplicate injection).
+        assert raw.count(b"---\n") == 2
+        # Converges: re-lint is clean for the rule.
+        r = run_lint(repo, "--rule", "agentskill-valid")
+        assert r["rc"] == 0
+        assert "agentskill-valid" not in rule_ids(r)
+
+
+@pytest.mark.integration
 class TestSafeAutofixIdempotency:
     """Comprehensive idempotency and correctness suite for all SAFE autofixes.
 
