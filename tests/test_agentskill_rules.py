@@ -1504,6 +1504,55 @@ def test_transitive_relative_path_from_reference(temp_dir):
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
 
 
+def test_data_file_referenced_by_referenced_script(temp_dir):
+    """SKILL.md -> script -> data file: the data file is not dead."""
+    skill = _make_skill(temp_dir, body="Run `scripts/check_repos.py` before merging.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "check_repos.py").write_text(
+        "import os\n\n"
+        "SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))\n"
+        'ALLOWED_REPOS_FILE = os.path.join(SCRIPT_DIR, "allowed-repos.txt")\n'
+    )
+    (skill / "scripts" / "allowed-repos.txt").write_text("org/repo\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_data_file_mentioned_only_by_unreferenced_script_is_flagged(temp_dir):
+    """Mentions inside a script that is itself unreferenced do not count."""
+    skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text('DATA = "config/settings.json"\n')
+    (skill / "config").mkdir()
+    (skill / "config" / "settings.json").write_text("{}\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    flagged = {v.file_path for v in violations}
+    assert flagged == {skill / "scripts" / "orphan.py", skill / "config" / "settings.json"}
+
+
+def test_binary_referenced_file_is_not_a_traversal_source(temp_dir):
+    """Bytes inside a referenced binary must not propagate references."""
+    skill = _make_skill(temp_dir, body="The logo lives at assets/logo.bin.")
+    (skill / "assets").mkdir()
+    (skill / "assets" / "logo.bin").write_bytes(b"\x00\x01 hidden.txt \x02")
+    (skill / "hidden.txt").write_text("secret\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "hidden.txt"]
+
+
+def test_oversized_referenced_file_is_not_a_traversal_source(temp_dir):
+    """Referenced files over the 1 MiB source cap must not propagate references."""
+    skill = _make_skill(temp_dir, body="Ship the payload in `assets/blob.txt`.")
+    (skill / "assets").mkdir()
+    (skill / "assets" / "blob.txt").write_text(("padding\n" * 150_000) + "big-secret.txt\n")
+    (skill / "big-secret.txt").write_text("x\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "big-secret.txt"]
+
+
 def test_unreachable_markdown_is_not_a_traversal_source(temp_dir):
     """Mentions inside an unreferenced markdown file do not count."""
     skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")

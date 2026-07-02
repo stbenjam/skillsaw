@@ -376,7 +376,7 @@ class TestUnreferencedSkillFiles:
         assert "report-builder/references/release-weeks.md" not in flagged
 
     def test_directory_mention_covers_contents(self, tmp_path):
-        """assets/shell.html is only covered by the `assets/` directory mention."""
+        """assets/theme.css is only covered by the `assets/` directory mention."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         r = run_lint(repo)
         assert self.RULE not in rule_ids(r)
@@ -389,7 +389,23 @@ class TestUnreferencedSkillFiles:
         )
         r = run_lint(repo, config=config)
         flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
-        assert flagged == {"report-builder/assets/shell.html"}
+        assert flagged == {"report-builder/assets/theme.css"}
+
+    def test_file_read_by_referenced_script_counts(self, tmp_path):
+        """assets/shell.html is read by scripts/build.py, which SKILL.md invokes.
+
+        Even with directory mentions disabled, the SKILL.md -> build.py ->
+        shell.html chain keeps the template referenced (regression for the
+        script-as-reference-source semantics).
+        """
+        repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "rules:\n" "  agentskill-unreferenced-files:\n" "    directory_mention_covers: false\n"
+        )
+        r = run_lint(repo, config=config)
+        flagged = {v["file_path"] for v in by_rule(r).get(self.RULE, [])}
+        assert "report-builder/assets/shell.html" not in flagged
 
     def test_default_exclusions_never_flagged(self, tmp_path):
         """README.md, LICENSE, evals/, and dotfiles are exempt by default."""

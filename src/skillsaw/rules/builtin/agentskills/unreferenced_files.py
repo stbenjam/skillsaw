@@ -10,8 +10,15 @@ Reference semantics
 -------------------
 
 A file counts as referenced when its path or filename is mentioned in
-SKILL.md or, transitively, in any local markdown file that is itself
-reachable from SKILL.md (SKILL.md -> references/a.md -> references/b.md).
+SKILL.md or, transitively, in any local file that is itself reachable
+from SKILL.md (SKILL.md -> references/a.md -> references/b.md).  Every
+referenced file — not just markdown — becomes a reference source: a
+data file read by a script that SKILL.md documents (SKILL.md ->
+``check.py`` -> ``allowed-repos.txt``) is neither dead weight nor
+hidden, because the whole chain is reviewable.  Non-markdown sources
+contribute raw-text mentions only (no link resolution); binary files
+(``read_text`` failure or NUL bytes) and files over 1 MiB never become
+sources.
 
 "Mentioned" is deliberately broader than markdown links, because bundled
 scripts are typically invoked inside fenced code blocks (``python
@@ -81,6 +88,10 @@ _FILE_AFTER = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 _DIR_AFTER = r"(?![A-Za-z0-9_.-])"
 
 _EXTERNAL_LINK_PREFIXES = ("http://", "https://", "#", "mailto:")
+
+# Referenced files above this size never become traversal sources — a
+# multi-megabyte data blob mentioning a filename is not documentation.
+_SOURCE_SIZE_LIMIT = 1024 * 1024
 
 
 class AgentSkillUnreferencedFilesRule(Rule):
@@ -233,7 +244,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         all_files: List[Path],
         directory_covers: bool,
     ) -> Set[Path]:
-        """Files referenced from the roots, following referenced local markdown."""
+        """Files referenced from the roots, following every referenced local file."""
         skill_resolved = skill_path.resolve()
         rel_of = {f: f.resolve().relative_to(skill_resolved).as_posix() for f in all_files}
         all_dirs = self._candidate_dirs(rel_of.values())
@@ -252,17 +263,21 @@ class AgentSkillUnreferencedFilesRule(Rule):
             processed.add(resolved_source)
 
             text = read_text(source)
-            if text is None:
-                continue
-            block = block_by_path.get(resolved_source)
-            doc = block.markdown if block is not None else MarkdownDoc(text)
+            if text is None or "\0" in text:
+                continue  # unreadable or binary content is never a source
 
             newly_referenced: List[Path] = []
 
-            # Markdown links, resolved relative to the linking file.
-            link_files, link_dirs = self._link_targets(doc, source.parent, skill_resolved)
-            if directory_covers:
-                covered_dirs.update(link_dirs)
+            # Markdown links, resolved relative to the linking file.  Link
+            # syntax only means anything in markdown sources; scripts and
+            # data files contribute raw-text mentions below.
+            link_files: Set[Path] = set()
+            if source.suffix.lower() == ".md":
+                block = block_by_path.get(resolved_source)
+                doc = block.markdown if block is not None else MarkdownDoc(text)
+                link_files, link_dirs = self._link_targets(doc, source.parent, skill_resolved)
+                if directory_covers:
+                    covered_dirs.update(link_dirs)
             for candidate in all_files:
                 if candidate in referenced:
                     continue
@@ -285,10 +300,19 @@ class AgentSkillUnreferencedFilesRule(Rule):
                         referenced.add(candidate)
                         newly_referenced.append(candidate)
 
-            # Transitive traversal: referenced local markdown becomes a source.
+            # Transitive traversal: every referenced file becomes a source,
+            # so a data file read by a documented script is not dead
+            # (SKILL.md -> check.py -> allowed-repos.txt).  Oversized files
+            # are skipped; binary content is rejected when dequeued.
             for candidate in newly_referenced:
-                if candidate.suffix.lower() == ".md" and candidate.resolve() not in processed:
-                    queue.append(candidate)
+                if candidate.resolve() in processed:
+                    continue
+                try:
+                    if candidate.stat().st_size > _SOURCE_SIZE_LIMIT:
+                        continue
+                except OSError:
+                    continue
+                queue.append(candidate)
 
         return referenced
 
