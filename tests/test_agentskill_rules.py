@@ -435,6 +435,21 @@ def test_description_folded_multiline_max_length(temp_dir):
     assert violations[0].line == 3
 
 
+def test_description_max_length_invalid_values_fall_back(temp_dir):
+    """A blank key (None), non-integer, bool, or non-positive max_length
+    falls back to the spec's 1024 default instead of crashing."""
+    skill = temp_dir / "resilient"
+    skill.mkdir()
+    desc_1100 = "x" * 1100
+    (skill / "SKILL.md").write_text(f"---\nname: resilient\ndescription: {desc_1100}\n---\n")
+
+    context = RepositoryContext(skill)
+    for bad_value in [None, "not-a-number", True, 2.5, 0, -1]:
+        violations = AgentSkillDescriptionRule(config={"max_length": bad_value}).check(context)
+        assert len(violations) == 1, f"max_length={bad_value!r} should fall back to 1024"
+        assert "1024" in violations[0].message
+
+
 def test_description_max_length_above_spec_limit_honored(temp_dir):
     """A configured max_length above 1024 wins: a 1500-char description
     does not warn at max_length 2000. The spec's own limit is validated

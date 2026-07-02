@@ -13,3 +13,5 @@ Deploy the application to the staging environment.
 2. Run the pre-deployment validation suite.
 3. Upload the artifacts and roll the staging cluster.
 4. Verify health checks and post a summary to the team channel.
+
+<!-- The description above is 343 characters; integration tests assert on this length. -->

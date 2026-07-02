@@ -13,3 +13,5 @@ Investigate a production incident from start to finish.
 2. Pull the relevant service logs for the affected window.
 3. Summarize likely root causes with supporting evidence.
 4. Draft the incident report and file follow-up issues.
+
+<!-- The description above is 1334, above the spec's 1024 default characters; integration tests assert on this length. -->

@@ -17,3 +17,5 @@ Summarize open incidents and produce a morning handoff report.
 1. List the open incidents from the pager rotation.
 2. Collect owner, severity, and the latest status update for each.
 3. Write the handoff report with links to every incident.
+
+<!-- The description above is 303 when the folded lines are parsed characters; integration tests assert on this length. -->

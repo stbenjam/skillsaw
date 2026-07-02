@@ -12,3 +12,5 @@ Generate release notes from merged pull requests since the last tag.
 1. List pull requests merged since the last tag.
 2. Group the entries by product area.
 3. Label any breaking changes for maintainers.
+
+<!-- The description above is exactly 256 characters; integration tests assert on this length. -->

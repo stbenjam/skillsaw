@@ -50,7 +50,12 @@ class AgentSkillDescriptionRule(Rule):
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        max_length = self.config.get("max_length", DESCRIPTION_MAX_LENGTH)
+        # Fall back to the spec limit when the configured value isn't a
+        # positive integer (a blank key parses as None; bool is an int
+        # subclass — reject it) so a bad config can't crash the lint.
+        max_length = self.config.get("max_length")
+        if isinstance(max_length, bool) or not isinstance(max_length, int) or max_length <= 0:
+            max_length = DESCRIPTION_MAX_LENGTH
         violations = []
 
         for skill_node in context.lint_tree.find(SkillNode):
