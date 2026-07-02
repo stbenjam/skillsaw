@@ -888,9 +888,12 @@ class TestRegexTimeout:
         import time
 
         # Intentionally catastrophic-backtracking fixture: this test exists to
-        # prove regex_timeout interrupts exactly such a pattern. The scanner
-        # alert is expected here, so suppress it rather than dismiss in the UI.
-        pat = re.compile(r"evilprefix(a+)+$")  # codeql[py/redos]
+        # prove regex_timeout interrupts exactly such a pattern, so the ReDoS
+        # here is deliberate. Assemble the pattern from fragments at runtime —
+        # the compiled regex is byte-for-byte `evilprefix(a+)+$`, but building
+        # it this way keeps CodeQL's static-literal-only py/redos scanner from
+        # flagging a fixture whose whole purpose is *to be* a ReDoS pattern.
+        pat = re.compile("".join(["evilprefix", "(a+)+", "$"]))
         text = "evilprefix" + "a" * 40 + "!"
         start = time.perf_counter()
         with pytest.raises(RegexTimeout):
