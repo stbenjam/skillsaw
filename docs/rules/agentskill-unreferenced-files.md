@@ -31,7 +31,10 @@ an agent to open or run.
 
 A file is referenced when its path or filename is mentioned in
 SKILL.md **or transitively** in any local markdown file reachable from
-SKILL.md (SKILL.md → `references/a.md` → `references/b.md` counts).
+SKILL.md (SKILL.md → `references/a.md` → `references/b.md` counts). A
+skill-root README.md also counts as a reference root — a file
+documented in the skill's README is neither dead weight nor hidden
+from review.
 
 Mentions are detected in markdown links, inline code spans, fenced
 code blocks (`python scripts/run.py`), and plain prose:
@@ -47,9 +50,10 @@ code blocks (`python scripts/run.py`), and plain prose:
   referenced. Prose and code mentions need the trailing slash; links
   may target the bare directory.
 
-Never flagged: SKILL.md itself, README.md, LICENSE / LICENSE.*, files
-under `evals/`, and hidden files or directories. The `exclude` option
-adds glob patterns on top of these defaults.
+Never flagged: SKILL.md itself, README.md, CHANGELOG.md,
+LICENSE / LICENSE.*, NOTICE / NOTICE.*, files under `evals/`, and
+hidden files or directories. The `exclude` option adds glob patterns
+on top of these defaults.
 
 ## Examples
 
@@ -100,7 +104,7 @@ rules:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
-| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, LICENSE*, evals/, hidden files) | `[]` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, hidden files) | `[]` |
 
 
 *Run `skillsaw explain agentskill-unreferenced-files` to see this documentation and the rule's effective configuration in your terminal.*
