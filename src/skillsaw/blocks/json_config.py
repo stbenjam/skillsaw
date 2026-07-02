@@ -22,6 +22,7 @@ class HookHandler:
 
     type: str
     command: Optional[str] = None
+    args: Optional[List[str]] = None
     url: Optional[str] = None
     headers: Optional[Dict[str, Any]] = None
     server: Optional[str] = None
@@ -43,6 +44,7 @@ class HookHandler:
         return cls(
             type=d.get("type", ""),
             command=d.get("command"),
+            args=d.get("args"),
             url=d.get("url"),
             headers=d.get("headers"),
             server=d.get("server"),
@@ -166,6 +168,7 @@ class McpServerConfig:
     headers: Optional[Dict[str, Any]] = None
     headers_helper: Optional[str] = None
     startup_timeout: Optional[float] = None
+    timeout: Optional[float] = None
     always_load: Optional[bool] = None
     oauth: Optional[Dict[str, Any]] = None
 
@@ -182,6 +185,7 @@ class McpServerConfig:
             headers=d.get("headers"),
             headers_helper=d.get("headersHelper"),
             startup_timeout=d.get("startupTimeout"),
+            timeout=d.get("timeout"),
             always_load=d.get("alwaysLoad"),
             oauth=d.get("oauth"),
         )

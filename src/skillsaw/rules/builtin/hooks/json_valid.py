@@ -22,6 +22,7 @@ _VALID_HOOK_EVENTS = {
     "PostToolUseFailure",
     "PostToolBatch",
     "Notification",
+    "MessageDisplay",
     "SubagentStart",
     "SubagentStop",
     "TaskCreated",
@@ -56,6 +57,7 @@ _TYPE_REQUIRED_FIELDS = {
 # Fields restricted to specific handler types (field -> set of valid types)
 _TYPE_SPECIFIC_FIELDS = {
     "command": {"command"},
+    "args": {"command"},
     "async": {"command"},
     "asyncRewake": {"command"},
     "shell": {"command"},
@@ -71,6 +73,7 @@ _TYPE_SPECIFIC_FIELDS = {
 
 # Common optional field type validation
 _OPTIONAL_FIELD_TYPES = {
+    "args": list,
     "timeout": (int, float),
     "async": bool,
     "asyncRewake": bool,
