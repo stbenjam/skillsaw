@@ -105,3 +105,13 @@ class DocsOutput:
     marketplace: Optional[MarketplaceDoc] = None
     plugins: List[PluginDoc] = field(default_factory=list)
     skills: List[SkillDoc] = field(default_factory=list)
+
+
+def name_str(name: Any) -> str:
+    """Coerce a manifest-derived ``name`` to ``str`` for sorting and paths.
+
+    Names come from user JSON and may be non-strings (numeric, bool) or
+    absent.  Only ``None`` maps to ``""`` -- ``str(name or "")`` would
+    collapse valid falsy names like ``0`` to the empty string.
+    """
+    return "" if name is None else str(name)

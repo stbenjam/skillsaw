@@ -2547,6 +2547,37 @@ class TestMarkdownAstRegressions:
         ]
         assert flagged == [], f"indented code lines were scanned as prose: {flagged}"
 
+    def test_percent_encoded_link_resolves_and_fix_stays_parseable(self, tmp_path):
+        """Regression for #322: a %20 link to a real file must not be
+        flagged, and the suggest fixer must percent-encode the destination
+        it emits — a raw space inside `](...)` silently destroys the link."""
+        repo = copy_fixture("regression/broken-ref-percent-encoding", tmp_path)
+        r = run_lint(repo)
+        broken = [v for v in violations(r) if v["rule_id"] == "content-broken-internal-reference"]
+        # Only the genuinely broken link fires; the working %20 link does not.
+        assert len(broken) == 1
+        assert "references/naming%20rles.md" in broken[0]["message"]
+        assert "did you mean" in broken[0]["message"]
+
+        before_lines = len((repo / "CLAUDE.md").read_text().splitlines())
+        _run_fix(repo, "--suggest")
+        fixed = (repo / "CLAUDE.md").read_text()
+        assert "[the naming rules](references/naming%20rules.md)" in fixed
+        assert "](references/naming rules.md)" not in fixed
+        # The working links are untouched — including the file whose
+        # literal name contains %20 and is linked verbatim.
+        assert "[the style guide](references/style%20guide.md)" in fixed
+        assert "[API notes](references/api%20notes.md)" in fixed
+        assert len(fixed.splitlines()) == before_lines
+        # Idempotent: second fix is byte-identical.
+        _run_fix(repo, "--suggest")
+        assert (repo / "CLAUDE.md").read_text() == fixed
+        # Re-lint: the emitted destination parses and resolves.
+        r2 = run_lint(repo)
+        assert not [
+            v for v in violations(r2) if v["rule_id"] == "content-broken-internal-reference"
+        ]
+
     def test_suppression_directive_inside_fence_not_honored(self, tmp_path):
         """A directive shown inside a fenced code block is documentation,
         not a directive — later violations must still be reported."""

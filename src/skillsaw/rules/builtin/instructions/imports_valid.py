@@ -50,6 +50,14 @@ class InstructionImportsValidRule(Rule):
                     continue
 
                 import_path_str = match.group(1)
+
+                # Home-directory imports (Claude Code's ``@~/.claude/...``
+                # memory syntax) reference machine-local files that are not
+                # part of the repository. They're environment-specific, so
+                # existence checking is always noise in CI — skip them.
+                if import_path_str.startswith("~"):
+                    continue
+
                 target = (context.root_path / import_path_str).resolve()
 
                 try:
