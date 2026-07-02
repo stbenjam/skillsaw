@@ -423,6 +423,137 @@ def test_marketplace_owner_with_name_passes(temp_dir):
     assert len(violations) == 0
 
 
+def _marketplace_with(temp_dir, **overrides):
+    """Write a minimal marketplace.json with field overrides applied."""
+    import json
+
+    claude_dir = temp_dir / ".claude-plugin"
+    claude_dir.mkdir()
+    marketplace_json = {
+        "name": "test-marketplace",
+        "owner": {"name": "Test Owner"},
+        "plugins": [],
+    }
+    marketplace_json.update(overrides)
+    (claude_dir / "marketplace.json").write_text(json.dumps(marketplace_json))
+    return temp_dir
+
+
+def test_marketplace_duplicate_plugin_names(temp_dir):
+    """Duplicate plugin names in the plugins array are an error."""
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[
+            {"name": "my-plugin", "source": "./plugins/my-plugin"},
+            {"name": "my-plugin", "source": {"source": "github", "repo": "o/r"}},
+        ],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    dupes = [v for v in violations if "duplicate plugin name" in v.message]
+    assert len(dupes) == 1
+    assert dupes[0].severity == Severity.ERROR
+    assert "plugins[1]" in dupes[0].message
+
+
+def test_marketplace_name_not_kebab_case_warns(temp_dir):
+    repo = _marketplace_with(temp_dir, name="My Marketplace")
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    kebab = [v for v in violations if "kebab-case" in v.message]
+    assert len(kebab) == 1
+    assert kebab[0].severity == Severity.WARNING
+
+
+def test_marketplace_source_path_traversal_fails(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "escape", "source": "./../outside"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    traversal = [v for v in violations if "'..'" in v.message]
+    assert len(traversal) == 1
+    assert traversal[0].severity == Severity.ERROR
+
+
+def test_marketplace_source_missing_dot_slash_info(temp_dir):
+    """A relative source without the ./ prefix gets a style nudge, not an error."""
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "my-plugin", "source": "plugins/my-plugin"}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    style = [v for v in violations if "start with './'" in v.message]
+    assert len(style) == 1
+    assert style[0].severity == Severity.INFO
+
+
+def test_marketplace_source_object_required_fields(temp_dir):
+    """Each typed source object must carry its required fields."""
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[
+            {"name": "gh", "source": {"source": "github"}},
+            {"name": "web", "source": {"source": "url"}},
+            {"name": "sub", "source": {"source": "git-subdir", "url": "https://x"}},
+            {"name": "pkg", "source": {"source": "npm"}},
+        ],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    messages = [v.message for v in violations]
+    assert any("plugins[0].source of type 'github' requires a 'repo'" in m for m in messages)
+    assert any("plugins[1].source of type 'url' requires a 'url'" in m for m in messages)
+    assert any("plugins[2].source of type 'git-subdir' requires a 'path'" in m for m in messages)
+    assert any("plugins[3].source of type 'npm' requires a 'package'" in m for m in messages)
+
+
+def test_marketplace_source_object_valid_types_pass(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[
+            {"name": "gh", "source": {"source": "github", "repo": "owner/repo"}},
+            {"name": "web", "source": {"source": "url", "url": "https://x/p.zip"}},
+            {
+                "name": "sub",
+                "source": {"source": "git-subdir", "url": "https://x", "path": "plugins/sub"},
+            },
+            {"name": "pkg", "source": {"source": "npm", "package": "@scope/pkg"}},
+        ],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert len(violations) == 0
+
+
+def test_marketplace_source_unknown_type_warns(temp_dir):
+    """Unknown object source types warn (future types must not hard-fail)."""
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "odd", "source": {"source": "hg", "repo": "o/r"}}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    unknown = [v for v in violations if "unknown source type 'hg'" in v.message]
+    assert len(unknown) == 1
+    assert unknown[0].severity == Severity.WARNING
+
+
+def test_marketplace_source_object_missing_type_fails(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "odd", "source": {"repo": "o/r"}}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert any("missing required 'source' type field" in v.message for v in violations)
+
+
+def test_marketplace_source_wrong_type_fails(temp_dir):
+    repo = _marketplace_with(
+        temp_dir,
+        plugins=[{"name": "odd", "source": 42}],
+    )
+    violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
+    assert any(
+        "source must be a relative path string or an object" in v.message for v in violations
+    )
+
+
 def test_marketplace_plugin_entry_missing_name(temp_dir):
     """Test that plugin entry without name fails"""
     import json
@@ -637,7 +768,7 @@ def test_marketplace_registration_fix_registers_plugin(marketplace_repo):
 
     data = json.loads(fix.fixed_content)
     entries = [p for p in data["plugins"] if p.get("name") == "plugin-three"]
-    assert entries == [{"name": "plugin-three", "source": "plugins/plugin-three"}]
+    assert entries == [{"name": "plugin-three", "source": "./plugins/plugin-three"}]
     assert {p["name"] for p in data["plugins"]} == {
         "plugin-one",
         "plugin-two",
@@ -696,7 +827,7 @@ def test_marketplace_registration_fix_skips_non_dict_entries(temp_dir):
     fixes = rule.fix(context, violations)
     assert len(fixes) == 1
     data = json.loads(fixes[0].fixed_content)
-    assert {"name": "plugin-one", "source": "plugins/plugin-one"} in data["plugins"]
+    assert {"name": "plugin-one", "source": "./plugins/plugin-one"} in data["plugins"]
     assert "plugin-zero" in data["plugins"]
 
 

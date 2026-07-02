@@ -26,3 +26,11 @@ consume the marketplace cannot list or install plugins.
 
 Fix the JSON syntax error or add the missing required fields reported
 in the violation message.
+
+Plugin entries are also validated: every entry needs a unique `name`
+and a `source`. A string source is a path relative to the marketplace
+root — it should start with `./` and must not escape the repository
+with `..`. An object source declares its type via the `source` field
+(`github`, `url`, `git-subdir`, or `npm`) and must carry that type's
+required fields (`repo`, `url`, `url` + `path`, or `package`
+respectively).

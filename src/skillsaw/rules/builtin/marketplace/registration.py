@@ -102,7 +102,8 @@ class MarketplaceRegistrationRule(Rule):
                     except ValueError:
                         pass
                     break
-            data["plugins"].append({"name": plugin_name, "source": rel_source})
+            # Relative sources must start with ./ per the marketplace spec.
+            data["plugins"].append({"name": plugin_name, "source": f"./{rel_source}"})
             fixed_violations.append(v)
 
         if fixed_violations:
