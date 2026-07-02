@@ -10,6 +10,7 @@ from pathlib import Path
 from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
+    path_matches_patterns,
     HAS_CURSOR,
     HAS_COPILOT,
     HAS_GEMINI,
@@ -783,3 +784,51 @@ def test_explicit_repo_type_override_drives_discovery(temp_dir):
     assert context.repo_types == {RepositoryType.SINGLE_PLUGIN}
     assert context.repo_type == RepositoryType.SINGLE_PLUGIN
     assert [p.resolve() for p in context.plugins] == [temp_dir.resolve()]
+
+
+class TestPathMatchesPatterns:
+    """gitignore-style ``**/`` semantics on top of fnmatch (issue #322)."""
+
+    def _match(self, temp_dir, rel, patterns):
+        root = temp_dir.resolve()
+        return path_matches_patterns(root / rel, root, patterns)
+
+    def test_leading_star_star_matches_top_level_dir(self, temp_dir):
+        """**/templates/** must exclude a templates/ dir at the repo root."""
+        assert self._match(temp_dir, "templates/x/SKILL.md", ["**/templates/**"])
+
+    def test_leading_star_star_matches_nested_dir(self, temp_dir):
+        assert self._match(temp_dir, "a/templates/x/SKILL.md", ["**/templates/**"])
+        assert self._match(temp_dir, "a/b/templates/x/SKILL.md", ["**/templates/**"])
+
+    def test_leading_star_star_requires_whole_component(self, temp_dir):
+        """The stripped variant must not turn into a substring match."""
+        assert not self._match(temp_dir, "mytemplates/x/SKILL.md", ["**/templates/**"])
+        assert not self._match(temp_dir, "templatesx/SKILL.md", ["**/templates/**"])
+        assert not self._match(temp_dir, "other/x/SKILL.md", ["**/templates/**"])
+
+    def test_trailing_star_star_matches_contents_at_any_depth(self, temp_dir):
+        assert self._match(temp_dir, "templates/SKILL.md", ["**/templates/**"])
+        assert self._match(temp_dir, "templates/deep/nested/file.md", ["**/templates/**"])
+
+    def test_default_excludes_cover_top_level_dirs(self, temp_dir):
+        from skillsaw.config import LinterConfig
+
+        patterns = LinterConfig.default().exclude_patterns
+        for d in ("template", "templates", "_template"):
+            assert self._match(temp_dir, f"{d}/starter/SKILL.md", patterns)
+
+    def test_plain_star_still_crosses_slashes(self, temp_dir):
+        """Backward compat: existing fnmatch patterns keep matching."""
+        assert self._match(temp_dir, "a/b/generated.md", ["*generated.md"])
+        assert self._match(temp_dir, "vendor/deep/file.md", ["vendor/*"])
+        assert self._match(temp_dir, "commands/generated.md", ["commands/generated.md"])
+
+    def test_no_patterns_never_matches(self, temp_dir):
+        assert not self._match(temp_dir, "templates/x/SKILL.md", [])
+
+    def test_path_outside_root_never_matches(self, temp_dir):
+        root = (temp_dir / "repo").resolve()
+        root.mkdir()
+        outside = temp_dir / "templates" / "x" / "SKILL.md"
+        assert not path_matches_patterns(outside, root, ["**/templates/**"])
