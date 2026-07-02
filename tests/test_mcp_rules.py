@@ -1004,3 +1004,64 @@ def test_root_and_plugin_mcp_json_both_detected(temp_dir):
     assert len(violations) == 2
     messages = [v.message for v in violations]
     assert any(".mcp.json" in m for m in messages)
+
+
+def test_ws_mcp_valid(temp_dir):
+    """WebSocket transport with a url passes validation."""
+    mcp_config = {
+        "mcpServers": {
+            "ws-server": {
+                "type": "ws",
+                "url": "wss://mcp.example.com/socket",
+                "headers": {"Authorization": "Bearer TOKEN"},
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    rule = McpValidJsonRule()
+    violations = rule.check(RepositoryContext(plugin_dir))
+    assert len(violations) == 0
+
+
+def test_ws_mcp_missing_url(temp_dir):
+    """WebSocket transport requires a url field."""
+    mcp_config = {"mcpServers": {"ws-server": {"type": "ws"}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    rule = McpValidJsonRule()
+    violations = rule.check(RepositoryContext(plugin_dir))
+    assert len(violations) == 1
+    assert "must have a 'url' field" in violations[0].message
+
+
+def test_timeout_number_valid(temp_dir):
+    """Per-server timeout in milliseconds is a valid numeric field."""
+    mcp_config = {
+        "mcpServers": {
+            "slow-server": {
+                "command": "node",
+                "args": ["server.js"],
+                "timeout": 600000,
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    rule = McpValidJsonRule()
+    violations = rule.check(RepositoryContext(plugin_dir))
+    assert len(violations) == 0
+
+
+def test_timeout_wrong_type_rejected(temp_dir):
+    """timeout must be a number, not a string or boolean."""
+    mcp_config = {
+        "mcpServers": {
+            "slow-server": {
+                "command": "node",
+                "timeout": "600000",
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    rule = McpValidJsonRule()
+    violations = rule.check(RepositoryContext(plugin_dir))
+    assert len(violations) == 1
+    assert "'timeout' must be a number" in violations[0].message
