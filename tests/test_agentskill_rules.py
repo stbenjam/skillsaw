@@ -374,6 +374,82 @@ def test_description_over_limit_warns(temp_dir):
     assert violations[0].line == 3
 
 
+def test_description_default_max_length_unchanged(temp_dir):
+    """Backward compatibility: at default config a 400-char description
+    passes and only the spec's 1024 limit fires, with the same message."""
+    skill = temp_dir / "longish"
+    skill.mkdir()
+    desc_400 = "x" * 400
+    (skill / "SKILL.md").write_text(f"---\nname: longish\ndescription: {desc_400}\n---\n")
+    assert AgentSkillDescriptionRule().check(RepositoryContext(skill)) == []
+
+    over = temp_dir / "over-spec"
+    over.mkdir()
+    desc_1100 = "x" * 1100
+    (over / "SKILL.md").write_text(f"---\nname: over-spec\ndescription: {desc_1100}\n---\n")
+    violations = AgentSkillDescriptionRule().check(RepositoryContext(over))
+    assert len(violations) == 1
+    assert violations[0].message == "Description exceeds 1024 characters (1100)"
+
+
+def test_description_configured_max_length_warns(temp_dir):
+    """max_length: 256 makes a 400-char description warn with both numbers."""
+    skill = temp_dir / "budgeted"
+    skill.mkdir()
+    desc_400 = "x" * 400
+    (skill / "SKILL.md").write_text(f"---\nname: budgeted\ndescription: {desc_400}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert len(violations) == 1
+    assert "400" in violations[0].message
+    assert "256" in violations[0].message
+    assert violations[0].line == 3
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_description_exactly_at_max_length_passes(temp_dir):
+    """Boundary: a description of exactly max_length characters is fine."""
+    skill = temp_dir / "boundary"
+    skill.mkdir()
+    exact_desc = "x" * 256
+    (skill / "SKILL.md").write_text(f"---\nname: boundary\ndescription: {exact_desc}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert violations == []
+
+
+def test_description_folded_multiline_max_length(temp_dir):
+    """Folded YAML descriptions are measured on the parsed string value,
+    and the line number points at the description key."""
+    skill = temp_dir / "folded"
+    skill.mkdir()
+    words = ("word " * 70).strip()  # 349 chars parsed
+    (skill / "SKILL.md").write_text(f"---\nname: folded\ndescription: >\n  {words}\n---\n")
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillDescriptionRule(config={"max_length": 256}).check(context)
+    assert len(violations) == 1
+    assert "349" in violations[0].message
+    assert violations[0].line == 3
+
+
+def test_description_max_length_above_spec_limit_honored(temp_dir):
+    """A configured max_length above 1024 wins: a 1500-char description
+    does not warn at max_length 2000. The spec's own limit is validated
+    by the ecosystem at publish time."""
+    skill = temp_dir / "relaxed"
+    skill.mkdir()
+    desc_1500 = "x" * 1500
+    (skill / "SKILL.md").write_text(f"---\nname: relaxed\ndescription: {desc_1500}\n---\n")
+
+    context = RepositoryContext(skill)
+    assert AgentSkillDescriptionRule(config={"max_length": 2000}).check(context) == []
+    # sanity: the same description warns at defaults
+    assert len(AgentSkillDescriptionRule().check(context)) == 1
+
+
 # --- agentskill-structure ---
 
 
