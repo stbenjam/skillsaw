@@ -1,0 +1,17 @@
+{
+  "name": "acme-tools",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "metadata": {"pluginRoot": "./plugins"},
+  "plugins": [
+    {"name": "widget-maker", "source": "widget-maker", "description": "Build and manage widgets"},
+    {"name": "log-analyzer", "source": "./log-analyzer", "description": "Analyze application logs"},
+    {
+      "name": "release-notes",
+      "source": "release-notes",
+      "description": "Draft release notes from merged changes",
+      "version": "1.0.0",
+      "author": {"name": "Release Team"},
+      "strict": false
+    }
+  ]
+}
