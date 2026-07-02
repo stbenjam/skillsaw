@@ -225,6 +225,50 @@ class TestExtractor:
         md_pages = render_markdown(docs)
         assert md_pages
 
+    def test_render_numeric_marketplace_plugin_name_does_not_crash(self, temp_dir):
+        """A numeric plugin name in marketplace.json must not crash the docs
+        renderers either: the marketplace markdown path derives per-plugin
+        page filenames from ``plugin.name`` string methods (issue #322).
+        """
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "test-marketplace",
+                    "owner": {"name": "Owner"},
+                    "plugins": [
+                        {
+                            "name": "alpha",
+                            "source": "./plugins/alpha",
+                            "description": "A well-formed plugin",
+                        },
+                        {
+                            "name": 123,
+                            "source": "./plugins/beta",
+                            "description": "Numeric name",
+                        },
+                    ],
+                }
+            )
+        )
+        for dirname, name in (("alpha", "alpha"), ("beta", 123)):
+            plugin_dir = temp_dir / "plugins" / dirname / ".claude-plugin"
+            plugin_dir.mkdir(parents=True)
+            (plugin_dir / "plugin.json").write_text(
+                json.dumps({"name": name, "description": "d", "version": "1.0"})
+            )
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+
+        html_pages = render_html(docs)
+        assert "index.html" in html_pages
+        md_pages = render_markdown(docs)
+        assert "README.md" in md_pages
+        # The numeric-named plugin still gets a per-plugin page.
+        assert "123.md" in md_pages
+
     def test_custom_title(self, valid_plugin):
         ctx = RepositoryContext(valid_plugin)
         docs = extract_docs(ctx, title="My Custom Title")

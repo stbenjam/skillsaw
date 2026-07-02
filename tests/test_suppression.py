@@ -151,17 +151,21 @@ class TestBuildSuppressionMap:
 
     def test_stacked_disable_next_line_bare_suppresses_all(self):
         """A bare disable-next-line stacked with a specific one still suppresses
-        everything on the next line (empty rule list means 'all rules')."""
-        content = (
+        everything on the next line (empty rule list means 'all rules'),
+        regardless of directive order. The bare-first order is the real
+        regression case: last-wins overwrote the suppress-all with the
+        explicit directive's rule list."""
+        for stack in (
             "<!-- skillsaw-disable-next-line content-weak-language -->\n"
+            "<!-- skillsaw-disable-next-line -->\n",
             "<!-- skillsaw-disable-next-line -->\n"
-            "Try to write clean code.\n"
-            "Try to write clean code again.\n"
-        )
-        smap = build_suppression_map(content)
-        assert smap.is_suppressed("content-weak-language", 3)
-        assert smap.is_suppressed("content-tautological", 3)
-        assert not smap.is_suppressed("content-weak-language", 4)
+            "<!-- skillsaw-disable-next-line content-weak-language -->\n",
+        ):
+            content = stack + "Try to write clean code.\nTry to write clean code again.\n"
+            smap = build_suppression_map(content)
+            assert smap.is_suppressed("content-weak-language", 3)
+            assert smap.is_suppressed("content-tautological", 3)
+            assert not smap.is_suppressed("content-weak-language", 4)
 
     def test_disable_next_line_no_rules_suppresses_all(self):
         """Bare <!-- skillsaw-disable-next-line --> suppresses all rules on the next line."""

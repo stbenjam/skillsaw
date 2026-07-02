@@ -256,5 +256,8 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
 
 
 def _plugin_filename(plugin: PluginDoc) -> str:
-    safe = plugin.name.replace("/", "-").replace(" ", "-")
+    # ``plugin.name`` is manifest-derived and may be a non-string (e.g. a
+    # numeric ``"name": 123`` in marketplace.json); coerce before calling
+    # string methods so ``docs`` doesn't crash on inputs ``lint`` tolerates.
+    safe = str(plugin.name or "").replace("/", "-").replace(" ", "-")
     return f"{safe}.md"
