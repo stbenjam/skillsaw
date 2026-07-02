@@ -41,10 +41,11 @@ code blocks (`python scripts/run.py`), and plain prose:
   may target the bare directory.
 
 Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
-NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`,
-hidden files or directories, and symlinks (which are also never
-followed). The `exclude` option adds glob patterns on top of these
-defaults.
+NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
+and `tests/` (eval/test scaffolding is consumed by external harnesses
+by convention, not referenced from the skill text), hidden files or
+directories, and symlinks (which are also never followed). The
+`exclude` option adds glob patterns on top of these defaults.
 
 ## Examples
 

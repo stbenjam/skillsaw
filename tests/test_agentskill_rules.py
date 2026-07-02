@@ -1713,6 +1713,9 @@ def test_default_exclusions(temp_dir):
     (skill / ".hidden-notes.txt").write_text("hidden\n")
     (skill / ".ci").mkdir()
     (skill / ".ci" / "pipeline.yaml").write_text("steps: []\n")
+    (skill / "tests").mkdir()
+    (skill / "tests" / "evals.json").write_text(json.dumps({"evals": [{"prompt": "p"}]}))
+    (skill / "tests" / "graders.ts").write_text("export const graders = [];\n")
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
 

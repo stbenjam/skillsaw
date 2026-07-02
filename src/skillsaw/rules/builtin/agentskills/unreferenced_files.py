@@ -51,10 +51,13 @@ directory mentions require the trailing slash (so the English word
 directory path.
 
 Built-in exclusions (never flagged): SKILL.md itself, README.md,
-CHANGELOG.md, LICENSE* / NOTICE* (any suffix), everything under evals/,
-hidden files or directories, and symlinks (which are also never
-followed).  The ``exclude`` config option adds glob patterns on top of
-(not replacing) these defaults.
+CHANGELOG.md, LICENSE* / NOTICE* (any suffix), everything under evals/
+and tests/ (eval and test scaffolding is consumed by external harnesses
+by convention — e.g. auth0/agent-skills ships evals.json/graders.ts
+under tests/ that nothing in the skill references), hidden files or
+directories, and symlinks (which are also never followed).  The
+``exclude`` config option adds glob patterns on top of (not replacing)
+these defaults.
 
 A skill-root README.md additionally counts as a reference root alongside
 SKILL.md: it is standard human-facing documentation, so a bundled file
@@ -121,7 +124,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 "Additional glob patterns (matched against skill-relative "
                 "paths and bare file names) exempt from dead-file detection; "
                 "extends the built-in exclusions (SKILL.md, README.md, "
-                "CHANGELOG.md, LICENSE*, NOTICE*, evals/, hidden files)"
+                "CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, hidden files)"
             ),
         },
     }
@@ -227,7 +230,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             return True
         if name.startswith(("LICENSE", "NOTICE")):
             return True
-        if rel.startswith("evals/"):
+        if rel.startswith(("evals/", "tests/")):
             return True
         for pattern in extra_patterns:
             if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(name, pattern):

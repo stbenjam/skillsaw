@@ -408,12 +408,13 @@ class TestUnreferencedSkillFiles:
         assert "report-builder/assets/shell.html" not in flagged
 
     def test_default_exclusions_never_flagged(self, tmp_path):
-        """README.md, LICENSE, evals/, and dotfiles are exempt by default."""
+        """README.md, LICENSE, evals/, tests/, and dotfiles are exempt by default."""
         repo = copy_fixture("agentskills/unreferenced-clean", tmp_path)
         skill = repo / "report-builder"
         assert (skill / "README.md").is_file()
         assert (skill / "LICENSE").is_file()
         assert (skill / "evals" / "evals.json").is_file()
+        assert (skill / "tests" / "evals.json").is_file()
         assert (skill / "assets" / ".gitkeep").is_file()
         r = run_lint(repo)
         assert self.RULE not in rule_ids(r)

@@ -56,10 +56,11 @@ code blocks (`python scripts/run.py`), and plain prose:
   may target the bare directory.
 
 Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
-NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`,
-hidden files or directories, and symlinks (which are also never
-followed). The `exclude` option adds glob patterns on top of these
-defaults.
+NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
+and `tests/` (eval/test scaffolding is consumed by external harnesses
+by convention, not referenced from the skill text), hidden files or
+directories, and symlinks (which are also never followed). The
+`exclude` option adds glob patterns on top of these defaults.
 
 ## Examples
 
@@ -110,7 +111,7 @@ rules:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
-| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, hidden files) | `[]` |
+| `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, hidden files) | `[]` |
 
 
 *Run `skillsaw explain agentskill-unreferenced-files` to see this documentation and the rule's effective configuration in your terminal.*
