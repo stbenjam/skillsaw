@@ -88,6 +88,14 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Layout — slightly wider page grid so the hero demo and the wide rules
+ * tables get more room on large screens.
+ * ------------------------------------------------------------------------ */
+.md-grid {
+    max-width: 66rem;
+}
+
+/* ---------------------------------------------------------------------------
  * Navigation
  * ------------------------------------------------------------------------ */
 .md-nav__link--active {
@@ -148,20 +156,35 @@
 /* ---------------------------------------------------------------------------
  * Landing page hero
  * ------------------------------------------------------------------------ */
+/* Split hero: pitch + CTAs on the left, live demo on the right. Stacks and
+   centers on narrow viewports. */
 .hero {
+    display: flex;
+    align-items: center;
+    gap: 1.6rem;
+    padding: 1rem 0 1.2rem;
+}
+
+.hero .hero-copy {
+    flex: 1 1 20rem;
+    min-width: 0;
+}
+
+.hero .hero-demo {
+    flex: 1.15 1 22rem;
+    min-width: 0;
     text-align: center;
-    padding: 2rem 0 1rem;
 }
 
 .hero h1 {
-    font-size: 2.6rem;
+    font-size: 2.1rem;
     font-weight: 800;
     letter-spacing: -0.02em;
     background: var(--skillsaw-hero-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 0.6rem;
+    margin: 0 0 0.6rem;
 }
 
 .hero h1 .headerlink {
@@ -169,45 +192,29 @@
 }
 
 .hero .hero-subtitle {
-    max-width: 34rem;
-    margin: 0 auto 1rem;
-    font-size: 0.85rem;
+    margin: 0 0 1rem;
+    font-size: 0.78rem;
     color: var(--md-default-fg-color--light);
 }
 
 .hero .hero-badges {
-    margin: 0 0 1.2rem;
+    margin: 0 0 1rem;
 }
 
 .hero .hero-badges img {
     height: 20px;
     vertical-align: middle;
-    margin: 0 0.1rem;
-}
-
-.hero .hero-install {
-    margin: 0 0 1.2rem;
-}
-
-.hero .hero-install code {
-    display: inline-block;
-    font-size: 0.85rem;
-    padding: 0.5em 1.1em;
-    border-radius: 2rem;
-    border: 1px solid var(--skillsaw-card-border);
+    margin: 0 0.15rem 0.15rem 0;
 }
 
 .hero .md-button {
-    margin: 0.2rem 0.3rem;
+    margin: 0.2rem 0.4rem 0.2rem 0;
+    font-size: 0.7rem;
+    padding: 0.5em 1.2em;
 }
 
 /* Demo — asciinema embed presented as a framed screen */
-.demo-frame {
-    text-align: center;
-    padding: 0.5rem 0 1rem;
-}
-
-.demo-frame iframe {
+.hero .hero-demo iframe {
     max-width: 100% !important;
     border: 1px solid var(--skillsaw-card-border) !important;
     border-radius: 12px;
@@ -215,12 +222,43 @@
     overflow: hidden;
 }
 
+@media screen and (max-width: 66.5em) {
+    .hero {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.8rem;
+    }
+
+    .hero .hero-copy {
+        flex-basis: auto;
+    }
+
+    .hero .hero-subtitle {
+        max-width: 34rem;
+        margin: 0 auto 1rem;
+    }
+
+    .hero .hero-demo {
+        width: 100%;
+    }
+
+    .hero .md-button {
+        margin: 0.2rem 0.3rem;
+    }
+}
+
 /* ---------------------------------------------------------------------------
  * Feature grid cards
  * ------------------------------------------------------------------------ */
+/* Tighter grid so three cards fit per row on desktop */
+.md-typeset .grid.cards {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+
 .md-typeset .grid.cards > ul > li {
     border: 1px solid var(--skillsaw-card-border);
     border-radius: 8px;
+    font-size: 0.72rem;
     transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
