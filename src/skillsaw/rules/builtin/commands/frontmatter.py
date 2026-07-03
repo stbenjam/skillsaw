@@ -4,7 +4,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.utils import insert_frontmatter_fields
+from skillsaw.rules.builtin.utils import insert_frontmatter_fields, read_text
 
 
 class CommandFrontmatterRule(Rule):
@@ -59,7 +59,13 @@ class CommandFrontmatterRule(Rule):
         for v in violations:
             if not v.file_path or not v.file_path.exists():
                 continue
-            original = v.file_path.read_text(encoding="utf-8")
+            # BOM-stripping read: a raw utf-8 read would keep a leading U+FEFF
+            # and the "Missing frontmatter" fix below would embed it mid-file
+            # after the prepended block (write_text_preserving restores the
+            # original BOM at file start).
+            original = read_text(v.file_path)
+            if original is None:
+                continue
             if "Missing frontmatter" in v.message:
                 fixed = f"---\ndescription: \n---\n{original}"
                 results.append(

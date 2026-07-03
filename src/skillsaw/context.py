@@ -724,20 +724,28 @@ class RepositoryContext:
         """
         resolved_path = plugin_path.resolve()
 
-        # Try plugin.json
+        # Try plugin.json. Non-string names (invalid, flagged by validation
+        # rules) fall through to the directory-name fallback rather than
+        # propagating a TypeError into rules that expect a string.
         plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
         if plugin_json.exists():
             try:
                 with open(plugin_json, "r") as f:
                     data = json.load(f)
-                    if name := data.get("name"):
-                        return name
+                    # A malformed plugin.json can hold any JSON type, not
+                    # just an object.
+                    if isinstance(data, dict):
+                        name = data.get("name")
+                        if name and isinstance(name, str):
+                            return name
             except (json.JSONDecodeError, IOError):
                 pass
 
         # Try marketplace metadata
         if resolved_path in self.plugin_metadata:
-            return self.plugin_metadata[resolved_path].get("name", plugin_path.name)
+            name = self.plugin_metadata[resolved_path].get("name", plugin_path.name)
+            if isinstance(name, str):
+                return name
 
         # Fall back to directory name
         return plugin_path.name

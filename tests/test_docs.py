@@ -230,6 +230,8 @@ class TestExtractor:
         """A numeric plugin name in marketplace.json must not crash the docs
         renderers either: the marketplace markdown path derives per-plugin
         page filenames from ``plugin.name`` string methods (issue #322).
+        Non-string names are invalid (marketplace-json-valid flags them), so
+        name resolution degrades to the plugin's directory name.
         """
         claude_dir = temp_dir / ".claude-plugin"
         claude_dir.mkdir()
@@ -267,8 +269,9 @@ class TestExtractor:
         assert "index.html" in html_pages
         md_pages = render_markdown(docs)
         assert "README.md" in md_pages
-        # The numeric-named plugin still gets a per-plugin page.
-        assert "123.md" in md_pages
+        # The numeric-named plugin still gets a per-plugin page, keyed by
+        # its directory name (the fallback for invalid non-string names).
+        assert "beta.md" in md_pages
 
     def test_render_falsy_plugin_name_preserved(self):
         """A falsy-but-valid plugin name (``0``) must be preserved by the

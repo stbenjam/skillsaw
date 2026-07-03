@@ -1,0 +1,8 @@
+{
+  "name": "acme-analytics",
+  "owner": {"name": "ACME Analytics Team", "url": "https://analytics.acme.example.com"},
+  "plugins": [
+    {"name": "report-builder", "source": "./plugins/report-builder", "description": "Generate analytics reports"},
+    {"name": 123, "source": "./plugins/metrics-collector", "description": "Collect runtime metrics", "strict": false}
+  ]
+}

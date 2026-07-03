@@ -3,6 +3,7 @@ Tests for agentskills.io rules and detection
 """
 
 import json
+import shutil
 from pathlib import Path
 
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -19,6 +20,16 @@ from skillsaw.rules.builtin.agentskills import (
     AgentSkillEvalsRule,
     AgentSkillUnreferencedFilesRule,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
+
 
 # --- Detection tests ---
 
@@ -1887,3 +1898,240 @@ def test_symlink_escaping_skill_dir_is_ignored(temp_dir):
     # although mentioned by SKILL.md — is not read: the out-of-tree mention
     # of scripts/orphan.py must not mark it referenced.
     assert flagged == {skill / "scripts" / "orphan.py"}
+
+
+# --- Unreferenced files: directory mentions without a trailing slash ---
+
+
+def test_dot_slash_directory_mention_covers_contents(temp_dir):
+    """`./canvas-fonts`-style mentions (no trailing slash) cover the directory."""
+    skill = _make_skill(temp_dir, body="Search the `./fonts` directory for a matching typeface.")
+    fonts = skill / "fonts"
+    fonts.mkdir()
+    (fonts / "regular.ttf").write_text("font\n")
+    (fonts / "bold.ttf").write_text("font\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_interior_slash_directory_mention_covers_contents(temp_dir):
+    """A nested path-ish mention (`assets/fonts`, no trailing slash) covers the directory."""
+    skill = _make_skill(temp_dir, body="Pick any typeface from assets/fonts and embed it.")
+    fonts = skill / "assets" / "fonts"
+    fonts.mkdir(parents=True)
+    (fonts / "regular.ttf").write_text("font\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_slashless_dir_mention_does_not_cover_file_paths_inside(temp_dir):
+    """`./fonts/regular.ttf` is a file mention, not a mention of fonts/."""
+    skill = _make_skill(temp_dir, body="Embed `./fonts/regular.ttf` in the report.")
+    fonts = skill / "fonts"
+    fonts.mkdir()
+    (fonts / "regular.ttf").write_text("font\n")
+    (fonts / "bold.ttf").write_text("font\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [fonts / "bold.ttf"]
+
+
+def test_slashless_dir_mention_respects_directory_covers_disabled(temp_dir):
+    skill = _make_skill(temp_dir, body="Search the `./fonts` directory for a typeface.")
+    fonts = skill / "fonts"
+    fonts.mkdir()
+    (fonts / "regular.ttf").write_text("font\n")
+
+    rule = AgentSkillUnreferencedFilesRule({"directory_mention_covers": False})
+    violations = rule.check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [fonts / "regular.ttf"]
+
+
+# --- Unreferenced files: Python imports are followed ---
+
+
+def test_python_import_marks_module_relative_to_script_dir(temp_dir):
+    """SKILL.md -> scripts/recalc.py -> `from office.soffice import x` covers
+    scripts/office/soffice.py (module resolved relative to the importing file)."""
+    skill = _make_skill(temp_dir, body="Recalculate with `python scripts/recalc.py out.xlsx`.")
+    office = skill / "scripts" / "office"
+    office.mkdir(parents=True)
+    (skill / "scripts" / "recalc.py").write_text(
+        "from office.soffice import get_soffice_env\n\nprint(get_soffice_env())\n"
+    )
+    (office / "__init__.py").write_text("")
+    (office / "soffice.py").write_text("def get_soffice_env():\n    return {}\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_python_relative_import_reference(temp_dir):
+    """`from . import util` and `from ..pkg import mod` resolve within the skill."""
+    skill = _make_skill(temp_dir, body="Run `python scripts/main.py` to build the report.")
+    scripts = skill / "scripts"
+    scripts.mkdir()
+    pkg = skill / "pkg"
+    pkg.mkdir()
+    (scripts / "main.py").write_text(
+        "from . import util\nfrom ..pkg import renderer\n\nutil.go()\n"
+    )
+    (scripts / "util.py").write_text("def go():\n    pass\n")
+    (pkg / "__init__.py").write_text("")
+    (pkg / "renderer.py").write_text("def render():\n    pass\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_python_from_import_symbol_marks_module(temp_dir):
+    """`from pkg.helper import a_symbol` marks pkg/helper.py even though
+    a_symbol is not itself a module."""
+    skill = _make_skill(temp_dir, body="Run `python scripts/main.py` before replying.")
+    (skill / "scripts").mkdir()
+    (skill / "pkg").mkdir()
+    (skill / "scripts" / "main.py").write_text("from pkg.helper import recalc\n\nrecalc()\n")
+    (skill / "pkg" / "__init__.py").write_text("")
+    (skill / "pkg" / "helper.py").write_text("def recalc():\n    return 0\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_python_import_in_unreferenced_script_does_not_count(temp_dir):
+    """Imports only propagate from scripts that are themselves reachable."""
+    skill = _make_skill(temp_dir, body="No bundled files are mentioned here.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("import helper\n\nhelper.go()\n")
+    (skill / "scripts" / "helper.py").write_text("def go():\n    pass\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    flagged = {v.file_path for v in violations}
+    assert flagged == {skill / "scripts" / "orphan.py", skill / "scripts" / "helper.py"}
+
+
+def test_python_import_fallback_on_syntax_error(temp_dir):
+    """Sources ast.parse rejects still contribute imports via the line scan."""
+    skill = _make_skill(temp_dir, body="Run `python2 scripts/legacy.py` if asked.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "legacy.py").write_text(
+        "import helper\n\nprint 'python 2 syntax breaks ast.parse'\n"
+    )
+    (skill / "scripts" / "helper.py").write_text("def go():\n    pass\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_unreferenced_reachability_fixture(temp_dir):
+    """End-to-end fixture: slash-less `./fonts` dir mention, a Python import
+    chain (SKILL.md -> scripts/main.py -> pkg/helper.py -> data/schema.xsd),
+    and one genuinely dead file that stays flagged."""
+    skill = copy_fixture("unreferenced-reachability", temp_dir)
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "legacy" / "cleanup.py"]
+
+
+# --- Unreferenced files: case-insensitive mentions ---
+
+
+def test_case_insensitive_file_mention(temp_dir):
+    """SKILL.md saying FORMS.md covers forms.md on disk (case-insensitive
+    filesystems make such references work), and the covered file still
+    becomes a traversal source."""
+    skill = _make_skill(temp_dir, body="To fill a PDF form, read FORMS.md and follow it.")
+    (skill / "forms.md").write_text("# Forms\n\nRun `python scripts/fill.py form.pdf` first.\n")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "fill.py").write_text("print('fill')\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_case_insensitive_directory_mention(temp_dir):
+    """`Templates/` in prose covers a templates/ directory on disk."""
+    skill = _make_skill(temp_dir, body="Copy a starting point from `Templates/` first.")
+    templates = skill / "templates"
+    templates.mkdir()
+    (templates / "report.md").write_text("# Report skeleton\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_mention_boundaries_still_apply_case_insensitively(temp_dir):
+    """Case folding must not loosen token boundaries: Redeploy.SHELL still
+    does not reference deploy.sh."""
+    skill = _make_skill(temp_dir, body="Use the Redeploy.SHELL workflow for rollouts.")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "deploy.sh").write_text("#!/bin/sh\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "scripts" / "deploy.sh"]
+
+
+# --- Unreferenced files: imports in markdown fences ---
+
+
+def test_fenced_python_import_reference(temp_dir):
+    """A ```python fence teaching `from core.gif_builder import GIFBuilder`
+    covers core/gif_builder.py."""
+    skill = _make_skill(
+        temp_dir,
+        body=(
+            "Build the GIF like this:\n\n"
+            "```python\n"
+            "from core.gif_builder import GIFBuilder\n"
+            "builder = GIFBuilder()\n"
+            "```"
+        ),
+    )
+    core = skill / "core"
+    core.mkdir()
+    (core / "gif_builder.py").write_text("class GIFBuilder:\n    pass\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_fenced_import_chain_is_transitive(temp_dir):
+    """The module reached through a fence import becomes a traversal source."""
+    skill = _make_skill(
+        temp_dir,
+        body="Compose frames:\n\n```python\nfrom core.frames import compose\n```",
+    )
+    core = skill / "core"
+    core.mkdir()
+    (core / "frames.py").write_text(
+        '"""Frame helpers; palettes load from data/palette.json."""\n\n'
+        "def compose():\n    pass\n"
+    )
+    (skill / "data").mkdir()
+    (skill / "data" / "palette.json").write_text("{}\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_non_python_fence_imports_are_ignored(temp_dir):
+    """Import-looking lines in a fence labeled with another language do not
+    mark modules referenced."""
+    skill = _make_skill(
+        temp_dir,
+        body=("Example configuration:\n\n" "```text\n" "from core.hidden import backdoor\n" "```"),
+    )
+    core = skill / "core"
+    core.mkdir()
+    (core / "hidden.py").write_text("def backdoor():\n    pass\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [core / "hidden.py"]
+
+
+def test_whitespace_only_fence_info_does_not_crash(temp_dir):
+    """A fence opener with only trailing whitespace after the backticks is
+    treated as an unlabeled fence whose imports are followed. markdown-it
+    strips the info string per CommonMark, and the language check guards
+    against a whitespace-only info regardless."""
+    skill = _make_skill(
+        temp_dir,
+        body=("Build it:\n\n" "```   \n" "from core.frames import compose\n" "```"),
+    )
+    core = skill / "core"
+    core.mkdir()
+    (core / "frames.py").write_text("def compose():\n    pass\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []

@@ -1,6 +1,7 @@
 """Tests for the skillsaw marketplace command group."""
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -1092,3 +1093,142 @@ class TestInteractive:
             mock_stdin.isatty.return_value = False
             with pytest.raises(ValueError, match="Multiple plugins"):
                 _handle_multi_plugin(exc, add_skill, name="x", path=temp_dir)
+
+
+# ---------------------------------------------------------------------------
+# Non-string plugin names in marketplace.json (regression for
+# rule-execution-error crash in plugin-naming via get_plugin_name)
+# ---------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _copy_fixture(name, tmp_path):
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(FIXTURES / name, dst)
+    return dst
+
+
+def _run_lint_json(path):
+    result = subprocess.run(
+        [sys.executable, "-m", "skillsaw", "lint", "--format", "json", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    output = json.loads(result.stdout) if result.stdout.strip() else None
+    return result, output
+
+
+class TestNonStringPluginName:
+    """A non-string plugin 'name' in marketplace.json must produce a
+    marketplace-json-valid ERROR, not a rule-execution-error crash."""
+
+    def test_marketplace_json_valid_reports_error(self, tmp_path):
+        repo = _copy_fixture("marketplace/nonstring-name", tmp_path)
+        result, output = _run_lint_json(repo)
+
+        messages = [
+            v["message"] for v in output["violations"] if v["rule_id"] == "marketplace-json-valid"
+        ]
+        assert any(
+            "plugins[1] plugin name must be a string" in m and "123" in m for m in messages
+        ), f"expected non-string name error, got: {messages}"
+        errors = [
+            v
+            for v in output["violations"]
+            if v["rule_id"] == "marketplace-json-valid" and v["severity"] == "error"
+        ]
+        assert errors, "non-string plugin name must be reported at ERROR severity"
+
+    def test_no_rule_execution_error(self, tmp_path):
+        repo = _copy_fixture("marketplace/nonstring-name", tmp_path)
+        result, output = _run_lint_json(repo)
+
+        crashed = [v for v in output["violations"] if v["rule_id"] == "rule-execution-error"]
+        assert crashed == [], f"rules crashed: {[v['message'] for v in crashed]}"
+
+    def test_exit_is_normal_lint_failure(self, tmp_path):
+        repo = _copy_fixture("marketplace/nonstring-name", tmp_path)
+        result, output = _run_lint_json(repo)
+
+        # Normal lint failure (violations found), not an internal error.
+        assert (
+            result.returncode == 1
+        ), f"expected exit 1, got {result.returncode}; stderr: {result.stderr}"
+        assert output is not None, "lint must still emit JSON output"
+        assert "Traceback" not in result.stderr
+
+    def test_get_plugin_name_falls_back_to_directory_name(self, tmp_path):
+        """A non-string marketplace name must not propagate out of
+        get_plugin_name — it degrades to the directory name."""
+        from skillsaw.context import RepositoryContext
+
+        repo = _copy_fixture("marketplace/nonstring-name", tmp_path)
+        context = RepositoryContext(repo)
+        plugin_path = repo / "plugins" / "metrics-collector"
+        assert context.get_plugin_name(plugin_path) == "metrics-collector"
+
+    def test_get_plugin_name_nonstring_plugin_json_name(self, tmp_path):
+        """A non-string name in plugin.json also degrades to the directory name."""
+        from skillsaw.context import RepositoryContext
+
+        plugin_dir = tmp_path / "my-plugin"
+        (plugin_dir / ".claude-plugin").mkdir(parents=True)
+        (plugin_dir / "commands").mkdir()
+        (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": 123, "description": "bad name type"})
+        )
+
+        context = RepositoryContext(plugin_dir)
+        assert context.get_plugin_name(plugin_dir) == "my-plugin"
+
+    def test_get_plugin_name_nondict_plugin_json(self, tmp_path):
+        """A plugin.json holding a non-object JSON document (list, string,
+        number, null) degrades to the directory name instead of raising
+        AttributeError."""
+        from skillsaw.context import RepositoryContext
+
+        payloads = ('["not", "an", "object"]', '"just-a-string"', "42", "null")
+        for i, payload in enumerate(payloads):
+            plugin_dir = tmp_path / f"plugin-{i}"
+            (plugin_dir / ".claude-plugin").mkdir(parents=True)
+            (plugin_dir / "commands").mkdir()
+            (plugin_dir / ".claude-plugin" / "plugin.json").write_text(payload)
+
+            context = RepositoryContext(plugin_dir)
+            assert context.get_plugin_name(plugin_dir) == plugin_dir.name
+
+    def test_duplicate_detection_with_nonstring_names(self, tmp_path):
+        """Duplicate detection must not crash on non-string names: each one is
+        flagged as a type error, and string duplicates are still caught."""
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.marketplace import MarketplaceJsonValidRule
+
+        claude_dir = tmp_path / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "dupes-marketplace",
+                    "owner": {"name": "Owner"},
+                    "plugins": [
+                        {"name": 123, "source": "./plugins/a"},
+                        {"name": 123, "source": "./plugins/b"},
+                        {"name": "tool", "source": "./plugins/c"},
+                        {"name": "tool", "source": "./plugins/d"},
+                    ],
+                }
+            )
+        )
+
+        context = RepositoryContext(tmp_path)
+        violations = MarketplaceJsonValidRule().check(context)
+        messages = [v.message for v in violations]
+
+        type_errors = [m for m in messages if "plugin name must be a string" in m]
+        assert len(type_errors) == 2, messages
+        assert any("duplicate plugin name 'tool'" in m for m in messages), messages
+        # Non-string names are excluded from duplicate comparison — no
+        # duplicate report should mention 123.
+        assert not any("duplicate" in m and "123" in m for m in messages), messages

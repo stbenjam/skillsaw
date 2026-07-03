@@ -302,6 +302,65 @@ def test_broken_plugin_surfaces_error_and_lint_continues(fake_plugin, repo):
     assert any(getattr(r, "_source", "") == "builtin" for r in linter.rules)
 
 
+def test_plugin_rule_with_raising_rule_id_is_isolated(fake_plugin, repo):
+    """A plugin rule whose rule_id property raises must not abort the lint."""
+
+    class RaisingIdRule(Rule):
+        @property
+        def rule_id(self) -> str:
+            raise RuntimeError("boom from rule_id")
+
+        @property
+        def description(self) -> str:
+            return "broken rule (test)"
+
+        def default_severity(self) -> Severity:
+            return Severity.WARNING
+
+        def check(self, context):
+            return []
+
+    fake_plugin(
+        "fake_raising_id",
+        module_attrs={"SKILLSAW_RULES": [RaisingIdRule, AlwaysFiresRule]},
+    )
+    linter, violations = _lint(repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert len(errors) == 1
+    assert errors[0].severity == Severity.ERROR
+    assert "RaisingIdRule" in errors[0].message
+    assert "boom from rule_id" in errors[0].message
+    # The plugin's healthy rule and the builtins still ran.
+    assert "plugin-always-fires" in {r.rule_id for r in linter.rules}
+    assert any(getattr(r, "_source", "") == "builtin" for r in linter.rules)
+
+
+def test_plugin_rule_raising_during_enablement_is_isolated(fake_plugin, repo):
+    """A plugin rule whose repo_types access raises is fault-isolated too."""
+
+    class RaisingRepoTypesRule(AlwaysFiresRule):
+        @property
+        def rule_id(self) -> str:
+            return "plugin-raising-repo-types"
+
+        @property
+        def repo_types(self):
+            raise RuntimeError("boom from repo_types")
+
+    fake_plugin(
+        "fake_raising_rt",
+        module_attrs={"SKILLSAW_RULES": [RaisingRepoTypesRule]},
+    )
+    linter, violations = _lint(repo)
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert len(errors) == 1
+    assert errors[0].severity == Severity.ERROR
+    assert "plugin-raising-repo-types" in errors[0].message
+    assert "boom from repo_types" in errors[0].message
+    assert "plugin-raising-repo-types" not in {r.rule_id for r in linter.rules}
+    assert any(getattr(r, "_source", "") == "builtin" for r in linter.rules)
+
+
 def test_rule_id_collision_with_builtin_is_skipped(fake_plugin, repo):
     fake_plugin("fake_shadow", module_attrs={"SKILLSAW_RULES": [ShadowsBuiltinRule]})
     linter, violations = _lint(repo)
@@ -602,6 +661,57 @@ def test_invalid_repo_type_name_fails_plugin(fake_plugin):
     (plugin,) = load_plugins()
     assert plugin.error is not None
     assert "kebab-case" in plugin.error
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["/etc/*.conf", "C:\\agents\\*.md", "C:/agents/*.md", "//server/share/*.md"],
+)
+def test_repo_type_absolute_content_path_fails_plugin(fake_plugin, pattern):
+    """Absolute content_paths globs (POSIX or Windows) are rejected at load."""
+    fake_plugin(
+        "fake_rt_abs",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type(content_paths=[pattern])],
+        },
+    )
+    (plugin,) = load_plugins()
+    assert plugin.error is not None
+    assert "absolute" in plugin.error
+    assert "relative to the repository root" in plugin.error
+
+
+def test_repo_type_absolute_content_path_single_load_error(fake_plugin, acme_repo):
+    """An absolute glob yields one plugin-load-error, not a crash per rule."""
+    fake_plugin(
+        "fake_rt_abs_lint",
+        module_attrs={
+            "SKILLSAW_RULES": [],
+            "SKILLSAW_REPO_TYPES": [acme_repo_type(content_paths=["/etc/*.conf"])],
+        },
+    )
+    linter, violations = _lint(acme_repo)
+    load_errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    exec_errors = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert len(load_errors) == 1
+    assert load_errors[0].severity == Severity.ERROR
+    assert "absolute" in load_errors[0].message
+    assert exec_errors == []
+    # Builtin rules still ran despite the rejected plugin.
+    assert any(getattr(r, "_source", "") == "builtin" for r in linter.rules)
+
+
+def test_user_config_absolute_content_path_glob_is_skipped(repo):
+    """An absolute glob in user config content-paths is ignored, not a crash."""
+    config = LinterConfig.default()
+    config.content_paths = ["/etc/*.conf"]
+    linter, violations = _lint(repo, config=config, no_plugins=True)
+    exec_errors = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert exec_errors == []
+    # The tree still built: CLAUDE.md is present and lintable.
+    tree_paths = {node.path.name for node in linter.context.lint_tree.walk()}
+    assert "CLAUDE.md" in tree_paths
 
 
 def test_tree_contributor_adds_block(fake_plugin, acme_repo):
