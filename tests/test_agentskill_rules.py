@@ -21,6 +21,16 @@ from skillsaw.rules.builtin.agentskills import (
     AgentSkillUnreferencedFilesRule,
 )
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
+
+
 # --- Detection tests ---
 
 
@@ -2013,9 +2023,7 @@ def test_unreferenced_reachability_fixture(temp_dir):
     """End-to-end fixture: slash-less `./fonts` dir mention, a Python import
     chain (SKILL.md -> scripts/main.py -> pkg/helper.py -> data/schema.xsd),
     and one genuinely dead file that stays flagged."""
-    fixture = Path(__file__).parent / "fixtures" / "unreferenced-reachability"
-    skill = temp_dir / "unreferenced-reachability"
-    shutil.copytree(fixture, skill)
+    skill = copy_fixture("unreferenced-reachability", temp_dir)
 
     violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
     assert [v.file_path for v in violations] == [skill / "legacy" / "cleanup.py"]

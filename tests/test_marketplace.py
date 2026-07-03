@@ -1183,6 +1183,22 @@ class TestNonStringPluginName:
         context = RepositoryContext(plugin_dir)
         assert context.get_plugin_name(plugin_dir) == "my-plugin"
 
+    def test_get_plugin_name_nondict_plugin_json(self, tmp_path):
+        """A plugin.json holding a non-object JSON document (list, string,
+        number, null) degrades to the directory name instead of raising
+        AttributeError."""
+        from skillsaw.context import RepositoryContext
+
+        payloads = ('["not", "an", "object"]', '"just-a-string"', "42", "null")
+        for i, payload in enumerate(payloads):
+            plugin_dir = tmp_path / f"plugin-{i}"
+            (plugin_dir / ".claude-plugin").mkdir(parents=True)
+            (plugin_dir / "commands").mkdir()
+            (plugin_dir / ".claude-plugin" / "plugin.json").write_text(payload)
+
+            context = RepositoryContext(plugin_dir)
+            assert context.get_plugin_name(plugin_dir) == plugin_dir.name
+
     def test_duplicate_detection_with_nonstring_names(self, tmp_path):
         """Duplicate detection must not crash on non-string names: each one is
         flagged as a type error, and string duplicates are still caught."""

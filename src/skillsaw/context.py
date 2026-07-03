@@ -732,9 +732,12 @@ class RepositoryContext:
             try:
                 with open(plugin_json, "r") as f:
                     data = json.load(f)
-                    name = data.get("name")
-                    if name and isinstance(name, str):
-                        return name
+                    # A malformed plugin.json can hold any JSON type, not
+                    # just an object.
+                    if isinstance(data, dict):
+                        name = data.get("name")
+                        if name and isinstance(name, str):
+                            return name
             except (json.JSONDecodeError, IOError):
                 pass
 
