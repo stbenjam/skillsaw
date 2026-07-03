@@ -50,19 +50,6 @@ dead zones, and structural issues with more than 40 rules, then auto-fixes them.
     Deterministic autofixes via `skillsaw fix`; a Skills plugin guides coding
     agents through the rest — see demo below.
 
--   :building_construction:{ .lg .middle } **Scaffolding**
-
-    ---
-
-    `skillsaw add` generates plugins, skills, commands, agents, and hooks with best-practice
-    structure.
-
--   :memo:{ .lg .middle } **Documentation**
-
-    ---
-
-    `skillsaw docs` generates HTML or Markdown documentation for your plugins and marketplaces.
-
 -   :electric_plug:{ .lg .middle } **Extensible**
 
     ---
@@ -76,6 +63,19 @@ dead zones, and structural issues with more than 40 rules, then auto-fixes them.
 
     GitHub and GitLab integration with inline PR comments, deduplication, and
     automatic thread resolution.
+
+-   :building_construction:{ .lg .middle } **Scaffolding**
+
+    ---
+
+    `skillsaw add` generates plugins, skills, commands, agents, and hooks with best-practice
+    structure.
+
+-   :memo:{ .lg .middle } **Documentation**
+
+    ---
+
+    `skillsaw docs` generates HTML or Markdown documentation for your plugins and marketplaces.
 
 </div>
 
