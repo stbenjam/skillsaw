@@ -1,27 +1,64 @@
-/* skillsaw custom theme — sawblade steel with spark orange accents */
+/* skillsaw custom theme — brand navy + saw-spark green, light & dark schemes.
+ *
+ * Brand tokens are derived from the logo (navy wordmark, green check/blade).
+ * Everything scheme-specific is scoped to [data-md-color-scheme=...] so the
+ * palette toggle works without leaking colors across schemes.
+ */
 
-:root,
+/* ---------------------------------------------------------------------------
+ * Light scheme (default)
+ * ------------------------------------------------------------------------ */
+[data-md-color-scheme="default"] {
+    --md-primary-fg-color: #24476b;
+    --md-primary-fg-color--light: #35597f;
+    --md-primary-fg-color--dark: #1a3550;
+    --md-primary-bg-color: #ffffff;
+    --md-primary-bg-color--light: #ffffffb3;
+
+    --md-accent-fg-color: #1f8a56;
+    --md-accent-fg-color--transparent: #1f8a5620;
+    --md-accent-bg-color: #ffffff;
+    --md-accent-bg-color--light: #ffffffb3;
+
+    --md-typeset-a-color: #17734a;
+
+    --skillsaw-hero-gradient: linear-gradient(135deg, #24476b 0%, #1f8a56 100%);
+    --skillsaw-card-border: #d7dde3;
+    --skillsaw-table-head-bg: #24476b;
+    --skillsaw-table-head-fg: #ffffff;
+    --skillsaw-table-stripe: #f4f7f9;
+    --skillsaw-table-hover: #eaf2ee;
+}
+
+/* ---------------------------------------------------------------------------
+ * Dark scheme (slate)
+ * ------------------------------------------------------------------------ */
 [data-md-color-scheme="slate"] {
     --md-primary-fg-color: #78909c;
     --md-primary-fg-color--light: #90a4ae;
     --md-primary-fg-color--dark: #546e7a;
-    --md-primary-bg-color: #fff;
+    --md-primary-bg-color: #ffffff;
     --md-primary-bg-color--light: #ffffffb3;
 
-    --md-accent-fg-color: #4fc3f7;
-    --md-accent-fg-color--transparent: #4fc3f720;
-    --md-accent-bg-color: #fff;
-    --md-accent-bg-color--light: #ffffffb3;
+    --md-accent-fg-color: #8ce0ae;
+    --md-accent-fg-color--transparent: #8ce0ae20;
+    --md-accent-bg-color: #1a1c1e;
+    --md-accent-bg-color--light: #1a1c1eb3;
 
-    --md-typeset-a-color: #4fc3f7;
-}
+    --md-typeset-a-color: #6fcf97;
 
-/* Cool dark background */
-[data-md-color-scheme="slate"] {
+    /* Cool dark background */
     --md-default-bg-color: #1a1c1e;
     --md-default-bg-color--light: #1a1c1e80;
     --md-default-bg-color--lighter: #1a1c1e33;
     --md-default-bg-color--lightest: #1a1c1e0d;
+
+    --skillsaw-hero-gradient: linear-gradient(135deg, #b9ecd0 0%, #6fcf97 45%, #3fae74 100%);
+    --skillsaw-card-border: #37474f;
+    --skillsaw-table-head-bg: #263238;
+    --skillsaw-table-head-fg: #8ce0ae;
+    --skillsaw-table-stripe: #20242780;
+    --skillsaw-table-hover: #26323860;
 }
 
 /* Code blocks — blue-gray tinted */
@@ -38,6 +75,29 @@
     background-color: #1e2124;
 }
 
+/* Header bar — steel blue-gray in dark mode (light mode uses primary navy) */
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+    background-color: #263238;
+}
+
+/* Footer */
+[data-md-color-scheme="slate"] .md-footer,
+[data-md-color-scheme="slate"] .md-footer-meta {
+    background-color: #151719;
+}
+
+/* ---------------------------------------------------------------------------
+ * Layout — slightly wider page grid so the hero demo and the wide rules
+ * tables get more room on large screens.
+ * ------------------------------------------------------------------------ */
+.md-grid {
+    max-width: 66rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * Navigation
+ * ------------------------------------------------------------------------ */
 .md-nav__link--active {
     color: var(--md-accent-fg-color) !important;
     font-weight: 700;
@@ -56,17 +116,13 @@
     padding-left: 0.6rem;
 }
 
-/* Header bar — steel blue-gray */
-[data-md-color-scheme="slate"] .md-header {
-    background-color: #263238;
-}
-
-/* Header — vertically center logo + title together */
+/* ---------------------------------------------------------------------------
+ * Header — logo and wordmark
+ * ------------------------------------------------------------------------ */
 .md-header__inner {
     align-items: center;
 }
 
-/* Header logo — 25% larger */
 .md-header .md-logo {
     display: flex;
     align-items: center;
@@ -78,7 +134,8 @@
     width: auto;
 }
 
-/* Header title — replace text with logo-text image */
+/* Header title — replace text with the wordmark image. The wordmark is navy,
+   so render it white (works on both the navy and steel header bars). */
 .md-header__title {
     display: flex;
     align-items: center;
@@ -93,93 +150,225 @@
     min-width: 7rem;
     position: relative;
     top: 5px;
+    filter: brightness(0) invert(1);
 }
 
-/* Hero section on landing page */
-.md-content [style*="text-align: center"] h1 {
-    font-size: 3rem;
+/* ---------------------------------------------------------------------------
+ * Landing page hero
+ * ------------------------------------------------------------------------ */
+/* Hero: full-width title on top, then prose + CTAs side by side with the
+   live demo. Columns wrap and stack on narrow viewports. */
+.hero {
+    padding: 1.2rem 0 1rem;
+    text-align: left;
+}
+
+.hero .hero-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.2rem 2.4rem;
+}
+
+.hero .hero-copy {
+    flex: 1 1 18rem;
+    min-width: 0;
+}
+
+.hero .hero-features {
+    flex: 1.5 1 24rem;
+    min-width: 0;
+}
+
+.hero .hero-demo {
+    max-width: 46rem;
+    margin: 1.6rem auto 0;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 2.1rem;
     font-weight: 800;
-    background: linear-gradient(135deg, #80deea 0%, #4fc3f7 40%, #29b6f6 100%);
+    letter-spacing: -0.02em;
+    background: var(--skillsaw-hero-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 0.5rem;
+    margin: 0 0 1rem;
 }
 
-/* Feature grid cards */
+.hero h1 .headerlink {
+    display: none;
+}
+
+.hero .hero-subtitle {
+    margin: 0 0 1rem;
+    font-size: 0.78rem;
+    color: var(--md-default-fg-color--light);
+}
+
+.hero .hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0 0 1.2rem;
+}
+
+.hero .hero-badges img {
+    height: 20px;
+    display: block;
+}
+
+.hero .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0;
+}
+
+.hero .md-button {
+    margin: 0;
+    font-size: 0.7rem;
+    padding: 0.5em 1.2em;
+}
+
+/* Demo — asciinema embed presented as a framed screen */
+.hero .hero-demo iframe {
+    max-width: 100% !important;
+    border: 1px solid var(--skillsaw-card-border) !important;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+ * Feature grid cards
+ * ------------------------------------------------------------------------ */
+/* Tighter grid so three cards fit per row on desktop */
+.md-typeset .grid.cards {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+}
+
 .md-typeset .grid.cards > ul > li {
-    border: 1px solid #37474f;
+    border: 1px solid var(--skillsaw-card-border);
     border-radius: 8px;
-    transition: border-color 0.2s, transform 0.2s;
+    font-size: 0.72rem;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .md-typeset .grid.cards > ul > li:hover {
     border-color: var(--md-accent-fg-color);
     transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
-/* Buttons */
+.md-typeset .grid.cards > ul > li .twemoji.lg {
+    color: var(--md-accent-fg-color);
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------ */
 .md-typeset .md-button--primary {
-    background-color: #4fc3f7;
-    border-color: #4fc3f7;
-    color: #1a1c1e;
+    background-color: #1f8a56;
+    border-color: #1f8a56;
+    color: #ffffff;
 }
 
 .md-typeset .md-button--primary:hover {
-    background-color: #29b6f6;
-    border-color: #29b6f6;
+    background-color: #17734a;
+    border-color: #17734a;
+    color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+    background-color: #6fcf97;
+    border-color: #6fcf97;
+    color: #10241a;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary:hover {
+    background-color: #8ce0ae;
+    border-color: #8ce0ae;
+    color: #10241a;
 }
 
 .md-typeset .md-button:not(.md-button--primary) {
-    border-color: #78909c;
-    color: #90a4ae;
+    border-color: var(--md-default-fg-color--light);
+    color: var(--md-default-fg-color--light);
 }
 
 .md-typeset .md-button:not(.md-button--primary):hover {
-    border-color: #4fc3f7;
-    color: #4fc3f7;
+    border-color: var(--md-accent-fg-color);
+    color: var(--md-accent-fg-color);
+    background-color: transparent;
 }
 
-/* Tables — Rule ID column */
+/* ---------------------------------------------------------------------------
+ * Tables — the rules-reference tables are wide; Material wraps them in a
+ * horizontal scroll container (.md-typeset__scrollwrap), so the page never
+ * overflows. Polish the presentation: branded header row, zebra striping,
+ * row hover, and no wrapping in the Rule ID column.
+ * ------------------------------------------------------------------------ */
+.md-typeset .md-typeset__scrollwrap {
+    overflow-x: auto;
+}
+
+.md-typeset table:not([class]) {
+    border: 1px solid var(--skillsaw-card-border);
+    border-radius: 6px;
+}
+
 .md-typeset table:not([class]) td:first-child {
     white-space: nowrap;
 }
 
-/* Tables — steel headers */
 .md-typeset table:not([class]) th {
-    background-color: #263238;
-    color: #4fc3f7;
+    background-color: var(--skillsaw-table-head-bg);
+    color: var(--skillsaw-table-head-fg);
     font-weight: 600;
 }
 
-.md-typeset table:not([class]) tr:hover td {
-    background-color: #26323840;
+.md-typeset table:not([class]) th a {
+    color: inherit;
 }
 
-/* Admonitions */
+.md-typeset table:not([class]) tbody tr:nth-child(even) {
+    background-color: var(--skillsaw-table-stripe);
+}
+
+.md-typeset table:not([class]) tbody tr:hover {
+    background-color: var(--skillsaw-table-hover);
+    box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Admonitions
+ * ------------------------------------------------------------------------ */
 .md-typeset .admonition,
 .md-typeset details {
-    border-color: #546e7a;
+    border-color: var(--skillsaw-card-border);
 }
 
-/* Onboarding admonition — sparkle gradient */
+/* Onboarding admonition — brand-tinted */
 .md-typeset .admonition.tip {
-    border-color: #4fc3f7;
-    background: linear-gradient(135deg, #1a2a3020 0%, #1a3a4a30 100%);
+    border-color: var(--md-accent-fg-color);
+    background: var(--md-accent-fg-color--transparent);
 }
 
 .md-typeset .admonition.tip > .admonition-title {
-    background-color: #4fc3f718;
+    background-color: var(--md-accent-fg-color--transparent);
     font-size: 1.05em;
 }
 
 .md-typeset .admonition.tip > .admonition-title::before {
-    background-color: #4fc3f7;
+    background-color: var(--md-accent-fg-color);
 }
 
 /* Onboarding step icons */
 .step-icon {
-    color: #4fc3f7;
+    color: var(--md-accent-fg-color);
 }
 
 /* Onboarding step table — borderless, compact */
@@ -200,33 +389,30 @@
     background: transparent;
 }
 
-.md-typeset .admonition.tip table tr:hover td {
+.md-typeset .admonition.tip table tbody tr:nth-child(even),
+.md-typeset .admonition.tip table tbody tr:hover {
     background: transparent;
+    box-shadow: none;
 }
 
-/* Tabs */
+/* ---------------------------------------------------------------------------
+ * Content tabs, search, scrollbar
+ * ------------------------------------------------------------------------ */
 .md-typeset .tabbed-labels > label.tabbed-alternate--active {
     color: var(--md-accent-fg-color);
     border-color: var(--md-accent-fg-color);
 }
 
-/* Search highlight */
 .md-search-result mark {
-    background-color: #4fc3f740;
-    color: #4fc3f7;
+    background-color: var(--md-accent-fg-color--transparent);
+    color: var(--md-accent-fg-color);
 }
 
-/* Footer */
-.md-footer {
-    background-color: #151719;
-}
-
-/* Scrollbar */
 ::-webkit-scrollbar-thumb {
     background: #546e7a;
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #4fc3f7;
+    background: var(--md-accent-fg-color);
 }

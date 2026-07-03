@@ -1,26 +1,38 @@
 ---
-
-<div style="text-align: center; padding: 2rem 0;" markdown>
-
-![skillsaw logo](images/logo.png){ width="200" }
-
-**Keep your skills sharp.**
-
-40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
-
-[Get Started](getting-started.md){ .md-button .md-button--primary }
-[View Rules](rules/index.md){ .md-button }
-
-</div>
-
-<div style="text-align: center; padding: 1rem 0;">
-<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
-<noscript><p markdown>▶️ **[Watch the onboarding demo](https://asciinema.org/a/1259880)** — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
-</div>
-
+hide:
+  - navigation
+  - toc
 ---
 
-## Features
+<div class="hero" markdown>
+
+<div class="hero-body" markdown>
+
+<div class="hero-copy" markdown>
+
+# Keep your skills sharp.
+
+<p class="hero-subtitle" markdown>
+skillsaw lints the files that steer your AI coding agents: skills, plugins,
+CLAUDE.md, and AGENTS.md. It catches weak language, contradictions, attention
+dead zones, and structural issues with more than 40 rules, then auto-fixes them.
+</p>
+
+<p class="hero-badges" markdown>
+[![PyPI version](https://img.shields.io/pypi/v/skillsaw?label=PyPI&color=1f8a56)](https://pypi.org/project/skillsaw/)
+[![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-24476b.svg)](https://opensource.org/licenses/Apache-2.0)
+[![skillsaw grade](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstbenjam%2Fskillsaw%2Fmain%2F.skillsaw-badge.json)](https://github.com/stbenjam/skillsaw)
+</p>
+
+<p class="hero-actions" markdown>
+[Get Started](getting-started.md){ .md-button .md-button--primary }
+[View Rules](rules/index.md){ .md-button }
+</p>
+
+</div>
+
+<div class="hero-features" markdown>
 
 <div class="grid cards" markdown>
 
@@ -35,22 +47,22 @@
 
     ---
 
-    Deterministic autofixes via `skillsaw fix`, plus how-to-fix guidance in
-    `skillsaw explain` that coding agents use to resolve the rest.
+    Deterministic autofixes via `skillsaw fix`; a Skills plugin guides coding
+    agents through the rest — see demo below.
 
--   :mag:{ .lg .middle } **Context-Aware**
-
-    ---
-
-    Auto-detects repo type and instruction formats: CLAUDE.md, AGENTS.md, Cursor, Copilot,
-    Gemini, Kiro, and more.
-
--   :triangular_ruler:{ .lg .middle } **50 Rules**
+-   :electric_plug:{ .lg .middle } **Extensible**
 
     ---
 
-    Validates structure, metadata, commands, cross-file consistency, context budget, and
-    content quality.
+    Custom rules, pip-installable rule plugins, and per-rule thresholds
+    tailor skillsaw to your project.
+
+-   :robot:{ .lg .middle } **CI-Ready**
+
+    ---
+
+    GitHub and GitLab integration with inline PR comments, deduplication, and
+    automatic thread resolution.
 
 -   :building_construction:{ .lg .middle } **Scaffolding**
 
@@ -65,39 +77,15 @@
 
     `skillsaw docs` generates HTML or Markdown documentation for your plugins and marketplaces.
 
--   :electric_plug:{ .lg .middle } **Extensible**
-
-    ---
-
-    Custom rules, banned patterns, per-rule thresholds — tailor skillsaw to your project.
-
--   :robot:{ .lg .middle } **CI-Ready**
-
-    ---
-
-    GitHub Action with inline PR comments, deduplication, and automatic thread resolution.
-
--   :zap:{ .lg .middle } **Version-Gated**
-
-    ---
-
-    New rules gated behind config versions — no surprises on upgrade.
+</div>
 
 </div>
 
----
+</div>
 
-## Quick Start
+<div class="hero-demo">
+<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
+<noscript><p>▶️ <strong><a href="https://asciinema.org/a/1259880">Watch the onboarding demo</a></strong> — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
+</div>
 
-```bash
-# Lint current directory (no install required)
-uvx skillsaw
-
-# Fix structural issues automatically
-skillsaw fix
-
-# Content quality issues? Your coding agent can fix them —
-# every violation points to `skillsaw explain` guidance
-```
-
-[:octicons-arrow-right-24: Full installation guide](getting-started.md)
+</div>
