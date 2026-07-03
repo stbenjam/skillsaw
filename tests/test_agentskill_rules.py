@@ -2111,3 +2111,19 @@ def test_non_python_fence_imports_are_ignored(temp_dir):
 
     violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
     assert [v.file_path for v in violations] == [core / "hidden.py"]
+
+
+def test_whitespace_only_fence_info_does_not_crash(temp_dir):
+    """A fence opener with only trailing whitespace after the backticks is
+    treated as an unlabeled fence whose imports are followed. markdown-it
+    strips the info string per CommonMark, and the language check guards
+    against a whitespace-only info regardless."""
+    skill = _make_skill(
+        temp_dir,
+        body=("Build it:\n\n" "```   \n" "from core.frames import compose\n" "```"),
+    )
+    core = skill / "core"
+    core.mkdir()
+    (core / "frames.py").write_text("def compose():\n    pass\n")
+
+    assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []

@@ -456,7 +456,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
         targets: Set[Path] = set()
         lines: Optional[List[str]] = None
         for fence in doc.fences():
-            lang = fence.info.split()[0].lower() if fence.info else ""
+            info_words = fence.info.split() if fence.info else []
+            lang = info_words[0].lower() if info_words else ""
             if lang not in _PY_FENCE_INFOS:
                 continue
             if lines is None:  # split the blob once, only when needed
