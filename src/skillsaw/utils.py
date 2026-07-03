@@ -173,7 +173,12 @@ def write_text_preserving(file_path: Path, content: str) -> None:
 
     has_bom = original.startswith(b"\xef\xbb\xbf")
     sample = original[3:] if has_bom else original
-    uses_crlf = b"\r\n" in sample
+    # Use the DOMINANT line ending: a single stray CRLF in an otherwise-LF
+    # file must not flip every line to CRLF (and vice versa).  Ties and
+    # lone-CR (classic Mac) files normalize to LF.
+    crlf_count = sample.count(b"\r\n")
+    bare_lf_count = sample.count(b"\n") - crlf_count
+    uses_crlf = crlf_count > bare_lf_count
 
     # Normalize whatever the caller produced back to BOM-free LF first, so
     # re-applying the original shape is idempotent even when a fix path read
@@ -251,13 +256,17 @@ def commented_item_line(node: Any, index: int) -> Optional[int]:
     return None
 
 
-def _fast_top_level_key_lines(text: str) -> Optional[Dict[str, int]]:
-    """Map top-level mapping keys to 0-based lines using PyYAML's composer.
+def _fast_top_level_key_nodes(
+    text: str,
+) -> Optional[Dict[str, Tuple[yaml.Node, yaml.Node]]]:
+    """Map top-level mapping keys to their ``(key_node, value_node)`` pair
+    using PyYAML's composer (libyaml-backed when available).
 
-    Much faster than a ruamel round-trip parse (libyaml-backed when
-    available).  Returns ``None`` when the document needs the ruamel
-    fallback to preserve exact behavior: parse errors, non-string keys,
-    or duplicate keys (which ruamel rejects).
+    The nodes carry ``start_mark`` / ``end_mark`` positions, so callers can
+    locate the exact character span a key and its value occupy.  Returns
+    ``None`` when the document needs the ruamel fallback to preserve exact
+    behavior: parse errors, non-string keys, or duplicate keys (which
+    ruamel rejects).
     """
     loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
     try:
@@ -266,14 +275,28 @@ def _fast_top_level_key_lines(text: str) -> Optional[Dict[str, int]]:
         return None
     if node is None or not isinstance(node, yaml.MappingNode):
         return {}
-    result: Dict[str, int] = {}
-    for key_node, _value_node in node.value:
+    result: Dict[str, Tuple[yaml.Node, yaml.Node]] = {}
+    for key_node, value_node in node.value:
         if not isinstance(key_node, yaml.ScalarNode) or key_node.tag != "tag:yaml.org,2002:str":
             return None
         if key_node.value in result:
             return None
-        result[key_node.value] = key_node.start_mark.line
+        result[key_node.value] = (key_node, value_node)
     return result
+
+
+def _fast_top_level_key_lines(text: str) -> Optional[Dict[str, int]]:
+    """Map top-level mapping keys to 0-based lines using PyYAML's composer.
+
+    Much faster than a ruamel round-trip parse (libyaml-backed when
+    available).  Returns ``None`` when the document needs the ruamel
+    fallback to preserve exact behavior: parse errors, non-string keys,
+    or duplicate keys (which ruamel rejects).
+    """
+    nodes = _fast_top_level_key_nodes(text)
+    if nodes is None:
+        return None
+    return {key: key_node.start_mark.line for key, (key_node, _value) in nodes.items()}
 
 
 @_file_cache.cached
@@ -353,22 +376,98 @@ def prepend_frontmatter_fields(content: str, additions: List[str]) -> Optional[s
 
 
 def replace_frontmatter_field(content: str, key: str, replacement_line: str) -> Optional[str]:
-    """Replace an existing top-level ``key:`` line inside the frontmatter.
+    """Replace an existing top-level ``key:`` field inside the frontmatter.
 
-    Returns the new content, or ``None`` when *content* has no parseable
-    frontmatter block or no top-level ``key:`` line to replace.  Only the
-    first occurrence is replaced, and the line ending is preserved.
+    The true top-level key is located with the same libyaml-backed composer
+    that powers :func:`frontmatter_key_line` — a bare ``^key:`` regex also
+    matches column-0 *continuation* lines of another structure (e.g. the
+    second line of ``metadata: {tags: [x],\\nname: legacy-tag}``) and
+    replacing those corrupts previously-valid YAML (issue: agentskill-valid
+    SAFE-fix corruption).
+
+    Returns:
+        - the new content, with the key line **and its full value span**
+          replaced by *replacement_line* (a value continuing on following
+          lines — flow collection, block scalar, multi-line plain scalar —
+          is collapsed so no orphaned continuation lines remain);
+        - ``None`` when *content* has no parseable frontmatter block or no
+          genuine top-level ``key`` to replace (callers may then safely
+          insert the field instead);
+        - *content* unchanged when the key exists but the span cannot be
+          verified (exotic frontmatter: duplicate keys, non-string keys,
+          flow-style or quoted key lines) — a no-op beats corruption.
     """
     m = _FRONTMATTER_RE.match(content)
     if not m:
         return None
+    fm_text = m.group(1)
     key_re = re.compile(rf"^{re.escape(key)}[ \t]*:[^\r\n]*", re.MULTILINE)
-    km = key_re.search(m.group(1))
-    if km is None:
+    nodes = _fast_top_level_key_nodes(fm_text)
+    if nodes is None:
+        # Exotic frontmatter (duplicate keys, non-string keys, parse error):
+        # fall back to ruamel for key membership only.
+        data = _ruamel_load(fm_text)
+        if isinstance(data, CommentedMap):
+            if key not in data:
+                return None
+        elif key_re.search(fm_text) is None:
+            # Undeterminable structure and not even a key-shaped line: there
+            # is nothing to replace.
+            return None
+        # Key present (or structure undeterminable): a blind line splice
+        # could hit a continuation line, so leave the content untouched.
+        return content
+    if key not in nodes:
+        # Any regex hit would be a continuation line of another structure,
+        # not a top-level key.
         return None
-    start = m.start(1) + km.start()
-    end = m.start(1) + km.end()
-    return content[:start] + replacement_line + content[end:]
+    key_node, value_node = nodes[key]
+    if key_node.start_mark.column != 0:
+        # Flow-style top-level mapping ({key: ...}): no key *line* to splice.
+        return content
+
+    # 0-based offsets of each line start within fm_text (fm_text always ends
+    # with a newline, so line N's start exists for every mark line N).
+    line_starts = [0]
+    idx = fm_text.find("\n")
+    while idx != -1:
+        line_starts.append(idx + 1)
+        idx = fm_text.find("\n", idx + 1)
+
+    key_line = key_node.start_mark.line
+    if key_line >= len(line_starts):
+        return content
+    line_start = line_starts[key_line]
+    km = key_re.match(fm_text, line_start)
+    if km is None:
+        # Quoted or otherwise decorated key line the callers' replacement
+        # format does not cover.
+        return content
+
+    if value_node.end_mark.line <= key_line:
+        # Single-line inline value (or empty/null value): replace just the
+        # key line, preserving the original line ending.
+        start = m.start(1) + km.start()
+        end = m.start(1) + km.end()
+        return content[:start] + replacement_line + content[end:]
+
+    # Multi-line value: replace the whole span from the key line through the
+    # value's end mark so no orphaned continuation lines remain.
+    end_line = value_node.end_mark.line
+    end_col = value_node.end_mark.column
+    if end_line >= len(line_starts):
+        return content
+    end_off = line_starts[end_line] + end_col
+    if end_off > len(fm_text):
+        return content
+    replacement = replacement_line
+    if end_col == 0:
+        # The value consumed its final line break (block scalars end at the
+        # start of the following line); restore the newline.
+        replacement += _frontmatter_newline(m.group(0))
+    start = m.start(1) + line_start
+    end = m.start(1) + end_off
+    return content[:start] + replacement + content[end:]
 
 
 def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Optional[int]]:

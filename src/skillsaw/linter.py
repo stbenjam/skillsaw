@@ -172,6 +172,10 @@ class Linter:
             for rule_class in plugin.rule_classes:
                 try:
                     rule_instance = rule_class()
+                    # rule_id is a plugin-controlled property: a raising
+                    # implementation must be fault-isolated exactly like a
+                    # failing constructor, or one bad plugin aborts the lint.
+                    rid = rule_instance.rule_id
                 except Exception as e:
                     self._plugin_load_violations.append(
                         RuleViolation(
@@ -179,14 +183,13 @@ class Linter:
                             severity=Severity.ERROR,
                             message=(
                                 f"Plugin '{plugin.name}': rule class "
-                                f"{rule_class.__name__} could not be instantiated: "
+                                f"{rule_class.__name__} could not be loaded: "
                                 f"{e.__class__.__name__}: {e}"
                             ),
                         )
                     )
                     continue
 
-                rid = rule_instance.rule_id
                 if rid in self._known_rule_ids:
                     # First loader wins (builtins, then earlier plugins); a
                     # shadowing rule would silently change what a rule ID means.
@@ -233,14 +236,31 @@ class Linter:
                 # or "auto") is supplied directly. Semantics match builtins:
                 # "auto" follows repo_types/formats detection, False is
                 # opt-in via config.
-                if self._rule_ids or self.config.is_rule_enabled(
-                    rid,
-                    self.context,
-                    rule_instance.repo_types,
-                    rule_instance.formats,
-                    since_version=rule_instance.since,
-                    default_enabled=rule_instance.default_enabled,
-                ):
+                try:
+                    # repo_types/formats/since/default_enabled are read from
+                    # the plugin's class here — same fault isolation as above.
+                    enabled = bool(self._rule_ids) or self.config.is_rule_enabled(
+                        rid,
+                        self.context,
+                        rule_instance.repo_types,
+                        rule_instance.formats,
+                        since_version=rule_instance.since,
+                        default_enabled=rule_instance.default_enabled,
+                    )
+                except Exception as e:
+                    self._plugin_load_violations.append(
+                        RuleViolation(
+                            rule_id="plugin-load-error",
+                            severity=Severity.ERROR,
+                            message=(
+                                f"Plugin '{plugin.name}': rule '{rid}' raised "
+                                f"while evaluating enablement: "
+                                f"{e.__class__.__name__}: {e}"
+                            ),
+                        )
+                    )
+                    continue
+                if enabled:
                     rule_instance._source = f"plugin:{plugin.name}"
                     self.rules.append(rule_instance)
                     logger.info("Rule %-30s enabled (plugin: %s)", rid, plugin.name)

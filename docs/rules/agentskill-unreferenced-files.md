@@ -46,14 +46,33 @@ code blocks (`python scripts/run.py`), and plain prose:
 
 - Relative paths count: `scripts/run.py`, `./scripts/run.py`, or
   `img/logo.png` from a file in the same directory.
+- Matching is case-insensitive: SKILL.md saying `FORMS.md` covers a
+  `forms.md` on disk — such references work on case-insensitive
+  filesystems.
 - Bare filenames count: a mention of `run.py` anywhere marks
   `scripts/run.py` as referenced. Skills routinely refer to bundled
   scripts by name alone, so requiring full paths would flag
   heavily-referenced files.
 - Directory mentions cover their contents (configurable): "read the
   files in `references/`" marks everything under `references/` as
-  referenced. Prose and code mentions need the trailing slash; links
-  may target the bare directory.
+  referenced. Prose and code mentions must be path-ish — a trailing
+  slash (`references/`), a `./` prefix (`./canvas-fonts`), or an
+  interior `/` (`assets/fonts`); the slash-less forms only count when
+  the directory actually exists in the skill, and a bare word with no
+  path markers never covers anything. Links may target the bare
+  directory.
+- Python imports are followed: when a reachable file is a `.py` file,
+  its imports are resolved within the skill (relative to the skill
+  root and to the importing file's directory, including relative
+  imports), so SKILL.md → `scripts/recalc.py` → `from office.soffice
+  import ...` covers `scripts/office/soffice.py`. Imported modules
+  join the traversal, so files they mention (a schema referenced from
+  a docstring) are covered too. `from a.b import c` covers `a/b/c.py`
+  when it exists, otherwise the `a.b` module; package `__init__.py`
+  files along the path are covered as well. Imports shown inside
+  python-labeled (or unlabeled) fenced code blocks of reachable
+  markdown count the same way: a SKILL.md fence teaching `from
+  core.gif_builder import GIFBuilder` covers `core/gif_builder.py`.
 
 Never flagged: SKILL.md itself, README.md, CHANGELOG.md, LICENSE* and
 NOTICE* files (any suffix, e.g. `LICENSE-MIT`), files under `evals/`
@@ -112,7 +131,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`) as referencing every file under it | `true` |
+| `directory_mention_covers` | Treat a mention of a directory (e.g. `references/`, `./canvas-fonts`, or `assets/fonts` when the directory exists) as referencing every file under it | `true` |
 | `exclude` | Additional glob patterns (matched against skill-relative paths and bare file names; a leading `**/` also matches at the skill root) exempt from dead-file detection; extends the built-in exclusions (SKILL.md, README.md, CHANGELOG.md, LICENSE*, NOTICE*, evals/, tests/, test_*.py, testdata/, hidden files) | `[]` |
 
 

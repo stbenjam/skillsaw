@@ -72,7 +72,7 @@ class AgentSkillNameRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Skill name must be lowercase with hyphens and match directory name"
+        return "Skill name must be lowercase letters, numbers, and hyphens and match directory name"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR

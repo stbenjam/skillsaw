@@ -32,7 +32,7 @@ import re
 import types
 from dataclasses import dataclass, field
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable, List, Optional, Set, Type
 
 from .rule import Rule
@@ -91,6 +91,16 @@ class PluginRepoType:
             raise TypeError(
                 f"PluginRepoType '{self.name}': content_paths must be a list of glob strings"
             )
+        for pattern in self.content_paths:
+            # Path.glob() raises NotImplementedError on absolute patterns;
+            # reject them at load time (both POSIX and Windows forms) so the
+            # plugin fails with one clear error instead of crashing every rule.
+            if PurePosixPath(pattern).is_absolute() or PureWindowsPath(pattern).is_absolute():
+                raise ValueError(
+                    f"PluginRepoType '{self.name}': content_paths pattern "
+                    f"{pattern!r} is absolute — glob patterns must be "
+                    "relative to the repository root"
+                )
 
 
 @dataclass

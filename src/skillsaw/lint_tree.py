@@ -272,7 +272,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # User-configured content paths plus globs contributed by detected
     # plugin repo types; the ``seen`` set dedupes any overlap.
     for glob_pattern in [*context.content_paths, *context.plugin_content_paths]:
-        for extra in sorted(context.root_path.glob(glob_pattern)):
+        try:
+            matches = sorted(context.root_path.glob(glob_pattern))
+        except (NotImplementedError, ValueError) as e:
+            # Path.glob() rejects absolute patterns (NotImplementedError)
+            # and some malformed ones (ValueError). The tree builds lazily
+            # inside each rule's check(), so an invalid pattern — from user
+            # config ``content-paths`` or a plugin repo type — would
+            # otherwise surface as one rule-execution-error per rule.
+            logger.warning("Ignoring invalid content path glob %r: %s", glob_pattern, e)
+            continue
+        for extra in matches:
             if extra.is_file():
                 _add_block(root, extra, ExtraBlock)
 
