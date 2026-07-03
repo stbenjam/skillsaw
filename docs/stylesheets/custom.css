@@ -156,23 +156,33 @@
 /* ---------------------------------------------------------------------------
  * Landing page hero
  * ------------------------------------------------------------------------ */
-/* Split hero: pitch + CTAs on the left, live demo on the right. Stacks and
-   centers on narrow viewports. */
+/* Hero: full-width title on top, then prose + CTAs side by side with the
+   live demo. Columns wrap and stack on narrow viewports. */
 .hero {
+    padding: 1.2rem 0 1rem;
+    text-align: left;
+}
+
+.hero .hero-body {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 1.6rem;
-    padding: 1rem 0 1.2rem;
+    gap: 1.2rem 2.4rem;
 }
 
 .hero .hero-copy {
-    flex: 1 1 20rem;
+    flex: 1 1 18rem;
+    min-width: 0;
+}
+
+.hero .hero-features {
+    flex: 1.5 1 24rem;
     min-width: 0;
 }
 
 .hero .hero-demo {
-    flex: 1.15 1 22rem;
-    min-width: 0;
+    max-width: 46rem;
+    margin: 1.6rem auto 0;
     text-align: center;
 }
 
@@ -184,7 +194,7 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin: 0 0 0.6rem;
+    margin: 0 0 1rem;
 }
 
 .hero h1 .headerlink {
@@ -198,17 +208,27 @@
 }
 
 .hero .hero-badges {
-    margin: 0 0 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0 0 1.2rem;
 }
 
 .hero .hero-badges img {
     height: 20px;
-    vertical-align: middle;
-    margin: 0 0.15rem 0.15rem 0;
+    display: block;
+}
+
+.hero .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0;
 }
 
 .hero .md-button {
-    margin: 0.2rem 0.4rem 0.2rem 0;
+    margin: 0;
     font-size: 0.7rem;
     padding: 0.5em 1.2em;
 }
@@ -220,31 +240,6 @@
     border-radius: 12px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
     overflow: hidden;
-}
-
-@media screen and (max-width: 66.5em) {
-    .hero {
-        flex-direction: column;
-        text-align: center;
-        gap: 0.8rem;
-    }
-
-    .hero .hero-copy {
-        flex-basis: auto;
-    }
-
-    .hero .hero-subtitle {
-        max-width: 34rem;
-        margin: 0 auto 1rem;
-    }
-
-    .hero .hero-demo {
-        width: 100%;
-    }
-
-    .hero .md-button {
-        margin: 0.2rem 0.3rem;
-    }
 }
 
 /* ---------------------------------------------------------------------------

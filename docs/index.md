@@ -1,13 +1,21 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 <div class="hero" markdown>
+
+<div class="hero-body" markdown>
 
 <div class="hero-copy" markdown>
 
 # Keep your skills sharp.
 
 <p class="hero-subtitle" markdown>
-skillsaw lints the files that steer your AI coding agents — skills, plugins,
-CLAUDE.md, AGENTS.md — with 40+ rules that catch weak language, contradictions,
-attention dead zones, and structural issues, then auto-fix them.
+skillsaw lints the files that steer your AI coding agents: skills, plugins,
+CLAUDE.md, and AGENTS.md. It catches weak language, contradictions, attention
+dead zones, and structural issues with more than 40 rules, then auto-fixes them.
 </p>
 
 <p class="hero-badges" markdown>
@@ -17,19 +25,14 @@ attention dead zones, and structural issues, then auto-fix them.
 [![skillsaw grade](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstbenjam%2Fskillsaw%2Fmain%2F.skillsaw-badge.json)](https://github.com/stbenjam/skillsaw)
 </p>
 
+<p class="hero-actions" markdown>
 [Get Started](getting-started.md){ .md-button .md-button--primary }
 [View Rules](rules/index.md){ .md-button }
+</p>
 
 </div>
 
-<div class="hero-demo">
-<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
-<noscript><p>▶️ <strong><a href="https://asciinema.org/a/1259880">Watch the onboarding demo</a></strong> — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
-</div>
-
-</div>
-
-## Features
+<div class="hero-features" markdown>
 
 <div class="grid cards" markdown>
 
@@ -46,20 +49,6 @@ attention dead zones, and structural issues, then auto-fix them.
 
     Deterministic autofixes via `skillsaw fix`, plus how-to-fix guidance in
     `skillsaw explain` that coding agents use to resolve the rest.
-
--   :mag:{ .lg .middle } **Context-Aware**
-
-    ---
-
-    Auto-detects repo type and instruction formats: CLAUDE.md, AGENTS.md, Cursor, Copilot,
-    Gemini, Kiro, and more.
-
--   :triangular_ruler:{ .lg .middle } **50 Rules**
-
-    ---
-
-    Validates structure, metadata, commands, cross-file consistency, context budget, and
-    content quality.
 
 -   :building_construction:{ .lg .middle } **Scaffolding**
 
@@ -78,7 +67,8 @@ attention dead zones, and structural issues, then auto-fix them.
 
     ---
 
-    Custom rules, banned patterns, per-rule thresholds — tailor skillsaw to your project.
+    Custom rules, pip-installable rule plugins, banned patterns, and per-rule thresholds
+    tailor skillsaw to your project.
 
 -   :robot:{ .lg .middle } **CI-Ready**
 
@@ -86,27 +76,15 @@ attention dead zones, and structural issues, then auto-fix them.
 
     GitHub Action with inline PR comments, deduplication, and automatic thread resolution.
 
--   :zap:{ .lg .middle } **Version-Gated**
-
-    ---
-
-    New rules gated behind config versions — no surprises on upgrade.
+</div>
 
 </div>
 
----
+</div>
 
-## Quick Start
+<div class="hero-demo">
+<script src="https://asciinema.org/a/1259880.js" id="asciicast-1259880" async data-autoplay="true" data-loop="true" data-speed="1.5" data-theme="dracula"></script>
+<noscript><p>▶️ <strong><a href="https://asciinema.org/a/1259880">Watch the onboarding demo</a></strong> — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
+</div>
 
-```bash
-# Lint current directory (no install required)
-uvx skillsaw
-
-# Fix structural issues automatically
-skillsaw fix
-
-# Content quality issues? Your coding agent can fix them —
-# every violation points to `skillsaw explain` guidance
-```
-
-[:octicons-arrow-right-24: Full installation guide](getting-started.md)
+</div>

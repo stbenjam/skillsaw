@@ -26,6 +26,8 @@ theme:
     text: Inter
     code: JetBrains Mono
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
     - navigation.top
