@@ -48,7 +48,8 @@ dead zones, and structural issues with more than 40 rules, then auto-fixes them.
     ---
 
     Deterministic autofixes via `skillsaw fix`, plus how-to-fix guidance in
-    `skillsaw explain` that coding agents use to resolve the rest.
+    `skillsaw explain` that coding agents use to resolve the rest — a Skills
+    plugin is available for integration, see demo below.
 
 -   :building_construction:{ .lg .middle } **Scaffolding**
 
@@ -67,14 +68,15 @@ dead zones, and structural issues with more than 40 rules, then auto-fixes them.
 
     ---
 
-    Custom rules, pip-installable rule plugins, banned patterns, and per-rule thresholds
+    Custom rules, pip-installable rule plugins, and per-rule thresholds
     tailor skillsaw to your project.
 
 -   :robot:{ .lg .middle } **CI-Ready**
 
     ---
 
-    GitHub Action with inline PR comments, deduplication, and automatic thread resolution.
+    GitHub and GitLab integration with inline PR comments, deduplication, and
+    automatic thread resolution.
 
 </div>
 
