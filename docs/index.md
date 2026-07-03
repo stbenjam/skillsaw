@@ -47,9 +47,8 @@ dead zones, and structural issues with more than 40 rules, then auto-fixes them.
 
     ---
 
-    Deterministic autofixes via `skillsaw fix`, plus how-to-fix guidance in
-    `skillsaw explain` that coding agents use to resolve the rest — a Skills
-    plugin is available for integration, see demo below.
+    Deterministic autofixes via `skillsaw fix`; a Skills plugin guides coding
+    agents through the rest — see demo below.
 
 -   :building_construction:{ .lg .middle } **Scaffolding**
 
