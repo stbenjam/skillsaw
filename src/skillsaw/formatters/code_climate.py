@@ -20,8 +20,10 @@ def format_code_climate(
     rules,
     version: str,
     verbose: bool = False,
+    fail_level: str = "error",
 ) -> str:
-    filtered = violations if verbose else [v for v in violations if v.severity != Severity.INFO]
+    show_info = verbose or fail_level == "info"
+    filtered = violations if show_info else [v for v in violations if v.severity != Severity.INFO]
 
     items = []
     for v in filtered:

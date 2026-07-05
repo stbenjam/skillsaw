@@ -26,6 +26,7 @@ def format_sarif(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    fail_level: str = "error",
 ) -> str:
     seen = {}
     for r in rules:
@@ -53,7 +54,8 @@ def format_sarif(
             }
 
     results = []
-    filtered = violations if verbose else [v for v in violations if v.severity != Severity.INFO]
+    show_info = verbose or fail_level == "info"
+    filtered = violations if show_info else [v for v in violations if v.severity != Severity.INFO]
     for v in filtered:
         result = {
             "ruleId": v.rule_id,

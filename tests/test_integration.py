@@ -1347,6 +1347,32 @@ class TestExitCodes:
         assert "Info:" not in r["stdout"]
         assert "All checks passed" in r["stdout"]
 
+    def test_fail_on_info_includes_info_in_json_output(self, tmp_path):
+        """When info violations fail the run, non-verbose JSON must include them."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, verbose=False)
+        assert r["rc"] == 1
+        info_violations = [v for v in violations(r) if v["severity"] == "info"]
+        assert len(info_violations) >= 1
+
+    def test_info_stays_hidden_in_json_output_without_fail_on(self, tmp_path):
+        """Without fail-on: info, non-verbose JSON output keeps info hidden."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, verbose=False)
+        assert r["rc"] == 0
+        assert all(v["severity"] != "info" for v in violations(r))
+        assert summary(r)["info"] >= 1
+
+    def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):
+        """SARIF output must also include the info violations that failed the run."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        out_file = tmp_path / "report.sarif"
+        r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
+        assert r["rc"] == 1
+        sarif = json.loads(out_file.read_text())
+        results = sarif["runs"][0]["results"]
+        assert any(res["level"] == "note" for res in results)
+
 
 # ── Output Formats ───────────────────────────────────────────────
 

@@ -108,9 +108,9 @@ def format_report(
         duration: Wall-clock lint time in seconds (text and json formats only;
             sarif/code-climate schemas have no place for it)
         grade: Optional Grade for the run (text and json formats only)
-        fail_level: Effective severity threshold that fails the run (text
-            format only) — with ``fail-on: info`` the text output must show
-            the info violations that caused the failure even without -v
+        fail_level: Effective severity threshold that fails the run — with
+            ``fail-on: info`` every format must include the info violations
+            that caused the failure even without -v
     """
     if fmt == "text":
         from .text import format_text
@@ -130,19 +130,27 @@ def format_report(
         from .json_fmt import format_json
 
         return format_json(
-            violations, context, rules, version, verbose, baseline_suppressed, duration, grade
+            violations,
+            context,
+            rules,
+            version,
+            verbose,
+            baseline_suppressed,
+            duration,
+            grade,
+            fail_level,
         )
     elif fmt == "sarif":
         from .sarif import format_sarif
 
-        return format_sarif(violations, context, rules, version, verbose)
+        return format_sarif(violations, context, rules, version, verbose, fail_level)
     elif fmt == "html":
         from .html import format_html
 
-        return format_html(violations, context, rules, version, verbose)
+        return format_html(violations, context, rules, version, verbose, fail_level)
     elif fmt in ("code-climate", "gitlab"):
         from .code_climate import format_code_climate
 
-        return format_code_climate(violations, context, rules, version, verbose)
+        return format_code_climate(violations, context, rules, version, verbose, fail_level)
     else:
         raise ValueError(f"Unknown format: {fmt}. Supported: {', '.join(FORMATS)}")

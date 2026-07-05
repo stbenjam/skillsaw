@@ -13,10 +13,12 @@ def format_html(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    fail_level: str = "error",
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
-    visible = [v for v in violations if verbose or v.severity != Severity.INFO]
+    show_info = verbose or fail_level == "info"
+    visible = [v for v in violations if show_info or v.severity != Severity.INFO]
 
     def severity_badge(sev: Severity) -> str:
         colors = {

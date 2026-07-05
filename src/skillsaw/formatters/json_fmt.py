@@ -16,7 +16,11 @@ def format_json(
     baseline_suppressed: int = 0,
     duration: Optional[float] = None,
     grade=None,
+    fail_level: str = "error",
 ) -> str:
+    # With fail-on: info the info violations decide the exit code, so a CI
+    # report that omitted them would fail with no visible cause.
+    show_info = verbose or fail_level == "info"
     errors, warnings, info = get_counts(violations)
 
     repo_types_list = context.repo_type_names()
@@ -54,7 +58,7 @@ def format_json(
                 "source": v.source,
             }
             for v in violations
-            if verbose or v.severity != Severity.INFO
+            if show_info or v.severity != Severity.INFO
         ],
         "summary": {
             "errors": errors,
