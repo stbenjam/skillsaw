@@ -4,7 +4,7 @@ import json
 from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_json(
@@ -16,7 +16,9 @@ def format_json(
     baseline_suppressed: int = 0,
     duration: Optional[float] = None,
     grade=None,
+    fail_level: str = "error",
 ) -> str:
+    show_info = should_show_info(verbose, fail_level)
     errors, warnings, info = get_counts(violations)
 
     repo_types_list = context.repo_type_names()
@@ -54,7 +56,7 @@ def format_json(
                 "source": v.source,
             }
             for v in violations
-            if verbose or v.severity != Severity.INFO
+            if show_info or v.severity != Severity.INFO
         ],
         "summary": {
             "errors": errors,

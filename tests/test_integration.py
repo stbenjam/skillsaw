@@ -1276,6 +1276,113 @@ class TestExitCodes:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 1
 
+    def test_exit_1_on_info_with_fail_on_config(self, tmp_path):
+        """fail-on: info in config makes info-only violations exit 1."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_exit_0_on_info_without_fail_on(self, tmp_path):
+        """Info-only violations exit 0 by default."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_exit_1_on_info_with_fail_on_flag(self, tmp_path):
+        """--fail-on info tightens a config without fail-on."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--fail-on", "info")
+        assert r["rc"] == 1
+
+    def test_strict_alone_does_not_fail_on_info(self, tmp_path):
+        """--strict only promotes warnings — info-only violations still pass."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict")
+        assert r["rc"] == 0
+
+    def test_fail_on_flag_overrides_config_strict(self, tmp_path):
+        """--fail-on error overrides strict: true in the config — warnings pass."""
+        repo = copy_fixture("config/strict-mode", tmp_path)
+        r = run_lint(repo, "--fail-on", "error")
+        assert r["rc"] == 0
+        assert summary(r)["warnings"] >= 1
+
+    def test_strict_flag_overrides_config_fail_on(self, tmp_path):
+        """--strict overrides fail-on: info in the config — info-only passes."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, "--strict")
+        assert r["rc"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_contradictory_strict_and_fail_on_flags_error(self, tmp_path):
+        """--strict with a disagreeing --fail-on is rejected."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict", "--fail-on", "info")
+        assert r["rc"] == 1
+        assert "contradict" in r["stderr"]
+
+    def test_agreeing_strict_and_fail_on_flags_accepted(self, tmp_path):
+        """--strict --fail-on warning agree and lint normally."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict", "--fail-on", "warning")
+        assert r["rc"] == 0
+
+    def test_fail_on_info_shows_info_in_text_output(self, tmp_path):
+        """When info violations fail the run, text output must show them without -v."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+        assert r["rc"] == 1
+        assert "Info:" in r["stdout"]
+        assert "All checks passed" not in r["stdout"]
+
+    def test_info_stays_hidden_in_text_output_without_fail_on(self, tmp_path):
+        """Without fail-on: info, non-verbose text output keeps info hidden."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+        assert r["rc"] == 0
+        assert "Info:" not in r["stdout"]
+        assert "All checks passed" in r["stdout"]
+
+    def test_fail_on_info_includes_info_in_json_output(self, tmp_path):
+        """When info violations fail the run, non-verbose JSON must include them."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, verbose=False)
+        assert r["rc"] == 1
+        info_violations = [v for v in violations(r) if v["severity"] == "info"]
+        assert len(info_violations) >= 1
+
+    def test_info_stays_hidden_in_json_output_without_fail_on(self, tmp_path):
+        """Without fail-on: info, non-verbose JSON output keeps info hidden."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, verbose=False)
+        assert r["rc"] == 0
+        assert all(v["severity"] != "info" for v in violations(r))
+        assert summary(r)["info"] >= 1
+
+    def test_fail_on_info_includes_info_in_html_output(self, tmp_path):
+        """HTML report must show fatal info violations and count them in the footer."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        out_file = tmp_path / "report.html"
+        r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
+        assert r["rc"] == 1
+        html = out_file.read_text()
+        assert "plugin-readme" in html
+        assert '<span class="count-item count-info">Info:' in html
+
+    def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):
+        """SARIF output must also include the info violations that failed the run."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        out_file = tmp_path / "report.sarif"
+        r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
+        assert r["rc"] == 1
+        sarif = json.loads(out_file.read_text())
+        results = sarif["runs"][0]["results"]
+        assert any(res["level"] == "note" for res in results)
+
 
 # ── Output Formats ───────────────────────────────────────────────
 

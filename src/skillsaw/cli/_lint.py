@@ -35,6 +35,14 @@ def _run_lint(args):
 
     cli_version = _get_version()
 
+    if args.strict and args.fail_on and args.fail_on != "warning":
+        print(
+            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
+            "(--strict means --fail-on warning)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     output_formats = {}
     for spec in args.outputs:
         try:
@@ -92,8 +100,14 @@ def _run_lint(args):
     if config_path and args.verbose and args.fmt == "text":
         print(f"Using config: {config_path}\n")
 
-    if args.strict:
-        config.strict = True
+    # CLI flags override the config file's strict/fail-on settings; the config
+    # values only apply when neither flag is given.
+    if args.fail_on:
+        fail_level = args.fail_on
+    elif args.strict:
+        fail_level = "warning"
+    else:
+        fail_level = config.effective_fail_level()
 
     baseline = None
     if not args.no_baseline:
@@ -204,6 +218,7 @@ def _run_lint(args):
         baseline_suppressed=baseline_suppressed,
         duration=lint_duration,
         grade=grade,
+        fail_level=fail_level,
     )
     print(stdout_output)
 
@@ -220,6 +235,7 @@ def _run_lint(args):
                 baseline_suppressed=baseline_suppressed,
                 duration=lint_duration,
                 grade=grade,
+                fail_level=fail_level,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -229,7 +245,9 @@ def _run_lint(args):
 
     if missing_count > 0 or errors > 0:
         sys.exit(1)
-    elif config.strict and warnings_count > 0:
+    elif fail_level in ("warning", "info") and warnings_count > 0:
+        sys.exit(1)
+    elif fail_level == "info" and info > 0:
         sys.exit(1)
     else:
         sys.exit(0)

@@ -1,0 +1,6 @@
+version: "99.0.0"
+fail-on: info
+
+rules:
+  plugin-readme:
+    severity: info

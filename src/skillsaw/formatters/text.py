@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_duration(seconds: float) -> str:
@@ -29,7 +29,9 @@ def format_text(
     baseline_suppressed: int = 0,
     duration: Optional[float] = None,
     grade=None,
+    fail_level: str = "error",
 ) -> str:
+    show_info = should_show_info(verbose, fail_level)
     no_color = "NO_COLOR" in os.environ
     red = "" if no_color else "\033[91m"
     yellow = "" if no_color else "\033[93m"
@@ -64,12 +66,12 @@ def format_text(
         for v in warnings_list:
             output.append(f"  {fmt_violation(v)}")
 
-    if verbose and info_list:
+    if show_info and info_list:
         output.append(f"\n{blue}{bold}Info:{reset}")
         for v in info_list:
             output.append(f"  {fmt_violation(v)}")
 
-    shown = errors_list + warnings_list + (info_list if verbose else [])
+    shown = errors_list + warnings_list + (info_list if show_info else [])
     # Synthetic rule IDs (e.g. invalid-config) have no documentation page —
     # only link rules that actually ran as builtins.
     builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
@@ -91,7 +93,7 @@ def format_text(
     output.append(f"\n{bold}Summary:{reset}")
     output.append(f"  {red}Errors:   {errors}{reset}")
     output.append(f"  {yellow}Warnings: {warnings}{reset}")
-    if verbose:
+    if show_info:
         output.append(f"  {blue}Info:     {info}{reset}")
     if baseline_suppressed:
         dim = "" if no_color else "\033[2m"
@@ -102,14 +104,14 @@ def format_text(
             f"  Grade:    {grade_color}{bold}{grade.letter}{reset} "
             f"({grade.density:.2f} weighted violations per 10k tokens)"
         )
-        if grade.info and not verbose:
+        if grade.info and not show_info:
             dim = "" if no_color else "\033[2m"
             output.append(
                 f"  {dim}{grade.info} info-level violation(s) count toward"
                 f" the grade — run with -v to see them{reset}"
             )
 
-    if errors == 0 and warnings == 0:
+    if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")
 
     return "\n".join(output)

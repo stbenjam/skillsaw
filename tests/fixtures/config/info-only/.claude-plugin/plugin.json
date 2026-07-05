@@ -1,0 +1,6 @@
+{
+  "name": "info-only-test",
+  "description": "Test that info violations do not fail by default",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

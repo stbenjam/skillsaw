@@ -4,7 +4,7 @@ import html
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_html(
@@ -13,10 +13,12 @@ def format_html(
     rules: List[Rule],
     version: str,
     verbose: bool = False,
+    fail_level: str = "error",
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
-    visible = [v for v in violations if verbose or v.severity != Severity.INFO]
+    show_info = should_show_info(verbose, fail_level)
+    visible = [v for v in violations if show_info or v.severity != Severity.INFO]
 
     def severity_badge(sev: Severity) -> str:
         colors = {
@@ -78,7 +80,7 @@ def format_html(
     </section>"""
 
     info_count_row = ""
-    if verbose:
+    if show_info:
         info_count_row = f'<span class="count-item count-info">Info: {info}</span>'
 
     return f"""\

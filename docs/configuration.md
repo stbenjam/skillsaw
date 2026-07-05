@@ -51,6 +51,7 @@ content-paths:
   - "docs/runbooks/*.md"
 
 strict: false
+fail-on: error
 ```
 
 ## Version Pinning
@@ -89,8 +90,11 @@ Most rules default to `auto`, so they activate only where they make sense.
 repository and why.
 
 Each rule also has a `severity`, one of `error`, `warning`, or `info`.
-Errors fail the lint; warnings fail it only in [strict mode](#strict-mode);
-info-level violations are shown with `--verbose` and never fail the lint.
+By default only errors fail the lint; warnings fail it in
+[strict mode](#strict-mode), and the [`fail-on`](#failure-threshold)
+threshold can make any severity — including info — fail the run.
+Info-level violations are shown with `--verbose` (and always when
+`fail-on: info` makes them fatal).
 
 ```yaml
 rules:
@@ -107,10 +111,40 @@ With `strict: true`, warnings fail the lint just like errors:
 strict: true
 ```
 
-The `--strict` CLI flag does the same for a single run. Note that the CLI
-flag can only *upgrade* to strict — there is no `--no-strict` flag, so a
-`strict: true` in the config file cannot be overridden from the command
-line.
+The `--strict` CLI flag does the same for a single run, overriding the
+config file's `strict` and `fail-on` settings (see below).
+
+## Failure Threshold
+
+`fail-on` generalizes strict mode: violations at the given severity or
+above make the run exit non-zero.
+
+```yaml
+fail-on: info   # any violation at info or above fails the run
+```
+
+| `fail-on` | Fails the run |
+|-----------|---------------|
+| `error` (default) | errors only |
+| `warning` | errors and warnings (same as `strict: true`) |
+| `info` | any violation |
+
+`strict: true` is shorthand for `fail-on: warning`. When both config keys
+are set, the strictest one wins — adding `fail-on: info` to a config that
+already has `strict: true` just tightens the threshold.
+
+The `--fail-on` and `--strict` CLI flags override the config file's
+settings for a single run — `--fail-on error` runs with the default
+threshold even when the config says `strict: true`. Passing both flags
+with contradictory values (`--strict --fail-on info`) is an error;
+`--strict --fail-on warning` is accepted since they agree.
+
+`fail-on: info` is useful for ratcheting: once a repo is at zero
+violations, it stays that way — new info-level findings (including from
+rules added in newer skillsaw versions) fail CI instead of accumulating
+silently. When info violations are what failed the run, the text output
+shows them even without `--verbose`. Pair it with a
+[baseline](baseline.md) to adopt the threshold before reaching zero.
 
 ## Custom Rules
 

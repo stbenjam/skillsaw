@@ -1212,3 +1212,70 @@ def test_find_config_at_filesystem_walk_includes_start_dir(tmp_path):
     # The walk must include the start directory itself.
     (tmp_path / ".skillsaw.yaml").write_text("rules: {}\n", encoding="utf-8")
     assert find_config(tmp_path) == tmp_path / ".skillsaw.yaml"
+
+
+# ── fail-on ──────────────────────────────────────────────────────
+
+
+def test_fail_on_defaults_to_error(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.15.0"\nrules: {}\n'))
+    assert config.fail_on == "error"
+    assert config.effective_fail_level() == "error"
+
+
+def test_fail_on_parses_valid_levels(tmp_path):
+    for level in ("error", "warning", "info"):
+        config = LinterConfig.from_file(_write(tmp_path, f'version: "0.15.0"\nfail-on: {level}\n'))
+        assert config.fail_on == level
+        assert config.effective_fail_level() == level
+
+
+def test_fail_on_invalid_value_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'fail-on' must be one of"):
+        LinterConfig.from_file(_write(tmp_path, 'version: "0.15.0"\nfail-on: fatal\n'))
+
+
+def test_fail_on_non_string_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'fail-on' must be one of"):
+        LinterConfig.from_file(_write(tmp_path, 'version: "0.15.0"\nfail-on: true\n'))
+
+
+def test_null_fail_on_does_not_crash(tmp_path):
+    """fail-on: null should not crash, should behave like the default"""
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.15.0"\nfail-on:\n'))
+    assert config.fail_on == "error"
+
+
+def test_strict_implies_fail_on_warning(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.15.0"\nstrict: true\n'))
+    assert config.effective_fail_level() == "warning"
+
+
+def test_fail_on_info_tightens_past_strict(tmp_path):
+    config = LinterConfig.from_file(
+        _write(tmp_path, 'version: "0.15.0"\nstrict: true\nfail-on: info\n')
+    )
+    assert config.effective_fail_level() == "info"
+
+
+def test_fail_on_error_cannot_loosen_strict(tmp_path):
+    """strict: true wins over fail-on: error — the strictest setting applies,
+    and the ineffective fail-on produces a load warning."""
+    config = LinterConfig.from_file(
+        _write(tmp_path, 'version: "0.15.0"\nstrict: true\nfail-on: error\n')
+    )
+    assert config.effective_fail_level() == "warning"
+    assert any("fail-on: error" in w for w in config.warnings)
+
+
+def test_fail_on_roundtrips_through_save(tmp_path):
+    config = LinterConfig.default()
+    config.fail_on = "info"
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.fail_on == "info"
