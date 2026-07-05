@@ -4,3 +4,4 @@ AGENTS.md linguist-generated=true
 .opencode/** linguist-generated=true
 .agents/** linguist-generated=true
 .github/instructions/** linguist-generated=true
+.github/copilot-instructions.md linguist-generated=true
