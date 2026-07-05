@@ -91,7 +91,10 @@ runs:
           ARGS="$ARGS --strict"
         fi
         if [ -n "$SKILLSAW_FAIL_ON" ]; then
-          ARGS="$ARGS --fail-on $SKILLSAW_FAIL_ON"
+          case "$SKILLSAW_FAIL_ON" in
+            error|warning|info) ARGS="$ARGS --fail-on $SKILLSAW_FAIL_ON" ;;
+            *) echo "Invalid fail-on value: $SKILLSAW_FAIL_ON (expected error, warning, or info)" >&2; exit 1 ;;
+          esac
         fi
         if [ "$SKILLSAW_VERBOSE" = "true" ]; then
           ARGS="$ARGS -v"

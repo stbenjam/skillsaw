@@ -4,7 +4,7 @@ import html
 from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_html(
@@ -17,7 +17,7 @@ def format_html(
 ) -> str:
     errors, warnings, info = get_counts(violations)
 
-    show_info = verbose or fail_level == "info"
+    show_info = should_show_info(verbose, fail_level)
     visible = [v for v in violations if show_info or v.severity != Severity.INFO]
 
     def severity_badge(sev: Severity) -> str:

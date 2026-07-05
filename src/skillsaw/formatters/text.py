@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_duration(seconds: float) -> str:
@@ -31,9 +31,7 @@ def format_text(
     grade=None,
     fail_level: str = "error",
 ) -> str:
-    # With fail-on: info the info violations decide the exit code, so hiding
-    # them behind -v would fail CI without showing what failed.
-    show_info = verbose or fail_level == "info"
+    show_info = should_show_info(verbose, fail_level)
     no_color = "NO_COLOR" in os.environ
     red = "" if no_color else "\033[91m"
     yellow = "" if no_color else "\033[93m"

@@ -4,7 +4,7 @@ import json
 from typing import List, Optional
 
 from ..rule import Rule, RuleViolation, Severity
-from . import get_counts, relative_path
+from . import get_counts, relative_path, should_show_info
 
 
 def format_json(
@@ -18,9 +18,7 @@ def format_json(
     grade=None,
     fail_level: str = "error",
 ) -> str:
-    # With fail-on: info the info violations decide the exit code, so a CI
-    # report that omitted them would fail with no visible cause.
-    show_info = verbose or fail_level == "info"
+    show_info = should_show_info(verbose, fail_level)
     errors, warnings, info = get_counts(violations)
 
     repo_types_list = context.repo_type_names()

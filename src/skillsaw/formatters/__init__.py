@@ -72,6 +72,15 @@ def parse_output_spec(spec: str) -> tuple:
     return infer_format(spec), spec
 
 
+def should_show_info(verbose: bool, fail_level: str) -> bool:
+    """Whether info-level violations should be surfaced in a report.
+
+    Info violations are always shown with -v, and also when ``fail-on: info``
+    makes them decide the exit code — a failing CI run must show its cause.
+    """
+    return verbose or fail_level == "info"
+
+
 def get_counts(violations: List[RuleViolation]):
     """Count violations by severity."""
     from ..rule import Severity

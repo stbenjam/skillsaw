@@ -5,7 +5,7 @@ import json
 from typing import List
 
 from ..rule import RuleViolation, Severity
-from . import relative_path
+from . import relative_path, should_show_info
 
 _SEVERITY_MAP = {
     "error": "critical",
@@ -22,7 +22,7 @@ def format_code_climate(
     verbose: bool = False,
     fail_level: str = "error",
 ) -> str:
-    show_info = verbose or fail_level == "info"
+    show_info = should_show_info(verbose, fail_level)
     filtered = violations if show_info else [v for v in violations if v.severity != Severity.INFO]
 
     items = []

@@ -6,6 +6,7 @@ from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
+from . import should_show_info
 
 _SEVERITY_MAP = {
     "error": "error",
@@ -54,7 +55,7 @@ def format_sarif(
             }
 
     results = []
-    show_info = verbose or fail_level == "info"
+    show_info = should_show_info(verbose, fail_level)
     filtered = violations if show_info else [v for v in violations if v.severity != Severity.INFO]
     for v in filtered:
         result = {
