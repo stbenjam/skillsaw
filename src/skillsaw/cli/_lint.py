@@ -7,7 +7,6 @@ import sys
 import time
 from pathlib import Path
 
-from ..config import _FAIL_ON_LEVELS
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
@@ -93,12 +92,22 @@ def _run_lint(args):
     if config_path and args.verbose and args.fmt == "text":
         print(f"Using config: {config_path}\n")
 
-    if args.strict:
-        config.strict = True
+    if args.strict and args.fail_on and args.fail_on != "warning":
+        print(
+            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
+            "(--strict means --fail-on warning)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    if args.fail_on and _FAIL_ON_LEVELS[args.fail_on] > _FAIL_ON_LEVELS[config.fail_on]:
-        # CLI can only tighten the threshold, mirroring --strict semantics.
-        config.fail_on = args.fail_on
+    # CLI flags override the config file's strict/fail-on settings; the config
+    # values only apply when neither flag is given.
+    if args.fail_on:
+        fail_level = args.fail_on
+    elif args.strict:
+        fail_level = "warning"
+    else:
+        fail_level = config.effective_fail_level()
 
     baseline = None
     if not args.no_baseline:
@@ -198,8 +207,6 @@ def _run_lint(args):
         block.estimate_tokens() for ctx in contexts for block in ctx.lint_tree.content_blocks()
     )
     grade = compute_grade(all_violations, content_tokens)
-
-    fail_level = config.effective_fail_level()
 
     stdout_output = format_report(
         args.fmt,

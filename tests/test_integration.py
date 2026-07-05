@@ -1304,11 +1304,32 @@ class TestExitCodes:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 0
 
-    def test_fail_on_flag_cannot_loosen_config_strict(self, tmp_path):
-        """--fail-on error must not override strict: true in the config."""
+    def test_fail_on_flag_overrides_config_strict(self, tmp_path):
+        """--fail-on error overrides strict: true in the config — warnings pass."""
         repo = copy_fixture("config/strict-mode", tmp_path)
         r = run_lint(repo, "--fail-on", "error")
+        assert r["rc"] == 0
+        assert summary(r)["warnings"] >= 1
+
+    def test_strict_flag_overrides_config_fail_on(self, tmp_path):
+        """--strict overrides fail-on: info in the config — info-only passes."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, "--strict")
+        assert r["rc"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_contradictory_strict_and_fail_on_flags_error(self, tmp_path):
+        """--strict with a disagreeing --fail-on is rejected."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict", "--fail-on", "info")
         assert r["rc"] == 1
+        assert "contradict" in r["stderr"]
+
+    def test_agreeing_strict_and_fail_on_flags_accepted(self, tmp_path):
+        """--strict --fail-on warning agree and lint normally."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict", "--fail-on", "warning")
+        assert r["rc"] == 0
 
     def test_fail_on_info_shows_info_in_text_output(self, tmp_path):
         """When info violations fail the run, text output must show them without -v."""

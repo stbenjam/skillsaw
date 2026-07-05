@@ -111,10 +111,8 @@ With `strict: true`, warnings fail the lint just like errors:
 strict: true
 ```
 
-The `--strict` CLI flag does the same for a single run. Note that the CLI
-flag can only *upgrade* to strict — there is no `--no-strict` flag, so a
-`strict: true` in the config file cannot be overridden from the command
-line.
+The `--strict` CLI flag does the same for a single run, overriding the
+config file's `strict` and `fail-on` settings (see below).
 
 ## Failure Threshold
 
@@ -131,13 +129,15 @@ fail-on: info   # any violation at info or above fails the run
 | `warning` | errors and warnings (same as `strict: true`) |
 | `info` | any violation |
 
-`strict: true` is shorthand for `fail-on: warning`. When both are set, the
-strictest one wins — neither option can loosen the other, so adding
-`fail-on: info` to a config that already has `strict: true` just tightens
-the threshold.
+`strict: true` is shorthand for `fail-on: warning`. When both config keys
+are set, the strictest one wins — adding `fail-on: info` to a config that
+already has `strict: true` just tightens the threshold.
 
-The `--fail-on` CLI flag does the same for a single run and, like
-`--strict`, can only tighten the config file's setting.
+The `--fail-on` and `--strict` CLI flags override the config file's
+settings for a single run — `--fail-on error` runs with the default
+threshold even when the config says `strict: true`. Passing both flags
+with contradictory values (`--strict --fail-on info`) is an error;
+`--strict --fail-on warning` is accepted since they agree.
 
 `fail-on: info` is useful for ratcheting: once a repo is at zero
 violations, it stays that way — new info-level findings (including from

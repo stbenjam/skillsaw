@@ -61,7 +61,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     lint_parser.add_argument(
         "--strict",
         action="store_true",
-        help="Treat warnings as errors (exit with error code if warnings exist)",
+        help="Treat warnings as errors (equivalent to --fail-on warning; "
+        "overrides the config file's strict/fail-on settings)",
     )
     lint_parser.add_argument(
         "--fail-on",
@@ -69,8 +70,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         choices=["error", "warning", "info"],
         default=None,
         help="Fail on violations at this severity or above (default: error; "
-        "--strict is equivalent to --fail-on warning). Like --strict, this "
-        "can only tighten the config file's setting, never loosen it.",
+        "--strict is equivalent to --fail-on warning). Overrides the config "
+        "file's strict/fail-on settings.",
     )
     lint_parser.add_argument(
         "--format",
