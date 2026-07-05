@@ -66,10 +66,27 @@ make update       # regenerate everything: APM, example config, README docs, sit
 - `docs/index.md`, `docs/rules/`, `docs/cli.md`, `docs/research.md` — site
   content from rule metadata and long-form rule docs
   (`scripts/generate-site-content.py`)
-- `.claude/`, `.cursor/`, `.opencode/`, and `AGENTS.md` (codex) — APM-compiled
-  instructions and skills for the targets in `apm.yml`
+- `.claude/rules/`, `.cursor/rules/`, `.github/instructions/`,
+  `.github/copilot-instructions.md`, and `AGENTS.md` (codex/opencode) —
+  APM-compiled instruction files for the targets in `apm.yml`
+- `.agents/skills/` (shared, cross-client) and `.claude/skills/` — APM-managed
+  skills. The three published product skills (`skillsaw-create-plugin`,
+  `skillsaw-fix`, `skillsaw-onboard`) live in top-level `skills/` (the plugin
+  export) and are referenced as local-path deps in `apm.yml` so APM deploys
+  them into the agent dirs — do not hand-edit or symlink them into `.claude/`
 
 The `verify-update` CI check will fail if generated files are stale.
+
+### Guarding against injected content
+
+`make update` regenerates managed files in place but never *deletes* unmanaged
+ones, so it cannot catch a PR that injects a new file into a managed agent
+directory (`.claude/`, `.cursor/`, `.agents/`, `.github/instructions/`, …).
+`make verify-apm` closes that gap: it regenerates the managed tree into a
+throwaway scratch dir and diffs it against the working tree, failing on any
+injected, hand-edited, or missing file. It is **non-destructive** — it never
+writes into the working tree — so it is safe to run locally. The
+`verify-update` CI job runs it after the `make update` staleness check.
 
 ## Writing new rules
 
@@ -116,5 +133,6 @@ This runs 5 specialist reviewers (architecture, Python, security, QA, docs) plus
 1. `make test` — full test suite passes
 2. `make lint` — formatting is clean
 3. `make update` — generated files are current
-4. Bump version via `scripts/bump-version.sh` (for releases)
-5. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure exit 0
+4. `make verify-apm` — agent dirs match APM sources (no injected/unmanaged content)
+5. Bump version via `scripts/bump-version.sh` (for releases)
+6. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure exit 0

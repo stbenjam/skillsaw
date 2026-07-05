@@ -3,8 +3,13 @@ version: 0.4.0
 description: A configurable linter for agent skills, plugins, and AI coding assistant context
 targets:
   - claude
+  - copilot
   - cursor
   - codex
   - opencode
 
-dependencies: {}
+dependencies:
+  apm:
+    - ./skills/skillsaw-create-plugin
+    - ./skills/skillsaw-fix
+    - ./skills/skillsaw-onboard

@@ -8,7 +8,8 @@ exclude:
   - ".cursor/*"
   - ".opencode/*"
   - ".agents/*"
-  - ".github/instructions/*"  
+  - ".github/instructions/*"
+  - ".github/copilot-instructions.md"
   # Templates
   - "src/skillsaw/marketplace/templates/*"
   # Testing fixtures with intentional errors

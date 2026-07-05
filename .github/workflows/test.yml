@@ -108,6 +108,13 @@ jobs:
             exit 1
           fi
 
+      - name: Verify agent dirs match APM sources (injection/drift gate)
+        # `make update` regenerates in place, so it cannot catch a file *injected*
+        # into a managed agent dir (apm never deletes unmanaged files). This
+        # non-destructive gate regenerates into a scratch dir and diffs, failing
+        # on any injected/unmanaged or hand-edited file.
+        run: make verify-apm
+
   integration:
     runs-on: ubuntu-latest
 
