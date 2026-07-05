@@ -2,6 +2,7 @@
 name: skillsaw-onboard
 description: "Onboard a repository to skillsaw — run the linter, apply autofixes, manually fix remaining violations, set up CI, and create a baseline. Use when adopting skillsaw on a new or existing project."
 compatibility: "Requires skillsaw (uvx skillsaw or pip install skillsaw). Optional: gh CLI for GitHub Actions setup."
+license: Apache-2.0
 metadata:
   author: stbenjam
   version: "1.0"
@@ -205,10 +206,10 @@ they decline, skip to Step 9.
 First, look up the latest skillsaw version to pin against:
 
 ```
-curl -s https://pypi.org/pypi/skillsaw/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
+python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json'))['info']['version'])"
 ```
 
-If `curl` or `python3` is unavailable, fall back to:
+If `python3` is unavailable, fall back to:
 
 ```
 git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k3 -V | tail -1

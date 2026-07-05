@@ -2,6 +2,7 @@
 name: skillsaw-review-panel
 description: Serial multi-specialist code review panel for skillsaw PRs. Runs 5 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer) inline then synthesizes a single verdict.
 compatibility: Requires git, gh CLI, and internet access
+license: Apache-2.0
 user-invocable: true
 metadata:
   author: stbenjam
