@@ -30,14 +30,19 @@ timeout-minutes: 10
 
 network:
   allowed:
-    - defaults                      # GitHub + Copilot model API
+    - defaults                      # GitHub + Copilot API
+    - openrouter.ai                 # BYOK model provider
 
-# Copilot engine with Copilot's Auto model selection (required on tiers that
-# don't allow pinning a specific model). Omitting `model` pins gh-aw's default
-# (claude-sonnet-4.6); `model: auto` uses Copilot's own automatic selection.
+# Copilot engine in BYOK mode: model requests go to OpenRouter (GLM 5.2), not
+# Copilot's own catalog. COPILOT_PROVIDER_* are the secret-carrying engine.env
+# keys gh-aw strict mode allows; the provider key reaches the model layer, not
+# the agent container.
 engine:
   id: copilot
-  model: auto
+  env:
+    COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
+    COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    COPILOT_MODEL: z-ai/glm-5.2
 
 safe-outputs:
   add-comment:                      # posted by the privileged safe-output job
