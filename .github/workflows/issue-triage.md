@@ -32,6 +32,7 @@ network:
   allowed:
     - defaults                      # GitHub + Copilot API
     - openrouter.ai                 # BYOK model provider
+    - python                        # PyPI — so the agent can `pip install -e .` and actually run skillsaw to reproduce bugs
 
 # Copilot engine in BYOK mode: model requests go to OpenRouter (GLM 5.2), not
 # Copilot's own catalog. COPILOT_PROVIDER_* are the secret-carrying engine.env
