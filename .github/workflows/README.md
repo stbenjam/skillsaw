@@ -10,10 +10,12 @@ markdown file with YAML frontmatter (the agent's prompt is the body). It is
 what GitHub Actions executes.
 
 **What it does.** When a maintainer applies the `triage-for-agent` label to an
-issue, an agent classifies it (bug / feature / documentation / question /
-other), assesses the claim against the code by reading only, enriches it with
-the likely rule + `file:line`, related issues, and suggested labels, and posts
-one advisory triage comment.
+issue, the agent runs the **`skillsaw-issue-review`** skill (auto-discovered by
+Copilot from `.agents/skills/`) to classify the issue (bug / feature /
+documentation / question / other), assess its claims against the code, enrich
+it, and post one advisory triage comment. The workflow body just invokes the
+skill — the triage procedure lives in the skill so it can be reused
+interactively too.
 
 ### Operating it
 
