@@ -1,0 +1,78 @@
+name: Security Scan
+
+on:
+  pull_request:
+    paths:
+      - '.apm/**'
+      - '.claude/**'
+      - '.agents/**'
+      - '.github/workflows/security-scan.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.apm/**'
+      - '.claude/**'
+      - '.agents/**'
+      - '.github/workflows/security-scan.yml'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install scanner
+        run: pip install "cisco-ai-skill-scanner>=2,<3"
+
+      # scan-all recurses one directory at a time, so scan each agent-context
+      # tree separately and aggregate the result. The fresh checkout contains
+      # only tracked files, so there is no untracked venv/cache to recurse into.
+      - name: Run security scan
+        env:
+          SKILL_SCANNER_LLM_MODEL: openrouter/anthropic/claude-opus-4.8
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          mkdir -p scan-results
+          failed=0
+          for dir in .apm .claude .agents; do
+            name="${dir#.}"
+            echo "::group::Scanning ${dir}"
+            skill-scanner scan-all \
+              --recursive \
+              --lenient \
+              --use-llm \
+              --fail-on-severity high \
+              --format sarif \
+              --output-sarif "scan-results/skill-scanner-${name}.sarif" \
+              --format html \
+              --output-html "scan-results/skill-scanner-${name}.html" \
+              "${dir}" || failed=1
+            echo "::endgroup::"
+          done
+          exit "${failed}"
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: success() || failure()
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        with:
+          sarif_file: scan-results
+
+      - name: Upload results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-scan-results
+          path: scan-results/
