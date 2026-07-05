@@ -824,6 +824,12 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | `skip-builtins` | Disable built-in deprecated model/API checks | `false` |
 | `regex-timeout` | Per-pattern wall-clock budget (seconds) for custom banned patterns; guards against catastrophic-backtracking regexes (clamped to 10s max) | `2.0` |
 
+**`content-inconsistent-terminology` parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `groups` | Per-group overrides keyed by group name (e.g. 'function/method'): 'off' or false disables the group; a severity ('error', 'warning', 'info') overrides the rule severity for that group | `{}` |
+
 **`content-unlinked-internal-reference` parameters:**
 
 | Parameter | Description | Default |
