@@ -85,8 +85,14 @@ markdown structure.
 
 - **Rules should be configurable, when there are tuneable settings**
 - **Never break existing rules for users of skillsaw**
-- **New rules default to `enabled: auto` or `enabled: false`**: never force-enable
-  a new rule that could break existing users.
+- **Rules register themselves** — any concrete `Rule` subclass under
+  `src/skillsaw/rules/builtin/` is auto-discovered; don't hand-maintain
+  import lists or config dicts. Defaults live on the class:
+  `default_enabled` and `default_severity()` are the single source of
+  truth, and `LinterConfig.default()` is generated from them.
+- **New rules default to `enabled: auto` or `enabled: false`** (set
+  `default_enabled = False` for opt-in; the base class default is `"auto"`):
+  never force-enable a new rule that could break existing users.
 - **Use the lint tree for discovery** — call `context.lint_tree.find(NodeType)`
 - **Report line numbers** on every violation traceable to a specific line, except for whole-file based violations
 - **Use `read_yaml_commented()`** (from `utils.py`) for YAML — never
@@ -108,3 +114,19 @@ markdown structure.
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.
+
+## Autofix invariants
+
+- **No negative lookarounds around backtrackable quantifiers** in patterns
+  that feed autofixes. A trailing `(?!\))` after `\.\w{1,10}` doesn't reject
+  the match — the engine backtracks into a *truncated* match and the fix
+  splices a corrupted span (issue #321). Match greedily, then reject by
+  inspecting the characters adjacent to the full match in code.
+- **Fixes that add a frontmatter field must guard against the key already
+  existing** — `check()` may report "missing" for an empty/null value while
+  the `key:` line is still present. Use `replace_frontmatter_field()` first
+  and fall back to `prepend_frontmatter_fields()`, or the fix prepends a
+  duplicate key on every run and never converges (issue #321).
+- New SAFE-autofix edge cases belong in the `tests/fixtures/autofix/safe-idempotency`
+  fixture so `TestSafeAutofixIdempotency` guards them; update
+  `EXPECTED_SAFE_VIOLATIONS` when the fixture grows.

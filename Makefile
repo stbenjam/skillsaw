@@ -1,4 +1,4 @@
-APM_VERSION := 0.12.4
+APM_VERSION := 0.24.0
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
