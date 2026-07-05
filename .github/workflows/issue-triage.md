@@ -32,9 +32,12 @@ network:
   allowed:
     - defaults                      # GitHub + Copilot model API
 
-# Copilot engine with automatic model selection (the Copilot tier chooses the model).
+# Copilot engine with Copilot's Auto model selection (required on tiers that
+# don't allow pinning a specific model). Omitting `model` pins gh-aw's default
+# (claude-sonnet-4.6); `model: auto` uses Copilot's own automatic selection.
 engine:
   id: copilot
+  model: auto
 
 safe-outputs:
   add-comment:                      # posted by the privileged safe-output job
