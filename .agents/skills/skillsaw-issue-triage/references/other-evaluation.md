@@ -35,6 +35,16 @@ invalid, spam, out-of-scope, needs-more-info).
   redirect (e.g. a rule plugin, or an upstream tool's tracker).
 - **Invalid / spam**: state briefly why and recommend closing.
 
+## Recommendation mapping
+
+- **documentation** with a genuinely wrong/missing doc → **FIX** (basis: confirmed).
+- **documentation** where the docs are already right → **REJECT** (works as intended).
+- **question**, **duplicate**, **invalid/spam**, **out-of-scope**, or
+  **needs-info** → **REJECT**, with the concrete next step in the verdict line
+  (answer & close / close as duplicate of #N / request the missing details).
+- If a question or doc issue exposes a real defect or a genuine gap, reclassify
+  to `bug` (→ FIX) or `feature` (→ IMPLEMENT / PLUGIN / REJECT per its domain gate).
+
 ## Enrichment to add (all sub-types)
 
 - The verified facts and where they live (`file:line`, doc URL, or issue/PR link).
