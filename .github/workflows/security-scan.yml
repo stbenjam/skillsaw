@@ -5,22 +5,14 @@ on:
     branches: [main]
     paths:
       - '.apm/**'
-      - '.claude/**'
-      - '.agents/**'
-      - '.cursor/**'
-      - '.opencode/**'
-      - '.github/instructions/**'
+      - 'skills/**'
       - '.github/workflows/security-scan.yml'
   push:
     branches:
       - main
     paths:
       - '.apm/**'
-      - '.claude/**'
-      - '.agents/**'
-      - '.cursor/**'
-      - '.opencode/**'
-      - '.github/instructions/**'
+      - 'skills/**'
       - '.github/workflows/security-scan.yml'
 
 jobs:
@@ -30,26 +22,21 @@ jobs:
       contents: read
       security-events: write
     strategy:
-      # Scan every agent-context tree even if one fails, and give each its own
-      # SARIF category so code scanning accepts the uploads (CodeQL rejects
-      # multiple SARIF runs sharing a category). These trees are all generated
-      # from .apm; scanning every load surface (Claude, Cursor, opencode,
-      # Copilot) is defense in depth against injection in a generated copy.
+      # Scan only the hand-authored sources: .apm/ (instructions + dev skills)
+      # and skills/ (published product skills). Every agent-context tree
+      # (.claude, .cursor, .opencode, .agents, .github/instructions, AGENTS.md)
+      # is deterministically generated from these by apm, and that
+      # reproducibility is enforced by `make verify-apm`, so scanning the
+      # generated copies is redundant. (The scanner only inspects skill
+      # packages anyway; all of them live under these two trees.) fail-fast:
+      # false + a per-dir SARIF category so code scanning accepts both uploads.
       fail-fast: false
       matrix:
         include:
           - dir: .apm
             name: apm
-          - dir: .claude
-            name: claude
-          - dir: .agents
-            name: agents
-          - dir: .cursor
-            name: cursor
-          - dir: .opencode
-            name: opencode
-          - dir: .github/instructions
-            name: github-instructions
+          - dir: skills
+            name: skills
 
     steps:
       - name: Checkout code
