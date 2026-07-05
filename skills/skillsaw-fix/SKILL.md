@@ -2,6 +2,7 @@
 name: skillsaw-fix
 description: "Fix skillsaw lint violations — apply deterministic autofixes, then resolve the remaining violations with targeted edits guided by `skillsaw explain`. Use when skillsaw reports violations, when asked to clean up lint findings, or after `skillsaw fix` leaves violations behind."
 compatibility: "Requires skillsaw (uvx skillsaw or pip install skillsaw)."
+license: Apache-2.0
 metadata:
   author: stbenjam
   version: "1.0"
