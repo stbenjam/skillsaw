@@ -1276,6 +1276,56 @@ class TestExitCodes:
         r = run_lint(repo, "--strict")
         assert r["rc"] == 1
 
+    def test_exit_1_on_info_with_fail_on_config(self, tmp_path):
+        """fail-on: info in config makes info-only violations exit 1."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 1
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_exit_0_on_info_without_fail_on(self, tmp_path):
+        """Info-only violations exit 0 by default."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert summary(r)["info"] >= 1
+
+    def test_exit_1_on_info_with_fail_on_flag(self, tmp_path):
+        """--fail-on info tightens a config without fail-on."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--fail-on", "info")
+        assert r["rc"] == 1
+
+    def test_strict_alone_does_not_fail_on_info(self, tmp_path):
+        """--strict only promotes warnings — info-only violations still pass."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, "--strict")
+        assert r["rc"] == 0
+
+    def test_fail_on_flag_cannot_loosen_config_strict(self, tmp_path):
+        """--fail-on error must not override strict: true in the config."""
+        repo = copy_fixture("config/strict-mode", tmp_path)
+        r = run_lint(repo, "--fail-on", "error")
+        assert r["rc"] == 1
+
+    def test_fail_on_info_shows_info_in_text_output(self, tmp_path):
+        """When info violations fail the run, text output must show them without -v."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+        assert r["rc"] == 1
+        assert "Info:" in r["stdout"]
+        assert "All checks passed" not in r["stdout"]
+
+    def test_info_stays_hidden_in_text_output_without_fail_on(self, tmp_path):
+        """Without fail-on: info, non-verbose text output keeps info hidden."""
+        repo = copy_fixture("config/info-only", tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+        assert r["rc"] == 0
+        assert "Info:" not in r["stdout"]
+        assert "All checks passed" in r["stdout"]
+
 
 # ── Output Formats ───────────────────────────────────────────────
 

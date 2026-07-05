@@ -64,6 +64,15 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Treat warnings as errors (exit with error code if warnings exist)",
     )
     lint_parser.add_argument(
+        "--fail-on",
+        dest="fail_on",
+        choices=["error", "warning", "info"],
+        default=None,
+        help="Fail on violations at this severity or above (default: error; "
+        "--strict is equivalent to --fail-on warning). Like --strict, this "
+        "can only tighten the config file's setting, never loosen it.",
+    )
+    lint_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",

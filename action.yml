@@ -17,6 +17,10 @@ inputs:
     description: 'Treat warnings as errors'
     required: false
     default: 'false'
+  fail-on:
+    description: 'Fail on violations at this severity or above: error, warning, info (strict is equivalent to fail-on: warning; the strictest setting wins)'
+    required: false
+    default: ''
   plugins:
     description: 'Newline-separated list of plugin packages to install (e.g. skillsaw-runbooks==0.1.0)'
     required: false
@@ -32,7 +36,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: 'skillsaw exit code (0=pass, 1=errors or strict warnings)'
+    description: 'skillsaw exit code (0=pass, 1=violations at or above the fail-on threshold)'
     value: ${{ steps.lint.outputs.exit-code }}
   errors:
     description: 'Number of errors found'
@@ -77,6 +81,7 @@ runs:
       env:
         SKILLSAW_PATH: ${{ inputs.path }}
         SKILLSAW_STRICT: ${{ inputs.strict }}
+        SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
         SKILLSAW_NO_CUSTOM_RULES: ${{ inputs.no-custom-rules }}
       run: |
@@ -84,6 +89,9 @@ runs:
         ARGS=""
         if [ "$SKILLSAW_STRICT" = "true" ]; then
           ARGS="$ARGS --strict"
+        fi
+        if [ -n "$SKILLSAW_FAIL_ON" ]; then
+          ARGS="$ARGS --fail-on $SKILLSAW_FAIL_ON"
         fi
         if [ "$SKILLSAW_VERBOSE" = "true" ]; then
           ARGS="$ARGS -v"

@@ -23,6 +23,11 @@ _DEFAULT_EXCLUDE_PATTERNS = [
     "**/_template/**",
 ]
 
+# Severity threshold ordering for ``fail-on``: a run fails when violations
+# exist at the configured level or above (error < warning < info in terms of
+# how much fails the run).
+_FAIL_ON_LEVELS = {"error": 0, "warning": 1, "info": 2}
+
 
 def _parse_version(v: str) -> Tuple[int, ...]:
     """Parse a version string leniently into a comparable numeric tuple.
@@ -56,6 +61,10 @@ class LinterConfig:
     exclude_patterns: List[str] = field(default_factory=list)
     content_paths: List[str] = field(default_factory=list)
     strict: bool = False
+    # Severity threshold that fails the run: violations at this level or above
+    # exit non-zero. ``strict: true`` is sugar for ``fail-on: warning``; the
+    # strictest of the two wins (see ``effective_fail_level``).
+    fail_on: str = "error"
     # Rule plugins (pip-installed packages exposing skillsaw.plugins entry
     # points). ``plugins_enabled: False`` skips all of them; ``disabled_plugins``
     # skips specific plugins by entry point name.
@@ -76,6 +85,7 @@ class LinterConfig:
             "exclude",
             "content-paths",
             "strict",
+            "fail-on",
             "plugins",
         }
     )
@@ -205,6 +215,21 @@ class LinterConfig:
         else:
             raise ValueError(f"'strict' must be a boolean, got {type(raw_strict).__name__}")
 
+        raw_fail_on = data.get("fail-on")
+        if raw_fail_on is None:
+            fail_on = "error"
+        elif isinstance(raw_fail_on, str) and raw_fail_on in _FAIL_ON_LEVELS:
+            fail_on = raw_fail_on
+            if fail_on == "error" and strict:
+                load_warnings.append(
+                    "'fail-on: error' has no effect while 'strict: true' — "
+                    "the strictest setting wins; remove 'strict' to lower the threshold"
+                )
+        else:
+            raise ValueError(
+                f"'fail-on' must be one of {', '.join(_FAIL_ON_LEVELS)}, got {raw_fail_on!r}"
+            )
+
         raw_plugins = data.get("plugins")
         plugins_enabled = True
         disabled_plugins: List[str] = []
@@ -248,6 +273,7 @@ class LinterConfig:
             exclude_patterns=exclude_patterns,
             content_paths=content_paths,
             strict=strict,
+            fail_on=fail_on,
             plugins_enabled=plugins_enabled,
             disabled_plugins=disabled_plugins,
             config_dir=config_path.resolve().parent,
@@ -287,6 +313,17 @@ class LinterConfig:
         config = cls.default()
         config.version = __version__
         return config
+
+    def effective_fail_level(self) -> str:
+        """Resolve ``strict`` and ``fail-on`` into a single severity threshold.
+
+        ``strict: true`` counts as ``fail-on: warning``; the strictest setting
+        wins, so neither option can loosen the other.
+        """
+        candidates = [self.fail_on if self.fail_on in _FAIL_ON_LEVELS else "error"]
+        if self.strict:
+            candidates.append("warning")
+        return max(candidates, key=_FAIL_ON_LEVELS.__getitem__)
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
@@ -432,6 +469,7 @@ class LinterConfig:
         d["custom-rules"] = self.custom_rules
         d["exclude"] = self.exclude_patterns
         d["strict"] = self.strict
+        d["fail-on"] = self.fail_on
         if self.content_paths:
             d["content-paths"] = self.content_paths
         if not self.plugins_enabled or self.disabled_plugins:
@@ -519,6 +557,8 @@ class LinterConfig:
             self._write_field(f, "content-paths", self.content_paths)
             f.write("\n# Treat warnings as errors\n")
             f.write(f"strict: {self._yaml_value(self.strict)}\n")
+            f.write("\n# Fail on violations at this severity or above: error, warning, info\n")
+            f.write(f"fail-on: {self._yaml_value(self.fail_on)}\n")
 
     def _write_field(self, f, key: str, value: Any):
         """Helper to write a YAML field to the file."""

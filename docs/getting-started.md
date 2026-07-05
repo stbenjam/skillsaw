@@ -138,8 +138,8 @@ Summary:
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success (no errors, or warnings only in non-strict mode) |
-| `1` | Failure (errors found, or warnings in strict mode) |
+| `0` | Success (no violations at or above the failure threshold) |
+| `1` | Failure (errors found; warnings in strict mode; any violation with `fail-on: info`) |
 
 ## More Commands
 
@@ -156,6 +156,9 @@ skillsaw -v
 
 # Strict mode (warnings become errors)
 skillsaw --strict
+
+# Fail on any violation, even info-level (see Configuration → Failure Threshold)
+skillsaw --fail-on info
 
 # List all rules with fix support info
 skillsaw list-rules

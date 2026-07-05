@@ -96,6 +96,7 @@ jobs:
 | `path` | Path to lint | `.` |
 | `version` | Specific skillsaw version to install | latest |
 | `strict` | Treat warnings as errors | `false` |
+| `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict` is equivalent to `fail-on: warning`, strictest wins | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
 | `plugins` | Newline-separated list of plugin packages to install | `''` |
@@ -104,7 +105,7 @@ jobs:
 
 | Output | Description |
 |--------|-------------|
-| `exit-code` | skillsaw exit code (0=pass, 1=errors or strict warnings) |
+| `exit-code` | skillsaw exit code (0=pass, 1=violations at or above the fail-on threshold) |
 | `errors` | Number of errors found |
 | `warnings` | Number of warnings found |
 | `report-file` | Path to JSON report file |

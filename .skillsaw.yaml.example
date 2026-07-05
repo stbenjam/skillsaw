@@ -360,3 +360,6 @@ content-paths: []
 
 # Treat warnings as errors
 strict: false
+
+# Fail on violations at this severity or above: error, warning, info
+fail-on: error

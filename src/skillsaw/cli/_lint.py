@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 
+from ..config import _FAIL_ON_LEVELS
 from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
 from ..linter import Linter
@@ -94,6 +95,10 @@ def _run_lint(args):
 
     if args.strict:
         config.strict = True
+
+    if args.fail_on and _FAIL_ON_LEVELS[args.fail_on] > _FAIL_ON_LEVELS[config.fail_on]:
+        # CLI can only tighten the threshold, mirroring --strict semantics.
+        config.fail_on = args.fail_on
 
     baseline = None
     if not args.no_baseline:
@@ -194,6 +199,8 @@ def _run_lint(args):
     )
     grade = compute_grade(all_violations, content_tokens)
 
+    fail_level = config.effective_fail_level()
+
     stdout_output = format_report(
         args.fmt,
         all_violations,
@@ -204,6 +211,7 @@ def _run_lint(args):
         baseline_suppressed=baseline_suppressed,
         duration=lint_duration,
         grade=grade,
+        fail_level=fail_level,
     )
     print(stdout_output)
 
@@ -220,6 +228,7 @@ def _run_lint(args):
                 baseline_suppressed=baseline_suppressed,
                 duration=lint_duration,
                 grade=grade,
+                fail_level=fail_level,
             )
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -229,7 +238,9 @@ def _run_lint(args):
 
     if missing_count > 0 or errors > 0:
         sys.exit(1)
-    elif config.strict and warnings_count > 0:
+    elif fail_level in ("warning", "info") and warnings_count > 0:
+        sys.exit(1)
+    elif fail_level == "info" and info > 0:
         sys.exit(1)
     else:
         sys.exit(0)

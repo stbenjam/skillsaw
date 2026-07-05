@@ -51,6 +51,7 @@ content-paths:
   - "docs/runbooks/*.md"
 
 strict: false
+fail-on: error
 ```
 
 ## Version Pinning
@@ -89,8 +90,11 @@ Most rules default to `auto`, so they activate only where they make sense.
 repository and why.
 
 Each rule also has a `severity`, one of `error`, `warning`, or `info`.
-Errors fail the lint; warnings fail it only in [strict mode](#strict-mode);
-info-level violations are shown with `--verbose` and never fail the lint.
+By default only errors fail the lint; warnings fail it in
+[strict mode](#strict-mode), and the [`fail-on`](#failure-threshold)
+threshold can make any severity — including info — fail the run.
+Info-level violations are shown with `--verbose` (and always when
+`fail-on: info` makes them fatal).
 
 ```yaml
 rules:
@@ -111,6 +115,36 @@ The `--strict` CLI flag does the same for a single run. Note that the CLI
 flag can only *upgrade* to strict — there is no `--no-strict` flag, so a
 `strict: true` in the config file cannot be overridden from the command
 line.
+
+## Failure Threshold
+
+`fail-on` generalizes strict mode: violations at the given severity or
+above make the run exit non-zero.
+
+```yaml
+fail-on: info   # any violation at info or above fails the run
+```
+
+| `fail-on` | Fails the run |
+|-----------|---------------|
+| `error` (default) | errors only |
+| `warning` | errors and warnings (same as `strict: true`) |
+| `info` | any violation |
+
+`strict: true` is shorthand for `fail-on: warning`. When both are set, the
+strictest one wins — neither option can loosen the other, so adding
+`fail-on: info` to a config that already has `strict: true` just tightens
+the threshold.
+
+The `--fail-on` CLI flag does the same for a single run and, like
+`--strict`, can only tighten the config file's setting.
+
+`fail-on: info` is useful for ratcheting: once a repo is at zero
+violations, it stays that way — new info-level findings (including from
+rules added in newer skillsaw versions) fail CI instead of accumulating
+silently. When info violations are what failed the run, the text output
+shows them even without `--verbose`. Pair it with a
+[baseline](baseline.md) to adopt the threshold before reaching zero.
 
 ## Custom Rules
 
