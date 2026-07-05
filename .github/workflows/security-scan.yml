@@ -2,10 +2,14 @@ name: Security Scan
 
 on:
   pull_request:
+    branches: [main]
     paths:
       - '.apm/**'
       - '.claude/**'
       - '.agents/**'
+      - '.cursor/**'
+      - '.opencode/**'
+      - '.github/instructions/**'
       - '.github/workflows/security-scan.yml'
   push:
     branches:
@@ -14,6 +18,9 @@ on:
       - '.apm/**'
       - '.claude/**'
       - '.agents/**'
+      - '.cursor/**'
+      - '.opencode/**'
+      - '.github/instructions/**'
       - '.github/workflows/security-scan.yml'
 
 jobs:
@@ -25,7 +32,9 @@ jobs:
     strategy:
       # Scan every agent-context tree even if one fails, and give each its own
       # SARIF category so code scanning accepts the uploads (CodeQL rejects
-      # multiple SARIF runs sharing a category).
+      # multiple SARIF runs sharing a category). These trees are all generated
+      # from .apm; scanning every load surface (Claude, Cursor, opencode,
+      # Copilot) is defense in depth against injection in a generated copy.
       fail-fast: false
       matrix:
         include:
@@ -35,6 +44,12 @@ jobs:
             name: claude
           - dir: .agents
             name: agents
+          - dir: .cursor
+            name: cursor
+          - dir: .opencode
+            name: opencode
+          - dir: .github/instructions
+            name: github-instructions
 
     steps:
       - name: Checkout code
@@ -48,15 +63,21 @@ jobs:
           python-version: "3.11"
 
       - name: Install scanner
-        run: pip install "cisco-ai-skill-scanner>=2,<3"
+        run: pip install "cisco-ai-skill-scanner==2.0.11"
 
       # scan-all recurses one directory tree. The fresh checkout contains only
       # committed files, so there is no untracked venv/cache to descend into.
+      # Skip cleanly if the tree is absent so a removed directory doesn't turn
+      # the whole matrix red.
       - name: Run security scan
         env:
-          SKILL_SCANNER_LLM_MODEL: openrouter/anthropic/claude-opus-4.8
+          SKILL_SCANNER_LLM_MODEL: openrouter/z-ai/glm-5.2
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
+          if [ ! -d "${{ matrix.dir }}" ]; then
+            echo "${{ matrix.dir }} is not present in this checkout; skipping."
+            exit 0
+          fi
           skill-scanner scan-all \
             --recursive \
             --lenient \
@@ -69,7 +90,7 @@ jobs:
             "${{ matrix.dir }}"
 
       - name: Upload SARIF to GitHub Code Scanning
-        if: success() || failure()
+        if: (success() || failure()) && hashFiles(format('skill-scanner-{0}.sarif', matrix.name)) != ''
         uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           sarif_file: skill-scanner-${{ matrix.name }}.sarif
@@ -83,3 +104,4 @@ jobs:
           path: |
             skill-scanner-${{ matrix.name }}.sarif
             skill-scanner-${{ matrix.name }}.html
+          if-no-files-found: ignore
