@@ -151,7 +151,7 @@ Quality report, available since skillsaw 0.11.3):
 ```yaml
 skillsaw:
   script:
-    - pip install skillsaw==0.15.0
+    - pip install skillsaw==0.16.0
     - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:

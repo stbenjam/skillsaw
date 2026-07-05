@@ -173,7 +173,7 @@ docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
 # GitLab CI — outputs Code Quality JSON for MR widgets
 skillsaw:
   script:
-    - pip install skillsaw==0.15.0
+    - pip install skillsaw==0.16.0
     - skillsaw lint --output gitlab:gl-code-quality-report.json .
   artifacts:
     reports:
@@ -194,7 +194,7 @@ repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.15.0  # or pin a full commit SHA
+    rev: v0.16.0  # or pin a full commit SHA
     hooks:
       - id: skillsaw
 ```

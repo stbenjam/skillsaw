@@ -11,7 +11,7 @@ Add skillsaw to your repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.15.0
+    rev: v0.16.0
     hooks:
       - id: skillsaw
 ```
