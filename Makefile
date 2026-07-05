@@ -1,4 +1,4 @@
-APM_VERSION := 0.12.4
+APM_VERSION := 0.24.0
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
@@ -16,7 +16,7 @@ help:
 	@echo "  generate-docs - Regenerate Builtin Rules section of README.md"
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
 	@echo "  apm           - Install APM dependencies"
-	@echo "  verify-apm    - Verify generated APM files are up to date"
+	@echo "  verify-apm    - Non-destructively verify agent dirs match APM sources (injection/drift gate)"
 	@echo "  benchmark     - Benchmark linting speed on a synthetic repo (SCALE=medium)"
 	@echo "  benchmark-save    - Save benchmark results as the local baseline"
 	@echo "  benchmark-compare - Compare against the local baseline (fails on regression)"
@@ -95,5 +95,5 @@ apm:
 	uvx --from apm-cli@$(APM_VERSION) apm install
 	uvx --from apm-cli@$(APM_VERSION) apm compile
 
-verify-apm: apm
-	@echo "APM install and compile succeeded."
+verify-apm:
+	APM_VERSION=$(APM_VERSION) ./scripts/verify-apm.sh

@@ -19,19 +19,80 @@ CRITICAL: You MUST always run these steps before pushing changes.
 5. Test against `openshift-eng/ai-helpers`: clone it, run `skillsaw`, ensure
    exit 0.
 
+## Pre-PR Checklist
+
+Before opening a pull request, you must:
+
+- Evaluate whether documentation is up to date for the changes on this branch.
+    - Example: you added a new feature, flag, or lint type
+      Action: You update README.md to include this
+    - Example: you encountered a problem during development that would be important to remember later
+      Action: You update .apm/instructions and run make update
+- Evaluate whether test coverage on a new feature, flag, lint type or bug fix is complete
+    - Bug fixes need regression protection
+    - New features, linters, rules need integration test coverage WITH fixtures (see testing rules)
+ 
 ## Post-PR Checklist
 
 After opening a PR, continue monitoring for feedback from CodeRabbit, Gemini,
 and stbenjam.  You may cease monitoring 20 minutes after pushing a PR. Address
 valid feedback that comes in.
 
+## Performance
+
+Lint speed is benchmarked with the harness in `benchmarks/` (`make
+benchmark`, `make profile`, `make benchmark-save` / `make benchmark-compare`
+for regression checks — see DEVELOPMENT.md). When touching content rules,
+the lint tree, or `utils.py` read paths, save a baseline on main and compare
+on your branch.
+
+- **Never write per-line × per-pattern regex loops** in scanning rules. Run
+  `patterns_matching_anywhere(body, patterns)` (from `content_analysis`)
+  first and per-line scan only the surviving patterns — it prefilters with a
+  C-speed substring check on each pattern's required literal and is
+  results-identical to the naive loop.
+- **`lint_tree.find(NodeType)` is memoized per node.** Anything that mutates
+  tree structure outside a rebuild must call `invalidate_find_cache()` (see
+  `FrontmatteredBlock.write_frontmatter_text`).
+- **Top-level frontmatter key lines come from `frontmatter_key_line()`**,
+  which uses a libyaml-backed line map with a ruamel fallback. Don't add
+  per-key ruamel parses; ruamel round-trip parsing is ~30x slower and was
+  the dominant cost of lint-tree construction.
+- Per-blob work (whole-body `.lower()`, config-file stats) belongs outside
+  the per-block loop — compute once per `check()`.
+
+## Markdown: AST for reading, splice for writing
+
+Markdown structure (links, code spans, fences, HTML comments, headings) comes
+from the markdown-it-py AST exposed via `block.markdown` (a
+`skillsaw.markdown_doc.MarkdownDoc`). Never hand-roll per-line regexes for
+markdown structure.
+
+- **Detection**: use the `MarkdownDoc` accessors — `links()`, `code_spans()`,
+  `text_segments()`, `fences()`, `headings()`, `html_comments()`,
+  `prose_lines()`. Scanning rules that only need prose get it automatically
+  through `read_body(strip_code_blocks=True)`.
+- **Fixes**: splice at the token spans the check matched using
+  `markdown_doc.splice(content, edits)` — never re-locate fix targets with
+  `line.find()` / `str.replace()`, which corrupts substrings of other tokens.
+- **Never render the AST back to markdown** — round-trip rendering reformats
+  whole files, violating the scope-the-fix autofix rule.
+- Use `markdown_doc.file_span()` to translate body-relative columns to file
+  columns before splicing (YAML-embedded bodies are indented in the file);
+  skip the edit when it returns `None`.
+
 ## New Linter Rules
 
-- **EVERYTHING MUST BE PART OF THE PARSE TREE**
 - **Rules should be configurable, when there are tuneable settings**
 - **Never break existing rules for users of skillsaw**
-- **New rules default to `enabled: auto` or `enabled: false`**: never force-enable
-  a new rule that could break existing users.
+- **Rules register themselves** — any concrete `Rule` subclass under
+  `src/skillsaw/rules/builtin/` is auto-discovered; don't hand-maintain
+  import lists or config dicts. Defaults live on the class:
+  `default_enabled` and `default_severity()` are the single source of
+  truth, and `LinterConfig.default()` is generated from them.
+- **New rules default to `enabled: auto` or `enabled: false`** (set
+  `default_enabled = False` for opt-in; the base class default is `"auto"`):
+  never force-enable a new rule that could break existing users.
 - **Use the lint tree for discovery** — call `context.lint_tree.find(NodeType)`
 - **Report line numbers** on every violation traceable to a specific line, except for whole-file based violations
 - **Use `read_yaml_commented()`** (from `utils.py`) for YAML — never
@@ -42,6 +103,30 @@ valid feedback that comes in.
 - **Never fabricate line numbers** — if a field is missing, omit the line.
 - **Declare `repo_types`** to control when `enabled: auto` fires.
 - **Declare `config_schema`** when the rule accepts parameters.
+- **EVERYTHING MUST BE PART OF THE PARSE TREE**
+- **Prose vs config is encoded in the block hierarchy** — `ContentBlock`
+  subclasses are prose for an agent's context window and get every
+  content-quality rule automatically. Structured config files (settings,
+  hooks, MCP JSON) must subclass `JsonConfigBlock` instead; dedicated
+  rules find them with `find(SettingsBlock)` etc. Never add a config
+  file type under `ContentBlock` — content rules would lint its JSON
+  as instruction text.
 
 JSON files are exempt from line number requirements — the `json` module does
 not preserve them. File-level reporting is acceptable for JSON rules.
+
+## Autofix invariants
+
+- **No negative lookarounds around backtrackable quantifiers** in patterns
+  that feed autofixes. A trailing `(?!\))` after `\.\w{1,10}` doesn't reject
+  the match — the engine backtracks into a *truncated* match and the fix
+  splices a corrupted span (issue #321). Match greedily, then reject by
+  inspecting the characters adjacent to the full match in code.
+- **Fixes that add a frontmatter field must guard against the key already
+  existing** — `check()` may report "missing" for an empty/null value while
+  the `key:` line is still present. Use `replace_frontmatter_field()` first
+  and fall back to `prepend_frontmatter_fields()`, or the fix prepends a
+  duplicate key on every run and never converges (issue #321).
+- New SAFE-autofix edge cases belong in the `tests/fixtures/autofix/safe-idempotency`
+  fixture so `TestSafeAutofixIdempotency` guards them; update
+  `EXPECTED_SAFE_VIOLATIONS` when the fixture grows.
