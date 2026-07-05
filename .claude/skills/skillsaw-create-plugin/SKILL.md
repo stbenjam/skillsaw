@@ -2,6 +2,7 @@
 name: skillsaw-create-plugin
 description: "Create a skillsaw rule plugin — a pip-installable Python package that adds custom lint rules to skillsaw. Walks through scaffolding the package, writing rules against the lint tree, testing, and publishing to PyPI. Use when a user wants to share skillsaw rules across repositories or publish them for others."
 compatibility: "Requires Python 3.9+ and skillsaw (pip install skillsaw). Publishing requires a PyPI account."
+license: Apache-2.0
 metadata:
   author: stbenjam
   version: "1.0"

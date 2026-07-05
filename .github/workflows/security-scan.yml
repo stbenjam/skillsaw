@@ -1,0 +1,96 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.apm/**'
+      - 'skills/**'
+      - '.github/workflows/security-scan.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.apm/**'
+      - 'skills/**'
+      - '.github/workflows/security-scan.yml'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      # Scan only the hand-authored sources: .apm/ (instructions + dev skills)
+      # and skills/ (published product skills). Every agent-context tree
+      # (.claude, .cursor, .opencode, .agents, .github/instructions, AGENTS.md)
+      # is deterministically generated from these by apm, and that
+      # reproducibility is enforced by `make verify-apm`, so scanning the
+      # generated copies is redundant. (The scanner only inspects skill
+      # packages anyway; all of them live under these two trees.) fail-fast:
+      # false + a per-dir SARIF category so code scanning accepts both uploads.
+      fail-fast: false
+      matrix:
+        include:
+          - dir: .apm
+            name: apm
+          - dir: skills
+            name: skills
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install scanner
+        run: pip install "cisco-ai-skill-scanner==2.0.11"
+
+      # scan-all recurses one directory tree. The fresh checkout contains only
+      # committed files, so there is no untracked venv/cache to descend into.
+      # Skip cleanly if the tree is absent so a removed directory doesn't turn
+      # the whole matrix red.
+      # Static analysis only (YARA / bytecode / taint / manifest). The LLM judge
+      # is intentionally omitted: this scans the repo's own agent sources, so on
+      # same-repo PRs and pushes the author is the maintainer (no threat), and
+      # fork PRs — the actual untrusted-contributor case — can't receive the
+      # OPENROUTER_API_KEY secret anyway. An LLM pass would add cost and
+      # flakiness with no security benefit here.
+      - name: Run security scan
+        run: |
+          if [ ! -d "${{ matrix.dir }}" ]; then
+            echo "${{ matrix.dir }} is not present in this checkout; skipping."
+            exit 0
+          fi
+          skill-scanner scan-all \
+            --recursive \
+            --lenient \
+            --fail-on-severity high \
+            --format sarif \
+            --output-sarif "skill-scanner-${{ matrix.name }}.sarif" \
+            --format html \
+            --output-html "skill-scanner-${{ matrix.name }}.html" \
+            "${{ matrix.dir }}"
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: (success() || failure()) && hashFiles(format('skill-scanner-{0}.sarif', matrix.name)) != ''
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        with:
+          sarif_file: skill-scanner-${{ matrix.name }}.sarif
+          category: skill-scanner-${{ matrix.name }}
+
+      - name: Upload results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-scan-results-${{ matrix.name }}
+          path: |
+            skill-scanner-${{ matrix.name }}.sarif
+            skill-scanner-${{ matrix.name }}.html
+          if-no-files-found: ignore
