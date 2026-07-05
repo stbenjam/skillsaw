@@ -22,6 +22,19 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    strategy:
+      # Scan every agent-context tree even if one fails, and give each its own
+      # SARIF category so code scanning accepts the uploads (CodeQL rejects
+      # multiple SARIF runs sharing a category).
+      fail-fast: false
+      matrix:
+        include:
+          - dir: .apm
+            name: apm
+          - dir: .claude
+            name: claude
+          - dir: .agents
+            name: agents
 
     steps:
       - name: Checkout code
@@ -37,42 +50,36 @@ jobs:
       - name: Install scanner
         run: pip install "cisco-ai-skill-scanner>=2,<3"
 
-      # scan-all recurses one directory at a time, so scan each agent-context
-      # tree separately and aggregate the result. The fresh checkout contains
-      # only tracked files, so there is no untracked venv/cache to recurse into.
+      # scan-all recurses one directory tree. The fresh checkout contains only
+      # committed files, so there is no untracked venv/cache to descend into.
       - name: Run security scan
         env:
           SKILL_SCANNER_LLM_MODEL: openrouter/anthropic/claude-opus-4.8
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          mkdir -p scan-results
-          failed=0
-          for dir in .apm .claude .agents; do
-            name="${dir#.}"
-            echo "::group::Scanning ${dir}"
-            skill-scanner scan-all \
-              --recursive \
-              --lenient \
-              --use-llm \
-              --fail-on-severity high \
-              --format sarif \
-              --output-sarif "scan-results/skill-scanner-${name}.sarif" \
-              --format html \
-              --output-html "scan-results/skill-scanner-${name}.html" \
-              "${dir}" || failed=1
-            echo "::endgroup::"
-          done
-          exit "${failed}"
+          skill-scanner scan-all \
+            --recursive \
+            --lenient \
+            --use-llm \
+            --fail-on-severity high \
+            --format sarif \
+            --output-sarif "skill-scanner-${{ matrix.name }}.sarif" \
+            --format html \
+            --output-html "skill-scanner-${{ matrix.name }}.html" \
+            "${{ matrix.dir }}"
 
       - name: Upload SARIF to GitHub Code Scanning
         if: success() || failure()
         uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
-          sarif_file: scan-results
+          sarif_file: skill-scanner-${{ matrix.name }}.sarif
+          category: skill-scanner-${{ matrix.name }}
 
       - name: Upload results
         if: success() || failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: security-scan-results
-          path: scan-results/
+          name: security-scan-results-${{ matrix.name }}
+          path: |
+            skill-scanner-${{ matrix.name }}.sarif
+            skill-scanner-${{ matrix.name }}.html
