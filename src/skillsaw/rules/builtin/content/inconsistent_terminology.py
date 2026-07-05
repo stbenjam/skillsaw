@@ -3,7 +3,7 @@
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -54,6 +54,59 @@ class ContentInconsistentTerminologyRule(Rule):
 
     MIN_FILES = 2
 
+    config_schema = {
+        "groups": {
+            "type": "dict",
+            "default": {},
+            "description": (
+                "Per-group overrides keyed by group name (e.g. 'function/method'): "
+                "'off' or false disables the group; a severity ('error', 'warning', "
+                "'info') overrides the rule severity for that group"
+            ),
+        },
+    }
+
+    def __init__(self, config: Dict[str, Any] = None):
+        super().__init__(config)
+        self._group_overrides: Dict[str, Optional[Severity]] = self._parse_group_overrides()
+
+    def _parse_group_overrides(self) -> Dict[str, Optional[Severity]]:
+        """Parse the ``groups`` config into {group name: severity or None}.
+
+        ``None`` means the group is disabled. Groups absent from the map keep
+        the rule-level severity.
+        """
+        raw = self.config.get("groups")
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"'groups' for rule '{self.rule_id}' must be a mapping of "
+                f"group name to 'off' or a severity, got {type(raw).__name__}"
+            )
+        valid_names = [name for name, _ in self._TERM_GROUPS]
+        overrides: Dict[str, Optional[Severity]] = {}
+        for name, value in raw.items():
+            if name not in valid_names:
+                raise ValueError(
+                    f"Unknown terminology group '{name}' for rule "
+                    f"'{self.rule_id}'. Valid groups: {', '.join(valid_names)}"
+                )
+            # YAML may parse a bare ``off`` as boolean False depending on the
+            # loader, so accept the boolean and both string spellings.
+            if value is False or (isinstance(value, str) and value.lower() in ("off", "false")):
+                overrides[name] = None
+                continue
+            try:
+                overrides[name] = Severity(value.lower() if isinstance(value, str) else value)
+            except (ValueError, KeyError, TypeError) as err:
+                valid = ", ".join(s.value for s in Severity)
+                raise ValueError(
+                    f"Invalid setting '{value}' for terminology group '{name}' "
+                    f"in rule '{self.rule_id}'. Valid values: off, {valid}"
+                ) from err
+        return overrides
+
     @property
     def rule_id(self) -> str:
         return "content-inconsistent-terminology"
@@ -72,6 +125,9 @@ class ContentInconsistentTerminologyRule(Rule):
 
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
+            group_severity = self._group_overrides.get(group_name, self.severity)
+            if group_severity is None:
+                continue
             term_usage: Dict[str, int] = defaultdict(int)
             files_by_term: Dict[str, List[Path]] = defaultdict(list)
             for cf in content_files:
@@ -96,6 +152,6 @@ class ContentInconsistentTerminologyRule(Rule):
                         minority_files.update(fpaths)
                 msg = f"Inconsistent terminology: {group_name} — multiple variants used across files. Pick one and use it consistently."
                 for fpath in sorted(minority_files):
-                    violations.append(self.violation(msg, file_path=fpath))
+                    violations.append(self.violation(msg, file_path=fpath, severity=group_severity))
 
         return violations

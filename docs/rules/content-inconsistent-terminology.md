@@ -46,6 +46,24 @@ everywhere. Prefer technical terms over informal ones (e.g., "directory"
 over "folder", "repository" over "codebase"). A coding agent can
 standardize terminology automatically.
 
+If a group doesn't apply to your repository — for example, a polyglot
+repo that legitimately documents both Go *functions* and Java *methods* —
+disable just that group (or override its severity) while keeping the
+rest enforced:
+
+```yaml
+rules:
+  content-inconsistent-terminology:
+    severity: error
+    groups:
+      function/method: off      # disable this group only
+      PR/pull request/merge request: warning  # downgrade this group
+```
+
+Valid group names: `directory/folder`, `repo/repository/codebase`,
+`PR/pull request/merge request`, `function/method`. Valid values: `off`
+(or `false`) to disable, or a severity (`error`, `warning`, `info`).
+
 ## Configuration
 
 ```yaml
@@ -54,6 +72,10 @@ rules:
     enabled: auto  # true | false | auto
     severity: info
 ```
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `groups` | Per-group overrides keyed by group name (e.g. 'function/method'): 'off' or false disables the group; a severity ('error', 'warning', 'info') overrides the rule severity for that group | `{}` |
 
 ## Research Basis
 

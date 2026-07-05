@@ -1,0 +1,7 @@
+version: "99.0.0"
+rules:
+  content-inconsistent-terminology:
+    enabled: true
+    severity: error
+    groups:
+      function/method: off
