@@ -1017,13 +1017,19 @@ class TestContentInconsistentTerminologyRule:
         assert all("function/method" not in v.message for v in violations)
         assert any("directory/folder" in v.message for v in violations)
 
-    def test_disabled_group_accepts_yaml_false(self, temp_dir):
-        """YAML 1.1 loaders parse a bare ``off`` as boolean False."""
+    @pytest.mark.parametrize("setting", [False, "false", "OFF"])
+    def test_disabled_group_accepts_off_spellings(self, temp_dir, setting):
+        """YAML 1.1 loaders parse a bare ``off`` as boolean False; quoted
+        strings and casing variants must behave the same."""
         (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
         (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
         context = RepositoryContext(temp_dir)
-        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": False}})
+        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": setting}})
         assert rule.check(context) == []
+
+    def test_group_severity_is_case_insensitive(self):
+        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": "Warning"}})
+        assert rule._group_overrides["function/method"] == Severity.WARNING
 
     def test_group_severity_override(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Write a helper function in a directory.\n")
@@ -1048,9 +1054,19 @@ class TestContentInconsistentTerminologyRule:
         with pytest.raises(ValueError, match="Invalid setting 'loud'"):
             ContentInconsistentTerminologyRule({"groups": {"function/method": "loud"}})
 
-    def test_groups_must_be_mapping(self):
+    @pytest.mark.parametrize("bad", [["function/method"], [], "", 0, False])
+    def test_groups_must_be_mapping(self, bad):
         with pytest.raises(ValueError, match="must be a mapping"):
-            ContentInconsistentTerminologyRule({"groups": ["function/method"]})
+            ContentInconsistentTerminologyRule({"groups": bad})
+
+    def test_groups_null_treated_as_absent(self, temp_dir):
+        """``groups:`` with no value parses as None and must not raise."""
+        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
+        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentInconsistentTerminologyRule({"groups": None})
+        assert rule._group_overrides == {}
+        assert rule.check(context)
 
 
 class TestContentBrokenInternalReferenceRule:

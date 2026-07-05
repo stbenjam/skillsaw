@@ -76,7 +76,9 @@ class ContentInconsistentTerminologyRule(Rule):
         ``None`` means the group is disabled. Groups absent from the map keep
         the rule-level severity.
         """
-        raw = self.config.get("groups") or {}
+        raw = self.config.get("groups")
+        if raw is None:
+            raw = {}
         if not isinstance(raw, dict):
             raise ValueError(
                 f"'groups' for rule '{self.rule_id}' must be a mapping of "
@@ -91,12 +93,12 @@ class ContentInconsistentTerminologyRule(Rule):
                     f"'{self.rule_id}'. Valid groups: {', '.join(valid_names)}"
                 )
             # YAML may parse a bare ``off`` as boolean False depending on the
-            # loader, so accept both spellings.
-            if value is False or (isinstance(value, str) and value.lower() == "off"):
+            # loader, so accept the boolean and both string spellings.
+            if value is False or (isinstance(value, str) and value.lower() in ("off", "false")):
                 overrides[name] = None
                 continue
             try:
-                overrides[name] = Severity(value)
+                overrides[name] = Severity(value.lower() if isinstance(value, str) else value)
             except (ValueError, KeyError, TypeError) as err:
                 valid = ", ".join(s.value for s in Severity)
                 raise ValueError(
