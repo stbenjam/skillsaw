@@ -16,3 +16,9 @@ exclude:
   - "src/skillsaw/marketplace/templates/*"
   # Testing fixtures with intentional errors
   - "tests/fixtures/*"
+
+# Additional markdown files to run content rules on (not agentic artifacts,
+# so not auto-discovered) — dogfood the review guidelines against our own
+# content-quality rules.
+content-paths:
+  - "REVIEW.md"
