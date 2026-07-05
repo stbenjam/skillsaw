@@ -107,5 +107,8 @@ TRIAGE
 )"
 ```
 
-Do not close, label, or reassign the issue unless the user explicitly asks —
-this skill is advisory. Its output is a recommendation for a maintainer.
+This skill is advisory: its output is a recommendation for a maintainer. Act on
+your own initiative only to post the triage comment — leave closing, reassigning,
+and labeling to a human. The one exception is a label action the invoking context
+explicitly directs, such as an automation clearing its own trigger label once the
+comment is posted; carry that out.

@@ -28,7 +28,6 @@ network:
     - defaults                      # GitHub + Copilot model API
 
 # Copilot engine pinned to Opus 4.8, using Copilot's hosted model directly.
-# No BYOK / provider key — there is no model-provider secret to manage or leak.
 engine:
   id: copilot
   model: claude-opus-4.8

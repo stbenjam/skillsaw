@@ -26,7 +26,7 @@ etc. Only continue if the request really is about linting agent context.
   `skillsaw.org/rules/`), `.venv/bin/skillsaw --help`, and the example config for
   config options.
 - If already satisfied → **REJECT** with a redirect to the existing
-  rule/flag/option (basis: already supported).
+  rule/flag/option (already supported).
 
 ## 3. Core or plugin?
 
@@ -47,7 +47,7 @@ etc. Only continue if the request really is about linting agent context.
 
 ## Enrichment to add
 
-- The recommendation (**IMPLEMENT / PLUGIN / REJECT**) and its one-line basis.
+- The recommendation (**IMPLEMENT / PLUGIN / REJECT**) and its one-line rationale.
 - Whether the capability already exists (with the rule/flag name if so).
 - For **IMPLEMENT**: rough shape — which rule type / node
   (`context.lint_tree.find(...)`), config schema, and `repo_types` it needs, plus

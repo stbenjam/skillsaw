@@ -1,21 +1,23 @@
-## {{VERDICT_EMOJI}} Recommendation — {{RECOMMENDATION}}
+## Issue Triage Verdict
+
+**Recommendation:** {{RECOMMENDATION}}
 
 <!--
-Pick exactly one RECOMMENDATION and its VERDICT_EMOJI, and render the H2 above
-as e.g. "## 🔌 Recommendation — PLUGIN":
-
-  🛠️  FIX — REPRODUCED       a real defect you reproduced/confirmed; skillsaw should fix it
-                             (a genuinely wrong or missing doc counts as FIX too)
-  ✨  IMPLEMENT — GOOD IDEA   an in-scope feature worth building into skillsaw core
-  🔌  PLUGIN                  in skillsaw's domain but niche/single-vendor — belongs in a
-                             rule plugin, not core (link https://skillsaw.org/plugins/)
-  ⛔  REJECT                  out of scope, not reproduced, works-as-intended, invalid,
-                             duplicate, or answered
+RECOMMENDATION — pick exactly one, keep the emoji:
+  🛠️ FIX — REPRODUCED       a real defect you reproduced/confirmed; skillsaw should fix it
+                            (a genuinely wrong or missing doc counts as FIX too)
+  ✨ IMPLEMENT — GOOD IDEA   an in-scope feature worth building into skillsaw core
+  🔌 PLUGIN                  in skillsaw's domain but niche/single-vendor — belongs in a
+                            rule plugin, not core (link https://skillsaw.org/plugins/)
+  ⛔ REJECT                  out of scope, not reproduced, works-as-intended, invalid,
+                            duplicate, or answered
 -->
 
 > {{VERDICT_LINE}}
-<!-- One bold sentence a maintainer can act on at a glance: the call + the single most
+<!-- One sentence a maintainer can act on at a glance: the call + the single most
      important reason. Must stand on its own. -->
+
+---
 
 ### Summary
 
@@ -23,17 +25,12 @@ as e.g. "## 🔌 Recommendation — PLUGIN":
 <!-- 3–4 plain-language sentences: what the issue asks, whether its claims hold up against
      the code, and why this recommendation. Save the evidence for the details below. -->
 
+---
+
 <details>
-<summary><b>Triage details</b></summary>
+<summary><b>What I checked & enriched details</b></summary>
 
 <br>
-
-**Classification:** {{CLASS}}{{SECONDARY}} &nbsp;·&nbsp; **Basis:** {{BASIS}}
-<!--
-CLASS: bug | feature | documentation | question | other
-SECONDARY: optional " · also: <class>" when the issue spans two
-BASIS: reproduced | not reproduced | works as intended | already supported | needs more info
--->
 
 **What I checked**
 
@@ -58,4 +55,4 @@ As applicable:
 
 ---
 
-<sub>🤖 Advisory triage by <a href="https://github.com/stbenjam/skillsaw/tree/main/.apm/skills/skillsaw-issue-triage">skillsaw-issue-triage</a> — a recommendation for a maintainer, not a decision. Labels and closes are suggestions only.</sub>
+<sub>🤖 Advisory triage by [skillsaw-issue-triage](https://github.com/stbenjam/skillsaw/tree/main/.apm/skills/skillsaw-issue-triage) — a recommendation for a maintainer, not a decision. Labels and closes are suggestions only.</sub>

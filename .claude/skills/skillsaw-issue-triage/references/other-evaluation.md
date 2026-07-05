@@ -37,8 +37,8 @@ invalid, spam, out-of-scope, needs-more-info).
 
 ## Recommendation mapping
 
-- **documentation** with a genuinely wrong/missing doc → **FIX** (basis: confirmed).
-- **documentation** where the docs are already right → **REJECT** (works as intended).
+- A **documentation** issue where the doc is genuinely wrong or missing → **FIX**.
+- A **documentation** issue where the docs are already right → **REJECT** (works as intended).
 - **question**, **duplicate**, **invalid/spam**, **out-of-scope**, or
   **needs-info** → **REJECT**, with the concrete next step in the verdict line
   (answer & close / close as duplicate of #N / request the missing details).
