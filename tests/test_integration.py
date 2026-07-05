@@ -1363,6 +1363,16 @@ class TestExitCodes:
         assert all(v["severity"] != "info" for v in violations(r))
         assert summary(r)["info"] >= 1
 
+    def test_fail_on_info_includes_info_in_html_output(self, tmp_path):
+        """HTML report must show fatal info violations and count them in the footer."""
+        repo = copy_fixture("config/fail-on-info", tmp_path)
+        out_file = tmp_path / "report.html"
+        r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
+        assert r["rc"] == 1
+        html = out_file.read_text()
+        assert "plugin-readme" in html
+        assert "count-info" in html
+
     def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):
         """SARIF output must also include the info violations that failed the run."""
         repo = copy_fixture("config/fail-on-info", tmp_path)

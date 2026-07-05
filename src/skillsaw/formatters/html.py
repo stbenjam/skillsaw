@@ -80,7 +80,7 @@ def format_html(
     </section>"""
 
     info_count_row = ""
-    if verbose:
+    if show_info:
         info_count_row = f'<span class="count-item count-info">Info: {info}</span>'
 
     return f"""\
