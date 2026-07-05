@@ -8,12 +8,13 @@ metadata:
   version: "1.0"
 ---
 
-# skillsaw Issue Review
+# skillsaw Issue Triage
 
 Triage a single open issue on the **skillsaw** linter: decide what kind of
 issue it is, check whether its claims hold up against the actual code, fill in
-the details it is missing, and leave one clear triage comment. This skill
-**reviews** issues — it does not fix them (that is `skillsaw-issue-solver`).
+the details it is missing, land on a clear recommendation, and leave one triage
+comment. This skill **triages** issues — it does not fix them (that is
+`skillsaw-issue-solver`).
 
 Each classification has a detailed evaluation checklist in `references/`,
 loaded **only for the class the issue falls into** (progressive disclosure).
@@ -79,7 +80,23 @@ Add the details the issue is missing so it is actionable without a round-trip:
   `question`, `duplicate`, `needs-info`, `good-first-issue`) — do not apply them
   unless asked.
 
-## Step 5 — Post One Triage Comment
+## Step 5 — Decide the Recommendation
+
+Land on exactly one recommendation — this is the headline of the triage comment:
+
+| Recommendation | When |
+|---|---|
+| 🛠️ **FIX — REPRODUCED** | A real defect you reproduced or confirmed against the code (a genuinely wrong or missing doc counts here too). |
+| ✨ **IMPLEMENT — GOOD IDEA** | An in-scope feature worth building into skillsaw core. |
+| 🔌 **PLUGIN** | In skillsaw's domain but niche / single-vendor — belongs in a rule plugin, not core. Link `skillsaw.org/plugins/`. |
+| ⛔ **REJECT** | Out of scope, not reproduced, works-as-intended, invalid, duplicate, or answered. |
+
+The evaluation checklist for the class drives this: a bug that reproduces → FIX,
+one that doesn't → REJECT; a feature follows the domain gate in
+`references/feature-evaluation.md` (out of domain → REJECT, niche → PLUGIN,
+broadly useful → IMPLEMENT).
+
+## Step 6 — Post One Triage Comment
 
 Render `references/triage-template.md` and post it as exactly ONE comment:
 
@@ -90,5 +107,8 @@ TRIAGE
 )"
 ```
 
-Do not close, label, or reassign the issue unless the user explicitly asks —
-this skill is advisory. Its output is a recommendation for a maintainer.
+This skill is advisory: its output is a recommendation for a maintainer. Act on
+your own initiative only to post the triage comment — leave closing, reassigning,
+and labeling to a human. The one exception is a label action the invoking context
+explicitly directs, such as an automation clearing its own trigger label once the
+comment is posted; carry that out.
