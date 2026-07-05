@@ -16,11 +16,14 @@ You are releasing a new version of the **skillsaw** linter.
 
 Before releasing, verify:
 
-1. You are on the `main` branch and it is clean (`git status`)
+1. You are on the `main` branch, it is clean (`git status`), and up to
+   date with `origin/main` (`git pull origin main`)
 2. All tests pass: `make test`
 3. Formatting is clean: `make lint`
-4. Determine what version to release — if no version was specified, the
-   bump script will auto-increment the patch version
+4. Determine what version to release — if no version was specified,
+   choose based on the commits since the last tag: new features or rules
+   → bump minor; fixes only → bump patch (the bump script defaults to
+   patch when given no argument)
 
 The Makefile automatically creates the `.venv` and installs dependencies.
 
@@ -33,20 +36,44 @@ Run the bump script:
 bash scripts/bump-version.sh [version]
 ```
 
-This updates both `pyproject.toml` and `src/skillsaw/__init__.py`. If no
-version argument is given, it increments the patch version automatically.
+This updates `pyproject.toml`, `src/skillsaw/__init__.py`, and
+`action.yml` (the action's default skillsaw version). If no version
+argument is given, it increments the patch version automatically.
 
-Verify the bump by checking the output and confirming both files were updated.
-
-## Step 3: Commit and push the version bump
-
-First verify remotes with `git remote -v` to confirm `origin` points to
-the user's fork (stbenjam/skillsaw). Then:
+Then regenerate generated files and catch the pinned version references
+the script does NOT update:
 
 ```bash
-git add pyproject.toml src/skillsaw/__init__.py
+make update
+grep -rn "{old_version}" README.md docs/
+```
+
+Update every stale pin by hand — currently `pip install skillsaw==X.Y.Z`
+in `README.md` and `docs/ci.md`, and pre-commit `rev: vX.Y.Z` in
+`README.md` and `docs/pre-commit.md`. Do NOT touch historical
+"Since vX.Y.Z" lines in `docs/rules/`.
+
+## Step 3: Open a version-bump PR
+
+`main` is branch-protected — a direct push is rejected, so the bump goes
+through a PR. First verify remotes with `git remote -v` (`origin` should
+be stbenjam/skillsaw). Then:
+
+```bash
+git checkout -b release/{version}-bump
+git add -A
 git commit -m "[Auto] Bump version to {version}"
-git push origin main
+git push -u origin release/{version}-bump
+gh pr create --title "[Auto] Bump version to {version}" --body "Version bump for the {version} release."
+```
+
+Wait for all required checks to pass, merge the PR, then update local
+main:
+
+```bash
+gh pr checks {pr} --watch
+gh pr merge {pr} --squash
+git checkout main && git pull origin main
 ```
 
 ## Step 4: Generate release notes
@@ -69,8 +96,11 @@ commits, CI-only changes).
 
 ## Step 5: Create the GitHub release
 
+Only after the bump PR has merged, so the tag includes the bumped
+version files:
+
 ```bash
-gh release create v{version} --title "v{version}" --notes "{release_notes}"
+gh release create v{version} --title "v{version}" --notes "{release_notes}" --target main
 ```
 
 This triggers the `release.yml` workflow which builds and publishes to PyPI
