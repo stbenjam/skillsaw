@@ -47,5 +47,5 @@ safe-outputs:
 # skillsaw Issue Triage
 
 A maintainer has labeled the triggering issue `triage-for-agent`. Triage that
-issue using the **skillsaw-issue-review** skill, and post the triage comment it
+issue using the **skillsaw-issue-triage** skill, and post the triage comment it
 produces.

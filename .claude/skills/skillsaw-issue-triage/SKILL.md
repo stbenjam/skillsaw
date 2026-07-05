@@ -1,6 +1,6 @@
 ---
-name: skillsaw-issue-review
-description: Triage a GitHub issue filed against skillsaw — classify it (bug, feature, docs, question, other), verify its claims against the codebase, enrich it with missing details, and post one structured triage comment. Use to review and label incoming issues, not to fix them.
+name: skillsaw-issue-triage
+description: Triage a GitHub issue filed against skillsaw — classify it (bug, feature, docs, question, other), verify its claims against the codebase, enrich it with missing details, and post one structured triage comment. Use to triage and label incoming issues, not to fix them.
 compatibility: Requires git, gh CLI, and internet access
 user-invocable: true
 metadata:

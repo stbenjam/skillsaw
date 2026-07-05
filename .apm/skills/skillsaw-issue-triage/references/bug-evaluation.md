@@ -16,11 +16,11 @@ refute that claim against the current code, then enrich the report.
 
 ## Verify accuracy against the code
 
-- **Locate the responsible code.** Bugs are **not** limited to rules. Trace the
-  report to whatever owns the behavior: a rule under `src/skillsaw/rules/builtin/`,
-  or the engine around it — the lint tree, `markdown_doc`, config discovery and
-  loading, the autofix pass, `utils.py` read paths, or the CLI. For crashes, get
-  the traceback and name the failing function wherever it lives.
+- **Locate the responsible code.** Trace the report to whatever owns the
+  behavior — a rule under `src/skillsaw/rules/builtin/`, or the engine around it:
+  the lint tree, `markdown_doc`, config discovery and loading, the autofix pass,
+  `utils.py` read paths, or the CLI. For crashes, get the traceback and name the
+  failing function wherever it lives.
 - **Intended vs. defective.** Confirm the behavior is actually wrong, not working
   as designed. For a rule, check its docs (`skillsaw explain <rule-id>` /
   `skillsaw.org/rules/`) and its `default_severity` / `repo_types`; for engine
