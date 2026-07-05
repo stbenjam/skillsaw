@@ -96,7 +96,7 @@ jobs:
 | `path` | Path to lint | `.` |
 | `version` | Specific skillsaw version to install | latest |
 | `strict` | Treat warnings as errors | `false` |
-| `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict` is equivalent to `fail-on: warning`, strictest wins | `''` |
+| `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
 | `plugins` | Newline-separated list of plugin packages to install | `''` |

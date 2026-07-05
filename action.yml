@@ -18,7 +18,7 @@ inputs:
     required: false
     default: 'false'
   fail-on:
-    description: 'Fail on violations at this severity or above: error, warning, info (strict is equivalent to fail-on: warning; the strictest setting wins)'
+    description: 'Fail on violations at this severity or above: error, warning, info (strict: true is equivalent to fail-on: warning; combining strict with a contradictory fail-on fails the run)'
     required: false
     default: ''
   plugins:

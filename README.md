@@ -1110,7 +1110,9 @@ By default only errors fail the run. `strict: true` (or `--strict`) also
 fails on warnings, and `fail-on: <error|warning|info>` (or `--fail-on`)
 sets the threshold directly — `fail-on: info` fails on any violation, so a
 clean repo stays clean as new rules land. `strict: true` is equivalent to
-`fail-on: warning`; when both are set the strictest wins.
+`fail-on: warning`; when both config keys are set the strictest wins. The
+CLI flags override the config file's settings; passing both flags with
+contradictory values is an error.
 
 ## Example Output
 
