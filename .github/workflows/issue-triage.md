@@ -5,8 +5,9 @@
 #   - Trust gate: only fires when a maintainer applies the `triage-for-agent`
 #     label (labeled event + names filter + roles gate). Anonymous/attacker
 #     issues never auto-trigger the agent.
-#   - Powerless agent: `permissions: read-all` — the agent that reads the
-#     untrusted issue text cannot write anything.
+#   - Least-privilege agent: the agent job holds read-only repo/issue/PR scopes
+#     plus `copilot-requests` (auth for the Copilot model API). The writes
+#     (comment, label removal) run in the separate safe-outputs job.
 #   - Privilege separation: the triage comment is posted by the `safe-outputs`
 #     job, not the agent. `threat-detection` (auto-enabled by safe-outputs)
 #     scans the proposed comment for prompt_injection / secret_leak before it
@@ -19,7 +20,11 @@ on:
   roles: [admin, maintainer, write] # only a trusted actor's label fires it
   reaction: "eyes"                  # bot 👀s the issue when it picks it up
 
-permissions: read-all               # powerless agent — no write scope
+permissions:                        # agent job scopes (writes happen in safe-outputs)
+  contents: read                    # read the repo to verify claims
+  issues: read                      # read the triggering issue + comments
+  pull-requests: read               # search for related/duplicate PRs
+  copilot-requests: write           # authorize GITHUB_TOKEN for the Copilot model API
 
 timeout-minutes: 10
 
