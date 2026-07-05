@@ -32,10 +32,9 @@ network:
   allowed:
     - defaults                      # GitHub + Copilot model API
 
-# Copilot engine pinned to Opus 4.8, using Copilot's hosted model directly.
+# Copilot engine with automatic model selection (the Copilot tier chooses the model).
 engine:
   id: copilot
-  model: claude-opus-4.8
 
 safe-outputs:
   add-comment:                      # posted by the privileged safe-output job
