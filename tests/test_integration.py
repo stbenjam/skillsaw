@@ -1371,7 +1371,7 @@ class TestExitCodes:
         assert r["rc"] == 1
         html = out_file.read_text()
         assert "plugin-readme" in html
-        assert "count-info" in html
+        assert '<span class="count-item count-info">Info:' in html
 
     def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):
         """SARIF output must also include the info violations that failed the run."""

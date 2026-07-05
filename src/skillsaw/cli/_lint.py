@@ -35,6 +35,14 @@ def _run_lint(args):
 
     cli_version = _get_version()
 
+    if args.strict and args.fail_on and args.fail_on != "warning":
+        print(
+            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
+            "(--strict means --fail-on warning)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     output_formats = {}
     for spec in args.outputs:
         try:
@@ -91,14 +99,6 @@ def _run_lint(args):
 
     if config_path and args.verbose and args.fmt == "text":
         print(f"Using config: {config_path}\n")
-
-    if args.strict and args.fail_on and args.fail_on != "warning":
-        print(
-            f"Error: --strict and --fail-on {args.fail_on} contradict each other "
-            "(--strict means --fail-on warning)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     # CLI flags override the config file's strict/fail-on settings; the config
     # values only apply when neither flag is given.
