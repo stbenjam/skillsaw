@@ -56,41 +56,27 @@ jobs:
       # committed files, so there is no untracked venv/cache to descend into.
       # Skip cleanly if the tree is absent so a removed directory doesn't turn
       # the whole matrix red.
+      # Static analysis only (YARA / bytecode / taint / manifest). The LLM judge
+      # is intentionally omitted: this scans the repo's own agent sources, so on
+      # same-repo PRs and pushes the author is the maintainer (no threat), and
+      # fork PRs — the actual untrusted-contributor case — can't receive the
+      # OPENROUTER_API_KEY secret anyway. An LLM pass would add cost and
+      # flakiness with no security benefit here.
       - name: Run security scan
-        env:
-          # The scanner reads the LLM key from SKILL_SCANNER_LLM_API_KEY for every
-          # provider (see llm_provider_config._resolve_api_key); it does NOT read
-          # OPENROUTER_API_KEY. Feeding the wrong var makes it silently fall back
-          # to static-only ("Could not load LLM analyzer: API key required").
-          SKILL_SCANNER_LLM_MODEL: openrouter/z-ai/glm-5.2
-          SKILL_SCANNER_LLM_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           if [ ! -d "${{ matrix.dir }}" ]; then
             echo "${{ matrix.dir }} is not present in this checkout; skipping."
             exit 0
           fi
-          # Capture the scanner's exit code without letting the default
-          # `bash -eo pipefail` abort the step before the LLM check below.
-          rc=0
           skill-scanner scan-all \
             --recursive \
             --lenient \
-            --use-llm \
             --fail-on-severity high \
             --format sarif \
             --output-sarif "skill-scanner-${{ matrix.name }}.sarif" \
             --format html \
             --output-html "skill-scanner-${{ matrix.name }}.html" \
-            "${{ matrix.dir }}" 2>&1 | tee scan-output.log || rc=$?
-          # Fail closed: we asked for --use-llm, so the LLM judge must actually
-          # run. The scanner treats LLM load/call failures as non-fatal and exits
-          # 0 on static-only results, which would be a false green for an
-          # LLM-gated security check. Fail the job if the judge did not run.
-          if grep -qiE "Could not load LLM analyzer|LLM analysis failed|LLM API error" scan-output.log; then
-            echo "::error::LLM judge did not run (see log above) — refusing a static-only pass. Check SKILL_SCANNER_LLM_API_KEY / model."
-            exit 1
-          fi
-          exit "$rc"
+            "${{ matrix.dir }}"
 
       - name: Upload SARIF to GitHub Code Scanning
         if: (success() || failure()) && hashFiles(format('skill-scanner-{0}.sarif', matrix.name)) != ''
