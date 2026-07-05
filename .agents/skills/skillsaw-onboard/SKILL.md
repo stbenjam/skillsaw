@@ -205,10 +205,10 @@ they decline, skip to Step 9.
 First, look up the latest skillsaw version to pin against:
 
 ```
-curl -s https://pypi.org/pypi/skillsaw/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
+python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json'))['info']['version'])"
 ```
 
-If `curl` or `python3` is unavailable, fall back to:
+If `python3` is unavailable, fall back to:
 
 ```
 git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k3 -V | tail -1
