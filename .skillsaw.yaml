@@ -4,15 +4,19 @@ version: "99.0.0" # high version so all new rules get triggered
 exclude:
   # Agentic artifacts come from .apm, don't lint twice
   - "AGENTS.md"
-  - "GEMINI.md"
-  - "CLAUDE.md"
   - ".claude/*"
   - ".cursor/*"
-  - ".gemini/*"
   - ".opencode/*"
   - ".agents/*"
-  - ".github/instructions/*"  
+  - ".github/instructions/*"
+  - ".github/copilot-instructions.md"
   # Templates
   - "src/skillsaw/marketplace/templates/*"
   # Testing fixtures with intentional errors
   - "tests/fixtures/*"
+
+# Additional markdown files to run content rules on (not agentic artifacts,
+# so not auto-discovered) — dogfood the review guidelines against our own
+# content-quality rules.
+content-paths:
+  - "REVIEW.md"
