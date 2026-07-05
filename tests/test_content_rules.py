@@ -609,7 +609,7 @@ class TestContentEmbeddedSecretsRule:
 
     def test_detects_github_token(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
-            "Use token ghp_abcdefghijklmnopqrstuvwxyz123456789012\n"
+            "Use token ghp_abcdefghijklmnopqrstuvwxyz123456789012\n"  # notsecret
         )
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
@@ -630,7 +630,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) == 0
 
     def test_reports_line_number(self, temp_dir):
-        content = "Line 1\nLine 2\nPassword: password='xK9$mQ2vLp8#nR4zW7@j'\nLine 4\n"
+        content = "Line 1\nLine 2\nPassword: password='xK9$mQ2vLp8#nR4zW7@j'\nLine 4\n"  # notsecret
         (temp_dir / "CLAUDE.md").write_text(content)
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
@@ -641,19 +641,19 @@ class TestContentEmbeddedSecretsRule:
         "secret,expected_desc",
         [
             ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),
-            ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),
+            ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),  # notsecret
             ("ASIAIOSFODNN7EXAMPLE", "AWS temporary access key"),
             ("xoxa-123456789012-abcdefghij", "Slack app token"),
             ("xoxr-123456789012-abcdefghij", "Slack refresh token"),
             (_STRIPE_SK, "Stripe secret key"),
             (_STRIPE_RK, "Stripe restricted key"),
-            ("AIzaSyATESTFAKEKEYDONOTUSE0000000000000", "Google API key"),
-            ("SK00000000000000000000000000000000", "Twilio API key"),
+            ("AIzaSyATESTFAKEKEYDONOTUSE0000000000000", "Google API key"),  # notsecret
+            ("SK00000000000000000000000000000000", "Twilio API key"),  # notsecret
             (
-                "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijk",
+                "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz0123456789abcdefghijk",  # notsecret
                 "SendGrid API key",
             ),
-            ("npm_abcdefghijklmnopqrstuvwxyz1234567890", "npm access token"),
+            ("npm_abcdefghijklmnopqrstuvwxyz1234567890", "npm access token"),  # notsecret
             ("pypi-abcdefghijklmnopqrstuvwxyz", "PyPI API token"),
             (
                 "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123def456",
@@ -714,7 +714,7 @@ class TestContentEmbeddedSecretsRule:
             'password="hunter2placeholder"',
             "password = 'your-password-here'",
             'password: "aaaaaaaaaaaaaaaa"',
-            'password = "dummy-value-123"',
+            'password = "dummy-value-123"',  # notsecret
             'api_key = "<your-api-key-goes-here>"',
             'api_key = "${MY_API_KEY_FROM_ENV}"',
             'api_key = "EXAMPLE_KEY_1234567890"',
@@ -757,9 +757,9 @@ class TestContentEmbeddedSecretsRule:
     @pytest.mark.parametrize(
         "line,expected_desc",
         [
-            ('password = "xK9$mQ2vLp8#nR4z"', "Hardcoded password"),
+            ('password = "xK9$mQ2vLp8#nR4z"', "Hardcoded password"),  # notsecret
             ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),
-            ('secret_key = "kJ8vQz3mN9pL2wXyRb5cDf7g"', "Hardcoded secret key"),
+            ('secret_key = "kJ8vQz3mN9pL2wXyRb5cDf7g"', "Hardcoded secret key"),  # notsecret
         ],
         ids=["random-password", "hex-api-key", "mixed-secret-key"],
     )
@@ -781,10 +781,10 @@ class TestContentEmbeddedSecretsRule:
             'password = "Tr0ub4dor&3"',
             # $ followed by uppercase inside a random value is not an
             # env-var reference and must not suppress the finding.
-            'password = "xK9$MQ2vLp8#nR4z"',
+            'password = "xK9$MQ2vLp8#nR4z"',  # notsecret
             # Incidental <..> punctuation inside a random value is not an
             # angle-bracket placeholder.
-            'password = "k<9x>Km2#pQzW4vT"',
+            'password = "k<9x>Km2#pQzW4vT"',  # notsecret
         ],
         ids=[
             "short-random-8",
@@ -810,7 +810,7 @@ class TestContentEmbeddedSecretsRule:
             # stoplists and plausibly occur inside real credential values —
             # they must not act as placeholder markers.
             ('api_key = "app-secret-x8K2mQ9zL4vN"', "Hardcoded API key"),
-            ('password = "xK2passwd9QmZ4vN"', "Hardcoded password"),
+            ('password = "xK2passwd9QmZ4vN"', "Hardcoded password"),  # notsecret
         ],
         ids=["secret-substring", "passwd-substring"],
     )
@@ -1003,6 +1003,70 @@ class TestContentInconsistentTerminologyRule:
         context = RepositoryContext(temp_dir)
         violations = ContentInconsistentTerminologyRule().check(context)
         assert len(violations) == 0
+
+    def test_disabled_group_is_skipped(self, temp_dir):
+        """Issue #366: a group set to 'off' stops firing while others keep working."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "The first function parameter is the context directory.\n"
+        )
+        (temp_dir / "AGENTS.md").write_text("Call the service method in this folder.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": "off"}})
+        violations = rule.check(context)
+        assert violations, "directory/folder group should still fire"
+        assert all("function/method" not in v.message for v in violations)
+        assert any("directory/folder" in v.message for v in violations)
+
+    @pytest.mark.parametrize("setting", [False, "false", "OFF"])
+    def test_disabled_group_accepts_off_spellings(self, temp_dir, setting):
+        """YAML 1.1 loaders parse a bare ``off`` as boolean False; quoted
+        strings and casing variants must behave the same."""
+        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
+        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": setting}})
+        assert rule.check(context) == []
+
+    def test_group_severity_is_case_insensitive(self):
+        rule = ContentInconsistentTerminologyRule({"groups": {"function/method": "Warning"}})
+        assert rule._group_overrides["function/method"] == Severity.WARNING
+
+    def test_group_severity_override(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Write a helper function in a directory.\n")
+        (temp_dir / "AGENTS.md").write_text("Write a helper method in a folder.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentInconsistentTerminologyRule(
+            {"severity": "error", "groups": {"function/method": "info"}}
+        )
+        violations = rule.check(context)
+        by_group = {}
+        for v in violations:
+            group = v.message.split("Inconsistent terminology: ")[1].split(" —")[0]
+            by_group[group] = v.severity
+        assert by_group["function/method"] == Severity.INFO
+        assert by_group["directory/folder"] == Severity.ERROR
+
+    def test_unknown_group_name_rejected(self):
+        with pytest.raises(ValueError, match="Unknown terminology group 'bogus'"):
+            ContentInconsistentTerminologyRule({"groups": {"bogus": "off"}})
+
+    def test_invalid_group_setting_rejected(self):
+        with pytest.raises(ValueError, match="Invalid setting 'loud'"):
+            ContentInconsistentTerminologyRule({"groups": {"function/method": "loud"}})
+
+    @pytest.mark.parametrize("bad", [["function/method"], [], "", 0, False])
+    def test_groups_must_be_mapping(self, bad):
+        with pytest.raises(ValueError, match="must be a mapping"):
+            ContentInconsistentTerminologyRule({"groups": bad})
+
+    def test_groups_null_treated_as_absent(self, temp_dir):
+        """``groups:`` with no value parses as None and must not raise."""
+        (temp_dir / "CLAUDE.md").write_text("Write a helper function.\n")
+        (temp_dir / "AGENTS.md").write_text("Write a helper method.\n")
+        context = RepositoryContext(temp_dir)
+        rule = ContentInconsistentTerminologyRule({"groups": None})
+        assert rule._group_overrides == {}
+        assert rule.check(context)
 
 
 class TestContentBrokenInternalReferenceRule:

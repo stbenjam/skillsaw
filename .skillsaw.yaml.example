@@ -146,6 +146,7 @@ rules:
   content-inconsistent-terminology:
     enabled: auto
     severity: info
+    # groups: {}
 
   # Check if instruction count in a file exceeds LLM instruction budget (~150)
   content-instruction-budget:

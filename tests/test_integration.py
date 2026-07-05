@@ -1617,6 +1617,45 @@ class TestRequiredFieldsConfig:
 
 
 @pytest.mark.integration
+class TestTerminologyGroupsConfig:
+    """End-to-end tests for per-group content-inconsistent-terminology config
+    (issue #366).
+
+    The fixture mixes function/method (disabled via ``groups``) and
+    directory/folder (kept at the rule-level error severity) across
+    CLAUDE.md and AGENTS.md.
+    """
+
+    FIXTURE = "config/terminology-groups"
+
+    def _rule_violations(self, r):
+        return [v for v in violations(r) if v["rule_id"] == "content-inconsistent-terminology"]
+
+    def test_disabled_group_silenced_others_kept(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = self._rule_violations(r)
+        assert vs, "directory/folder group should still fire"
+        assert all("function/method" not in v["message"] for v in vs)
+        assert all(v["severity"] == "error" for v in vs)
+
+    def test_without_groups_config_all_groups_fire(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-inconsistent-terminology:\n"
+            "    enabled: true\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        messages = [v["message"] for v in self._rule_violations(r)]
+        assert any("function/method" in m for m in messages)
+        assert any("directory/folder" in m for m in messages)
+
+
+@pytest.mark.integration
 class TestDescriptionMaxLengthConfig:
     """End-to-end tests for the configurable agentskill-description max_length.
 
