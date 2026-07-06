@@ -218,9 +218,17 @@ def main():
     readme_path = Path(__file__).resolve().parent.parent / "README.md"
     readme = readme_path.read_text()
 
-    if BEGIN_MARKER not in readme or END_MARKER not in readme:
+    has_begin = BEGIN_MARKER in readme
+    has_end = END_MARKER in readme
+    if not has_begin and not has_end:
         print("README.md has no generated rules section; skipping README update.")
         sys.exit(0)
+    if has_begin != has_end:
+        print(
+            f"ERROR: Mismatched markers in README.md (begin: {has_begin}, end: {has_end})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     rules_by_id = {}
     for rule_class in BUILTIN_RULES:
