@@ -1,4 +1,4 @@
-"""Tests for the context-window budget report (skillsaw budget)."""
+"""Tests for the context-window budget report (skillsaw context)."""
 
 import json
 import os
@@ -19,9 +19,9 @@ from skillsaw.context import RepositoryContext
 from .test_integration import copy_fixture
 
 
-def run_budget(path, *extra_args):
+def run_context(path, *extra_args):
     return subprocess.run(
-        [sys.executable, "-m", "skillsaw", "budget", str(path), *extra_args],
+        [sys.executable, "-m", "skillsaw", "context", str(path), *extra_args],
         capture_output=True,
         text=True,
         timeout=60,
@@ -235,11 +235,11 @@ class TestComputeBudget:
             assert tokens == sorted(tokens, reverse=True)
 
 
-class TestBudgetCli:
+class TestContextCli:
     @pytest.mark.integration
     def test_text_output(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
-        result = run_budget(repo)
+        result = run_context(repo)
         assert result.returncode == 0, result.stderr
         assert "SESSION START" in result.stdout
         assert "ON DEMAND" in result.stdout
@@ -249,7 +249,7 @@ class TestBudgetCli:
     @pytest.mark.integration
     def test_json_output(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
-        result = run_budget(repo, "--format", "json")
+        result = run_context(repo, "--format", "json")
         assert result.returncode == 0, result.stderr
 
         payload = json.loads(result.stdout)
@@ -260,7 +260,7 @@ class TestBudgetCli:
     @pytest.mark.integration
     def test_top_truncates_text_output(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
-        result = run_budget(repo, "--top", "1")
+        result = run_context(repo, "--top", "1")
         assert result.returncode == 0, result.stderr
         assert "top 1 of 7" in result.stdout
         assert "--top 0 for all" in result.stdout
@@ -268,7 +268,7 @@ class TestBudgetCli:
     @pytest.mark.integration
     def test_window_changes_percentage(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
-        result = run_budget(repo, "--format", "json", "--window", "1000")
+        result = run_context(repo, "--format", "json", "--window", "1000")
         payload = json.loads(result.stdout)
         assert payload["window"] == 1000
         assert payload["session_start"]["window_percent"] > 10
@@ -284,7 +284,7 @@ class TestBudgetCli:
             "        warn: 10\n"
             "        error: 50\n"
         )
-        result = run_budget(repo, "--format", "json")
+        result = run_context(repo, "--format", "json")
         payload = json.loads(result.stdout)
         claude = next(f for f in payload["session_start"]["files"] if f["path"] == "CLAUDE.md")
         assert claude["status"] == "error"
@@ -300,13 +300,13 @@ class TestBudgetCli:
             "      claude-md:\n"
             "        warn: 10\n"
         )
-        result = run_budget(repo)
+        result = run_context(repo)
         assert "over warn limit" in result.stdout
         assert "context-budget rule" in result.stdout
 
     @pytest.mark.integration
     def test_missing_path_exits_nonzero(self, tmp_path):
-        result = run_budget(tmp_path / "does-not-exist")
+        result = run_context(tmp_path / "does-not-exist")
         assert result.returncode == 1
         assert "Path not found" in result.stderr
 

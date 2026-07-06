@@ -17,7 +17,7 @@ _SUBCOMMANDS = {
     "baseline",
     "explain",
     "badge",
-    "budget",
+    "context",
     "plugins",
 }
 
@@ -86,10 +86,10 @@ def main():
         from ._badge import _run_badge
 
         _run_badge(args)
-    elif args.command == "budget":
-        from ._budget import _run_budget
+    elif args.command == "context":
+        from ._context import _run_context
 
-        _run_budget(args)
+        _run_context(args)
     elif args.command == "tree":
         from ._tree import _run_tree
 

@@ -1,4 +1,4 @@
-"""Handler for the ``skillsaw budget`` subcommand."""
+"""Handler for the ``skillsaw context`` subcommand."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def _print_text(report, top: int) -> None:
         print(f"\n{', '.join(parts)} — enforced by the context-budget rule")
 
 
-def _run_budget(args):
+def _run_context(args):
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)

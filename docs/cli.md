@@ -83,7 +83,7 @@ Display the repository lint tree
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 | `--format` | Output format (default: text) (choices: text, dot) | `text` |
 
-## `skillsaw budget`
+## `skillsaw context`
 
 Report estimated context-window token costs for the repository's agent content
 

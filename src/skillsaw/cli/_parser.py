@@ -28,7 +28,7 @@ Examples:
   skillsaw init                   # Generate default config
   skillsaw list-rules             # List available rules
   skillsaw docs                   # Generate documentation
-  skillsaw budget                 # Report context-window token costs
+  skillsaw context                # Report context-window token costs
   skillsaw add marketplace        # Scaffold a new marketplace
 
 For more information, visit: https://github.com/stbenjam/skillsaw
@@ -330,9 +330,9 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Output format (default: text)",
     )
 
-    # --- budget ---
-    budget_parser = subparsers.add_parser(
-        "budget",
+    # --- context ---
+    context_parser = subparsers.add_parser(
+        "context",
         help="Report estimated context-window token costs for the repository's agent content",
         description="Estimate what this repository's agent content costs in "
         "context-window tokens, split by when it is paid for: content loaded "
@@ -345,33 +345,33 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "are estimates (chars/4).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    budget_parser.add_argument(
+    context_parser.add_argument(
         "path",
         nargs="?",
         type=Path,
         default=Path.cwd(),
         help="Path to repository (default: current directory)",
     )
-    budget_parser.add_argument(
+    context_parser.add_argument(
         "-c",
         "--config",
         type=Path,
         help="Path to .skillsaw.yaml config file",
     )
-    budget_parser.add_argument(
+    context_parser.add_argument(
         "--format",
         dest="fmt",
         default="text",
         choices=["text", "json"],
         help="Output format (default: text)",
     )
-    budget_parser.add_argument(
+    context_parser.add_argument(
         "--window",
         type=int,
         default=200_000,
         help="Context-window size in tokens used for percentages (default: 200000)",
     )
-    budget_parser.add_argument(
+    context_parser.add_argument(
         "--top",
         type=int,
         default=15,

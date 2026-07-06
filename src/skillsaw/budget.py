@@ -27,7 +27,7 @@ Frontmatter is deliberately included in a file's on-demand cost even
 though descriptions are also billed in session-start metadata: the rule
 measures whole files for its per-file limits, and pricing them any other
 way would let the report call an item "ok" that lint flags over budget.
-The report never fails a run — ``skillsaw budget`` observes, the
+The report never fails a run — ``skillsaw context`` observes, the
 ``context-budget`` rule enforces.
 
 CodeRabbit and promptfoo content is excluded: skillsaw lints it as prose,
