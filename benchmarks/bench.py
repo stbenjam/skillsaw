@@ -236,6 +236,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.repeats < 1:
         parser.error("--repeats must be at least 1")
 
+    # Validate the baseline before the (slow) benchmark run so a missing file
+    # fails fast with guidance instead of crashing after all the work.
+    if args.compare and not args.compare.exists():
+        parser.error(
+            f"baseline not found: {args.compare}\n"
+            "save one first on a clean tree: make benchmark-save"
+        )
+
     with tempfile.TemporaryDirectory(prefix="skillsaw-bench-") as tmp:
         if args.repo:
             repo_path = args.repo.resolve()
