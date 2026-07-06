@@ -6,13 +6,19 @@ split by *when* the content is paid for:
 
 - **Session start** — content a coding agent loads into every session:
   instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, copilot
-  instructions, cursor/cline/kiro rules), rules-directory files, and the
-  frontmatter descriptions of every skill, command, and agent (harnesses
-  list name + description in the system prompt so the agent knows what it
-  can invoke).
-- **On demand** — content loaded only when invoked: skill, command, and
-  agent bodies, skill references, prompts, chatmodes, and extra content
-  files.
+  instructions, cline/kiro rules), rules-directory files without a
+  ``paths:`` scope, ``alwaysApply`` cursor rules, and the frontmatter
+  descriptions of skills, commands, and agents (harnesses list name +
+  description in the system prompt so the agent knows what it can
+  invoke; entries marked ``disable-model-invocation: true`` are not
+  listed and are excluded).
+- **On demand** — content loaded only when invoked or when its path
+  scope matches: whole skill, command, and agent files, skill
+  references, prompts, chatmodes, extra content files, path-scoped
+  rules (``paths:`` frontmatter), and non-``alwaysApply`` cursor rules.
+  Content-block categories contributed by skillsaw plugins land here
+  too — pricing them beats dropping them, and their harness semantics
+  are unknown.
 
 Token counts are the same estimate the ``context-budget`` rule uses
 (``len(text) // 4``) over the raw file, and every item is checked against
@@ -33,7 +39,8 @@ from .utils import read_text
 if TYPE_CHECKING:  # pragma: no cover
     from .context import RepositoryContext
 
-# ContentBlock categories that are injected into every session.
+# ContentBlock categories that are injected into every session (unless
+# the individual file opts out via paths:/alwaysApply frontmatter).
 SESSION_CATEGORIES = {"claude-md", "agents-md", "gemini-md", "instruction", "rule"}
 
 # ContentBlock categories loaded only when the component is invoked.
@@ -47,6 +54,12 @@ ON_DEMAND_CATEGORIES = {
     "context",
     "extra",
 }
+
+# Linted as prose, but consumed by CodeRabbit / promptfoo — never loaded
+# into an agent session.
+EXCLUDED_CATEGORIES = {"coderabbit", "promptfoo-prompt"}
+
+_TRUTHY = (True, "true", "True")
 
 DEFAULT_WINDOW = 200_000
 
@@ -160,10 +173,32 @@ def _status(tokens: int, limits: Tuple[Optional[int], Optional[int]]) -> Optiona
 
 
 def _rel(path: Path, root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(root))
-    except ValueError:
-        return str(path)
+    # Prefer the unresolved path: a symlink inside the repo pointing at a
+    # target outside it should keep its repo-relative name, not leak the
+    # target's absolute path.
+    for candidate in (path, path.resolve()):
+        try:
+            return str(candidate.relative_to(root))
+        except ValueError:
+            continue
+    return str(path)
+
+
+def _always_loaded(block) -> bool:
+    """Whether a session-category block really is unconditional.
+
+    Rules-directory files with a ``paths:`` frontmatter key are loaded
+    when matching files are read, not at launch; cursor ``.mdc`` rules
+    are only injected unconditionally when ``alwaysApply`` is true.
+    """
+    field_value = getattr(block.parent, "field_value", None)
+    if field_value is None:
+        return True  # plain instruction file, no frontmatter routing
+    if block.category == "rule":
+        return not field_value("paths")
+    if block.path.suffix == ".mdc":
+        return field_value("alwaysApply") in _TRUTHY
+    return True
 
 
 def compute_budget(
@@ -184,8 +219,17 @@ def compute_budget(
     from .rules.builtin.context_budget.budget import DEFAULT_LIMITS, _parse_limit
 
     merged: Dict[str, Any] = dict(DEFAULT_LIMITS)
-    merged.update(user_limits or {})
-    limits = {category: _parse_limit(value) for category, value in merged.items()}
+    if isinstance(user_limits, dict):
+        merged.update(user_limits)
+    limits = {}
+    for category, value in merged.items():
+        try:
+            limits[category] = _parse_limit(value)
+        except (TypeError, ValueError):
+            # Malformed config entry: fall back to the default threshold
+            # rather than crashing a report. Lint surfaces the config error.
+            default = DEFAULT_LIMITS.get(category)
+            limits[category] = _parse_limit(default) if default is not None else (None, None)
 
     root = context.root_path
     report = BudgetReport(root=str(root), window=window, limits=limits)
@@ -193,14 +237,15 @@ def compute_budget(
     seen: set = set()
     for block in context.lint_tree.content_blocks():
         category = block.category
-        if category in SESSION_CATEGORIES:
-            bucket = report.session_files
-        elif category in ON_DEMAND_CATEGORIES:
-            bucket = report.on_demand
-        else:
-            # coderabbit / promptfoo-prompt fragments: linted as prose but
-            # consumed by those tools, never loaded into an agent session.
+        if category in EXCLUDED_CATEGORIES:
             continue
+        if category in SESSION_CATEGORIES and _always_loaded(block):
+            bucket = report.session_files
+        else:
+            # On-demand categories, path-scoped/conditional session files,
+            # and plugin-contributed categories we can't classify — pricing
+            # unknowns as on-demand beats silently dropping them.
+            bucket = report.on_demand
 
         resolved = block.path.resolve()
         if resolved in seen:
@@ -238,14 +283,19 @@ def _gather_metadata(
     kinds = [
         ("skill", SkillBlock, "skill-description"),
         ("command", CommandBlock, "command-description"),
-        # No description limit category exists for agents; items get no status.
-        ("agent", AgentBlock, "agent-description"),
+        # The context-budget rule enforces no agent-description limit, so
+        # budget must never flag one (limit_key None -> status always None).
+        ("agent", AgentBlock, None),
     ]
 
     groups: List[MetadataGroup] = []
     for kind, block_type, limit_key in kinds:
         group = MetadataGroup(kind=kind)
         for block in context.lint_tree.find(block_type):
+            if block.field_value("disable-model-invocation") in _TRUTHY:
+                # Not listed in the model's context; the body still costs
+                # on-demand tokens when the user invokes it.
+                continue
             name = block.field_value("name")
             if not isinstance(name, str) or not name:
                 # Skills are named by their directory, commands/agents by
@@ -256,10 +306,14 @@ def _gather_metadata(
             group.items.append(
                 BudgetItem(
                     label=name,
-                    category=limit_key,
+                    category=limit_key or f"{kind}-description",
                     tokens=tokens,
                     path=_rel(block.path, root),
-                    status=_status(tokens, limits.get(limit_key, (None, None))),
+                    status=(
+                        _status(tokens, limits.get(limit_key, (None, None)))
+                        if limit_key is not None
+                        else None
+                    ),
                 )
             )
         group.items.sort(key=lambda i: (-i.tokens, i.label))

@@ -1,0 +1,8 @@
+---
+description: Core code style for every file in the repository
+alwaysApply: true
+---
+
+- Type hints on every public function signature.
+- Prefer explicit imports over wildcard imports.
+- Raise domain-specific exceptions from `app/errors.py`.

@@ -1,0 +1,7 @@
+reviews:
+  path_instructions:
+    - path: "app/api/**"
+      instructions: >-
+        Check that every endpoint validates input with a Pydantic model and
+        returns errors through the shared error handler. Flag any handler
+        that contains business logic instead of delegating to a service.

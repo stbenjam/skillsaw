@@ -67,7 +67,7 @@ def _print_text(report, top: int) -> None:
     print()
 
     shown = report.on_demand if top <= 0 else report.on_demand[:top]
-    header = f"{bold}ON DEMAND{reset} {dim}— loaded when invoked"
+    header = f"{bold}ON DEMAND{reset} {dim}— loaded when invoked or path-matched"
     if len(shown) < len(report.on_demand):
         header += f" (top {len(shown)} of {len(report.on_demand)}; --top 0 for all)"
     print(header + f"{reset}")

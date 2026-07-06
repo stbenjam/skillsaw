@@ -1,0 +1,9 @@
+---
+description: API endpoint conventions for the order-processing service
+globs: app/api/**
+alwaysApply: false
+---
+
+- Every endpoint validates input with a Pydantic model; no raw dict access.
+- Return errors through the shared error handler in `app/api/errors.py`.
+- New endpoints need an OpenAPI description and a request/response example.

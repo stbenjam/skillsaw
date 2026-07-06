@@ -336,12 +336,13 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Report estimated context-window token costs for the repository's agent content",
         description="Estimate what this repository's agent content costs in "
         "context-window tokens, split by when it is paid for: content loaded "
-        "into every session at startup (instruction files, rules-directory "
-        "files, and the frontmatter descriptions of every skill, command, and "
-        "agent) versus content loaded on demand when invoked (skill, command, "
-        "and agent bodies, references, prompts). Every item is checked against "
-        "the context-budget rule's configured limits. Token counts are "
-        "estimates (chars/4).",
+        "into every session at startup (instruction files, unscoped "
+        "rules-directory files, and the frontmatter descriptions of skills, "
+        "commands, and agents) versus content loaded on demand (whole skill, "
+        "command, and agent files when invoked, references, prompts, and "
+        "path-scoped rules when their paths match). Every item is checked "
+        "against the context-budget rule's configured limits. Token counts "
+        "are estimates (chars/4).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     budget_parser.add_argument(
