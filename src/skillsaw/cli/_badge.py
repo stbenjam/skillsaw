@@ -14,26 +14,46 @@ _BADGE_FILENAME = ".skillsaw-badge.json"
 _CARD_FILENAME = ".skillsaw-card.svg"
 
 
+def _git(root_path: Path, *argv):
+    """Run git in *root_path*, returning stripped stdout or None on failure."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root_path), *argv],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _repo_display_name(root_path: Path) -> str:
+    """Repository name shown on the report card.
+
+    Prefers the origin remote's repository basename — checkout directory
+    names vary (forks, CI workspaces, worktrees) while the remote does
+    not — and falls back to the directory name.
+    """
+    remote = _git(root_path, "remote", "get-url", "origin")
+    if remote:
+        name = remote.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+        if name.endswith(".git"):
+            name = name[: -len(".git")]
+        if name:
+            return name
+    return root_path.resolve().name
+
+
 def _github_raw_url(root_path: Path, badge_path: Path):
     """Best-effort raw.githubusercontent.com URL for the badge file.
 
     Returns None when the repo has no recognizable GitHub remote.
     """
     import re
-    import subprocess
 
-    def _git(*argv):
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(root_path), *argv],
-                capture_output=True,
-                text=True,
-            )
-        except OSError:
-            return None
-        return result.stdout.strip() if result.returncode == 0 else None
-
-    remote = _git("config", "--get", "remote.origin.url")
+    remote = _git(root_path, "config", "--get", "remote.origin.url")
     if not remote:
         return None
     m = re.search(r"github\.com[:/]([^/]+)/(.+?)(?:\.git)?/?$", remote)
@@ -41,11 +61,11 @@ def _github_raw_url(root_path: Path, badge_path: Path):
         return None
     owner, repo = m.group(1), m.group(2)
 
-    branch = _git("symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    branch = _git(root_path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
     if branch and branch.startswith("origin/"):
         branch = branch[len("origin/") :]
     if not branch:
-        branch = _git("rev-parse", "--abbrev-ref", "HEAD") or "main"
+        branch = _git(root_path, "rev-parse", "--abbrev-ref", "HEAD") or "main"
 
     try:
         rel = badge_path.resolve().relative_to(root_path.resolve())
@@ -97,7 +117,7 @@ def _run_badge(args):
         card_path.write_text(
             render_card(
                 grade,
-                repo_name=context.root_path.resolve().name,
+                repo_name=_repo_display_name(context.root_path),
                 plugin_count=len(context.lint_tree.find(PluginNode)),
                 skill_count=len(context.lint_tree.find(SkillNode)),
                 top_rules=Counter(v.rule_id for v in violations).most_common(3),

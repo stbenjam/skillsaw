@@ -169,6 +169,28 @@ def test_card_shows_at_most_three_rules():
     assert "rule-3" not in fields
 
 
+def test_card_empty_repo_name_falls_back():
+    fields = _texts_by_testid(_render(repo_name=""))
+    assert fields["repo-name"] == "repository"
+
+
+def test_card_survives_off_scale_grade():
+    # render_card is a public function: an unexpected letter or color
+    # must not crash it. Unknown letters draw the empty (last-notch)
+    # ring and a neutral accent.
+    class _StubGrade:
+        letter = "E"
+        density = 3.0
+        content_tokens = 1_000
+        color = "papayawhip"
+
+    svg = _render(grade=_StubGrade())
+    fields = _texts_by_testid(svg)
+    assert fields["grade-letter"] == "E"
+    assert "#888888" in svg
+    assert 'stroke-dasharray="0.00' in svg
+
+
 # ── CLI integration ──────────────────────────────────────────────
 
 
@@ -290,7 +312,32 @@ def test_run_badge_in_process_with_remote(tmp_path, capsys):
     assert run_badge_in_process(repo, "--card", "--theme", "light") == 0
     out = capsys.readouterr().out
     assert "raw.githubusercontent.com/acme/mkt/main/.skillsaw-card.svg" in out
-    assert THEMES["light"]["bg"] in (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
+    svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
+    assert THEMES["light"]["bg"] in svg
+    # The card shows the remote's repo basename, not the checkout dirname.
+    assert _texts_by_testid(svg)["repo-name"] == "mkt"
+
+
+def test_repo_display_name(tmp_path):
+    from skillsaw.cli._badge import _repo_display_name
+
+    repo = tmp_path / "checkout-dir"
+    repo.mkdir()
+    # Not a git repo, then a repo without a remote: directory name.
+    assert _repo_display_name(repo) == "checkout-dir"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    assert _repo_display_name(repo) == "checkout-dir"
+
+    def set_url(url):
+        subprocess.run(["git", "-C", str(repo), "remote", "remove", "origin"], capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", url], check=True)
+
+    set_url("https://github.com/acme/widgets.git")
+    assert _repo_display_name(repo) == "widgets"
+    set_url("git@github.com:acme/gadgets.git")
+    assert _repo_display_name(repo) == "gadgets"
+    set_url("https://gitlab.com/group/subgroup/tools/")
+    assert _repo_display_name(repo) == "tools"
 
 
 def test_run_badge_in_process_non_github_remote(tmp_path, capsys):

@@ -144,7 +144,7 @@ the letter grade, weighted violation density, content-token count,
 plugin/skill counts, and the top offending rules (`--theme light|dark`,
 default dark):
 
-![skillsaw report card, dark theme (the default)](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/report-card-dark.svg)
+![skillsaw's own report card, dark theme (the default)](https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg)
 
 Regenerate both on pushes to your default branch and commit them when
 they change:

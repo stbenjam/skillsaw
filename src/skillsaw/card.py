@@ -94,13 +94,20 @@ def render_card(
     if theme not in THEMES:
         raise ValueError(f"unknown theme {theme!r} (choose from {', '.join(sorted(THEMES))})")
     colors = THEMES[theme]
-    accent = SHIELDS_COLOR_HEX[grade.color]
-    name = escape(_truncate(repo_name, 30))
+    # Defensive fallbacks: real Grade objects always yield a mapped color
+    # and an on-scale letter, but a public function shouldn't crash on
+    # unexpected inputs.
+    accent = SHIELDS_COLOR_HEX.get(grade.color, "#888888")
+    name = escape(_truncate(repo_name or "repository", 30))
     letter = escape(grade.letter)
 
     # Ring fill reflects the grade's position on the fixed notch scale
-    # (A+ = full ring, F = nearly empty).
-    notch = LETTER_NOTCHES.index(grade.letter)
+    # (A+ = full ring, F = nearly empty). Letters off the scale draw the
+    # empty (last-notch) ring.
+    try:
+        notch = LETTER_NOTCHES.index(grade.letter)
+    except ValueError:
+        notch = len(LETTER_NOTCHES) - 1
     fraction = 1.0 - notch / (len(LETTER_NOTCHES) - 1)
     dash = f"{fraction * _RING_CIRCUMFERENCE:.2f}"
 
