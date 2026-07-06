@@ -12,7 +12,8 @@
 #     job, not the agent. `threat-detection` (auto-enabled by safe-outputs)
 #     scans the proposed comment for prompt_injection / secret_leak before it
 #     is posted, fail-closed.
-#   - Egress is pinned to GitHub (+ the Copilot model API).
+#   - Egress is limited to GitHub + the Copilot API, OpenRouter (the BYOK model
+#     provider), and PyPI (so the agent can install skillsaw to reproduce bugs).
 on:
   issues:
     types: [labeled]
@@ -32,6 +33,7 @@ network:
   allowed:
     - defaults                      # GitHub + Copilot API
     - openrouter.ai                 # BYOK model provider
+    - python                        # PyPI (pip) — install skillsaw to run it for bug reproduction
 
 # Copilot engine in BYOK mode: model requests go to OpenRouter (GLM 5.2), not
 # Copilot's own catalog. COPILOT_PROVIDER_* are the secret-carrying engine.env
