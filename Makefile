@@ -92,7 +92,7 @@ clean:
 	rm -rf $(VENV)
 
 apm:
-	uvx --from apm-cli@$(APM_VERSION) apm install
+	uvx --from apm-cli@$(APM_VERSION) apm install --force
 	uvx --from apm-cli@$(APM_VERSION) apm compile
 
 verify-apm:

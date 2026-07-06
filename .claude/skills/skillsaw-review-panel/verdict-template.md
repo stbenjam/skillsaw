@@ -2,6 +2,17 @@
 
 **Disposition**: {{DISPOSITION}}
 
+<!--
+DISPOSITION is one of:
+  APPROVE
+  REQUEST_CHANGES
+  NEEDS_DISCUSSION
+  REJECT — REDIRECT TO PLUGIN
+  REJECT
+For REJECT — REDIRECT TO PLUGIN, the synthesis MUST link
+https://skillsaw.org/plugins/ and mention the skillsaw-create-plugin skill.
+-->
+
 ---
 
 ### Specialist Findings
@@ -25,6 +36,10 @@
 **Technical Writer**
 
 {{WRITER_FINDINGS}}
+
+**Ecosystem Reviewer**
+
+{{ECOSYSTEM_FINDINGS}}
 
 ---
 
