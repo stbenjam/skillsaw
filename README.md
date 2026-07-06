@@ -217,6 +217,24 @@ skillsaw badge .
 See [`skillsaw badge`](https://skillsaw.org/cli/#skillsaw-badge) for badge
 generation options.
 
+## Context Budget Report
+
+`skillsaw budget` prices your agent content in estimated context-window
+tokens, split by when it's paid for: the **session-start tax** every
+session pays (instruction files, rules, and the frontmatter description of
+every skill, command, and agent) versus content loaded **on demand** when
+invoked (skill, command, and agent bodies, references, prompts).
+
+```bash
+skillsaw budget                  # human-readable report with bars
+skillsaw budget --format json    # full data for CI or dashboards
+```
+
+Every item is checked against the [`context-budget`
+rule's](https://skillsaw.org/rules/context-budget/) configured limits, so
+the report and enforcement always agree. The report itself never fails a
+run — `budget` observes, the `context-budget` rule enforces.
+
 ## Supply Chain Protection
 
 skillsaw is designed for repositories that execute AI-agent instructions,

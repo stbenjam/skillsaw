@@ -83,6 +83,17 @@ Display the repository lint tree
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 | `--format` | Output format (default: text) (choices: text, dot) | `text` |
 
+## `skillsaw budget`
+
+Report estimated context-window token costs for the repository's agent content
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `--format` | Output format (default: text) (choices: text, json) | `text` |
+| `--window` | Context-window size in tokens used for percentages (default: 200000) | `200000` |
+| `--top` | Show at most N on-demand items in text output; 0 shows all (default: 15) | `15` |
+
 ## `skillsaw baseline`
 
 Generate or update the baseline file from current violations
