@@ -381,6 +381,30 @@ def test_uncommitted_new_violation_is_caught(tmp_path):
     assert rule_ids(r) == {"content-embedded-secrets"}
 
 
+def test_multiple_lint_paths_share_one_ephemeral_baseline(tmp_path):
+    repo = git_repo(tmp_path)
+    alpha = repo / "tools" / "alpha"
+    beta = repo / "tools" / "beta"
+    for tool in (alpha, beta):
+        tool.mkdir(parents=True)
+        (tool / "CLAUDE.md").write_text(
+            f"# {tool.name} Guidelines\n\n"
+            "Run `make check` before committing changes to this tool.\n"
+            "Try to keep the command wrappers thin.\n"
+        )
+    commit_all(repo, "Add tool guides")
+    append(alpha / "CLAUDE.md", SECRET_LINE)
+    commit_all(repo, "Add deploy token")
+
+    r = run_lint(alpha, str(beta), "--since", "HEAD~1")
+
+    assert r["rc"] == 1
+    assert rule_ids(r) == {"content-embedded-secrets"}
+    # One legacy weak-language violation per sibling directory.
+    assert suppressed(r) == 2
+    assert worktree_count(repo) == 1
+
+
 def test_lint_path_missing_at_merge_base_contributes_no_baseline(tmp_path):
     repo = git_repo(tmp_path)
     nested = repo / "nested"

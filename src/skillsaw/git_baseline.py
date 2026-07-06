@@ -189,7 +189,7 @@ def build_git_baseline(
                 # The path was added after the merge-base: the base
                 # contributes no violations for it.
                 logger.info(
-                    "--since: %s does not exist at merge-base %s; " "no baseline entries for it",
+                    "--since: %s does not exist at merge-base %s; no baseline entries for it",
                     rel,
                     merge_base[:12],
                 )
