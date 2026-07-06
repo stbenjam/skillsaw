@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Builtin Rules section and Table of Contents of README.md."""
+"""Generate README.md rules documentation when generated sections are present."""
 
 import json
 import re
@@ -219,10 +219,8 @@ def main():
     readme = readme_path.read_text()
 
     if BEGIN_MARKER not in readme or END_MARKER not in readme:
-        print(f"ERROR: Missing markers in README.md", file=sys.stderr)
-        print(f"  Expected: {BEGIN_MARKER}", file=sys.stderr)
-        print(f"  Expected: {END_MARKER}", file=sys.stderr)
-        sys.exit(1)
+        print("README.md has no generated rules section; skipping README update.")
+        sys.exit(0)
 
     rules_by_id = {}
     for rule_class in BUILTIN_RULES:
