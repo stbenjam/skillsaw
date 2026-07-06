@@ -52,7 +52,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v6.3.0
       with:
         python-version: '3.11'
 
@@ -118,7 +118,7 @@ runs:
 
     - name: Upload report artifact
       if: github.event_name == 'pull_request'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: skillsaw-report
         path: ${{ steps.lint.outputs.report-file }}
@@ -132,7 +132,7 @@ runs:
         echo '${{ github.event.pull_request.head.sha }}' > /tmp/skillsaw-head-sha
     - name: Upload PR metadata
       if: github.event_name == 'pull_request'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: skillsaw-pr-metadata
         path: |
