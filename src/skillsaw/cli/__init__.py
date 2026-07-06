@@ -18,6 +18,7 @@ _SUBCOMMANDS = {
     "explain",
     "badge",
     "plugins",
+    "hook",
 }
 
 
@@ -89,6 +90,10 @@ def main():
         from ._tree import _run_tree
 
         _run_tree(args)
+    elif args.command == "hook":
+        from ._hook import _run_hook
+
+        _run_hook(args)
 
 
 def claudelint_shim():

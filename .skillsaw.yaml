@@ -1,6 +1,10 @@
 # skillsaw self-lint config
 version: "99.0.0" # high version so all new rules get triggered
 
+# Hold ourselves to warning severity — dogfood the PostToolUse hook, which
+# surfaces violations at (or above) this bar as agents edit our own context.
+fail-on: warning
+
 exclude:
   # Agentic artifacts come from .apm, don't lint twice
   - "AGENTS.md"

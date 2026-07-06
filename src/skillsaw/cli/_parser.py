@@ -385,4 +385,20 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         add_help=False,
     )
 
+    # --- hook ---
+    hook_parser = subparsers.add_parser(
+        "hook",
+        help="Run skillsaw from a Claude Code plugin hook (reads event JSON on stdin)",
+        description="Run skillsaw from a Claude Code hook. Reads the hook payload "
+        "as JSON on stdin and lints the file that was just edited, using the "
+        "repository's own .skillsaw.yaml configuration. Intended to be wired into "
+        "a plugin's hooks/hooks.json, not run by hand.",
+    )
+    hook_parser.add_argument(
+        "event",
+        nargs="?",
+        default="post-tool-use",
+        help="Hook event to handle (currently only 'post-tool-use' is supported)",
+    )
+
     return parser

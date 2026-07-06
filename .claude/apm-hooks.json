@@ -1,0 +1,14 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": "Edit|Write|MultiEdit|Update",
+      "hooks": [
+        {
+          "type": "command",
+          "command": ".claude/hooks/skillsaw/hooks/post-tool-use.sh"
+        }
+      ],
+      "_apm_source": "_local/skillsaw"
+    }
+  ]
+}

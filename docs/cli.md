@@ -162,3 +162,7 @@ Add a hook to a plugin
 | `--plugin` | Target plugin name (auto-detected if unambiguous) |  |
 | `--path` | Marketplace root path |  |
 
+## `skillsaw hook`
+
+Run skillsaw from a Claude Code plugin hook (reads event JSON on stdin)
+

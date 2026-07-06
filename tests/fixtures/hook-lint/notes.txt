@@ -1,0 +1,2 @@
+Plain notes file that skillsaw does not lint. Editing this must never
+trigger the PostToolUse hook.
