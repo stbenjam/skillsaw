@@ -1,22 +1,2 @@
-# Code owners for skillsaw.
-#
-# NOTE: CODEOWNERS is only *enforced* when branch protection on `main` has
-# "Require review from Code Owners" enabled AND requires >= 1 approving review.
-# As of this writing main requires 0 approvals, so this file documents intent
-# but does not yet block merges. Enable both settings to make it binding.
-
-# Default owner for everything.
-*                           @stbenjam
-
-# CI / automation surface — anything that carries a write token or runs an
-# LLM agent. Changes here should always get an explicit owner review.
-/.github/                   @stbenjam
-/.github/workflows/         @stbenjam
-/action.yml                 @stbenjam
-/review/                    @stbenjam
-
-# Release + supply-chain critical paths.
-/.github/workflows/release.yml   @stbenjam
-/pyproject.toml                  @stbenjam
-/requirements.txt                @stbenjam
-/requirements-dev.txt            @stbenjam
+# @stbenjam owns everything. Enforced once main requires a Code Owner review.
+* @stbenjam
