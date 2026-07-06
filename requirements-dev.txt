@@ -11,6 +11,6 @@ flake8>=6.0
 mypy>=1.0
 
 # Build
-build>=0.10
-twine>=4.0
+build>=1.5.0
+twine>=6.2.0
 
