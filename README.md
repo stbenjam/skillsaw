@@ -4,194 +4,356 @@
 
 ### skillsaw
 
-Keep your skills sharp. skillsaw lints the files that steer AI coding agents:
-skills, plugins, CLAUDE.md, AGENTS.md, Cursor/Copilot/Gemini/Kiro context,
-CodeRabbit config, Promptfoo evals, and related agent tooling.
+Keep your skills sharp. 40+ rules catch weak language, contradictions, attention dead zones, and structural issues — then auto-fix them.
 
 [![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![skillsaw grade](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstbenjam%2Fskillsaw%2Fmain%2F.skillsaw-badge.json)](https://skillsaw.org/)
 
 </td>
 </tr></table>
 
-[Full documentation](https://skillsaw.org) | [Getting started](https://skillsaw.org/getting-started/) | [Rules](https://skillsaw.org/rules/) | [Configuration](https://skillsaw.org/configuration/) | [CI](https://skillsaw.org/ci/)
-
 [![Watch the skillsaw onboarding demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/onboarding-demo.png)](https://asciinema.org/a/1259880)
 
-## What It Does
+<p align="center">▶️ <b><a href="https://asciinema.org/a/1259880">Easy onboarding with AI!</a></b> — watch an AI agent grade, fix, and configure a repo from scratch.</p>
 
-skillsaw is a configurable, rule-based linter for agentic context:
+---
 
-- **Structure**: validates agentskills.io skills, Claude Code plugins and marketplaces, commands, hooks, MCP config, settings files, Promptfoo evals, CodeRabbit config, and more.
-- **Content quality**: catches weak language, contradictions, tautologies, attention dead zones, oversized sections, embedded secrets, and instructions that are hard for agents to act on.
-- **Adoption flow**: supports deterministic autofixes, baselines for existing issues, CI output formats, and an optional AI-assisted onboarding skill.
-- **Extensibility**: supports custom rules and pip-installable rule plugins when the built-in checks are not enough.
-
-It keeps the instruction and configuration layer around AI coding agents clear,
-safe, structured, and maintainable.
+**[Full documentation at skillsaw.org](https://skillsaw.org)** — supports Claude Code plugins, agentskills.io, CLAUDE.md, AGENTS.md, Cursor, Copilot, Gemini, Kiro, CodeRabbit, and more.
 
 ## Quick Start
 
-No install is required if you use `uvx`:
+No install required — run with `uvx skillsaw` (or [install](#installation)
+it for repeated use).
 
 ```bash
-uvx skillsaw
-```
-
-For repeated use:
-
-```bash
-pip install skillsaw
-skillsaw
-```
-
-Common first commands:
-
-```bash
-# Show what skillsaw detects in this repository
+# 1. See what skillsaw detects in your repo
 skillsaw tree
 
-# Lint the current directory
+# 2. Lint it (current directory by default — also accepts multiple
+#    directories and/or SKILL.md files: skillsaw lint dir1/ dir2/SKILL.md)
 skillsaw
 
-# Apply deterministic autofixes
+# 3. Fix what you can automatically
 skillsaw fix
 
-# Accept remaining current issues so only new violations fail
+# 4. Accept remaining violations as the baseline
 skillsaw baseline
 
-# Explain why a rule fired and how to fix it
+# Done — only new violations will fail from here on
+skillsaw   # exit 0
+
+# Curious why a rule fired (or didn't)?
 skillsaw explain content-weak-language
 ```
 
-See the [CLI reference](https://skillsaw.org/cli/) for every command, flag,
-output format, and exit code.
+For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 
-## Onboard With An Agent
+> [!TIP]
+> **:sparkles: Onboard with AI** — let your coding agent handle the entire setup in one shot.
+>
+> **Claude Code:**
+> ```bash
+> claude plugin marketplace add stbenjam/skillsaw
+> claude plugin install skillsaw@skillsaw-marketplace
+> ```
+> Then type `/skillsaw-onboard` — it installs skillsaw, lints your repo, autofixes what it can, walks you through manual fixes, sets up CI, and creates a baseline.
+>
+> **Other agents** — see the [Getting Started guide](https://skillsaw.org/getting-started/#onboard-with-ai).
 
-If you want an AI coding agent to do the setup work, install the skillsaw
-Claude Code plugin:
+## Installation
 
-```bash
-claude plugin marketplace add stbenjam/skillsaw
-claude plugin install skillsaw@skillsaw-marketplace
-```
-
-Then run:
-
-```text
-/skillsaw-onboard
-```
-
-That onboarding skill installs skillsaw, scans the repository, applies safe
-autofixes, helps resolve remaining findings, sets up CI, and creates a
-baseline. Other agents can follow the same workflow from the
-[Getting Started guide](https://skillsaw.org/getting-started/#onboard-with-ai).
-
-## What It Checks
-
-skillsaw auto-detects repository types and enables relevant rules. A repository
-can match multiple types at once.
-
-Supported areas include:
-
-- [agentskills.io skills](https://skillsaw.org/rules/agentskills/)
-- [Claude Code plugins and marketplaces](https://skillsaw.org/plugins/)
-- Commands, agents, hooks, settings, and MCP configuration
-- CLAUDE.md, AGENTS.md, and other agent-facing instruction files
-- [Promptfoo evals](https://skillsaw.org/rules/promptfoo/)
-- [CodeRabbit configuration](https://skillsaw.org/rules/coderabbit/)
-- [APM packages](https://skillsaw.org/rules/apm/)
-- General content quality rules for prose that enters an agent context window
-
-Browse the [rules reference](https://skillsaw.org/rules/) for the full list.
-
-## Adopt It Safely
-
-Most existing repositories have some findings on the first run. The intended
-adoption path is:
-
-1. Run `skillsaw` and review the findings.
-2. Run `skillsaw fix` for deterministic autofixes.
-3. Fix high-value issues manually.
-4. Run `skillsaw baseline` to accept anything you are not ready to address.
-5. Add CI so new violations fail pull requests.
-
-The baseline file lets teams adopt skillsaw without fixing every historical
-issue immediately. Over time, fix old entries and regenerate the baseline.
-
-Read more:
-
-- [Baseline guide](https://skillsaw.org/baseline/)
-- [Autofixing guide](https://skillsaw.org/autofixing/)
-- [CI integration](https://skillsaw.org/ci/)
-- [Pre-commit hook](https://skillsaw.org/pre-commit/)
-
-## Minimal CI
-
-GitHub Actions:
-
-```yaml
-name: skillsaw
-
-on: [pull_request]
-
-permissions:
-  contents: read
-
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: stbenjam/skillsaw@v0
-        with:
-          strict: true
-```
-
-For PR comments, SARIF, GitLab Code Quality, custom rules, plugins, and supply
-chain guidance, see [CI integration](https://skillsaw.org/ci/) and
-[supply chain protection](https://skillsaw.org/supply-chain-protection/).
-
-## Configure
-
-Generate a starter config:
+### Via uvx (easiest, no install required)
 
 ```bash
-skillsaw init
+uvx skillsaw
+uvx skillsaw /path/to/skills
 ```
 
-Typical configuration controls include enabled rules, severity, failure
-thresholds, exclude patterns, per-rule excludes, repo type detection, and
-content paths. See the [configuration guide](https://skillsaw.org/configuration/)
-for the schema and examples.
+### Via pip
 
-## Extend
+```bash
+pip install skillsaw
+```
 
-skillsaw can be extended in two ways:
-
-- **Custom rules** live in a repository and run only when custom rules are
-  explicitly allowed.
-- **Rule plugins** are pip-installable Python packages for sharing rule sets
-  across repositories.
-
-Start with [custom rules](https://skillsaw.org/custom-rules/) for local checks
-and [rule plugins](https://skillsaw.org/plugins/#rule-plugins) for reusable
-distribution.
-
-## Development
+### From source
 
 ```bash
 git clone https://github.com/stbenjam/skillsaw.git
 cd skillsaw
 pip install -e .
-make test
-make lint
 ```
 
-Development docs live in [DEVELOPMENT.md](DEVELOPMENT.md). Contributions are
-welcome; please include tests for behavior changes and update docs when user
-visible behavior changes.
+### Using Docker
+
+```bash
+docker pull ghcr.io/stbenjam/skillsaw:latest
+docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
+```
+
+See the [Getting Started guide](https://skillsaw.org/getting-started/) for
+GitHub Actions and other installation options.
+
+## What skillsaw checks
+
+skillsaw automatically detects your repository structure. A repository can
+match multiple types simultaneously.
+
+Supported repository types include:
+
+- [agentskills.io skills](https://skillsaw.org/repo-types/#agentskillsio-skills)
+- [Single Claude Code plugins](https://skillsaw.org/repo-types/#single-plugin)
+- [Claude Code plugin marketplaces](https://skillsaw.org/repo-types/#marketplace-multiple-plugins)
+- [`.claude/` directories](https://skillsaw.org/repo-types/#claude-directory)
+- [CodeRabbit configuration](https://skillsaw.org/rules/coderabbit/)
+- [Promptfoo eval configs](https://skillsaw.org/rules/promptfoo/)
+- [APM repositories](https://skillsaw.org/rules/apm/)
+
+The built-in rules cover structural validation, content intelligence, context
+budgets, supply-chain checks, settings, MCP configuration, hooks, commands,
+skills, agents, and marketplace registration.
+
+Browse the [Repository Types](https://skillsaw.org/repo-types/) and
+[Builtin Rules](https://skillsaw.org/rules/) references for the full details.
+
+## Configuration
+
+Generate a default `.skillsaw.yaml` in your repository root:
+
+```bash
+skillsaw init
+```
+
+This creates a config file with all builtin rules, their defaults, and
+descriptions. Edit it to enable, disable, or customize rules for your project.
+See [`.skillsaw.yaml.example`](.skillsaw.yaml.example) for a complete example.
+
+Common configuration topics:
+
+- [Version pinning](https://skillsaw.org/configuration/#version-pinning)
+- [Exclude patterns](https://skillsaw.org/configuration/#exclude-patterns)
+- [Per-rule excludes](https://skillsaw.org/configuration/#per-rule-excludes)
+- [Inline suppression](https://skillsaw.org/configuration/#inline-suppression)
+- [Content paths](https://skillsaw.org/configuration/#content-paths)
+
+## Baseline
+
+When adopting skillsaw on an existing project, you may have many
+pre-existing violations. The **baseline** feature lets you snapshot
+current violations so that `skillsaw lint` only reports *new* ones —
+existing violations are accepted and won't cause failures.
+
+```bash
+# Generate .skillsaw-baseline.json from current violations
+skillsaw baseline
+
+# Run lint without baseline filtering
+skillsaw lint --no-baseline
+```
+
+The baseline matches violations by fingerprint, so it survives ordinary line
+drift and reports stale entries when old violations are fixed. See the
+[Baseline guide](https://skillsaw.org/baseline/) for matching behavior,
+ratchet behavior, and refresh workflow.
+
+## CI Integration
+
+```yaml
+# GitHub Actions
+- uses: stbenjam/skillsaw@v0
+  with:
+    strict: true
+```
+
+```yaml
+# GitLab CI — outputs Code Quality JSON for MR widgets
+skillsaw:
+  script:
+    - pip install skillsaw==0.16.0
+    - skillsaw lint --output gitlab:gl-code-quality-report.json .
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+Output formats for `--format` / `--output`: `text`, `json`, `sarif`, `html`,
+`code-climate`, and `gitlab`.
+
+For PR review comments, the secure two-workflow pattern, plugins, custom
+rules, and full configuration options, see the
+[CI Integration guide](https://skillsaw.org/ci/).
+
+## Pre-commit
+
+skillsaw ships a [Pre-commit](https://pre-commit.com/) hook. Add this to your
+repository's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/stbenjam/skillsaw
+    rev: v0.16.0  # or pin a full commit SHA
+    hooks:
+      - id: skillsaw
+```
+
+See the [Pre-commit guide](https://skillsaw.org/pre-commit/) for details.
+
+## Quality Grade & Badge
+
+Every lint run computes a letter grade (A+ through F) summarizing
+repository quality, shown in the text summary and in the JSON report
+under `summary.grade`.
+
+Add the badge to your README:
+
+```markdown
+[![skillsaw grade](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FOWNER%2FREPO%2Fmain%2F.skillsaw-badge.json)](https://skillsaw.org/)
+```
+
+Generate the badge data with:
+
+```bash
+skillsaw badge .
+```
+
+See [`skillsaw badge`](https://skillsaw.org/cli/#skillsaw-badge) for badge
+generation options.
+
+## Supply Chain Protection
+
+skillsaw is designed for repositories that execute AI-agent instructions,
+plugins, hooks, and custom rules. For untrusted pull requests:
+
+- Pin skillsaw to a specific version.
+- Keep custom rules disabled unless you trust the source.
+- Use the secure CI workflow when posting PR comments.
+- Review hooks, MCP servers, and settings changes carefully.
+
+See [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/)
+for the threat model and hardened CI patterns.
+
+## Autofixing
+
+skillsaw applies deterministic fixes for structural issues. Content-quality
+violations that need judgment are fixed by coding agents (Claude Code, Cursor,
+etc.) — the lint interface is familiar, and every violation points to
+`skillsaw explain` which includes how-to-fix guidance.
+
+```bash
+skillsaw fix                     # Apply safe structural fixes
+skillsaw fix --suggest           # Also apply suggested fixes
+skillsaw fix --dry-run           # Preview safe fixes as colored diffs
+skillsaw fix --suggest --dry-run # Preview safe + suggested fixes
+```
+
+See [Autofixing](https://skillsaw.org/autofixing/) for deterministic fix
+confidence levels, agent workflows, and idempotency guarantees.
+
+## Custom Rules and Plugins
+
+Create custom validation rules by extending the `Rule` base class and
+referencing them from `.skillsaw.yaml`:
+
+```yaml
+custom-rules:
+  - ./my_custom_rules.py
+```
+
+To share rules across repositories, package them as a **rule plugin** — a
+pip-installable package that registers rules through the `skillsaw.plugins`
+entry point group.
+
+Start with [Custom Rules](https://skillsaw.org/custom-rules/) for local checks
+and [Rule Plugins](https://skillsaw.org/plugins/) for reusable distribution.
+
+## Scaffolding
+
+`skillsaw add` scaffolds marketplaces, plugins, and components with
+best-practice structure, CI, and branding out of the box.
+
+```bash
+skillsaw add marketplace
+skillsaw add plugin my-plugin
+skillsaw add skill my-skill
+skillsaw add command greet
+skillsaw add agent helper
+skillsaw add hook PreToolUse
+```
+
+See [Scaffolding](https://skillsaw.org/scaffolding/) for context detection,
+marketplace layouts, and generated files.
+
+## Documentation Generation
+
+skillsaw can generate documentation for your plugins, skills, and marketplaces:
+
+```bash
+skillsaw docs
+skillsaw docs --format markdown
+skillsaw docs -o my-docs/
+```
+
+See the [CLI Reference](https://skillsaw.org/cli/#docs) for all documentation
+generation options.
+
+## Example Output
+
+```
+Linting: /path/to/skills-repo
+
+Errors:
+  ✗ ERROR [skills/my-skill/SKILL.md]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
+  ✗ ERROR [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
+
+Warnings:
+  ⚠ WARNING [skills/helper/SKILL.md]: Description exceeds 1024 characters (1087)
+  ⚠ WARNING [plugins/utils]: Missing README.md (recommended)
+
+Summary:
+  Errors:   2
+  Warnings: 2
+```
+
+## Migrating from claudelint
+
+This project was renamed from `claudelint` to `skillsaw`. To migrate:
+
+1. Update your package: `pip install skillsaw` (instead of `pip install claudelint`)
+2. Rename `.claudelint.yaml` to `.skillsaw.yaml` (the old name is still discovered as a fallback)
+3. Update CLI usage: `skillsaw` (instead of `claudelint`)
+4. Update imports in custom rules: `from skillsaw import ...` (the old `from claudelint import ...` still works)
+
+The `claudelint` command still works as a shim but prints a deprecation warning.
+
+## Development
+
+```bash
+# Run tests
+pytest tests/ -v
+
+# Format code
+black src/ tests/
+
+# Build Docker image
+docker build -t skillsaw .
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions.
+
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache 2.0 - See [LICENSE](LICENSE) for details.
+
+## See Also
+
+- [agentskills.io Specification](https://agentskills.io/specification)
+- [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code)
+- [Claude Code Plugins Reference](https://docs.claude.com/en/docs/claude-code/plugins-reference)
+- [AI Helpers Marketplace](https://github.com/openshift-eng/ai-helpers) - Example marketplace using skillsaw
+
+## Support
+
+- **Issues**: https://github.com/stbenjam/skillsaw/issues
+- **Discussions**: https://github.com/stbenjam/skillsaw/discussions
