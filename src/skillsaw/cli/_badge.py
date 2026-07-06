@@ -101,7 +101,7 @@ def _run_badge(args):
                 plugin_count=len(context.lint_tree.find(PluginNode)),
                 skill_count=len(context.lint_tree.find(SkillNode)),
                 top_rules=Counter(v.rule_id for v in violations).most_common(3),
-                theme=getattr(args, "theme", "light"),
+                theme=getattr(args, "theme", "dark"),
             ),
             encoding="utf-8",
         )

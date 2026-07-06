@@ -141,7 +141,10 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 payload) and prints ready-to-paste README markdown. Add `--card` to also
 render `.skillsaw-card.svg` — a self-contained SVG report card showing
 the letter grade, weighted violation density, content-token count,
-plugin/skill counts, and the top offending rules (`--theme light|dark`).
+plugin/skill counts, and the top offending rules (`--theme light|dark`,
+default dark):
+
+![skillsaw report card, dark theme (the default)](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/report-card-dark.svg)
 
 Regenerate both on pushes to your default branch and commit them when
 they change:

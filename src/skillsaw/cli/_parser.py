@@ -386,8 +386,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     badge_parser.add_argument(
         "--theme",
         choices=["light", "dark"],
-        default="light",
-        help="Report card color theme, used with --card (default: light)",
+        default="dark",
+        help="Report card color theme, used with --card (default: dark)",
     )
 
     # --- add ---

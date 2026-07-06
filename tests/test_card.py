@@ -124,6 +124,17 @@ def test_card_themes():
     ET.fromstring(dark)
 
 
+def test_default_theme_is_dark():
+    kwargs = dict(
+        grade=compute_grade(_violations(warnings=5, info=3), content_tokens=12_345),
+        repo_name="example/repo",
+        plugin_count=3,
+        skill_count=12,
+        top_rules=[("content-vague", 5)],
+    )
+    assert THEMES["dark"]["bg"] in render_card(**kwargs)
+
+
 def test_card_rejects_unknown_theme():
     with pytest.raises(ValueError, match="unknown theme"):
         _render(theme="solarized")
@@ -179,18 +190,21 @@ def test_badge_card_writes_svg(tmp_path):
     assert fields["grade-letter"]
     assert fields["repo-name"] == repo.name
 
+    # Dark theme is the default.
+    assert THEMES["dark"]["bg"] in svg
+
     assert "Card written to" in result.stdout
     assert ".skillsaw-card.svg" in result.stdout
     # Ready-to-paste README markdown for the card.
     assert "[![skillsaw report card](" in result.stdout
 
 
-def test_badge_card_dark_theme(tmp_path):
+def test_badge_card_light_theme(tmp_path):
     repo = copy_fixture("marketplace/clean", tmp_path)
-    result = run_badge(repo, "--card", "--theme", "dark")
+    result = run_badge(repo, "--card", "--theme", "light")
     assert result.returncode == 0, result.stderr
     svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
-    assert THEMES["dark"]["bg"] in svg
+    assert THEMES["light"]["bg"] in svg
     ET.fromstring(svg)
 
 
@@ -235,3 +249,70 @@ def test_badge_without_card_is_unchanged(tmp_path):
     assert "Card written" not in result.stdout
     assert "report card" not in result.stdout
     assert "Commit .skillsaw-badge.json and regenerate it" in result.stdout
+
+
+# ── In-process CLI (coverage of the _run_badge paths the subprocess
+#    integration tests above exercise outside the coverage tracer) ───
+
+
+def run_badge_in_process(*argv):
+    from skillsaw.cli._badge import _run_badge
+    from skillsaw.cli._parser import _build_parser
+
+    args = _build_parser().parse_args(["badge", *[str(a) for a in argv]])
+    with pytest.raises(SystemExit) as exc:
+        _run_badge(args)
+    return exc.value.code
+
+
+def test_run_badge_in_process_with_card(tmp_path, capsys):
+    repo = copy_fixture("marketplace/clean", tmp_path)
+    assert run_badge_in_process(repo, "--card") == 0
+    out = capsys.readouterr().out
+
+    svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
+    assert THEMES["dark"]["bg"] in svg  # default theme
+    ET.fromstring(svg)
+
+    # No git remote: the embed markdown falls back to placeholders.
+    assert "RAW_URL_TO_YOUR_CARD_SVG" in out
+    assert "Commit .skillsaw-badge.json and .skillsaw-card.svg" in out
+    assert "camo" in out
+
+
+def test_run_badge_in_process_with_remote(tmp_path, capsys):
+    repo = copy_fixture("marketplace/clean", tmp_path)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "remote", "add", "origin", "git@github.com:acme/mkt.git"],
+        check=True,
+    )
+    assert run_badge_in_process(repo, "--card", "--theme", "light") == 0
+    out = capsys.readouterr().out
+    assert "raw.githubusercontent.com/acme/mkt/main/.skillsaw-card.svg" in out
+    assert THEMES["light"]["bg"] in (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
+
+
+def test_run_badge_in_process_non_github_remote(tmp_path, capsys):
+    repo = copy_fixture("marketplace/clean", tmp_path)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "remote", "add", "origin", "https://gitlab.com/acme/mkt.git"],
+        check=True,
+    )
+    assert run_badge_in_process(repo, "--card") == 0
+    out = capsys.readouterr().out
+    assert "RAW_URL_TO_YOUR_CARD_SVG" in out
+
+
+def test_run_badge_in_process_without_card(tmp_path, capsys):
+    repo = copy_fixture("marketplace/clean", tmp_path)
+    assert run_badge_in_process(repo) == 0
+    out = capsys.readouterr().out
+    assert not (repo / ".skillsaw-card.svg").exists()
+    assert "Commit .skillsaw-badge.json and regenerate it" in out
+
+
+def test_run_badge_in_process_missing_path(capsys):
+    assert run_badge_in_process("/nonexistent/repo/path", "--card") == 1
+    assert "Path not found" in capsys.readouterr().err

@@ -83,7 +83,7 @@ def render_card(
     plugin_count: int,
     skill_count: int,
     top_rules: Sequence[Tuple[str, int]],
-    theme: str = "light",
+    theme: str = "dark",
 ) -> str:
     """Render the report card as an SVG string.
 
