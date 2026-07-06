@@ -23,6 +23,10 @@ split by *when* the content is paid for:
 Token counts are the same estimate the ``context-budget`` rule uses
 (``len(text) // 4``) over the raw file, and every item is checked against
 that rule's configured limits so the report and the enforcement agree.
+Frontmatter is deliberately included in a file's on-demand cost even
+though descriptions are also billed in session-start metadata: the rule
+measures whole files for its per-file limits, and pricing them any other
+way would let the report call an item "ok" that lint flags over budget.
 The report never fails a run — ``skillsaw budget`` observes, the
 ``context-budget`` rule enforces.
 
