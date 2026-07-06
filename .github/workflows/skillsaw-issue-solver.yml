@@ -13,13 +13,12 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
 
 jobs:
   issue-solver:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Get labeled issues with trusted content only
         id: activity
@@ -72,7 +71,7 @@ jobs:
           echo "Prepared issues with trusted comments:"
           cat /tmp/issues-with-comments.json | jq '[.[] | {number, title, comment_count: (.trusted_comments | length)}]'
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
         if: steps.activity.outputs.has_issues == 'true'
         with:
           prompt: |
@@ -97,7 +96,7 @@ jobs:
 
       - name: Upload execution log
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: claude-execution-log-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
