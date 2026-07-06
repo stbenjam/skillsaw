@@ -1,152 +1,40 @@
 ---
 name: skillsaw-review-panel
-description: Serial multi-specialist code review panel for skillsaw PRs. Runs 5 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer) inline then synthesizes a single verdict.
+description: Serial multi-specialist code review panel for skillsaw PRs. Runs 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) inline then synthesizes a single verdict.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
 metadata:
   author: stbenjam
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Review Panel — Serial Multi-Specialist Review
 
-> **MUST**: New CLI commands, subcommands, flags, and workflows MUST have corresponding README sections (Quick Start examples, dedicated section, or both). A feature without README docs is incomplete.
-
-Run **5 specialist reviewers + 1 arbiter** inline in the main agent, one
+Run **6 specialist reviewers + 1 arbiter** inline in the main agent, one
 after another. This is serial-only by design — the codebase context is
 derived once and shared across all specialists, saving tokens. Each
 specialist can see prior specialists' file reads (though not their
 findings).
+
+Each specialist's detailed scope lives in the `references/` directory
+alongside this skill and is loaded **only when that specialist runs**
+(progressive disclosure) — keep this file lean and pull the scope in on demand.
 
 The panel is **advisory**. It does not gate merge. It surfaces findings;
 the maintainer and PR author decide ship.
 
 ## Specialist Roster
 
-| Specialist | Lens |
-|---|---|
-| Architecture Reviewer | Module boundaries, abstraction level, SOLID, cross-file impact, error propagation |
-| Python Expert | Idiomatic Python, type hints, performance, stdlib usage, packaging conventions |
-| Security & Supply Chain Reviewer | Injection, credential handling, dependency trust, lockfile integrity, build pipeline |
-| QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions |
-| Technical Writer | Documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift |
-| Panel Arbiter | Strategic synthesis, disagreement resolution, final disposition |
-
-## Specialist Scope
-
-### Architecture Reviewer
-
-Reviews structural quality of the change:
-
-- **Single Responsibility**: Does each new function/type/module have one clear job?
-- **Cross-file impact**: Do changes propagate through all callers and dependents without breakage?
-  Trace imports from changed modules to verify no downstream breakage.
-- **Abstraction level**: Are new abstractions justified or premature? Three similar
-  lines is better than a premature abstraction.
-- **Module boundaries**: Are package/module imports clean? Any circular dependencies?
-  Does the change respect the existing architecture (context.py -> config.py ->
-  rule.py -> linter.py pipeline)?
-- **Error handling**: Are errors propagated to callers without being swallowed? Exceptions
-  should carry actionable messages.
-- **Pattern consistency**: Do new patterns match existing architectural conventions
-  in the codebase?
-
-Anti-patterns to flag: god functions, shotgun surgery, feature envy,
-inappropriate intimacy, premature abstraction.
-
-### Python Expert
-
-Reviews Python-specific quality:
-
-- **Idiomatic Python**: Does the code use Python idioms — list comprehensions
-  vs loops, context managers, f-strings, pathlib over os.path, dataclasses where
-  appropriate?
-- **Type hints**: Are new public functions typed with accurate, matching signatures? Do type hints match actual
-  behavior? Are `Optional`, `Union`, generic types used with the right semantics?
-- **Performance**: Any obvious O(n^2) patterns, unnecessary copies, repeated I/O in
-  loops, or wasteful allocations? For a linter codebase, file I/O patterns matter.
-- **stdlib usage**: Is the code reinventing something available in the standard library?
-  Check `pathlib`, `dataclasses`, `functools`, `itertools`, `contextlib`, `typing`,
-  `importlib.resources`, `json`, `re`, `argparse`.
-- **Packaging**: Are `pyproject.toml` changes valid and complete? Are package-data patterns right?
-  Are imports structured so that `skillsaw` and the `claudelint` shim both work?
-- **Compatibility**: Does the code work on Python 3.9+? Avoid walrus operator patterns
-  that assume 3.10+ match statement syntax.
-
-### Security & Supply Chain Reviewer
-
-Reviews security posture with a **fails-closed** bias — when uncertain
-whether a pattern is safe, flag it.
-
-**Vulnerability surfaces:**
-- **Injection**: Command injection via subprocess, template injection, log injection.
-  Any use of `subprocess` with `shell=True` or unsanitized user input in commands
-  is blocking.
-- **Path traversal**: Does user-supplied input flow into file paths without validation?
-  Check `Path()` constructions from external input.
-- **Secret management**: Hardcoded secrets, secrets in logs, config exposure.
-- **Input validation**: Untrusted input at system boundaries. For skillsaw, this means
-  plugin.json, marketplace.json, SKILL.md, and other files the linter parses — a
-  malicious repo could craft these to exploit the linter.
-
-**Supply chain risk:**
-- **New dependencies**: Is the dependency necessary? Actively maintained? How many
-  transitive dependencies does it pull in?
-- **Dependency changes**: Version bumps, removed pins, loosened constraints.
-- **Build pipeline changes**: CI config, Makefile, Dockerfile, GitHub Actions workflows.
-  Do they introduce untrusted sources or execution of remote code?
-- **GitHub Actions**: Are action versions pinned to commit SHAs or at least major
-  versions? Any use of `pull_request_target` with checkout of PR code?
-
-### QA Engineer
-
-Reviews test coverage and quality:
-
-- **Coverage gaps**: For each new or modified function with non-trivial logic,
-  verify that tests exist. Flag public/exported functions that lack tests entirely.
-  Actually check the `tests/` directory — do not guess.
-- **Untested error paths**: Identify error branches, edge cases, and failure modes
-  in the new code that have no corresponding test.
-- **Test quality**: Are tests asserting meaningful behavior or just achieving line
-  coverage? Look for tests that pass trivially, assert nothing, or test
-  implementation details rather than behavior.
-- **Edge cases**: Suggest specific test scenarios with example inputs:
-  empty inputs, None values, boundary values, malformed YAML/JSON, large inputs,
-  missing files, permission errors.
-- **Regression coverage**: If the change fixes a bug, is there a test that would
-  have caught the original bug?
-- **Fixture usage**: Does the test use the project's existing `temp_dir` fixture
-  and test patterns from `conftest.py`?
-- **Concrete suggestions**: Do not just say "add tests." Name the function, describe
-  the test scenario, and give example inputs and expected outputs.
-
-### Technical Writer
-
-Reviews documentation accuracy and completeness. First assess whether the
-change touches areas that have documentation. If the repo section has
-little to no docs, note this and move on — do not flag the absence of
-docs that never existed.
-
-When documentation exists:
-
-- **Stale docs**: Do changes modify behavior, CLI flags, config options, or rule
-  semantics that are described in `README.md`, `CLAUDE.md`, or `.claude/rules/`?
-  If so, are the docs updated?
-- **New features**: Does the change add user-facing functionality (new rules, new
-  CLI subcommands, new config options) that should be documented but isn't?
-  Check `README.md` specifically — new CLI commands, subcommands, flags, and
-  workflows require corresponding README sections (Quick Start examples,
-  dedicated section, or both). A feature without README docs is incomplete.
-- **CLAUDE.md consistency**: Do `.claude/rules/*.md` files still accurately describe
-  the architecture and development workflow after this change?
-- **Rule documentation**: If a new rule is added, will `make update` pick it up
-  for README generation? Are `config_schema` and `repo_types` set so docs generate
-  with accurate content and no missing fields?
-- **Example config**: Will `make update` regenerate the example config with all
-  new rules or options included and no stale entries?
-- **Inline doc quality**: Are new public functions and classes documented with
-  clear, concise docstrings where the purpose is non-obvious?
+| Specialist | Lens | Scope |
+|---|---|---|
+| Architecture Reviewer | Module boundaries, abstraction level, SOLID, cross-file impact, error propagation | `references/architecture.md` |
+| Python Expert | Idiomatic Python, type hints, performance, stdlib usage, packaging conventions | `references/python-expert.md` |
+| Security & Supply Chain Reviewer | Injection, credential handling, dependency trust, lockfile integrity, build pipeline | `references/security-supply-chain.md` |
+| QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | `references/qa-engineer.md` |
+| Technical Writer | Documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | `references/technical-writer.md` |
+| Ecosystem Reviewer | Target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | `references/ecosystem.md` |
+| Panel Arbiter | Strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
 
 ## Execution Procedure
 
@@ -190,23 +78,27 @@ resolved issues.
 ### Step 3 — Run Specialists Serially
 
 For each specialist in roster order (Architecture, Python Expert,
-Security & Supply Chain, QA Engineer, Technical Writer):
+Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
 
 1. State the specialist name as a heading.
-2. Review the diff and codebase through that specialist's lens using
-   the scope defined above. Read files, grep, and run git commands as
-   needed — context from earlier specialists' file reads carries over.
-3. Produce findings in this format:
+2. **Read that specialist's `references/*.md` file now** (in the `references/`
+   directory alongside this skill) — it holds the detailed scope. Do not
+   review from the one-line lens alone.
+3. Review the diff and codebase through that specialist's lens. Read files,
+   grep, and run git commands to gather the evidence the scope calls for —
+   context from earlier specialists' file reads carries over.
+4. Produce findings in this format:
    - **Severity**: `BLOCKING` | `SUGGESTION` | `NOTE`
    - **File:line** reference (when applicable)
    - **Finding** description
    - **Recommended action**
-4. If no issues found, say so with what was checked.
-5. Move on to the next specialist.
+5. If no issues found, say so with what was checked.
+6. Move on to the next specialist.
 
 **Severity calibration:**
 - `BLOCKING`: Correctness regressions, security vulnerabilities, architectural
-  faults that compound. Must include explicit rationale for why this blocks.
+  faults that compound, or (for the Ecosystem Reviewer) a scope violation that
+  warrants redirect-to-plugin. Must include explicit rationale for why this blocks.
 - `SUGGESTION`: Substantive feedback that improves the code but is not a
   correctness issue. This is the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
@@ -215,23 +107,34 @@ Security & Supply Chain, QA Engineer, Technical Writer):
 
 After all specialists complete, synthesize directly:
 
-1. Read all specialist findings
-2. Resolve any conflicts between specialists
-3. Assign disposition: **APPROVE**, **REQUEST_CHANGES**, or **NEEDS_DISCUSSION**
-4. Compile required actions (blocking) vs optional follow-ups
+1. Read all specialist findings.
+2. Resolve any conflicts between specialists.
+3. Assign a disposition (see below).
+4. Compile required actions (blocking) vs optional follow-ups.
 
 **Disposition criteria:**
 
-- **APPROVE**: No unresolved BLOCKING findings
-- **REQUEST_CHANGES**: BLOCKING findings that require code changes
-- **NEEDS_DISCUSSION**: Findings that need author input to resolve
+- **APPROVE**: No unresolved BLOCKING findings.
+- **REQUEST_CHANGES**: BLOCKING findings that require code changes, but the
+  change is in scope and fixable.
+- **NEEDS_DISCUSSION**: Findings that need author input to resolve — the panel
+  cannot decide without clarification, and the issue is neither a clean approve
+  nor an outright change request or rejection.
+- **REJECT — REDIRECT TO PLUGIN**: The Ecosystem Reviewer judged the change
+  targets a low-adoption / unproven tool that does not belong in skillsaw core.
+  The change is not *wrong* — it is better shipped as a rule plugin. The verdict
+  points the author to <https://skillsaw.org/plugins/>, the
+  `skillsaw-create-plugin` skill, and `examples/plugins/skillsaw-example-plugin/`.
+- **REJECT**: Out of skillsaw's domain, wrong direction, or not viable, and not
+  salvageable as a plugin.
 
 **Arbiter biases:**
 
-- Security over ergonomics
-- Codebase consistency over local elegance
-- Existing patterns over novel ones
-- Backward compatibility is paramount — breaking existing users is always blocking
+- Security over ergonomics.
+- Codebase consistency over local elegance.
+- Existing patterns over novel ones.
+- Backward compatibility is paramount — breaking existing users is always blocking.
+- Core stays focused — favor a plugin redirect over expanding core for niche tools.
 
 Clean changes with no issues are a valid outcome — do not manufacture
 findings.
@@ -258,4 +161,5 @@ A change passes when:
 - [ ] Security & Supply Chain: no unmitigated vulnerability or supply chain risk
 - [ ] QA Engineer: adequate test coverage, edge cases addressed
 - [ ] Technical Writer: documentation consistent with changes
+- [ ] Ecosystem Reviewer: target tool is in scope for core, or redirected to a plugin with links to skillsaw.org/plugins/
 - [ ] Panel Arbiter: trade-offs ratified, disposition set

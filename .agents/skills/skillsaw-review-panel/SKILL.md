@@ -17,9 +17,9 @@ derived once and shared across all specialists, saving tokens. Each
 specialist can see prior specialists' file reads (though not their
 findings).
 
-Each specialist's detailed scope lives in `references/` and is loaded
-**only when that specialist runs** (progressive disclosure) — keep this
-file lean and pull the scope in on demand.
+Each specialist's detailed scope lives in the `references/` directory
+alongside this skill and is loaded **only when that specialist runs**
+(progressive disclosure) — keep this file lean and pull the scope in on demand.
 
 The panel is **advisory**. It does not gate merge. It surfaces findings;
 the maintainer and PR author decide ship.
@@ -81,8 +81,9 @@ For each specialist in roster order (Architecture, Python Expert,
 Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
 
 1. State the specialist name as a heading.
-2. **Read that specialist's `references/*.md` file now** — it holds the
-   detailed scope. Do not review from the one-line lens alone.
+2. **Read that specialist's `references/*.md` file now** (in the `references/`
+   directory alongside this skill) — it holds the detailed scope. Do not
+   review from the one-line lens alone.
 3. Review the diff and codebase through that specialist's lens. Read files,
    grep, and run git commands to gather the evidence the scope calls for —
    context from earlier specialists' file reads carries over.
@@ -116,6 +117,9 @@ After all specialists complete, synthesize directly:
 - **APPROVE**: No unresolved BLOCKING findings.
 - **REQUEST_CHANGES**: BLOCKING findings that require code changes, but the
   change is in scope and fixable.
+- **NEEDS_DISCUSSION**: Findings that need author input to resolve — the panel
+  cannot decide without clarification, and the issue is neither a clean approve
+  nor an outright change request or rejection.
 - **REJECT — REDIRECT TO PLUGIN**: The Ecosystem Reviewer judged the change
   targets a low-adoption / unproven tool that does not belong in skillsaw core.
   The change is not *wrong* — it is better shipped as a rule plugin. The verdict
