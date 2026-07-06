@@ -36,7 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
     "mkdocs-material>=9.0",
-    "mkdocs-redirects>=1.2,<1.2.3",
+    "mkdocs-redirects>=1.2,<1.2.4",
 ]
 dev = [
     "pytest>=7.0",
