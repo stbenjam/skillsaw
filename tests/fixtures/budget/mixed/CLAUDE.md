@@ -4,6 +4,8 @@ This service powers the order-processing pipeline for the storefront. It is
 a Python 3.12 application managed with uv; the API layer is FastAPI and the
 worker processes consume from RabbitMQ.
 
+@docs/architecture.md
+
 ## Development workflow
 
 - Install dependencies with `uv sync` before running anything.

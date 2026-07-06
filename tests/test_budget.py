@@ -51,8 +51,9 @@ class TestComputeBudget:
         assert not session_paths & on_demand_paths
 
     def test_conditional_session_content_is_on_demand(self, tmp_path):
-        """paths:-scoped rules and non-alwaysApply cursor rules are loaded
-        when their paths match, not at session start."""
+        """paths:-scoped rules, applyTo-scoped instruction files, and
+        non-alwaysApply cursor rules are loaded when their paths match,
+        not at session start."""
         repo = copy_fixture("budget/mixed", tmp_path)
         report = compute_budget(RepositoryContext(repo))
 
@@ -61,6 +62,101 @@ class TestComputeBudget:
         assert ".cursor/rules/core-style.mdc" in session_paths  # alwaysApply: true
         assert ".cursor/rules/api-conventions.mdc" in on_demand_paths
         assert ".claude/rules/frontend.md" in on_demand_paths  # paths: scoped
+        # applyTo: "**" applies everywhere -> session; narrower glob -> on demand
+        assert ".github/instructions/general.instructions.md" in session_paths
+        assert ".github/instructions/frontend.instructions.md" in on_demand_paths
+
+    def test_imports_resolved_into_session(self, tmp_path):
+        repo = copy_fixture("budget/mixed", tmp_path)
+        report = compute_budget(RepositoryContext(repo))
+
+        imported = next(i for i in report.session_files if i.path == "docs/architecture.md")
+        assert imported.category == "import"
+        assert imported.via == "CLAUDE.md"
+        assert imported.tokens > 0
+        # No limit category exists for imports; the context-budget rule
+        # never sees them, so budget must not flag them.
+        assert imported.status is None
+        # Billed to the importing harness's session.
+        assert "claude" in imported.harnesses
+
+    def test_import_cycles_and_depth_are_bounded(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("# Guide\n\n@a.md\n\nGeneral notes here.\n")
+        (tmp_path / "a.md").write_text("# A\n\n@b.md\n")
+        (tmp_path / "b.md").write_text("# B\n\n@a.md\n\n@c.md\n")
+        (tmp_path / "c.md").write_text("# C\n\n@d.md\n")
+        (tmp_path / "d.md").write_text("# D\n\n@e.md\n")
+        (tmp_path / "e.md").write_text("# E — beyond the four-hop limit\n")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        session_paths = [i.path for i in report.session_files]
+        # Cycle a<->b counted once each; d is hop 4 (last allowed), e is hop 5.
+        assert session_paths.count("a.md") == 1
+        assert session_paths.count("b.md") == 1
+        assert "d.md" in session_paths
+        assert "e.md" not in session_paths
+
+    def test_import_home_and_escaping_paths_skipped(self, tmp_path):
+        outside = tmp_path / "outside.md"
+        outside.write_text("# Outside the repo\n")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text(
+            "# Guide\n\n@~/private/notes.md\n\n@../outside.md\n\n@missing.md\n"
+        )
+        report = compute_budget(RepositoryContext(repo))
+        assert [i.path for i in report.session_files] == ["CLAUDE.md"]
+
+    def test_import_of_counted_file_unions_harnesses(self, tmp_path):
+        # The docs-recommended pattern: CLAUDE.md is just an @AGENTS.md
+        # import. AGENTS.md must not be double-billed, and the claude
+        # session must include it.
+        (tmp_path / "CLAUDE.md").write_text("# Claude\n\n@AGENTS.md\n")
+        (tmp_path / "AGENTS.md").write_text(
+            "# Agents\n\nRun make test before pushing. Keep handlers thin.\n"
+        )
+        report = compute_budget(RepositoryContext(tmp_path))
+
+        agents_items = [i for i in report.session_files if i.path == "AGENTS.md"]
+        assert len(agents_items) == 1
+        assert "claude" in agents_items[0].harnesses
+        assert "default" in agents_items[0].harnesses
+        assert report.by_harness["claude"] >= agents_items[0].tokens
+
+    def test_harness_filter(self, tmp_path):
+        repo = copy_fixture("budget/mixed", tmp_path)
+        claude = compute_budget(RepositoryContext(repo), harness="claude")
+        paths = {i.path for i in claude.session_files}
+        assert paths == {"CLAUDE.md", "docs/architecture.md", ".claude/rules/style.md"}
+        assert claude.metadata  # claude sessions pay the descriptions tax
+
+        gemini = compute_budget(RepositoryContext(repo), harness="gemini")
+        paths = {i.path for i in gemini.session_files}
+        assert paths == {"GEMINI.md", "AGENTS.md"}  # Gemini CLI accepts either
+        assert gemini.metadata == []
+
+        cursor = compute_budget(RepositoryContext(repo), harness="cursor")
+        paths = {i.path for i in cursor.session_files}
+        assert paths == {"AGENTS.md", ".cursor/rules/core-style.mdc"}
+
+        with pytest.raises(ValueError, match="Unknown harness"):
+            compute_budget(RepositoryContext(repo), harness="emacs")
+
+    def test_by_harness_totals(self, tmp_path):
+        repo = copy_fixture("budget/mixed", tmp_path)
+        report = compute_budget(RepositoryContext(repo))
+
+        by_path = {i.path: i.tokens for i in report.session_files}
+        metadata_total = sum(g.total for g in report.metadata)
+        assert report.by_harness["claude"] == (
+            by_path["CLAUDE.md"]
+            + by_path["docs/architecture.md"]
+            + by_path[".claude/rules/style.md"]
+            + metadata_total
+        )
+        assert report.by_harness["default"] == by_path["AGENTS.md"] + metadata_total
+        # Gemini reads GEMINI.md or AGENTS.md, no skills metadata.
+        assert report.by_harness["gemini"] == by_path["GEMINI.md"] + by_path["AGENTS.md"]
 
     def test_coderabbit_content_excluded_everywhere(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
@@ -262,7 +358,7 @@ class TestContextCli:
         repo = copy_fixture("budget/mixed", tmp_path)
         result = run_context(repo, "--top", "1")
         assert result.returncode == 0, result.stderr
-        assert "top 1 of 7" in result.stdout
+        assert "top 1 of 8" in result.stdout
         assert "--top 0 for all" in result.stdout
 
     @pytest.mark.integration

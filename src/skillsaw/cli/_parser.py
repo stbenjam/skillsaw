@@ -366,6 +366,17 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Output format (default: text)",
     )
     context_parser.add_argument(
+        "--harness",
+        default="all",
+        choices=["all", "claude", "cursor", "copilot", "gemini", "default"],
+        help="Report the session-start cost for one harness's sessions: claude "
+        "reads CLAUDE.md (+ @-imports) and .claude/rules; gemini reads GEMINI.md "
+        "or AGENTS.md; copilot reads copilot-instructions.md, *.instructions.md, "
+        "and AGENTS.md; cursor reads .cursor/rules and AGENTS.md; default is a "
+        "generic AGENTS.md agent. 'all' (the default) reports the union with a "
+        "per-harness breakdown. The on-demand section is never filtered.",
+    )
+    context_parser.add_argument(
         "--window",
         type=int,
         default=200_000,

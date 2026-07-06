@@ -220,16 +220,22 @@ generation options.
 ## Context Budget Report
 
 `skillsaw context` prices your agent content in estimated context-window
-tokens, split by when it's paid for: the **session-start tax** every
-session pays (instruction files, unscoped rules, and the frontmatter
+tokens, split by when it's paid for: the **session-start tax** (instruction
+files with `@`-imports resolved, unscoped rules, and the frontmatter
 descriptions of skills, commands, and agents) versus content loaded **on
 demand** (whole skill, command, and agent files when invoked; references
-and prompts; rules scoped by `paths:` or non-`alwaysApply` cursor rules
-when their paths match).
+and prompts; rules and instructions scoped by `paths:`/`applyTo:` globs or
+non-`alwaysApply` cursor rules when their paths match).
+
+No harness reads every instruction file — Claude Code reads CLAUDE.md,
+Gemini reads GEMINI.md or AGENTS.md, Copilot and Cursor read their own
+files plus AGENTS.md — so the report breaks the session total down per
+harness, and `--harness` narrows it to one:
 
 ```bash
-skillsaw context                 # human-readable report with bars
-skillsaw context --format json   # full data for CI or dashboards
+skillsaw context                  # union report with per-harness totals
+skillsaw context --harness claude # what a Claude Code session pays
+skillsaw context --format json    # full data for CI or dashboards
 ```
 
 Every item is checked against the same limits the [`context-budget`

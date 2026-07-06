@@ -47,8 +47,17 @@ def _print_text(report, top: int) -> None:
     print(f"{dim}Token counts are estimates (chars/4); window: {report.window:,} tokens{reset}")
     print()
 
-    print(f"{bold}SESSION START{reset} {dim}— loaded into every session{reset}")
-    rows = [(i.tokens, i.label, i) for i in report.session_files]
+    if report.harness == "all":
+        print(f"{bold}SESSION START{reset} {dim}— loaded into every session{reset}")
+    else:
+        print(
+            f"{bold}SESSION START ({report.harness}){reset} "
+            f"{dim}— loaded into every {report.harness} session{reset}"
+        )
+    rows = [
+        (i.tokens, i.label if i.via is None else f"{i.label} {dim}(via {i.via}){reset}", i)
+        for i in report.session_files
+    ]
     for group in report.metadata:
         over = sum(1 for i in group.items if i.status in ("warn", "error"))
         label = f"{group.kind} descriptions ({len(group.items)})"
@@ -64,6 +73,12 @@ def _print_text(report, top: int) -> None:
         f"  {bold}{report.session_total:>8,}{reset}  total — "
         f"{report.window_percent:.1f}% of the {report.window:,}-token window"
     )
+    if report.harness == "all" and len(report.by_harness) > 1:
+        parts = [f"{h} {t:,}" for h, t in sorted(report.by_harness.items(), key=lambda kv: -kv[1])]
+        print(
+            f"  {dim}by harness (each session loads only its own files): "
+            f"{' · '.join(parts)}{reset}"
+        )
     print()
 
     shown = report.on_demand if top <= 0 else report.on_demand[:top]
@@ -111,7 +126,9 @@ def _run_context(args):
     from ..budget import compute_budget
 
     user_limits = config.get_rule_config("context-budget").get("limits") or {}
-    report = compute_budget(context, user_limits=user_limits, window=args.window)
+    report = compute_budget(
+        context, user_limits=user_limits, window=args.window, harness=args.harness
+    )
 
     if args.fmt == "json":
         print(json.dumps(report.to_dict(), indent=2))

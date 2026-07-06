@@ -91,6 +91,7 @@ Report estimated context-window token costs for the repository's agent content
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
 | `--format` | Output format (default: text) (choices: text, json) | `text` |
+| `--harness` | Report the session-start cost for one harness's sessions: claude reads CLAUDE.md (+ @-imports) and .claude/rules; gemini reads GEMINI.md or AGENTS.md; copilot reads copilot-instructions.md, *.instructions.md, and AGENTS.md; cursor reads .cursor/rules and AGENTS.md; default is a generic AGENTS.md agent. 'all' (the default) reports the union with a per-harness breakdown. The on-demand section is never filtered. (choices: all, claude, cursor, copilot, gemini, default) | `all` |
 | `--window` | Context-window size in tokens used for percentages (default: 200000) | `200000` |
 | `--top` | Show at most N on-demand items in text output; 0 shows all (default: 15) | `15` |
 
