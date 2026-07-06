@@ -13,7 +13,7 @@ help:
 	@echo "  test          - Run pytest tests"
 	@echo "  clean         - Remove Python cache files and virtualenv"
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
-	@echo "  generate-docs - Regenerate Builtin Rules section of README.md"
+	@echo "  generate-docs - Regenerate README docs sections when present"
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Non-destructively verify agent dirs match APM sources (injection/drift gate)"
