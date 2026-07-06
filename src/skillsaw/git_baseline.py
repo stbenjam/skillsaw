@@ -43,7 +43,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
 from .baseline import BaselineFile, build_baseline
 from .config import LinterConfig
-from .context import RepositoryContext
+from .context import RepositoryContext, RepositoryType
 from .linter import Linter
 from .rule import RuleViolation, Severity
 
@@ -72,7 +72,10 @@ def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess:
 
 def repo_toplevel(path: Path) -> Path:
     """Resolve the git working-tree toplevel containing *path*."""
-    result = _git(path, "rev-parse", "--show-toplevel")
+    # git needs a directory as cwd; with a file path subprocess would raise
+    # NotADirectoryError instead of producing a clean error.
+    cwd = path if path.is_dir() else path.parent
+    result = _git(cwd, "rev-parse", "--show-toplevel")
     if result.returncode != 0:
         raise GitBaselineError(
             f"--since requires a git repository, but {path} is not inside one "
@@ -88,6 +91,12 @@ def _is_shallow(repo_root: Path) -> bool:
 
 def resolve_merge_base(repo_root: Path, ref: str) -> str:
     """Resolve the merge-base of HEAD and *ref*, with a precise error on failure."""
+    # A ref starting with "-" would be parsed by git as a command-line flag
+    # rather than a revision — reject it before it reaches git.
+    if not ref or ref.startswith("-"):
+        raise GitBaselineError(
+            f"--since: invalid ref '{ref}' (refs must not be empty or start with '-')"
+        )
     result = _git(repo_root, "merge-base", "HEAD", ref)
     if result.returncode == 0:
         return result.stdout.strip()
@@ -139,6 +148,7 @@ def build_git_baseline(
     lint_paths: Sequence[Path],
     version_string: str,
     *,
+    repo_types: Optional[Set[RepositoryType]] = None,
     rule_ids: Optional[Set[str]] = None,
     skip_rule_ids: Optional[Set[str]] = None,
     no_custom_rules: bool = False,
@@ -149,9 +159,11 @@ def build_git_baseline(
     Each lint path is mapped to its location inside the snapshot worktree
     (paths that do not exist at the merge-base simply contribute no
     baseline entries).  The snapshot is linted with the caller's *config*
-    (from the current working tree) and rule selection flags, INFO
-    violations are dropped, and ratchet ``baseline_mode``\\ s are captured —
-    all mirroring ``skillsaw baseline`` semantics.
+    (from the current working tree), *repo_types* override (``--type``),
+    and rule selection flags, INFO violations are dropped, and ratchet
+    ``baseline_mode``\\ s are captured — all mirroring ``skillsaw baseline``
+    semantics.  The base and current lints must use the same rule set, or
+    rules enabled only on one side would report spurious differences.
 
     Returns ``(baseline, merge_base_sha)`` where ``baseline.root_path`` is
     already pointed at *repo_root* so current violations fingerprint to
@@ -185,6 +197,7 @@ def build_git_baseline(
 
             context = RepositoryContext(
                 mapped,
+                repo_types=repo_types,
                 exclude_patterns=config.exclude_patterns,
                 content_paths=config.content_paths,
             )

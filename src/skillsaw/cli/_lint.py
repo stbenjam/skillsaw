@@ -138,6 +138,7 @@ def _run_lint(args):
                 config,
                 paths,
                 cli_version,
+                repo_types=override_types,
                 rule_ids=rule_ids,
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,

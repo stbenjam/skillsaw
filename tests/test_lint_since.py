@@ -190,6 +190,23 @@ def test_line_drift_keeps_legacy_violations_suppressed(tmp_path):
     assert suppressed(r) == 3
 
 
+def test_type_override_applies_to_merge_base_lint(tmp_path):
+    repo = git_repo(tmp_path)
+    append(repo / "CLAUDE.md", "\nRun `make docs` to rebuild the API reference.\n")
+    commit_all(repo, "Mention docs build")
+
+    # --type single-plugin enables rules (plugin-json-required,
+    # plugin-readme) that dot-claude auto-detection would not. The
+    # override must apply to the merge-base snapshot too, or those rules
+    # would fire only on the current tree and report spurious "new"
+    # violations for an unchanged repo.
+    r = run_lint(repo, "--since", "HEAD~1", "--type", "single-plugin", "--strict")
+
+    assert r["rc"] == 0, r["stdout"]
+    assert violations(r) == []
+    assert suppressed(r) > 0
+
+
 # ── Ratchet composition ──────────────────────────────────────────
 
 
@@ -262,13 +279,26 @@ def test_unknown_ref_is_a_clear_error(tmp_path):
     assert "Traceback" not in r["stderr"]
 
 
+def test_ref_starting_with_dash_is_rejected(tmp_path):
+    repo = git_repo(tmp_path)
+
+    # A ref like "-foo" must not reach git, where it would parse as a flag.
+    r = run_lint(repo, "--since=-foo")
+
+    assert r["rc"] == 1
+    assert "invalid ref" in r["stderr"]
+    assert "Traceback" not in r["stderr"]
+
+
 def test_shallow_clone_error_suggests_fetching_history(tmp_path):
     origin = git_repo(tmp_path)
     append(origin / "CLAUDE.md", "\nRun `make docs` to rebuild the API reference.\n")
     commit_all(origin, "Mention docs build")
 
     clone = tmp_path / "shallow"
-    git(tmp_path, "clone", "-q", "--depth", "1", f"file://{origin}", str(clone))
+    # as_uri() builds a portable file:// URL (a plain local path would make
+    # git silently ignore --depth and produce a full, non-shallow clone).
+    git(tmp_path, "clone", "-q", "--depth", "1", origin.as_uri(), str(clone))
 
     r = run_lint(clone, "--since", "HEAD~1")
 

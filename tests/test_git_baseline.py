@@ -17,7 +17,7 @@ import pytest
 
 from skillsaw.baseline import BaselineFile
 from skillsaw.config import LinterConfig
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.git_baseline import (
     GitBaselineError,
     _snapshot_worktree,
@@ -59,6 +59,12 @@ class TestRepoToplevel:
         repo = git_repo(tmp_path)
         assert repo_toplevel(repo / ".claude" / "rules") == repo.resolve()
 
+    def test_resolves_toplevel_from_file_path(self, tmp_path):
+        # Robustness for direct API callers: a file path must not crash
+        # subprocess with NotADirectoryError.
+        repo = git_repo(tmp_path)
+        assert repo_toplevel(repo / "CLAUDE.md") == repo.resolve()
+
     def test_not_a_git_repo(self, tmp_path):
         plain = copy_fixture(tmp_path)
         with pytest.raises(GitBaselineError, match="requires a git repository"):
@@ -90,13 +96,26 @@ class TestResolveMergeBase:
             resolve_merge_base(repo, "no-such-branch")
         assert "no-such-branch" in str(exc.value)
 
+    def test_ref_starting_with_dash_rejected(self, tmp_path):
+        repo = git_repo(tmp_path)
+        # "-foo" would be parsed by git as a flag, not a revision.
+        with pytest.raises(GitBaselineError, match="invalid ref"):
+            resolve_merge_base(repo, "-foo")
+
+    def test_empty_ref_rejected(self, tmp_path):
+        repo = git_repo(tmp_path)
+        with pytest.raises(GitBaselineError, match="invalid ref"):
+            resolve_merge_base(repo, "")
+
     def test_shallow_clone_mentions_fetching_history(self, tmp_path):
         origin = git_repo(tmp_path)
         append(origin / "CLAUDE.md", "\nRun `make docs` to rebuild the API reference.\n")
         commit_all(origin, "Mention docs build")
 
         clone = tmp_path / "shallow"
-        git(tmp_path, "clone", "-q", "--depth", "1", f"file://{origin}", str(clone))
+        # as_uri() builds a portable file:// URL (a plain local path would
+        # make git silently ignore --depth and produce a full clone).
+        git(tmp_path, "clone", "-q", "--depth", "1", origin.as_uri(), str(clone))
 
         with pytest.raises(GitBaselineError, match="shallow") as exc:
             resolve_merge_base(clone, "HEAD~1")
@@ -228,6 +247,24 @@ class TestBuildGitBaseline:
         assert [v.rule_id for v in kept] == ["content-embedded-secrets"]
         assert linter.baseline_suppressed_count == 3
         assert linter.stale_baseline_entries == []
+
+    def test_repo_types_override_applies_to_snapshot(self, tmp_path):
+        repo = git_repo(tmp_path)
+        repo_root = repo.resolve()
+
+        baseline, _ = build_git_baseline(
+            repo_root,
+            "HEAD",
+            fixture_config(repo),
+            [repo_root],
+            "0.0.0-test",
+            repo_types={RepositoryType.SINGLE_PLUGIN},
+        )
+
+        # plugin-json-required only fires under the single-plugin type;
+        # its presence proves the snapshot lint honored the override
+        # instead of auto-detecting dot-claude.
+        assert "plugin-json-required" in {e.rule_id for e in baseline.violations}
 
     def test_lint_path_missing_at_merge_base_contributes_nothing(self, tmp_path):
         repo = git_repo(tmp_path)
