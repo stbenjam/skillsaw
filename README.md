@@ -26,9 +26,8 @@ skillsaw is a configurable, rule-based linter for agentic context:
 - **Adoption flow**: supports deterministic autofixes, baselines for existing issues, CI output formats, and an optional AI-assisted onboarding skill.
 - **Extensibility**: supports custom rules and pip-installable rule plugins when the built-in checks are not enough.
 
-The goal is not to lint application source code. It is to keep the instruction
-and configuration layer around AI coding agents clear, safe, structured, and
-maintainable.
+It keeps the instruction and configuration layer around AI coding agents clear,
+safe, structured, and maintainable.
 
 ## Quick Start
 
