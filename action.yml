@@ -33,6 +33,10 @@ inputs:
     description: 'Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)'
     required: false
     default: 'true'
+  since:
+    description: 'Only report violations introduced since the merge-base of HEAD and this ref (e.g. origin/main). Requires git history: use actions/checkout with fetch-depth: 0 (or fetch the base branch).'
+    required: false
+    default: ''
 
 outputs:
   exit-code:
@@ -84,11 +88,15 @@ runs:
         SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
         SKILLSAW_NO_CUSTOM_RULES: ${{ inputs.no-custom-rules }}
+        SKILLSAW_SINCE: ${{ inputs.since }}
       run: |
         set +e
         ARGS=""
         if [ "$SKILLSAW_STRICT" = "true" ]; then
           ARGS="$ARGS --strict"
+        fi
+        if [ -n "$SKILLSAW_SINCE" ]; then
+          ARGS="$ARGS --since $SKILLSAW_SINCE"
         fi
         if [ -n "$SKILLSAW_FAIL_ON" ]; then
           case "$SKILLSAW_FAIL_ON" in

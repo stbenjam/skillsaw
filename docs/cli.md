@@ -23,6 +23,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
+| `--since` | Only report violations introduced since the merge-base of HEAD and REF (e.g. origin/main). Lints that commit in a temporary git worktree and uses the result as an ephemeral baseline. Takes precedence over .skillsaw-baseline.json; cannot be combined with --no-baseline. Requires git history for the merge-base. |  |
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |

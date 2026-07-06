@@ -154,6 +154,24 @@ drift and reports stale entries when old violations are fixed. See the
 [Baseline guide](https://skillsaw.org/baseline/) for matching behavior,
 ratchet behavior, and refresh workflow.
 
+### Lint only your changes
+
+`--since` builds the baseline on the fly from git history — no committed
+`.skillsaw-baseline.json` needed. It lints the merge-base of HEAD and the
+given ref in a temporary git worktree and reports only the violations
+introduced since:
+
+```bash
+# Report only violations introduced on your branch
+skillsaw lint --since origin/main
+```
+
+Pre-existing violations stay suppressed even when your change shifts the
+lines around them, and ratchet rules (like `context-budget`) only fire when
+your change makes the tracked value worse. See
+[Lint only your changes](https://skillsaw.org/baseline/#lint-only-your-changes-since)
+for the mechanism and caveats.
+
 ## CI Integration
 
 ```yaml

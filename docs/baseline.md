@@ -64,6 +64,62 @@ Run lint without baseline filtering:
 skillsaw lint --no-baseline
 ```
 
+## Lint Only Your Changes (`--since`)
+
+`--since REF` builds the baseline on the fly from git history — no
+committed `.skillsaw-baseline.json`, no setup:
+
+```bash
+# Report only violations introduced on your branch
+skillsaw lint --since origin/main
+
+# Report only violations introduced by the last commit
+skillsaw lint --since HEAD~1
+```
+
+### How it works
+
+`--since` resolves the **merge-base** of HEAD and REF (the commit your
+work diverged from), checks it out into a temporary git worktree, lints
+that snapshot with the same configuration, and uses the result as an
+ephemeral baseline. The temporary worktree is always removed afterwards.
+
+Because the ephemeral baseline uses the same content-hash fingerprints
+as a committed baseline, everything above applies:
+
+- **Drift immunity** — pre-existing violations stay suppressed even when
+  your change inserts or removes lines around them.
+- **Ratchet composition** — value-carrying rules (`context-budget`,
+  `content-instruction-budget`, `content-actionability-score`) re-fire
+  only when your change makes the tracked value worse. Growing a
+  SKILL.md past its merge-base token count reports the regression;
+  shrinking it stays quiet.
+- Fixed violations are reported as
+  `Baseline: N violation(s) fixed since REF`.
+
+Merge-base semantics mean commits that landed on REF after you branched
+are not counted against you — only your own changes are compared.
+
+The rule configuration (`.skillsaw.yaml`, `--rule`/`--skip-rule`,
+`--no-custom-rules`, `--no-plugins`) is deliberately taken from the
+*current* working tree for both lints: `--since` measures how the
+repository changed, not how the rule configuration changed.
+
+`--since` takes precedence over a committed `.skillsaw-baseline.json`
+and cannot be combined with `--no-baseline`.
+
+### Limitations
+
+- **Renames resurface old violations** — fingerprints include the
+  relative file path, so violations in a renamed file no longer match
+  their merge-base entries and are reported again.
+- **Roughly doubles lint time** — the merge-base snapshot is linted in
+  addition to the working tree.
+- **Requires git history** — the merge-base commit must be reachable.
+  In shallow CI clones, fetch history first (e.g. `fetch-depth: 0` with
+  `actions/checkout`, or `git fetch --unshallow`); skillsaw reports a
+  precise error when it cannot resolve the merge-base.
+
 ## Stale Entries
 
 When you fix a baselined violation, its baseline entry becomes **stale**.
