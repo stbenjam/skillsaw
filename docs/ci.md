@@ -135,6 +135,48 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 - When a violation is fixed, its comment thread is automatically resolved
 - Comments with human replies are preserved
 
+## Badge and report card
+
+`skillsaw badge` writes `.skillsaw-badge.json` (a shields.io endpoint
+payload) and prints ready-to-paste README markdown. Add `--card` to also
+render `.skillsaw-card.svg` — a self-contained SVG report card showing
+the letter grade, weighted violation density, content-token count,
+plugin/skill counts, and the top offending rules (`--theme light|dark`).
+
+Regenerate both on pushes to your default branch and commit them when
+they change:
+
+```yaml
+name: Badge
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: pipx install skillsaw
+      - run: skillsaw badge --card .  # grades, never gates (always exits 0)
+      - name: Commit badge artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .skillsaw-badge.json .skillsaw-card.svg
+          git diff --cached --quiet || git commit -m "Update skillsaw badge"
+          git push
+```
+
+Both images are served from your repository via
+`raw.githubusercontent.com`. GitHub proxies README images through its
+camo cache, which caches aggressively — a freshly regenerated badge or
+card can appear stale for a while after pushing.
+
 ## Other output formats
 
 skillsaw supports several machine-readable output formats — `--format`

@@ -99,6 +99,8 @@ Grade the repository and write a shields.io badge JSON file
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `-o`, `--output` | Badge JSON output path (default: .skillsaw-badge.json in the repository root) |  |
+| `--card` | Also render a self-contained SVG report card (.skillsaw-card.svg) next to the badge JSON |  |
+| `--theme` | Report card color theme, used with --card (default: light) (choices: light, dark) | `light` |
 
 ## `skillsaw add`
 

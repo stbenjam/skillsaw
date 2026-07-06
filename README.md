@@ -217,6 +217,30 @@ skillsaw badge .
 See [`skillsaw badge`](https://skillsaw.org/cli/#skillsaw-badge) for badge
 generation options.
 
+### README report card
+
+`skillsaw badge --card` additionally renders `.skillsaw-card.svg`, a
+self-contained SVG report card (no external fonts, images, or network
+requests) showing the giant letter grade, weighted violation density,
+content-token count, plugin/skill counts, and the top three offending
+rules:
+
+```bash
+skillsaw badge --card .              # light theme (default)
+skillsaw badge --card --theme dark .
+```
+
+Commit the SVG next to the badge JSON and embed it:
+
+```markdown
+[![skillsaw report card](https://raw.githubusercontent.com/OWNER/REPO/main/.skillsaw-card.svg)](https://skillsaw.org/)
+```
+
+The grading scale is fixed (deliberately not configurable), so cards are
+comparable across repositories. Note that GitHub proxies README images
+through its camo cache, so a freshly regenerated card can appear stale
+for a while after pushing.
+
 ## Supply Chain Protection
 
 skillsaw is designed for repositories that execute AI-agent instructions,

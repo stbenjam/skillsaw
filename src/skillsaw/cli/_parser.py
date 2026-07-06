@@ -377,6 +377,18 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=None,
         help="Badge JSON output path (default: .skillsaw-badge.json in the repository root)",
     )
+    badge_parser.add_argument(
+        "--card",
+        action="store_true",
+        help="Also render a self-contained SVG report card (.skillsaw-card.svg) "
+        "next to the badge JSON",
+    )
+    badge_parser.add_argument(
+        "--theme",
+        choices=["light", "dark"],
+        default="light",
+        help="Report card color theme, used with --card (default: light)",
+    )
 
     # --- add ---
     subparsers.add_parser(
