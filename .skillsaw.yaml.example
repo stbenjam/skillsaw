@@ -153,6 +153,14 @@ rules:
     enabled: auto
     severity: warning
 
+  # Detect near-duplicate sections that have drifted apart across instruction files
+  content-instruction-drift:
+    enabled: auto
+    severity: info
+    # similarity-threshold: 0.8
+    # min-section-words: 40
+    # ignore-generated: true
+
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
