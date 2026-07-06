@@ -1124,6 +1124,36 @@ class TestContentInstructionDriftRule:
         context = RepositoryContext(temp_dir)
         assert ContentInstructionDriftRule().check(context) == []
 
+    def test_html_comment_and_whitespace_add_no_drift_distance(self, temp_dir):
+        # A suppression directive (or any comment) plus extra blank lines in
+        # one copy of an otherwise-identical section must not create drift.
+        commented = _DRIFT_SECTION.replace(
+            "## Testing workflow\n",
+            "## Testing workflow\n\n<!-- skillsaw-disable some-other-rule -->\n\n\n",
+            1,
+        )
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + commented)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_html_comment_does_not_mask_real_drift(self, temp_dir):
+        # Comments are blanked before comparison, so one cannot dilute the
+        # similarity of a genuinely drifted pair below the threshold.
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(
+            _DRIFT_PREAMBLE
+            + _DRIFT_SECTION_EDITED.replace(
+                "## Testing workflow\n",
+                "## Testing workflow\n\n<!-- reviewers: keep in sync -->\n\n",
+                1,
+            )
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInstructionDriftRule().check(context)
+        assert len(violations) == 1
+        assert "% similar" in violations[0].message
+
     def test_dissimilar_sections_pass(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
         (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + """## Testing workflow

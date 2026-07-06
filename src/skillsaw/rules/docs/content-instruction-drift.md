@@ -59,6 +59,24 @@ Compare the two sections named in the violation and reconcile them:
    rule — or replace the duplicated section with a short pointer to a
    single shared file.
 
+**Intentional harness-specific divergence.** Sometimes two copies are
+*supposed* to differ — e.g. CLAUDE.md says "Claude Code style tool
+names" where AGENTS.md says "Codex style tool names". Suppress that
+section with a standard inline directive in the file the violation is
+reported on (the later file in path order — or both files, to be safe):
+
+```markdown
+<!-- skillsaw-disable content-instruction-drift -->
+## Tool naming
+...harness-specific content...
+<!-- skillsaw-enable content-instruction-drift -->
+```
+
+The directive comment itself never affects the comparison: HTML
+comments and whitespace are stripped before sections are compared, so
+adding a suppression to one file cannot create (or hide) drift
+distance in another pair.
+
 Tune the rule in `.skillsaw.yaml`:
 
 ```yaml

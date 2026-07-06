@@ -1745,6 +1745,25 @@ class TestInstructionDrift:
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         assert "content-instruction-drift" not in rule_ids(r)
 
+    def test_inline_suppression_allows_intentional_divergence(self, tmp_path):
+        """A skillsaw-disable directive above the reported section silences
+        the finding — the documented recipe for sections that are supposed
+        to differ per assistant. The directive goes in the anchor file
+        (CLAUDE.md, the later file in path order); it is an HTML comment,
+        so it adds no drift distance of its own."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text().replace(
+                "## Testing",
+                "<!-- skillsaw-disable content-instruction-drift -->\n## Testing",
+                1,
+            )
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
+
 
 @pytest.mark.integration
 class TestDescriptionMaxLengthConfig:
