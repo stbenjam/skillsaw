@@ -8,6 +8,13 @@ targets:
   - codex
   - opencode
 
+# Keep test fixtures out of primitive discovery: a committed
+# `*.instructions.md` (or any primitive) under tests/ would otherwise be
+# vacuumed into the generated AGENTS.md / copilot-instructions.md.
+compilation:
+  exclude:
+    - "tests/**"
+
 dependencies:
   apm:
     - ./skills/skillsaw-create-plugin
