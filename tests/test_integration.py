@@ -1517,6 +1517,7 @@ BROKEN_FIXTURES = [
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
+    "content/instruction-drift",
 ]
 
 CLEAN_FIXTURES = [
@@ -1710,6 +1711,58 @@ class TestTerminologyGroupsConfig:
         messages = [v["message"] for v in self._rule_violations(r)]
         assert any("function/method" in m for m in messages)
         assert any("directory/folder" in m for m in messages)
+
+
+@pytest.mark.integration
+class TestInstructionDrift:
+    """End-to-end tests for content-instruction-drift.
+
+    The fixture's CLAUDE.md and .github/copilot-instructions.md share a
+    Testing section, but the CLAUDE.md copy gained a coverage sentence —
+    a drifted near-duplicate. Every other section pair is dissimilar.
+    """
+
+    FIXTURE = "content/instruction-drift"
+
+    def test_drifted_section_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        drift = by_rule(r).get("content-instruction-drift", [])
+        assert len(drift) == 1
+        v = drift[0]
+        # Anchored on the later file in (path, line) order: CLAUDE.md,
+        # at its '## Testing' heading, referencing the copilot copy.
+        assert v["file_path"].endswith("CLAUDE.md")
+        assert v["line"] == 14
+        assert "% similar" in v["message"]
+        assert ".github/copilot-instructions.md:13" in v["message"]
+
+    def test_silent_on_clean_instruction_files(self, tmp_path):
+        """Distinct sections across instruction files must not fire."""
+        repo = copy_fixture("config/terminology-groups", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
+
+    def test_inline_suppression_allows_intentional_divergence(self, tmp_path):
+        """A skillsaw-disable directive above the reported section silences
+        the finding — the documented recipe for sections that are supposed
+        to differ per assistant. The directive goes in the anchor file
+        (CLAUDE.md, the later file in path order); it is an HTML comment,
+        so it adds no drift distance of its own."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text().replace(
+                "## Testing",
+                "<!-- skillsaw-disable content-instruction-drift -->\n## Testing",
+                1,
+            )
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
 
 
 @pytest.mark.integration

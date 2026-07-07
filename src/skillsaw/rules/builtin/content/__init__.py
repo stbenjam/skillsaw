@@ -12,6 +12,7 @@ from .cognitive_chunks import ContentCognitiveChunksRule
 from .embedded_secrets import ContentEmbeddedSecretsRule
 from .banned_references import ContentBannedReferencesRule
 from .inconsistent_terminology import ContentInconsistentTerminologyRule
+from .instruction_drift import ContentInstructionDriftRule
 from .broken_internal_reference import ContentBrokenInternalReferenceRule
 from .unlinked_internal_reference import ContentUnlinkedInternalReferenceRule
 from .placeholder_text import ContentPlaceholderTextRule
@@ -31,6 +32,7 @@ __all__ = [
     "ContentEmbeddedSecretsRule",
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
+    "ContentInstructionDriftRule",
     "ContentBrokenInternalReferenceRule",
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",
