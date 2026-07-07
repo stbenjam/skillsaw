@@ -9,6 +9,9 @@ metadata:
   version: "1.0"
 ---
 
+<!-- Source paths below are repo-root-relative references, not links navigable from this skill's directory. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 # skillsaw Maintenance
 
 You are performing maintenance on the **skillsaw** linter. Your goal is to ensure
@@ -35,12 +38,12 @@ Fetch and review the current versions of:
    - Check for new required fields in plugin.json
    - Check for new command format requirements
    - Check for structural changes to plugin layout
-   - Compare against `src/skillsaw/rules/builtin/plugin_structure.py` and `command_format.py`
+   - Compare against `src/skillsaw/rules/builtin/plugin_structure.py` and `src/skillsaw/rules/builtin/command_format.py`
 
 3. **Claude Code marketplace format** at https://docs.claude.com/en/docs/claude-code/plugin-marketplaces
    - Check for new marketplace.json requirements
    - Check for changes to plugin registration or discovery
-   - Compare against `src/skillsaw/rules/builtin/marketplace.py`
+   - Compare against `src/skillsaw/rules/builtin/marketplace/`
 
 4. **Claude Code .claude/ directory** at https://code.claude.com/docs/en/claude-directory
    - Check for structure requirements, supported files, and conventions

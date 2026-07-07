@@ -2,6 +2,8 @@
 version: "99.0.0" # high version so all new rules get triggered
 
 exclude:
+  # apm build artifacts (gitignored) — the sources live in .apm/ and skills/
+  - "apm_modules/*"
   # Agentic artifacts come from .apm, don't lint twice
   - "AGENTS.md"
   - ".claude/*"
@@ -20,3 +22,19 @@ exclude:
 # content-quality rules.
 content-paths:
   - "REVIEW.md"
+
+rules:
+  # Progressive-disclosure reference material and fill-in templates are not
+  # top-level instruction files: scoring them for imperative actionability is
+  # a category error (a {{PLACEHOLDER}} template can't be "actionable").
+  content-actionability-score:
+    exclude:
+      - "**/references/**"
+      - "**/*template.md"
+  # Terminology consistency is a cross-file signal for authored instructions.
+  # Reference guidance and templates use domain vocabulary verbatim (skillsaw's
+  # own "repo type" concept, placeholder tokens) — exclude them from the check.
+  content-inconsistent-terminology:
+    exclude:
+      - "**/references/**"
+      - "**/*template.md"
