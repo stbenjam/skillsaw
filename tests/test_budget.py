@@ -69,9 +69,6 @@ class TestComputeBudget:
         assert ".cursor/rules/core-style.mdc" in session_paths  # alwaysApply: true
         assert ".cursor/rules/api-conventions.mdc" in on_demand_paths
         assert ".claude/rules/frontend.md" in on_demand_paths  # paths: scoped
-        # applyTo: "**" applies everywhere -> session; narrower glob -> on demand
-        assert ".github/instructions/general.instructions.md" in session_paths
-        assert ".github/instructions/frontend.instructions.md" in on_demand_paths
 
     def test_imports_resolved_into_session(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
@@ -229,9 +226,19 @@ class TestComputeBudget:
         assert ".kiro/steering/api.md" in on_demand_paths
         assert ".kiro/steering/manual.md" in on_demand_paths
 
-    def test_instructions_md_without_applyto_is_conditional(self, tmp_path):
+    def test_instructions_md_applyto_scoping(self, tmp_path):
+        # NOTE: these live in tmp dirs, not a static fixture — apm compile
+        # sweeps every *.instructions.md in the repo into the generated
+        # AGENTS.md, so fixture files with this suffix would pollute
+        # `make update` output.
         instr = tmp_path / ".github" / "instructions"
         instr.mkdir(parents=True)
+        (instr / "general.instructions.md").write_text(
+            "---\napplyTo: '**'\n---\n\nApplies to every file in the repo.\n"
+        )
+        (instr / "frontend.instructions.md").write_text(
+            "---\napplyTo: 'web/**'\n---\n\nOnly when touching the frontend.\n"
+        )
         (instr / "nokey.instructions.md").write_text(
             "---\ndescription: Reviewed manually\n---\n\nOnly applied when referenced.\n"
         )
@@ -242,7 +249,10 @@ class TestComputeBudget:
         (tmp_path / "AGENTS.md").write_text("# Guide\n\nGeneral instructions.\n")
 
         report = compute_budget(RepositoryContext(tmp_path))
+        session_paths = {i.path for i in report.session_files}
         on_demand_paths = {i.path for i in report.on_demand}
+        assert ".github/instructions/general.instructions.md" in session_paths
+        assert ".github/instructions/frontend.instructions.md" in on_demand_paths
         assert ".github/instructions/nokey.instructions.md" in on_demand_paths
         assert ".github/instructions/lowercase.instructions.md" in on_demand_paths
 
@@ -523,7 +533,7 @@ class TestContextCli:
         repo = copy_fixture("budget/mixed", tmp_path)
         result = run_context(repo, "--top", "1")
         assert result.returncode == 0, result.stderr
-        assert "top 1 of 8" in result.stdout
+        assert "top 1 of 7" in result.stdout
         assert "--top 0 for all" in result.stdout
 
     @pytest.mark.integration
