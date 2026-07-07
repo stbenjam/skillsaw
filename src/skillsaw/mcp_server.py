@@ -342,9 +342,10 @@ def create_server() -> FastMCP:
 
         # A skill-directory rename changes discovery, unlocking fixes a
         # single pass can't see — same follow-up run `skillsaw fix` does.
+        # This branch only runs for real fix runs, so apply for real too.
         if not dry_run and any(f.rule_id == "agentskill-name" for f in applied):
             context, linter = _build_linter(root, config)
-            more_applied, more_suggested = linter.fix_and_apply(confidence)
+            more_applied, more_suggested = linter.fix_and_apply(confidence, dry_run=False)
             applied.extend(more_applied)
             suggested.extend(more_suggested)
 
