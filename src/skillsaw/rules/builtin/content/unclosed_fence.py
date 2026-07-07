@@ -87,6 +87,8 @@ class ContentUnclosedFenceRule(Rule):
         with *markup*: at most 3 spaces of indent, then a run of the same
         fence character at least as long as the opener, then only whitespace.
         """
+        if not markup:
+            return False
         text = line.rstrip()
         run = text.lstrip(" ")
         if len(text) - len(run) > 3:
@@ -114,8 +116,11 @@ class ContentUnclosedFenceRule(Rule):
             # Append only when the body ends the file (plain markdown files
             # and frontmattered bodies).  YAML-embedded bodies (.coderabbit
             # instructions, promptfoo prompts) are indented inside a host
-            # document — a bare closer at EOF would corrupt it.
-            if not content.endswith(body):
+            # document — a bare closer at EOF would corrupt it.  Trailing
+            # newline differences are tolerated: extra blank lines at EOF
+            # sit inside the unclosed fence, so the appended closer still
+            # terminates it.
+            if not content.rstrip("\r\n").endswith(body.rstrip("\r\n")):
                 continue
             closer = fence.markup
             fixed = content + ("" if content.endswith("\n") else "\n") + closer + "\n"
