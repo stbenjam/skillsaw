@@ -139,7 +139,10 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                 msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
                 if file_exists:
                     msg += " (file exists, autofixable)"
-                violations.append(self.violation(msg, block=cf, line=body_line))
+                # fix() only wraps references whose target exists on disk.
+                violations.append(
+                    self.violation(msg, block=cf, line=body_line, fixable=file_exists)
+                )
         return violations
 
     def fix(

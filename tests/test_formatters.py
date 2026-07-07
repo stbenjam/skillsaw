@@ -11,7 +11,7 @@ from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
 from skillsaw.formatters.code_climate import format_code_climate
-from skillsaw.rule import RuleViolation, Severity
+from skillsaw.rule import AutofixConfidence, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
@@ -921,3 +921,184 @@ def test_json_includes_duration(valid_plugin):
 
     report = json.loads(format_json(violations, context, linter.rules, "0.0.0"))
     assert "duration_seconds" not in report["stats"]
+
+
+# --- Fixable markers and fix hints ---
+
+
+def _make_fixable_violations():
+    """One SAFE-fixable error, one SAFE-fixable warning shown as error,
+    one SUGGEST-fixable warning, one explicitly unfixable error."""
+    return [
+        RuleViolation(
+            rule_id="agentskill-valid",
+            severity=Severity.ERROR,
+            message="Missing required 'name' field",
+            file_path=Path("skills/foo/SKILL.md"),
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+        RuleViolation(
+            rule_id="agent-frontmatter",
+            severity=Severity.ERROR,
+            message="Missing 'description' in frontmatter",
+            file_path=Path("agents/bar.md"),
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+        RuleViolation(
+            rule_id="content-broken-internal-reference",
+            severity=Severity.WARNING,
+            message="Broken internal link (did you mean 'docs/guide.md'?)",
+            file_path=Path("SKILL.md"),
+            line=8,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SUGGEST,
+        ),
+        RuleViolation(
+            rule_id="agentskill-valid",
+            severity=Severity.ERROR,
+            message="'description' must be a string",
+            file_path=Path("skills/baz/SKILL.md"),
+            fixable=False,
+        ),
+    ]
+
+
+def test_text_marks_safe_fixable_violations(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+
+    assert "(agentskill-valid) [*] [skills/foo/SKILL.md]:" in output
+    assert "(agent-frontmatter) [*] [agents/bar.md]:" in output
+
+
+def test_text_marks_suggest_fixable_violations(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+
+    assert "(content-broken-internal-reference) [?] [SKILL.md:8]:" in output
+
+
+def test_text_no_marker_on_unfixable_violation(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+
+    # Same rule id as a marked violation — only the fixable one is marked.
+    assert "(agentskill-valid) [skills/baz/SKILL.md]:" in output
+
+
+def test_text_no_marker_when_fixability_unknown(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    # _make_violations leaves fixable=None (e.g. synthetic violations).
+    output = format_text(_make_violations(), context, [], "0.0.0", verbose=True)
+
+    assert "[*]" not in output
+    assert "[?]" not in output
+    assert "fixable with" not in output
+
+
+def test_text_fixable_summary_splits_safe_and_suggest(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+
+    assert (
+        "[*] 2 violation(s) fixable with `skillsaw fix`"
+        " ([?] 1 more with `skillsaw fix --suggest`)" in output
+    )
+
+
+def test_text_fixable_summary_safe_only(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        v for v in _make_fixable_violations() if v.fix_confidence != AutofixConfidence.SUGGEST
+    ]
+    output = format_text(violations, context, [], "0.0.0")
+
+    assert "[*] 2 violation(s) fixable with `skillsaw fix`" in output
+    assert "--suggest" not in output
+
+
+def test_text_fixable_summary_suggest_only(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        v for v in _make_fixable_violations() if v.fix_confidence != AutofixConfidence.SAFE
+    ]
+    output = format_text(violations, context, [], "0.0.0")
+
+    assert "[?] 1 violation(s) fixable with `skillsaw fix --suggest`" in output
+    assert "[*]" not in output
+
+
+def test_text_fixable_summary_counts_only_shown_violations(valid_plugin):
+    """A hidden info-level fixable violation must not inflate the summary —
+    the counts must match the marked lines above them."""
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="content-unlinked-internal-reference",
+            severity=Severity.INFO,
+            message="Unlinked path reference: 'docs/x.md' (file exists, autofixable)",
+            file_path=Path("SKILL.md"),
+            line=3,
+            fixable=True,
+            fix_confidence=AutofixConfidence.SAFE,
+        ),
+    ]
+
+    hidden = format_text(violations, context, [], "0.0.0", verbose=False)
+    assert "fixable with" not in hidden
+
+    shown = format_text(violations, context, [], "0.0.0", verbose=True)
+    assert "[*] 1 violation(s) fixable with `skillsaw fix`" in shown
+
+
+def test_json_fixable_true_includes_confidence(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    report = json.loads(format_json(_make_fixable_violations(), context, [], "0.0.0"))
+
+    safe = next(v for v in report["violations"] if v["rule_id"] == "agent-frontmatter")
+    assert safe["fixable"] is True
+    assert safe["fix_confidence"] == "safe"
+
+    suggest = next(
+        v for v in report["violations"] if v["rule_id"] == "content-broken-internal-reference"
+    )
+    assert suggest["fixable"] is True
+    assert suggest["fix_confidence"] == "suggest"
+
+
+def test_json_fixable_false_omits_confidence(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    report = json.loads(format_json(_make_fixable_violations(), context, [], "0.0.0"))
+
+    unfixable = next(
+        v for v in report["violations"] if v["message"] == "'description' must be a string"
+    )
+    assert unfixable["fixable"] is False
+    assert "fix_confidence" not in unfixable
+
+
+def test_json_fixable_absent_when_unknown(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    # _make_violations leaves fixable=None (e.g. synthetic violations).
+    report = json.loads(format_json(_make_violations(), context, [], "0.0.0", verbose=True))
+
+    for v in report["violations"]:
+        assert "fixable" not in v
+        assert "fix_confidence" not in v
+
+
+def test_html_fixable_marker(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_html(_make_fixable_violations(), context, [], "1.0.0")
+
+    assert 'title="fixable with skillsaw fix"' in output
+    assert 'title="fixable with skillsaw fix --suggest"' in output
+
+
+def test_html_no_fixable_marker_when_unknown(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_html(_make_violations(), context, [], "1.0.0", verbose=True)
+
+    assert 'class="fixable"' not in output
