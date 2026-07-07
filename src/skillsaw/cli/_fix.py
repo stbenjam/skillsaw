@@ -16,6 +16,14 @@ from ._helpers import (
 )
 
 
+def _rel(path, root):
+    """Repo-relative display path, matching lint output style."""
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        return path
+
+
 def _run_fix(args):
     missing = [p for p in args.path if not p.exists()]
     for p in missing:
@@ -84,20 +92,23 @@ def _run_fix(args):
             path_suggested.extend(rename_suggested)
 
         applied.extend((f, context.root_path) for f in path_applied)
-        suggested.extend(path_suggested)
+        suggested.extend((f, context.root_path) for f in path_suggested)
 
     c = _ansi_colors()
+
+    # Single-root runs print repo-relative paths, matching lint output.
+    # Multi-root runs keep absolute paths — the same relative name in two
+    # repos (e.g. CLAUDE.md) would be ambiguous.
+    def _display(file_path, root):
+        return _rel(file_path, root) if len(paths) == 1 else file_path
 
     if applied:
         label = "Would fix" if dry_run else "Fixed"
         print(f"{label} {len(applied)} issue(s):")
         for fix, root in applied:
-            print(f"  {c['bold']}✓ [{fix.file_path}] {fix.description}{c['reset']}")
+            rel = _rel(fix.file_path, root)
+            print(f"  {c['bold']}✓ [{_display(fix.file_path, root)}] {fix.description}{c['reset']}")
             if dry_run and fix.original_content != fix.fixed_content:
-                try:
-                    rel = fix.file_path.relative_to(root)
-                except ValueError:
-                    rel = fix.file_path
                 diff_lines = difflib.unified_diff(
                     fix.original_content.splitlines(keepends=True),
                     fix.fixed_content.splitlines(keepends=True),
@@ -120,12 +131,15 @@ def _run_fix(args):
 
     if suggested:
         print(f"\nSuggested fixes ({len(suggested)} — review before applying):")
-        for fix in suggested:
-            print(f"  ? [{fix.file_path}] {fix.description}")
+        for fix, root in suggested:
+            print(f"  ? [{_display(fix.file_path, root)}] {fix.description}")
         print("\nRun `skillsaw fix --suggest` to apply suggested fixes.")
         print("Run `skillsaw fix --suggest --dry-run` to preview changes.")
 
     if dry_run and applied:
         print(f"\n{c['yellow']}dry-run — no files were modified{c['reset']}")
+
+    if applied and not dry_run:
+        print("\nRun `skillsaw lint` to see remaining issues.")
 
     sys.exit(0)

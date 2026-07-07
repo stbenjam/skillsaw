@@ -5,7 +5,7 @@ Text output formatter — human-readable terminal output with optional ANSI colo
 import os
 from typing import List, Optional
 
-from ..rule import Rule, RuleViolation, Severity
+from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
 from . import get_counts, relative_path, should_show_info
 
@@ -46,13 +46,21 @@ def format_text(
     warnings_list = [v for v in violations if v.severity == Severity.WARNING]
     info_list = [v for v in violations if v.severity == Severity.INFO]
 
+    def fix_marker(v: RuleViolation) -> str:
+        """Ruff-style fixability marker: [*] safe, [?] needs --suggest."""
+        if not v.fixable:
+            return ""
+        return " [*]" if v.fix_confidence == AutofixConfidence.SAFE else " [?]"
+
     def fmt_violation(v: RuleViolation) -> str:
         icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[v.severity.value]
         rel = relative_path(v.file_path, context.root_path)
         location = ""
         if rel:
             location = f" [{rel}:{v.file_line}]" if v.file_line else f" [{rel}]"
-        return f"{icon} {v.severity.value.upper()} ({v.rule_id}){location}: {v.message}"
+        return (
+            f"{icon} {v.severity.value.upper()} ({v.rule_id}){fix_marker(v)}{location}: {v.message}"
+        )
 
     output = []
 
@@ -110,6 +118,28 @@ def format_text(
                 f"  {dim}{grade.info} info-level violation(s) count toward"
                 f" the grade — run with -v to see them{reset}"
             )
+
+    # Legend for the [*]/[?] markers and the lint-to-fix hint. Counts are
+    # over the violations shown above, so marked lines and counts agree
+    # (`skillsaw fix` groups per-file fixes and may report different totals).
+    safe_fixable = sum(1 for v in shown if v.fixable and v.fix_confidence == AutofixConfidence.SAFE)
+    suggest_fixable = sum(
+        1 for v in shown if v.fixable and v.fix_confidence != AutofixConfidence.SAFE
+    )
+    if safe_fixable and suggest_fixable:
+        output.append(
+            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`"
+            f" ([?] {suggest_fixable} more with `skillsaw fix --suggest`){reset}"
+        )
+    elif safe_fixable:
+        output.append(
+            f"  {green}[*] {safe_fixable} violation(s) fixable with `skillsaw fix`{reset}"
+        )
+    elif suggest_fixable:
+        output.append(
+            f"  {green}[?] {suggest_fixable} violation(s) fixable with"
+            f" `skillsaw fix --suggest`{reset}"
+        )
 
     if errors == 0 and warnings == 0 and (fail_level != "info" or info == 0):
         output.append(f"\n{green}{bold}✓ All checks passed!{reset}")

@@ -2375,6 +2375,87 @@ class TestSafeAutofixIdempotency:
 
 
 @pytest.mark.integration
+class TestLintFixLoop:
+    """Lint output advertises fixability and fix output closes the loop."""
+
+    FIXTURE = "autofix/safe-idempotency"
+
+    def test_text_lint_marks_fixable_violations(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        # SAFE-autofixable rules carry the [*] marker after the rule id.
+        assert "(agent-frontmatter) [*]" in r["stdout"]
+        assert "(command-frontmatter) [*]" in r["stdout"]
+        # Rules without an autofix never get a marker.
+        assert "(agentskill-unreferenced-files) [*]" not in r["stdout"]
+        assert "(agentskill-unreferenced-files) [?]" not in r["stdout"]
+        # agentskill-valid only fixes the missing-name subset.
+        assert (
+            "(agentskill-valid) [*] [skills/missing-name/SKILL.md]: "
+            "Missing required 'name' field" in r["stdout"]
+        )
+        assert (
+            "(agentskill-valid) [skills/no-frontmatter/SKILL.md]: "
+            "Missing YAML frontmatter" in r["stdout"]
+        )
+
+    def test_text_lint_summary_shows_fixable_count(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        m = re.search(r"\[\*\] (\d+) violation\(s\) fixable with `skillsaw fix`", r["stdout"])
+        assert m, f"missing fixable summary line in:\n{r['stdout']}"
+        # The count matches the [*]-marked violation lines above it.
+        assert int(m.group(1)) == r["stdout"].count("[*]") - 1
+
+    def test_json_lint_reports_fixable_per_violation(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        grouped = by_rule(r)
+
+        for v in grouped["agent-frontmatter"]:
+            assert v["fixable"] is True
+            assert v["fix_confidence"] == "safe"
+
+        # agentskill-valid: only the missing-name subset is fixable.
+        for v in grouped["agentskill-valid"]:
+            if "Missing required 'name'" in v["message"]:
+                assert v["fixable"] is True
+                assert v["fix_confidence"] == "safe"
+            else:
+                assert v["fixable"] is False
+                assert "fix_confidence" not in v
+
+        # content-unlinked-internal-reference: fixable iff the target exists.
+        unlinked = grouped["content-unlinked-internal-reference"]
+        assert any(v["fixable"] for v in unlinked)
+        for v in unlinked:
+            assert v["fixable"] == ("autofixable" in v["message"])
+
+        # Rules without an autofix report fixable: false, no confidence.
+        for v in grouped["agentskill-unreferenced-files"]:
+            assert v["fixable"] is False
+            assert "fix_confidence" not in v
+
+    def test_fix_output_uses_relative_paths_and_hints_relint(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = _run_fix(repo)
+
+        assert "✓ [agents/no-fm-agent.md]" in result.stdout
+        assert str(repo) not in result.stdout, "fix output leaked absolute paths"
+        assert "Run `skillsaw lint` to see remaining issues." in result.stdout
+
+    def test_fix_no_relint_hint_when_nothing_fixed(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        result = _run_fix(repo)
+
+        assert "No auto-fixable violations found" in result.stdout
+        assert "Run `skillsaw lint`" not in result.stdout
+
+
+@pytest.mark.integration
 class TestRuleFilter:
     """Tests for --rule flag filtering."""
 

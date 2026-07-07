@@ -36,12 +36,15 @@ class AgentFrontmatterRule(Rule):
 
         for block in context.lint_tree.find(AgentBlock):
             if block.frontmatter_error:
+                # fix() only adds missing frontmatter/fields — malformed YAML
+                # needs a human.
                 violations.append(
                     self.violation(
                         block.frontmatter_error,
                         file_path=block.path,
                         line=block.frontmatter_error_line,
                         block=block,
+                        fixable=False,
                     )
                 )
                 continue

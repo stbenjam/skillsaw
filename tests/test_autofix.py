@@ -222,6 +222,47 @@ class TestRuleSupportsAutofix:
         assert rule.fix(context, []) == []
 
 
+class TestViolationFixability:
+    """Rule.violation() defaults fixable from supports_autofix + confidence."""
+
+    class DeclaredSafeRule(SafeFixRule):
+        autofix_confidence = AutofixConfidence.SAFE
+
+    def test_rule_without_fix_is_not_fixable(self):
+        v = NoFixRule().violation("something wrong")
+        assert v.fixable is False
+        assert v.fix_confidence is None
+
+    def test_fix_without_declared_confidence_is_not_fixable_by_default(self):
+        # No class-level autofix_confidence means the SAFE/SUGGEST split is
+        # unknowable at check() time — such rules must opt in per violation.
+        v = SafeFixRule().violation("Contains BAD")
+        assert v.fixable is False
+        assert v.fix_confidence is None
+
+    def test_fix_with_declared_confidence_is_fixable(self):
+        v = self.DeclaredSafeRule().violation("Contains BAD")
+        assert v.fixable is True
+        assert v.fix_confidence == AutofixConfidence.SAFE
+
+    def test_explicit_fixable_false_overrides_default(self):
+        v = self.DeclaredSafeRule().violation("Contains BAD", fixable=False)
+        assert v.fixable is False
+        assert v.fix_confidence is None
+
+    def test_explicit_fixable_true_uses_class_confidence(self):
+        v = SafeFixRule().violation(
+            "Contains BAD", fixable=True, fix_confidence=AutofixConfidence.SUGGEST
+        )
+        assert v.fixable is True
+        assert v.fix_confidence == AutofixConfidence.SUGGEST
+
+    def test_direct_construction_leaves_fixability_unknown(self):
+        v = RuleViolation(rule_id="synthetic", severity=Severity.ERROR, message="boom")
+        assert v.fixable is None
+        assert v.fix_confidence is None
+
+
 class TestLinterFix:
     def test_fix_with_no_violations(self, valid_plugin):
         context = RepositoryContext(valid_plugin)

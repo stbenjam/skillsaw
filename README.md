@@ -300,17 +300,22 @@ generation options.
 Linting: /path/to/skills-repo
 
 Errors:
-  ✗ ERROR [skills/my-skill/SKILL.md]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
-  ✗ ERROR [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
+  ✗ ERROR (agentskill-name) [*] [skills/my-skill/SKILL.md:2]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
+  ✗ ERROR (plugin-json-required) [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
 
 Warnings:
-  ⚠ WARNING [skills/helper/SKILL.md]: Description exceeds 1024 characters (1087)
-  ⚠ WARNING [plugins/utils]: Missing README.md (recommended)
+  ⚠ WARNING (agentskill-description) [skills/helper/SKILL.md:3]: Description exceeds 1024 characters (1087)
+  ⚠ WARNING (plugin-readme) [plugins/utils]: Missing README.md (recommended)
 
 Summary:
   Errors:   2
   Warnings: 2
+  [*] 1 violation(s) fixable with `skillsaw fix`
 ```
+
+Violations that `skillsaw fix` can resolve automatically are marked with
+`[*]` (safe fixes) or `[?]` (suggested fixes, applied with
+`skillsaw fix --suggest`), and the summary counts each kind.
 
 ## Migrating from claudelint
 
