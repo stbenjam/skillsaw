@@ -57,6 +57,8 @@ For all commands and flags, see the [CLI Reference](https://skillsaw.org/cli/).
 > ```
 > Then type `/skillsaw-onboard` — it installs skillsaw, lints your repo, autofixes what it can, walks you through manual fixes, sets up CI, and creates a baseline.
 >
+> The plugin also ships the `skillsaw-lint` skill plus a hint-only hook: whenever your agent writes or edits agentic context (a skill, command, agent, hook, or instruction file), it lints and improves that file before reporting the work done.
+>
 > **Other agents** — see the [Getting Started guide](https://skillsaw.org/getting-started/#onboard-with-ai).
 
 ## Installation
