@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **55** builtin rules 
+skillsaw includes **56** builtin rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
@@ -16,7 +16,7 @@ organized into the following categories:
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (18 rules)
+- [Content Intelligence](content-intelligence.md) (19 rules)
 - [CodeRabbit](coderabbit.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Settings](settings.md) (1 rule)
