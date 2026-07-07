@@ -155,6 +155,7 @@ RULE_GROUPS = [
             "content-broken-internal-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",
+            "content-unclosed-fence",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "

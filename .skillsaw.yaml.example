@@ -179,6 +179,11 @@ rules:
     enabled: auto
     severity: warning
 
+  # Detect code fences opened but never closed, hiding the rest of the file from content rules
+  content-unclosed-fence:
+    enabled: auto
+    severity: warning
+
   # Detect bare path-like strings not wrapped in markdown link syntax
   content-unlinked-internal-reference:
     enabled: auto

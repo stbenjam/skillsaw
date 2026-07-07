@@ -1517,6 +1517,7 @@ BROKEN_FIXTURES = [
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
+    "content-unclosed-fence/skill-hides-violations",
 ]
 
 CLEAN_FIXTURES = [
@@ -1960,6 +1961,82 @@ class TestUnlinkedInternalReferenceAutofix:
         assert len(unlinked) == 1
         assert "scripts/run_tests.py" in unlinked[0]["message"]
         assert unlinked[0]["line"] == 18
+
+
+class TestContentUnclosedFenceAutofix:
+    """Integration tests for content-unclosed-fence detection and autofix.
+
+    The fixture's SKILL.md opens a ```bash fence that never closes, so the
+    hedging prose after it parses as code — every content rule is blind to
+    it and the file lints clean apart from the unclosed-fence warning.
+    """
+
+    FIXTURE = "content-unclosed-fence/skill-hides-violations"
+    SKILL = Path("skills") / "deploy" / "SKILL.md"
+
+    def test_unclosed_fence_detected_and_blinds_content_rules(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        unclosed = [v for v in violations(r) if v["rule_id"] == "content-unclosed-fence"]
+        assert len(unclosed) == 1
+        assert unclosed[0]["line"] == 11  # the opening ```bash line
+        assert unclosed[0]["severity"] == "warning"
+        assert "```bash" in unclosed[0]["message"]
+        # The blindness: weak language after the runaway fence is stripped
+        # as code before content rules scan the body.
+        assert "content-weak-language" not in rule_ids(r)
+        # A warning never breaks the default exit code.
+        assert r["rc"] == 0
+
+    def test_plain_fix_only_suggests(self, tmp_path):
+        """Without --suggest the SUGGEST-confidence fix must not be applied."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original = (repo / self.SKILL).read_text()
+
+        result = _run_fix(repo)
+        assert "Append missing closing fence" in result.stdout
+        assert (repo / self.SKILL).read_text() == original
+
+    def test_suggest_fix_appends_closer_and_converges(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original = (repo / self.SKILL).read_text()
+
+        _run_fix(repo, "--suggest")
+
+        fixed = (repo / self.SKILL).read_text()
+        assert fixed == original + "```\n"
+        assert len(fixed.splitlines()) == len(original.splitlines()) + 1
+
+        r = run_lint(repo)
+        assert "content-unclosed-fence" not in rule_ids(r)
+
+    def test_suggest_fix_is_idempotent(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--suggest")
+        first = (repo / self.SKILL).read_text()
+
+        _run_fix(repo, "--suggest")
+        assert (repo / self.SKILL).read_text() == first
+
+    def test_closing_fence_where_code_ends_surfaces_hidden_violations(self, tmp_path):
+        """The blindness regression: the weak-language violations swallowed
+        by the runaway fence appear once the fence closes where the code
+        block was meant to end (the review step after the suggested fix)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        assert "content-weak-language" not in rule_ids(r)
+
+        skill = repo / self.SKILL
+        lines = skill.read_text().split("\n")
+        assert lines[12] == "make deploy ENV=production"
+        lines.insert(13, "```")  # close the fence after the last code line
+        skill.write_text("\n".join(lines))
+
+        r2 = run_lint(repo)
+        assert "content-unclosed-fence" not in rule_ids(r2)
+        weak = [v for v in violations(r2) if v["rule_id"] == "content-weak-language"]
+        assert len(weak) == 3
+        assert all(v["file_path"].endswith("SKILL.md") for v in weak)
 
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────
