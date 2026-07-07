@@ -110,6 +110,12 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "json or gitlab/code-climate). Can be specified multiple times.",
     )
     lint_parser.add_argument(
+        "--statistics",
+        action="store_true",
+        dest="statistics",
+        help="Print per-rule violation counts, highest first (text format only)",
+    )
+    lint_parser.add_argument(
         "--type",
         dest="repo_types",
         action="append",

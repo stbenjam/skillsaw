@@ -227,6 +227,15 @@ def _run_lint(args):
     )
     print(stdout_output)
 
+    if getattr(args, "statistics", False) and args.fmt == "text":
+        from ..formatters.text import format_statistics
+
+        stats = format_statistics(
+            all_violations, verbose=args.verbose, fail_level=fail_level, color=color
+        )
+        if stats:
+            print(f"\n{stats}")
+
     report_cache = {}
     for output_path, fmt in output_formats.items():
         if fmt not in report_cache:

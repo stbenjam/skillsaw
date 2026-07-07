@@ -244,9 +244,9 @@ def test_text_includes_rule_id(valid_plugin):
     violations = _make_violations()
 
     output = format_text(violations, context, [], "0.0.0", verbose=True)
-    assert "(plugin-json-required)" in output
-    assert "(command-naming)" in output
-    assert "(plugin-json-valid)" in output
+    assert "plugin-json-required" in output
+    assert "command-naming" in output
+    assert "plugin-json-valid" in output
 
 
 def test_text_verbose_shows_info(valid_plugin):
@@ -264,6 +264,114 @@ def test_text_non_verbose_hides_info(valid_plugin):
 
     output = format_text(violations, context, [], "0.0.0", verbose=False)
     assert "Info:" not in output
+
+
+# --- Text formatter: file grouping, dedup, statistics ---
+
+
+def _grouping_violations():
+    """Two files; one file has a rule+message repeated on three lines."""
+    return [
+        RuleViolation(
+            rule_id="content-terminology",
+            severity=Severity.INFO,
+            message='Use "skill" not "Skill"',
+            file_path=Path("a/SKILL.md"),
+            line=40,
+        ),
+        RuleViolation(
+            rule_id="content-terminology",
+            severity=Severity.INFO,
+            message='Use "skill" not "Skill"',
+            file_path=Path("a/SKILL.md"),
+            line=42,
+        ),
+        RuleViolation(
+            rule_id="content-terminology",
+            severity=Severity.INFO,
+            message='Use "skill" not "Skill"',
+            file_path=Path("a/SKILL.md"),
+            line=55,
+        ),
+        RuleViolation(
+            rule_id="content-terminology",
+            severity=Severity.INFO,
+            message='Use "skill" not "Skill"',
+            file_path=Path("b/README.md"),
+            line=3,
+        ),
+    ]
+
+
+def test_text_groups_violations_under_file_header(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_make_violations(), context, [], "0.0.0", verbose=True)
+    lines = output.splitlines()
+
+    # Each violation's file appears once as its own header line, and the
+    # rows for that file follow it.
+    assert "plugins/foo/commands/Bad_Name.md" in lines
+    assert "plugins/foo/.claude-plugin/plugin.json" in lines
+    assert "\nViolations:" in output
+
+
+def test_text_collapses_repeated_message_within_file(valid_plugin):
+    """A rule+message repeated in one file collapses to a single row listing
+    the extra line numbers; a different file keeps its own row."""
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_grouping_violations(), context, [], "0.0.0", verbose=True)
+
+    # The three a/SKILL.md hits collapse to one row with a line list.
+    assert "(also on lines 42, 55)" in output
+    # content-terminology appears once per file (a/SKILL.md + b/README.md).
+    assert output.count('Use "skill" not "Skill"') == 2
+
+
+def test_text_sorts_files_and_lines(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text(_grouping_violations(), context, [], "0.0.0", verbose=True)
+    lines = output.splitlines()
+
+    # Files are alphabetical: a/SKILL.md before b/README.md.
+    assert lines.index("a/SKILL.md") < lines.index("b/README.md")
+
+
+def test_text_no_violations_section_when_clean(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    output = format_text([], context, [], "0.0.0")
+    assert "Violations:" not in output
+    assert "All checks passed" in output
+
+
+def test_statistics_ranks_rules_by_count():
+    from skillsaw.formatters.text import format_statistics
+
+    output = format_statistics(_grouping_violations(), verbose=True)
+    assert "Statistics:" in output
+    assert "content-terminology" in output
+    # 4 violations, one rule.
+    assert "4  content-terminology" in output
+    assert "4 violation(s) across 1 rule(s)" in output
+
+
+def test_statistics_empty_when_nothing_shown():
+    from skillsaw.formatters.text import format_statistics
+
+    # All info; without verbose/fail-on info they are not shown.
+    assert format_statistics(_grouping_violations(), verbose=False) == ""
+
+
+def test_statistics_descending_order():
+    from skillsaw.formatters.text import format_statistics
+
+    violations = [
+        RuleViolation("rule-a", Severity.ERROR, "x", Path("f.md"), 1),
+        RuleViolation("rule-b", Severity.ERROR, "y", Path("f.md"), 2),
+        RuleViolation("rule-b", Severity.ERROR, "z", Path("f.md"), 3),
+    ]
+    output = format_statistics(violations)
+    lines = [ln.strip() for ln in output.splitlines()]
+    assert lines.index("2  rule-b") < lines.index("1  rule-a")
 
 
 # --- JSON formatter ---
@@ -1034,24 +1142,36 @@ def _make_fixable_violations():
 def test_text_marks_safe_fixable_violations(valid_plugin):
     context = RepositoryContext(valid_plugin)
     output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+    lines = output.splitlines()
 
-    assert "(agentskill-valid) [*] [skills/foo/SKILL.md]:" in output
-    assert "(agent-frontmatter) [*] [agents/bar.md]:" in output
+    # Violations are grouped under a per-file header; the [*] marker is a
+    # column on the matching rule's row.
+    assert "skills/foo/SKILL.md" in lines
+    assert any("agentskill-valid" in ln and "[*]" in ln for ln in lines)
+    assert "agents/bar.md" in lines
+    assert any("agent-frontmatter" in ln and "[*]" in ln for ln in lines)
 
 
 def test_text_marks_suggest_fixable_violations(valid_plugin):
     context = RepositoryContext(valid_plugin)
     output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+    lines = output.splitlines()
 
-    assert "(content-broken-internal-reference) [?] [SKILL.md:8]:" in output
+    assert "SKILL.md" in lines  # top-level SKILL.md file header
+    assert any("content-broken-internal-reference" in ln and "[?]" in ln for ln in lines)
 
 
 def test_text_no_marker_on_unfixable_violation(valid_plugin):
     context = RepositoryContext(valid_plugin)
     output = format_text(_make_fixable_violations(), context, [], "0.0.0")
+    lines = output.splitlines()
 
-    # Same rule id as a marked violation — only the fixable one is marked.
-    assert "(agentskill-valid) [skills/baz/SKILL.md]:" in output
+    # Same rule id as a marked violation elsewhere — the unfixable one's row
+    # (under its own file) carries no marker.
+    assert "skills/baz/SKILL.md" in lines
+    row = lines[lines.index("skills/baz/SKILL.md") + 1]
+    assert "agentskill-valid" in row
+    assert "[*]" not in row and "[?]" not in row
 
 
 def test_text_no_marker_when_fixability_unknown(valid_plugin):

@@ -323,16 +323,27 @@ generation options.
 
 ## Example Output
 
+Violations are grouped by file — each file appears once as a header with its
+problems listed beneath it in `line`, severity, rule, message columns.
+Identical messages repeated within a file collapse to a single row that lists
+the extra line numbers.
+
 ```
 Linting: /path/to/skills-repo
 
-Errors:
-  ✗ ERROR (agentskill-name) [*] [skills/my-skill/SKILL.md:2]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
-  ✗ ERROR (plugin-json-required) [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
+Violations:
 
-Warnings:
-  ⚠ WARNING (agentskill-description) [skills/helper/SKILL.md:3]: Description exceeds 1024 characters (1087)
-  ⚠ WARNING (plugin-readme) [plugins/utils]: Missing README.md (recommended)
+plugins/git/.claude-plugin/plugin.json
+     ✗ error    plugin-json-required        Missing plugin.json
+
+plugins/utils
+     ⚠ warning  plugin-readme               Missing README.md (recommended)
+
+skills/helper/SKILL.md
+  3  ⚠ warning  agentskill-description      Description exceeds 1024 characters (1087)
+
+skills/my-skill/SKILL.md
+  2  ✗ error    agentskill-name        [*]  Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
 
 Summary:
   Errors:   2
@@ -343,6 +354,18 @@ Summary:
 Violations that `skillsaw fix` can resolve automatically are marked with
 `[*]` (safe fixes) or `[?]` (suggested fixes, applied with
 `skillsaw fix --suggest`), and the summary counts each kind.
+
+Add `--statistics` for a ruff-style per-rule count, highest first:
+
+```
+skillsaw lint --statistics
+
+Statistics:
+  5  content-weak-language
+  2  agentskill-description
+  1  plugin-json-required
+  8 violation(s) across 3 rule(s)
+```
 
 ### Color and hyperlinks
 

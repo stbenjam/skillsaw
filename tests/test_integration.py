@@ -1383,6 +1383,33 @@ class TestExitCodes:
         results = sarif["runs"][0]["results"]
         assert any(res["level"] == "note" for res in results)
 
+    def test_text_groups_violations_by_file(self, tmp_path):
+        """Text output lists each violated file once as a header, with its
+        rows grouped beneath it rather than scattered per-severity."""
+        repo = copy_fixture("agentskills", tmp_path)
+        r = run_lint(repo, fmt="text", verbose=True)
+        assert "Violations:" in r["stdout"]
+        lines = r["stdout"].splitlines()
+        # A file header line appears exactly once even when the file has
+        # violations from several rules.
+        header = "broken/Bad_Formatter/SKILL.md"
+        assert lines.count(header) == 1
+
+    def test_statistics_flag_prints_per_rule_counts(self, tmp_path):
+        repo = copy_fixture("agentskills", tmp_path)
+        r = run_lint(repo, "--statistics", fmt="text", verbose=True)
+        assert "Statistics:" in r["stdout"]
+        assert "content-weak-language" in r["stdout"]
+        assert "violation(s) across" in r["stdout"]
+
+    def test_statistics_flag_noop_without_violations(self, tmp_path):
+        repo = copy_fixture("agentskills", tmp_path)
+        # Without -v the info-only files still leave errors/warnings, so use a
+        # clean subtree to confirm the block is omitted when nothing is shown.
+        clean = repo / "clean" / "database-migrate"
+        r = run_lint(clean, "--statistics", fmt="text", verbose=False)
+        assert "Statistics:" not in r["stdout"]
+
 
 # ── Output Formats ───────────────────────────────────────────────
 
@@ -2514,21 +2541,24 @@ class TestLintFixLoop:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         r = run_lint(repo, fmt="text", verbose=False)
 
-        # SAFE-autofixable rules carry the [*] marker after the rule id.
-        assert "(agent-frontmatter) [*]" in r["stdout"]
-        assert "(command-frontmatter) [*]" in r["stdout"]
+        lines = r["stdout"].splitlines()
+
+        def row(rule_id, message):
+            return next(ln for ln in lines if rule_id in ln and message in ln)
+
+        # SAFE-autofixable rules carry the [*] marker in their row's column.
+        assert any("agent-frontmatter" in ln and "[*]" in ln for ln in lines)
+        assert any("command-frontmatter" in ln and "[*]" in ln for ln in lines)
         # Rules without an autofix never get a marker.
-        assert "(agentskill-unreferenced-files) [*]" not in r["stdout"]
-        assert "(agentskill-unreferenced-files) [?]" not in r["stdout"]
-        # agentskill-valid only fixes the missing-name subset.
-        assert (
-            "(agentskill-valid) [*] [skills/missing-name/SKILL.md]: "
-            "Missing required 'name' field" in r["stdout"]
+        assert not any(
+            "agentskill-unreferenced-files" in ln and ("[*]" in ln or "[?]" in ln) for ln in lines
         )
-        assert (
-            "(agentskill-valid) [skills/no-frontmatter/SKILL.md]: "
-            "Missing YAML frontmatter" in r["stdout"]
-        )
+        # agentskill-valid only fixes the missing-name subset. Both files are
+        # grouped under their own header; the marker lives on the row.
+        assert "skills/missing-name/SKILL.md" in lines
+        assert "[*]" in row("agentskill-valid", "Missing required 'name' field")
+        no_fm = row("agentskill-valid", "Missing YAML frontmatter")
+        assert "[*]" not in no_fm and "[?]" not in no_fm
 
     def test_text_lint_summary_shows_fixable_count(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
