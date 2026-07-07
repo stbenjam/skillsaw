@@ -10,92 +10,88 @@ metadata:
 
 # skillsaw Onboard
 
-You are onboarding this repository to **skillsaw**, a linter for agentic
+Onboard this repo to **skillsaw**, a linter for agentic
 contextual building blocks (CLAUDE.md, skills, plugins, agents, hooks, etc.).
 
-Work through each step in order. Communicate progress to the user at each stage.
+Follow each step in order, and report progress to the user at each stage.
 
 ## Step 1: Install skillsaw
 
-Check if `skillsaw` is already available by running `skillsaw --version`. If it
+Check whether `skillsaw` is already available by running `skillsaw --version`. If it
 is installed, skip to Step 2.
 
-If not installed, choose the best method for this environment:
+If not installed, choose the best approach for this environment:
 
 1. **uvx (preferred)** — zero-install, works immediately:
    ```
    uvx skillsaw
    ```
-   Use `uvx skillsaw` as the command prefix for all subsequent steps (e.g.
-   `uvx skillsaw tree`, `uvx skillsaw fix`).
+   Use `uvx skillsaw` as the command prefix for all subsequent steps (e.g. `uvx skillsaw tree`, `uvx skillsaw fix`).
 
-2. **pip** — if uvx is not available:
+2. **pip** — install with pip if uvx is not available:
    ```
    pip install skillsaw
    ```
 
-3. **Container (podman or docker)** — if neither uvx nor pip is available.
+3. **Container (podman or docker)** — use this if neither uvx nor pip is available.
    Use whichever runtime is installed (`podman` or `docker`):
    ```
    podman pull ghcr.io/stbenjam/skillsaw:latest
    podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw
    ```
-   The `:Z` suffix relabels the mount for SELinux. Mount the repo at
-   `/workspace` and pass subcommands after the image name
-   (e.g. `podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw tree`).
+   The `:Z` suffix relabels the mount for SELinux. Always mount the repo at
+   `/workspace` and pass subcommands after the image name (e.g. `podman run -v $(pwd):/workspace:Z ghcr.io/stbenjam/skillsaw tree`).
 
-Confirm the installation works by running `skillsaw --version` (or the
-equivalent for the chosen method) before proceeding.
+Verify the installation works by running `skillsaw --version` (or the equivalent for the chosen approach) before proceeding.
 
-## Step 2: Initial scan
+## Step 2: Run the initial scan
 
 Run `skillsaw tree` to see what skillsaw detects in this repo — the repo type,
-instruction files, plugins, skills, and other components. Show the user a brief
-summary of what was found.
+instruction files, plugins, skills, and other components. Review the findings
+and keep the user updated with a brief summary.
 
 Then run `skillsaw` (lint) and capture the full output. Count the errors and
-warnings. If the repo has zero violations, congratulate the user and skip to
+warnings. When zero violations remain, congratulate the user and always skip to
 Step 6 (config) or Step 7 (CI setup).
 
-## Step 3: Apply deterministic autofixes
+## Step 3: Run deterministic autofixes
 
 Run `skillsaw fix` to apply safe, deterministic fixes (e.g. adding missing
 frontmatter, fixing names to kebab-case, registering unregistered plugins).
 
-After fixing, run `skillsaw` again to see what remains. Report to the user:
-- How many violations were auto-fixed
+After fixing, run `skillsaw` again to check what remains. Report to the user:
+- How many violations skillsaw auto-fixed
 - How many violations remain
 
 If all violations are resolved, skip to Step 6.
 
-## Step 4: Fix remaining violations manually
+## Step 4: Review and fix remaining violations manually
 
-For each remaining violation, attempt to fix it directly. You are an AI agent —
+For each remaining violation, handle it directly. You are an AI agent —
 you can read and edit the files yourself. Common fixes include:
 
 <!-- skillsaw-disable content-weak-language, content-tautological -->
 - **Weak language** (`content-weak-language`): Remove hedging words like "try
-  to", "you might want to", "consider", "maybe". Rewrite as direct imperatives.
+  to", "you might want to", "consider", "maybe" — use direct imperatives instead.
 - **Tautological statements** (`content-tautological`): Remove empty truisms
   like "follow best practices" or "ensure code quality". Replace with specific,
   actionable instructions or delete the line entirely.
 <!-- skillsaw-enable content-weak-language, content-tautological -->
-- **Vague references** (`content-vague-reference`): Replace vague phrases like
-  "the relevant files" or "appropriate tools" with specific names.
+- **Vague references** (`content-vague-reference`): remove vague phrases like
+  "the relevant files" or "appropriate tools" — use specific names instead.
 - **Missing descriptions** or **missing fields**: Add the required content.
-- **Structural issues**: Fix directory names, file naming, missing files.
+- **Structural issues**: create missing files, and fix directory and file names.
 
-For each fix:
+For each fix, follow these steps:
 1. Read the file and understand the context around the violation
 2. Make a targeted edit that fixes the violation without changing surrounding meaning
 3. Keep edits scoped to the violation — do not rewrite entire files
 
 After fixing all violations you can address, run `skillsaw` again to confirm
 they are resolved. If violations remain that you cannot fix (e.g. they require
-user decisions about content), list them for the user and explain what needs to
-change.
+user decisions about content), always list them for the user and explain what needs to change.
 
-## Step 5: Baseline remaining violations
+## Step 5: Create a baseline for remaining violations
 
 If any violations remain after Steps 3–4, offer to create a baseline:
 
@@ -105,14 +101,14 @@ violations will fail going forward. You can fix them over time and re-run
 `skillsaw baseline` to shrink the accepted set."
 
 If the user agrees, run `skillsaw baseline` and confirm the file was created.
-Remind them to commit `.skillsaw-baseline.json` to the repository.
+Remind them to commit `.skillsaw-baseline.json` to the repo.
 
-## Step 6: Generate configuration
+## Step 6: Create the configuration
 
 If no `.skillsaw.yaml` exists yet, run `skillsaw init` to generate a default
-config file. Tell the user they can customize rule settings in this file.
+config file. Tell the user they can configure rule settings in this file.
 
-If one already exists, skip this step.
+If one already exists, keep it and skip this step.
 
 ## Step 7: Set up CI
 
@@ -120,10 +116,11 @@ Ask the user which CI system they use. Offer the following options:
 
 ### GitHub Actions
 
+<!-- skillsaw-disable-next-line content-unlinked-internal-reference -->
 Create `.github/workflows/lint.yml`:
 
 Pin actions to commit SHAs for supply-chain protection. Look up the current
-SHAs before creating the workflow:
+SHAs before you create the workflow:
 
 ```
 git ls-remote --tags https://github.com/actions/checkout.git v5
@@ -155,8 +152,8 @@ jobs:
           strict: true
 ```
 
-Then ask if they also want PR review comments. If yes, also create
-`.github/workflows/lint-review.yml`:
+<!-- skillsaw-disable-next-line content-unlinked-internal-reference -->
+Then ask if they also want PR review comments. If yes, also create `.github/workflows/lint-review.yml`:
 
 ```yaml
 name: Lint Review
@@ -179,8 +176,7 @@ jobs:
 ### GitLab CI
 
 Add a `skillsaw` job to `.gitlab-ci.yml`. Use the `code-climate` output format
-with a GitLab Code Quality artifact so violations appear inline on merge
-requests:
+and configure a GitLab Code Quality artifact so violations appear inline in merge-request diffs:
 
 ```yaml
 skillsaw:
@@ -195,21 +191,19 @@ skillsaw:
 
 ### No CI / Skip
 
-If the user declines CI setup, skip this step. Mention they can set it up later
-by following the skillsaw CI documentation.
+If the user declines CI setup, skip this step. Mention they can set it up later by following the skillsaw CI documentation.
 
-## Step 8: Makefile targets
+## Step 8: Add Makefile targets
 
-Ask the user if they want Makefile targets for running skillsaw locally. If
-they decline, skip to Step 9.
+Ask the user whether to add Makefile targets for running skillsaw locally. If they decline, skip to Step 9.
 
-First, look up the latest skillsaw version to pin against:
+First, run this to look up the latest skillsaw version to pin against:
 
 ```
 python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://pypi.org/pypi/skillsaw/json'))['info']['version'])"
 ```
 
-If `python3` is unavailable, fall back to:
+If `python3` is unavailable, run this instead:
 
 ```
 git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k3 -V | tail -1
@@ -217,7 +211,7 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git 'v*' | sort -t/ -k
 
 Ask the user whether they prefer **uvx** or **podman/docker** for the targets.
 
-### uvx targets
+### Add uvx targets
 
 ```makefile
 SKILLSAW_VERSION := <LATEST_VERSION>
@@ -230,10 +224,9 @@ lint-fix:
 	uvx skillsaw==$(SKILLSAW_VERSION) fix
 ```
 
-### podman/docker targets
+### Add podman/docker targets
 
-Use whichever container runtime is installed. Pin to the version tag, not
-`latest`:
+Use whichever container runtime is installed. Pin to the version tag, not `latest`:
 
 ```makefile
 SKILLSAW_VERSION := <LATEST_VERSION>
@@ -248,32 +241,28 @@ lint-fix:
 ```
 
 If a `Makefile` already exists, append the targets. If not, create one. In
-either case, do not overwrite existing `lint` or `lint-fix` targets — if they
+either case, never overwrite existing `lint` or `lint-fix` targets — if they
 already exist, ask the user what names to use instead (e.g. `skillsaw-lint`).
 
-## Step 9: README badge
+## Step 9: Add a README badge
 
-Ask the user if they want a skillsaw grade badge in their README. The badge
-shows the repository's letter grade (A+ through F) and updates whenever the
-badge file is regenerated. If they decline, skip to Step 10.
+Ask the user whether to add a skillsaw grade badge to their README. The badge
+shows the repo's letter grade (A+ through F) and refreshes whenever you build the
+badge file. If they decline, skip to Step 10.
 
-If they agree:
+If they agree, follow these steps:
 
-1. Run `skillsaw badge`. This writes `.skillsaw-badge.json` to the repo root
-   and prints ready-to-paste markdown for two shields.io badge styles.
-2. Add the **endpoint badge** markdown (the variant whose color tracks the
-   grade automatically) to `README.md`:
-   - If the README already has badges (look for `img.shields.io`,
-     `badge.svg`, or similar image links near the top), add the skillsaw
-     badge on the same line or block as the existing badges.
-   - If there are no badges yet, add it on its own line directly under the
-     top-level heading.
-3. The badge must link to `https://skillsaw.org/` — the markdown printed by
+1. Run `skillsaw badge`. This writes `.skillsaw-badge.json` to the repo root and prints ready-to-paste markdown for two shields.io badge styles.
+2. Add the **endpoint badge** markdown (the variant whose color tracks the grade automatically) to `README.md`:
+   - If the README already has badges, check near the top for `img.shields.io`,
+     `badge.svg`, or similar image links, then add the skillsaw badge on the same
+     line or block as the existing badges.
+   - If there are no badges yet, add it on its own line directly under the top-level heading.
+3. Always link the badge to `https://skillsaw.org/` — the markdown printed by
    `skillsaw badge` already does this; keep that link when placing it.
-4. If `skillsaw badge` printed a URL placeholder (no GitHub remote detected),
-   tell the user the badge will render once `.skillsaw-badge.json` is
-   published at a URL shields.io can fetch, and leave the placeholder for
-   them to fill in.
+4. Check whether `skillsaw badge` printed a URL placeholder (no GitHub remote
+   detected). If so, the badge renders once you publish `.skillsaw-badge.json`
+   at a URL shields.io can fetch — keep the placeholder for them to fill in.
 
 If Makefile targets were set up in Step 8, wire badge regeneration into them:
 add a `badge` target using the same command prefix as the other targets, and
@@ -290,16 +279,15 @@ lint: badge
 	uvx skillsaw==$(SKILLSAW_VERSION) --strict
 ```
 
-Tell the user the badge reflects the committed `.skillsaw-badge.json`, so it
-should be regenerated when content changes — run `make lint` (or `skillsaw
-badge` directly), or add it to CI (e.g. a workflow step that runs `skillsaw
-badge` and commits the file if it changed). The badge ignores any baseline:
-it always reflects the repository's true grade.
+Remind the user: the badge reflects the committed `.skillsaw-badge.json`, so always
+regenerate it when content changes — run `make lint` (or `skillsaw badge`
+directly), or add it to CI (e.g. a workflow step that runs `skillsaw badge` and
+commits the file if it changed). The badge ignores any baseline and always
+reflects the repo's true grade.
 
-## Step 10: Final verification
+## Step 10: Run the final verification
 
-Run `skillsaw` one final time and confirm the repo passes (exit 0). Summarize
-what was done:
+Run `skillsaw` one final time and confirm the repo passes (exit 0). Summarize what was done:
 
 - Number of violations found initially
 - Number fixed automatically
@@ -310,6 +298,7 @@ what was done:
 - README badge (if added)
 - Files created or modified
 
+<!-- skillsaw-disable content-unlinked-internal-reference -->
 Remind the user to commit all new/changed files:
 - `.skillsaw.yaml` (if created)
 - `.skillsaw-baseline.json` (if created)
@@ -319,3 +308,4 @@ Remind the user to commit all new/changed files:
 - `.gitlab-ci.yml` (if modified)
 - `Makefile` (if created or modified)
 - Any files that were fixed
+<!-- skillsaw-enable content-unlinked-internal-reference -->
