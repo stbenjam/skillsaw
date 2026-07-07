@@ -32,11 +32,14 @@ class CommandFrontmatterRule(Rule):
 
         for block in context.lint_tree.find(CommandBlock):
             if block.frontmatter_error:
+                # fix() only adds missing frontmatter/fields — malformed YAML
+                # needs a human.
                 violations.append(
                     self.violation(
                         block.frontmatter_error,
                         block=block,
                         line=block.frontmatter_error_line,
+                        fixable=False,
                     )
                 )
                 continue

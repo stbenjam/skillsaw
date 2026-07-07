@@ -3,7 +3,7 @@
 import html
 from typing import List
 
-from ..rule import Rule, RuleViolation, Severity
+from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from . import get_counts, relative_path, should_show_info
 
 
@@ -47,12 +47,22 @@ def format_html(
         key=lambda v: (severity_order[v.severity], str(v.file_path or ""), v.file_line or 0)
     )
 
+    def fix_marker(v: RuleViolation) -> str:
+        if not v.fixable:
+            return ""
+        cmd = (
+            "skillsaw fix"
+            if v.fix_confidence == AutofixConfidence.SAFE
+            else "skillsaw fix --suggest"
+        )
+        return f' <span class="fixable" title="fixable with {cmd}">*</span>'
+
     rows = ""
     for v in visible:
         rows += (
             "<tr>"
             f"<td>{severity_badge(v.severity)}</td>"
-            f"<td><code>{html.escape(v.rule_id)}</code></td>"
+            f"<td><code>{html.escape(v.rule_id)}</code>{fix_marker(v)}</td>"
             f"<td>{location(v)}</td>"
             f"<td>{html.escape(v.message)}</td>"
             "</tr>\n"
@@ -192,6 +202,11 @@ def format_html(
     }}
     .count-item {{
       font-weight: 600;
+    }}
+    .fixable {{
+      color: #2f9e44;
+      font-weight: 700;
+      cursor: help;
     }}
     .count-error {{ color: #dc3545; }}
     .count-warning {{ color: #e8a317; }}

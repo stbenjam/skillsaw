@@ -8,7 +8,7 @@ from pathlib import Path
 from ..context import RepositoryContext
 from ..linter import Linter
 from ._config import load_config
-from ._helpers import _RuleProgress, _ansi_colors
+from ._helpers import _RuleProgress, _ansi_colors, color_enabled
 
 _BADGE_FILENAME = ".skillsaw-badge.json"
 _CARD_FILENAME = ".skillsaw-card.svg"
@@ -126,7 +126,7 @@ def _run_badge(args):
             encoding="utf-8",
         )
 
-    c = _ansi_colors()
+    c = _ansi_colors(color_enabled(sys.stdout, args.color))
     grade_color = (
         c["green"]
         if grade.letter[0] in "AB"

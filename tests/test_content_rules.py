@@ -24,10 +24,12 @@ from skillsaw.rules.builtin.content_rules import (
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentInstructionDriftRule,
     ContentBrokenInternalReferenceRule,
     ContentUnlinkedInternalReferenceRule,
     ContentPlaceholderTextRule,
 )
+from skillsaw.rules.builtin.content import ContentUnclosedFenceRule
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
 _STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
@@ -1069,6 +1071,153 @@ class TestContentInconsistentTerminologyRule:
         assert rule.check(context)
 
 
+# A realistic ~50-word section shared between instruction files in the
+# drift tests below.
+_DRIFT_SECTION = """## Testing workflow
+
+Run the full test suite with `make test` before every push. Integration
+tests require Docker; start the daemon with `make docker-up` first and
+tear it down with `make docker-down` when finished. If a test is flaky,
+quarantine it with the flaky marker and file an issue including the
+failure output and a link to the CI run.
+"""
+
+# The same section after someone edited one copy: an extra closing
+# sentence pushes similarity to roughly 0.85 — drifted, not rewritten.
+_DRIFT_SECTION_EDITED = (
+    _DRIFT_SECTION
+    + "Never merge a pull request while the suite is red, even for changes "
+    + "that look completely unrelated to the failing test.\n"
+)
+
+_DRIFT_PREAMBLE = """# Project guide
+
+General development notes for agents working in this repository.
+
+"""
+
+
+class TestContentInstructionDriftRule:
+    def test_rule_metadata(self):
+        rule = ContentInstructionDriftRule()
+        assert rule.rule_id == "content-instruction-drift"
+        assert rule.default_severity() == Severity.INFO
+
+    def test_detects_drifted_sections(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        claude_content = _DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED
+        (temp_dir / "CLAUDE.md").write_text(claude_content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentInstructionDriftRule().check(context)
+        assert len(violations) == 1
+        v = violations[0]
+        # Anchored on the second file in (path, line) sort order: CLAUDE.md
+        assert v.file_path.name == "CLAUDE.md"
+        heading_line = claude_content.splitlines().index("## Testing workflow") + 1
+        assert v.file_line == heading_line
+        assert "% similar" in v.message
+        assert "AGENTS.md:5" in v.message
+        assert "Testing workflow" in v.message
+
+    def test_identical_sections_pass(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_html_comment_and_whitespace_add_no_drift_distance(self, temp_dir):
+        # A suppression directive (or any comment) plus extra blank lines in
+        # one copy of an otherwise-identical section must not create drift.
+        commented = _DRIFT_SECTION.replace(
+            "## Testing workflow\n",
+            "## Testing workflow\n\n<!-- skillsaw-disable some-other-rule -->\n\n\n",
+            1,
+        )
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + commented)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_html_comment_does_not_mask_real_drift(self, temp_dir):
+        # Comments are blanked before comparison, so one cannot dilute the
+        # similarity of a genuinely drifted pair below the threshold.
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(
+            _DRIFT_PREAMBLE
+            + _DRIFT_SECTION_EDITED.replace(
+                "## Testing workflow\n",
+                "## Testing workflow\n\n<!-- reviewers: keep in sync -->\n\n",
+                1,
+            )
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInstructionDriftRule().check(context)
+        assert len(violations) == 1
+        assert "% similar" in violations[0].message
+
+    def test_dissimilar_sections_pass(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + """## Testing workflow
+
+All unit specs live under `spec/` and run through the bundled rake
+target. Coverage reports upload to the internal dashboard on merge, so
+regressions surface within an hour. When adding a fixture, prefer
+factories over static YAML dumps and document any external service the
+scenario touches in the fixture header comment block.
+""")
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_short_sections_skipped(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("## Style\n\nUse ruff. Run make format before push.\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "## Style\n\nUse ruff. Run make format before pushing.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_single_file_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_code_blocks_do_not_participate(self, temp_dir):
+        """Drift confined to fenced code is invisible: read_body strips code."""
+        code_a = "```bash\nmake docker-up && make test\n```\n"
+        code_b = "```bash\nmake docker-up && make test -j4 --verbose\n```\n"
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION + code_a)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION + code_b)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_generated_files_skipped_by_default(self, temp_dir):
+        # Marker in its own tiny section so it doesn't dilute the compared one
+        footer = "\n## About\n\n*This file was generated by APM CLI. Do not edit manually.*\n"
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED + footer)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+        violations = ContentInstructionDriftRule({"ignore-generated": False}).check(context)
+        assert len(violations) == 1
+
+    @pytest.mark.parametrize("bad_threshold", [0, 1.5])
+    def test_invalid_threshold_rejected(self, bad_threshold):
+        with pytest.raises(ValueError, match="similarity-threshold"):
+            ContentInstructionDriftRule({"similarity-threshold": bad_threshold})
+
+    def test_invalid_min_section_words_rejected(self):
+        with pytest.raises(ValueError, match="min-section-words"):
+            ContentInstructionDriftRule({"min-section-words": 0})
+
+    def test_custom_threshold_honored(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context)
+        rule = ContentInstructionDriftRule({"similarity-threshold": 0.95})
+        assert rule.check(context) == []
+
+
 class TestContentBrokenInternalReferenceRule:
     def test_rule_metadata(self):
         rule = ContentBrokenInternalReferenceRule()
@@ -1837,3 +1986,140 @@ class TestContentBrokenInternalReferenceAutofix:
         violations = rule.check(context)
         assert len(violations) == 1
         assert "did you mean" not in violations[0].message
+
+
+class TestContentUnclosedFenceRule:
+    def _check(self, temp_dir):
+        return ContentUnclosedFenceRule().check(RepositoryContext(temp_dir))
+
+    def test_rule_metadata(self):
+        rule = ContentUnclosedFenceRule()
+        assert rule.rule_id == "content-unclosed-fence"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.autofix_confidence == AutofixConfidence.SUGGEST
+        assert rule.supports_autofix
+
+    def test_detects_unclosed_fence(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n```bash\nmake test\n\nAlways run the linter before pushing.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "```bash" in violations[0].message
+
+    def test_closed_fence_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n```bash\nmake test\n```\n")
+        assert self._check(temp_dir) == []
+
+    def test_closed_fence_at_eof_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n```")
+        assert self._check(temp_dir) == []
+
+    def test_unclosed_fence_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_unclosed_fence_with_trailing_blank_lines(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n\n\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_longer_closer_run_closes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n`````\n")
+        assert self._check(temp_dir) == []
+
+    def test_shorter_closer_does_not_close(self, temp_dir):
+        # A three-backtick run cannot close a four-backtick fence.
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```\ncode\n```\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_four_backtick_fence_with_inner_fences_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```bash\nmake test\n```\n````\n")
+        assert self._check(temp_dir) == []
+
+    def test_tilde_fence_unclosed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n")
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "~~~python" in violations[0].message
+
+    def test_tilde_fence_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n~~~\n")
+        assert self._check(temp_dir) == []
+
+    def test_closer_with_trailing_spaces_and_indent(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n   ```  \n")
+        assert self._check(temp_dir) == []
+
+    def test_pseudo_closer_with_info_string_flagged(self, temp_dir):
+        # "``` bash" has an info string, which a closing fence cannot have.
+        (temp_dir / "CLAUDE.md").write_text("```bash\ncode\n``` bash\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_indented_code_block_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Paragraph.\n\n    indented code\n    more code\n")
+        assert self._check(temp_dir) == []
+
+    def test_blockquote_nested_fence_not_flagged(self, temp_dir):
+        # Out of scope: a column-0 closer would not terminate it.
+        (temp_dir / "CLAUDE.md").write_text("> ```\n> code\n")
+        assert self._check(temp_dir) == []
+
+    def test_list_nested_fence_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("- item\n  ```\n  code\n")
+        assert self._check(temp_dir) == []
+
+    def test_fence_closed_mid_file_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n```\n\nProse after the block.\n")
+        assert self._check(temp_dir) == []
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert self._check(temp_dir) == []
+
+
+class TestContentUnclosedFenceAutofix:
+    def _fix(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnclosedFenceRule()
+        return rule.fix(context, rule.check(context))
+
+    def test_fix_appends_closer(self, temp_dir):
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
+        assert fixes[0].fixed_content == content + "```\n"
+
+    def test_fix_adds_newline_when_missing(self, temp_dir):
+        content = "```bash\nmake test"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "\n```\n"
+
+    def test_fix_uses_matching_markup(self, temp_dir):
+        content = "````markdown\n```bash\nmake test\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "````\n"
+
+    def test_fix_uses_tilde_markup(self, temp_dir):
+        content = "~~~python\nprint('hi')\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "~~~\n"
+
+    def test_fixed_content_lints_clean(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentUnclosedFenceRule().check(RepositoryContext(temp_dir)) == []

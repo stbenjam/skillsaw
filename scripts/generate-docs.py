@@ -118,6 +118,7 @@ RULE_GROUPS = [
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
+            "content-instruction-drift",
             "content-broken-internal-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",

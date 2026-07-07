@@ -10,6 +10,22 @@ from ..context import RepositoryType
 from ..formatters import EXTENSION_MAP, FORMATS
 from ._config import _get_version
 
+_COLOR_HELP = (
+    "Force ANSI colors and terminal hyperlinks on (--color) or off "
+    "(--no-color). Default: color only when stdout is a terminal; "
+    "FORCE_COLOR and NO_COLOR are also honored."
+)
+
+
+def _add_color_flag(subparser) -> None:
+    subparser.add_argument(
+        "--color",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="color",
+        help=_COLOR_HELP,
+    )
+
 
 def _build_parser():
     """Build the main argument parser with all subcommands.
@@ -145,6 +161,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Disable the interactive per-rule progress indicator "
         "(auto-disabled when stderr is not a terminal)",
     )
+    _add_color_flag(lint_parser)
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -211,6 +228,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Disable the interactive per-rule progress indicator "
         "(auto-disabled when stderr is not a terminal)",
     )
+    _add_color_flag(fix_parser)
 
     # --- init ---
     init_parser = subparsers.add_parser(
@@ -259,6 +277,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file (default: auto-discover)",
     )
+    _add_color_flag(explain_parser)
 
     # --- docs ---
     docs_parser = subparsers.add_parser(
@@ -389,6 +408,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default="dark",
         help="Report card color theme, used with --card (default: dark)",
     )
+    _add_color_flag(badge_parser)
 
     # --- add ---
     subparsers.add_parser(

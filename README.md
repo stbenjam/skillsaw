@@ -327,17 +327,34 @@ generation options.
 Linting: /path/to/skills-repo
 
 Errors:
-  ✗ ERROR [skills/my-skill/SKILL.md]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
-  ✗ ERROR [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
+  ✗ ERROR (agentskill-name) [*] [skills/my-skill/SKILL.md:2]: Name 'My Skill' must contain only lowercase letters, numbers, and hyphens
+  ✗ ERROR (plugin-json-required) [plugins/git/.claude-plugin/plugin.json]: Missing plugin.json
 
 Warnings:
-  ⚠ WARNING [skills/helper/SKILL.md]: Description exceeds 1024 characters (1087)
-  ⚠ WARNING [plugins/utils]: Missing README.md (recommended)
+  ⚠ WARNING (agentskill-description) [skills/helper/SKILL.md:3]: Description exceeds 1024 characters (1087)
+  ⚠ WARNING (plugin-readme) [plugins/utils]: Missing README.md (recommended)
 
 Summary:
   Errors:   2
   Warnings: 2
+  [*] 1 violation(s) fixable with `skillsaw fix`
 ```
+
+Violations that `skillsaw fix` can resolve automatically are marked with
+`[*]` (safe fixes) or `[?]` (suggested fixes, applied with
+`skillsaw fix --suggest`), and the summary counts each kind.
+
+### Color and hyperlinks
+
+Terminal output is colored only when stdout is a terminal — piped or
+redirected output stays plain. Force it with `--color` or `--no-color`,
+which outrank the `FORCE_COLOR` environment variable (non-empty forces
+color on even through a pipe, useful in CI; `0` forces it off), which
+outranks `NO_COLOR` (present disables color). When color is enabled on a real terminal
+(`TERM` other than `dumb`), rule ids link to their documentation pages
+and file paths become clickable `file://` links, replacing the "Rule
+docs" URL footer with a one-line hint. Hyperlinks are never emitted
+through a pipe, even when color is forced.
 
 ## Migrating from claudelint
 
