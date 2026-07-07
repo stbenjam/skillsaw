@@ -144,17 +144,58 @@ def _dedup_rules(rules):
 # ---------------------------------------------------------------------------
 
 
-def _ansi_colors():
-    no_color = "NO_COLOR" in os.environ
+def color_enabled(stream, mode: str = "auto") -> bool:
+    """Whether ANSI color should be emitted on ``stream``.
+
+    Standard cascade, strongest first:
+
+    1. ``--color always`` / ``--color never`` (the ``mode`` argument)
+    2. ``FORCE_COLOR`` — non-empty forces color on (``0`` forces it off)
+    3. ``NO_COLOR`` — present (even empty) disables color
+    4. ``stream.isatty()``
+
+    ``FORCE_COLOR`` outranks ``NO_COLOR`` so CI setups that export both
+    get the color they explicitly asked for.
+    """
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    force = os.environ.get("FORCE_COLOR")
+    if force:
+        return force != "0"
+    if "NO_COLOR" in os.environ:
+        return False
+    try:
+        return stream.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def hyperlinks_enabled(stream, color: bool) -> bool:
+    """Whether OSC 8 terminal hyperlinks should be emitted on ``stream``.
+
+    Requires color, a real terminal, and ``TERM`` other than ``dumb``.
+    Unlike color, hyperlinks are never forced through a pipe — CI log
+    viewers render SGR colors but display raw OSC 8 bytes as garbage.
+    """
+    if not color or os.environ.get("TERM") == "dumb":
+        return False
+    try:
+        return stream.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _ansi_colors(enabled: bool):
     return {
-        "bold": "" if no_color else "\033[1m",
-        "dim": "" if no_color else "\033[2m",
-        "green": "" if no_color else "\033[92m",
-        "red": "" if no_color else "\033[91m",
-        "yellow": "" if no_color else "\033[93m",
-        "cyan": "" if no_color else "\033[96m",
-        "reset": "" if no_color else "\033[0m",
-        "no_color": no_color,
+        "bold": "\033[1m" if enabled else "",
+        "dim": "\033[2m" if enabled else "",
+        "green": "\033[92m" if enabled else "",
+        "red": "\033[91m" if enabled else "",
+        "yellow": "\033[93m" if enabled else "",
+        "cyan": "\033[96m" if enabled else "",
+        "reset": "\033[0m" if enabled else "",
     }
 
 
@@ -177,12 +218,13 @@ def install_warning_display() -> None:
 
     def _showwarning(message, category, filename, lineno, file=None, line=None):
         if isinstance(message, CustomRuleWarning):
-            c = _ansi_colors()
+            out = sys.stderr if file is None else file
+            c = _ansi_colors(color_enabled(out))
             print(
                 f"{c['yellow']}⚠ Loading custom rule file:{c['reset']} "
                 f"{c['bold']}{message.path}{c['reset']} "
                 f"{c['dim']}(use --no-custom-rules to skip){c['reset']}",
-                file=sys.stderr if file is None else file,
+                file=out,
             )
         else:
             default_showwarning(message, category, filename, lineno, file, line)

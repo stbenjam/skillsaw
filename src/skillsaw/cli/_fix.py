@@ -13,6 +13,7 @@ from ._helpers import (
     _RuleProgress,
     _ansi_colors,
     _resolve_lint_paths,
+    color_enabled,
 )
 
 
@@ -94,7 +95,7 @@ def _run_fix(args):
         applied.extend((f, context.root_path) for f in path_applied)
         suggested.extend((f, context.root_path) for f in path_suggested)
 
-    c = _ansi_colors()
+    c = _ansi_colors(color_enabled(sys.stdout, args.color))
 
     # Single-root runs print repo-relative paths, matching lint output.
     # Multi-root runs keep absolute paths — the same relative name in two

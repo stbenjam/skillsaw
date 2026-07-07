@@ -102,6 +102,8 @@ def format_report(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
+    color: bool = False,
+    hyperlinks: bool = False,
 ) -> str:
     """
     Format lint results in the specified format.
@@ -120,6 +122,9 @@ def format_report(
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
+        color: Emit ANSI colors (text format only — resolved by the caller
+            via ``color_enabled()``; file outputs stay plain)
+        hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
     """
     if fmt == "text":
         from .text import format_text
@@ -134,6 +139,8 @@ def format_report(
             duration,
             grade,
             fail_level,
+            color=color,
+            hyperlinks=hyperlinks,
         )
     elif fmt == "json":
         from .json_fmt import format_json

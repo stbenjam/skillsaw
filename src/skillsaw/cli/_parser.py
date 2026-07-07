@@ -10,6 +10,21 @@ from ..context import RepositoryType
 from ..formatters import EXTENSION_MAP, FORMATS
 from ._config import _get_version
 
+_COLOR_HELP = (
+    "When to emit ANSI colors and terminal hyperlinks (default: auto — "
+    "color only when stdout is a terminal; FORCE_COLOR forces color on, "
+    "NO_COLOR turns it off)"
+)
+
+
+def _add_color_flag(subparser) -> None:
+    subparser.add_argument(
+        "--color",
+        choices=["always", "never", "auto"],
+        default="auto",
+        help=_COLOR_HELP,
+    )
+
 
 def _build_parser():
     """Build the main argument parser with all subcommands.
@@ -145,6 +160,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Disable the interactive per-rule progress indicator "
         "(auto-disabled when stderr is not a terminal)",
     )
+    _add_color_flag(lint_parser)
 
     # --- fix ---
     fix_parser = subparsers.add_parser(
@@ -211,6 +227,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Disable the interactive per-rule progress indicator "
         "(auto-disabled when stderr is not a terminal)",
     )
+    _add_color_flag(fix_parser)
 
     # --- init ---
     init_parser = subparsers.add_parser(
@@ -259,6 +276,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file (default: auto-discover)",
     )
+    _add_color_flag(explain_parser)
 
     # --- docs ---
     docs_parser = subparsers.add_parser(
@@ -377,6 +395,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         default=None,
         help="Badge JSON output path (default: .skillsaw-badge.json in the repository root)",
     )
+    _add_color_flag(badge_parser)
 
     # --- add ---
     subparsers.add_parser(

@@ -2,7 +2,7 @@
 Text output formatter — human-readable terminal output with optional ANSI colors.
 """
 
-import os
+from pathlib import Path
 from typing import List, Optional
 
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
@@ -20,6 +20,22 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {secs}s"
 
 
+def _osc8(url: str, text: str) -> str:
+    """Wrap text in an OSC 8 terminal hyperlink."""
+    return f"\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"
+
+
+def _file_uri(file_path) -> Optional[str]:
+    """file:// URI for a violation path, or None when one can't be built."""
+    try:
+        path = Path(file_path)
+        if not path.is_absolute():
+            path = path.resolve()
+        return path.as_uri()
+    except (OSError, ValueError):
+        return None
+
+
 def format_text(
     violations: List[RuleViolation],
     context,
@@ -30,21 +46,27 @@ def format_text(
     duration: Optional[float] = None,
     grade=None,
     fail_level: str = "error",
+    color: bool = False,
+    hyperlinks: bool = False,
 ) -> str:
     show_info = should_show_info(verbose, fail_level)
-    no_color = "NO_COLOR" in os.environ
-    red = "" if no_color else "\033[91m"
-    yellow = "" if no_color else "\033[93m"
-    blue = "" if no_color else "\033[94m"
-    green = "" if no_color else "\033[92m"
-    bold = "" if no_color else "\033[1m"
-    reset = "" if no_color else "\033[0m"
+    red = "\033[91m" if color else ""
+    yellow = "\033[93m" if color else ""
+    blue = "\033[94m" if color else ""
+    green = "\033[92m" if color else ""
+    bold = "\033[1m" if color else ""
+    dim = "\033[2m" if color else ""
+    reset = "\033[0m" if color else ""
 
     errors, warnings, info = get_counts(violations)
 
     errors_list = [v for v in violations if v.severity == Severity.ERROR]
     warnings_list = [v for v in violations if v.severity == Severity.WARNING]
     info_list = [v for v in violations if v.severity == Severity.INFO]
+
+    # Synthetic rule IDs (e.g. invalid-config) have no documentation page —
+    # only link rules that actually ran as builtins.
+    builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
 
     def fix_marker(v: RuleViolation) -> str:
         """Ruff-style fixability marker: [*] safe, [?] needs --suggest."""
@@ -57,9 +79,17 @@ def format_text(
         rel = relative_path(v.file_path, context.root_path)
         location = ""
         if rel:
-            location = f" [{rel}:{v.file_line}]" if v.file_line else f" [{rel}]"
+            loc_text = f"{rel}:{v.file_line}" if v.file_line else rel
+            if hyperlinks:
+                uri = _file_uri(v.file_path)
+                if uri:
+                    loc_text = _osc8(uri, loc_text)
+            location = f" [{loc_text}]"
+        rule_ref = v.rule_id
+        if hyperlinks and v.rule_id in builtin_ids:
+            rule_ref = _osc8(rule_doc_url(v.rule_id), v.rule_id)
         return (
-            f"{icon} {v.severity.value.upper()} ({v.rule_id}){fix_marker(v)}{location}: {v.message}"
+            f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: {v.message}"
         )
 
     output = []
@@ -80,14 +110,18 @@ def format_text(
             output.append(f"  {fmt_violation(v)}")
 
     shown = errors_list + warnings_list + (info_list if show_info else [])
-    # Synthetic rule IDs (e.g. invalid-config) have no documentation page —
-    # only link rules that actually ran as builtins.
-    builtin_ids = {r.rule_id for r in rules if getattr(r, "_source", "builtin") == "builtin"}
     documented = sorted({v.rule_id for v in shown if v.rule_id in builtin_ids})
     if documented:
-        output.append(f"\n{bold}Rule docs{reset} (or run `skillsaw explain <rule-id>`):")
-        for rule_id in documented:
-            output.append(f"  {rule_doc_url(rule_id)}")
+        if hyperlinks:
+            # Rule ids above are clickable — the per-rule URL list is noise.
+            output.append(
+                f"\n{dim}Rule ids link to their docs — or run"
+                f" `skillsaw explain <rule-id>`.{reset}"
+            )
+        else:
+            output.append(f"\n{bold}Rule docs{reset} (or run `skillsaw explain <rule-id>`):")
+            for rule_id in documented:
+                output.append(f"  {rule_doc_url(rule_id)}")
 
     output.append(f"\n{bold}Scanned:{reset}")
     repo_types_str = ", ".join(context.repo_type_names(include_unknown=False))
@@ -104,7 +138,6 @@ def format_text(
     if show_info:
         output.append(f"  {blue}Info:     {info}{reset}")
     if baseline_suppressed:
-        dim = "" if no_color else "\033[2m"
         output.append(f"  {dim}Baseline: {baseline_suppressed} suppressed{reset}")
     if grade is not None:
         grade_color = {"A": green, "B": green, "C": yellow, "D": red, "F": red}[grade.letter[0]]
@@ -113,7 +146,6 @@ def format_text(
             f"({grade.density:.2f} weighted violations per 10k tokens)"
         )
         if grade.info and not show_info:
-            dim = "" if no_color else "\033[2m"
             output.append(
                 f"  {dim}{grade.info} info-level violation(s) count toward"
                 f" the grade — run with -v to see them{reset}"

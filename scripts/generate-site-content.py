@@ -518,6 +518,29 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     return "\n".join(lines) + "\n"
 
 
+CLI_COLOR_SECTION = """\
+## Color and hyperlinks
+
+Commands that produce terminal output (`lint`, `fix`, `explain`, `badge`)
+decide whether to emit ANSI colors with the standard cascade, strongest
+first:
+
+1. `--color always` / `--color never`
+2. `FORCE_COLOR` — a non-empty value forces color on even through a pipe
+   (`0` forces it off); useful in CI logs that render ANSI
+3. `NO_COLOR` — present (even empty) disables color
+4. Otherwise color is used only when stdout is a terminal
+
+Piped or redirected output is plain text by default. On terminals that
+aren't `TERM=dumb`, text output also emits [OSC 8
+hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda):
+rule ids link to their documentation pages, file paths become clickable
+`file://` links, and the per-rule "Rule docs" URL footer collapses to a
+one-line hint. Hyperlinks are never emitted through a pipe, even when
+color is forced.
+"""
+
+
 def generate_cli_reference(commands):
     """Generate docs/cli.md from parsed argparse data."""
     lines = [GENERATED_HEADER, "# CLI Reference\n"]
@@ -541,6 +564,7 @@ def generate_cli_reference(commands):
                 lines.append(f"| {arg['flags']} | {desc} | {default} |")
             lines.append("")
 
+    lines.append(CLI_COLOR_SECTION)
     return "\n".join(lines) + "\n"
 
 
