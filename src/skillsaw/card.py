@@ -21,6 +21,7 @@ Invariants:
 
 from __future__ import annotations
 
+import math
 from typing import Sequence, Tuple
 from xml.sax.saxutils import escape
 
@@ -59,9 +60,10 @@ THEMES = {
     },
 }
 
-# Grade-ring geometry: radius 46 => circumference 2*pi*46.
+# Grade-ring geometry. The circumference is derived from the radius so
+# the two can never drift apart; both are rendered rounded to 2 decimals.
 _RING_RADIUS = 46
-_RING_CIRCUMFERENCE = 289.03
+_RING_CIRCUMFERENCE = 2 * math.pi * _RING_RADIUS
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -111,19 +113,21 @@ def render_card(
     fraction = 1.0 - notch / (len(LETTER_NOTCHES) - 1)
     dash = f"{fraction * _RING_CIRCUMFERENCE:.2f}"
 
-    rule_lines = []
     if top_rules:
+        rules_block = ['    <text x="24" y="139" class="label">Top rules</text>']
         for i, (rule_id, count) in enumerate(list(top_rules)[:3]):
             label = escape(f"{i + 1}. {_truncate(rule_id, 40)} ({count})")
-            rule_lines.append(
+            rules_block.append(
                 f'    <text x="24" y="{154 + 14 * i}" class="rule"'
                 f' data-testid="rule-{i}">{label}</text>'
             )
     else:
-        rule_lines.append(
-            '    <text x="24" y="154" class="rule" data-testid="rule-none">'
-            "none — clean run</text>"
-        )
+        # A violation-free run gets a positive line instead of a "Top
+        # rules" header with nothing to list under it.
+        rules_block = [
+            '    <text x="24" y="139" class="label" data-testid="rule-none">'
+            "No violations — clean run</text>"
+        ]
 
     plugin_word = "plugin" if plugin_count == 1 else "plugins"
     skill_word = "skill" if skill_count == 1 else "skills"
@@ -169,8 +173,7 @@ def render_card(
             f'~<tspan data-testid="tokens">{grade.content_tokens:,}</tspan>',
         ),
         _stat_row(118, "Building blocks", plugins_value),
-        '    <text x="24" y="139" class="label">Top rules</text>',
-        *rule_lines,
+        *rules_block,
         "  </g>",
         '  <g transform="translate(415.5, 97.5)">',
         (
@@ -180,7 +183,7 @@ def render_card(
         (
             f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
             f' stroke-width="7" stroke-linecap="round" transform="rotate(-90)"'
-            f' stroke-dasharray="{dash} {_RING_CIRCUMFERENCE}"/>'
+            f' stroke-dasharray="{dash} {_RING_CIRCUMFERENCE:.2f}"/>'
         ),
         (
             '    <text y="16" text-anchor="middle" class="grade-letter"'

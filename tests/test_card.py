@@ -159,7 +159,10 @@ def test_card_without_violations_shows_clean_run():
     svg = _render(grade=compute_grade([], content_tokens=10_000), top_rules=[])
     fields = _texts_by_testid(svg)
     assert "rule-0" not in fields
-    assert "clean run" in fields["rule-none"]
+    # No dangling "Top rules" header over an empty list — a single
+    # positive line takes its place.
+    assert fields["rule-none"] == "No violations — clean run"
+    assert "Top rules" not in svg
 
 
 def test_card_shows_at_most_three_rules():

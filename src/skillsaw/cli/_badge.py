@@ -174,7 +174,7 @@ def _run_badge(args):
         )
     else:
         card_url = _github_raw_url(context.root_path, card_path) or "<RAW_URL_TO_YOUR_CARD_SVG>"
-        print(f"\n  Report card (self-contained SVG):")
+        print("\n  Report card (self-contained SVG):")
         print(f"  [![skillsaw report card]({card_url})](https://skillsaw.org/)")
         print(
             f"\nCommit {badge_path.name} and {card_path.name} and regenerate them"
