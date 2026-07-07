@@ -22,6 +22,16 @@ make test         # full suite with coverage
 
 Tests run against Python 3.9–3.14 in CI. Locally, your active Python version is used.
 
+Most of `tests/test_integration.py` drives the CLI out-of-process via
+`subprocess.run([sys.executable, "-m", "skillsaw", ...])`. pytest-cov 7
+dropped automatic subprocess instrumentation, so without help
+`src/skillsaw/cli/` would report ~0% coverage despite being thoroughly
+exercised. `pyproject.toml` sets `[tool.coverage.run] patch =
+["subprocess"]` (requires coverage>=7.10) to have coverage.py patch the
+`subprocess` module so child interpreters get instrumented automatically —
+no `COVERAGE_PROCESS_START`/`sitecustomize.py` setup needed. This adds
+roughly 25 seconds to `make test`.
+
 ## Formatting and linting
 
 ```bash

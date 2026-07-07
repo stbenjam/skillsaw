@@ -43,20 +43,28 @@ def format_json(
     if duration is not None:
         stats["duration_seconds"] = round(duration, 3)
 
+    def violation_entry(v: RuleViolation) -> dict:
+        entry = {
+            "rule_id": v.rule_id,
+            "severity": v.severity.value,
+            "message": v.message,
+            "file_path": relative_path(v.file_path, context.root_path),
+            "line": v.file_line,
+            "source": v.source,
+        }
+        # Additive: omitted when fixability is unknown (e.g. synthetic
+        # violations); fix_confidence only accompanies fixable violations.
+        if v.fixable is not None:
+            entry["fixable"] = v.fixable
+            if v.fixable and v.fix_confidence is not None:
+                entry["fix_confidence"] = v.fix_confidence.value
+        return entry
+
     report = {
         "version": version,
         "stats": stats,
         "violations": [
-            {
-                "rule_id": v.rule_id,
-                "severity": v.severity.value,
-                "message": v.message,
-                "file_path": relative_path(v.file_path, context.root_path),
-                "line": v.file_line,
-                "source": v.source,
-            }
-            for v in violations
-            if show_info or v.severity != Severity.INFO
+            violation_entry(v) for v in violations if show_info or v.severity != Severity.INFO
         ],
         "summary": {
             "errors": errors,
