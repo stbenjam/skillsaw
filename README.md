@@ -323,10 +323,11 @@ Terminal output is colored only when stdout is a terminal — piped or
 redirected output stays plain. Override with `--color always|never|auto`,
 which outranks the `FORCE_COLOR` environment variable (non-empty forces
 color on, useful in CI; `0` forces it off), which outranks `NO_COLOR`
-(present disables color). On hyperlink-capable terminals (`TERM` other
-than `dumb`), rule ids link to their documentation pages and file paths
-become clickable `file://` links, replacing the "Rule docs" URL footer
-with a one-line hint.
+(present disables color). When color is enabled on a real terminal
+(`TERM` other than `dumb`), rule ids link to their documentation pages
+and file paths become clickable `file://` links, replacing the "Rule
+docs" URL footer with a one-line hint. Hyperlinks are never emitted
+through a pipe, even when color is forced.
 
 ## Migrating from claudelint
 

@@ -531,8 +531,9 @@ first:
 3. `NO_COLOR` — present (even empty) disables color
 4. Otherwise color is used only when stdout is a terminal
 
-Piped or redirected output is plain text by default. On terminals that
-aren't `TERM=dumb`, text output also emits [OSC 8
+Piped or redirected output is plain text by default. When color is
+enabled on a real terminal (`TERM` other than `dumb`), text output also
+emits [OSC 8
 hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda):
 rule ids link to their documentation pages, file paths become clickable
 `file://` links, and the per-rule "Rule docs" URL footer collapses to a
