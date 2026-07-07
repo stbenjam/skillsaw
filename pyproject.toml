@@ -38,6 +38,12 @@ docs = [
     "mkdocs-material>=9.0",
     "mkdocs-redirects>=1.2,<1.2.4",
 ]
+# The MCP SDK needs Python >= 3.10 (skillsaw's floor is 3.9); the marker
+# makes `pip install 'skillsaw[mcp]'` a no-op there and `skillsaw mcp`
+# prints an actionable error instead.
+mcp = [
+    "mcp>=1.10,<2; python_version >= '3.10'",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -45,6 +51,7 @@ dev = [
     "flake8>=6.0",
     "mypy>=1.0",
     "skillsaw-runbooks==0.1.0",
+    "mcp>=1.10,<2; python_version >= '3.10'",
 ]
 
 [project.urls]

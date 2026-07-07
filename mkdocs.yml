@@ -118,6 +118,7 @@ nav:
     - CI Integration: ci.md
     - Pre-commit: pre-commit.md
     - CLI Reference: cli.md
+    - MCP Server: mcp-server.md
     - Custom Rules: custom-rules.md
     - Rule Plugins: plugins.md
     - Scaffolding: scaffolding.md

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.stbenjam/skillsaw",
+  "description": "Lint, grade, and autofix agent skills, plugins, and AI coding assistant context files.",
+  "repository": {
+    "url": "https://github.com/stbenjam/skillsaw",
+    "source": "github"
+  },
+  "websiteUrl": "https://skillsaw.org",
+  "version": "0.16.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "skillsaw",
+      "version": "0.16.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "skillsaw[mcp]"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

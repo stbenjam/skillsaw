@@ -11,8 +11,7 @@ from ._helpers import _ansi_colors
 
 
 def _run_explain(args):
-    from ..rules.builtin import BUILTIN_RULES
-    from ..rule_docs import load_rule_docs, rule_doc_url
+    from ..rule_docs import find_rule_class, load_rule_docs, rule_doc_url
 
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
@@ -21,32 +20,7 @@ def _run_explain(args):
         print(f"Error: Config file not found: {args.config}", file=sys.stderr)
         sys.exit(1)
 
-    rule_class = None
-    known_ids = []
-    for candidate in BUILTIN_RULES:
-        rule = candidate()
-        known_ids.append(rule.rule_id)
-        if rule.rule_id == args.rule_id:
-            rule_class = candidate
-            break
-
-    plugin_name = None
-    if rule_class is None:
-        from ..plugins import load_plugins
-
-        for plugin in load_plugins():
-            for candidate in plugin.rule_classes:
-                try:
-                    rule = candidate()
-                except Exception:
-                    continue
-                known_ids.append(rule.rule_id)
-                if rule.rule_id == args.rule_id:
-                    rule_class = candidate
-                    plugin_name = plugin.name
-                    break
-            if rule_class is not None:
-                break
+    rule_class, plugin_name, known_ids = find_rule_class(args.rule_id)
 
     if rule_class is None:
         print(f"Error: Unknown rule '{args.rule_id}'", file=sys.stderr)

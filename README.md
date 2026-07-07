@@ -196,6 +196,21 @@ repos:
 
 See the [Pre-commit guide](https://skillsaw.org/pre-commit/) for details.
 
+## MCP Server
+
+Agents can lint the context they're authoring over the
+[Model Context Protocol](https://modelcontextprotocol.io):
+
+```bash
+pip install 'skillsaw[mcp]'
+claude mcp add skillsaw -- skillsaw mcp
+```
+
+`skillsaw mcp` serves `lint`, `grade`, `fix`, `explain_rule`, and
+`list_rules` tools over stdio to any MCP client (Claude Code, Cursor, Codex
+CLI, Gemini CLI). See the [MCP Server guide](https://skillsaw.org/mcp-server/)
+for other clients and tool details.
+
 ## Quality Grade & Badge
 
 Every lint run computes a letter grade (A+ through F) summarizing

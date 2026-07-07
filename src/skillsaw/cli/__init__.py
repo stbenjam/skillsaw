@@ -18,6 +18,7 @@ _SUBCOMMANDS = {
     "explain",
     "badge",
     "plugins",
+    "mcp",
 }
 
 
@@ -89,6 +90,10 @@ def main():
         from ._tree import _run_tree
 
         _run_tree(args)
+    elif args.command == "mcp":
+        from ._mcp import _run_mcp
+
+        _run_mcp(args)
 
 
 def claudelint_shim():

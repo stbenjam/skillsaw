@@ -378,6 +378,17 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Badge JSON output path (default: .skillsaw-badge.json in the repository root)",
     )
 
+    # --- mcp ---
+    subparsers.add_parser(
+        "mcp",
+        help="Run an MCP server exposing lint, grade, fix, and rule docs over stdio",
+        description="Serve skillsaw over the Model Context Protocol (stdio "
+        "transport) so coding agents can lint, grade, and fix the context "
+        "files they are authoring. Exposes lint, grade, fix, explain_rule, "
+        "and list_rules tools. Requires the optional 'mcp' dependency: "
+        "pip install 'skillsaw[mcp]'.",
+    )
+
     # --- add ---
     subparsers.add_parser(
         "add",

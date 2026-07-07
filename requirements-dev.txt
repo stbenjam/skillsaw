@@ -10,6 +10,9 @@ black>=26,<27
 flake8>=6.0
 mypy>=1.0
 
+# MCP server (optional `skillsaw[mcp]` extra; tests exercise the real SDK)
+mcp>=1.10,<2; python_version >= "3.10"
+
 # Build
 build>=1.5.0
 twine>=6.2.0

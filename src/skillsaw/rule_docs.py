@@ -10,7 +10,7 @@ package data under ``skillsaw/rules/docs/<rule-id>.md`` so that
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 DOCS_BASE_URL = "https://skillsaw.org/rules/"
 
@@ -32,3 +32,37 @@ def load_rule_docs(rule_id: str) -> Optional[str]:
     if not doc_path.is_file():
         return None
     return doc_path.read_text(encoding="utf-8").strip()
+
+
+def find_rule_class(rule_id: str) -> Tuple[Optional[type], Optional[str], List[str]]:
+    """Locate a rule class by id across builtin rules and installed plugins.
+
+    Shared by ``skillsaw explain`` and the MCP server's ``explain_rule``
+    tool. Returns ``(rule_class, plugin_name, known_ids)``: *rule_class* is
+    ``None`` when the id is unknown, *plugin_name* is ``None`` for builtin
+    rules, and *known_ids* lists every rule id seen (for suggestions).
+    """
+    # Late imports: rules.builtin walks every rule module and plugins hit
+    # entry points — neither belongs at import time of this small helper.
+    from .rules.builtin import BUILTIN_RULES
+
+    known_ids: List[str] = []
+    for candidate in BUILTIN_RULES:
+        rule = candidate()
+        known_ids.append(rule.rule_id)
+        if rule.rule_id == rule_id:
+            return candidate, None, known_ids
+
+    from .plugins import load_plugins
+
+    for plugin in load_plugins():
+        for candidate in plugin.rule_classes:
+            try:
+                rule = candidate()
+            except Exception:
+                continue
+            known_ids.append(rule.rule_id)
+            if rule.rule_id == rule_id:
+                return candidate, plugin.name, known_ids
+
+    return None, None, known_ids
