@@ -144,12 +144,13 @@ def _dedup_rules(rules):
 # ---------------------------------------------------------------------------
 
 
-def color_enabled(stream, mode: str = "auto") -> bool:
+def color_enabled(stream, color: bool | None = None) -> bool:
     """Whether ANSI color should be emitted on ``stream``.
 
     Standard cascade, strongest first:
 
-    1. ``--color always`` / ``--color never`` (the ``mode`` argument)
+    1. ``--color`` / ``--no-color`` (the ``color`` argument: ``True`` forces
+       on, ``False`` forces off, ``None`` auto-detects)
     2. ``FORCE_COLOR`` — non-empty forces color on (``0`` forces it off)
     3. ``NO_COLOR`` — present (even empty) disables color
     4. ``stream.isatty()``
@@ -157,10 +158,8 @@ def color_enabled(stream, mode: str = "auto") -> bool:
     ``FORCE_COLOR`` outranks ``NO_COLOR`` so CI setups that export both
     get the color they explicitly asked for.
     """
-    if mode == "always":
-        return True
-    if mode == "never":
-        return False
+    if color is not None:
+        return color
     force = os.environ.get("FORCE_COLOR")
     if force:
         return force != "0"

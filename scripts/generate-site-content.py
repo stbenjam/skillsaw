@@ -525,7 +525,7 @@ Commands that produce terminal output (`lint`, `fix`, `explain`, `badge`)
 decide whether to emit ANSI colors with the standard cascade, strongest
 first:
 
-1. `--color always` / `--color never`
+1. `--color` / `--no-color`
 2. `FORCE_COLOR` — a non-empty value forces color on even through a pipe
    (`0` forces it off); useful in CI logs that render ANSI
 3. `NO_COLOR` — present (even empty) disables color

@@ -11,17 +11,18 @@ from ..formatters import EXTENSION_MAP, FORMATS
 from ._config import _get_version
 
 _COLOR_HELP = (
-    "When to emit ANSI colors and terminal hyperlinks (default: auto — "
-    "color only when stdout is a terminal; FORCE_COLOR forces color on, "
-    "NO_COLOR turns it off)"
+    "Force ANSI colors and terminal hyperlinks on (--color) or off "
+    "(--no-color). Default: color only when stdout is a terminal; "
+    "FORCE_COLOR and NO_COLOR are also honored."
 )
 
 
 def _add_color_flag(subparser) -> None:
     subparser.add_argument(
         "--color",
-        choices=["always", "never", "auto"],
-        default="auto",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="color",
         help=_COLOR_HELP,
     )
 

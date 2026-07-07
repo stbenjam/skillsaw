@@ -26,7 +26,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
-| `--color` | When to emit ANSI colors and terminal hyperlinks (default: auto — color only when stdout is a terminal; FORCE_COLOR forces color on, NO_COLOR turns it off) (choices: always, never, auto) | `auto` |
+| `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw fix`
 
@@ -42,7 +42,7 @@ Automatically fix lint violations
 | `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs) |  |
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
-| `--color` | When to emit ANSI colors and terminal hyperlinks (default: auto — color only when stdout is a terminal; FORCE_COLOR forces color on, NO_COLOR turns it off) (choices: always, never, auto) | `auto` |
+| `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw init`
 
@@ -63,7 +63,7 @@ Show documentation and effective configuration for a rule
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
-| `--color` | When to emit ANSI colors and terminal hyperlinks (default: auto — color only when stdout is a terminal; FORCE_COLOR forces color on, NO_COLOR turns it off) (choices: always, never, auto) | `auto` |
+| `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw docs`
 
@@ -102,7 +102,7 @@ Grade the repository and write a shields.io badge JSON file
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `-o`, `--output` | Badge JSON output path (default: .skillsaw-badge.json in the repository root) |  |
-| `--color` | When to emit ANSI colors and terminal hyperlinks (default: auto — color only when stdout is a terminal; FORCE_COLOR forces color on, NO_COLOR turns it off) (choices: always, never, auto) | `auto` |
+| `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw add`
 
@@ -172,7 +172,7 @@ Commands that produce terminal output (`lint`, `fix`, `explain`, `badge`)
 decide whether to emit ANSI colors with the standard cascade, strongest
 first:
 
-1. `--color always` / `--color never`
+1. `--color` / `--no-color`
 2. `FORCE_COLOR` — a non-empty value forces color on even through a pipe
    (`0` forces it off); useful in CI logs that render ANSI
 3. `NO_COLOR` — present (even empty) disables color

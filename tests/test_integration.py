@@ -2760,14 +2760,14 @@ class TestColorOutput:
         result = self._run_piped(repo, env=_color_env(FORCE_COLOR="1", NO_COLOR="1"))
         assert "\x1b[" in result.stdout
 
-    def test_color_always_beats_no_color_through_pipe(self, tmp_path):
+    def test_color_flag_beats_no_color_through_pipe(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        result = self._run_piped(repo, "--color", "always", env=_color_env(NO_COLOR="1"))
+        result = self._run_piped(repo, "--color", env=_color_env(NO_COLOR="1"))
         assert "\x1b[" in result.stdout
 
-    def test_color_never_beats_force_color(self, tmp_path):
+    def test_no_color_beats_force_color(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        result = self._run_piped(repo, "--color", "never", env=_color_env(FORCE_COLOR="1"))
+        result = self._run_piped(repo, "--no-color", env=_color_env(FORCE_COLOR="1"))
         assert "\x1b[" not in result.stdout
 
     def test_output_text_file_is_always_plain(self, tmp_path):
@@ -2800,9 +2800,9 @@ class TestColorOutput:
         assert "Rule docs" in output
 
     @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
-    def test_color_never_on_tty(self, tmp_path):
+    def test_no_color_on_tty(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"), "--color", "never")
+        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"), "--no-color")
         assert "\x1b[" not in output
         assert "\x1b]8" not in output
 

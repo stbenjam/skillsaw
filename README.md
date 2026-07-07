@@ -320,10 +320,10 @@ Violations that `skillsaw fix` can resolve automatically are marked with
 ### Color and hyperlinks
 
 Terminal output is colored only when stdout is a terminal — piped or
-redirected output stays plain. Override with `--color always|never|auto`,
-which outranks the `FORCE_COLOR` environment variable (non-empty forces
-color on, useful in CI; `0` forces it off), which outranks `NO_COLOR`
-(present disables color). When color is enabled on a real terminal
+redirected output stays plain. Force it with `--color` or `--no-color`,
+which outrank the `FORCE_COLOR` environment variable (non-empty forces
+color on even through a pipe, useful in CI; `0` forces it off), which
+outranks `NO_COLOR` (present disables color). When color is enabled on a real terminal
 (`TERM` other than `dumb`), rule ids link to their documentation pages
 and file paths become clickable `file://` links, replacing the "Rule
 docs" URL footer with a one-line hint. Hyperlinks are never emitted

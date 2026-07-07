@@ -2,7 +2,7 @@
 Unit tests for the CLI color/hyperlink capability cascade (GH-415).
 
 ``color_enabled`` implements the standard precedence every mature CLI
-ships: --color always|never > FORCE_COLOR > NO_COLOR > stream.isatty().
+ships: --color/--no-color > FORCE_COLOR > NO_COLOR > stream.isatty().
 ``hyperlinks_enabled`` additionally requires a real terminal that is not
 ``TERM=dumb`` — OSC 8 sequences are never forced through a pipe.
 """
@@ -84,17 +84,17 @@ def test_force_color_empty_falls_through_to_isatty(monkeypatch):
     assert color_enabled(PIPE) is False
 
 
-# --- color_enabled: --color flag overrides everything ---
+# --- color_enabled: --color / --no-color flag overrides everything ---
 
 
-def test_color_always_beats_no_color_and_pipe(monkeypatch):
+def test_color_flag_beats_no_color_and_pipe(monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
-    assert color_enabled(PIPE, mode="always") is True
+    assert color_enabled(PIPE, color=True) is True
 
 
-def test_color_never_beats_force_color_and_tty(monkeypatch):
+def test_no_color_flag_beats_force_color_and_tty(monkeypatch):
     monkeypatch.setenv("FORCE_COLOR", "1")
-    assert color_enabled(TTY, mode="never") is False
+    assert color_enabled(TTY, color=False) is False
 
 
 # --- hyperlinks_enabled ---
