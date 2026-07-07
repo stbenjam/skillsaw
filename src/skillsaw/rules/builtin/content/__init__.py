@@ -16,6 +16,7 @@ from .instruction_drift import ContentInstructionDriftRule
 from .broken_internal_reference import ContentBrokenInternalReferenceRule
 from .unlinked_internal_reference import ContentUnlinkedInternalReferenceRule
 from .placeholder_text import ContentPlaceholderTextRule
+from .unclosed_fence import ContentUnclosedFenceRule
 
 __all__ = [
     "ContentWeakLanguageRule",
@@ -36,4 +37,5 @@ __all__ = [
     "ContentBrokenInternalReferenceRule",
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",
+    "ContentUnclosedFenceRule",
 ]

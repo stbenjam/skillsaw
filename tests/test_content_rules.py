@@ -29,6 +29,7 @@ from skillsaw.rules.builtin.content_rules import (
     ContentUnlinkedInternalReferenceRule,
     ContentPlaceholderTextRule,
 )
+from skillsaw.rules.builtin.content import ContentUnclosedFenceRule
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
 _STRIPE_SK = "sk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
@@ -1985,3 +1986,140 @@ class TestContentBrokenInternalReferenceAutofix:
         violations = rule.check(context)
         assert len(violations) == 1
         assert "did you mean" not in violations[0].message
+
+
+class TestContentUnclosedFenceRule:
+    def _check(self, temp_dir):
+        return ContentUnclosedFenceRule().check(RepositoryContext(temp_dir))
+
+    def test_rule_metadata(self):
+        rule = ContentUnclosedFenceRule()
+        assert rule.rule_id == "content-unclosed-fence"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.autofix_confidence == AutofixConfidence.SUGGEST
+        assert rule.supports_autofix
+
+    def test_detects_unclosed_fence(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n```bash\nmake test\n\nAlways run the linter before pushing.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "```bash" in violations[0].message
+
+    def test_closed_fence_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n```bash\nmake test\n```\n")
+        assert self._check(temp_dir) == []
+
+    def test_closed_fence_at_eof_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n```")
+        assert self._check(temp_dir) == []
+
+    def test_unclosed_fence_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_unclosed_fence_with_trailing_blank_lines(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n\n\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_longer_closer_run_closes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n`````\n")
+        assert self._check(temp_dir) == []
+
+    def test_shorter_closer_does_not_close(self, temp_dir):
+        # A three-backtick run cannot close a four-backtick fence.
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```\ncode\n```\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_four_backtick_fence_with_inner_fences_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```bash\nmake test\n```\n````\n")
+        assert self._check(temp_dir) == []
+
+    def test_tilde_fence_unclosed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n")
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "~~~python" in violations[0].message
+
+    def test_tilde_fence_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n~~~\n")
+        assert self._check(temp_dir) == []
+
+    def test_closer_with_trailing_spaces_and_indent(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n   ```  \n")
+        assert self._check(temp_dir) == []
+
+    def test_pseudo_closer_with_info_string_flagged(self, temp_dir):
+        # "``` bash" has an info string, which a closing fence cannot have.
+        (temp_dir / "CLAUDE.md").write_text("```bash\ncode\n``` bash\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_indented_code_block_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Paragraph.\n\n    indented code\n    more code\n")
+        assert self._check(temp_dir) == []
+
+    def test_blockquote_nested_fence_not_flagged(self, temp_dir):
+        # Out of scope: a column-0 closer would not terminate it.
+        (temp_dir / "CLAUDE.md").write_text("> ```\n> code\n")
+        assert self._check(temp_dir) == []
+
+    def test_list_nested_fence_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("- item\n  ```\n  code\n")
+        assert self._check(temp_dir) == []
+
+    def test_fence_closed_mid_file_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n```\n\nProse after the block.\n")
+        assert self._check(temp_dir) == []
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert self._check(temp_dir) == []
+
+
+class TestContentUnclosedFenceAutofix:
+    def _fix(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnclosedFenceRule()
+        return rule.fix(context, rule.check(context))
+
+    def test_fix_appends_closer(self, temp_dir):
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
+        assert fixes[0].fixed_content == content + "```\n"
+
+    def test_fix_adds_newline_when_missing(self, temp_dir):
+        content = "```bash\nmake test"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "\n```\n"
+
+    def test_fix_uses_matching_markup(self, temp_dir):
+        content = "````markdown\n```bash\nmake test\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "````\n"
+
+    def test_fix_uses_tilde_markup(self, temp_dir):
+        content = "~~~python\nprint('hi')\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "~~~\n"
+
+    def test_fixed_content_lints_clean(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentUnclosedFenceRule().check(RepositoryContext(temp_dir)) == []

@@ -1,0 +1,6 @@
+{
+  "name": "deploy-tools",
+  "description": "Deployment helpers for staging and production releases",
+  "version": "1.0.0",
+  "author": {"name": "Test"}
+}

@@ -128,6 +128,8 @@ class MarkdownFence:
     file_line_start: int
     file_line_end: int
     indented: bool = False
+    markup: str = ""  # opening fence run ("```", "~~~~", …); empty for indented blocks
+    nested: bool = False  # inside a container (blockquote, list item)
 
 
 @dataclass
@@ -863,6 +865,8 @@ class MarkdownDoc:
                         file_line_start=self.file_line(start + 1),
                         file_line_end=self.file_line(end),
                         indented=token.type == "code_block",
+                        markup=token.markup or "",
+                        nested=token.level > 0,
                     )
                 )
         return result
