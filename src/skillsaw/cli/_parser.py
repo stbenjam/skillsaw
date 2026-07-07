@@ -397,7 +397,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Badge JSON output path (default: .skillsaw-badge.json in the repository root)",
     )
     badge_parser.add_argument(
-        "--card",
+        "--large",
         action="store_true",
         help="Also render a self-contained SVG report card (.skillsaw-card.svg) "
         "next to the badge JSON",
@@ -406,7 +406,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "--theme",
         choices=["light", "dark"],
         default="dark",
-        help="Report card color theme, used with --card (default: dark)",
+        help="Report card color theme, used with --large (default: dark)",
     )
     _add_color_flag(badge_parser)
 

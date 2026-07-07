@@ -1,6 +1,6 @@
 """
 Tests for the SVG report card (skillsaw.card) and the
-``skillsaw badge --card`` subcommand.
+``skillsaw badge --large`` subcommand.
 """
 
 import subprocess
@@ -199,7 +199,7 @@ def test_card_survives_off_scale_grade():
 
 def test_badge_card_writes_svg(tmp_path):
     repo = copy_fixture("marketplace/clean", tmp_path)
-    result = run_badge(repo, "--card")
+    result = run_badge(repo, "--large")
     assert result.returncode == 0, result.stderr
 
     # Badge JSON is still written as before.
@@ -222,11 +222,13 @@ def test_badge_card_writes_svg(tmp_path):
     assert ".skillsaw-card.svg" in result.stdout
     # Ready-to-paste README markdown for the card.
     assert "[![skillsaw report card](" in result.stdout
+    # The "run --large" hint is only shown when --large is omitted.
+    assert "generate a card-sized badge" not in result.stdout
 
 
 def test_badge_card_light_theme(tmp_path):
     repo = copy_fixture("marketplace/clean", tmp_path)
-    result = run_badge(repo, "--card", "--theme", "light")
+    result = run_badge(repo, "--large", "--theme", "light")
     assert result.returncode == 0, result.stderr
     svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
     assert THEMES["light"]["bg"] in svg
@@ -236,7 +238,7 @@ def test_badge_card_light_theme(tmp_path):
 def test_badge_card_beside_custom_output(tmp_path):
     repo = copy_fixture("marketplace/clean", tmp_path)
     out = tmp_path / "artifacts" / "badge.json"
-    result = run_badge(repo, "--card", "-o", str(out))
+    result = run_badge(repo, "--large", "-o", str(out))
     assert result.returncode == 0, result.stderr
     assert out.exists()
     card = tmp_path / "artifacts" / ".skillsaw-card.svg"
@@ -259,13 +261,13 @@ def test_badge_card_uses_github_remote_for_url(tmp_path):
         ],
         check=True,
     )
-    result = run_badge(repo, "--card")
+    result = run_badge(repo, "--large")
     assert result.returncode == 0, result.stderr
     assert "raw.githubusercontent.com/example/market/main/.skillsaw-card.svg" in result.stdout
 
 
 def test_badge_without_card_is_unchanged(tmp_path):
-    # Without --card the command must behave exactly as before: same
+    # Without --large the command must behave exactly as before: same
     # output text, no SVG file.
     repo = copy_fixture("marketplace/clean", tmp_path)
     result = run_badge(repo)
@@ -274,6 +276,8 @@ def test_badge_without_card_is_unchanged(tmp_path):
     assert "Card written" not in result.stdout
     assert "report card" not in result.stdout
     assert "Commit .skillsaw-badge.json and regenerate it" in result.stdout
+    # ...but it points the user at the larger card-sized badge.
+    assert "Run `skillsaw badge --large` to generate a card-sized badge." in result.stdout
 
 
 # ── In-process CLI (coverage of the _run_badge paths the subprocess
@@ -292,7 +296,7 @@ def run_badge_in_process(*argv):
 
 def test_run_badge_in_process_with_card(tmp_path, capsys):
     repo = copy_fixture("marketplace/clean", tmp_path)
-    assert run_badge_in_process(repo, "--card") == 0
+    assert run_badge_in_process(repo, "--large") == 0
     out = capsys.readouterr().out
 
     svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
@@ -312,7 +316,7 @@ def test_run_badge_in_process_with_remote(tmp_path, capsys):
         ["git", "-C", str(repo), "remote", "add", "origin", "git@github.com:acme/mkt.git"],
         check=True,
     )
-    assert run_badge_in_process(repo, "--card", "--theme", "light") == 0
+    assert run_badge_in_process(repo, "--large", "--theme", "light") == 0
     out = capsys.readouterr().out
     assert "raw.githubusercontent.com/acme/mkt/main/.skillsaw-card.svg" in out
     svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
@@ -350,7 +354,7 @@ def test_run_badge_in_process_non_github_remote(tmp_path, capsys):
         ["git", "-C", str(repo), "remote", "add", "origin", "https://gitlab.com/acme/mkt.git"],
         check=True,
     )
-    assert run_badge_in_process(repo, "--card") == 0
+    assert run_badge_in_process(repo, "--large") == 0
     out = capsys.readouterr().out
     assert "RAW_URL_TO_YOUR_CARD_SVG" in out
 
@@ -364,5 +368,5 @@ def test_run_badge_in_process_without_card(tmp_path, capsys):
 
 
 def test_run_badge_in_process_missing_path(capsys):
-    assert run_badge_in_process("/nonexistent/repo/path", "--card") == 1
+    assert run_badge_in_process("/nonexistent/repo/path", "--large") == 1
     assert "Path not found" in capsys.readouterr().err

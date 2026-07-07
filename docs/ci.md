@@ -138,7 +138,7 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 ## Badge and report card
 
 `skillsaw badge` writes `.skillsaw-badge.json` (a shields.io endpoint
-payload) and prints ready-to-paste README markdown. Add `--card` to also
+payload) and prints ready-to-paste README markdown. Add `--large` to also
 render `.skillsaw-card.svg` — a self-contained SVG report card showing
 the letter grade, weighted violation density, content-token count,
 plugin/skill counts, and the top offending rules (`--theme light|dark`,
@@ -165,7 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: pipx install skillsaw
-      - run: skillsaw badge --card .  # grades, never gates (always exits 0)
+      - run: skillsaw badge --large .  # grades, never gates (always exits 0)
       - name: Commit badge artifacts
         run: |
           git config user.name "github-actions[bot]"

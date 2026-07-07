@@ -50,7 +50,7 @@ generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py
 
 badge: $(VENV)/bin/activate
-	$(VENV)/bin/skillsaw badge --card .
+	$(VENV)/bin/skillsaw badge --large .
 
 self-lint: $(VENV)/bin/activate badge
 	$(VENV)/bin/skillsaw lint .

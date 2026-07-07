@@ -1,4 +1,4 @@
-"""Self-contained SVG report card for ``skillsaw badge --card``.
+"""Self-contained SVG report card for ``skillsaw badge --large``.
 
 Renders a fixed-size (495x195 viewBox) github-readme-stats style card
 showing the letter grade, weighted violation density, content-token

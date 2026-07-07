@@ -107,7 +107,7 @@ def _run_badge(args):
     badge_path.write_text(json.dumps(grade.badge_json(), indent=2) + "\n", encoding="utf-8")
 
     card_path = None
-    if getattr(args, "card", False):
+    if getattr(args, "large", False):
         from collections import Counter
 
         from ..card import render_card
@@ -141,6 +141,8 @@ def _run_badge(args):
     print(f"\nBadge written to {badge_path}")
     if card_path is not None:
         print(f"Card written to {card_path}")
+    else:
+        print("Run `skillsaw badge --large` to generate a card-sized badge.")
 
     raw_url = _github_raw_url(context.root_path, badge_path)
     if raw_url is None:
