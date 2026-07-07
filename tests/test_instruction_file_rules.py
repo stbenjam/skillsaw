@@ -316,6 +316,71 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
 
+    def test_mid_line_relative_import_reported(self, temp_dir):
+        # A mid-line ``@./…`` reference is unambiguously an import path.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\nLoad @./config.md before running.\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "config.md" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_slash_import_reported_when_parent_dir_exists(self, temp_dir):
+        # ``@docs/missing`` (no extension) is shaped like a GitHub team mention,
+        # but the ``docs/`` directory exists, so it's a broken import, not prose.
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nFollow the guide in @docs/missing before coding.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "docs/missing" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_slash_mention_not_checked_when_parent_dir_absent(self, temp_dir):
+        # ``@org/platform-team`` has no matching ``org/`` directory, so it reads
+        # as a team mention rather than an import and must stay quiet.
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nAsk @org/platform-team before changing deploys.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_deep_then_shallow_path_revisits_for_nested_violation(self, temp_dir):
+        # ``hub.md`` is first reached at the hop limit (its children can't be
+        # followed), then again directly. The shallow re-entry must recurse into
+        # its child and surface the child's broken import (regression for the
+        # visited-set-by-path-only bug).
+        shared = temp_dir / "shared"
+        shared.mkdir()
+        (shared / "hub.md").write_text("# Hub\n\n@child.md\n")
+        (shared / "child.md").write_text("# Child\n\n@missing.md\n")
+        (temp_dir / "p1.md").write_text("# P1\n\n@p2.md\n")
+        (temp_dir / "p2.md").write_text("# P2\n\n@p3.md\n")
+        (temp_dir / "p3.md").write_text("# P3\n\n@shared/hub.md\n")
+        # Deep chain first (reaches hub at depth 4), then the direct import.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@p1.md\n@shared/hub.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].file_path == shared / "child.md"
+        assert "missing.md" in violations[0].message
+
+    def test_import_recursion_stops_at_hop_limit(self, temp_dir):
+        # A five-deep chain: the fifth file's broken import must not be reported
+        # because recursion stops after four hops.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@a.md\n")
+        (temp_dir / "a.md").write_text("# A\n\n@b.md\n")
+        (temp_dir / "b.md").write_text("# B\n\n@c.md\n")
+        (temp_dir / "c.md").write_text("# C\n\n@d.md\n")
+        (temp_dir / "d.md").write_text("# D\n\n@e.md\n")
+        (temp_dir / "e.md").write_text("# E\n\n@beyond-the-limit.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
     def test_at_in_fenced_code_block_not_matched(self, temp_dir):
         content = (
             "# Instructions\n"
