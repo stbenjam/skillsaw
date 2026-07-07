@@ -43,7 +43,8 @@ Roll back with `make rollback ENV=staging` within 5 minutes.
 ## How to fix
 
 Add the missing closing fence right after the last intended code line —
-same character, at least as many as the opener (` ``` ` closes ` ``` `,
-`````` ```` `````` closes `````` ```` ``````). The autofix appends the matching
-closer at the end of the file; if the code block was meant to end
-earlier, move the appended closer up to the right line.
+same character as the opener, in a run at least as long (a three-backtick
+opener closes with three or more backticks, a four-backtick opener needs
+four). The autofix appends the matching closer at the end of the file;
+if the code block was meant to end earlier, move the appended closer up
+to the right line.
