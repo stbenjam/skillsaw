@@ -214,13 +214,15 @@ class Rule(ABC):
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules
         whose ``fix()`` only repairs a subset of their violations must pass
-        ``fixable`` explicitly so lint output doesn't over-promise; rules
-        without a class-level confidence must also pass ``fix_confidence``.
+        ``fixable`` explicitly so lint output doesn't over-promise.
         """
         if fixable is None:
             fixable = self.supports_autofix and self.autofix_confidence is not None
         if fix_confidence is None and fixable:
-            fix_confidence = self.autofix_confidence
+            # Unknown confidence falls back to SUGGEST so every fixable
+            # violation carries one and no format over-promises what a
+            # plain `skillsaw fix` run will clear.
+            fix_confidence = self.autofix_confidence or AutofixConfidence.SUGGEST
         return RuleViolation(
             rule_id=self.rule_id,
             severity=severity if severity is not None else self.severity,

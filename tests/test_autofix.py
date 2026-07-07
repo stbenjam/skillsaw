@@ -257,6 +257,13 @@ class TestViolationFixability:
         assert v.fixable is True
         assert v.fix_confidence == AutofixConfidence.SUGGEST
 
+    def test_explicit_fixable_true_without_confidence_falls_back_to_suggest(self):
+        # SafeFixRule has no class-level autofix_confidence — the fallback
+        # must never over-promise what a plain `skillsaw fix` run clears.
+        v = SafeFixRule().violation("Contains BAD", fixable=True)
+        assert v.fixable is True
+        assert v.fix_confidence == AutofixConfidence.SUGGEST
+
     def test_direct_construction_leaves_fixability_unknown(self):
         v = RuleViolation(rule_id="synthetic", severity=Severity.ERROR, message="boom")
         assert v.fixable is None
@@ -995,3 +1002,68 @@ class TestAgentFixMissingFrontmatterBlock:
         agent_md.write_text(fixes[0].fixed_content)
         invalidate_read_caches()
         assert rule.check(RepositoryContext(plugin_dir)) == []
+
+
+class TestFixCliOutput:
+    """In-process `skillsaw fix` runs: display paths and the re-lint hint."""
+
+    @staticmethod
+    def _make_repo(tmp_path, name):
+        repo = tmp_path / name
+        cmd_dir = repo / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "deploy.md").write_text(
+            "# Deploy\n\n"
+            "Deploy the application to production.\n\n"
+            "See [the guide](docs/guid.md) for the full deployment checklist.\n"
+        )
+        docs = repo / "docs"
+        docs.mkdir()
+        (docs / "guide.md").write_text("# Guide\n\nDeployment steps live here.\n")
+        return repo
+
+    @staticmethod
+    def _run_cli(monkeypatch, capsys, *argv):
+        import sys
+
+        import skillsaw.cli as cli
+
+        monkeypatch.setattr(sys, "argv", ["skillsaw", "fix", *[str(a) for a in argv]])
+        with pytest.raises(SystemExit) as exc:
+            cli.main()
+        assert exc.value.code == 0
+        return capsys.readouterr().out
+
+    def test_single_root_prints_relative_paths_and_relint_hint(self, tmp_path, monkeypatch, capsys):
+        repo = self._make_repo(tmp_path, "repo")
+        invalidate_read_caches()
+
+        out = self._run_cli(monkeypatch, capsys, repo)
+
+        # Applied and suggested fixes both print repo-relative paths.
+        assert "✓ [.claude/commands/deploy.md]" in out
+        assert "? [.claude/commands/deploy.md]" in out
+        assert str(repo) not in out, "fix output leaked absolute paths"
+        assert "Run `skillsaw lint` to see remaining issues." in out
+
+    def test_multi_root_keeps_absolute_paths(self, tmp_path, monkeypatch, capsys):
+        repo1 = self._make_repo(tmp_path, "repo-one")
+        repo2 = self._make_repo(tmp_path, "repo-two")
+        invalidate_read_caches()
+
+        out = self._run_cli(monkeypatch, capsys, repo1, repo2)
+
+        # The same relative name exists in both repos — output must
+        # disambiguate with absolute paths.
+        assert f"✓ [{repo1 / '.claude/commands/deploy.md'}]" in out
+        assert f"✓ [{repo2 / '.claude/commands/deploy.md'}]" in out
+
+    def test_no_relint_hint_on_dry_run(self, tmp_path, monkeypatch, capsys):
+        repo = self._make_repo(tmp_path, "repo")
+        invalidate_read_caches()
+
+        out = self._run_cli(monkeypatch, capsys, "--dry-run", repo)
+
+        assert "Would fix" in out
+        assert "dry-run — no files were modified" in out
+        assert "Run `skillsaw lint` to see remaining issues." not in out
