@@ -3,8 +3,8 @@
 
 # Testing
 pytest>=7.0
-pytest-cov>=4.0
-coverage>=7.10  # needed for [tool.coverage.run] patch = ["subprocess"] in pyproject.toml
+pytest-cov>=7.0
+coverage[toml]>=7.10  # needed for [tool.coverage.run] patch = ["subprocess"] in pyproject.toml
 
 # Code quality
 black>=26,<27

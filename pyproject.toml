@@ -40,8 +40,8 @@ docs = [
 ]
 dev = [
     "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "coverage>=7.10",  # needed for [tool.coverage.run] patch = ["subprocess"]
+    "pytest-cov>=7.0",
+    "coverage[toml]>=7.10",  # needed for [tool.coverage.run] patch = ["subprocess"]
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
