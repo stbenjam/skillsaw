@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \".cursor/hooks/skillsaw/hooks/context-hint.py\"",
+            "timeout": 10
+          }
+        ],
+        "_apm_source": "_local/skillsaw"
+      }
+    ]
+  },
+  "version": 1
+}
