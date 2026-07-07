@@ -22,7 +22,7 @@ invalid, spam, out-of-scope, needs-more-info).
 - **Answer from the code and docs**, not from memory — verify the behavior the
   reporter is asking about and cite where it is defined or documented.
 - If the answer reveals a real defect or a genuine gap, reclassify to `bug` or
-  `feature` and note that in the comment.
+  `feature` and say so in the comment.
 - Link the relevant docs so the reporter can self-serve next time.
 
 ## Other (duplicate / invalid / spam / out-of-scope / needs-info)
