@@ -70,6 +70,7 @@ organized into the following categories:
 | [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - | Content Intelligence |
 | [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - | Content Intelligence |
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
+| [`content-instruction-drift`](content-instruction-drift.md) | Detect near-duplicate sections that have drifted apart across instruction files | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |

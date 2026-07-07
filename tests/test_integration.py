@@ -1518,6 +1518,7 @@ BROKEN_FIXTURES = [
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
     "content-unclosed-fence/skill-hides-violations",
+    "content/instruction-drift",
 ]
 
 CLEAN_FIXTURES = [
@@ -1711,6 +1712,58 @@ class TestTerminologyGroupsConfig:
         messages = [v["message"] for v in self._rule_violations(r)]
         assert any("function/method" in m for m in messages)
         assert any("directory/folder" in m for m in messages)
+
+
+@pytest.mark.integration
+class TestInstructionDrift:
+    """End-to-end tests for content-instruction-drift.
+
+    The fixture's CLAUDE.md and .github/copilot-instructions.md share a
+    Testing section, but the CLAUDE.md copy gained a coverage sentence —
+    a drifted near-duplicate. Every other section pair is dissimilar.
+    """
+
+    FIXTURE = "content/instruction-drift"
+
+    def test_drifted_section_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        drift = by_rule(r).get("content-instruction-drift", [])
+        assert len(drift) == 1
+        v = drift[0]
+        # Anchored on the later file in (path, line) order: CLAUDE.md,
+        # at its '## Testing' heading, referencing the copilot copy.
+        assert v["file_path"].endswith("CLAUDE.md")
+        assert v["line"] == 14
+        assert "% similar" in v["message"]
+        assert ".github/copilot-instructions.md:13" in v["message"]
+
+    def test_silent_on_clean_instruction_files(self, tmp_path):
+        """Distinct sections across instruction files must not fire."""
+        repo = copy_fixture("config/terminology-groups", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
+
+    def test_inline_suppression_allows_intentional_divergence(self, tmp_path):
+        """A skillsaw-disable directive above the reported section silences
+        the finding — the documented recipe for sections that are supposed
+        to differ per assistant. The directive goes in the anchor file
+        (CLAUDE.md, the later file in path order); it is an HTML comment,
+        so it adds no drift distance of its own."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text().replace(
+                "## Testing",
+                "<!-- skillsaw-disable content-instruction-drift -->\n## Testing",
+                1,
+            )
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
 
 
 @pytest.mark.integration
@@ -2452,6 +2505,87 @@ class TestSafeAutofixIdempotency:
 
 
 @pytest.mark.integration
+class TestLintFixLoop:
+    """Lint output advertises fixability and fix output closes the loop."""
+
+    FIXTURE = "autofix/safe-idempotency"
+
+    def test_text_lint_marks_fixable_violations(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        # SAFE-autofixable rules carry the [*] marker after the rule id.
+        assert "(agent-frontmatter) [*]" in r["stdout"]
+        assert "(command-frontmatter) [*]" in r["stdout"]
+        # Rules without an autofix never get a marker.
+        assert "(agentskill-unreferenced-files) [*]" not in r["stdout"]
+        assert "(agentskill-unreferenced-files) [?]" not in r["stdout"]
+        # agentskill-valid only fixes the missing-name subset.
+        assert (
+            "(agentskill-valid) [*] [skills/missing-name/SKILL.md]: "
+            "Missing required 'name' field" in r["stdout"]
+        )
+        assert (
+            "(agentskill-valid) [skills/no-frontmatter/SKILL.md]: "
+            "Missing YAML frontmatter" in r["stdout"]
+        )
+
+    def test_text_lint_summary_shows_fixable_count(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, fmt="text", verbose=False)
+
+        m = re.search(r"\[\*\] (\d+) violation\(s\) fixable with `skillsaw fix`", r["stdout"])
+        assert m, f"missing fixable summary line in:\n{r['stdout']}"
+        # The count matches the [*]-marked violation lines above it.
+        assert int(m.group(1)) == r["stdout"].count("[*]") - 1
+
+    def test_json_lint_reports_fixable_per_violation(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        grouped = by_rule(r)
+
+        for v in grouped["agent-frontmatter"]:
+            assert v["fixable"] is True
+            assert v["fix_confidence"] == "safe"
+
+        # agentskill-valid: only the missing-name subset is fixable.
+        for v in grouped["agentskill-valid"]:
+            if "Missing required 'name'" in v["message"]:
+                assert v["fixable"] is True
+                assert v["fix_confidence"] == "safe"
+            else:
+                assert v["fixable"] is False
+                assert "fix_confidence" not in v
+
+        # content-unlinked-internal-reference: fixable iff the target exists.
+        unlinked = grouped["content-unlinked-internal-reference"]
+        assert any(v["fixable"] for v in unlinked)
+        for v in unlinked:
+            assert v["fixable"] == ("autofixable" in v["message"])
+
+        # Rules without an autofix report fixable: false, no confidence.
+        for v in grouped["agentskill-unreferenced-files"]:
+            assert v["fixable"] is False
+            assert "fix_confidence" not in v
+
+    def test_fix_output_uses_relative_paths_and_hints_relint(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = _run_fix(repo)
+
+        assert "✓ [agents/no-fm-agent.md]" in result.stdout
+        assert str(repo) not in result.stdout, "fix output leaked absolute paths"
+        assert "Run `skillsaw lint` to see remaining issues." in result.stdout
+
+    def test_fix_no_relint_hint_when_nothing_fixed(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo)
+        result = _run_fix(repo)
+
+        assert "No auto-fixable violations found" in result.stdout
+        assert "Run `skillsaw lint`" not in result.stdout
+
+
+@pytest.mark.integration
 class TestRuleFilter:
     """Tests for --rule flag filtering."""
 
@@ -2636,28 +2770,29 @@ class TestNoCustomRulesLint:
         ), "Custom-rule notice should be human-readable, not the warnings-module format"
         assert "_load_custom_rule" not in result.stderr
 
-    def test_custom_rule_warning_colors_respect_no_color(self, tmp_path):
+    def test_custom_rule_warning_colors_respect_color_cascade(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         sentinel = tmp_path / "sentinel.txt"
-        base_env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        base_env = {k: v for k, v in os.environ.items() if k not in ("NO_COLOR", "FORCE_COLOR")}
+        base_env["SKILLSAW_SENTINEL"] = str(sentinel)
         args = [sys.executable, "-m", "skillsaw", "lint", str(repo)]
 
-        env = {k: v for k, v in base_env.items() if k != "NO_COLOR"}
-        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
-        colored = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
-        assert colored, f"missing custom-rule notice on stderr: {result.stderr}"
-        assert "\x1b[" in colored[0], "Notice should be colored when NO_COLOR is unset"
+        def notice_lines(env):
+            result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+            lines = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
+            assert lines, f"missing custom-rule notice on stderr: {result.stderr}"
+            return lines
 
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**base_env, "NO_COLOR": "1"},
-        )
-        plain = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
-        assert plain, f"missing custom-rule notice on stderr: {result.stderr}"
+        # FORCE_COLOR beats both NO_COLOR and the captured (non-TTY) stderr.
+        colored = notice_lines({**base_env, "FORCE_COLOR": "1", "NO_COLOR": "1"})
+        assert "\x1b[" in colored[0], "Notice should be colored when FORCE_COLOR is set"
+
+        plain = notice_lines({**base_env, "NO_COLOR": "1"})
         assert "\x1b[" not in plain[0], "Notice must not contain ANSI codes under NO_COLOR"
+
+        # Captured stderr is a pipe, not a terminal — plain by default.
+        piped = notice_lines(base_env)
+        assert "\x1b[" not in piped[0], "Notice must not be colored when stderr is not a TTY"
 
     def test_no_warning_when_custom_rules_skipped(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -2676,6 +2811,130 @@ class TestNoCustomRulesLint:
         assert (
             "Loading custom rule file" not in result.stderr
         ), "Warning should not appear when --no-custom-rules is used"
+
+
+# ── TTY-aware color and OSC 8 hyperlinks (GH-415) ────────────────
+
+
+def _color_env(**extra):
+    """os.environ without ambient color overrides, plus explicit extras."""
+    env = {k: v for k, v in os.environ.items() if k not in ("NO_COLOR", "FORCE_COLOR")}
+    env.update(extra)
+    return env
+
+
+def _run_lint_in_pty(repo, env, *extra_args):
+    """Run `skillsaw lint` with stdout attached to a pseudo-terminal."""
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "skillsaw", "lint", *extra_args, str(repo)],
+            stdout=slave,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    finally:
+        os.close(slave)
+    chunks = []
+    try:
+        while True:
+            try:
+                data = os.read(master, 65536)
+            except OSError:
+                break  # EIO: child closed the pty
+            if not data:
+                break
+            chunks.append(data)
+        proc.wait(timeout=60)
+    finally:
+        os.close(master)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
+@pytest.mark.integration
+class TestColorOutput:
+    """Color is gated on TTY-ness with the --color/FORCE_COLOR/NO_COLOR cascade."""
+
+    FIXTURE = "single-plugin"
+
+    def _run_piped(self, repo, *extra_args, env=None):
+        args = [sys.executable, "-m", "skillsaw", "lint", *extra_args, str(repo)]
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=60, env=env or _color_env()
+        )
+
+    def test_piped_output_is_plain_by_default(self, tmp_path):
+        """`skillsaw lint | less` must not leak raw ANSI escapes (GH-415)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo)
+        assert "\x1b[" not in result.stdout
+        assert "\x1b]8" not in result.stdout
+        # Piped output keeps the parse-stable Rule docs footer.
+        assert "Rule docs" in result.stdout
+        assert "https://skillsaw.org/rules/" in result.stdout
+
+    def test_force_color_enables_ansi_through_pipe(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, env=_color_env(FORCE_COLOR="1"))
+        assert "\x1b[" in result.stdout
+        # Hyperlinks stay off through a pipe even when color is forced —
+        # CI log viewers render SGR but show OSC 8 bytes as garbage.
+        assert "\x1b]8" not in result.stdout
+        assert "Rule docs" in result.stdout
+
+    def test_force_color_beats_no_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, env=_color_env(FORCE_COLOR="1", NO_COLOR="1"))
+        assert "\x1b[" in result.stdout
+
+    def test_color_flag_beats_no_color_through_pipe(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, "--color", env=_color_env(NO_COLOR="1"))
+        assert "\x1b[" in result.stdout
+
+    def test_no_color_beats_force_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, "--no-color", env=_color_env(FORCE_COLOR="1"))
+        assert "\x1b[" not in result.stdout
+
+    def test_output_text_file_is_always_plain(self, tmp_path):
+        """--output text files must stay plain even when stdout color is forced."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        report = tmp_path / "report.txt"
+        result = self._run_piped(
+            repo, "--output", f"text:{report}", env=_color_env(FORCE_COLOR="1")
+        )
+        assert "\x1b[" in result.stdout
+        assert "\x1b[" not in report.read_text()
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_tty_gets_color_and_hyperlinks(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"))
+        assert "\x1b[" in output
+        assert "\x1b]8;;https://skillsaw.org/rules/" in output
+        assert "\x1b]8;;file://" in output
+        # The per-rule URL footer collapses when rule ids are clickable.
+        assert "Rule docs" not in output
+        assert "skillsaw explain" in output
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_term_dumb_suppresses_hyperlinks_but_not_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="dumb"))
+        assert "\x1b[" in output
+        assert "\x1b]8" not in output
+        assert "Rule docs" in output
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_no_color_on_tty(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"), "--no-color")
+        assert "\x1b[" not in output
+        assert "\x1b]8" not in output
 
 
 # ── Baseline ─────────────────────────────────────────────────────

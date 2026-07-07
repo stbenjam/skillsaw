@@ -15,6 +15,7 @@ from .content import (  # noqa: F401
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentInstructionDriftRule,
     ContentBrokenInternalReferenceRule,
     ContentUnlinkedInternalReferenceRule,
     ContentPlaceholderTextRule,

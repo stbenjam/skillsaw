@@ -8,7 +8,7 @@ from pathlib import Path
 from ..context import RepositoryContext
 from ..linter import Linter
 from ._config import load_config
-from ._helpers import _RuleProgress, _ansi_colors
+from ._helpers import _RuleProgress, _ansi_colors, color_enabled
 
 _BADGE_FILENAME = ".skillsaw-badge.json"
 
@@ -85,7 +85,7 @@ def _run_badge(args):
     badge_path.parent.mkdir(parents=True, exist_ok=True)
     badge_path.write_text(json.dumps(grade.badge_json(), indent=2) + "\n", encoding="utf-8")
 
-    c = _ansi_colors()
+    c = _ansi_colors(color_enabled(sys.stdout, args.color))
     grade_color = (
         c["green"]
         if grade.letter[0] in "AB"
