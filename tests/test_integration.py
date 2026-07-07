@@ -2640,28 +2640,29 @@ class TestNoCustomRulesLint:
         ), "Custom-rule notice should be human-readable, not the warnings-module format"
         assert "_load_custom_rule" not in result.stderr
 
-    def test_custom_rule_warning_colors_respect_no_color(self, tmp_path):
+    def test_custom_rule_warning_colors_respect_color_cascade(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         sentinel = tmp_path / "sentinel.txt"
-        base_env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+        base_env = {k: v for k, v in os.environ.items() if k not in ("NO_COLOR", "FORCE_COLOR")}
+        base_env["SKILLSAW_SENTINEL"] = str(sentinel)
         args = [sys.executable, "-m", "skillsaw", "lint", str(repo)]
 
-        env = {k: v for k, v in base_env.items() if k != "NO_COLOR"}
-        result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
-        colored = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
-        assert colored, f"missing custom-rule notice on stderr: {result.stderr}"
-        assert "\x1b[" in colored[0], "Notice should be colored when NO_COLOR is unset"
+        def notice_lines(env):
+            result = subprocess.run(args, capture_output=True, text=True, timeout=60, env=env)
+            lines = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
+            assert lines, f"missing custom-rule notice on stderr: {result.stderr}"
+            return lines
 
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**base_env, "NO_COLOR": "1"},
-        )
-        plain = [ln for ln in result.stderr.splitlines() if "Loading custom rule file" in ln]
-        assert plain, f"missing custom-rule notice on stderr: {result.stderr}"
+        # FORCE_COLOR beats both NO_COLOR and the captured (non-TTY) stderr.
+        colored = notice_lines({**base_env, "FORCE_COLOR": "1", "NO_COLOR": "1"})
+        assert "\x1b[" in colored[0], "Notice should be colored when FORCE_COLOR is set"
+
+        plain = notice_lines({**base_env, "NO_COLOR": "1"})
         assert "\x1b[" not in plain[0], "Notice must not contain ANSI codes under NO_COLOR"
+
+        # Captured stderr is a pipe, not a terminal — plain by default.
+        piped = notice_lines(base_env)
+        assert "\x1b[" not in piped[0], "Notice must not be colored when stderr is not a TTY"
 
     def test_no_warning_when_custom_rules_skipped(self, tmp_path):
         repo = copy_fixture(self.FIXTURE, tmp_path)
@@ -2680,6 +2681,130 @@ class TestNoCustomRulesLint:
         assert (
             "Loading custom rule file" not in result.stderr
         ), "Warning should not appear when --no-custom-rules is used"
+
+
+# ── TTY-aware color and OSC 8 hyperlinks (GH-415) ────────────────
+
+
+def _color_env(**extra):
+    """os.environ without ambient color overrides, plus explicit extras."""
+    env = {k: v for k, v in os.environ.items() if k not in ("NO_COLOR", "FORCE_COLOR")}
+    env.update(extra)
+    return env
+
+
+def _run_lint_in_pty(repo, env, *extra_args):
+    """Run `skillsaw lint` with stdout attached to a pseudo-terminal."""
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "skillsaw", "lint", *extra_args, str(repo)],
+            stdout=slave,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    finally:
+        os.close(slave)
+    chunks = []
+    try:
+        while True:
+            try:
+                data = os.read(master, 65536)
+            except OSError:
+                break  # EIO: child closed the pty
+            if not data:
+                break
+            chunks.append(data)
+        proc.wait(timeout=60)
+    finally:
+        os.close(master)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
+@pytest.mark.integration
+class TestColorOutput:
+    """Color is gated on TTY-ness with the --color/FORCE_COLOR/NO_COLOR cascade."""
+
+    FIXTURE = "single-plugin"
+
+    def _run_piped(self, repo, *extra_args, env=None):
+        args = [sys.executable, "-m", "skillsaw", "lint", *extra_args, str(repo)]
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=60, env=env or _color_env()
+        )
+
+    def test_piped_output_is_plain_by_default(self, tmp_path):
+        """`skillsaw lint | less` must not leak raw ANSI escapes (GH-415)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo)
+        assert "\x1b[" not in result.stdout
+        assert "\x1b]8" not in result.stdout
+        # Piped output keeps the parse-stable Rule docs footer.
+        assert "Rule docs" in result.stdout
+        assert "https://skillsaw.org/rules/" in result.stdout
+
+    def test_force_color_enables_ansi_through_pipe(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, env=_color_env(FORCE_COLOR="1"))
+        assert "\x1b[" in result.stdout
+        # Hyperlinks stay off through a pipe even when color is forced —
+        # CI log viewers render SGR but show OSC 8 bytes as garbage.
+        assert "\x1b]8" not in result.stdout
+        assert "Rule docs" in result.stdout
+
+    def test_force_color_beats_no_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, env=_color_env(FORCE_COLOR="1", NO_COLOR="1"))
+        assert "\x1b[" in result.stdout
+
+    def test_color_flag_beats_no_color_through_pipe(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, "--color", env=_color_env(NO_COLOR="1"))
+        assert "\x1b[" in result.stdout
+
+    def test_no_color_beats_force_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run_piped(repo, "--no-color", env=_color_env(FORCE_COLOR="1"))
+        assert "\x1b[" not in result.stdout
+
+    def test_output_text_file_is_always_plain(self, tmp_path):
+        """--output text files must stay plain even when stdout color is forced."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        report = tmp_path / "report.txt"
+        result = self._run_piped(
+            repo, "--output", f"text:{report}", env=_color_env(FORCE_COLOR="1")
+        )
+        assert "\x1b[" in result.stdout
+        assert "\x1b[" not in report.read_text()
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_tty_gets_color_and_hyperlinks(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"))
+        assert "\x1b[" in output
+        assert "\x1b]8;;https://skillsaw.org/rules/" in output
+        assert "\x1b]8;;file://" in output
+        # The per-rule URL footer collapses when rule ids are clickable.
+        assert "Rule docs" not in output
+        assert "skillsaw explain" in output
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_term_dumb_suppresses_hyperlinks_but_not_color(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="dumb"))
+        assert "\x1b[" in output
+        assert "\x1b]8" not in output
+        assert "Rule docs" in output
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_no_color_on_tty(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="xterm-256color"), "--no-color")
+        assert "\x1b[" not in output
+        assert "\x1b]8" not in output
 
 
 # ── Baseline ─────────────────────────────────────────────────────

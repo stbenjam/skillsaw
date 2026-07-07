@@ -191,19 +191,24 @@ def test_text_shows_all_checks_passed(valid_plugin):
     assert "All checks passed" in output
 
 
-def test_text_includes_ansi_by_default(valid_plugin, monkeypatch):
-    monkeypatch.delenv("NO_COLOR", raising=False)
+def test_text_includes_ansi_when_color_enabled(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
     linter = Linter(context, config)
     violations = linter.run()
 
-    output = format_text(violations, context, linter.rules, "0.0.0")
+    output = format_text(violations, context, linter.rules, "0.0.0", color=True)
     assert "\033[" in output
 
 
-def test_text_no_ansi_when_no_color(valid_plugin, monkeypatch):
-    monkeypatch.setenv("NO_COLOR", "")
+def test_text_plain_by_default(valid_plugin, monkeypatch):
+    """Without an explicit color=True the text report never emits ANSI.
+
+    Callers resolve TTY-ness via color_enabled(); the formatter itself must
+    stay plain even when NO_COLOR is unset (regression for leaked escapes
+    in piped output and --output text files, GH-415).
+    """
+    monkeypatch.delenv("NO_COLOR", raising=False)
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
     linter = Linter(context, config)
@@ -213,14 +218,13 @@ def test_text_no_ansi_when_no_color(valid_plugin, monkeypatch):
     assert "\033[" not in output
 
 
-def test_text_no_ansi_when_no_color_value(valid_plugin, monkeypatch):
-    monkeypatch.setenv("NO_COLOR", "1")
+def test_text_no_ansi_when_color_disabled(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
     linter = Linter(context, config)
     violations = linter.run()
 
-    output = format_text(violations, context, linter.rules, "0.0.0")
+    output = format_text(violations, context, linter.rules, "0.0.0", color=False)
     assert "\033[" not in output
 
 
@@ -621,6 +625,68 @@ def test_text_no_rule_docs_for_synthetic_rule_ids(valid_plugin):
 
     output = format_text(violations, context, linter.rules, "1.0.0")
     assert "https://skillsaw.org/rules/invalid-config/" not in output
+
+
+# --- OSC 8 hyperlinks (text formatter) ---
+
+
+def _hyperlink_violations():
+    return [
+        RuleViolation(
+            rule_id="command-naming",
+            severity=Severity.WARNING,
+            message="Command file should use kebab-case",
+            file_path=Path("plugins/foo/commands/Bad_Name.md"),
+            line=3,
+        ),
+        RuleViolation(
+            rule_id="invalid-config",
+            severity=Severity.WARNING,
+            message="Unknown rule 'bogus-rule' in config",
+        ),
+    ]
+
+
+def test_text_hyperlinks_link_rule_ids_and_paths(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    linter.run()
+
+    output = format_text(
+        _hyperlink_violations(), context, linter.rules, "1.0.0", color=True, hyperlinks=True
+    )
+    assert "\x1b]8;;https://skillsaw.org/rules/command-naming/\x1b\\command-naming" in output
+    assert "\x1b]8;;file://" in output
+    # Synthetic rule ids have no docs page and must not be linked.
+    assert "\x1b]8;;https://skillsaw.org/rules/invalid-config/" not in output
+
+
+def test_text_hyperlinks_collapse_rule_docs_footer(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    linter.run()
+
+    output = format_text(
+        _hyperlink_violations(), context, linter.rules, "1.0.0", color=True, hyperlinks=True
+    )
+    assert "Rule docs" not in output
+    assert "https://skillsaw.org/rules/command-naming/\x1b\\" in output  # only as a link
+    assert "skillsaw explain" in output  # the one-line hint remains
+
+
+def test_text_no_osc8_without_hyperlinks(valid_plugin):
+    """Color alone (e.g. FORCE_COLOR through a pipe) keeps the plain footer."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    linter.run()
+
+    output = format_text(_hyperlink_violations(), context, linter.rules, "1.0.0", color=True)
+    assert "\x1b]8;;" not in output
+    assert "Rule docs" in output
+    assert "https://skillsaw.org/rules/command-naming/" in output
 
 
 def test_sarif_synthetic_descriptor_for_unknown_rule_id(valid_plugin):
