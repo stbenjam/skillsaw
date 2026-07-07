@@ -1,7 +1,8 @@
 """
 Output formatters for skillsaw lint results.
 
-Supported formats: text, json, sarif, html, code-climate (alias: gitlab).
+Supported formats: text, json, sarif, html, code-climate (alias: gitlab),
+github, markdown.
 """
 
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import List, Optional
 
 from ..rule import Rule, RuleViolation
 
-FORMATS = ("text", "json", "sarif", "html", "code-climate", "gitlab")
+FORMATS = ("text", "json", "sarif", "html", "code-climate", "gitlab", "github", "markdown")
 
 
 def relative_path(file_path: Optional[Path], root: Path) -> Optional[str]:
@@ -28,6 +29,7 @@ EXTENSION_MAP = {
     ".html": "html",
     ".htm": "html",
     ".txt": "text",
+    ".md": "markdown",
 }
 
 _FORMAT_SET = set(FORMATS)
@@ -107,7 +109,8 @@ def format_report(
     Format lint results in the specified format.
 
     Args:
-        fmt: One of "text", "json", "sarif", "html", "code-climate", "gitlab"
+        fmt: One of "text", "json", "sarif", "html", "code-climate", "gitlab",
+            "github", "markdown"
         violations: Violations from linter.run()
         context: RepositoryContext
         rules: List of Rule instances that were run
@@ -116,7 +119,7 @@ def format_report(
         baseline_suppressed: Number of violations suppressed by baseline
         duration: Wall-clock lint time in seconds (text and json formats only;
             sarif/code-climate schemas have no place for it)
-        grade: Optional Grade for the run (text and json formats only)
+        grade: Optional Grade for the run (text, json, and markdown formats only)
         fail_level: Effective severity threshold that fails the run — with
             ``fail-on: info`` every format must include the info violations
             that caused the failure even without -v
@@ -161,5 +164,22 @@ def format_report(
         from .code_climate import format_code_climate
 
         return format_code_climate(violations, context, rules, version, verbose, fail_level)
+    elif fmt == "github":
+        from .github import format_github
+
+        return format_github(violations, context, rules, version, verbose, fail_level)
+    elif fmt == "markdown":
+        from .markdown import format_markdown
+
+        return format_markdown(
+            violations,
+            context,
+            rules,
+            version,
+            verbose,
+            baseline_suppressed,
+            grade,
+            fail_level,
+        )
     else:
         raise ValueError(f"Unknown format: {fmt}. Supported: {', '.join(FORMATS)}")

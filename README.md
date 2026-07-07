@@ -157,7 +157,7 @@ ratchet behavior, and refresh workflow.
 ## CI Integration
 
 ```yaml
-# GitHub Actions
+# GitHub Actions — annotations + job-summary report card, zero config
 - uses: stbenjam/skillsaw@v0
   with:
     strict: true
@@ -175,7 +175,8 @@ skillsaw:
 ```
 
 Output formats for `--format` / `--output`: `text`, `json`, `sarif`, `html`,
-`code-climate`, and `gitlab`.
+`code-climate`, `gitlab`, `github` (GitHub Actions annotations), and
+`markdown` (report card for `$GITHUB_STEP_SUMMARY`).
 
 For PR review comments, the secure two-workflow pattern, plugins, custom
 rules, and full configuration options, see the

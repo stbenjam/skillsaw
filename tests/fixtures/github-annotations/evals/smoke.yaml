@@ -1,0 +1,6 @@
+description: "Smoke-test the deploy command prompt"
+providers:
+  - id: anthropic:messages:claude-3-5-sonnet-latest
+prompts:
+  - "Deploy version {{version}} to production"
+tests: 42

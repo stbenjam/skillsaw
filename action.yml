@@ -33,6 +33,10 @@ inputs:
     description: 'Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)'
     required: false
     default: 'true'
+  annotations:
+    description: 'Emit GitHub annotations (inline PR/file annotations, no extra permissions needed). GitHub caps them at 10 errors + 10 warnings per step; the full report always goes to the log and job summary.'
+    required: false
+    default: 'true'
 
 outputs:
   exit-code:
@@ -84,6 +88,7 @@ runs:
         SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
         SKILLSAW_NO_CUSTOM_RULES: ${{ inputs.no-custom-rules }}
+        SKILLSAW_ANNOTATIONS: ${{ inputs.annotations }}
       run: |
         set +e
         ARGS=""
@@ -104,8 +109,33 @@ runs:
         fi
 
         REPORT_FILE=$(mktemp --suffix=.json)
-        skillsaw $ARGS --format text --output "$REPORT_FILE" "$SKILLSAW_PATH"
+        ANNOTATIONS_FILE=$(mktemp)
+        SUMMARY_FILE=$(mktemp --suffix=.md)
+
+        # Older skillsaw releases don't have the github/markdown formats;
+        # only request them when the installed version supports them.
+        EXTRA_OUTPUTS=""
+        if skillsaw lint --help 2>/dev/null | grep -q "markdown"; then
+          EXTRA_OUTPUTS="--output markdown:$SUMMARY_FILE"
+          if [ "$SKILLSAW_ANNOTATIONS" = "true" ]; then
+            EXTRA_OUTPUTS="$EXTRA_OUTPUTS --output github:$ANNOTATIONS_FILE"
+          fi
+        fi
+
+        skillsaw $ARGS --format text --output "$REPORT_FILE" $EXTRA_OUTPUTS "$SKILLSAW_PATH"
         EXIT_CODE=$?
+
+        # Annotations: workflow commands become inline PR/file annotations
+        # when printed to the step's stdout.
+        if [ -s "$ANNOTATIONS_FILE" ]; then
+          cat "$ANNOTATIONS_FILE"
+        fi
+
+        # Job summary: markdown report card on the workflow run page.
+        if [ -n "$GITHUB_STEP_SUMMARY" ] && [ -s "$SUMMARY_FILE" ]; then
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+        fi
 
         echo "exit-code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
         echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"

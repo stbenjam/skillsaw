@@ -11,6 +11,8 @@ from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
 from skillsaw.formatters.html import format_html
 from skillsaw.formatters.code_climate import format_code_climate
+from skillsaw.formatters.github import ANNOTATION_LIMIT, format_github
+from skillsaw.formatters.markdown import MAX_TABLE_ROWS, format_markdown
 from skillsaw.rule import RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
@@ -141,7 +143,12 @@ def test_format_report_dispatches_all_formats(valid_plugin):
 
     for fmt in FORMATS:
         output = format_report(fmt, violations, context, linter.rules, "0.0.0")
-        assert len(output) > 0
+        if fmt == "github":
+            # A clean run emits no workflow commands — annotations would be
+            # pure noise. Every other format always renders a report.
+            assert output == ""
+        else:
+            assert len(output) > 0
 
 
 def test_format_report_unknown_format(valid_plugin):
@@ -921,3 +928,363 @@ def test_json_includes_duration(valid_plugin):
 
     report = json.loads(format_json(violations, context, linter.rules, "0.0.0"))
     assert "duration_seconds" not in report["stats"]
+
+
+# --- GitHub Actions annotations formatter ---
+
+
+def _bulk_violations(count, severity, rule_id="bulk-rule"):
+    return [
+        RuleViolation(
+            rule_id=rule_id,
+            severity=severity,
+            message=f"violation number {i}",
+            file_path=Path(f"docs/file-{i}.md"),
+            line=i + 1,
+        )
+        for i in range(count)
+    ]
+
+
+def test_github_basic_commands(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_github(violations, context, [], "1.0.0", verbose=True)
+    lines = output.split("\n")
+
+    assert lines[0] == (
+        "::error file=plugins/foo/.claude-plugin,title=plugin-json-required::Missing plugin.json"
+    )
+    assert lines[1] == (
+        "::warning file=plugins/foo/commands/Bad_Name.md,line=3,"
+        "title=command-naming::Command file should use kebab-case"
+    )
+    assert lines[2] == (
+        "::notice file=plugins/foo/.claude-plugin/plugin.json,line=1,"
+        "title=plugin-json-valid::Recommended field 'author' missing"
+    )
+
+
+def test_github_hides_info_without_verbose(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_github(violations, context, [], "1.0.0", verbose=False)
+    assert "::notice" not in output
+    assert "::error" in output
+    assert "::warning" in output
+
+
+def test_github_shows_info_when_fail_on_info(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_github(violations, context, [], "1.0.0", verbose=False, fail_level="info")
+    assert "::notice" in output
+
+
+def test_github_escapes_message(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="50% failed\nsecond line\rthird line",
+            file_path=Path("docs/a.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert output == (
+        "::error file=docs/a.md,line=1,title=test-rule::" "50%25 failed%0Asecond line%0Dthird line"
+    )
+
+
+def test_github_escapes_percent_first(valid_plugin, monkeypatch):
+    """A literal '%0A' in the message must not survive as a newline escape."""
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="literal %0A sequence",
+            file_path=Path("docs/a.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert "::literal %250A sequence" in output
+
+
+def test_github_escapes_properties(valid_plugin, monkeypatch):
+    """Commas and colons in property values must be escaped — they delimit
+    properties and the command itself."""
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.WARNING,
+            message="odd path",
+            file_path=Path("docs/a,b/c:d.md"),
+            line=2,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert output == "::warning file=docs/a%2Cb/c%3Ad.md,line=2,title=test-rule::odd path"
+
+
+def test_github_no_file_omits_file_property(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="repo-rule",
+            severity=Severity.ERROR,
+            message="repo-level problem",
+            file_path=None,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert output == "::error title=repo-rule::repo-level problem"
+
+
+def test_github_paths_relative_to_root(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="absolute path input",
+            file_path=valid_plugin / "commands" / "test-command.md",
+            line=1,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert "file=commands/test-command.md," in output
+
+
+def test_github_paths_relative_to_workspace(valid_plugin, monkeypatch):
+    """When the lint root is a subdirectory of GITHUB_WORKSPACE, annotations
+    still need paths relative to the workspace, not the lint root."""
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(valid_plugin.parent))
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="workspace-relative path",
+            file_path=Path("commands/test-command.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert f"file={valid_plugin.name}/commands/test-command.md," in output
+
+
+def test_github_path_outside_workspace_falls_back_to_root(valid_plugin, monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path / "elsewhere"))
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="outside the workspace",
+            file_path=Path("commands/test-command.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert "file=commands/test-command.md," in output
+
+
+def test_github_caps_errors_with_truncation_notice(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _bulk_violations(25, Severity.ERROR)
+
+    output = format_github(violations, context, [], "1.0.0")
+    lines = output.split("\n")
+
+    error_lines = [ln for ln in lines if ln.startswith("::error ")]
+    notice_lines = [ln for ln in lines if ln.startswith("::notice ")]
+    assert len(error_lines) == ANNOTATION_LIMIT
+    assert len(notice_lines) == 1
+    assert lines[-1].startswith("::notice title=skillsaw::")
+    assert "15 more violations" in lines[-1]
+
+
+def test_github_caps_each_severity_independently(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = (
+        _bulk_violations(12, Severity.ERROR, "error-rule")
+        + _bulk_violations(11, Severity.WARNING, "warning-rule")
+        + _bulk_violations(12, Severity.INFO, "info-rule")
+    )
+
+    output = format_github(violations, context, [], "1.0.0", verbose=True)
+    lines = output.split("\n")
+
+    assert len([ln for ln in lines if ln.startswith("::error ")]) == ANNOTATION_LIMIT
+    assert len([ln for ln in lines if ln.startswith("::warning ")]) == ANNOTATION_LIMIT
+    # Info notices leave one notice slot free for the truncation notice, so
+    # GitHub's 10-notice cap never drops it.
+    notice_lines = [ln for ln in lines if ln.startswith("::notice ")]
+    assert len(notice_lines) == ANNOTATION_LIMIT
+    assert "6 more violations" in notice_lines[-1]
+
+
+def test_github_at_cap_has_no_truncation_notice(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _bulk_violations(ANNOTATION_LIMIT, Severity.ERROR)
+
+    output = format_github(violations, context, [], "1.0.0")
+    lines = output.split("\n")
+
+    assert len(lines) == ANNOTATION_LIMIT
+    assert "::notice" not in output
+
+
+def test_github_clean_run_emits_nothing(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+
+    assert format_github([], context, [], "1.0.0") == ""
+
+
+def test_github_dispatched_via_format_report(valid_plugin, monkeypatch):
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_report("github", violations, context, [], "1.0.0")
+    assert "::error " in output
+
+
+# --- Markdown formatter ---
+
+
+def test_markdown_structure(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_markdown(violations, context, [], "1.0.0", verbose=True)
+    assert output.startswith("## skillsaw report")
+    assert "**1** error · **1** warning · **1** info" in output
+    assert "| Severity | Rule | Location | Message |" in output
+    assert "| --- | --- | --- | --- |" in output
+    assert "`plugin-json-required`" in output
+    assert "`plugins/foo/commands/Bad_Name.md:3`" in output
+    assert "Missing plugin.json" in output
+
+
+def test_markdown_sorted_by_severity(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = list(reversed(_make_violations()))
+
+    output = format_markdown(violations, context, [], "1.0.0", verbose=True)
+    error_pos = output.index("plugin-json-required")
+    warning_pos = output.index("command-naming")
+    info_pos = output.index("plugin-json-valid")
+    assert error_pos < warning_pos < info_pos
+
+
+def test_markdown_hides_info_without_verbose(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_markdown(violations, context, [], "1.0.0", verbose=False)
+    assert "plugin-json-valid" not in output
+    assert "info" not in output.split("\n")[2]
+
+
+def test_markdown_escapes_table_cells(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="pipe | and <b>html</b> & ampersand\nsecond line",
+            file_path=Path("docs/a.md"),
+            line=1,
+        ),
+    ]
+
+    output = format_markdown(violations, context, [], "1.0.0")
+    assert "pipe \\| and &lt;b&gt;html&lt;/b&gt; &amp; ampersand<br>second line" in output
+
+
+def test_markdown_includes_grade(valid_plugin):
+    from skillsaw.grade import Grade
+
+    context = RepositoryContext(valid_plugin)
+    grade = Grade(letter="B", density=1.23, errors=0, warnings=2, info=0, content_tokens=10000)
+
+    output = format_markdown([], context, [], "1.0.0", grade=grade)
+    assert "**Grade: B** (1.23 weighted violations per 10k tokens)" in output
+
+
+def test_markdown_omits_grade_when_absent(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+
+    output = format_markdown([], context, [], "1.0.0")
+    assert "Grade" not in output
+
+
+def test_markdown_clean_run(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+
+    output = format_markdown([], context, [], "1.0.0")
+    assert "All checks passed" in output
+    assert "| Severity |" not in output
+
+
+def test_markdown_truncates_huge_reports(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _bulk_violations(MAX_TABLE_ROWS + 7, Severity.WARNING)
+
+    output = format_markdown(violations, context, [], "1.0.0")
+    rows = [ln for ln in output.split("\n") if ln.startswith("| ⚠")]
+    assert len(rows) == MAX_TABLE_ROWS
+    assert "...and 7 more violations not shown" in output
+
+
+def test_markdown_reports_baseline_suppressed(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+
+    output = format_markdown([], context, [], "1.0.0", baseline_suppressed=4)
+    assert "4 baseline-suppressed" in output
+
+
+def test_markdown_dispatched_via_format_report(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violations = _make_violations()
+
+    output = format_report("markdown", violations, context, [], "1.0.0")
+    assert output.startswith("## skillsaw report")
+
+
+def test_markdown_extension_inferred():
+    assert infer_format("report.md") == "markdown"
+    assert parse_output_spec("summary.md") == ("markdown", "summary.md")
+
+
+def test_github_output_spec_prefix():
+    assert parse_output_spec("github:annotations.txt") == ("github", "annotations.txt")
+    assert parse_output_spec("markdown:report.md") == ("markdown", "report.md")

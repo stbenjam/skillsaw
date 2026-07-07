@@ -3113,3 +3113,96 @@ class TestNameAutofixMultilineScalar:
         assert any("folded-name" in f for f in remaining)
         assert any("next-line" in f for f in remaining)
         assert any("dup-keys" in f for f in remaining)
+
+
+# ── github / markdown output formats ─────────────────────────────
+
+
+@pytest.mark.integration
+class TestGithubAndMarkdownFormats:
+    """End-to-end coverage for the CI-facing output formats: ``--format
+    github`` (GitHub Actions workflow commands, machine-parsed) and
+    ``--output markdown:FILE`` (job-summary report card).
+
+    The fixture is pinned to two stable rules with ``--rule`` so the
+    expected output stays exact as unrelated rules evolve."""
+
+    FIXTURE = "github-annotations"
+    RULE_ARGS = ("--rule", "command-naming", "--rule", "promptfoo-valid")
+
+    def _run(self, repo, *args, env_overrides=None):
+        env = os.environ.copy()
+        # GITHUB_WORKSPACE leaks in when the suite itself runs in Actions
+        env.pop("GITHUB_WORKSPACE", None)
+        if env_overrides:
+            env.update(env_overrides)
+        cmd = [sys.executable, "-m", "skillsaw", "lint", *args, str(repo)]
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
+
+    def test_github_format_emits_workflow_commands(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run(repo, "--format", "github", *self.RULE_ARGS)
+
+        assert result.returncode == 1
+        lines = [ln for ln in result.stdout.splitlines() if ln]
+        assert lines == [
+            "::error file=evals/smoke.yaml,line=6,title=promptfoo-valid::"
+            "'tests' must be an array or a string file reference",
+            "::warning file=commands/Deploy_Prod.md,title=command-naming::"
+            "Command name 'Deploy_Prod' should use kebab-case",
+        ]
+
+    def test_github_format_paths_relative_to_workspace(self, tmp_path):
+        """When GITHUB_WORKSPACE is set and the lint root is a subdirectory
+        (the action's ``path`` input), ``file=`` must still be
+        workspace-relative or annotations attach to the wrong files."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = self._run(
+            repo,
+            "--format",
+            "github",
+            *self.RULE_ARGS,
+            env_overrides={"GITHUB_WORKSPACE": str(tmp_path)},
+        )
+
+        assert result.returncode == 1
+        assert f"file={repo.name}/evals/smoke.yaml,line=6,title=promptfoo-valid" in result.stdout
+        assert f"file={repo.name}/commands/Deploy_Prod.md,title=command-naming" in result.stdout
+
+    def test_markdown_output_file(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        report = tmp_path / "report.md"
+        result = self._run(repo, "--output", f"markdown:{report}", *self.RULE_ARGS)
+
+        assert result.returncode == 1
+        # stdout keeps the human-readable text report
+        assert "Summary:" in result.stdout
+
+        content = report.read_text()
+        assert content.startswith("## skillsaw report")
+        assert "**1** error · **1** warning" in content
+        assert "| Severity | Rule | Location | Message |" in content
+        assert (
+            "| ✗ error | `promptfoo-valid` | `evals/smoke.yaml:6` "
+            "| 'tests' must be an array or a string file reference |"
+        ) in content
+        assert (
+            "| ⚠ warning | `command-naming` | `commands/Deploy_Prod.md` "
+            "| Command name 'Deploy_Prod' should use kebab-case |"
+        ) in content
+        assert "**Grade:" in content
+
+    def test_md_extension_infers_markdown(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        report = tmp_path / "summary.md"
+        result = self._run(repo, "--output", str(report), *self.RULE_ARGS)
+
+        assert result.returncode == 1
+        assert report.read_text().startswith("## skillsaw report")
+
+    def test_github_format_clean_repo_emits_nothing(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        result = self._run(repo, "--format", "github")
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""

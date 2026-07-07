@@ -2,9 +2,11 @@
 
 ## GitHub Action
 
-The GitHub Action installs skillsaw, runs it, and prints violations in the CI
-log. A separate review action posts violations as inline PR comments with
-automatic deduplication and thread resolution.
+The GitHub Action installs skillsaw, runs it, prints violations in the CI
+log, posts them as GitHub annotations, and appends a markdown report card to
+the job summary — all with read-only permissions and zero configuration. For
+richer PR feedback, a separate review action posts violations as inline PR
+comments with automatic deduplication and thread resolution.
 
 ### Basic usage (lint only)
 
@@ -28,7 +30,31 @@ jobs:
           strict: true
 ```
 
+That single step already gives you, without any write permissions:
+
+- **Annotations** — each violation becomes a GitHub annotation
+  (`::error` / `::warning` workflow commands). On pull requests these render
+  inline in the diff, but only for lines the PR actually changed; every
+  annotation also appears on the run's summary page. GitHub caps annotations
+  at 10 errors and 10 warnings per step — when the cap is hit, a notice
+  reports how many more violations were found. Set `annotations: 'false'`
+  to turn them off.
+- **Job summary** — a markdown report card (violation counts, grade, and a
+  violations table) appended to the workflow run's summary page.
+- **Log output** — the full human-readable report, always.
+
+When the `path` input points at a subdirectory, annotation paths are still
+emitted relative to `$GITHUB_WORKSPACE` (as GitHub requires), so annotations
+attach to the right files.
+
+If you need feedback on *every* violation as resolvable inline PR comments —
+including on lines the PR didn't touch — use the review action below.
+
 ### With PR review comments
+
+The review action goes beyond annotations: comments are deduplicated across
+re-runs, threads resolve automatically when violations are fixed, and
+comments attach to any line, not just those in the PR diff.
 
 To post inline comments on PRs (including fork PRs), use the two-workflow
 pattern. The lint workflow runs with read-only permissions and uploads the
@@ -99,6 +125,7 @@ jobs:
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
+| `annotations` | Emit GitHub annotations (capped by GitHub at 10 errors + 10 warnings per step) | `true` |
 | `plugins` | Newline-separated list of plugin packages to install | `''` |
 
 ### Outputs
@@ -139,9 +166,26 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 
 skillsaw supports several machine-readable output formats — `--format`
 (stdout) and `--output` (file) accept `text`, `json`, `sarif`, `html`,
-`code-climate`, and `gitlab` — including [SARIF
+`code-climate`, `gitlab`, `github`, and `markdown` — including [SARIF
 2.1.0](https://sarifweb.azurewebsites.net/) for tools that ingest it.
 See the [CLI reference](cli.md) for details.
+
+If you run skillsaw in GitHub Actions without the action (e.g. inside an
+existing job), the `github` and `markdown` formats give you the same
+zero-config feedback:
+
+```yaml
+- run: |
+    pip install skillsaw==0.16.0
+    skillsaw lint --format github --output markdown:skillsaw-report.md .
+    cat skillsaw-report.md >> "$GITHUB_STEP_SUMMARY"
+```
+
+The `github` format prints [workflow
+commands](https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions)
+(`::error file=...,line=...,title=rule-id::message`) that GitHub turns into
+annotations; the `markdown` format is a compact report card for
+`$GITHUB_STEP_SUMMARY` (or anywhere else markdown renders).
 
 ## GitLab CI
 
