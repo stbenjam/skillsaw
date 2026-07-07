@@ -153,6 +153,14 @@ rules:
     enabled: auto
     severity: warning
 
+  # Detect near-duplicate sections that have drifted apart across instruction files
+  content-instruction-drift:
+    enabled: auto
+    severity: info
+    # similarity-threshold: 0.8
+    # min-section-words: 40
+    # ignore-generated: true
+
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
@@ -176,6 +184,11 @@ rules:
 
   # Detect tautological instructions that the model already follows by default
   content-tautological:
+    enabled: auto
+    severity: warning
+
+  # Detect code fences opened but never closed, hiding the rest of the file from content rules
+  content-unclosed-fence:
     enabled: auto
     severity: warning
 

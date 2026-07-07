@@ -16,6 +16,8 @@ from ._helpers import (
     _build_merged_context,
     _dedup_rules,
     _resolve_lint_paths,
+    color_enabled,
+    hyperlinks_enabled,
 )
 
 
@@ -248,6 +250,7 @@ def _run_lint(args):
     )
     grade = compute_grade(all_violations, content_tokens)
 
+    color = color_enabled(sys.stdout, args.color)
     stdout_output = format_report(
         args.fmt,
         all_violations,
@@ -259,6 +262,8 @@ def _run_lint(args):
         duration=lint_duration,
         grade=grade,
         fail_level=fail_level,
+        color=color,
+        hyperlinks=hyperlinks_enabled(sys.stdout, color),
     )
     print(stdout_output)
 

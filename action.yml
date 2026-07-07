@@ -83,6 +83,8 @@ runs:
       id: lint
       shell: bash
       env:
+        # Actions stdout is not a TTY; force ANSI color in the step log.
+        FORCE_COLOR: '1'
         SKILLSAW_PATH: ${{ inputs.path }}
         SKILLSAW_STRICT: ${{ inputs.strict }}
         SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
