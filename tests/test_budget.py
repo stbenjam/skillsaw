@@ -47,8 +47,15 @@ class TestComputeBudget:
         assert ".claude/commands/ship.md" in on_demand_paths
         assert ".claude/agents/reviewer.md" in on_demand_paths
 
-        # Session files never leak into on-demand and vice versa.
-        assert not session_paths & on_demand_paths
+        # Session files never leak into on-demand and vice versa. The only
+        # legitimate cross-bucket paths are dual-role items: a file whose
+        # body is on-demand but whose description/import is session cost.
+        dual_role = {
+            i.path
+            for i in report.session_files
+            if i.category in ("import", "cursor-rule-description")
+        }
+        assert not (session_paths & on_demand_paths) - dual_role
 
     def test_conditional_session_content_is_on_demand(self, tmp_path):
         """paths:-scoped rules, applyTo-scoped instruction files, and
@@ -107,6 +114,149 @@ class TestComputeBudget:
         report = compute_budget(RepositoryContext(repo))
         assert [i.path for i in report.session_files] == ["CLAUDE.md"]
 
+    def test_midline_and_list_item_imports_billed(self, tmp_path):
+        # The canonical example from the Claude Code memory docs: imports
+        # work anywhere in the file, not only at line start.
+        (tmp_path / "CLAUDE.md").write_text(
+            "See @README.md for project overview.\n\n"
+            "# Additional Instructions\n\n"
+            "- git workflow @docs/git-instructions.md\n"
+        )
+        (tmp_path / "README.md").write_text("# Project\n\nA service that processes orders.\n")
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "git-instructions.md").write_text("# Git\n\nRebase before merging.\n")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        session_paths = {i.path for i in report.session_files}
+        assert "README.md" in session_paths
+        assert "docs/git-instructions.md" in session_paths
+
+    def test_import_of_on_demand_file_billed_to_session(self, tmp_path):
+        # An @-imported skill reference is loaded at session start for the
+        # importer AND remains an on-demand asset: both roles are billed,
+        # and its own transitive imports are still traversed.
+        skill = tmp_path / ".claude" / "skills" / "deploy"
+        (skill / "references").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: deploy\ndescription: Deploy the service to production\n---\n\n"
+            "# Deploy\n\nFollow [the runbook](references/runbook.md).\n"
+        )
+        (skill / "references" / "runbook.md").write_text(
+            "# Runbook\n\nDrain traffic first.\n\n@../../../../docs/deep.md\n"
+        )
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "deep.md").write_text("# Deep\n\nTransitively imported content.\n")
+        (tmp_path / "CLAUDE.md").write_text(
+            "# Guide\n\n@.claude/skills/deploy/references/runbook.md\n"
+        )
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        session = {(i.path, i.category) for i in report.session_files}
+        assert (".claude/skills/deploy/references/runbook.md", "import") in session
+        assert ("docs/deep.md", "import") in session
+        # Still an on-demand asset too.
+        assert ".claude/skills/deploy/references/runbook.md" in {i.path for i in report.on_demand}
+
+    def test_symlinked_claude_agents_serve_both_harnesses(self, tmp_path):
+        # The docs-recommended `ln -s AGENTS.md CLAUDE.md` layout: one file,
+        # both harnesses — the dedupe must union, not drop, attribution.
+        (tmp_path / "AGENTS.md").write_text(
+            "# Guide\n\nRun make test before pushing. Keep handlers thin.\n"
+        )
+        os.symlink(tmp_path / "AGENTS.md", tmp_path / "CLAUDE.md")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        assert len(report.session_files) == 1
+        item = report.session_files[0]
+        assert "claude" in item.harnesses
+        assert "default" in item.harnesses
+        assert report.by_harness["claude"] == item.tokens
+
+    def test_transitive_import_harness_union_propagates(self, tmp_path):
+        # Two roots share an import chain; the second root's attribution
+        # must reach transitive imports, not just the first hop.
+        (tmp_path / "CLAUDE.md").write_text("# C\n\n@a.md\n")
+        (tmp_path / "GEMINI.md").write_text("# G\n\n@a.md\n")
+        (tmp_path / "a.md").write_text("# A\n\n@b.md\n")
+        (tmp_path / "b.md").write_text("# B\n\nShared leaf content for both harnesses.\n")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        b = next(i for i in report.session_files if i.path == "b.md")
+        assert {"claude", "gemini"} <= set(b.harnesses)
+
+    def test_gemini_reads_agents_md_only_without_gemini_md(self, tmp_path):
+        (tmp_path / "AGENTS.md").write_text("# Guide\n\nGeneric agent instructions here.\n")
+        report = compute_budget(RepositoryContext(tmp_path))
+        agents = next(i for i in report.session_files if i.path == "AGENTS.md")
+        assert "gemini" in agents.harnesses  # no GEMINI.md -> AGENTS.md serves gemini
+
+    def test_claude_local_and_dot_claude_memory_billed(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("# Guide\n\nProject instructions.\n")
+        (tmp_path / "CLAUDE.local.md").write_text("# Local\n\nMy machine-specific notes.\n")
+        dot = tmp_path / ".claude"
+        dot.mkdir()
+        (dot / "CLAUDE.md").write_text("# Dot-claude memory\n\nMore project memory.\n")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        session_paths = {i.path for i in report.session_files}
+        assert "CLAUDE.local.md" in session_paths
+        assert ".claude/CLAUDE.md" in session_paths
+        for path in ("CLAUDE.local.md", ".claude/CLAUDE.md"):
+            item = next(i for i in report.session_files if i.path == path)
+            assert item.harnesses == frozenset({"claude"})
+            # The context-budget rule cannot see these files, so budget
+            # must not attach a limit status to them.
+            assert item.status is None
+
+    def test_kiro_steering_inclusion_modes(self, tmp_path):
+        steering = tmp_path / ".kiro" / "steering"
+        steering.mkdir(parents=True)
+        (steering / "product.md").write_text("# Product\n\nAlways-on product context.\n")
+        (steering / "api.md").write_text(
+            "---\ninclusion: fileMatch\nfileMatchPattern: 'app/api/**'\n---\n\n"
+            "# API\n\nOnly when touching the API.\n"
+        )
+        (steering / "manual.md").write_text(
+            "---\ninclusion: manual\n---\n\n# Manual\n\nOnly when referenced.\n"
+        )
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        session_paths = {i.path for i in report.session_files}
+        on_demand_paths = {i.path for i in report.on_demand}
+        assert ".kiro/steering/product.md" in session_paths
+        assert ".kiro/steering/api.md" in on_demand_paths
+        assert ".kiro/steering/manual.md" in on_demand_paths
+
+    def test_instructions_md_without_applyto_is_conditional(self, tmp_path):
+        instr = tmp_path / ".github" / "instructions"
+        instr.mkdir(parents=True)
+        (instr / "nokey.instructions.md").write_text(
+            "---\ndescription: Reviewed manually\n---\n\nOnly applied when referenced.\n"
+        )
+        # Wrong-case key must still be honored.
+        (instr / "lowercase.instructions.md").write_text(
+            "---\napplyto: 'src/**'\n---\n\nScoped by a lower-cased key.\n"
+        )
+        (tmp_path / "AGENTS.md").write_text("# Guide\n\nGeneral instructions.\n")
+
+        report = compute_budget(RepositoryContext(tmp_path))
+        on_demand_paths = {i.path for i in report.on_demand}
+        assert ".github/instructions/nokey.instructions.md" in on_demand_paths
+        assert ".github/instructions/lowercase.instructions.md" in on_demand_paths
+
+    def test_cursor_agent_requested_description_is_session_cost(self, tmp_path):
+        repo = copy_fixture("budget/mixed", tmp_path)
+        report = compute_budget(RepositoryContext(repo))
+
+        desc = next(i for i in report.session_files if i.category == "cursor-rule-description")
+        assert desc.path == ".cursor/rules/api-conventions.mdc"
+        assert desc.tokens > 0
+        assert desc.harnesses == frozenset({"cursor"})
+        # The rule body itself stays on demand.
+        assert ".cursor/rules/api-conventions.mdc" in {i.path for i in report.on_demand}
+
     def test_import_of_counted_file_unions_harnesses(self, tmp_path):
         # The docs-recommended pattern: CLAUDE.md is just an @AGENTS.md
         # import. AGENTS.md must not be double-billed, and the claude
@@ -130,14 +280,21 @@ class TestComputeBudget:
         assert paths == {"CLAUDE.md", "docs/architecture.md", ".claude/rules/style.md"}
         assert claude.metadata  # claude sessions pay the descriptions tax
 
+        # GEMINI.md exists, so AGENTS.md does not serve gemini sessions.
         gemini = compute_budget(RepositoryContext(repo), harness="gemini")
         paths = {i.path for i in gemini.session_files}
-        assert paths == {"GEMINI.md", "AGENTS.md"}  # Gemini CLI accepts either
+        assert paths == {"GEMINI.md"}
         assert gemini.metadata == []
 
         cursor = compute_budget(RepositoryContext(repo), harness="cursor")
-        paths = {i.path for i in cursor.session_files}
-        assert paths == {"AGENTS.md", ".cursor/rules/core-style.mdc"}
+        by_role = {(i.path, i.category) for i in cursor.session_files}
+        assert by_role == {
+            ("AGENTS.md", "agents-md"),
+            (".cursor/rules/core-style.mdc", "instruction"),
+            # Agent-requested rule: description is session cost for cursor.
+            (".cursor/rules/api-conventions.mdc", "cursor-rule-description"),
+        }
+        assert cursor.metadata == []
 
         with pytest.raises(ValueError, match="Unknown harness"):
             compute_budget(RepositoryContext(repo), harness="emacs")
@@ -146,17 +303,23 @@ class TestComputeBudget:
         repo = copy_fixture("budget/mixed", tmp_path)
         report = compute_budget(RepositoryContext(repo))
 
-        by_path = {i.path: i.tokens for i in report.session_files}
-        metadata_total = sum(g.total for g in report.metadata)
+        by_key = {(i.path, i.category): i.tokens for i in report.session_files}
+        groups = {g.kind: g.total for g in report.metadata}
+        # Claude Code lists skills, commands, and agents; a generic
+        # AGENTS.md agent gets skills (agentskills.io) only.
         assert report.by_harness["claude"] == (
-            by_path["CLAUDE.md"]
-            + by_path["docs/architecture.md"]
-            + by_path[".claude/rules/style.md"]
-            + metadata_total
+            by_key[("CLAUDE.md", "claude-md")]
+            + by_key[("docs/architecture.md", "import")]
+            + by_key[(".claude/rules/style.md", "rule")]
+            + groups["skill"]
+            + groups["command"]
+            + groups["agent"]
         )
-        assert report.by_harness["default"] == by_path["AGENTS.md"] + metadata_total
-        # Gemini reads GEMINI.md or AGENTS.md, no skills metadata.
-        assert report.by_harness["gemini"] == by_path["GEMINI.md"] + by_path["AGENTS.md"]
+        assert report.by_harness["default"] == (
+            by_key[("AGENTS.md", "agents-md")] + groups["skill"]
+        )
+        # GEMINI.md exists, so gemini sessions load it alone.
+        assert report.by_harness["gemini"] == by_key[("GEMINI.md", "gemini-md")]
 
     def test_coderabbit_content_excluded_everywhere(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
@@ -302,12 +465,14 @@ class TestComputeBudget:
         over = report.over_limit()
         assert claude in over and skill in over and skill_desc in over
 
-    def test_no_duplicate_paths(self, tmp_path):
+    def test_no_duplicate_path_roles(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)
         report = compute_budget(RepositoryContext(repo))
 
-        paths = [i.path for i in report.session_files + report.on_demand]
-        assert len(paths) == len(set(paths))
+        # A path may appear once per role (whole file, import, description),
+        # never twice in the same role.
+        keys = [(i.path, i.category) for i in report.session_files + report.on_demand]
+        assert len(keys) == len(set(keys))
 
     def test_to_dict_shape(self, tmp_path):
         repo = copy_fixture("budget/mixed", tmp_path)

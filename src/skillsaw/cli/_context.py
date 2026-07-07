@@ -71,7 +71,7 @@ def _print_text(report, top: int) -> None:
     print(
         f"  {'─' * 8}\n"
         f"  {bold}{report.session_total:>8,}{reset}  total — "
-        f"{report.window_percent:.1f}% of the {report.window:,}-token window"
+        f"{report.window_percent:.2f}% of the {report.window:,}-token window"
     )
     if report.harness == "all" and len(report.by_harness) > 1:
         parts = [f"{h} {t:,}" for h, t in sorted(report.by_harness.items(), key=lambda kv: -kv[1])]
@@ -111,6 +111,9 @@ def _print_text(report, top: int) -> None:
 def _run_context(args):
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+    if args.window <= 0:
+        print("Error: --window must be a positive token count", file=sys.stderr)
         sys.exit(1)
 
     config, _config_path = load_config(args, args.path)

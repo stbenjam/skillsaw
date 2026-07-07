@@ -28,6 +28,12 @@ No single harness reads every root instruction file, so the union
 session total overstates any one session. ``by_harness`` carries
 per-harness truth, and ``harness=...`` narrows the report to one.
 
+The report prices the repository's content *as if installed and
+active*: a marketplace's plugin rules and command descriptions are
+billed to the sessions of users who install it. Imported files carry
+no limit status — the ``context-budget`` rule never sees them, and
+budget does not flag what lint cannot report.
+
 Token counts are the same estimate the ``context-budget`` rule uses
 (``len(text) // 4``) over the raw file, and every item is checked against
 that rule's configured limits so the report and the enforcement agree.
@@ -42,6 +48,7 @@ CodeRabbit and promptfoo content is excluded: skillsaw lints it as prose,
 but it is consumed by those tools, not loaded into an agent's session.
 """
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
@@ -84,14 +91,18 @@ DEFAULT_WINDOW = 200_000
 # Cursor reads .cursor/rules and AGENTS.md. "default" is a generic
 # AGENTS.md-reading agent (Codex, opencode, ...).
 HARNESSES = ("claude", "cursor", "copilot", "gemini", "default")
+# Gemini CLI's default context filename is GEMINI.md; AGENTS.md serves a
+# gemini session only when no GEMINI.md exists (compute_budget strips the
+# gemini attribution from AGENTS.md when GEMINI.md is present).
 _AGENTS_MD_READERS = frozenset({"default", "gemini", "copilot", "cursor"})
-# Skill/command/agent frontmatter descriptions: the agentskills.io / plugin
-# machinery, loaded by Claude Code and the generic agents that support skills.
-_METADATA_HARNESSES = frozenset({"claude", "default"})
 
 # Claude Code resolves @-imports recursively with a maximum depth of four
-# hops, relative to the importing file's directory (memory docs).
+# hops, relative to the importing file's directory, and they work anywhere
+# in the file ("See @README for ..."), not only at line start (memory docs).
+# This deliberately diverges from the instruction-imports-valid rule, which
+# only validates line-start imports against the repo root.
 _MAX_IMPORT_DEPTH = 4
+_IMPORT_ANYWHERE_RE = re.compile(r"(?:^|(?<=\s))@([^\s@]+)")
 
 # applyTo globs that mean "applies everywhere" — such files are effectively
 # unconditional session content, not path-scoped.
@@ -127,9 +138,15 @@ class BudgetItem:
 
 @dataclass
 class MetadataGroup:
-    """Frontmatter descriptions of one component kind (skill/command/agent)."""
+    """Frontmatter descriptions of one component kind (skill/command/agent).
+
+    ``harnesses``: which harnesses list this kind in the system prompt.
+    Skills (agentskills.io) are cross-tool; slash commands and subagents
+    are Claude Code machinery.
+    """
 
     kind: str
+    harnesses: frozenset = frozenset()
     items: List[BudgetItem] = field(default_factory=list)
 
     @property
@@ -183,6 +200,7 @@ class BudgetReport:
                     f"{g.kind}s": {
                         "count": len(g.items),
                         "tokens": g.total,
+                        "harnesses": sorted(g.harnesses),
                         "items": [i.to_dict() for i in g.items],
                     }
                     for g in self.metadata
@@ -239,33 +257,52 @@ def _scope_globs(value) -> Optional[List[str]]:
     return None
 
 
-def _instruction_scope(path: Path) -> Optional[List[str]]:
-    """applyTo/paths scope globs of a plain instruction file, if any.
+def _frontmatter_fields(path: Path) -> Dict[str, Any]:
+    """Lower-cased frontmatter key -> value for a plain instruction file.
 
-    Copilot/APM named instructions (``*.instructions.md``) carry an
-    ``applyTo:`` glob; the lint tree models them as plain files, so peek
-    at the frontmatter through the shared parser.
+    The lint tree models these as plain files, so peek through the shared
+    frontmatter parser. Keys are lower-cased because real repos write
+    ``applyTo``/``applyto`` interchangeably.
     """
-    from .blocks import FrontmatteredBlock
+    from .blocks import FrontmatteredBlock, FrontmatterField
 
     block = FrontmatteredBlock(path=path)
     if not block.has_frontmatter:
-        return None
-    for key in ("applyTo", "paths"):
-        globs = _scope_globs(block.field_value(key))
-        if globs is not None:
-            return globs
-    return None
+        return {}
+    return {f.name.lower(): f.value for f in block.find(FrontmatterField)}
+
+
+def _plain_instruction_always(path: Path) -> bool:
+    """Whether a plain instruction file loads unconditionally at launch.
+
+    - Kiro steering: ``inclusion: fileMatch``/``manual`` are conditional.
+    - ``applyTo``/``paths`` globs narrower than ``**`` are path-scoped.
+    - A ``*.instructions.md`` file with no ``applyTo`` at all is not
+      applied automatically (VS Code docs) — conditional.
+    """
+    fields = _frontmatter_fields(path)
+    inclusion = fields.get("inclusion")
+    if isinstance(inclusion, str) and inclusion.strip().lower() in ("filematch", "manual"):
+        return False
+    globs = _scope_globs(fields.get("applyto"))
+    if globs is None:
+        globs = _scope_globs(fields.get("paths"))
+    if globs is not None:
+        return any(g in _ALWAYS_GLOBS for g in globs)
+    if path.name.endswith(".instructions.md"):
+        return False
+    return True
 
 
 def _always_loaded(block) -> bool:
     """Whether a session-category block really is unconditional.
 
-    Rules-directory files with a ``paths:`` frontmatter key and
-    ``*.instructions.md`` files with an ``applyTo:`` glob narrower than
-    ``**`` are loaded when matching files are touched, not at launch;
-    cursor ``.mdc`` rules are only injected unconditionally when
-    ``alwaysApply`` is true.
+    Rules-directory files with a ``paths:`` frontmatter key, scoped
+    ``*.instructions.md`` files, and kiro fileMatch/manual steering are
+    loaded when matching files are touched, not at launch; cursor
+    ``.mdc`` rules are only injected whole when ``alwaysApply`` is true.
+    Root CLAUDE.md/AGENTS.md/GEMINI.md are always session content —
+    stray frontmatter on them never reroutes the file.
     """
     field_value = getattr(block.parent, "field_value", None)
     if field_value is not None:
@@ -274,10 +311,9 @@ def _always_loaded(block) -> bool:
         if block.path.suffix == ".mdc":
             return field_value("alwaysApply") in _TRUTHY
         return True
-    globs = _instruction_scope(block.path)
-    if globs is None:
+    if block.category != "instruction":
         return True
-    return any(g in _ALWAYS_GLOBS for g in globs)
+    return _plain_instruction_always(block.path)
 
 
 def _harnesses_for(block) -> frozenset:
@@ -345,6 +381,7 @@ def compute_budget(
     report = BudgetReport(root=str(root), window=window, harness=harness, limits=limits)
 
     seen: set = set()
+    session_by_resolved: Dict[Path, BudgetItem] = {}
     for block in context.lint_tree.content_blocks():
         category = block.category
         if category in EXCLUDED_CATEGORIES:
@@ -361,41 +398,111 @@ def compute_budget(
 
         resolved = block.path.resolve()
         if resolved in seen:
+            # The docs-recommended `ln -s AGENTS.md CLAUDE.md` layout: one
+            # file, two names. Don't double-bill, but the second name's
+            # harnesses still load it — union them into the survivor.
+            existing = session_by_resolved.get(resolved)
+            if existing is not None and bucket is report.session_files:
+                existing.harnesses = frozenset(existing.harnesses | harnesses)
             continue
         seen.add(resolved)
 
         raw = read_text(block.path)
         tokens = _estimate_tokens(raw) if raw is not None else block.estimate_tokens()
-        bucket.append(
-            BudgetItem(
-                label=_rel(block.path, root),
-                category=category,
-                tokens=tokens,
-                path=_rel(block.path, root),
-                status=_status(tokens, limits.get(category, (None, None))),
-                harnesses=harnesses,
-            )
+        item = BudgetItem(
+            label=_rel(block.path, root),
+            category=category,
+            tokens=tokens,
+            path=_rel(block.path, root),
+            status=_status(tokens, limits.get(category, (None, None))),
+            harnesses=harnesses,
         )
+        bucket.append(item)
+        if bucket is report.session_files:
+            session_by_resolved[resolved] = item
+        elif block.path.suffix == ".mdc":
+            # Cursor injects a non-alwaysApply rule's *description* into
+            # every session so the agent can request the rule — that
+            # metadata is session cost even though the body loads later.
+            desc = block.parent.field_value("description") if block.parent else None
+            if isinstance(desc, str) and desc.strip():
+                report.session_files.append(
+                    BudgetItem(
+                        label=f"{item.label} (description)",
+                        category="cursor-rule-description",
+                        tokens=_estimate_tokens(desc),
+                        path=item.path,
+                        harnesses=frozenset({"cursor"}),
+                    )
+                )
 
-    _add_imports(report, root, seen)
+    # Symlinked root files (`ln -s AGENTS.md CLAUDE.md`, per the Claude Code
+    # memory docs) collapse to a single lint-tree block, losing the other
+    # name's attribution — union every root name that exists on disk into
+    # whichever session item holds the shared resolved path.
+    for name, name_harnesses in (
+        ("CLAUDE.md", frozenset({"claude"})),
+        ("AGENTS.md", _AGENTS_MD_READERS),
+        ("GEMINI.md", frozenset({"gemini"})),
+    ):
+        candidate = root / name
+        if candidate.is_file():
+            existing = session_by_resolved.get(candidate.resolve())
+            if existing is not None:
+                existing.harnesses = frozenset(existing.harnesses | name_harnesses)
+
+    _add_claude_only_files(report, root, seen)
+
+    # Gemini CLI's default context file is GEMINI.md; AGENTS.md only serves
+    # a gemini session when no GEMINI.md exists.
+    if any(i.category == "gemini-md" for i in report.session_files):
+        for item in report.session_files:
+            if item.category == "agents-md":
+                item.harnesses = frozenset(item.harnesses - {"gemini"})
+
+    _add_imports(report, root)
     report.metadata = _gather_metadata(context, limits, root)
 
-    metadata_total = sum(g.total for g in report.metadata)
     for h in HARNESSES:
         total = sum(i.tokens for i in report.session_files if h in i.harnesses)
-        if h in _METADATA_HARNESSES:
-            total += metadata_total
+        total += sum(g.total for g in report.metadata if h in g.harnesses)
         if total > 0:
             report.by_harness[h] = total
 
     if harness != "all":
         report.session_files = [i for i in report.session_files if harness in i.harnesses]
-        if harness not in _METADATA_HARNESSES:
-            report.metadata = []
+        report.metadata = [g for g in report.metadata if harness in g.harnesses]
 
     report.session_files.sort(key=lambda i: (-i.tokens, i.label))
     report.on_demand.sort(key=lambda i: (-i.tokens, i.label))
     return report
+
+
+def _add_claude_only_files(report: BudgetReport, root: Path, seen: set) -> None:
+    """Bill .claude/CLAUDE.md and CLAUDE.local.md — both load into every
+    Claude Code session but neither enters the lint tree, so the block
+    loop never sees them. They get no limit status: the context-budget
+    rule cannot see them either, and budget must not flag what lint
+    cannot report."""
+    for extra in (root / ".claude" / "CLAUDE.md", root / "CLAUDE.local.md"):
+        if not extra.is_file():
+            continue
+        resolved = extra.resolve()
+        if resolved in seen:
+            continue
+        raw = read_text(extra)
+        if raw is None:
+            continue
+        seen.add(resolved)
+        report.session_files.append(
+            BudgetItem(
+                label=_rel(extra, root),
+                category="claude-md",
+                tokens=_estimate_tokens(raw),
+                path=_rel(extra, root),
+                harnesses=frozenset({"claude"}),
+            )
+        )
 
 
 # Root instruction files whose @-import references pull other files into the
@@ -403,19 +510,20 @@ def compute_budget(
 _IMPORT_CATEGORIES = {"claude-md", "agents-md", "gemini-md"}
 
 
-def _add_imports(report: BudgetReport, root: Path, seen: set) -> None:
+def _add_imports(report: BudgetReport, root: Path) -> None:
     """Resolve @-imports transitively and bill them as session-start items.
 
     Claude Code semantics: paths resolve relative to the importing file,
-    recursion is capped at four hops, ``@~/...`` home imports and paths
-    escaping the repository are skipped. An import that lands on a file
-    already counted elsewhere is not double-billed — but the importer's
-    harnesses are unioned in, so ``CLAUDE.md`` importing ``@AGENTS.md``
-    correctly attributes AGENTS.md to the claude session.
+    imports work anywhere in a prose line, recursion is capped at four
+    hops, ``@~/...`` home imports and paths escaping the repository are
+    skipped. An import that lands on a file already billed in the session
+    section is not double-billed — the importer's harnesses are unioned in
+    (so ``CLAUDE.md`` importing ``@AGENTS.md`` attributes AGENTS.md to the
+    claude session), and the union re-propagates through that file's own
+    imports. A target that is an on-demand asset (a skill reference, say)
+    gets a session import item too: the file plays both roles, and the two
+    sections are never summed together.
     """
-    # Single-sourced with the instruction-imports-valid rule (late import:
-    # core modules must not import rule packages at module import time).
-    from .rules.builtin.instructions._helpers import _IMPORT_RE
     from .markdown_doc import MarkdownDoc
 
     items_by_path = {(root / i.path).resolve(): i for i in report.session_files if i.path}
@@ -424,48 +532,54 @@ def _add_imports(report: BudgetReport, root: Path, seen: set) -> None:
         for item in list(report.session_files)
         if item.category in _IMPORT_CATEGORIES
     ]
-    traversed = set()
+    # Re-traverse a file when new harnesses reach it, so a second root's
+    # attribution propagates to transitive imports; harness sets only ever
+    # grow, so this terminates.
+    traversed_with: Dict[Path, frozenset] = {}
     while queue:
         src, src_item, depth = queue.pop(0)
-        if src in traversed or depth >= _MAX_IMPORT_DEPTH:
+        if depth >= _MAX_IMPORT_DEPTH:
             continue
-        traversed.add(src)
+        already = traversed_with.get(src, frozenset())
+        if src_item.harnesses and src_item.harnesses <= already:
+            continue
+        if not src_item.harnesses and src in traversed_with:
+            continue
+        traversed_with[src] = already | src_item.harnesses
         text = read_text(src)
         if text is None:
             continue
         for _, line in MarkdownDoc(text).prose_lines():
-            match = _IMPORT_RE.match(line)
-            if not match or match.group(1).startswith("~"):
-                continue
-            target = (src.parent / match.group(1)).resolve()
-            try:
-                target.relative_to(root)
-            except ValueError:
-                continue
-            if not target.is_file():
-                continue
-            existing = items_by_path.get(target)
-            if existing is not None:
-                existing.harnesses = frozenset(existing.harnesses | src_item.harnesses)
-                queue.append((target, existing, depth + 1))
-                continue
-            if target in seen:
-                continue
-            seen.add(target)
-            raw = read_text(target)
-            if raw is None:
-                continue
-            item = BudgetItem(
-                label=_rel(target, root),
-                category="import",
-                tokens=_estimate_tokens(raw),
-                path=_rel(target, root),
-                via=_rel(src, root),
-                harnesses=src_item.harnesses,
-            )
-            report.session_files.append(item)
-            items_by_path[target] = item
-            queue.append((target, item, depth + 1))
+            for match in _IMPORT_ANYWHERE_RE.finditer(line):
+                ref = match.group(1)
+                if ref.startswith("~"):
+                    continue
+                target = (src.parent / ref).resolve()
+                try:
+                    target.relative_to(root)
+                except ValueError:
+                    continue
+                if not target.is_file():
+                    continue
+                existing = items_by_path.get(target)
+                if existing is not None:
+                    existing.harnesses = frozenset(existing.harnesses | src_item.harnesses)
+                    queue.append((target, existing, depth + 1))
+                    continue
+                raw = read_text(target)
+                if raw is None:
+                    continue
+                item = BudgetItem(
+                    label=_rel(target, root),
+                    category="import",
+                    tokens=_estimate_tokens(raw),
+                    path=_rel(target, root),
+                    via=_rel(src, root),
+                    harnesses=src_item.harnesses,
+                )
+                report.session_files.append(item)
+                items_by_path[target] = item
+                queue.append((target, item, depth + 1))
 
 
 def _gather_metadata(
@@ -478,16 +592,18 @@ def _gather_metadata(
     from .blocks import AgentBlock, CommandBlock, SkillBlock
 
     kinds = [
-        ("skill", SkillBlock, "skill-description"),
-        ("command", CommandBlock, "command-description"),
+        # Skills are the cross-tool agentskills.io standard; slash-command
+        # and subagent descriptions are Claude Code machinery.
+        ("skill", SkillBlock, "skill-description", frozenset({"claude", "default"})),
+        ("command", CommandBlock, "command-description", frozenset({"claude"})),
         # The context-budget rule enforces no agent-description limit, so
         # budget must never flag one (limit_key None -> status always None).
-        ("agent", AgentBlock, None),
+        ("agent", AgentBlock, None, frozenset({"claude"})),
     ]
 
     groups: List[MetadataGroup] = []
-    for kind, block_type, limit_key in kinds:
-        group = MetadataGroup(kind=kind)
+    for kind, block_type, limit_key, kind_harnesses in kinds:
+        group = MetadataGroup(kind=kind, harnesses=kind_harnesses)
         for block in context.lint_tree.find(block_type):
             if block.field_value("disable-model-invocation") in _TRUTHY:
                 # Not listed in the model's context; the body still costs
