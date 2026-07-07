@@ -102,6 +102,8 @@ Grade the repository and write a shields.io badge JSON file
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover) |  |
 | `-o`, `--output` | Badge JSON output path (default: .skillsaw-badge.json in the repository root) |  |
+| `--large` | Also render a self-contained SVG report card (.skillsaw-card.svg) next to the badge JSON |  |
+| `--theme` | Report card color theme, used with --large (default: dark) (choices: light, dark) | `dark` |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw add`

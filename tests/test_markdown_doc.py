@@ -251,6 +251,31 @@ class TestFences:
         assert fence.indented
         assert fence.body_line_start == 3
 
+    def test_markup_backtick_and_tilde(self):
+        backtick, tilde = _doc("```yaml\nkey: val\n```\n\n~~~\ntext\n~~~\n").fences()
+        assert backtick.markup == "```"
+        assert tilde.markup == "~~~"
+
+    def test_markup_longer_run(self):
+        (fence,) = _doc("````markdown\n```\ninner\n```\n````\n").fences()
+        assert fence.markup == "````"
+
+    def test_markup_empty_for_indented_block(self):
+        (fence,) = _doc("before\n\n    indented code\n").fences()
+        assert fence.markup == ""
+
+    def test_top_level_fence_not_nested(self):
+        (fence,) = _doc("```\ncode\n```\n").fences()
+        assert not fence.nested
+
+    def test_blockquote_fence_nested(self):
+        (fence,) = _doc("> ```\n> code\n> ```\n").fences()
+        assert fence.nested
+
+    def test_list_fence_nested(self):
+        (fence,) = _doc("- item\n  ```\n  code\n  ```\n").fences()
+        assert fence.nested
+
 
 class TestProseLines:
     def test_line_count_always_preserved(self):

@@ -1518,6 +1518,8 @@ BROKEN_FIXTURES = [
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
+    "content-unclosed-fence/skill-hides-violations",
+    "content/instruction-drift",
 ]
 
 CLEAN_FIXTURES = [
@@ -1711,6 +1713,58 @@ class TestTerminologyGroupsConfig:
         messages = [v["message"] for v in self._rule_violations(r)]
         assert any("function/method" in m for m in messages)
         assert any("directory/folder" in m for m in messages)
+
+
+@pytest.mark.integration
+class TestInstructionDrift:
+    """End-to-end tests for content-instruction-drift.
+
+    The fixture's CLAUDE.md and .github/copilot-instructions.md share a
+    Testing section, but the CLAUDE.md copy gained a coverage sentence —
+    a drifted near-duplicate. Every other section pair is dissimilar.
+    """
+
+    FIXTURE = "content/instruction-drift"
+
+    def test_drifted_section_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        drift = by_rule(r).get("content-instruction-drift", [])
+        assert len(drift) == 1
+        v = drift[0]
+        # Anchored on the later file in (path, line) order: CLAUDE.md,
+        # at its '## Testing' heading, referencing the copilot copy.
+        assert v["file_path"].endswith("CLAUDE.md")
+        assert v["line"] == 14
+        assert "% similar" in v["message"]
+        assert ".github/copilot-instructions.md:13" in v["message"]
+
+    def test_silent_on_clean_instruction_files(self, tmp_path):
+        """Distinct sections across instruction files must not fire."""
+        repo = copy_fixture("config/terminology-groups", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
+
+    def test_inline_suppression_allows_intentional_divergence(self, tmp_path):
+        """A skillsaw-disable directive above the reported section silences
+        the finding — the documented recipe for sections that are supposed
+        to differ per assistant. The directive goes in the anchor file
+        (CLAUDE.md, the later file in path order); it is an HTML comment,
+        so it adds no drift distance of its own."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text().replace(
+                "## Testing",
+                "<!-- skillsaw-disable content-instruction-drift -->\n## Testing",
+                1,
+            )
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-instruction-drift" not in rule_ids(r)
 
 
 @pytest.mark.integration
@@ -1961,6 +2015,82 @@ class TestUnlinkedInternalReferenceAutofix:
         assert len(unlinked) == 1
         assert "scripts/run_tests.py" in unlinked[0]["message"]
         assert unlinked[0]["line"] == 18
+
+
+class TestContentUnclosedFenceAutofix:
+    """Integration tests for content-unclosed-fence detection and autofix.
+
+    The fixture's SKILL.md opens a ```bash fence that never closes, so the
+    hedging prose after it parses as code — every content rule is blind to
+    it and the file lints clean apart from the unclosed-fence warning.
+    """
+
+    FIXTURE = "content-unclosed-fence/skill-hides-violations"
+    SKILL = Path("skills") / "deploy" / "SKILL.md"
+
+    def test_unclosed_fence_detected_and_blinds_content_rules(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        unclosed = [v for v in violations(r) if v["rule_id"] == "content-unclosed-fence"]
+        assert len(unclosed) == 1
+        assert unclosed[0]["line"] == 11  # the opening ```bash line
+        assert unclosed[0]["severity"] == "warning"
+        assert "```bash" in unclosed[0]["message"]
+        # The blindness: weak language after the runaway fence is stripped
+        # as code before content rules scan the body.
+        assert "content-weak-language" not in rule_ids(r)
+        # A warning never breaks the default exit code.
+        assert r["rc"] == 0
+
+    def test_plain_fix_only_suggests(self, tmp_path):
+        """Without --suggest the SUGGEST-confidence fix must not be applied."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original = (repo / self.SKILL).read_text()
+
+        result = _run_fix(repo)
+        assert "Append missing closing fence" in result.stdout
+        assert (repo / self.SKILL).read_text() == original
+
+    def test_suggest_fix_appends_closer_and_converges(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        original = (repo / self.SKILL).read_text()
+
+        _run_fix(repo, "--suggest")
+
+        fixed = (repo / self.SKILL).read_text()
+        assert fixed == original + "```\n"
+        assert len(fixed.splitlines()) == len(original.splitlines()) + 1
+
+        r = run_lint(repo)
+        assert "content-unclosed-fence" not in rule_ids(r)
+
+    def test_suggest_fix_is_idempotent(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        _run_fix(repo, "--suggest")
+        first = (repo / self.SKILL).read_text()
+
+        _run_fix(repo, "--suggest")
+        assert (repo / self.SKILL).read_text() == first
+
+    def test_closing_fence_where_code_ends_surfaces_hidden_violations(self, tmp_path):
+        """The blindness regression: the weak-language violations swallowed
+        by the runaway fence appear once the fence closes where the code
+        block was meant to end (the review step after the suggested fix)."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo)
+        assert "content-weak-language" not in rule_ids(r)
+
+        skill = repo / self.SKILL
+        lines = skill.read_text().split("\n")
+        assert lines[12] == "make deploy ENV=production"
+        lines.insert(13, "```")  # close the fence after the last code line
+        skill.write_text("\n".join(lines))
+
+        r2 = run_lint(repo)
+        assert "content-unclosed-fence" not in rule_ids(r2)
+        weak = [v for v in violations(r2) if v["rule_id"] == "content-weak-language"]
+        assert len(weak) == 3
+        assert all(v["file_path"].endswith("SKILL.md") for v in weak)
 
 
 # ── SAFE Autofix Idempotency Suite ──────────────────────────────

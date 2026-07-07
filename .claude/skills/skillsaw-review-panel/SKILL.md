@@ -12,44 +12,42 @@ metadata:
 # Review Panel — Serial Multi-Specialist Review
 
 Run **6 specialist reviewers + 1 arbiter** inline in the main agent, one
-after another. This is serial-only by design — the codebase context is
-derived once and shared across all specialists, saving tokens. Each
-specialist can see prior specialists' file reads (though not their
-findings).
+after another. Keep the review serial by design — derive the repo context
+once and share it across all specialists to keep token cost low. Each specialist
+can read prior specialists' file reads (though not their findings).
 
-Each specialist's detailed scope lives in the `references/` directory
-alongside this skill and is loaded **only when that specialist runs**
+Read each specialist's detailed scope from the `references/` directory
+alongside this skill; load it **only when that specialist runs**
 (progressive disclosure) — keep this file lean and pull the scope in on demand.
 
-The panel is **advisory**. It does not gate merge. It surfaces findings;
-the maintainer and PR author decide ship.
+Keep the panel **advisory**. It does not gate merge. It surfaces findings;
+the maintainer and PR author review and decide ship.
 
 ## Specialist Roster
 
 | Specialist | Lens | Scope |
 |---|---|---|
-| Architecture Reviewer | Module boundaries, abstraction level, SOLID, cross-file impact, error propagation | `references/architecture.md` |
-| Python Expert | Idiomatic Python, type hints, performance, stdlib usage, packaging conventions | `references/python-expert.md` |
-| Security & Supply Chain Reviewer | Injection, credential handling, dependency trust, lockfile integrity, build pipeline | `references/security-supply-chain.md` |
-| QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | `references/qa-engineer.md` |
-| Technical Writer | Documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | `references/technical-writer.md` |
-| Ecosystem Reviewer | Target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | `references/ecosystem.md` |
-| Panel Arbiter | Strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
+| Architecture Reviewer | Check module boundaries, abstraction level, SOLID, cross-file impact, error propagation | [`references/architecture.md`](references/architecture.md) |
+| Python Expert | Review idiomatic Python, type hints, performance, stdlib usage, packaging conventions | [`references/python-expert.md`](references/python-expert.md) |
+| Security & Supply Chain Reviewer | Check injection, credential handling, dependency trust, lockfile integrity, build pipeline | [`references/security-supply-chain.md`](references/security-supply-chain.md) |
+| QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | [`references/qa-engineer.md`](references/qa-engineer.md) |
+| Technical Writer | Verify documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | [`references/technical-writer.md`](references/technical-writer.md) |
+| Ecosystem Reviewer | Review target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | [`references/ecosystem.md`](references/ecosystem.md) |
+| Panel Arbiter | Handle strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
 
-## Execution Procedure
+## Run the Execution Procedure
 
-Work through these steps in order. Do not skip ahead.
+Follow these steps in order. Do not skip ahead.
 
 ### Step 1 — Determine Base Ref and Read the Diff
 
-Figure out what the changes are being compared against:
+Check what the changes are being compared against:
 
 - If a PR number is provided: use `gh pr view <number> --json baseRefName` to
   get the base branch, then compute the merge base.
-- If no PR number: find the merge base using the first of `upstream/main`,
-  `origin/main`, `upstream/master`, `origin/master` that exists.
+- If no PR number: find the merge base using the first of `upstream/main`, `origin/main`, `upstream/master`, `origin/master` that exists.
 
-If no base ref can be determined, error and exit.
+If no base ref can be determined, throw an error and exit.
 
 Check out the PR branch if not already on it:
 ```bash
@@ -72,78 +70,70 @@ gh pr view <number> --json comments --jq '.comments[] | select(.body | contains(
 ```
 
 If prior reviews exist, note which findings have been addressed by
-subsequent commits and which remain unresolved. Avoid re-raising
-resolved issues.
+subsequent commits and which remain unresolved. Avoid re-raising resolved issues.
 
 ### Step 3 — Run Specialists Serially
 
-For each specialist in roster order (Architecture, Python Expert,
-Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
+Run each specialist in roster order (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
 
-1. State the specialist name as a heading.
+1. Write the specialist name as a heading.
 2. **Read that specialist's `references/*.md` file now** (in the `references/`
-   directory alongside this skill) — it holds the detailed scope. Do not
+   directory alongside this skill) — read the detailed scope it holds. Do not
    review from the one-line lens alone.
-3. Review the diff and codebase through that specialist's lens. Read files,
-   grep, and run git commands to gather the evidence the scope calls for —
-   context from earlier specialists' file reads carries over.
-4. Produce findings in this format:
-   - **Severity**: `BLOCKING` | `SUGGESTION` | `NOTE`
-   - **File:line** reference (when applicable)
-   - **Finding** description
-   - **Recommended action**
-5. If no issues found, say so with what was checked.
+3. Review the diff and repo through that specialist's lens. Read files,
+   grep, and run git commands to gather the evidence the scope calls for — context from earlier specialists' file reads carries over.
+4. Write findings in this format:
+   - **Severity**: set `BLOCKING` | `SUGGESTION` | `NOTE`
+   - **File:line** — include the reference when applicable
+   - **Finding** — write a description
+   - **Recommended action** — make it explicit
+5. If no issues found, say so and review what you checked.
 6. Move on to the next specialist.
 
-**Severity calibration:**
-- `BLOCKING`: Correctness regressions, security vulnerabilities, architectural
-  faults that compound, or (for the Ecosystem Reviewer) a scope violation that
-  warrants redirect-to-plugin. Must include explicit rationale for why this blocks.
-- `SUGGESTION`: Substantive feedback that improves the code but is not a
-  correctness issue. This is the default for real feedback.
-- `NOTE`: One-line polish, style nits, minor improvements.
+**Follow this severity calibration:**
+- `BLOCKING`: Set for correctness regressions, security vulnerabilities,
+  architectural faults that compound, or (for the Ecosystem Reviewer) a scope
+  violation that warrants redirect-to-plugin. Always include explicit rationale for why this blocks.
+- `SUGGESTION`: Set for substantive feedback that improves the code but is not a
+  correctness issue. Keep this the default for real feedback.
+- `NOTE`: Set for one-line polish, style nits, minor improvements.
 
-### Step 4 — Panel Arbiter Synthesis
+### Step 4 — Run Panel Arbiter Synthesis
 
-After all specialists complete, synthesize directly:
+After all specialists complete, review and synthesize directly:
 
 1. Read all specialist findings.
-2. Resolve any conflicts between specialists.
-3. Assign a disposition (see below).
-4. Compile required actions (blocking) vs optional follow-ups.
+2. Review and resolve any conflicts between specialists.
+3. Set a disposition (see below).
+4. Include required actions (blocking) vs optional follow-ups.
 
-**Disposition criteria:**
+**Follow these disposition criteria:**
 
-- **APPROVE**: No unresolved BLOCKING findings.
-- **REQUEST_CHANGES**: BLOCKING findings that require code changes, but the
-  change is in scope and fixable.
-- **NEEDS_DISCUSSION**: Findings that need author input to resolve — the panel
-  cannot decide without clarification, and the issue is neither a clean approve
-  nor an outright change request or rejection.
-- **REJECT — REDIRECT TO PLUGIN**: The Ecosystem Reviewer judged the change
-  targets a low-adoption / unproven tool that does not belong in skillsaw core.
-  The change is not *wrong* — it is better shipped as a rule plugin. The verdict
-  points the author to <https://skillsaw.org/plugins/>, the
-  `skillsaw-create-plugin` skill, and `examples/plugins/skillsaw-example-plugin/`.
-- **REJECT**: Out of skillsaw's domain, wrong direction, or not viable, and not
-  salvageable as a plugin.
+- **APPROVE**: Set when no unresolved BLOCKING findings remain.
+- **REQUEST_CHANGES**: Set for BLOCKING findings that require code changes, but the change is in scope and fixable.
+- **NEEDS_DISCUSSION**: Set when findings need author input to resolve. The panel
+  cannot decide without clarification — keep it here when the issue is neither a
+  clean approve nor an outright change request or rejection.
+- **REJECT — REDIRECT TO PLUGIN**: Set when the Ecosystem Reviewer judged the
+  change targets a low-adoption / unproven tool that does not belong in skillsaw
+  core. Keep the change — it ships better as a rule plugin. Point the author to
+  <https://skillsaw.org/plugins/>, the `skillsaw-create-plugin` skill, and `examples/plugins/skillsaw-example-plugin/`.
+- **REJECT**: Set when out of skillsaw's domain, wrong direction, or not viable, and not salvageable as a plugin.
 
-**Arbiter biases:**
+**Follow these arbiter biases:**
 
-- Security over ergonomics.
-- Codebase consistency over local elegance.
-- Existing patterns over novel ones.
+- Prefer security over ergonomics.
+- Prefer repo consistency over local elegance.
+- Prefer existing patterns over novel ones.
 - Backward compatibility is paramount — breaking existing users is always blocking.
-- Core stays focused — favor a plugin redirect over expanding core for niche tools.
+- Keep core focused — prefer a plugin redirect over expanding core for niche tools.
 
-Clean changes with no issues are a valid outcome — do not manufacture
-findings.
+Keep clean changes with no issues as a valid outcome — do not manufacture findings.
 
-### Step 5 — Render and Post Verdict
+### Step 5 — Write and Post the Verdict
 
-Load `verdict-template.md` (same directory as this skill) and fill the
-placeholders with findings and synthesis. Post the rendered verdict as
-exactly ONE PR comment:
+Read `verdict-template.md` (same directory as this skill) and fill the
+placeholders with findings and synthesis. Write the rendered verdict as exactly ONE PR comment:
 
 ```bash
 gh pr comment <number> --body "$(cat <<'VERDICT'
@@ -152,14 +142,14 @@ VERDICT
 )"
 ```
 
-## Quality Gates
+## Check the Quality Gates
 
-A change passes when:
+Verify a change passes when:
 
-- [ ] Architecture Reviewer: structure and patterns are sound
-- [ ] Python Expert: idiomatic, well-typed, performant Python
-- [ ] Security & Supply Chain: no unmitigated vulnerability or supply chain risk
-- [ ] QA Engineer: adequate test coverage, edge cases addressed
-- [ ] Technical Writer: documentation consistent with changes
-- [ ] Ecosystem Reviewer: target tool is in scope for core, or redirected to a plugin with links to skillsaw.org/plugins/
-- [ ] Panel Arbiter: trade-offs ratified, disposition set
+- [ ] Architecture Reviewer: Verify structure and patterns are sound.
+- [ ] Python Expert: Ensure idiomatic, well-typed, performant Python.
+- [ ] Security & Supply Chain: Check no unmitigated vulnerability or supply chain risk.
+- [ ] QA Engineer: Verify adequate test coverage, edge cases addressed.
+- [ ] Technical Writer: Ensure documentation consistent with changes.
+- [ ] Ecosystem Reviewer: Check target tool is in scope for core, or redirect to a plugin with links to skillsaw.org/plugins/.
+- [ ] Panel Arbiter: Ratify trade-offs, set disposition.
