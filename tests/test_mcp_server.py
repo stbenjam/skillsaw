@@ -253,12 +253,18 @@ class TestFixTool:
     def test_apply_writes_fixes_and_is_idempotent(self, tmp_path):
         repo = copy_fixture("autofix/safe-idempotency", tmp_path)
         before = snapshot_files(repo)
+        lint_before = payload(call_tool("lint", {"path": str(repo)}))
 
         data = payload(call_tool("fix", {"path": str(repo), "dry_run": False}))
         assert data["dry_run"] is False
         assert data["fixes"]
         after_first = snapshot_files(repo)
         assert after_first != before
+
+        # Independent re-lint confirms the fixes resolved violations (some
+        # rules keep unfixable instances, so the count drops, not zeroes).
+        lint_after = payload(call_tool("lint", {"path": str(repo)}))
+        assert lint_after["summary"]["total"] < lint_before["summary"]["total"]
 
         # Second run finds nothing left to fix and changes nothing.
         again = payload(call_tool("fix", {"path": str(repo), "dry_run": False}))
