@@ -62,7 +62,10 @@ def _annotation_path(file_path: Optional[Path], root: Path) -> Optional[str]:
         absolute = file_path if file_path.is_absolute() else root / file_path
         try:
             return absolute.resolve().relative_to(Path(workspace).resolve()).as_posix()
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
+            # ValueError: not under the workspace. OSError / RuntimeError:
+            # unresolvable paths — e.g. symlink loops, which raise
+            # RuntimeError from Path.resolve() before Python 3.13.
             pass
     rel = relative_path(file_path, root)
     return PurePath(rel).as_posix() if rel else None

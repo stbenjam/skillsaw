@@ -1095,6 +1095,32 @@ def test_github_paths_relative_to_workspace(valid_plugin, monkeypatch):
     assert f"file={valid_plugin.name}/commands/test-command.md," in output
 
 
+def test_github_unresolvable_path_falls_back_to_root(valid_plugin, monkeypatch):
+    """Path.resolve() raises RuntimeError on symlink loops before Python
+    3.13 — annotation paths must fall back to root-relative, not crash."""
+    import pathlib
+
+    monkeypatch.setenv("GITHUB_WORKSPACE", str(valid_plugin.parent))
+    context = RepositoryContext(valid_plugin)
+    violations = [
+        RuleViolation(
+            rule_id="test-rule",
+            severity=Severity.ERROR,
+            message="symlink loop on the way to the workspace",
+            file_path=Path("commands/test-command.md"),
+            line=1,
+        ),
+    ]
+
+    def raise_loop(self, strict=False):
+        raise RuntimeError(f"Symlink loop from {self!r}")
+
+    monkeypatch.setattr(pathlib.Path, "resolve", raise_loop)
+
+    output = format_github(violations, context, [], "1.0.0")
+    assert "file=commands/test-command.md," in output
+
+
 def test_github_path_outside_workspace_falls_back_to_root(valid_plugin, monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_WORKSPACE", str(tmp_path / "elsewhere"))
     context = RepositoryContext(valid_plugin)
