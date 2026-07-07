@@ -41,6 +41,7 @@ docs = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "coverage>=7.10",  # needed for [tool.coverage.run] patch = ["subprocess"]
     "black>=26,<27",
     "flake8>=6.0",
     "mypy>=1.0",
@@ -77,6 +78,16 @@ addopts = "-v"
 markers = [
     "integration: end-to-end CLI integration tests",
 ]
+
+[tool.coverage.run]
+# tests/test_integration.py drives the CLI via subprocess.run([sys.executable,
+# "-m", "skillsaw", ...]). pytest-cov 7 dropped automatic subprocess
+# instrumentation, so without this the entire src/skillsaw/cli/ package
+# reports ~0% despite being exercised by 200+ integration tests. `patch =
+# ["subprocess"]` (coverage.py >=7.10) makes coverage inject itself into
+# subprocesses started via the subprocess module, no COVERAGE_PROCESS_START
+# env var or sitecustomize.py needed.
+patch = ["subprocess"]
 
 [tool.black]
 line-length = 100
