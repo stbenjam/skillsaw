@@ -70,6 +70,20 @@ class AgentSkillRenameRefsRule(Rule):
         pattern_specs = [(patterns[r["old"]], r) for r in renames]
         referenced_olds: set[str] = set()
 
+        # fix() skips old names below autofix-min-segments (too ambiguous to
+        # rewrite), so only references to longer names are fixable. There is
+        # no class-level autofix_confidence, so the SUGGEST confidence of the
+        # produced fixes is declared per violation.
+        min_segments = self.config.get(
+            "autofix-min-segments",
+            self.config_schema["autofix-min-segments"]["default"],
+        )
+
+        def _fix_kwargs(old_name: str) -> dict:
+            if len(old_name.split("-")) >= min_segments:
+                return {"fixable": True, "fix_confidence": AutofixConfidence.SUGGEST}
+            return {"fixable": False}
+
         for block in gather_all_content_blocks(context):
             try:
                 content = block.path.read_text(encoding="utf-8")
@@ -92,6 +106,7 @@ class AgentSkillRenameRefsRule(Rule):
                             f"Stale reference to renamed skill '{old}' " f"(renamed to '{new}')",
                             file_path=block.path,
                             line=line_no,
+                            **_fix_kwargs(old),
                         )
                     )
                     referenced_olds.add(old)
@@ -115,6 +130,7 @@ class AgentSkillRenameRefsRule(Rule):
                         f"evals.json 'skill_name' ({skill_name!r}) references "
                         f"renamed skill (now '{rename['new']}')",
                         file_path=evals_json,
+                        **_fix_kwargs(skill_name),
                     )
                 )
                 referenced_olds.add(skill_name)

@@ -87,6 +87,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                             f"Broken internal link: [{link.text}]({target}) — target does not exist",
                             block=cf,
                             line=link.body_line,
+                            fixable=False,
                         )
                     )
                     continue
@@ -99,6 +100,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                             f"Broken internal link: [{link.text}]({target}) — target is outside repository",
                             block=cf,
                             line=link.body_line,
+                            fixable=False,
                         )
                     )
                     continue
@@ -109,7 +111,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                         msg += f" (did you mean '{suggestion}'?)"
                     elif not link.has_dest_span:
                         msg += " (reference-style link — fix the definition manually)"
-                    violations.append(self.violation(msg, block=cf, line=link.body_line))
+                    # fix() only rewrites links that have a fuzzy-match
+                    # suggestion and an inline destination span.
+                    violations.append(
+                        self.violation(
+                            msg,
+                            block=cf,
+                            line=link.body_line,
+                            fixable=suggestion is not None and link.has_dest_span,
+                        )
+                    )
         return violations
 
     @staticmethod

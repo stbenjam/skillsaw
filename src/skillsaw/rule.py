@@ -43,6 +43,13 @@ class RuleViolation:
     # don't collide. Example: context-budget emits whole-file and
     # per-description token violations for the same SKILL.md.
     metric: Optional[str] = None
+    # Whether ``skillsaw fix`` can resolve this violation. None means
+    # unknown — e.g. synthetic violations constructed outside
+    # ``Rule.violation()``.
+    fixable: Optional[bool] = None
+    # Confidence of the fix when ``fixable``: SAFE fixes apply with plain
+    # ``skillsaw fix``, SUGGEST fixes require ``--suggest``.
+    fix_confidence: Optional["AutofixConfidence"] = None
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -195,13 +202,27 @@ class Rule(ABC):
         block: Optional["ContentBlock"] = None,
         value: Optional[float] = None,
         metric: Optional[str] = None,
+        fixable: Optional[bool] = None,
+        fix_confidence: Optional[AutofixConfidence] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
         Pass ``block`` for content-based violations.  ``file_path`` is
         accepted for backward compatibility and auto-wraps into a block.
         ``metric`` disambiguates multiple ratchet violations per file.
+
+        ``fixable`` defaults from the rule: True when the rule overrides
+        ``fix()`` and declares a class-level ``autofix_confidence``.  Rules
+        whose ``fix()`` only repairs a subset of their violations must pass
+        ``fixable`` explicitly so lint output doesn't over-promise.
         """
+        if fixable is None:
+            fixable = self.supports_autofix and self.autofix_confidence is not None
+        if fix_confidence is None and fixable:
+            # Unknown confidence falls back to SUGGEST so every fixable
+            # violation carries one and no format over-promises what a
+            # plain `skillsaw fix` run will clear.
+            fix_confidence = self.autofix_confidence or AutofixConfidence.SUGGEST
         return RuleViolation(
             rule_id=self.rule_id,
             severity=severity if severity is not None else self.severity,
@@ -212,4 +233,6 @@ class Rule(ABC):
             source=self._source,
             value=value,
             metric=metric,
+            fixable=fixable,
+            fix_confidence=fix_confidence,
         )
