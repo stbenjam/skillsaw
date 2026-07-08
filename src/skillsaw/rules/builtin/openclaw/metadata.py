@@ -2,6 +2,7 @@
 Rule for validating openclaw metadata in SKILL.md frontmatter
 """
 
+import difflib
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -11,6 +12,33 @@ from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
 VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
+
+# Known top-level keys under metadata.openclaw (mirrors openclaw's
+# OpenClawSkillMetadata in src/skills/types.ts). Used only for typo detection —
+# unknown keys are silently ignored by openclaw, so we warn only on near-misses.
+KNOWN_OPENCLAW_KEYS = {
+    "always",
+    "skillKey",
+    "primaryEnv",
+    "apiKey",
+    "hidden",
+    "emoji",
+    "homepage",
+    "os",
+    "requires",
+    "install",
+}
+
+# Field(s) that satisfy each install kind. openclaw silently DROPS an install
+# entry whose kind is missing its required field (see src/skills/loading/
+# frontmatter.ts), so the installer never appears. A tuple means "any one of".
+REQUIRED_INSTALL_FIELDS = {
+    "brew": ("formula", "cask"),
+    "node": ("package",),
+    "go": ("module",),
+    "uv": ("package",),
+    "download": ("url",),
+}
 
 
 class OpenclawMetadataRule(Rule):
@@ -137,6 +165,42 @@ class OpenclawMetadataRule(Rule):
                         )
                     )
 
+        for str_field in ("skillKey", "primaryEnv", "apiKey"):
+            if str_field in openclaw and not isinstance(openclaw[str_field], str):
+                violations.append(
+                    self.violation(
+                        f"'metadata.openclaw.{str_field}' must be a string",
+                        file_path=skill_md,
+                        line=line_map.get(str_field),
+                    )
+                )
+
+        if "hidden" in openclaw and not isinstance(openclaw["hidden"], bool):
+            violations.append(
+                self.violation(
+                    "'metadata.openclaw.hidden' must be a boolean",
+                    file_path=skill_md,
+                    line=line_map.get("hidden"),
+                )
+            )
+
+        # openclaw silently ignores unrecognized keys, so a typo like `require`
+        # or `installs` vanishes without error. Warn only on near-misses to a
+        # known key (deliberate free-form keys stay unflagged).
+        for key in openclaw:
+            if key in KNOWN_OPENCLAW_KEYS:
+                continue
+            match = difflib.get_close_matches(key, KNOWN_OPENCLAW_KEYS, n=1, cutoff=0.8)
+            if match:
+                violations.append(
+                    self.violation(
+                        f"'metadata.openclaw.{key}' is not a recognized key "
+                        f"(did you mean '{match[0]}'?)",
+                        file_path=skill_md,
+                        line=line_map.get(key),
+                    )
+                )
+
     def _check_requires(self, openclaw, skill_md, line_map, violations):
         requires = openclaw.get("requires")
         if requires is None:
@@ -199,34 +263,48 @@ class OpenclawMetadataRule(Rule):
                 )
                 continue
 
-            kind = entry.get("kind")
-            if kind is not None:
-                if not isinstance(kind, str):
+            # openclaw reads `kind`, falling back to `type` as an alias, and
+            # lowercases it before matching (see parseOpenClawManifestInstallBase).
+            kind_field = "kind" if "kind" in entry else ("type" if "type" in entry else None)
+            raw_kind = entry.get("kind", entry.get("type"))
+            effective_kind = None
+            if raw_kind is not None:
+                if not isinstance(raw_kind, str):
                     violations.append(
                         self.violation(
-                            f"'metadata.openclaw.install[{i}].kind' must be a string",
+                            f"'metadata.openclaw.install[{i}].{kind_field}' must be a string",
                             file_path=skill_md,
-                            line=line_map.get("kind"),
+                            line=line_map.get(kind_field),
                         )
                     )
-                elif kind not in VALID_INSTALL_KINDS:
-                    violations.append(
-                        self.violation(
-                            f"'metadata.openclaw.install[{i}].kind' is '{kind}', "
-                            f"expected one of: {sorted(VALID_INSTALL_KINDS)}",
-                            file_path=skill_md,
-                            line=line_map.get("kind"),
+                else:
+                    normalized = raw_kind.strip().lower()
+                    if normalized in VALID_INSTALL_KINDS:
+                        effective_kind = normalized
+                    else:
+                        violations.append(
+                            self.violation(
+                                f"'metadata.openclaw.install[{i}].{kind_field}' is '{raw_kind}', "
+                                f"expected one of: {sorted(VALID_INSTALL_KINDS)}",
+                                file_path=skill_md,
+                                line=line_map.get(kind_field),
+                            )
                         )
-                    )
 
-            if isinstance(kind, str) and kind == "download" and "url" not in entry:
-                violations.append(
-                    self.violation(
-                        f"'metadata.openclaw.install[{i}]' with kind 'download' requires 'url'",
-                        file_path=skill_md,
-                        line=line_map.get("kind"),
+            # openclaw drops entries whose kind is missing its required field,
+            # so the installer silently never appears.
+            if effective_kind in REQUIRED_INSTALL_FIELDS:
+                required = REQUIRED_INSTALL_FIELDS[effective_kind]
+                if not any(field in entry for field in required):
+                    needed = " or ".join(f"'{field}'" for field in required)
+                    violations.append(
+                        self.violation(
+                            f"'metadata.openclaw.install[{i}]' with kind "
+                            f"'{effective_kind}' requires {needed}",
+                            file_path=skill_md,
+                            line=line_map.get(kind_field),
+                        )
                     )
-                )
 
             if "os" in entry:
                 os_val = entry["os"]
@@ -300,7 +378,16 @@ class OpenclawMetadataRule(Rule):
                     )
                 )
 
-            for str_field in ("id", "label", "formula", "url", "targetDir"):
+            for str_field in (
+                "id",
+                "label",
+                "formula",
+                "cask",
+                "package",
+                "module",
+                "url",
+                "targetDir",
+            ):
                 if str_field in entry and not isinstance(entry[str_field], str):
                     violations.append(
                         self.violation(
