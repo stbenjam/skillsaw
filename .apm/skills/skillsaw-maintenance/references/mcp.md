@@ -1,5 +1,8 @@
 # Model Context Protocol (MCP)
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 This covers the MCP protocol spec itself. For MCP config *as embedded in Claude Code*
 (`.mcp.json`, `mcpServers`), see also `references/claude.md`.
 

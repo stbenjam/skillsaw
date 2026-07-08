@@ -1,5 +1,8 @@
 # APM (Agent Package Manager)
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 ## Upstream source(s)
 - Repo: https://github.com/microsoft/apm — Microsoft's Agent Package Manager (npm-like
   dependency manager for AI agents).

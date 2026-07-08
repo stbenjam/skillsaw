@@ -1,5 +1,8 @@
 # OpenClaw
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 Most drift-prone tracked spec. OpenClaw publishes **no JSON Schema**, so skillsaw's
 `openclaw-metadata` rule is the de-facto validator. The rule hand-copies value sets that
 MUST be re-checked against upstream types on every maintenance pass (see Sync notes).

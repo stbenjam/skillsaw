@@ -1,5 +1,8 @@
 # CodeRabbit (`.coderabbit.yaml`)
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 ## Upstream source(s)
 - Configuration reference (authoritative, auto-generated from the schema):
   https://docs.coderabbit.ai/reference/configuration
