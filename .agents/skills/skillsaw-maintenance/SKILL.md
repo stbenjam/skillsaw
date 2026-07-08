@@ -10,6 +10,7 @@ metadata:
 ---
 
 <!-- Repo-root-relative src/... paths below are not navigable from this skill's directory, so they stay as inline code. Links to references/*.md are real files in this skill and are navigable. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
 
 # skillsaw Maintenance
 

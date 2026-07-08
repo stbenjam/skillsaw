@@ -1,5 +1,8 @@
 # Claude Code formats
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 Claude Code has several distinct formats. `.claude/` is NOT a plugin — it has its own
 layout. Each format below maps to its own skillsaw rules.
 

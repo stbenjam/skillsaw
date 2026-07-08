@@ -1,5 +1,8 @@
 # agentskills.io (Agent Skills)
 
+<!-- Repo-root-relative src/... and cross-reference paths below are intentionally kept as prose, not navigable links. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 ## Upstream source(s)
 - Spec (authoritative for prose): https://agentskills.io/specification
 - GitHub source repo: https://github.com/agentskills/agentskills — "Specification and
