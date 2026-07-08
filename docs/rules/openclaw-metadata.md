@@ -3,7 +3,7 @@
 
 # openclaw-metadata
 
-Validate metadata.openclaw fields against the openclaw spec
+Validate metadata.openclaw fields against the OpenClaw spec
 
 | | |
 |---|---|
@@ -17,13 +17,13 @@ Validate metadata.openclaw fields against the openclaw spec
 
 `metadata.openclaw` drives real runtime behavior: platform gating (`os`),
 activation requirements (`requires`), and dependency installation
-(`install`). openclaw validates it loosely and **silently ignores fields
+(`install`). OpenClaw validates it loosely and **silently ignores fields
 it doesn't recognize** — an invalid `kind`, `os`, or `archive` value
 produces no error, the skill just quietly misbehaves (e.g. an installer
 that never appears in `openclaw skills info`). This rule catches those
 mistakes at author time.
 
-See the [openclaw skills spec](https://docs.openclaw.ai/tools/skills) for
+See the [OpenClaw skills spec](https://docs.openclaw.ai/tools/skills) for
 the authoritative field list.
 
 ## Allowed values
