@@ -17,7 +17,7 @@
   <text x="56" y="46" class="subtitle">skillsaw report card</text>
   <g data-testid="stats">
     <text x="24" y="76"><tspan class="label">Violation density</tspan><tspan x="180" class="value"><tspan data-testid="density">1.08</tspan> per 10k tokens</tspan></text>
-    <text x="24" y="97"><tspan class="label">Content tokens</tspan><tspan x="180" class="value">~<tspan data-testid="tokens">26,752</tspan></tspan></text>
+    <text x="24" y="97"><tspan class="label">Content tokens</tspan><tspan x="180" class="value">~<tspan data-testid="tokens">26,755</tspan></tspan></text>
     <text x="24" y="118"><tspan class="label">Building blocks</tspan><tspan x="180" class="value"><tspan data-testid="plugins">1</tspan> plugin &#183; <tspan data-testid="skills">10</tspan> skills</tspan></text>
     <text x="24" y="139" class="label">Top rules</text>
     <text x="24" y="154" class="rule" data-testid="rule-0">1. content-unlinked-internal-reference (28)</text>

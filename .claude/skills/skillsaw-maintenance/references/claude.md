@@ -6,7 +6,7 @@ layout. Each format below maps to its own skillsaw rules.
 ## Upstream source(s)
 - Plugins: https://docs.claude.com/en/docs/claude-code/plugins-reference
 - Marketplaces: https://docs.claude.com/en/docs/claude-code/plugin-marketplaces
-- `.claude/` directory: https://code.claude.com/docs/en/claude-directory
+- `.claude/` directory: https://docs.claude.com/en/docs/claude-code/claude-directory
 - Hooks: https://docs.claude.com/en/docs/claude-code/hooks
 - MCP servers: https://docs.claude.com/en/docs/claude-code/mcp
 - Skills / agents: https://docs.claude.com/en/docs/claude-code/skills
