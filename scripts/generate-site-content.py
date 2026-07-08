@@ -115,7 +115,7 @@ RULE_GROUPS = [
         "openclaw",
         ["openclaw-metadata"],
         "Validates `metadata.openclaw` in SKILL.md frontmatter against the "
-        "[openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
+        "[OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
         "when `metadata.openclaw` is present.",
     ),
     (

@@ -14,7 +14,7 @@ VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
 
 
 class OpenclawMetadataRule(Rule):
-    """Validate metadata.openclaw in SKILL.md frontmatter against the openclaw spec"""
+    """Validate metadata.openclaw in SKILL.md frontmatter against the OpenClaw spec"""
 
     repo_types = {
         RepositoryType.AGENTSKILLS,
@@ -29,7 +29,7 @@ class OpenclawMetadataRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Validate metadata.openclaw fields against the openclaw spec"
+        return "Validate metadata.openclaw fields against the OpenClaw spec"
 
     def default_severity(self) -> Severity:
         return Severity.WARNING

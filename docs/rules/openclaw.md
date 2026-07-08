@@ -3,9 +3,9 @@
 
 # OpenClaw
 
-Validates `metadata.openclaw` in SKILL.md frontmatter against the [openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires when `metadata.openclaw` is present.
+Validates `metadata.openclaw` in SKILL.md frontmatter against the [OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires when `metadata.openclaw` is present.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - |
+| [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - |
 
