@@ -760,7 +760,7 @@ class TestContentEmbeddedSecretsRule:
         "line,expected_desc",
         [
             ('password = "xK9$mQ2vLp8#nR4z"', "Hardcoded password"),  # notsecret
-            ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),
+            ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),  # notsecret
             ('secret_key = "kJ8vQz3mN9pL2wXyRb5cDf7g"', "Hardcoded secret key"),  # notsecret
         ],
         ids=["random-password", "hex-api-key", "mixed-secret-key"],
@@ -841,7 +841,7 @@ class TestContentEmbeddedSecretsRule:
         repo_raise.mkdir()
         repo_lower.mkdir()
         (repo_raise / "CLAUDE.md").write_text(
-            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'  # notsecret
         )
         # Raising the threshold above the value's entropy suppresses it
         rule = ContentEmbeddedSecretsRule({"entropy-threshold": 5.0})
@@ -867,12 +867,14 @@ class TestContentEmbeddedSecretsRule:
         assert rule.check(RepositoryContext(repo_low)) == []
         # Above it (hex, ~4.0 bits/char): still fires.
         (repo_high / "CLAUDE.md").write_text(
-            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'  # notsecret
         )
         assert len(rule.check(RepositoryContext(repo_high))) == 1
 
     def test_additional_placeholders_configurable(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text('Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n')
+        (temp_dir / "CLAUDE.md").write_text(
+            'Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n'
+        )  # notsecret
         context = RepositoryContext(temp_dir)
         # Fires by default (high entropy, no builtin placeholder marker)
         assert len(ContentEmbeddedSecretsRule().check(context)) == 1
