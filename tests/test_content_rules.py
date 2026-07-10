@@ -873,8 +873,8 @@ class TestContentEmbeddedSecretsRule:
 
     def test_additional_placeholders_configurable(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
-            'Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n'
-        )  # notsecret
+            'Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n'  # notsecret
+        )
         context = RepositoryContext(temp_dir)
         # Fires by default (high entropy, no builtin placeholder marker)
         assert len(ContentEmbeddedSecretsRule().check(context)) == 1
