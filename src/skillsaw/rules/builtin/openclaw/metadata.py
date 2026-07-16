@@ -13,10 +13,10 @@ VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
 VALID_ARCHIVE_TYPES = {"tar.gz", "tar.bz2", "zip"}
 
-# Known top-level keys under metadata.openclaw (mirrors openclaw's
-# OpenClawSkillMetadata in src/skills/types.ts). Used only for typo detection —
-# unknown keys are silently ignored by openclaw, so we warn only on near-misses.
-KNOWN_OPENCLAW_KEYS = {
+# Known top-level keys under metadata.openclaw from OpenClaw and ClawHub. Used
+# only for typo detection — unknown keys are silently ignored by openclaw, so
+# we warn only on near-misses.
+KNOWN_OPENCLAW_KEYS = (
     "always",
     "skillKey",
     "primaryEnv",
@@ -27,7 +27,9 @@ KNOWN_OPENCLAW_KEYS = {
     "os",
     "requires",
     "install",
-}
+    "category",
+    "cliHelp",
+)
 
 # Field(s) that satisfy each install kind. openclaw silently DROPS an install
 # entry whose kind is missing its required field (see src/skills/loading/
@@ -165,7 +167,7 @@ class OpenclawMetadataRule(Rule):
                         )
                     )
 
-        for str_field in ("skillKey", "primaryEnv", "apiKey"):
+        for str_field in ("skillKey", "apiKey"):
             if str_field in openclaw and not isinstance(openclaw[str_field], str):
                 violations.append(
                     self.violation(
@@ -188,6 +190,8 @@ class OpenclawMetadataRule(Rule):
         # or `installs` vanishes without error. Warn only on near-misses to a
         # known key (deliberate free-form keys stay unflagged).
         for key in openclaw:
+            if not isinstance(key, str):
+                continue
             if key in KNOWN_OPENCLAW_KEYS:
                 continue
             match = difflib.get_close_matches(key, KNOWN_OPENCLAW_KEYS, n=1, cutoff=0.8)
@@ -265,31 +269,49 @@ class OpenclawMetadataRule(Rule):
 
             # openclaw reads `kind`, falling back to `type` as an alias, and
             # lowercases it before matching (see parseOpenClawManifestInstallBase).
-            kind_field = "kind" if "kind" in entry else ("type" if "type" in entry else None)
-            raw_kind = entry.get("kind", entry.get("type"))
+            kind_value = entry.get("kind")
+            type_value = entry.get("type")
+            if isinstance(kind_value, str):
+                kind_field, raw_kind = "kind", kind_value
+            elif isinstance(type_value, str):
+                kind_field, raw_kind = "type", type_value
+            elif "kind" in entry:
+                kind_field, raw_kind = "kind", kind_value
+            elif "type" in entry:
+                kind_field, raw_kind = "type", type_value
+            else:
+                kind_field, raw_kind = None, None
+
             effective_kind = None
-            if raw_kind is not None:
-                if not isinstance(raw_kind, str):
+            if kind_field is None:
+                violations.append(
+                    self.violation(
+                        f"'metadata.openclaw.install[{i}]' must specify 'kind' or 'type'",
+                        file_path=skill_md,
+                        line=install_line,
+                    )
+                )
+            elif not isinstance(raw_kind, str):
+                violations.append(
+                    self.violation(
+                        f"'metadata.openclaw.install[{i}].{kind_field}' must be a string",
+                        file_path=skill_md,
+                        line=line_map.get(kind_field),
+                    )
+                )
+            else:
+                normalized = raw_kind.strip().lower()
+                if normalized in VALID_INSTALL_KINDS:
+                    effective_kind = normalized
+                else:
                     violations.append(
                         self.violation(
-                            f"'metadata.openclaw.install[{i}].{kind_field}' must be a string",
+                            f"'metadata.openclaw.install[{i}].{kind_field}' is '{raw_kind}', "
+                            f"expected one of: {sorted(VALID_INSTALL_KINDS)}",
                             file_path=skill_md,
                             line=line_map.get(kind_field),
                         )
                     )
-                else:
-                    normalized = raw_kind.strip().lower()
-                    if normalized in VALID_INSTALL_KINDS:
-                        effective_kind = normalized
-                    else:
-                        violations.append(
-                            self.violation(
-                                f"'metadata.openclaw.install[{i}].{kind_field}' is '{raw_kind}', "
-                                f"expected one of: {sorted(VALID_INSTALL_KINDS)}",
-                                file_path=skill_md,
-                                line=line_map.get(kind_field),
-                            )
-                        )
 
             # openclaw drops entries whose kind is missing its required field,
             # so the installer silently never appears.

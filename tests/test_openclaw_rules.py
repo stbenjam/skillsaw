@@ -208,7 +208,8 @@ def test_primary_env_wrong_type_fails(temp_dir):
 
     context = RepositoryContext(skill)
     violations = OpenclawMetadataRule().check(context)
-    assert any("primaryEnv" in v.message and "string" in v.message for v in violations)
+    matching = [v for v in violations if "primaryEnv" in v.message and "string" in v.message]
+    assert len(matching) == 1
 
 
 def test_os_wrong_type_fails(temp_dir):
@@ -662,6 +663,29 @@ def test_kind_case_insensitive_passes(temp_dir):
     assert len(v) == 0
 
 
+def test_install_without_kind_or_type_fails(temp_dir):
+    v = _skill(temp_dir, "kind-missing", "    install:\n      - id: x\n")
+    assert any("must specify 'kind' or 'type'" in m.message for m in v)
+
+
+def test_install_null_kind_fails(temp_dir):
+    v = _skill(temp_dir, "kind-null", "    install:\n      - id: x\n        kind: null\n")
+    assert any("install[0].kind" in m.message and "string" in m.message for m in v)
+
+
+def test_install_non_string_kind_falls_back_to_type(temp_dir):
+    v = _skill(
+        temp_dir,
+        "kind-type-fallback",
+        "    install:\n"
+        "      - id: x\n"
+        "        kind: null\n"
+        "        type: node\n"
+        "        package: x\n",
+    )
+    assert len(v) == 0
+
+
 def test_brew_without_formula_or_cask_fails(temp_dir):
     v = _skill(temp_dir, "brew-none", "    install:\n      - id: b\n        kind: brew\n")
     assert any("brew" in m.message and "formula" in m.message for m in v)
@@ -730,7 +754,22 @@ def test_typo_key_near_miss_warns(temp_dir):
     assert any("did you mean" in m.message and "install" in m.message for m in v)
 
 
-def test_unknown_freeform_key_not_flagged(temp_dir):
-    # `category` is not a known key but not a near-miss either -> no warning
-    v = _skill(temp_dir, "freeform", "    category: productivity\n")
+def test_clawhub_metadata_keys_pass(temp_dir):
+    v = _skill(
+        temp_dir,
+        "clawhub",
+        "    category: productivity\n    cliHelp: tool --help\n",
+    )
+    assert len(v) == 0
+
+
+def test_clawhub_metadata_key_typos_warn(temp_dir):
+    category = _skill(temp_dir, "category-typo", "    categry: productivity\n")
+    cli_help = _skill(temp_dir, "clihelp-typo", "    clihelp: tool --help\n")
+    assert any("did you mean 'category'" in m.message for m in category)
+    assert any("did you mean 'cliHelp'" in m.message for m in cli_help)
+
+
+def test_non_string_openclaw_key_does_not_crash(temp_dir):
+    v = _skill(temp_dir, "numeric-key", "    1: value\n")
     assert len(v) == 0
