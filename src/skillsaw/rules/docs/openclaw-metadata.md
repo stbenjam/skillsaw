@@ -22,10 +22,12 @@ the authoritative field list.
 
 ## How to fix
 
-Correct the flagged field to an allowed value. Common cases: `npm` isn't
-a kind — use `kind: node` with a `package`; `kind: download` requires a
-`url`; there is no `apt`/`dnf` kind (use `brew`, which also runs on
-Linux, or `download`).
+Correct the flagged field to an allowed value. Each kind needs its
+field, or OpenClaw silently drops the installer: `brew`→`formula` (or
+`cask`), `node`/`uv`→`package`, `go`→`module`, `download`→`url`. Note
+`npm` isn't a kind (use `node`), `type` is an accepted alias for `kind`,
+and there's no `apt`/`dnf` kind (use `brew`, which also runs on Linux,
+or `download`).
 
 This rule only fires when `metadata.openclaw` is present — removing the
 block suppresses it entirely.
