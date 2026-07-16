@@ -149,9 +149,12 @@ class ContentInconsistentTerminologyRule(Rule):
         if len(content_files) < self.MIN_FILES:
             return []
 
-        scan_bodies: Dict[Path, Optional[str]] = {
-            cf.path: self._scan_body(cf) for cf in content_files
-        }
+        # Keyed by list position, not ``cf.path`` — several block types
+        # (``CodeRabbitContentBlock``, ``PromptfooPromptBlock``) emit multiple
+        # content blocks sharing the same file path (one per instruction
+        # fragment / prompt entry), so a path-keyed cache would silently
+        # collapse them onto whichever fragment's body was computed last.
+        scan_bodies: List[Optional[str]] = [self._scan_body(cf) for cf in content_files]
 
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
@@ -163,8 +166,7 @@ class ContentInconsistentTerminologyRule(Rule):
             files_by_term: Dict[str, List[Tuple[Path, Optional[int], ContentBlock]]] = defaultdict(
                 list
             )
-            for cf in content_files:
-                body = scan_bodies.get(cf.path)
+            for cf, body in zip(content_files, scan_bodies):
                 if not body:
                     continue
                 lowered = body.lower()

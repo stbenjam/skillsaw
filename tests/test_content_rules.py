@@ -1109,6 +1109,49 @@ class TestContentInconsistentTerminologyRule:
         assert v.line == 3
         assert v.file_line == 3
 
+    def test_multiple_coderabbit_fragments_scanned_independently(self, temp_dir):
+        """A ``.coderabbit.yaml`` with several instruction fragments produces
+        several ``ContentBlock``s that all share the same file path. A
+        path-keyed body cache would collapse them onto one fragment's text —
+        this must scan (and attribute violations to) each fragment on its
+        own terms."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"
+            "  instructions: |\n"
+            "    Create a new directory for generated assets before running codegen.\n"
+            "  tools:\n"
+            "    eslint:\n"
+            "      instructions: |\n"
+            "        Put the eslint config in the project folder root.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text("# Notes\n\nKeep the directory layout tidy.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        by_group = [v for v in violations if "directory/folder" in v.message]
+        assert len(by_group) == 1
+        assert by_group[0].file_path.name == ".coderabbit.yaml"
+        assert by_group[0].file_line == 7
+
+    def test_multiple_promptfoo_prompts_scanned_independently(self, temp_dir):
+        """Same collapsing risk as coderabbit fragments, for promptfoo's
+        multiple ``prompts[i]`` blocks sharing one file path."""
+        (temp_dir / "promptfooconfig.yaml").write_text(
+            "prompts:\n"
+            '  - "Create a new directory for the generated report."\n'
+            '  - "Save the output in the results folder."\n'
+            "providers:\n"
+            "  - openai:gpt-4o-mini\n"
+            "tests:\n"
+            "  - vars: {}\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text("# Notes\n\nKeep the directory layout tidy.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        by_group = [v for v in violations if "directory/folder" in v.message]
+        assert len(by_group) == 1
+        assert by_group[0].file_path.name == "promptfooconfig.yaml"
+        assert by_group[0].file_line == 3
+
 
 # A realistic ~50-word section shared between instruction files in the
 # drift tests below.
