@@ -3,8 +3,9 @@
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+from skillsaw.blocks import ContentBlock
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
@@ -118,10 +119,39 @@ class ContentInconsistentTerminologyRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.INFO
 
+    @staticmethod
+    def _scan_body(cf: ContentBlock) -> Optional[str]:
+        """Prose body with heading lines blanked, code/fences already stripped.
+
+        Headings are a different register than running prose (issue #427):
+        a spelled-out heading like ``# Create Pull Request`` shouldn't count
+        as a terminology choice when the body consistently uses "PR", and a
+        heading shouldn't get compared against files that never discuss the
+        same topic. Blanking (rather than dropping) heading lines keeps line
+        numbers aligned with the file so surviving matches stay traceable.
+        """
+        body = cf.read_body()
+        if not body:
+            return None
+        headings = cf.markdown.headings()
+        if not headings:
+            return body
+        lines = body.split("\n")
+        for heading in headings:
+            for body_line in range(heading.body_line, heading.body_line_end):
+                idx = body_line - 1
+                if 0 <= idx < len(lines):
+                    lines[idx] = ""
+        return "\n".join(lines)
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         content_files = gather_all_content_blocks(context)
         if len(content_files) < self.MIN_FILES:
             return []
+
+        scan_bodies: Dict[Path, Optional[str]] = {
+            cf.path: self._scan_body(cf) for cf in content_files
+        }
 
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
@@ -129,9 +159,12 @@ class ContentInconsistentTerminologyRule(Rule):
             if group_severity is None:
                 continue
             term_usage: Dict[str, int] = defaultdict(int)
-            files_by_term: Dict[str, List[Path]] = defaultdict(list)
+            # pattern -> [(path, matching 1-based line, block), ...]
+            files_by_term: Dict[str, List[Tuple[Path, Optional[int], ContentBlock]]] = defaultdict(
+                list
+            )
             for cf in content_files:
-                body = cf.read_body()
+                body = scan_bodies.get(cf.path)
                 if not body:
                     continue
                 lowered = body.lower()
@@ -139,19 +172,26 @@ class ContentInconsistentTerminologyRule(Rule):
                     literal = _required_literal(pattern.pattern, pattern.flags)
                     if literal is not None and literal not in lowered:
                         continue
-                    if pattern.search(body):
+                    match = pattern.search(body)
+                    if match:
                         term_usage[pattern.pattern] += 1
-                        files_by_term[pattern.pattern].append(cf.path)
+                        line_num = body.count("\n", 0, match.start()) + 1
+                        files_by_term[pattern.pattern].append((cf.path, line_num, cf))
 
             used_terms = [p for p in term_usage if term_usage[p] > 0]
             if len(used_terms) >= 2:
                 majority_term = max(used_terms, key=lambda p: term_usage[p])
-                minority_files: Set[Path] = set()
-                for term, fpaths in files_by_term.items():
-                    if term != majority_term:
-                        minority_files.update(fpaths)
+                minority_by_path: Dict[Path, Tuple[Optional[int], ContentBlock]] = {}
+                for term, entries in files_by_term.items():
+                    if term == majority_term:
+                        continue
+                    for fpath, line_num, cf in entries:
+                        minority_by_path.setdefault(fpath, (line_num, cf))
                 msg = f"Inconsistent terminology: {group_name} — multiple variants used across files. Pick one and use it consistently."
-                for fpath in sorted(minority_files):
-                    violations.append(self.violation(msg, file_path=fpath, severity=group_severity))
+                for fpath in sorted(minority_by_path):
+                    line_num, cf = minority_by_path[fpath]
+                    violations.append(
+                        self.violation(msg, block=cf, line=line_num, severity=group_severity)
+                    )
 
         return violations

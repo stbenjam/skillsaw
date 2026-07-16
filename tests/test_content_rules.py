@@ -1070,6 +1070,45 @@ class TestContentInconsistentTerminologyRule:
         assert rule._group_overrides == {}
         assert rule.check(context)
 
+    def test_heading_not_counted_as_prose_usage(self, temp_dir):
+        """Regression for issue #427: a spelled-out heading shouldn't clash
+        with a body that consistently uses the abbreviation elsewhere."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Create Pull Request\n\n"
+            "Open a PR against main. Wait for review on the PR before merging.\n"
+        )
+        (temp_dir / "AGENTS.md").write_text(
+            "# Notes\n\nAlways open a PR before merging any change.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert not any("PR/pull request/merge request" in v.message for v in violations)
+
+    def test_code_span_path_not_counted(self, temp_dir):
+        """Regression for issue #427: a path segment inside a code span
+        shouldn't read as a standalone terminology choice."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use the repo for context. See `.planning/codebase/CONVENTIONS.md` for details.\n"
+        )
+        (temp_dir / "AGENTS.md").write_text(
+            "Clone the repo and read the repo's contributing guide.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert not any("repo/repository/codebase" in v.message for v in violations)
+
+    def test_violation_reports_matching_line(self, temp_dir):
+        """Regression for issue #427: violations must point at the specific
+        line that used the minority term, not just the file."""
+        (temp_dir / "CLAUDE.md").write_text("# Layout\n\nCreate a directory for configs.\n")
+        (temp_dir / "AGENTS.md").write_text("# Layout\n\nCreate a folder for output.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert violations
+        v = violations[0]
+        assert v.line == 3
+        assert v.file_line == 3
+
 
 # A realistic ~50-word section shared between instruction files in the
 # drift tests below.
