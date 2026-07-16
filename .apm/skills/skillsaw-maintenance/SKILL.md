@@ -1,15 +1,15 @@
 ---
 name: skillsaw-maintenance
-description: Analyze upstream specs (agentskills.io, Claude Code plugin/marketplace format) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
+description: Analyze upstream specs (agentskills.io, Claude Code plugin/marketplace format, OpenClaw, MCP, CodeRabbit, APM) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
 metadata:
   author: stbenjam
-  version: "1.0"
+  version: "2.0"
 ---
 
-<!-- Source paths below are repo-root-relative references, not links navigable from this skill's directory. -->
+<!-- Repo-root-relative src/... paths below are not navigable from this skill's directory, so they stay as inline code. Links to references/*.md are real files in this skill and are navigable. -->
 <!-- skillsaw-disable content-unlinked-internal-reference -->
 
 # skillsaw Maintenance
@@ -27,35 +27,23 @@ itself.
 
 ## Step 1: Analyze upstream specs for changes
 
-Fetch and review the current versions of:
+For each tracked spec, open its reference file and compare the current upstream spec
+against the mapped skillsaw rule(s). Each reference lists the upstream source(s), what
+to check, the rules that map, and sync notes (hand-copied values that can drift).
 
-1. **agentskills.io specification** at https://agentskills.io/specification
-   - Check for new required/optional frontmatter fields in SKILL.md
-   - Check for changes to naming rules, directory structure, or evals format
-   - Compare against what skillsaw currently validates in `src/skillsaw/rules/builtin/agentskills.py`
+| Spec | Reference | Rules (dir) |
+|---|---|---|
+| Agent Skills (agentskills.io) | [references/agentskills.md](references/agentskills.md) | `agentskills/` |
+| Claude Code (plugins, marketplace, .claude, hooks, mcp, skills, agents) | [references/claude.md](references/claude.md) | `plugins/`, `commands/`, `marketplace/`, `hooks/`, `mcp/`, `skills/`, `agents/` |
+| OpenClaw | [references/openclaw.md](references/openclaw.md) | `openclaw/` |
+| Model Context Protocol | [references/mcp.md](references/mcp.md) | `mcp/` |
+| CodeRabbit (`.coderabbit.yaml`) | [references/coderabbit.md](references/coderabbit.md) | `coderabbit/` |
+| APM (`.apm/`) | [references/apm.md](references/apm.md) | `apm/` |
 
-2. **Claude Code plugin format** at https://docs.claude.com/en/docs/claude-code/plugins-reference
-   - Check for new required fields in plugin.json
-   - Check for new command format requirements
-   - Check for structural changes to plugin layout
-   - Compare against `src/skillsaw/rules/builtin/plugin_structure.py` and `src/skillsaw/rules/builtin/command_format.py`
-
-3. **Claude Code marketplace format** at https://docs.claude.com/en/docs/claude-code/plugin-marketplaces
-   - Check for new marketplace.json requirements
-   - Check for changes to plugin registration or discovery
-   - Compare against `src/skillsaw/rules/builtin/marketplace/`
-
-4. **Claude Code .claude/ directory** at https://code.claude.com/docs/en/claude-directory
-   - Check for structure requirements, supported files, and conventions
-   - Compare against `src/skillsaw/context.py` DOT_CLAUDE detection and discovery
-   - Note: .claude/ is NOT a plugin — it has its own format distinct from plugins
-
-5. **Claude Code hooks, MCP, agents, skills** formats
-   - Hooks: https://docs.claude.com/en/docs/claude-code/hooks
-   - MCP servers: https://docs.claude.com/en/docs/claude-code/mcp-servers
-   - Skills and agents: https://docs.claude.com/en/docs/claude-code/skills
-   - Review current docs for any format changes
-   - Compare against the corresponding rule files in `src/skillsaw/rules/builtin/`
+Pay special attention to the **Sync notes** in each reference: rules that hand-copy
+upstream value sets (OpenClaw's install kinds/os/archive, MCP transport types, APM
+required fields) are the highest drift risk. OpenClaw is the top risk — it publishes no
+JSON Schema, so skillsaw's rule is the de-facto validator.
 
 ## Step 2: Identify gaps
 
