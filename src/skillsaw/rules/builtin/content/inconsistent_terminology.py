@@ -155,6 +155,9 @@ class ContentInconsistentTerminologyRule(Rule):
         # fragment / prompt entry), so a path-keyed cache would silently
         # collapse them onto whichever fragment's body was computed last.
         scan_bodies: List[Optional[str]] = [self._scan_body(cf) for cf in content_files]
+        # Whole-body .lower() is blob-level work — compute it once per file
+        # here rather than once per (file, group) inside the loop below.
+        lowered_bodies: List[Optional[str]] = [b.lower() if b else None for b in scan_bodies]
 
         violations = []
         for group_name, patterns in self._TERM_GROUPS:
@@ -166,10 +169,9 @@ class ContentInconsistentTerminologyRule(Rule):
             files_by_term: Dict[str, List[Tuple[Path, Optional[int], ContentBlock]]] = defaultdict(
                 list
             )
-            for cf, body in zip(content_files, scan_bodies):
+            for cf, body, lowered in zip(content_files, scan_bodies, lowered_bodies):
                 if not body:
                     continue
-                lowered = body.lower()
                 for pattern in patterns:
                     literal = _required_literal(pattern.pattern, pattern.flags)
                     if literal is not None and literal not in lowered:
