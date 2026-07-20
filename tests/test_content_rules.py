@@ -2667,3 +2667,43 @@ class TestContentRuleFalsePositiveGuards:
         )
         violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
         assert violations == []
+
+    def test_html_comment_not_a_cluster_policy_statement(self, temp_dir):
+        """Suppression directives and commented-out prose are not
+        delivered to the agent — they can't restate a policy."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Ask before force-pushing to shared branches.\n\n"
+            "## Later\n\n"
+            "<!-- old rule: wait for approval before deleting data -->\n"
+            "Delete stale branches weekly.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_html_comment_not_a_loop_instruction(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n<!-- keep monitoring disabled for now -->\nRead the logs.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_emphasis_message_shows_decimal_ratio(self, temp_dir):
+        """A file just over the threshold must not render '20% exceeds
+        the 20% limit' — the measured ratio shows one decimal."""
+        lines = [f"- Step {i}: read the {i} widget log.\n" for i in range(23)]
+        content = (
+            "# Rules\n\n"
+            + "".join(lines)
+            + "- NEVER commit secrets.\n"
+            + "- ALWAYS run the tests.\n"
+            + "- You MUST update the spec.\n"
+            + "- NEVER log request bodies.\n"
+            + "- ALWAYS regenerate mocks.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = ContentEmphasisDensityRule({"max-ratio": 0.15}).check(
+            RepositoryContext(temp_dir)
+        )
+        assert len(violations) == 1
+        assert "17.2% exceeds the 15% limit" in violations[0].message

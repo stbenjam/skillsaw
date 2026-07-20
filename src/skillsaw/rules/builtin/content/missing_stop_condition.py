@@ -149,7 +149,7 @@ class ContentMissingStopConditionRule(Rule):
         """
         for offset, line in enumerate(lines):
             stripped = line.lstrip()
-            if stripped.startswith("|") or stripped.startswith("#"):
+            if stripped.startswith("|") or stripped.startswith("#") or stripped.startswith("<!--"):
                 continue
             body_line = start + offset
             if line.rstrip().endswith(":") and (

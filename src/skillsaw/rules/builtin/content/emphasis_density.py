@@ -105,11 +105,13 @@ class ContentEmphasisDensityRule(Rule):
             ratio = emphasized / total
             if ratio <= self._max_ratio:
                 continue
+            # One decimal on the measured ratio so a file just over the
+            # threshold never renders as "20% exceeds the 20% limit".
             violations.append(
                 self.violation(
                     f"{emphasized} of {total} lines carry critical emphasis "
-                    f"(IMPORTANT/MUST/NEVER/ALWAYS/...) — {int(ratio * 100)}% "
-                    f"exceeds the {int(self._max_ratio * 100)}% limit; when "
+                    f"(IMPORTANT/MUST/NEVER/ALWAYS/...) — {ratio * 100:.1f}% "
+                    f"exceeds the {self._max_ratio * 100:g}% limit; when "
                     f"everything is emphasized nothing stands out. Reserve "
                     f"emphasis for the few rules that matter most",
                     block=cf,

@@ -351,8 +351,11 @@ class ContentRepeatedDirectiveRule(Rule):
         matches: List[Tuple[int, str]] = []
         for line_num, line in enumerate(body.splitlines(), 1):
             # A heading naming a policy section ("### Require Explicit
-            # Approval") is not a statement of the policy.
-            if line.lstrip().startswith("#"):
+            # Approval") is not a statement of the policy, and an HTML
+            # comment (suppression directives, commented-out prose) is
+            # not delivered to the agent at all.
+            stripped = line.lstrip()
+            if stripped.startswith("#") or stripped.startswith("<!--"):
                 continue
             for (pattern,) in active:
                 m = pattern.search(line)
