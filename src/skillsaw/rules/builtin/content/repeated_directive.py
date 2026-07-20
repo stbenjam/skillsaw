@@ -23,6 +23,10 @@ _IMPERATIVE_RE = InstructionBudgetAnalyzer._IMPERATIVE_RE
 
 _WORD_RE = re.compile(r"[a-z0-9']+")
 
+# "Run 2: Failed tests = [...]" — an enumeration label, not an imperative.
+# The leading word only looks like a verb; lists of these are example data.
+_ENUMERATION_RE = re.compile(r"^\s*(?:[-*]\s*)?\w+\s+\d+\s*:")
+
 # Wall-clock budget for each user-supplied cluster pattern (issue #316:
 # config regexes run against untrusted bodies with a backtracking engine).
 _EXTRA_PATTERN_TIMEOUT = 2.0
@@ -66,6 +70,7 @@ class ContentRepeatedDirectiveRule(Rule):
 
     _DEFAULT_THRESHOLD = 0.85
     _DEFAULT_MIN_WORDS = 4
+    _DEFAULT_MIN_DISTANCE = 4
 
     config_schema = {
         "similarity-threshold": {
@@ -84,6 +89,15 @@ class ContentRepeatedDirectiveRule(Rule):
                 "Minimum number of words a directive line must contain to "
                 "participate in similarity comparison (phrase clusters are "
                 "not length-limited)"
+            ),
+        },
+        "min-line-distance": {
+            "type": "int",
+            "default": _DEFAULT_MIN_DISTANCE,
+            "description": (
+                "Minimum number of lines between two directives before they "
+                "are compared — neighboring similar bullets are usually "
+                "intentional parallel structure, not repetition"
             ),
         },
         "extra-clusters": {
@@ -125,6 +139,19 @@ class ContentRepeatedDirectiveRule(Rule):
                 f"least 2, got {min_words}"
             )
         self._min_words = min_words
+
+        min_distance = self.config.get("min-line-distance", self._DEFAULT_MIN_DISTANCE)
+        if not isinstance(min_distance, int) or isinstance(min_distance, bool):
+            raise ValueError(
+                f"'min-line-distance' for rule '{self.rule_id}' must be an "
+                f"integer, got {type(min_distance).__name__}"
+            )
+        if min_distance < 1:
+            raise ValueError(
+                f"'min-line-distance' for rule '{self.rule_id}' must be at "
+                f"least 1, got {min_distance}"
+            )
+        self._min_distance = min_distance
         self._extra_clusters = self._parse_extra_clusters()
 
     def _parse_extra_clusters(self) -> List[Tuple[str, List[re.Pattern]]]:
@@ -196,6 +223,8 @@ class ContentRepeatedDirectiveRule(Rule):
         for line_num, line in enumerate(body.splitlines(), 1):
             if not _IMPERATIVE_RE.match(line):
                 continue
+            if _ENUMERATION_RE.match(line):
+                continue
             words = self._normalize(line)
             if len(words) < self._min_words:
                 continue
@@ -221,6 +250,8 @@ class ContentRepeatedDirectiveRule(Rule):
             anchor_len = len(anchor.words)
             for i in range(j):
                 other = directives[i]
+                if anchor.body_line - other.body_line < self._min_distance:
+                    continue
                 if other.body_line in reported:
                     continue
                 other_len = len(other.words)

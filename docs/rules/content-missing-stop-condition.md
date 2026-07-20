@@ -23,10 +23,14 @@ among the few things a prompt should always keep: define the
 destination, not just the activity.
 
 The rule finds open-ended loop instructions — "keep monitoring",
-"keep checking", "poll for", "continuously", "retry when" — and flags
-them when the surrounding paragraph contains no stopping condition: no
-"until", no "stop after N minutes", no "at most N attempts", no
-count, timeout, or exit criteria.
+"keep checking", "poll for", "continuously check", "retry when" — and
+flags them when the surrounding paragraph contains no stopping
+condition: no "until", no "stop after N minutes", no "at most N
+attempts", no count, timeout, or exit criteria. Loop adverbs must sit
+next to an activity verb, so descriptive prose ("the daemon
+continuously reconnects") doesn't fire, and table rows are skipped —
+cell text like "Watch for crypto errors" is a matrix entry, not an
+instruction to loop.
 
 This rule is **opt-in** (`enabled: false` by default): monitoring
 language is common in prose that never reaches an agent verbatim.

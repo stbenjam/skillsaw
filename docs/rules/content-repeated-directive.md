@@ -36,7 +36,11 @@ Directives are compared line by line, so bullet-style instructions are
 matched most reliably; a directive buried mid-paragraph is compared
 together with the rest of its wrapped line. Inline code is part of the
 comparison — `` Run `make test` `` and `` Run `make lint` `` are
-different directives.
+different directives. Two shapes are deliberately excluded:
+enumeration labels that only look like imperatives ("Run 2: Failed
+tests = […]" is example data, not an instruction), and similar
+directives fewer than `min-line-distance` lines apart — neighboring
+bullets that share phrasing are intentional parallel structure.
 
 This differs from neighboring rules: `content-instruction-drift`
 compares whole sections *across* files; this rule compares individual
@@ -87,6 +91,7 @@ rules:
     severity: warning
     similarity-threshold: 0.9    # (0-1]; higher = only near-verbatim repeats fire
     min-directive-words: 5       # ignore directives shorter than this
+    min-line-distance: 4         # don't compare directives closer than this
     extra-clusters:              # project-specific restatement clusters
       deploy-source:
         - '\b(?:deploy|ship)\s+(?:only|exclusively)\b'
@@ -113,6 +118,7 @@ rules:
 |-----------|-------------|---------|
 | `similarity-threshold` | Similarity ratio (0-1] at or above which two directive lines in the same file are considered restatements; identical lines always fire | `0.85` |
 | `min-directive-words` | Minimum number of words a directive line must contain to participate in similarity comparison (phrase clusters are not length-limited) | `4` |
+| `min-line-distance` | Minimum number of lines between two directives before they are compared — neighboring similar bullets are usually intentional parallel structure, not repetition | `4` |
 | `extra-clusters` | Additional phrase clusters keyed by cluster name, each a list of regex patterns that express the same policy; two different lines matching one cluster are flagged as restatements | `{}` |
 
 

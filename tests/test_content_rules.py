@@ -2484,3 +2484,81 @@ class TestContentMissingStopConditionRule:
 
     def test_no_files_no_violations(self, temp_dir):
         assert ContentMissingStopConditionRule().check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentRepeatedDirectiveTuning:
+    """Guards added after real-repo impact analysis (GPT-5.6 rule set)."""
+
+    def test_enumeration_labels_not_directives(self, temp_dir):
+        """'Run 2: ...' example-data lines are labels, not imperatives."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Analysis example\n\n"
+            '- Run 2: Failed tests = ["api discovery should work"]\n'
+            '- Run 3: Failed tests = ["api discovery should work"]\n\n'
+            "## Later\n\n"
+            '- Run 7: Failed tests = ["api discovery should work"]\n'
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_neighboring_parallel_bullets_not_flagged(self, temp_dir):
+        """Similar bullets within min-line-distance are parallel structure."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Check the build log for compiler warnings today.\n"
+            "- Check the build log for compiler errors today.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_min_line_distance_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Check the build log for compiler warnings today.\n"
+            "- Check the build log for compiler errors today.\n"
+        )
+        rule = ContentRepeatedDirectiveRule({"min-line-distance": 1})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_invalid_min_line_distance_rejected(self):
+        with pytest.raises(ValueError, match="min-line-distance"):
+            ContentRepeatedDirectiveRule({"min-line-distance": 0})
+
+
+class TestContentMissingStopConditionTuning:
+    """Guards added after real-repo impact analysis (GPT-5.6 rule set)."""
+
+    def test_descriptive_continuously_not_flagged(self, temp_dir):
+        """'continuously' describing system behavior is not a loop order."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n"
+            "The sync daemon continuously reconnects to the message bus\n"
+            "when the broker restarts.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_imperative_continuously_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nContinuously check the job queue for new entries.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_watch_for_not_flagged(self, temp_dir):
+        """'Watch for X' means 'be alert to X', not 'loop watching X'."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nWatch for crypto and TLS errors in FIPS clusters.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_table_rows_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "| Variant | Guidance |\n"
+            "|---------|----------|\n"
+            "| fips | Keep checking the crypto logs |\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []

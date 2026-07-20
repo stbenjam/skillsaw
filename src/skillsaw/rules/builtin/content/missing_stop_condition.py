@@ -17,16 +17,19 @@ from skillsaw.rules.builtin.content_analysis import (
 # regexes run against untrusted bodies with a backtracking engine).
 _EXTRA_PATTERN_TIMEOUT = 2.0
 
-# Open-ended agentic activity: instructions that start a loop.
+# Open-ended agentic activity: instructions that start a loop. Loop
+# adverbs must sit next to an activity verb — a bare "continuously" or
+# "watch for" is usually describing system behavior, not instructing one.
+_LOOP_VERBS = r"(?:check|monitor|poll|watch|retry|rerun|run|verify|refresh)"
 _LOOP_PATTERNS = [
     (re.compile(p, re.IGNORECASE),)
     for p in (
         r"\bkeep\s+(?:monitoring|checking|polling|watching|retrying|waiting|looping|running)\b",
-        r"\b(?:monitor|poll|watch)(?:ing)?\s+for\b",
-        r"\bcontinuously\b",
-        r"\brepeatedly\b",
+        r"\bpoll(?:ing)?\s+(?:for|every|the)\b",
+        r"\b(?:continuously|repeatedly|indefinitely)\s+" + _LOOP_VERBS + r"\w*\b",
+        r"\b" + _LOOP_VERBS + r"\w*\s+(?:continuously|repeatedly|indefinitely)\b",
         r"\bin\s+a\s+loop\b",
-        r"\bretry\s+(?:on|if|when|until)\b",
+        r"\bretry\s+(?:on|if|when)\b",
     )
 ]
 
@@ -132,8 +135,14 @@ class ContentMissingStopConditionRule(Rule):
         return paragraphs
 
     def _first_loop_match(self, lines: List[str], active: List[tuple]):
-        """(paragraph-relative line offset, phrase) of the first loop match."""
+        """(paragraph-relative line offset, phrase) of the first loop match.
+
+        Table rows are skipped: cell text like "Watch for crypto errors"
+        is a descriptive matrix entry, not a loop instruction.
+        """
         for offset, line in enumerate(lines):
+            if line.lstrip().startswith("|"):
+                continue
             for (pattern,) in active:
                 m = pattern.search(line)
                 if m:

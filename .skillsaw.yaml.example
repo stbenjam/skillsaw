@@ -196,6 +196,7 @@ rules:
     severity: warning
     # similarity-threshold: 0.85
     # min-directive-words: 4
+    # min-line-distance: 4
     # extra-clusters: {}
 
   # Warn about markdown sections longer than ~500 tokens
