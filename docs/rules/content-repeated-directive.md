@@ -36,11 +36,23 @@ Directives are compared line by line, so bullet-style instructions are
 matched most reliably; a directive buried mid-paragraph is compared
 together with the rest of its wrapped line. Inline code is part of the
 comparison — `` Run `make test` `` and `` Run `make lint` `` are
-different directives. Two shapes are deliberately excluded:
+different directives. Three shapes are deliberately excluded:
 enumeration labels that only look like imperatives ("Run 2: Failed
-tests = […]" is example data, not an instruction), and similar
-directives fewer than `min-line-distance` lines apart — neighboring
-bullets that share phrasing are intentional parallel structure.
+tests = […]" is example data, not an instruction), similar directives
+fewer than `min-line-distance` lines apart (neighboring bullets that
+share phrasing are intentional parallel structure), and
+colon-terminated captions directly above a code fence ("Add to
+`customizations.vscode.extensions`:" repeated across sections is a
+caption — the code below it is the real, differing content).
+
+The two detection forms report differently: repeated/near-duplicate
+directives use the rule severity (warning by default), while cluster
+restatements always report at **info** — in long workflow files,
+matches like "requires confirmation" are often step-scoped ("this step
+requires confirmation" for two different steps) rather than one
+blanket policy stated twice, so they are review prompts, not defects.
+Headings never count as cluster matches: "### Require Explicit
+Approval" names a policy section, it doesn't restate the policy.
 
 This differs from neighboring rules: `content-instruction-drift`
 compares whole sections *across* files; this rule compares individual

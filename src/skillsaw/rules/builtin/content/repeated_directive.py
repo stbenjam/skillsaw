@@ -198,7 +198,7 @@ class ContentRepeatedDirectiveRule(Rule):
 
     @staticmethod
     def _scan_body(cf: ContentBlock):
-        """Raw prose with fenced-code lines blanked, inline code preserved.
+        """(prose, fence start lines) — fenced code blanked, inline code kept.
 
         ``read_body(strip_code_blocks=True)`` also blanks inline code
         spans, but a code span is often the only token distinguishing two
@@ -207,23 +207,32 @@ class ContentRepeatedDirectiveRule(Rule):
         """
         body = cf.read_body(strip_code_blocks=False)
         if not body:
-            return None
+            return None, frozenset()
         lines = body.splitlines()
+        fence_starts = set()
         for fence in cf.markdown.fences():
+            fence_starts.add(fence.body_line_start)
             for i in range(fence.body_line_start - 1, min(fence.body_line_end, len(lines))):
                 lines[i] = ""
-        return "\n".join(lines)
+        return "\n".join(lines), frozenset(fence_starts)
 
     @staticmethod
     def _normalize(line: str) -> List[str]:
         return _WORD_RE.findall(line.lower())
 
-    def _extract_directives(self, body: str) -> List[_Directive]:
+    def _extract_directives(self, body: str, fence_starts: frozenset) -> List[_Directive]:
         directives: List[_Directive] = []
         for line_num, line in enumerate(body.splitlines(), 1):
             if not _IMPERATIVE_RE.match(line):
                 continue
             if _ENUMERATION_RE.match(line):
+                continue
+            # "Add to `customizations.vscode.extensions`:" followed by a
+            # fence is a caption for the code below — parallel sections
+            # repeat the caption while the code (the real content) differs.
+            if line.rstrip().endswith(":") and (
+                line_num + 1 in fence_starts or line_num + 2 in fence_starts
+            ):
                 continue
             words = self._normalize(line)
             if len(words) < self._min_words:
@@ -236,9 +245,9 @@ class ContentRepeatedDirectiveRule(Rule):
         return text if len(text) <= limit else text[: limit - 1] + "…"
 
     def _similarity_violations(
-        self, cf: ContentBlock, body: str, reported: set
+        self, cf: ContentBlock, body: str, fence_starts: frozenset, reported: set
     ) -> List[RuleViolation]:
-        directives = self._extract_directives(body)
+        directives = self._extract_directives(body, fence_starts)
         if len(directives) < 2:
             return []
         threshold = self._threshold
@@ -312,6 +321,10 @@ class ContentRepeatedDirectiveRule(Rule):
             for line_num, phrase in matches[1:]:
                 if line_num in reported:
                     continue
+                # INFO, not the rule severity: cluster matches in long
+                # workflow files are often step-scoped ("this step requires
+                # confirmation" for two different steps) rather than one
+                # blanket policy stated twice — worth a look, not a defect.
                 violations.append(
                     self.violation(
                         f"'{phrase}' restates the {name} policy already "
@@ -319,9 +332,7 @@ class ContentRepeatedDirectiveRule(Rule):
                         f"('{first_phrase}') — state the policy once",
                         block=cf,
                         line=line_num,
-                        severity=(
-                            Severity.INFO if isinstance(cf, self._REFERENCE_BLOCK_TYPES) else None
-                        ),
+                        severity=Severity.INFO,
                     )
                 )
                 reported.add(line_num)
@@ -339,6 +350,10 @@ class ContentRepeatedDirectiveRule(Rule):
             return []
         matches: List[Tuple[int, str]] = []
         for line_num, line in enumerate(body.splitlines(), 1):
+            # A heading naming a policy section ("### Require Explicit
+            # Approval") is not a statement of the policy.
+            if line.lstrip().startswith("#"):
+                continue
             for (pattern,) in active:
                 m = pattern.search(line)
                 if m:
@@ -349,10 +364,10 @@ class ContentRepeatedDirectiveRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
-            body = self._scan_body(cf)
+            body, fence_starts = self._scan_body(cf)
             if not body:
                 continue
             reported: set = set()
-            violations.extend(self._similarity_violations(cf, body, reported))
+            violations.extend(self._similarity_violations(cf, body, fence_starts, reported))
             violations.extend(self._cluster_violations(cf, body, reported))
         return violations

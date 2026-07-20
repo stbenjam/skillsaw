@@ -89,7 +89,13 @@ class ContentEmphasisDensityRule(Rule):
             total = 0
             emphasized = 0
             for line in body.splitlines():
-                if not line.strip():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Table rows are structured spec data — "| `exp` | MUST be
+                # present |" is RFC-2119 language in a claims matrix, not
+                # steering emphasis.
+                if stripped.startswith("|"):
                     continue
                 total += 1
                 if _CRITICAL_KEYWORDS.search(line):

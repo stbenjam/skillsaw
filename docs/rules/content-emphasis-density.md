@@ -28,7 +28,9 @@ The rule counts lines containing critical-emphasis keywords
 directive and doesn't count) and flags the file when they exceed a
 configurable fraction of its non-blank lines. Short bursts are exempt:
 the rule stays silent below a minimum count of emphasized lines, so a
-small file with a couple of MUSTs is fine.
+small file with a couple of MUSTs is fine. Table rows are excluded
+from both counts — "| `exp` | MUST be present |" in a claims matrix is
+RFC-2119 spec language, not steering emphasis.
 
 This complements `content-critical-position`, which checks *where*
 critical instructions sit; this rule checks *how many* there are.

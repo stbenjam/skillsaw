@@ -27,10 +27,15 @@ The rule finds open-ended loop instructions — "keep monitoring",
 flags them when the surrounding paragraph contains no stopping
 condition: no "until", no "stop after N minutes", no "at most N
 attempts", no count, timeout, or exit criteria. Loop adverbs must sit
-next to an activity verb, so descriptive prose ("the daemon
-continuously reconnects") doesn't fire, and table rows are skipped —
-cell text like "Watch for crypto errors" is a matrix entry, not an
-instruction to loop.
+next to a base-form activity verb in imperative position, so
+descriptive prose never fires: "the daemon continuously reconnects",
+"in-cluster pollers continuously check", and "the tool is run
+repeatedly" all describe behavior rather than order it. Also skipped:
+table rows ("Watch for crypto errors" is a matrix entry), headings
+("### Poll for Bot Response" names a section), and colon-terminated
+captions directly above a code fence — when the loop is
+operationalized in the code block below, that code is where the bound
+lives.
 
 This rule is **opt-in** (`enabled: false` by default): monitoring
 language is common in prose that never reaches an agent verbatim.

@@ -2277,6 +2277,8 @@ class TestContentRepeatedDirectiveRule:
         assert len(violations) == 1
         assert violations[0].line == 7
         assert "approval policy" in violations[0].message
+        # Cluster restatements are review prompts, not defects — always INFO.
+        assert violations[0].severity == Severity.INFO
         assert "line 3" in violations[0].message
 
     def test_code_blocks_not_scanned(self, temp_dir):
@@ -2576,6 +2578,92 @@ class TestContentMissingStopConditionTuning:
             "| Variant | Guidance |\n"
             "|---------|----------|\n"
             "| fips | Keep checking the crypto logs |\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+
+class TestContentRuleFalsePositiveGuards:
+    """Guards from the ai-helpers / prodsec-skills field review."""
+
+    def test_colon_caption_before_fence_not_a_directive(self, temp_dir):
+        """'Add to `X`:' introducing a code block is a caption — parallel
+        sections repeat the caption while the code differs."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Setup\n\n"
+            "## VS Code\n\n"
+            "Add to `customizations.vscode.extensions`:\n\n"
+            '```json\n["ms-python.python"]\n```\n\n'
+            "## Vim\n\n"
+            "Add to `customizations.vscode.extensions`:\n\n"
+            '```json\n["vscodevim.vim"]\n```\n'
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_heading_not_a_cluster_policy_statement(self, temp_dir):
+        """A heading naming an approval section is not a restatement of
+        the policy stated in its body."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "### Step 4: Require Explicit Approval\n\n"
+            "Before applying changes, show the diff.\n\n"
+            "## Rules\n\n"
+            "Require explicit confirmation before applying fixes.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_rfc2119_table_not_emphasis_inflation(self, temp_dir):
+        """MUST in spec tables is RFC-2119 language, not steering emphasis."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# JWT validation\n\n"
+            "Validate every claim in the table below.\n\n"
+            "| Claim | Requirement |\n"
+            "|-------|-------------|\n"
+            "| `iss` | MUST match the issuer URL |\n"
+            "| `aud` | MUST match the audience |\n"
+            "| `exp` | MUST be under 15 minutes |\n"
+            "| `jti` | MUST be unique |\n"
+            "| `sub` | MUST identify the caller |\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_heading_not_a_loop_instruction(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "### Step 3: Poll for Bot Response\n\n"
+            "Read the reply and stop once it arrives.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_caption_above_fence_not_a_loop_instruction(self, temp_dir):
+        """A colon caption whose loop is operationalized (and bounded) in
+        the code block below it is not an open-ended instruction."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "After posting the comment, poll for the bot reply:\n\n"
+            "```bash\nfor i in {1..10}; do gh pr view; sleep 30; done\n```\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_third_person_loop_adverb_not_flagged(self, temp_dir):
+        """'pollers continuously check' describes infrastructure."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n"
+            "In-cluster pollers continuously check API availability, and\n"
+            "the aggregator runs continuously during upgrades.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_passive_loop_adverb_not_flagged(self, temp_dir):
+        """'the tool is run repeatedly' is descriptive, not imperative."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n" "Caching avoids redundant reanalysis when the tool is run repeatedly.\n"
         )
         violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
         assert violations == []

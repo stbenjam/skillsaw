@@ -18,16 +18,18 @@ from skillsaw.rules.builtin.content_analysis import (
 _EXTRA_PATTERN_TIMEOUT = 2.0
 
 # Open-ended agentic activity: instructions that start a loop. Loop
-# adverbs must sit next to an activity verb — a bare "continuously" or
-# "watch for" is usually describing system behavior, not instructing one.
+# adverbs must sit next to a base-form activity verb in imperative
+# position (line/clause start) — "pollers continuously check" and "the
+# tool is run repeatedly" describe system behavior, they don't order it.
 _LOOP_VERBS = r"(?:check|monitor|poll|watch|retry|rerun|run|verify|refresh)"
+_CLAUSE_START = r"(?:^[-*\s]*|(?<=[.!?:;]\s))"
 _LOOP_PATTERNS = [
-    (re.compile(p, re.IGNORECASE),)
+    (re.compile(p, re.IGNORECASE | re.MULTILINE),)
     for p in (
         r"\bkeep\s+(?:monitoring|checking|polling|watching|retrying|waiting|looping|running)\b",
         r"\bpoll(?:ing)?\s+(?:for|every|the)\b",
-        r"\b(?:continuously|repeatedly|indefinitely)\s+" + _LOOP_VERBS + r"\w*\b",
-        r"\b" + _LOOP_VERBS + r"\w*\s+(?:continuously|repeatedly|indefinitely)\b",
+        _CLAUSE_START + r"(?:continuously|repeatedly|indefinitely)\s+" + _LOOP_VERBS + r"\b",
+        _CLAUSE_START + _LOOP_VERBS + r"\s+(?:continuously|repeatedly|indefinitely)\b",
         r"\bin\s+a\s+loop\b",
         r"\bretry\s+(?:on|if|when)\b",
     )
@@ -134,14 +136,25 @@ class ContentMissingStopConditionRule(Rule):
             paragraphs.append((start, current))
         return paragraphs
 
-    def _first_loop_match(self, lines: List[str], active: List[tuple]):
+    def _first_loop_match(
+        self, lines: List[str], start: int, active: List[tuple], fence_starts: frozenset
+    ):
         """(paragraph-relative line offset, phrase) of the first loop match.
 
-        Table rows are skipped: cell text like "Watch for crypto errors"
-        is a descriptive matrix entry, not a loop instruction.
+        Skipped shapes: table rows ("Watch for crypto errors" is a matrix
+        entry), headings ("### Poll for Bot Response" names a section),
+        and colon-terminated captions directly above a code fence — the
+        loop is operationalized in the code, which is where its bound
+        lives.
         """
         for offset, line in enumerate(lines):
-            if line.lstrip().startswith("|"):
+            stripped = line.lstrip()
+            if stripped.startswith("|") or stripped.startswith("#"):
+                continue
+            body_line = start + offset
+            if line.rstrip().endswith(":") and (
+                body_line + 1 in fence_starts or body_line + 2 in fence_starts
+            ):
                 continue
             for (pattern,) in active:
                 m = pattern.search(line)
@@ -189,9 +202,10 @@ class ContentMissingStopConditionRule(Rule):
         active_loops = patterns_matching_anywhere(body, loop_patterns)
         if not active_loops:
             return []
+        fence_starts = frozenset(f.body_line_start for f in cf.markdown.fences())
         out: List[RuleViolation] = []
         for start, lines in self._paragraphs(body):
-            match = self._first_loop_match(lines, active_loops)
+            match = self._first_loop_match(lines, start, active_loops, fence_starts)
             if match is None:
                 continue
             paragraph = "\n".join(lines)
