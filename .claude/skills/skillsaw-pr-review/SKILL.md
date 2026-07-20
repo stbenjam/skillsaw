@@ -55,10 +55,8 @@ Check out the PR branch and critically review the changes:
    - **PR-level comments** (comments on the main conversation thread):
      - Reply directly on the PR thread: `gh pr comment <number> --body "..."`
 
-   After addressing all feedback:
-   - Run the full test suite: `pytest tests/ -v`
-   - Run formatting: `black src/ tests/`
-   - Push changes if any were made
+   After addressing all feedback, re-run the test suite and formatting
+   (same commands as step 1) and push changes if any were made.
 
 3. **Validate backward compatibility**
    - Test against ai-helpers: clone `openshift-eng/ai-helpers`, run `skillsaw` against it, ensure exit 0

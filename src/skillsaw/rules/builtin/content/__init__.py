@@ -17,6 +17,9 @@ from .broken_internal_reference import ContentBrokenInternalReferenceRule
 from .unlinked_internal_reference import ContentUnlinkedInternalReferenceRule
 from .placeholder_text import ContentPlaceholderTextRule
 from .unclosed_fence import ContentUnclosedFenceRule
+from .repeated_directive import ContentRepeatedDirectiveRule
+from .emphasis_density import ContentEmphasisDensityRule
+from .missing_stop_condition import ContentMissingStopConditionRule
 
 __all__ = [
     "ContentWeakLanguageRule",
@@ -38,4 +41,7 @@ __all__ = [
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",
     "ContentUnclosedFenceRule",
+    "ContentRepeatedDirectiveRule",
+    "ContentEmphasisDensityRule",
+    "ContentMissingStopConditionRule",
 ]

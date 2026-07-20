@@ -1519,6 +1519,8 @@ BROKEN_FIXTURES = [
     "root-mcp/invalid-json",
     "content-unclosed-fence/skill-hides-violations",
     "content/instruction-drift",
+    "content/repeated-directive",
+    "content/emphasis-density",
 ]
 
 CLEAN_FIXTURES = [
@@ -1546,6 +1548,7 @@ OPT_IN_RULES = {
     "promptfoo-assertions",
     "promptfoo-metadata",
     "hooks-prohibited",
+    "content-missing-stop-condition",
 }
 
 
@@ -1784,6 +1787,97 @@ class TestInstructionDrift:
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         assert "content-instruction-drift" not in rule_ids(r)
+
+
+@pytest.mark.integration
+class TestContentRepeatedDirective:
+    """End-to-end tests for content-repeated-directive.
+
+    The fixture CLAUDE.md repeats one directive verbatim ('Run `make
+    test` before every push.' in Testing and Releases) and restates the
+    approval policy in two wordings ('Ask before force-pushing' /
+    'Wait for approval').
+    """
+
+    FIXTURE = "content/repeated-directive"
+
+    def test_repeated_and_restated_directives_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-repeated-directive", [])
+        assert len(vs) == 2
+        exact = next(v for v in vs if "repeats the directive" in v["message"])
+        assert exact["file_path"].endswith("CLAUDE.md")
+        assert exact["line"] == 22
+        assert "line 8" in exact["message"]
+        cluster = next(v for v in vs if "approval policy" in v["message"])
+        assert cluster["line"] == 28
+        assert "line 15" in cluster["message"]
+
+    def test_inline_suppression_silences_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text().replace(
+                "## Releases",
+                "<!-- skillsaw-disable content-repeated-directive -->\n## Releases",
+            )
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-repeated-directive", [])
+        assert all("repeats the directive" not in v["message"] for v in vs)
+
+
+@pytest.mark.integration
+class TestContentEmphasisDensity:
+    """End-to-end tests for content-emphasis-density."""
+
+    FIXTURE = "content/emphasis-density"
+
+    def test_emphasis_inflation_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-emphasis-density", [])
+        assert len(vs) == 1
+        v = vs[0]
+        assert v["file_path"].endswith("CLAUDE.md")
+        assert v["line"] is None
+        assert "critical emphasis" in v["message"]
+
+    def test_relaxed_ratio_silences_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n' "rules:\n" "  content-emphasis-density:\n" "    max-ratio: 0.9\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-emphasis-density" not in rule_ids(r)
+
+
+@pytest.mark.integration
+class TestContentMissingStopCondition:
+    """End-to-end tests for content-missing-stop-condition (opt-in).
+
+    The opt-in fixture CLAUDE.md has an open-ended 'keep monitoring'
+    paragraph and a bounded retry paragraph ('give up after 3
+    attempts') that must not fire.
+    """
+
+    FIXTURE = "config/opt-in-rules"
+
+    def test_open_ended_loop_reported_bounded_loop_not(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-missing-stop-condition", [])
+        assert len(vs) == 1
+        v = vs[0]
+        assert v["file_path"].endswith("CLAUDE.md")
+        assert v["line"] == 8
+        assert "keep monitoring" in v["message"]
 
 
 @pytest.mark.integration

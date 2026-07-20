@@ -137,6 +137,13 @@ rules:
     # entropy-threshold: 3.5
     # additional-placeholders: []
 
+  # Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file
+  content-emphasis-density:
+    enabled: auto
+    severity: warning
+    # max-ratio: 0.2
+    # min-emphasized: 5
+
   # Detect instructions that should be automated as hooks instead of prose instructions
   content-hook-candidate:
     enabled: auto
@@ -161,6 +168,13 @@ rules:
     # min-section-words: 40
     # ignore-generated: true
 
+  # Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition
+  content-missing-stop-condition:
+    enabled: false
+    severity: warning
+    # extra-loop-patterns: []
+    # extra-terminator-patterns: []
+
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
@@ -175,6 +189,14 @@ rules:
   content-redundant-with-tooling:
     enabled: auto
     severity: warning
+
+  # Detect the same directive stated more than once within a file
+  content-repeated-directive:
+    enabled: auto
+    severity: warning
+    # similarity-threshold: 0.85
+    # min-directive-words: 4
+    # extra-clusters: {}
 
   # Warn about markdown sections longer than ~500 tokens
   content-section-length:
