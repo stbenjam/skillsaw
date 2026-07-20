@@ -2526,6 +2526,21 @@ class TestContentRepeatedDirectiveTuning:
         with pytest.raises(ValueError, match="min-line-distance"):
             ContentRepeatedDirectiveRule({"min-line-distance": 0})
 
+    def test_line_matching_similarity_and_cluster_reported_once(self, temp_dir):
+        """A line that is both a near-duplicate and a cluster match gets
+        exactly one violation — the similarity pass claims it and the
+        cluster pass honors the shared `reported` set."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Check with the user before deleting production data.\n\n"
+            "## Cleanup\n\n"
+            "Check with the user before deleting production files.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 7
+        assert "% similar" in violations[0].message
+
 
 class TestContentMissingStopConditionTuning:
     """Guards added after real-repo impact analysis (GPT-5.6 rule set)."""
