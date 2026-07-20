@@ -1715,6 +1715,26 @@ class TestTerminologyGroupsConfig:
 
 
 @pytest.mark.integration
+class TestInconsistentTerminologyRegisters:
+    """End-to-end regression for issue #427.
+
+    The fixture consistently uses "repo" and "PR" in running prose, but
+    also contains a code-span path (`` `.planning/codebase/...` ``) and
+    spelled-out skill headings (``# Create Pull Request``, ``# Review
+    Pull Request``) — neither register should count as a competing
+    terminology choice.
+    """
+
+    FIXTURE = "content/inconsistent-terminology-registers"
+
+    def test_headings_and_code_spans_do_not_trigger(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-inconsistent-terminology" not in rule_ids(r)
+
+
+@pytest.mark.integration
 class TestInstructionDrift:
     """End-to-end tests for content-instruction-drift.
 
