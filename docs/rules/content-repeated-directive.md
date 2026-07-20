@@ -15,7 +15,7 @@ Detect the same directive stated more than once within a file
 ## Why
 
 Stating the same instruction more than once doesn't make a model follow
-it harder. Frontier-model prompting guidance (e.g. OpenAI's GPT-5.6
+it more reliably. Frontier-model prompting guidance (e.g. OpenAI's GPT-5.6
 prompting guide) is explicit: state each instruction once — repeated
 directives are noise the model must parse around, and overlapping
 restatements of one policy ("ask first" here, "wait for approval"
