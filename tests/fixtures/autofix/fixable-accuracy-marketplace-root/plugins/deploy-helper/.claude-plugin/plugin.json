@@ -1,0 +1,6 @@
+{
+  "name": "deploy-helper",
+  "description": "Ship releases to staging and production",
+  "version": "0.4.1",
+  "author": {"name": "Acme Engineering"}
+}

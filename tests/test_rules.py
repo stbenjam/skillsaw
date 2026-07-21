@@ -9,7 +9,7 @@ import pytest
 
 
 from skillsaw.context import RepositoryContext
-from skillsaw.rule import Severity
+from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.rules.builtin.plugins import (
     PluginJsonRequiredRule,
     PluginJsonValidRule,
@@ -911,6 +911,9 @@ def test_marketplace_registration_fix_skips_plugin_outside_plugin_root(temp_dir)
 
     violations = rule.check(context)
     assert len(violations) == 1
+    # check() must not advertise a fix that fix() refuses to make.
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
 
     # No autofix is offered rather than a broken entry being written.
     assert rule.fix(context, violations) == []
@@ -932,6 +935,9 @@ def test_marketplace_registration_fix_plugins_not_list(temp_dir):
 
     violations = rule.check(context)
     assert len(violations) == 1
+    # check() must not advertise a fix that fix() refuses to make.
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
     assert rule.fix(context, violations) == []
 
 
@@ -944,6 +950,9 @@ def test_marketplace_registration_fix_top_level_array(temp_dir):
 
     violations = rule.check(context)
     assert len(violations) == 1
+    # check() must not advertise a fix that fix() refuses to make.
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
     assert rule.fix(context, violations) == []
 
 
@@ -961,6 +970,8 @@ def test_marketplace_registration_fix_skips_non_dict_entries(temp_dir):
 
     violations = rule.check(context)
     assert len(violations) == 1
+    # Non-dict entries don't block the rewrite, so fixability holds.
+    assert violations[0].fixable is True
 
     fixes = rule.fix(context, violations)
     assert len(fixes) == 1
@@ -977,7 +988,74 @@ def test_marketplace_registration_fix_invalid_json(temp_dir):
 
     violations = rule.check(context)
     assert len(violations) == 1
+    # check() must not advertise a fix that fix() refuses to make.
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
     assert rule.fix(context, violations) == []
+
+
+def _copy_autofix_fixture(name, tmp_path):
+    import shutil
+
+    src = Path(__file__).parent / "fixtures" / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
+
+
+def test_marketplace_registration_fixable_false_on_invalid_json(tmp_path):
+    """Regression (0.17.0): check() defaulted every violation to fixable=True
+    (the ``[*] fixable with skillsaw fix`` marker), but fix() bails on an
+    unparseable marketplace.json — the advertised lint-to-fix loop dead-ended
+    with 'No auto-fixable violations found'."""
+    repo = _copy_autofix_fixture("autofix/fixable-accuracy-marketplace-json", tmp_path)
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "log-analyzer" in violations[0].message
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
+
+    marketplace = repo / ".claude-plugin" / "marketplace.json"
+    before = marketplace.read_text()
+    assert rule.fix(context, violations) == []
+    assert marketplace.read_text() == before
+
+
+def test_marketplace_registration_fixable_false_outside_plugin_root(tmp_path):
+    """Regression (0.17.0): a plugin outside metadata.pluginRoot has no valid
+    relative source, so fix() skips it — check() must report fixable=False
+    instead of the inherited fixable=True default."""
+    repo = _copy_autofix_fixture("autofix/fixable-accuracy-marketplace-root", tmp_path)
+    context = RepositoryContext(repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert "deploy-helper" in violations[0].message
+    assert violations[0].fixable is False
+    assert violations[0].fix_confidence is None
+
+    marketplace = repo / ".claude-plugin" / "marketplace.json"
+    before = marketplace.read_text()
+    assert rule.fix(context, violations) == []
+    assert marketplace.read_text() == before
+
+
+def test_marketplace_registration_fixable_true_for_registrable_plugin(marketplace_repo):
+    """Positive control: a plugin fix() can register still advertises the
+    SUGGEST-confidence fix."""
+    _add_unregistered_plugin(marketplace_repo, "plugin-three")
+    context = RepositoryContext(marketplace_repo)
+    rule = MarketplaceRegistrationRule()
+
+    violations = rule.check(context)
+    assert len(violations) == 1
+    assert violations[0].fixable is True
+    assert violations[0].fix_confidence == AutofixConfidence.SUGGEST
+    assert len(rule.fix(context, violations)) == 1
 
 
 # --- marketplace-json-valid: malformed documents ---

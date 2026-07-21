@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.rule import Severity
+from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.utils import invalidate_read_caches
 from skillsaw.rules.builtin.agentskills import (
     RENAMES_MANIFEST,
@@ -403,6 +403,60 @@ def test_name_at_root_skips_dir_check(temp_dir):
     # root_path is skill dir, so name vs dir check is skipped
     violations = AgentSkillNameRule().check(context)
     assert not any("does not match directory" in v.message for v in violations)
+
+
+def test_name_fixable_matches_fix_coverage(tmp_path):
+    """Regression (0.17.0): check() defaulted every violation to fixable=True
+    (the ``[*] fixable with skillsaw fix`` marker), but fix() bails on names
+    it cannot rewrite safely — so the advertised lint-to-fix loop dead-ended
+    with 'No auto-fixable violations found'. check() must report
+    fixable=False exactly where fix() bails."""
+    repo = copy_fixture("autofix/fixable-accuracy-name", tmp_path)
+    rule = AgentSkillNameRule()
+    context = RepositoryContext(repo)
+
+    violations = rule.check(context)
+    assert len(violations) == 5
+    by_dir = {v.file_path.parent.name: v for v in violations}
+
+    # Un-kebab-able name: a fully non-Latin value kebab-cases to "".
+    v = by_dir["keigo-formatter"]
+    assert "lowercase letters" in v.message
+    assert v.fixable is False
+    assert v.fix_confidence is None
+
+    # Block-scalar name (``name: >-``): the value is not on the key line,
+    # so the single-line rewrite is unsafe.
+    v = by_dir["deploy-service"]
+    assert v.fixable is False
+    assert v.fix_confidence is None
+
+    # Duplicate ``name:`` keys: the rewrite would never converge.
+    v = by_dir["release-notes"]
+    assert v.fixable is False
+    assert v.fix_confidence is None
+
+    # Directory-mismatch where the directory name itself is invalid.
+    v = by_dir["My_Skill"]
+    assert "does not match directory" in v.message
+    assert v.fixable is False
+    assert v.fix_confidence is None
+
+    # Positive control: a kebab-caseable name still advertises a SAFE fix.
+    v = by_dir["format-checker"]
+    assert v.fixable is True
+    assert v.fix_confidence == AutofixConfidence.SAFE
+
+    # fix() repairs exactly the violations that advertised fixability and
+    # leaves the unfixable files untouched.
+    before = {
+        d: (repo / d / "SKILL.md").read_text()
+        for d in ["keigo-formatter", "deploy-service", "release-notes", "My_Skill"]
+    }
+    fixes = rule.fix(context, violations)
+    assert [f.file_path.parent.name for f in fixes] == ["format-checker"]
+    for d, content in before.items():
+        assert (repo / d / "SKILL.md").read_text() == content
 
 
 # --- agentskill-description ---

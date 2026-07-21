@@ -1,0 +1,4 @@
+{
+  "name": "acme-tools",
+  "owner": {"name": "Acme Engineering"},
+  "plugins": [
