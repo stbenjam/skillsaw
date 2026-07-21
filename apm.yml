@@ -12,4 +12,5 @@ dependencies:
   apm:
     - ./skills/skillsaw-create-plugin
     - ./skills/skillsaw-fix
+    - ./skills/skillsaw-lint
     - ./skills/skillsaw-onboard
