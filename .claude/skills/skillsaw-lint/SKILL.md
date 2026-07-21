@@ -1,7 +1,7 @@
 ---
 name: skillsaw-lint
-description: "Lint and improve agentic context you just wrote — skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, Cursor, Copilot, Cline, or Kiro rules). Use whenever you author or modify any of these files, before considering the work complete: run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean."
-compatibility: "Requires skillsaw (uvx skillsaw or pip install skillsaw)."
+description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, Cursor, Copilot, Cline, or Kiro rules). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
+compatibility: "Requires skillsaw (uvx skillsaw==0.16.0 or pip install skillsaw==0.16.0)."
 license: Apache-2.0
 metadata:
   author: stbenjam
@@ -23,8 +23,8 @@ fixing, and explaining — replace any hand-rolled check with it.
 
 ## Step 1: Locate skillsaw
 
-Run `skillsaw --version`. If the command is missing, use `uvx skillsaw` as the
-prefix for every command below (or `pip install skillsaw` if uvx is
+Run `skillsaw --version`. If the command is missing, use `uvx skillsaw==0.16.0` as the
+prefix for every command below (or `pip install skillsaw==0.16.0` if uvx is
 unavailable).
 
 ## Step 2: Lint what you wrote
