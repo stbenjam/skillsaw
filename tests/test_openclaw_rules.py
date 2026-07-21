@@ -2,10 +2,24 @@
 Tests for openclaw metadata validation rule
 """
 
+import shutil
+from pathlib import Path
+
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
+from skillsaw.linter import Linter
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.openclaw import OpenclawMetadataRule
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst)
+    return dst
+
 
 # --- config ---
 
@@ -460,6 +474,53 @@ def test_install_strip_components_wrong_type_fails(temp_dir):
     assert any("stripComponents" in v.message and "number" in v.message for v in violations)
 
 
+def test_install_strip_components_boolean_fails(temp_dir):
+    """bool is an int subclass in Python; `stripComponents: true` must still
+    be rejected — OpenClaw expects a numeric strip depth."""
+    skill = temp_dir / "bool-strip"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: bool-strip\ndescription: Bool strip\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://example.com/x.tar.gz\n"
+        "        stripComponents: true\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("stripComponents" in v.message and "number" in v.message for v in violations)
+
+
+def test_install_strip_components_false_fails(temp_dir):
+    skill = temp_dir / "false-strip"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: false-strip\ndescription: False strip\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://example.com/x.tar.gz\n"
+        "        stripComponents: false\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert any("stripComponents" in v.message and "number" in v.message for v in violations)
+
+
+def test_install_strip_components_number_passes(temp_dir):
+    skill = temp_dir / "good-strip"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: good-strip\ndescription: Good strip\nmetadata:\n"
+        "  openclaw:\n    install:\n"
+        "      - id: dl\n        kind: download\n        url: https://example.com/x.tar.gz\n"
+        "        archive: tar.gz\n        stripComponents: 1\n---\n"
+    )
+
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
 def test_install_string_fields_wrong_type_fails(temp_dir):
     skill = temp_dir / "bad-strings"
     skill.mkdir()
@@ -754,6 +815,15 @@ def test_typo_key_near_miss_warns(temp_dir):
     assert any("did you mean" in m.message and "install" in m.message for m in v)
 
 
+def test_typo_key_with_path_syntax_reports_flat_map_line(temp_dir):
+    # A key containing '.' cannot be resolved as a dotted path; the flat
+    # line map still gives the right line when the key name is unique.
+    v = _skill(temp_dir, "dotted-typo", "    always.x: true\n")
+    typo = [m for m in v if "did you mean 'always'" in m.message]
+    assert len(typo) == 1
+    assert typo[0].line == 6
+
+
 def test_clawhub_metadata_keys_pass(temp_dir):
     v = _skill(
         temp_dir,
@@ -773,3 +843,124 @@ def test_clawhub_metadata_key_typos_warn(temp_dir):
 def test_non_string_openclaw_key_does_not_crash(temp_dir):
     v = _skill(temp_dir, "numeric-key", "    1: value\n")
     assert len(v) == 0
+
+
+# --- YAML merge keys must not crash the rule ---
+
+
+def test_merge_key_in_install_entry_does_not_crash(temp_dir):
+    """'<<: *anchor' inside an install entry used to raise KeyError from the
+    ruamel line map (merge-derived keys have no position of their own)."""
+    v = _skill(
+        temp_dir,
+        "merge-install",
+        "    install:\n"
+        "      - &base\n"
+        "        kind: brew\n"
+        "        formula: ripgrep\n"
+        "      - <<: *base\n"
+        "        id: two\n",
+    )
+    assert len(v) == 0
+
+
+def test_merge_key_elsewhere_in_frontmatter_does_not_crash(temp_dir):
+    """A merge key outside install (here merged into metadata.openclaw
+    itself) used to crash the line-map builder with KeyError/TypeError."""
+    skill = temp_dir / "merge-elsewhere"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"
+        "name: merge-elsewhere\n"
+        "description: test\n"
+        "metadata:\n"
+        "  defaults: &defaults\n"
+        "    category: productivity\n"
+        "  openclaw:\n"
+        "    <<: *defaults\n"
+        "    always: true\n"
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    assert len(violations) == 0
+
+
+def test_merge_derived_kind_violation_reports_entry_line(temp_dir):
+    """A violation on a merge-derived field must not crash and must fall
+    back to the entry's own (real) line, never a fabricated one."""
+    skill = temp_dir / "go-merge"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"  # 1
+        "name: go-merge\n"  # 2
+        "description: test\n"  # 3
+        "metadata:\n"  # 4
+        "  openclaw:\n"  # 5
+        "    install:\n"  # 6
+        "      - &base\n"  # 7
+        "        kind: go\n"  # 8
+        "      - <<: *base\n"  # 9
+        "        id: two\n"  # 10
+        "---\n"
+    )
+    context = RepositoryContext(skill)
+    violations = OpenclawMetadataRule().check(context)
+    first = [v for v in violations if "install[0]" in v.message and "'module'" in v.message]
+    second = [v for v in violations if "install[1]" in v.message and "'module'" in v.message]
+    assert len(first) == 1 and first[0].line == 8
+    assert len(second) == 1 and second[0].line == 9
+
+
+def test_merge_keys_fixture_full_lint_no_rule_execution_error(temp_dir):
+    """Full lint over realistic merge-key skills must not surface any rule
+    crash as a rule-execution-error violation."""
+    repo = copy_fixture("openclaw-merge-keys", temp_dir)
+    context = RepositoryContext(repo)
+    linter = Linter(context, LinterConfig.default())
+    violations = linter.run()
+    errors = [v for v in violations if v.rule_id == "rule-execution-error"]
+    assert errors == []
+
+
+# --- exact line numbers with multiple install entries ---
+
+
+def test_line_numbers_with_multiple_install_entries(temp_dir):
+    """Per-entry violations must anchor to the offending entry's own lines,
+    not the last entry that happens to share the key name; a top-level os
+    violation must not anchor to an install entry's os line."""
+    repo = copy_fixture("openclaw-multi-install", temp_dir)
+    context = RepositoryContext(repo)
+    violations = OpenclawMetadataRule().check(context)
+
+    # install[0] (kind: node at line 10) is missing 'package'; install[1]
+    # (kind: brew at line 12) is valid and must not attract the violation.
+    required = [v for v in violations if "install[0]" in v.message and "'package'" in v.message]
+    assert len(required) == 1
+    assert required[0].line == 10
+
+    # Top-level os: [windows] is at line 6; install[1].os (valid) is at 14.
+    os_violations = [
+        v for v in violations if v.message.startswith("'metadata.openclaw.os' contains")
+    ]
+    assert len(os_violations) == 1
+    assert os_violations[0].line == 6
+
+    assert len(violations) == 2
+
+
+def test_invalid_kind_line_with_multiple_entries(temp_dir):
+    v = _skill(
+        temp_dir,
+        "multi-kind",
+        "    install:\n"  # 6
+        "      - id: a\n"  # 7
+        "        kind: pip\n"  # 8
+        "      - id: b\n"  # 9
+        "        kind: brew\n"  # 10
+        "        formula: ripgrep\n",  # 11
+    )
+    bad_kind = [m for m in v if "install[0].kind" in m.message and "pip" in m.message]
+    assert len(bad_kind) == 1
+    assert bad_kind[0].line == 8
