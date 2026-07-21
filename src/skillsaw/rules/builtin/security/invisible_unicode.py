@@ -83,23 +83,36 @@ def _rgi_flag_offsets(text: str) -> FrozenSet[int]:
     return frozenset(offsets)
 
 
-def _iter_strings(value: Any) -> Iterator[str]:
+def _iter_strings(value: Any, _seen: Optional[Set[int]] = None) -> Iterator[str]:
     """Yield every string embedded in a frontmatter value.
 
     Nested lists and mappings are walked (mapping keys included): a payload
     in ``allowed-tools: [Ba<ZWSP>sh]`` never surfaces through ``str(value)``
     because ``repr`` backslash-escapes format characters.
+
+    Containers already visited are skipped by ``id`` so self-referential
+    structures built from YAML anchor/alias cycles (``metadata: &m\\n
+    nested: *m`` — legal YAML that PyYAML constructs as a dict containing
+    itself) terminate instead of raising ``RecursionError``.
     """
     if isinstance(value, str):
         yield value
-    elif isinstance(value, dict):
+        return
+    if not isinstance(value, (dict, list, tuple)):
+        return
+    if _seen is None:
+        _seen = set()
+    if id(value) in _seen:
+        return
+    _seen.add(id(value))
+    if isinstance(value, dict):
         for key, item in value.items():
             if isinstance(key, str):
                 yield key
-            yield from _iter_strings(item)
-    elif isinstance(value, (list, tuple)):
+            yield from _iter_strings(item, _seen)
+    else:
         for item in value:
-            yield from _iter_strings(item)
+            yield from _iter_strings(item, _seen)
 
 
 def _joiner_suspicious(text: str, index: int) -> bool:
@@ -165,15 +178,17 @@ class SecurityInvisibleUnicodeRule(Rule):
             "default": False,
             "description": (
                 "Suppress bidirectional control characters (U+061C, "
-                "U+200E/U+200F, U+202A-U+202E, U+2066-U+2069) — enable for "
-                "repositories with legitimate right-to-left language content"
+                "U+200E/U+200F, U+202A-U+202E, U+2066-U+2069) entirely, "
+                "disabling Trojan Source detection — prefer exempting the "
+                "specific implicit-mark codepoints via allowed-codepoints"
             ),
         },
         "allowed-codepoints": {
             "type": "list",
             "default": [],
             "description": (
-                'Codepoints (as "U+XXXX" strings) to exempt from detection, '
+                'Codepoints to exempt from detection, as "U+XXXX" / "0xXXXX" '
+                "strings or bare integers (unquoted YAML 0x200B works), "
                 'e.g. ["U+00AD"] for content that uses soft hyphens'
             ),
         },
@@ -199,6 +214,16 @@ class SecurityInvisibleUnicodeRule(Rule):
             return set()
         allowed = set()
         for item in raw:
+            if isinstance(item, bool):
+                continue  # YAML true/false is not a codepoint
+            if isinstance(item, int):
+                # Unquoted YAML scalars arrive as ints — ``0x200B`` is
+                # already 8203 by the time PyYAML delivers it, so the value
+                # IS the codepoint.  Feeding str(8203) through the hex
+                # parser below would exempt U+8203 instead of U+200B.
+                if 0 <= item <= 0x10FFFF:
+                    allowed.add(item)
+                continue
             text = str(item).strip().upper()
             if text.startswith("U+"):
                 text = text[2:]
@@ -283,9 +308,14 @@ class SecurityInvisibleUnicodeRule(Rule):
         for fld in context.lint_tree.find(FrontmatterField):
             # Walk every string in the value (nested lists/maps, keys
             # included) plus the field name itself — str() of a container
-            # repr-escapes format characters, hiding the payload.
+            # repr-escapes format characters, hiding the payload.  The name
+            # goes through _iter_strings too: YAML legally produces
+            # non-string keys (``2024:`` -> int, ``2024-01-01:`` -> date,
+            # ``on:`` -> bool under YAML 1.1) which must not reach
+            # ``finditer`` — non-string scalars cannot carry invisible
+            # characters, so skipping them loses nothing.
             total: Counter = Counter()
-            for text in chain([fld.name], _iter_strings(fld.value)):
+            for text in chain(_iter_strings(fld.name), _iter_strings(fld.value)):
                 if not text:
                     continue
                 by_line = self._hits_by_line(text, pattern, skip_leading_bom=False)
@@ -293,9 +323,10 @@ class SecurityInvisibleUnicodeRule(Rule):
                     total.update(counts)
             if not total:
                 continue
+            name_text = fld.name if isinstance(fld.name, str) else str(fld.name)
             violations.append(
                 self.violation(
-                    f"Invisible unicode in frontmatter field '{_visible(fld.name)}': "
+                    f"Invisible unicode in frontmatter field '{_visible(name_text)}': "
                     f"{_codepoint_summary(total)}"
                     " — invisible to reviewers, visible to agents",
                     file_path=fld.path,
