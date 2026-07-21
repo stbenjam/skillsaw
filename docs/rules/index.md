@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **56** builtin rules 
+skillsaw includes **59** builtin rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
@@ -16,7 +16,7 @@ organized into the following categories:
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (19 rules)
+- [Content Intelligence](content-intelligence.md) (22 rules)
 - [CodeRabbit](coderabbit.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Settings](settings.md) (1 rule)
@@ -75,6 +75,9 @@ organized into the following categories:
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
 | [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |
+| [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - | Content Intelligence |
+| [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
+| [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - | CodeRabbit |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
