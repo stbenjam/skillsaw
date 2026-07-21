@@ -99,6 +99,8 @@ class ContentRepeatedDirectiveRule(Rule):
     """Detect the same directive stated more than once within a file"""
 
     formats = None
+    repo_types = None  # instruction content appears in every repo type
+    default_enabled = "auto"
     since = "0.17.0"
 
     _DEFAULT_THRESHOLD = 0.85
