@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **59** builtin rules 
+skillsaw includes **62** built-in rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
@@ -11,6 +11,7 @@ organized into the following categories:
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
 - [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
+- [Hidden-Content Validation](hidden-content.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
@@ -49,6 +50,9 @@ organized into the following categories:
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |
+| [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Hidden-Content Validation |
+| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments invisible to human review | warning (auto) | - | Hidden-Content Validation |
+| [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Hidden-Content Validation |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | [`rules-valid`](rules-valid.md) | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |

@@ -99,6 +99,22 @@ RULE_GROUPS = [
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
+        "Hidden-Content Validation",
+        "hidden-content",
+        [
+            "security-invisible-unicode",
+            "security-hidden-instructions",
+            "security-encoded-payload",
+        ],
+        "Content-validation rules that catch payloads and instructions "
+        "invisible to human review: invisible/bidi unicode smuggling (ASCII "
+        "smuggling, Trojan Source), agent directives hidden in HTML comments, "
+        "and long high-entropy base64/hex blobs that can smuggle encoded "
+        "payloads. They complement `hooks-dangerous`, `settings-dangerous`, "
+        "and `content-embedded-secrets`, which cover the executable and "
+        "credential sides of the same threat.",
+    ),
+    (
         "MCP (Model Context Protocol)",
         "mcp",
         ["mcp-valid-json", "mcp-prohibited"],
@@ -422,7 +438,7 @@ def _params_table(rule_id, schema):
 def generate_rules_index(rules_data):
     """Generate docs/rules/index.md — overview of all rules."""
     lines = [GENERATED_HEADER, "# Rules Reference\n"]
-    lines.append(f"skillsaw includes **{len(rules_data)}** builtin rules ")
+    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules ")
     lines.append("organized into the following categories:\n")
 
     for group_name, slug, rule_ids, description in RULE_GROUPS:

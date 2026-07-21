@@ -1521,6 +1521,7 @@ BROKEN_FIXTURES = [
     "content/instruction-drift",
     "content/repeated-directive",
     "content/emphasis-density",
+    "security/malicious-skill",
 ]
 
 CLEAN_FIXTURES = [
@@ -1589,6 +1590,32 @@ class TestRuleCoverage:
             assert r["rc"] == 0, f"{fixture_name}: expected exit 0, got {r['rc']}"
             assert s["errors"] == 0, f"{fixture_name}: unexpected errors"
             assert s["warnings"] == 0, f"{fixture_name}: unexpected warnings"
+
+
+# ── Hidden-Content Detection ────────────────────────────────────
+
+
+# Rules the malicious security fixture must trip under a default lint run
+# (no config, no baseline).
+EXPECTED_MALICIOUS_RULES = {
+    "hooks-dangerous",
+    "security-invisible-unicode",
+    "security-hidden-instructions",
+    "security-encoded-payload",
+}
+
+
+@pytest.mark.integration
+class TestMaliciousSkillDetection:
+    """Regression guard: the hidden-content rules catch the malicious fixture by default."""
+
+    def test_malicious_skill_detected(self, tmp_path):
+        repo = copy_fixture("security/malicious-skill", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] != 0, "malicious fixture must fail a default lint"
+        ids = rule_ids(r)
+        missing = EXPECTED_MALICIOUS_RULES - ids
+        assert not missing, f"Expected rules did not fire on malicious fixture: {sorted(missing)}"
 
 
 # ── Opt-In Rules ────────────────────────────────────────────────
