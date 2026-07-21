@@ -109,6 +109,8 @@ class InstructionImportsValidRule(Rule):
         seen[resolved_file] = depth
 
         for line_num, line in markdown.prose_lines():
+            if "@" not in line:
+                continue
             for import_path_str, line_start_import in _iter_import_paths(line):
                 # Home-directory imports (Claude Code's ``@~/.claude/...``
                 # memory syntax) reference machine-local files that are not

@@ -21,7 +21,7 @@ supposed to provide are missing, and no error is surfaced.
 
 ## Examples
 
-**Bad:**
+**Bad** — these imports reference files that don't exist in the repository:
 
 ```markdown
 @docs/old-guidelines.md
@@ -29,13 +29,18 @@ supposed to provide are missing, and no error is surfaced.
 - Review @docs/deploy-checklist.md before release.
 ```
 
-**Good:**
+**Good** — the same imports updated to point to files that exist:
 
 ```markdown
 @docs/guidelines.md
 
 - Review @docs/release-checklist.md before release.
 ```
+
+Both line-start imports (`@docs/guidelines.md`) and mid-line references
+(`Review @docs/release-checklist.md`) are validated, matching the
+[Claude Code import semantics](https://docs.anthropic.com/en/docs/claude-code/memory#imports)
+where `@path` references are resolved regardless of position in the line.
 
 ## How to fix
 

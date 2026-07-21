@@ -431,3 +431,14 @@ class TestInstructionImportsValidRule:
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
+
+    def test_nested_import_escapes_repo_root(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        (docs_dir / "entry.md").write_text("# Entry\n\n@../../outside.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "escapes" in violations[0].message.lower()
+        assert violations[0].file_path == docs_dir / "entry.md"
