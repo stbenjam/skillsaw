@@ -6,6 +6,16 @@ PYPROJECT="$REPO_ROOT/pyproject.toml"
 INIT_PY="$REPO_ROOT/src/skillsaw/__init__.py"
 ACTION_YML="$REPO_ROOT/action.yml"
 
+# Docs carrying an install pin that must track the released version. Historical
+# "Since vX.Y.Z" lines under docs/rules/ are deliberately excluded -- only the
+# two pin patterns below are rewritten, never a bare version string.
+PINNED_DOCS=(
+    "$REPO_ROOT/README.md"
+    "$REPO_ROOT/docs/ci.md"
+    "$REPO_ROOT/docs/pre-commit.md"
+    "$REPO_ROOT/docs/getting-started.md"
+)
+
 current_version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$PYPROJECT")
 
 if [[ -z "$current_version" ]]; then
@@ -39,3 +49,23 @@ echo "Updated:"
 echo "  $PYPROJECT"
 echo "  $INIT_PY"
 echo "  $ACTION_YML"
+
+# Rewrite install pins in docs. Each file is optional -- docs get reorganized,
+# and a missing file or absent pin is not an error.
+for doc in "${PINNED_DOCS[@]}"; do
+    [[ -f "$doc" ]] || continue
+    python3 -c "
+import re, sys
+
+path, current, new = sys.argv[1:4]
+text = original = open(path).read()
+for pattern, repl in [
+    (r'skillsaw==' + re.escape(current), 'skillsaw==' + new),
+    (r'rev: v' + re.escape(current), 'rev: v' + new),
+]:
+    text = re.sub(pattern, repl, text)
+if text != original:
+    open(path, 'w').write(text)
+    print('  ' + path)
+" "$doc" "$current_version" "$new_version"
+done
