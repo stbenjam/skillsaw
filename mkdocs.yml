@@ -130,6 +130,7 @@ nav:
     - Command Format: rules/command-format.md
     - Marketplace: rules/marketplace.md
     - Skills, Agents, Hooks: rules/skills-agents-hooks.md
+    - Hidden-Content Validation: rules/hidden-content.md
     - MCP: rules/mcp.md
     - Rules Directory: rules/rules-directory.md
     - OpenClaw: rules/openclaw.md

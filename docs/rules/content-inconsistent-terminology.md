@@ -46,6 +46,12 @@ everywhere. Prefer technical terms over informal ones (e.g., "directory"
 over "folder", "repository" over "codebase"). A coding agent can
 standardize terminology automatically.
 
+Only running prose counts as a terminology choice. Headings (e.g. a
+skill titled `# Create Pull Request` that says "PR" everywhere in its
+body) and inline code spans (e.g. a path like `` `.planning/codebase/foo.md` ``)
+are excluded, since they're a different register than the prose choice
+this rule is checking.
+
 If a group doesn't apply to your repository — for example, a polyglot
 repo that legitimately documents both Go *functions* and Java *methods* —
 disable just that group (or override its severity) while keeping the
