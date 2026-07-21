@@ -25,7 +25,14 @@ Follow these checks before opening a PR:
 - Verify test coverage on a new feature, flag, lint type or bug fix is complete.
     - Bug fixes must include regression protection.
     - New features, linters, and rules need integration test coverage WITH fixtures (see testing rules).
- 
+
+## Authoring Agentic Context
+
+When you create or edit a skill, slash command, agent, hook, or instruction
+file in this repo, load the `skillsaw-lint` skill and follow it: lint the
+file with `.venv/bin/skillsaw lint <path>`, apply fixes, and re-lint until
+clean before you finish. We ship the linter — our own context must pass it.
+
 ## Post-PR Checklist
 
 After opening a PR, keep monitoring for feedback from CodeRabbit, Gemini,

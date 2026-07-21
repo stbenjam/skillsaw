@@ -60,5 +60,9 @@ For an agent workflow focused purely on fixing, install the [`skillsaw-fix` skil
 
 To use it with Claude Code, copy the skill directory into your repo (e.g. `.claude/skills/skillsaw-fix/`) or reference it from a marketplace, then ask the agent to "fix the skillsaw violations".
 
+## The skillsaw-lint Skill
+
+Where `skillsaw-fix` is reactive (violations were reported, fix them), the [`skillsaw-lint` skill](https://github.com/stbenjam/skillsaw/blob/main/skills/skillsaw-lint/SKILL.md) is the proactive guardrail: whenever an agent authors or modifies agentic context — a skill, slash command, agent, hook, plugin, or an instruction file like CLAUDE.md — it lints what it just wrote, applies autofixes, resolves the remaining violations with `skillsaw explain` guidance, and re-lints until clean before reporting the work done.
+
 !!! note "Breaking changes (0.15)"
     Earlier releases shipped a built-in LLM fix path (`skillsaw fix --llm`, the `llm` config section, and the `skillsaw[llm]` extras) powered by LiteLLM. It was removed in 0.15 — coding agents already handle non-deterministic fixes better, with review built into the workflow. An existing `llm:` section in `.skillsaw.yaml` is now ignored with a warning. The long-deprecated `skillsaw lint --fix` flag was removed in the same release.
