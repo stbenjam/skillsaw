@@ -167,6 +167,7 @@ rules:
     # similarity-threshold: 0.8
     # min-section-words: 40
     # ignore-generated: true
+    # similarity-max-sections: 400
 
   # Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition
   content-missing-stop-condition:
@@ -197,6 +198,7 @@ rules:
     # similarity-threshold: 0.85
     # min-directive-words: 4
     # min-line-distance: 4
+    # similarity-max-directives: 1500
     # extra-clusters: {}
 
   # Warn about markdown sections longer than ~500 tokens
@@ -371,6 +373,7 @@ rules:
     # min-length: 120
     # entropy-threshold: 4.5
     # hex-entropy-threshold: 3.4
+    # hex-ascii-ratio: 0.9
 
   # Detect agent directives hidden in HTML comments invisible to human review
   security-hidden-instructions:

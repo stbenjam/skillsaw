@@ -71,11 +71,13 @@ Always validate URLs before fetching them.
 ```yaml
 rules:
   security-invisible-unicode:
-    # Repositories with legitimate right-to-left content (Arabic, Hebrew,
-    # Persian) may need bidi control characters:
+    # Suppress the ENTIRE bidi-control family — see the granular
+    # alternative under "When it's a false positive" first:
     allow-bidi-controls: false
-    # Exempt specific codepoints, e.g. soft hyphens in long prose:
-    allowed-codepoints: []       # e.g. ["U+00AD"]
+    # Exempt specific codepoints, e.g. soft hyphens in long prose.
+    # Entries may be "U+XXXX" / "0xXXXX" strings or bare integers —
+    # unquoted YAML hex (0x00AD) works too:
+    allowed-codepoints: []       # e.g. ["U+00AD"] or [0x00AD]
 ```
 
 ## How to fix
@@ -104,13 +106,32 @@ whatever tool or contributor generated it.
 
 ## When it's a false positive
 
-Right-to-left language content legitimately uses bidirectional controls —
-set `allow-bidi-controls: true` for those repositories. Typographic soft
-hyphens or other individually-vetted codepoints can be exempted via
-`allowed-codepoints`. Emoji joiner sequences, cursive-script joiners, and
-the three subdivision flag emoji (England, Scotland, Wales — the RGI
-emoji tag sequences) are already exempt automatically; any other use of
-tag characters always fires.
+The most common false positive is right-to-left text pasted from a web
+page or word processor: browsers and editors embed **implicit direction
+marks** — U+200E LEFT-TO-RIGHT MARK, U+200F RIGHT-TO-LEFT MARK, U+061C
+ARABIC LETTER MARK — around copied RTL words. These marks reorder nothing
+by themselves. Exempt exactly those three via `allowed-codepoints` and
+keep Trojan Source detection (U+202E RIGHT-TO-LEFT OVERRIDE, the
+embeddings, and the isolates — the CVE-2021-42574 reordering vector)
+fully active:
+
+```yaml
+rules:
+  security-invisible-unicode:
+    allowed-codepoints: ["U+200E", "U+200F", "U+061C"]
+```
+
+Reserve `allow-bidi-controls: true` for repositories that genuinely
+author with explicit bidirectional embedding and override controls — it
+suppresses the **entire** bidi family, including the explicit overrides
+this rule exists to catch, so prefer the per-codepoint exemption above
+whenever the flagged characters are only the implicit marks.
+
+Typographic soft hyphens or other individually-vetted codepoints can be
+exempted via `allowed-codepoints`. Emoji joiner sequences, cursive-script
+joiners, and the three subdivision flag emoji (England, Scotland, Wales —
+the RGI emoji tag sequences) are already exempt automatically; any other
+use of tag characters always fires.
 
 ## Configuration
 
@@ -123,8 +144,8 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `allow-bidi-controls` | Suppress bidirectional control characters (U+061C, U+200E/U+200F, U+202A-U+202E, U+2066-U+2069) — enable for repositories with legitimate right-to-left language content | `false` |
-| `allowed-codepoints` | Codepoints (as "U+XXXX" strings) to exempt from detection, e.g. ["U+00AD"] for content that uses soft hyphens | `[]` |
+| `allow-bidi-controls` | Suppress bidirectional control characters (U+061C, U+200E/U+200F, U+202A-U+202E, U+2066-U+2069) entirely, disabling Trojan Source detection — prefer exempting the specific implicit-mark codepoints via allowed-codepoints | `false` |
+| `allowed-codepoints` | Codepoints to exempt from detection, as "U+XXXX" / "0xXXXX" strings or bare integers (unquoted YAML 0x200B works), e.g. ["U+00AD"] for content that uses soft hyphens | `[]` |
 
 
 *Run `skillsaw explain security-invisible-unicode` to see this documentation and the rule's effective configuration in your terminal.*
