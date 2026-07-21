@@ -17,6 +17,7 @@ worth posting.
 import argparse
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 MARKER = "<!-- rule-impact-report -->"
 SAMPLE_LIMIT = 10
@@ -30,6 +31,23 @@ def load_results(directory):
         except (OSError, ValueError):
             results[path.stem] = None
     return results
+
+
+def load_shas(directory):
+    """Map result-file stems to the commit each repo was linted at.
+
+    One ``<stem>.sha`` file per repo, containing the clone's HEAD. Missing
+    or malformed files simply drop the permalink for that repo — the report
+    falls back to plain ``file:line`` text.
+    """
+    shas = {}
+    if not directory:
+        return shas
+    for path in Path(directory).glob("*.sha"):
+        sha = path.read_text(encoding="utf-8").strip()
+        if sha and all(c in "0123456789abcdef" for c in sha.lower()):
+            shas[path.stem] = sha
+    return shas
 
 
 def repo_label(stem, link=True):
@@ -61,10 +79,18 @@ def _sample_order(key):
     return (rule_id, file_path, line is not None, line or 0, message)
 
 
-def format_sample(keys):
+def format_sample(keys, slug=None, sha=None):
+    """Render sampled violation keys, linking each location to the exact
+    file (and line) at the commit that was linted when the repo slug and
+    SHA are known."""
     lines = []
     for rule_id, file_path, line, _message in sorted(keys, key=_sample_order)[:SAMPLE_LIMIT]:
         location = f"{file_path}:{line}" if line else file_path
+        if slug and sha:
+            url = f"https://github.com/{slug}/blob/{sha}/{quote(file_path.lstrip('./'))}"
+            if line:
+                url += f"#L{line}"
+            location = f"[{location}]({url})"
         lines.append(f"- `{rule_id}` — {location}")
     if len(keys) > SAMPLE_LIMIT:
         lines.append(f"- … and {len(keys) - SAMPLE_LIMIT} more")
@@ -85,10 +111,17 @@ def main():
     parser.add_argument(
         "--rules", default="", help="Space-separated rule ids the PR changed (for the header)"
     )
+    parser.add_argument(
+        "--shas",
+        default=None,
+        help="Directory of <repo>.sha files recording the commit each repo "
+        "was linted at; findings link to the file at that commit",
+    )
     args = parser.parse_args()
 
     base_results = load_results(args.base)
     head_results = load_results(args.head)
+    shas = load_shas(args.shas)
 
     sections = []
     clean = []
@@ -118,10 +151,12 @@ def main():
             f"`{rule}` ×{count}" for rule, count in sorted(rule_counts(new | resolved).items())
         )
         lines.append(f"{' / '.join(summary)} ({by_rule})")
+        slug = repo.replace("__", "/") if "__" in repo else None
+        sha = shas.get(repo)
         if new:
-            lines += ["", "New findings:"] + format_sample(new)
+            lines += ["", "New findings:"] + format_sample(new, slug=slug, sha=sha)
         if resolved:
-            lines += ["", "Resolved:"] + format_sample(resolved)
+            lines += ["", "Resolved:"] + format_sample(resolved, slug=slug, sha=sha)
         sections.append("\n".join(lines))
 
     print(MARKER)
