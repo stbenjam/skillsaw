@@ -1,0 +1,21 @@
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  path_instructions:
+    - path: "src/api/**"
+      instructions: |
+        Check for proper error handling and input validation on all
+        endpoints. Confirm changed handlers keep the staging deploy
+        runbook working:
+        ```bash
+        make deploy ENV=staging
+    - path: "tests/**"
+      instructions: >
+        Verify assertions are specific, not just checking that no
+        exception is raised. Each test should follow a clear
+        arrange-act-assert structure.
+chat:
+  auto_reply: true

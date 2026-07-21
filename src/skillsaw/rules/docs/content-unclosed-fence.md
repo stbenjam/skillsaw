@@ -48,3 +48,9 @@ opener closes with three or more backticks, a four-backtick opener needs
 four). The autofix appends the matching closer at the end of the file;
 if the code block was meant to end earlier, move the appended closer up
 to the right line.
+
+Markdown bodies embedded inside a YAML host document (`.coderabbit.yaml`
+`path_instructions`, promptfoo prompts) are still checked, but reported
+as **not auto-fixable**: appending a closer at the end of the host file
+would corrupt the YAML, so close the fence by hand inside the embedded
+block.

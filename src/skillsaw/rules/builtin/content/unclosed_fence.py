@@ -47,15 +47,33 @@ class ContentUnclosedFenceRule(Rule):
             if fence is None:
                 continue
             opener = fence.markup + fence.info
+            # fix() can only append a closer when the body ends the file
+            # (plain markdown and frontmattered bodies).  YAML-embedded
+            # bodies (.coderabbit path_instructions, promptfoo prompts)
+            # are ones fix() always skips — report them as not fixable so
+            # lint output doesn't over-promise.
+            content = read_text(cf.path)
+            appendable = content is not None and self._body_ends_file(content, body)
             violations.append(
                 self.violation(
                     f"Unclosed code fence: '{opener}' is never closed — everything "
                     "after it is treated as code and hidden from content rules",
                     block=cf,
                     line=fence.body_line_start,
+                    fixable=appendable,
                 )
             )
         return violations
+
+    @staticmethod
+    def _body_ends_file(content: str, body: str) -> bool:
+        """True when *body* is the tail of *content* — the only shape whose
+        unclosed fence can be repaired by appending a closer at EOF.
+        Trailing newline differences are tolerated: extra blank lines at
+        EOF sit inside the unclosed fence, so an appended closer still
+        terminates it.
+        """
+        return content.rstrip("\r\n").endswith(body.rstrip("\r\n"))
 
     @staticmethod
     def _unclosed_fence(doc: MarkdownDoc, body: str) -> Optional[MarkdownFence]:
@@ -116,11 +134,9 @@ class ContentUnclosedFenceRule(Rule):
             # Append only when the body ends the file (plain markdown files
             # and frontmattered bodies).  YAML-embedded bodies (.coderabbit
             # instructions, promptfoo prompts) are indented inside a host
-            # document — a bare closer at EOF would corrupt it.  Trailing
-            # newline differences are tolerated: extra blank lines at EOF
-            # sit inside the unclosed fence, so the appended closer still
-            # terminates it.
-            if not content.rstrip("\r\n").endswith(body.rstrip("\r\n")):
+            # document — a bare closer at EOF would corrupt it.  check()
+            # applies the same test and reports those as not fixable.
+            if not self._body_ends_file(content, body):
                 continue
             closer = fence.markup
             fixed = content + ("" if content.endswith("\n") else "\n") + closer + "\n"

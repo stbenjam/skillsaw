@@ -35,7 +35,34 @@ _LOOP_PATTERNS = [
     )
 ]
 
+# Prohibitive phrasing immediately before a loop phrase — "Avoid polling
+# the API", "Never poll the deployment API", "use webhooks instead of
+# polling" — forbids the loop rather than ordering it.  Checked against
+# the clause text preceding the loop match; up to two intervening words
+# are allowed ("Never poll in a loop" has "poll" between "Never" and the
+# matched "in a loop").
+_PROHIBITION_BEFORE_RE = re.compile(
+    r"\b(?:avoid|never|don't|do\s+not|stop|without|instead\s+of|rather\s+than)"
+    r"\s+(?:[\w'-]+\s+){0,2}$",
+    re.IGNORECASE,
+)
+_CLAUSE_SPLIT_RE = re.compile(r"[.!?;:]")
+
+# A negated stop-verb ("never stop", "don't stop", "do not cease") flips the
+# prohibition back into an unbounded-loop directive.
+_NEGATED_STOP_RE = re.compile(
+    r"\b(?:never|not|don't|won't|shouldn't|mustn't|can't)\s+"
+    r"(?:stop|cease|quit)\s+(?:[\w'-]+\s+){0,2}$",
+    re.IGNORECASE,
+)
+
 # Anything that bounds the loop: a condition, a count, or a time budget.
+# "once" only counts in bounding positions — "run once", "only once",
+# and clause-final "once" ("rerun the drain job once."), where the
+# subordinator reading is impossible ("at most once" is covered by the
+# at-most pattern).  As a bare word it is usually a subordinating
+# conjunction that STARTS a loop ("Once the PR is open, keep monitoring
+# ...") and must not exempt the paragraph.
 _TERMINATOR_PATTERNS = [
     (re.compile(p, re.IGNORECASE),)
     for p in (
@@ -49,12 +76,30 @@ _TERMINATOR_PATTERNS = [
         r"\bmax(?:imum)?\b",
         r"\b\d+\s+(?:times|attempts|retries|iterations|rounds)\b",
         r"\b(?:within|for|after)\s+\d+\s*(?:s|sec|seconds?|m|min|minutes?|h|hours?|days?)\b",
-        r"\bonce\b",
+        r"\b(?:only|exactly|just)\s+once\b",
+        r"\b(?:runs?|running|reruns?|rerunning|retry(?:ing)?|retries|retried|"
+        r"checks?|checking|checked|polls?|polling|polled|repeats?|repeating|"
+        r"attempts?|attempting|try(?:ing)?|tries|tried|executes?|executing|"
+        r"calls?|calling|invokes?|invoking)\s+(?:it\s+|this\s+|them\s+)?once\b",
+        r"\bonce\s*(?:[.,;:!?)'\"]|$)",
         r"\btimeout\b",
         r"\bdeadline\b",
         r"\b(?:exit|completion|success|stopping)\s+criteria\b",
     )
 ]
+
+
+def _is_prohibited(line: str, match_start: int) -> bool:
+    """True when the clause before *match_start* ends in a prohibition."""
+    clause = _CLAUSE_SPLIT_RE.split(line[:match_start])[-1]
+    match = _PROHIBITION_BEFORE_RE.search(clause)
+    if match is None:
+        return False
+    # "never stop polling" / "don't stop retrying" double-negates into a
+    # directive to loop forever — a negated stop-verb is not a prohibition.
+    if _NEGATED_STOP_RE.search(clause[: match.end()]):
+        return False
+    return True
 
 
 class ContentMissingStopConditionRule(Rule):
@@ -143,9 +188,10 @@ class ContentMissingStopConditionRule(Rule):
 
         Skipped shapes: table rows ("Watch for crypto errors" is a matrix
         entry), headings ("### Poll for Bot Response" names a section),
-        and colon-terminated captions directly above a code fence — the
+        colon-terminated captions directly above a code fence — the
         loop is operationalized in the code, which is where its bound
-        lives.
+        lives — and matches preceded by a prohibition ("Avoid polling
+        the API" forbids the loop, it doesn't start one).
         """
         for offset, line in enumerate(lines):
             stripped = line.lstrip()
@@ -158,7 +204,7 @@ class ContentMissingStopConditionRule(Rule):
                 continue
             for (pattern,) in active:
                 m = pattern.search(line)
-                if m:
+                if m and not _is_prohibited(line, m.start()):
                     return offset, m.group()
         return None
 

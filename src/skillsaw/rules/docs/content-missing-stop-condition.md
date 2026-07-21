@@ -18,10 +18,18 @@ descriptive prose never fires: "the daemon continuously reconnects",
 "in-cluster pollers continuously check", and "the tool is run
 repeatedly" all describe behavior rather than order it. Also skipped:
 table rows ("Watch for crypto errors" is a matrix entry), headings
-("### Poll for Bot Response" names a section), and colon-terminated
+("### Poll for Bot Response" names a section), colon-terminated
 captions directly above a code fence — when the loop is
 operationalized in the code block below, that code is where the bound
-lives.
+lives — and prohibitions ("Avoid polling the status endpoint", "Never
+poll the API", "use webhooks instead of polling" forbid the loop, they
+don't start one).
+
+The word "once" only counts as a stopping condition in bounding
+positions — "only once", "retry once", "at most once", or clause-final
+("rerun the drain job once."). As a subordinating conjunction it
+*starts* a loop rather than bounding it: "Once the PR is open, keep
+monitoring CI" is still flagged as open-ended.
 
 This rule is **opt-in** (`enabled: false` by default): monitoring
 language is common in prose that never reaches an agent verbatim.

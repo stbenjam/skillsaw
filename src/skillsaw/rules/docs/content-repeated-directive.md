@@ -20,16 +20,21 @@ The rule detects two forms of repetition within a single file:
 
 Directives are compared line by line, so bullet-style instructions are
 matched most reliably; a directive buried mid-paragraph is compared
-together with the rest of its wrapped line. Inline code is part of the
-comparison — `` Run `make test` `` and `` Run `make lint` `` are
-different directives. Three shapes are deliberately excluded:
-enumeration labels that only look like imperatives ("Run 2: Failed
-tests = […]" is example data, not an instruction), similar directives
-fewer than `min-line-distance` lines apart (neighboring bullets that
-share phrasing are intentional parallel structure), and
-colon-terminated captions directly above a code fence ("Add to
-`customizations.vscode.extensions`:" repeated across sections is a
-caption — the code below it is the real, differing content).
+together with the rest of its wrapped line. Emphasis markers are
+ignored — `- **Always run make test.**` matches its unbolded twin.
+Inline code is part of the comparison — `` Run `make test` `` and
+`` Run `make lint` `` are different directives. Four shapes are
+deliberately excluded: enumeration labels that only look like
+imperatives ("Run 2: Failed tests = […]" is example data, not an
+instruction), similar directives fewer than `min-line-distance` lines
+apart (neighboring bullets that share phrasing are intentional
+parallel structure), colon-terminated captions directly above a code
+fence ("Add to `customizations.vscode.extensions`:" repeated across
+sections is a caption — the code below it is the real, differing
+content), and fenced examples nested inside HTML blocks (the
+`<Bad>…</Bad>` / `<Good>…</Good>` quoting pattern common in
+skill-authoring docs — the quoted example text is illustrative, not a
+live directive).
 
 The two detection forms report differently: repeated/near-duplicate
 directives use the rule severity (warning by default), while cluster
@@ -38,7 +43,10 @@ matches like "requires confirmation" are often step-scoped ("this step
 requires confirmation" for two different steps) rather than one
 blanket policy stated twice, so they are review prompts, not defects.
 Headings never count as cluster matches: "### Require Explicit
-Approval" names a policy section, it doesn't restate the policy.
+Approval" names a policy section, it doesn't restate the policy, and
+incidental phrasing like "if you get permission errors" (a
+troubleshooting note, not an approval policy) is excluded from the
+built-in `approval` cluster.
 
 This differs from neighboring rules: `content-instruction-drift`
 compares whole sections *across* files; this rule compares individual
@@ -90,10 +98,20 @@ rules:
     similarity-threshold: 0.9    # (0-1]; higher = only near-verbatim repeats fire
     min-directive-words: 5       # ignore directives shorter than this
     min-line-distance: 4         # don't compare directives closer than this
+    similarity-max-directives: 1500  # cap on directives entering pairwise comparison
     extra-clusters:              # project-specific restatement clusters
       deploy-source:
         - '\b(?:deploy|ship)\s+(?:only|exclusively)\b'
 ```
+
+**Comparison cap.** Near-duplicate detection is quadratic in the number
+of directives per file, so it is bounded by `similarity-max-directives`
+(default 1500 — a realistic 2000-line CLAUDE.md holds ~1150 directives
+and is fully scanned). When a file exceeds the cap, directives beyond
+it skip only the pairwise near-duplicate stage; exact repeats are still
+detected everywhere with a linear scan, and phrase-cluster detection is
+unaffected. Nothing is reported incorrectly past the cap, the rule
+just compares less — raise the cap to fully scan unusually large files.
 
 Suppress an intentional repeat (e.g. a safety-critical reminder you
 want in both places) with an inline directive:
