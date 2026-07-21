@@ -92,7 +92,7 @@ Every run produces a letter grade based on weighted violation density. The
 same data can be rendered as a self-contained report card for a README or
 project dashboard.
 
-[![skillsaw report card](https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg)](https://skillsaw.org/)
+<a href="https://skillsaw.org/"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg" alt="skillsaw report card" width="495"></a>
 
 *skillsaw's own report card, generated with `skillsaw badge --large`.*
 
