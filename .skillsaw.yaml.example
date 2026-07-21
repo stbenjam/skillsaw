@@ -364,6 +364,27 @@ rules:
     enabled: auto
     severity: error
 
+  # Detect long high-entropy base64/hex blobs that can smuggle encoded payloads
+  security-encoded-payload:
+    enabled: auto
+    severity: warning
+    # min-length: 120
+    # entropy-threshold: 4.5
+    # hex-entropy-threshold: 3.4
+
+  # Detect agent directives hidden in HTML comments invisible to human review
+  security-hidden-instructions:
+    enabled: auto
+    severity: warning
+    # additional-allowed-prefixes: []
+
+  # Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context
+  security-invisible-unicode:
+    enabled: auto
+    severity: error
+    # allow-bidi-controls: false
+    # allowed-codepoints: []
+
   # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
   settings-dangerous:
     enabled: auto
