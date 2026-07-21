@@ -1,5 +1,5 @@
 <table><tr>
-<td width="200" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="200"></td>
+<td width="160" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="160"></td>
 <td valign="top">
 
 ### skillsaw
@@ -8,10 +8,11 @@
 
 A linter for the files that steer AI coding agents.
 
-[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-
 </td>
+<td width="380" valign="middle"><a href="https://skillsaw.org/"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg" alt="skillsaw report card" width="380"></a></td>
 </tr></table>
+
+[![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Agent instructions behave like code, but most teams still review them like
 prose. skillsaw gives them a linter. It finds the structural errors and content
@@ -30,14 +31,23 @@ precise, agent-friendly guidance.
 
 ## See it work
 
-[![Watch the skillsaw onboarding demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/onboarding-demo.png)](https://asciinema.org/a/1259880)
-
 [Watch an AI agent grade, fix, and configure a repository from
 scratch.](https://asciinema.org/a/1259880)
 
+[![Watch the skillsaw onboarding demo](https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/onboarding-demo.png)](https://asciinema.org/a/1259880)
+
 ## Try it
 
-No installation is required with [`uvx`](https://docs.astral.sh/uv/guides/tools/):
+Paste this into your coding agent to onboard skillsaw now:
+
+```text
+Read and follow the instructions at
+https://raw.githubusercontent.com/stbenjam/skillsaw/refs/heads/main/skills/skillsaw-onboard/SKILL.md
+to onboard this repo to skillsaw.
+```
+
+Or run it yourself. No installation is required with
+[`uvx`](https://docs.astral.sh/uv/guides/tools/):
 
 ```bash
 uvx skillsaw tree      # See what skillsaw detects
@@ -45,10 +55,6 @@ uvx skillsaw           # Lint the current repository
 uvx skillsaw fix       # Apply safe, deterministic fixes
 uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ```
-
-Prefer to let your coding agent handle setup, fixes, CI, and the initial
-baseline? Follow the [AI onboarding
-guide](https://skillsaw.org/getting-started/#onboard-with-ai).
 
 ## What it catches
 
@@ -92,12 +98,9 @@ Every run produces a letter grade based on weighted violation density. The
 same data can be rendered as a self-contained report card for a README or
 project dashboard.
 
-<a href="https://skillsaw.org/"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg" alt="skillsaw report card" width="495"></a>
-
-*skillsaw's own report card, generated with `skillsaw badge --large`.*
-
-Learn how to generate the [grade badge and report
-card](https://skillsaw.org/cli/#skillsaw-badge).
+The card above is skillsaw's own, generated with `skillsaw badge --large`.
+Learn how to generate a [grade badge and report
+card](https://skillsaw.org/cli/#skillsaw-badge) for your project.
 
 ## Contributing
 
