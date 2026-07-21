@@ -100,6 +100,7 @@ jobs:
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
 | `plugins` | Newline-separated list of plugin packages to install | `''` |
+| `since` | Only report violations introduced since the merge-base of HEAD and this ref (e.g. `origin/main`) — see [Lint only your changes](baseline.md#lint-only-your-changes-since) | `''` |
 
 ### Outputs
 
@@ -109,6 +110,35 @@ jobs:
 | `errors` | Number of errors found |
 | `warnings` | Number of warnings found |
 | `report-file` | Path to JSON report file |
+
+### Lint only the PR's changes
+
+Set `since` to fail CI only on violations the PR itself introduces —
+pre-existing violations in the base branch are suppressed automatically,
+with no committed baseline file. The merge-base commit must be available,
+so check out with full history:
+
+```yaml
+jobs:
+  skillsaw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # --since needs history to find the merge-base
+          persist-credentials: false
+      - uses: stbenjam/skillsaw@v0
+        with:
+          strict: true
+          since: origin/${{ github.base_ref }}
+```
+
+(Instead of `fetch-depth: 0`, fetching just the base branch also works:
+`git fetch origin "$BASE_REF"`.)
+
+`since` composes with the review action above: the uploaded report only
+contains the PR's own regressions, so inline comments shrink to exactly
+what the PR introduced.
 
 ### Supply Chain Protection
 

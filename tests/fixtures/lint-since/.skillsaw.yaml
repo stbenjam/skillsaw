@@ -1,0 +1,12 @@
+# skillsaw configuration for the lint-since fixture.
+# The low `rule` token budget makes .claude/rules/architecture.md exceed
+# its limit, giving the fixture a ratchet (value-carrying) violation.
+version: "0.16.0"
+
+rules:
+  context-budget:
+    enabled: true
+    severity: warning
+    limits:
+      rule:
+        warn: 40

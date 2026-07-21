@@ -143,6 +143,16 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Ignore baseline file even if .skillsaw-baseline.json exists",
     )
     lint_parser.add_argument(
+        "--since",
+        metavar="REF",
+        default=None,
+        help="Only report violations introduced since the merge-base of HEAD "
+        "and REF (e.g. origin/main). Lints that commit in a temporary git "
+        "worktree and uses the result as an ephemeral baseline. Takes "
+        "precedence over .skillsaw-baseline.json; cannot be combined with "
+        "--no-baseline. Requires git history for the merge-base.",
+    )
+    lint_parser.add_argument(
         "--no-custom-rules",
         action="store_true",
         dest="no_custom_rules",

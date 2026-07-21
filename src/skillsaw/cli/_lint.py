@@ -45,6 +45,14 @@ def _run_lint(args):
         )
         sys.exit(1)
 
+    if args.since and args.no_baseline:
+        print(
+            "Error: --since and --no-baseline cannot be combined "
+            "(--since builds its own ephemeral baseline from git)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     output_formats = {}
     for spec in args.outputs:
         try:
@@ -111,8 +119,40 @@ def _run_lint(args):
     else:
         fail_level = config.effective_fail_level()
 
+    rule_ids = set(args.rule_ids) if args.rule_ids else None
+    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
+    if rule_ids and skip_rule_ids:
+        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
+        sys.exit(1)
+
     baseline = None
-    if not args.no_baseline:
+    if args.since:
+        # --since builds an ephemeral baseline from the merge-base of HEAD
+        # and the given ref; it takes precedence over any committed
+        # .skillsaw-baseline.json.
+        from ..git_baseline import GitBaselineError, build_git_baseline, repo_toplevel
+
+        try:
+            repo_root = repo_toplevel(paths[0])
+            baseline, merge_base = build_git_baseline(
+                repo_root,
+                args.since,
+                config,
+                paths,
+                cli_version,
+                repo_types=override_types,
+                rule_ids=rule_ids,
+                skip_rule_ids=skip_rule_ids,
+                no_custom_rules=args.no_custom_rules,
+                no_plugins=args.no_plugins,
+            )
+        except GitBaselineError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        if args.fmt == "text":
+            print(f"Comparing against merge-base {merge_base[:12]} (--since {args.since})\n")
+    elif not args.no_baseline:
         from ..baseline import find_baseline, load_baseline
 
         baseline_path = find_baseline(config.config_dir or paths[0])
@@ -127,12 +167,6 @@ def _run_lint(args):
                     )
             except (ValueError, OSError) as e:
                 print(f"Warning: Failed to load baseline: {e}", file=sys.stderr)
-
-    rule_ids = set(args.rule_ids) if args.rule_ids else None
-    skip_rule_ids = set(args.skip_rule_ids) if args.skip_rule_ids else None
-    if rule_ids and skip_rule_ids:
-        print("Error: --rule and --skip-rule cannot be combined", file=sys.stderr)
-        sys.exit(1)
 
     lint_started = time.perf_counter()
     all_violations = []
@@ -188,16 +222,22 @@ def _run_lint(args):
         if baseline and args.fmt == "text":
             stale = linter.stale_baseline_entries
             if stale:
-                print(
-                    f"Baseline: {len(stale)} stale"
-                    f" {'entry' if len(stale) == 1 else 'entries'}"
-                    f" (violations resolved since baseline was set)"
-                )
+                if args.since:
+                    print(f"Baseline: {len(stale)} violation(s) fixed since {args.since}")
+                else:
+                    print(
+                        f"Baseline: {len(stale)} stale"
+                        f" {'entry' if len(stale) == 1 else 'entries'}"
+                        f" (violations resolved since baseline was set)"
+                    )
                 if args.verbose:
                     for entry in stale:
                         location = f" [{entry.file_path}]" if entry.file_path else ""
                         print(f"  - {entry.rule_id}{location}: {entry.message}")
-                print("  Run `skillsaw baseline` to update.\n")
+                if args.since:
+                    print()
+                else:
+                    print("  Run `skillsaw baseline` to update.\n")
 
     merged_context = _build_merged_context(contexts)
     unique_rules = _dedup_rules(all_rules)
