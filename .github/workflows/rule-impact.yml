@@ -75,13 +75,16 @@ jobs:
             grep -qx "$rule" /tmp/base-known.txt && base_args="$base_args --rule $rule"
           done < /tmp/changed-rules.txt
 
-          mkdir -p /tmp/repos /tmp/out/base /tmp/out/head
+          mkdir -p /tmp/repos /tmp/out/base /tmp/out/head /tmp/out/sha
           for r in openshift-eng/ai-helpers auth0/agent-skills \
                    opendatahub-io/agent-eval-harness kubernetes-sigs/maintainer-tools \
                    RedHatProductSecurity/prodsec-skills; do
             name=$(basename "$r")
             slug=${r//\//__}  # encode org/repo into the filename for the report
             git clone --quiet --depth 1 "https://github.com/$r.git" "/tmp/repos/$name"
+            # Record the commit being linted so the report can permalink
+            # findings to the exact file@line on GitHub.
+            git -C "/tmp/repos/$name" rev-parse HEAD > "/tmp/out/sha/$slug.sha"
 
             # Findings exit 1 — only rc > 1 (crash) is fatal.
             rc=0
@@ -100,7 +103,7 @@ jobs:
           done
 
           /tmp/head-venv/bin/python scripts/rule-impact-report.py \
-            --base /tmp/out/base --head /tmp/out/head \
+            --base /tmp/out/base --head /tmp/out/head --shas /tmp/out/sha \
             --rules "$(tr '\n' ' ' < /tmp/changed-rules.txt)" > /tmp/report.md
           cat /tmp/report.md
 
