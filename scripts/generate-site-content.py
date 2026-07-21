@@ -99,6 +99,22 @@ RULE_GROUPS = [
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
+        "Hidden-Content Validation",
+        "hidden-content",
+        [
+            "security-invisible-unicode",
+            "security-hidden-instructions",
+            "security-encoded-payload",
+        ],
+        "Content-validation rules that catch payloads and instructions "
+        "invisible to human review: invisible/bidi unicode smuggling (ASCII "
+        "smuggling, Trojan Source), agent directives hidden in HTML comments, "
+        "and long high-entropy base64/hex blobs that can smuggle encoded "
+        "payloads. They complement `hooks-dangerous`, `settings-dangerous`, "
+        "and `content-embedded-secrets`, which cover the executable and "
+        "credential sides of the same threat.",
+    ),
+    (
         "MCP (Model Context Protocol)",
         "mcp",
         ["mcp-valid-json", "mcp-prohibited"],
@@ -115,7 +131,7 @@ RULE_GROUPS = [
         "openclaw",
         ["openclaw-metadata"],
         "Validates `metadata.openclaw` in SKILL.md frontmatter against the "
-        "[openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
+        "[OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
         "when `metadata.openclaw` is present.",
     ),
     (
@@ -152,9 +168,14 @@ RULE_GROUPS = [
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
+            "content-instruction-drift",
             "content-broken-internal-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",
+            "content-unclosed-fence",
+            "content-repeated-directive",
+            "content-emphasis-density",
+            "content-missing-stop-condition",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
@@ -417,7 +438,7 @@ def _params_table(rule_id, schema):
 def generate_rules_index(rules_data):
     """Generate docs/rules/index.md — overview of all rules."""
     lines = [GENERATED_HEADER, "# Rules Reference\n"]
-    lines.append(f"skillsaw includes **{len(rules_data)}** builtin rules ")
+    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules ")
     lines.append("organized into the following categories:\n")
 
     for group_name, slug, rule_ids, description in RULE_GROUPS:
@@ -518,6 +539,30 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     return "\n".join(lines) + "\n"
 
 
+CLI_COLOR_SECTION = """\
+## Color and hyperlinks
+
+Commands that produce terminal output (`lint`, `fix`, `explain`, `badge`)
+decide whether to emit ANSI colors with the standard cascade, strongest
+first:
+
+1. `--color` / `--no-color`
+2. `FORCE_COLOR` — a non-empty value forces color on even through a pipe
+   (`0` forces it off); useful in CI logs that render ANSI
+3. `NO_COLOR` — present (even empty) disables color
+4. Otherwise color is used only when stdout is a terminal
+
+Piped or redirected output is plain text by default. When color is
+enabled on a real terminal (`TERM` other than `dumb`), text output also
+emits [OSC 8
+hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda):
+rule ids link to their documentation pages, file paths become clickable
+`file://` links, and the per-rule "Rule docs" URL footer collapses to a
+one-line hint. Hyperlinks are never emitted through a pipe, even when
+color is forced.
+"""
+
+
 def generate_cli_reference(commands):
     """Generate docs/cli.md from parsed argparse data."""
     lines = [GENERATED_HEADER, "# CLI Reference\n"]
@@ -541,6 +586,7 @@ def generate_cli_reference(commands):
                 lines.append(f"| {arg['flags']} | {desc} | {default} |")
             lines.append("")
 
+    lines.append(CLI_COLOR_SECTION)
     return "\n".join(lines) + "\n"
 
 

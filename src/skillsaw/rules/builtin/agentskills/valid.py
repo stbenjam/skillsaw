@@ -280,4 +280,11 @@ class AgentSkillValidRule(Rule):
                                 )
                             )
 
+        # fix() only repairs the missing-name case (it derives the name from
+        # the directory); every other violation needs a human.
+        for v in violations:
+            if "Missing required 'name'" not in v.message:
+                v.fixable = False
+                v.fix_confidence = None
+
         return violations

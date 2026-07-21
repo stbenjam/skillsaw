@@ -36,7 +36,7 @@ lint: $(VENV)/bin/activate
 	$(VENV)/bin/black --check src/ tests/
 
 test: $(VENV)/bin/activate
-	$(VENV)/bin/pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+	$(VENV)/bin/pytest tests/ -v --cov=src/skillsaw --cov-report=xml --cov-report=term
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
 generate-example: $(VENV)/bin/activate
@@ -50,7 +50,7 @@ generate-docs: $(VENV)/bin/activate
 	$(PYTHON) scripts/generate-docs.py
 
 badge: $(VENV)/bin/activate
-	$(VENV)/bin/skillsaw badge .
+	$(VENV)/bin/skillsaw badge --large .
 
 self-lint: $(VENV)/bin/activate badge
 	$(VENV)/bin/skillsaw lint .

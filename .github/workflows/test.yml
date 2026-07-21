@@ -35,7 +35,17 @@ jobs:
           pip install -e .
           pip install pytest pytest-cov
 
+      # Coverage is only uploaded from the 3.11 job, so only 3.11 pays the
+      # measurement cost. This matters most on 3.12, where settrace-based
+      # coverage de-optimizes the specializing interpreter and roughly
+      # doubled the job time (~8 min vs ~4 min for every other version).
       - name: Run tests
+        if: matrix.python-version != '3.11'
+        run: |
+          pytest tests/ -v
+
+      - name: Run tests with coverage
+        if: matrix.python-version == '3.11'
         run: |
           pytest tests/ -v --cov=src/skillsaw --cov-report=xml --cov-report=term
 

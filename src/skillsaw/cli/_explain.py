@@ -7,7 +7,7 @@ import sys
 from ..config import LinterConfig
 from ..context import RepositoryContext
 from ._config import load_config
-from ._helpers import _ansi_colors
+from ._helpers import _ansi_colors, color_enabled
 
 
 def _run_explain(args):
@@ -58,7 +58,7 @@ def _run_explain(args):
         print("Run `skillsaw list-rules` to see all rules.", file=sys.stderr)
         sys.exit(1)
 
-    c = _ansi_colors()
+    c = _ansi_colors(color_enabled(sys.stdout, args.color))
     defaults = LinterConfig.default()
     default_rule = rule_class(defaults.get_rule_config(args.rule_id))
     default_enabled = defaults.get_rule_config(args.rule_id).get("enabled", True)

@@ -24,9 +24,16 @@ from skillsaw.rules.builtin.content_rules import (
     ContentEmbeddedSecretsRule,
     ContentBannedReferencesRule,
     ContentInconsistentTerminologyRule,
+    ContentInstructionDriftRule,
     ContentBrokenInternalReferenceRule,
     ContentUnlinkedInternalReferenceRule,
     ContentPlaceholderTextRule,
+)
+from skillsaw.rules.builtin.content import (
+    ContentUnclosedFenceRule,
+    ContentRepeatedDirectiveRule,
+    ContentEmphasisDensityRule,
+    ContentMissingStopConditionRule,
 )
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
@@ -758,7 +765,7 @@ class TestContentEmbeddedSecretsRule:
         "line,expected_desc",
         [
             ('password = "xK9$mQ2vLp8#nR4z"', "Hardcoded password"),  # notsecret
-            ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),
+            ('api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"', "Hardcoded API key"),  # notsecret
             ('secret_key = "kJ8vQz3mN9pL2wXyRb5cDf7g"', "Hardcoded secret key"),  # notsecret
         ],
         ids=["random-password", "hex-api-key", "mixed-secret-key"],
@@ -839,7 +846,7 @@ class TestContentEmbeddedSecretsRule:
         repo_raise.mkdir()
         repo_lower.mkdir()
         (repo_raise / "CLAUDE.md").write_text(
-            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'  # notsecret
         )
         # Raising the threshold above the value's entropy suppresses it
         rule = ContentEmbeddedSecretsRule({"entropy-threshold": 5.0})
@@ -865,12 +872,14 @@ class TestContentEmbeddedSecretsRule:
         assert rule.check(RepositoryContext(repo_low)) == []
         # Above it (hex, ~4.0 bits/char): still fires.
         (repo_high / "CLAUDE.md").write_text(
-            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'
+            'Config: api_key = "9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"\n'  # notsecret
         )
         assert len(rule.check(RepositoryContext(repo_high))) == 1
 
     def test_additional_placeholders_configurable(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text('Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n')
+        (temp_dir / "CLAUDE.md").write_text(
+            'Config: api_key = "staging-key-9f8a7b6c5d4e3f2a"\n'  # notsecret
+        )
         context = RepositoryContext(temp_dir)
         # Fires by default (high entropy, no builtin placeholder marker)
         assert len(ContentEmbeddedSecretsRule().check(context)) == 1
@@ -1067,6 +1076,235 @@ class TestContentInconsistentTerminologyRule:
         rule = ContentInconsistentTerminologyRule({"groups": None})
         assert rule._group_overrides == {}
         assert rule.check(context)
+
+    def test_heading_not_counted_as_prose_usage(self, temp_dir):
+        """Regression for issue #427: a spelled-out heading shouldn't clash
+        with a body that consistently uses the abbreviation elsewhere."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Create Pull Request\n\n"
+            "Open a PR against main. Wait for review on the PR before merging.\n"
+        )
+        (temp_dir / "AGENTS.md").write_text(
+            "# Notes\n\nAlways open a PR before merging any change.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert not any("PR/pull request/merge request" in v.message for v in violations)
+
+    def test_code_span_path_not_counted(self, temp_dir):
+        """Regression for issue #427: a path segment inside a code span
+        shouldn't read as a standalone terminology choice."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Use the repo for context. See `.planning/codebase/CONVENTIONS.md` for details.\n"
+        )
+        (temp_dir / "AGENTS.md").write_text(
+            "Clone the repo and read the repo's contributing guide.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert not any("repo/repository/codebase" in v.message for v in violations)
+
+    def test_violation_reports_matching_line(self, temp_dir):
+        """Regression for issue #427: violations must point at the specific
+        line that used the minority term, not just the file."""
+        (temp_dir / "CLAUDE.md").write_text("# Layout\n\nCreate a directory for configs.\n")
+        (temp_dir / "AGENTS.md").write_text("# Layout\n\nCreate a folder for output.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        assert violations
+        v = violations[0]
+        assert v.line == 3
+        assert v.file_line == 3
+
+    def test_multiple_coderabbit_fragments_scanned_independently(self, temp_dir):
+        """A ``.coderabbit.yaml`` with several instruction fragments produces
+        several ``ContentBlock``s that all share the same file path. A
+        path-keyed body cache would collapse them onto one fragment's text —
+        this must scan (and attribute violations to) each fragment on its
+        own terms."""
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "reviews:\n"
+            "  instructions: |\n"
+            "    Create a new directory for generated assets before running codegen.\n"
+            "  tools:\n"
+            "    eslint:\n"
+            "      instructions: |\n"
+            "        Put the eslint config in the project folder root.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text("# Notes\n\nKeep the directory layout tidy.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        by_group = [v for v in violations if "directory/folder" in v.message]
+        assert len(by_group) == 1
+        assert by_group[0].file_path.name == ".coderabbit.yaml"
+        assert by_group[0].file_line == 7
+
+    def test_multiple_promptfoo_prompts_scanned_independently(self, temp_dir):
+        """Same collapsing risk as coderabbit fragments, for promptfoo's
+        multiple ``prompts[i]`` blocks sharing one file path."""
+        (temp_dir / "promptfooconfig.yaml").write_text(
+            "prompts:\n"
+            '  - "Create a new directory for the generated report."\n'
+            '  - "Save the output in the results folder."\n'
+            "providers:\n"
+            "  - openai:gpt-4o-mini\n"
+            "tests:\n"
+            "  - vars: {}\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text("# Notes\n\nKeep the directory layout tidy.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentInconsistentTerminologyRule().check(context)
+        by_group = [v for v in violations if "directory/folder" in v.message]
+        assert len(by_group) == 1
+        assert by_group[0].file_path.name == "promptfooconfig.yaml"
+        assert by_group[0].file_line == 3
+
+
+# A realistic ~50-word section shared between instruction files in the
+# drift tests below.
+_DRIFT_SECTION = """## Testing workflow
+
+Run the full test suite with `make test` before every push. Integration
+tests require Docker; start the daemon with `make docker-up` first and
+tear it down with `make docker-down` when finished. If a test is flaky,
+quarantine it with the flaky marker and file an issue including the
+failure output and a link to the CI run.
+"""
+
+# The same section after someone edited one copy: an extra closing
+# sentence pushes similarity to roughly 0.85 — drifted, not rewritten.
+_DRIFT_SECTION_EDITED = (
+    _DRIFT_SECTION
+    + "Never merge a pull request while the suite is red, even for changes "
+    + "that look completely unrelated to the failing test.\n"
+)
+
+_DRIFT_PREAMBLE = """# Project guide
+
+General development notes for agents working in this repository.
+
+"""
+
+
+class TestContentInstructionDriftRule:
+    def test_rule_metadata(self):
+        rule = ContentInstructionDriftRule()
+        assert rule.rule_id == "content-instruction-drift"
+        assert rule.default_severity() == Severity.INFO
+
+    def test_detects_drifted_sections(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        claude_content = _DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED
+        (temp_dir / "CLAUDE.md").write_text(claude_content)
+        context = RepositoryContext(temp_dir)
+        violations = ContentInstructionDriftRule().check(context)
+        assert len(violations) == 1
+        v = violations[0]
+        # Anchored on the second file in (path, line) sort order: CLAUDE.md
+        assert v.file_path.name == "CLAUDE.md"
+        heading_line = claude_content.splitlines().index("## Testing workflow") + 1
+        assert v.file_line == heading_line
+        assert "% similar" in v.message
+        assert "AGENTS.md:5" in v.message
+        assert "Testing workflow" in v.message
+
+    def test_identical_sections_pass(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_html_comment_and_whitespace_add_no_drift_distance(self, temp_dir):
+        # A suppression directive (or any comment) plus extra blank lines in
+        # one copy of an otherwise-identical section must not create drift.
+        commented = _DRIFT_SECTION.replace(
+            "## Testing workflow\n",
+            "## Testing workflow\n\n<!-- skillsaw-disable some-other-rule -->\n\n\n",
+            1,
+        )
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + commented)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_html_comment_does_not_mask_real_drift(self, temp_dir):
+        # Comments are blanked before comparison, so one cannot dilute the
+        # similarity of a genuinely drifted pair below the threshold.
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(
+            _DRIFT_PREAMBLE
+            + _DRIFT_SECTION_EDITED.replace(
+                "## Testing workflow\n",
+                "## Testing workflow\n\n<!-- reviewers: keep in sync -->\n\n",
+                1,
+            )
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentInstructionDriftRule().check(context)
+        assert len(violations) == 1
+        assert "% similar" in violations[0].message
+
+    def test_dissimilar_sections_pass(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + """## Testing workflow
+
+All unit specs live under `spec/` and run through the bundled rake
+target. Coverage reports upload to the internal dashboard on merge, so
+regressions surface within an hour. When adding a fixture, prefer
+factories over static YAML dumps and document any external service the
+scenario touches in the fixture header comment block.
+""")
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_short_sections_skipped(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("## Style\n\nUse ruff. Run make format before push.\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "## Style\n\nUse ruff. Run make format before pushing.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_single_file_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_code_blocks_do_not_participate(self, temp_dir):
+        """Drift confined to fenced code is invisible: read_body strips code."""
+        code_a = "```bash\nmake docker-up && make test\n```\n"
+        code_b = "```bash\nmake docker-up && make test -j4 --verbose\n```\n"
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION + code_a)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION + code_b)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
+    def test_generated_files_skipped_by_default(self, temp_dir):
+        # Marker in its own tiny section so it doesn't dilute the compared one
+        footer = "\n## About\n\n*This file was generated by APM CLI. Do not edit manually.*\n"
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED + footer)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+        violations = ContentInstructionDriftRule({"ignore-generated": False}).check(context)
+        assert len(violations) == 1
+
+    @pytest.mark.parametrize("bad_threshold", [0, 1.5])
+    def test_invalid_threshold_rejected(self, bad_threshold):
+        with pytest.raises(ValueError, match="similarity-threshold"):
+            ContentInstructionDriftRule({"similarity-threshold": bad_threshold})
+
+    def test_invalid_min_section_words_rejected(self):
+        with pytest.raises(ValueError, match="min-section-words"):
+            ContentInstructionDriftRule({"min-section-words": 0})
+
+    def test_custom_threshold_honored(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "CLAUDE.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context)
+        rule = ContentInstructionDriftRule({"similarity-threshold": 0.95})
+        assert rule.check(context) == []
 
 
 class TestContentBrokenInternalReferenceRule:
@@ -1837,3 +2075,635 @@ class TestContentBrokenInternalReferenceAutofix:
         violations = rule.check(context)
         assert len(violations) == 1
         assert "did you mean" not in violations[0].message
+
+
+class TestContentUnclosedFenceRule:
+    def _check(self, temp_dir):
+        return ContentUnclosedFenceRule().check(RepositoryContext(temp_dir))
+
+    def test_rule_metadata(self):
+        rule = ContentUnclosedFenceRule()
+        assert rule.rule_id == "content-unclosed-fence"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.autofix_confidence == AutofixConfidence.SUGGEST
+        assert rule.supports_autofix
+
+    def test_detects_unclosed_fence(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n```bash\nmake test\n\nAlways run the linter before pushing.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "```bash" in violations[0].message
+
+    def test_closed_fence_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n```bash\nmake test\n```\n")
+        assert self._check(temp_dir) == []
+
+    def test_closed_fence_at_eof_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n```")
+        assert self._check(temp_dir) == []
+
+    def test_unclosed_fence_without_trailing_newline(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_unclosed_fence_with_trailing_blank_lines(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```bash\nmake test\n\n\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_longer_closer_run_closes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n`````\n")
+        assert self._check(temp_dir) == []
+
+    def test_shorter_closer_does_not_close(self, temp_dir):
+        # A three-backtick run cannot close a four-backtick fence.
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```\ncode\n```\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_four_backtick_fence_with_inner_fences_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("````markdown\n```bash\nmake test\n```\n````\n")
+        assert self._check(temp_dir) == []
+
+    def test_tilde_fence_unclosed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n")
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert "~~~python" in violations[0].message
+
+    def test_tilde_fence_closed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("~~~python\nprint('hi')\n~~~\n")
+        assert self._check(temp_dir) == []
+
+    def test_closer_with_trailing_spaces_and_indent(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n   ```  \n")
+        assert self._check(temp_dir) == []
+
+    def test_pseudo_closer_with_info_string_flagged(self, temp_dir):
+        # "``` bash" has an info string, which a closing fence cannot have.
+        (temp_dir / "CLAUDE.md").write_text("```bash\ncode\n``` bash\n")
+        assert len(self._check(temp_dir)) == 1
+
+    def test_indented_code_block_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("Paragraph.\n\n    indented code\n    more code\n")
+        assert self._check(temp_dir) == []
+
+    def test_blockquote_nested_fence_not_flagged(self, temp_dir):
+        # Out of scope: a column-0 closer would not terminate it.
+        (temp_dir / "CLAUDE.md").write_text("> ```\n> code\n")
+        assert self._check(temp_dir) == []
+
+    def test_list_nested_fence_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("- item\n  ```\n  code\n")
+        assert self._check(temp_dir) == []
+
+    def test_fence_closed_mid_file_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("```\ncode\n```\n\nProse after the block.\n")
+        assert self._check(temp_dir) == []
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert self._check(temp_dir) == []
+
+
+class TestContentUnclosedFenceAutofix:
+    def _fix(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        rule = ContentUnclosedFenceRule()
+        return rule.fix(context, rule.check(context))
+
+    def test_fix_appends_closer(self, temp_dir):
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SUGGEST
+        assert fixes[0].fixed_content == content + "```\n"
+
+    def test_fix_adds_newline_when_missing(self, temp_dir):
+        content = "```bash\nmake test"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "\n```\n"
+
+    def test_fix_uses_matching_markup(self, temp_dir):
+        content = "````markdown\n```bash\nmake test\n```\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "````\n"
+
+    def test_fix_uses_tilde_markup(self, temp_dir):
+        content = "~~~python\nprint('hi')\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == content + "~~~\n"
+
+    def test_fixed_content_lints_clean(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = "# Rules\n\n```bash\nmake test\n\nRun the linter before pushing.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentUnclosedFenceRule().check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentRepeatedDirectiveRule:
+    def test_rule_metadata(self):
+        rule = ContentRepeatedDirectiveRule()
+        assert rule.rule_id == "content-repeated-directive"
+        assert rule.default_severity() == Severity.WARNING
+
+    def test_detects_exact_duplicate_directive(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "## Testing\n\n"
+            "- Run `make test` before every push.\n"
+            "- Mark slow tests with the `slow` marker for CI sharding.\n\n"
+            "## Releases\n\n"
+            "- Update the changelog in the same PR as the change.\n"
+            "- Run `make test` before every push.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 11
+        assert "repeats the directive at line 5" in violations[0].message
+
+    def test_detects_near_duplicate_directive(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Always run make test before pushing your changes.\n\n"
+            "## Later\n\n"
+            "Always run make test before pushing the changes.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "% similar" in violations[0].message
+
+    def test_distinct_directives_pass(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Run `make lint` before opening a PR.\n"
+            "- Run `make test` before every push.\n"
+            "- Use 4-space indentation in Python files.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_inline_code_distinguishes_directives(self, temp_dir):
+        """Two directives differing only in their code span are distinct."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Run `make lint` before every push.\n"
+            "- Run `make test` before every push.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_approval_cluster_restatement(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Ask before force-pushing to shared branches.\n\n"
+            "## Deployments\n\n"
+            "Wait for approval before deleting production resources.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 7
+        assert "approval policy" in violations[0].message
+        # Cluster restatements are review prompts, not defects — always INFO.
+        assert violations[0].severity == Severity.INFO
+        assert "line 3" in violations[0].message
+
+    def test_code_blocks_not_scanned(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "```\n"
+            "- Run `make test` before every push.\n"
+            "- Run `make test` before every push.\n"
+            "```\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_min_directive_words_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n" "- Run all the tests.\n\n" "## Later\n\n" "- Run all the tests.\n"
+        )
+        rule = ContentRepeatedDirectiveRule({"min-directive-words": 5})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+        rule = ContentRepeatedDirectiveRule({"min-directive-words": 4})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_extra_clusters_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Deploy only from the main branch.\n\n"
+            "## Later\n\n"
+            "Ship exclusively from the main branch.\n"
+        )
+        rule = ContentRepeatedDirectiveRule(
+            {"extra-clusters": {"deploy-source": [r"\b(?:deploy|ship)\s+(?:only|exclusively)\b"]}}
+        )
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "deploy-source policy" in violations[0].message
+
+    def test_invalid_threshold_rejected(self):
+        with pytest.raises(ValueError, match="similarity-threshold"):
+            ContentRepeatedDirectiveRule({"similarity-threshold": 0})
+        with pytest.raises(ValueError, match="similarity-threshold"):
+            ContentRepeatedDirectiveRule({"similarity-threshold": "high"})
+
+    def test_invalid_extra_cluster_pattern_rejected(self):
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            ContentRepeatedDirectiveRule({"extra-clusters": {"bad": ["("]}})
+        with pytest.raises(ValueError, match="must be a mapping"):
+            ContentRepeatedDirectiveRule({"extra-clusters": ["not-a-dict"]})
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentEmphasisDensityRule:
+    def test_rule_metadata(self):
+        rule = ContentEmphasisDensityRule()
+        assert rule.rule_id == "content-emphasis-density"
+        assert rule.default_severity() == Severity.WARNING
+
+    def test_flags_emphasis_inflation(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- IMPORTANT: run the tests before committing.\n"
+            "- You MUST update the API spec when handlers change.\n"
+            "- NEVER log request bodies.\n"
+            "- ALWAYS regenerate mocks after interface edits.\n"
+            "- CRITICAL: keep migrations reversible.\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line is None
+        assert "5 of 6 lines" in violations[0].message
+
+    def test_sparse_emphasis_passes(self, temp_dir):
+        lines = [f"- Step {i}: check the {i} widget output.\n" for i in range(30)]
+        content = "# Rules\n\n" + "".join(lines) + "- NEVER commit secrets.\n"
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_below_min_emphasized_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n- NEVER commit secrets.\n- ALWAYS run the tests.\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_lowercase_keywords_not_counted(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Never log request bodies.\n"
+            "- Always regenerate mocks.\n"
+            "- Never commit secrets.\n"
+            "- Always run the tests first.\n"
+            "- Never push directly to main.\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_code_blocks_not_counted(self, temp_dir):
+        fence_lines = "".join(f"MUST_FLAG_{i} = True\n" for i in range(6))
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n```python\n" + fence_lines + "```\n\n- Run the tests.\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_config_validation(self):
+        with pytest.raises(ValueError, match="max-ratio"):
+            ContentEmphasisDensityRule({"max-ratio": 1.5})
+        with pytest.raises(ValueError, match="min-emphasized"):
+            ContentEmphasisDensityRule({"min-emphasized": 0})
+
+    def test_max_ratio_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- IMPORTANT: run the tests before committing.\n"
+            "- You MUST update the API spec when handlers change.\n"
+            "- NEVER log request bodies.\n"
+            "- ALWAYS regenerate mocks after interface edits.\n"
+            "- CRITICAL: keep migrations reversible.\n"
+        )
+        rule = ContentEmphasisDensityRule({"max-ratio": 0.9})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentMissingStopConditionRule:
+    def test_rule_metadata(self):
+        rule = ContentMissingStopConditionRule()
+        assert rule.rule_id == "content-missing-stop-condition"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.default_enabled is False
+
+    def test_flags_open_ended_monitoring(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "After opening a PR, keep monitoring for reviewer feedback and\n"
+            "address comments as they arrive.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "keep monitoring" in violations[0].message
+
+    def test_terminator_in_same_paragraph_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "After opening a PR, keep monitoring for reviewer feedback.\n"
+            "You may stop monitoring 20 minutes after you push.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_until_terminator_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nPoll for job completion until the pipeline finishes.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_bounded_retry_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Retry when the registry pull fails; give up after 3 attempts\n"
+            "and page the infra channel instead.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_terminator_in_other_paragraph_does_not_count(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Keep polling the deployment status endpoint.\n\n"
+            "Unrelated: wait until the cache warms before benchmarking.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 3
+
+    def test_code_blocks_not_scanned(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n```\nkeep monitoring for feedback\n```\n")
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 0
+
+    def test_extra_loop_patterns_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nBabysit the release pipeline after merging.\n"
+        )
+        rule = ContentMissingStopConditionRule({"extra-loop-patterns": [r"\bbabysit\b"]})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "babysit" in violations[0].message.lower()
+
+    def test_extra_terminator_patterns_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nKeep checking CI and hand off at end of shift.\n"
+        )
+        rule = ContentMissingStopConditionRule(
+            {"extra-terminator-patterns": [r"\bend\s+of\s+shift\b"]}
+        )
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_invalid_pattern_rejected(self):
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            ContentMissingStopConditionRule({"extra-loop-patterns": ["("]})
+        with pytest.raises(ValueError, match="must be a list"):
+            ContentMissingStopConditionRule({"extra-terminator-patterns": "until"})
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert ContentMissingStopConditionRule().check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentRepeatedDirectiveTuning:
+    """Guards added after real-repo impact analysis (GPT-5.6 rule set)."""
+
+    def test_enumeration_labels_not_directives(self, temp_dir):
+        """'Run 2: ...' example-data lines are labels, not imperatives."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Analysis example\n\n"
+            '- Run 2: Failed tests = ["api discovery should work"]\n'
+            '- Run 3: Failed tests = ["api discovery should work"]\n\n'
+            "## Later\n\n"
+            '- Run 7: Failed tests = ["api discovery should work"]\n'
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_neighboring_parallel_bullets_not_flagged(self, temp_dir):
+        """Similar bullets within min-line-distance are parallel structure."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Check the build log for compiler warnings today.\n"
+            "- Check the build log for compiler errors today.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_min_line_distance_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Check the build log for compiler warnings today.\n"
+            "- Check the build log for compiler errors today.\n"
+        )
+        rule = ContentRepeatedDirectiveRule({"min-line-distance": 1})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_invalid_min_line_distance_rejected(self):
+        with pytest.raises(ValueError, match="min-line-distance"):
+            ContentRepeatedDirectiveRule({"min-line-distance": 0})
+
+    def test_line_matching_similarity_and_cluster_reported_once(self, temp_dir):
+        """A line that is both a near-duplicate and a cluster match gets
+        exactly one violation — the similarity pass claims it and the
+        cluster pass honors the shared `reported` set."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Check with the user before deleting production data.\n\n"
+            "## Cleanup\n\n"
+            "Check with the user before deleting production files.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 7
+        assert "% similar" in violations[0].message
+
+
+class TestContentMissingStopConditionTuning:
+    """Guards added after real-repo impact analysis (GPT-5.6 rule set)."""
+
+    def test_descriptive_continuously_not_flagged(self, temp_dir):
+        """'continuously' describing system behavior is not a loop order."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n"
+            "The sync daemon continuously reconnects to the message bus\n"
+            "when the broker restarts.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_imperative_continuously_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nContinuously check the job queue for new entries.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_watch_for_not_flagged(self, temp_dir):
+        """'Watch for X' means 'be alert to X', not 'loop watching X'."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nWatch for crypto and TLS errors in FIPS clusters.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_table_rows_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "| Variant | Guidance |\n"
+            "|---------|----------|\n"
+            "| fips | Keep checking the crypto logs |\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+
+class TestContentRuleFalsePositiveGuards:
+    """Guards from the ai-helpers / prodsec-skills field review."""
+
+    def test_colon_caption_before_fence_not_a_directive(self, temp_dir):
+        """'Add to `X`:' introducing a code block is a caption — parallel
+        sections repeat the caption while the code differs."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Setup\n\n"
+            "## VS Code\n\n"
+            "Add to `customizations.vscode.extensions`:\n\n"
+            '```json\n["ms-python.python"]\n```\n\n'
+            "## Vim\n\n"
+            "Add to `customizations.vscode.extensions`:\n\n"
+            '```json\n["vscodevim.vim"]\n```\n'
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_heading_not_a_cluster_policy_statement(self, temp_dir):
+        """A heading naming an approval section is not a restatement of
+        the policy stated in its body."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "### Step 4: Require Explicit Approval\n\n"
+            "Before applying changes, show the diff.\n\n"
+            "## Rules\n\n"
+            "Require explicit confirmation before applying fixes.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_rfc2119_table_not_emphasis_inflation(self, temp_dir):
+        """MUST in spec tables is RFC-2119 language, not steering emphasis."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# JWT validation\n\n"
+            "Validate every claim in the table below.\n\n"
+            "| Claim | Requirement |\n"
+            "|-------|-------------|\n"
+            "| `iss` | MUST match the issuer URL |\n"
+            "| `aud` | MUST match the audience |\n"
+            "| `exp` | MUST be under 15 minutes |\n"
+            "| `jti` | MUST be unique |\n"
+            "| `sub` | MUST identify the caller |\n"
+        )
+        violations = ContentEmphasisDensityRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_heading_not_a_loop_instruction(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "### Step 3: Poll for Bot Response\n\n"
+            "Read the reply and stop once it arrives.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_caption_above_fence_not_a_loop_instruction(self, temp_dir):
+        """A colon caption whose loop is operationalized (and bounded) in
+        the code block below it is not an open-ended instruction."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Skill\n\n"
+            "After posting the comment, poll for the bot reply:\n\n"
+            "```bash\nfor i in {1..10}; do gh pr view; sleep 30; done\n```\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_third_person_loop_adverb_not_flagged(self, temp_dir):
+        """'pollers continuously check' describes infrastructure."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n"
+            "In-cluster pollers continuously check API availability, and\n"
+            "the aggregator runs continuously during upgrades.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_passive_loop_adverb_not_flagged(self, temp_dir):
+        """'the tool is run repeatedly' is descriptive, not imperative."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Notes\n\n" "Caching avoids redundant reanalysis when the tool is run repeatedly.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_html_comment_not_a_cluster_policy_statement(self, temp_dir):
+        """Suppression directives and commented-out prose are not
+        delivered to the agent — they can't restate a policy."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Ask before force-pushing to shared branches.\n\n"
+            "## Later\n\n"
+            "<!-- old rule: wait for approval before deleting data -->\n"
+            "Delete stale branches weekly.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_html_comment_not_a_loop_instruction(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n<!-- keep monitoring disabled for now -->\nRead the logs.\n"
+        )
+        violations = ContentMissingStopConditionRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_emphasis_message_shows_decimal_ratio(self, temp_dir):
+        """A file just over the threshold must not render '20% exceeds
+        the 20% limit' — the measured ratio shows one decimal."""
+        lines = [f"- Step {i}: read the {i} widget log.\n" for i in range(23)]
+        content = (
+            "# Rules\n\n"
+            + "".join(lines)
+            + "- NEVER commit secrets.\n"
+            + "- ALWAYS run the tests.\n"
+            + "- You MUST update the spec.\n"
+            + "- NEVER log request bodies.\n"
+            + "- ALWAYS regenerate mocks.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        violations = ContentEmphasisDensityRule({"max-ratio": 0.15}).check(
+            RepositoryContext(temp_dir)
+        )
+        assert len(violations) == 1
+        assert "17.2% exceeds the 15% limit" in violations[0].message

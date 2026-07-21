@@ -12,9 +12,14 @@ from .cognitive_chunks import ContentCognitiveChunksRule
 from .embedded_secrets import ContentEmbeddedSecretsRule
 from .banned_references import ContentBannedReferencesRule
 from .inconsistent_terminology import ContentInconsistentTerminologyRule
+from .instruction_drift import ContentInstructionDriftRule
 from .broken_internal_reference import ContentBrokenInternalReferenceRule
 from .unlinked_internal_reference import ContentUnlinkedInternalReferenceRule
 from .placeholder_text import ContentPlaceholderTextRule
+from .unclosed_fence import ContentUnclosedFenceRule
+from .repeated_directive import ContentRepeatedDirectiveRule
+from .emphasis_density import ContentEmphasisDensityRule
+from .missing_stop_condition import ContentMissingStopConditionRule
 
 __all__ = [
     "ContentWeakLanguageRule",
@@ -31,7 +36,12 @@ __all__ = [
     "ContentEmbeddedSecretsRule",
     "ContentBannedReferencesRule",
     "ContentInconsistentTerminologyRule",
+    "ContentInstructionDriftRule",
     "ContentBrokenInternalReferenceRule",
     "ContentUnlinkedInternalReferenceRule",
     "ContentPlaceholderTextRule",
+    "ContentUnclosedFenceRule",
+    "ContentRepeatedDirectiveRule",
+    "ContentEmphasisDensityRule",
+    "ContentMissingStopConditionRule",
 ]

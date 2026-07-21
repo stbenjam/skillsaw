@@ -81,10 +81,10 @@ RULE_GROUPS = [
         None,
     ),
     (
-        "Openclaw",
+        "OpenClaw",
         ["openclaw-metadata"],
         "Validates `metadata.openclaw` in SKILL.md frontmatter against the "
-        "[openclaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
+        "[OpenClaw spec](https://docs.openclaw.ai/tools/skills). Only fires "
         "when `metadata.openclaw` is present.",
     ),
     (
@@ -118,6 +118,7 @@ RULE_GROUPS = [
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
+            "content-instruction-drift",
             "content-broken-internal-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",

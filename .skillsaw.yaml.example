@@ -137,6 +137,13 @@ rules:
     # entropy-threshold: 3.5
     # additional-placeholders: []
 
+  # Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file
+  content-emphasis-density:
+    enabled: auto
+    severity: warning
+    # max-ratio: 0.2
+    # min-emphasized: 5
+
   # Detect instructions that should be automated as hooks instead of prose instructions
   content-hook-candidate:
     enabled: auto
@@ -153,6 +160,21 @@ rules:
     enabled: auto
     severity: warning
 
+  # Detect near-duplicate sections that have drifted apart across instruction files
+  content-instruction-drift:
+    enabled: auto
+    severity: info
+    # similarity-threshold: 0.8
+    # min-section-words: 40
+    # ignore-generated: true
+
+  # Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition
+  content-missing-stop-condition:
+    enabled: false
+    severity: warning
+    # extra-loop-patterns: []
+    # extra-terminator-patterns: []
+
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
@@ -168,6 +190,15 @@ rules:
     enabled: auto
     severity: warning
 
+  # Detect the same directive stated more than once within a file
+  content-repeated-directive:
+    enabled: auto
+    severity: warning
+    # similarity-threshold: 0.85
+    # min-directive-words: 4
+    # min-line-distance: 4
+    # extra-clusters: {}
+
   # Warn about markdown sections longer than ~500 tokens
   content-section-length:
     enabled: auto
@@ -176,6 +207,11 @@ rules:
 
   # Detect tautological instructions that the model already follows by default
   content-tautological:
+    enabled: auto
+    severity: warning
+
+  # Detect code fences opened but never closed, hiding the rest of the file from content rules
+  content-unclosed-fence:
     enabled: auto
     severity: warning
 
@@ -276,7 +312,7 @@ rules:
     enabled: true
     severity: error
 
-  # Validate metadata.openclaw fields against the openclaw spec
+  # Validate metadata.openclaw fields against the OpenClaw spec
   openclaw-metadata:
     enabled: auto
     severity: warning
@@ -327,6 +363,27 @@ rules:
   rules-valid:
     enabled: auto
     severity: error
+
+  # Detect long high-entropy base64/hex blobs that can smuggle encoded payloads
+  security-encoded-payload:
+    enabled: auto
+    severity: warning
+    # min-length: 120
+    # entropy-threshold: 4.5
+    # hex-entropy-threshold: 3.4
+
+  # Detect agent directives hidden in HTML comments invisible to human review
+  security-hidden-instructions:
+    enabled: auto
+    severity: warning
+    # additional-allowed-prefixes: []
+
+  # Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context
+  security-invisible-unicode:
+    enabled: auto
+    severity: error
+    # allow-bidi-controls: false
+    # allowed-codepoints: []
 
   # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
   settings-dangerous:

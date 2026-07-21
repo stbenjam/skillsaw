@@ -1,3 +1,6 @@
+<!-- Source paths below are repo-root-relative references, not links navigable from this file's directory. -->
+<!-- skillsaw-disable content-unlinked-internal-reference -->
+
 # Testing
 
 ## Integration Tests

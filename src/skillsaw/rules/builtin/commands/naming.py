@@ -34,9 +34,14 @@ class CommandNamingRule(Rule):
             cmd_file = cmd_block.path
             cmd_name = cmd_file.stem
             if not self._is_kebab_case(cmd_name):
+                # fix() renames only when kebab-casing yields a distinct,
+                # valid name (e.g. '9lives' has no kebab form).
+                kebab = self._to_kebab(cmd_name)
                 violations.append(
                     self.violation(
-                        f"Command name '{cmd_name}' should use kebab-case", file_path=cmd_file
+                        f"Command name '{cmd_name}' should use kebab-case",
+                        file_path=cmd_file,
+                        fixable=self._is_kebab_case(kebab) and kebab != cmd_name,
                     )
                 )
 

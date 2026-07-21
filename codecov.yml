@@ -1,0 +1,13 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        # Tolerate small dips from refactors; a real regression still trips it.
+        threshold: 1%
+    patch:
+      default:
+        # New/changed lines must be 85% covered. Defensive guard branches
+        # (belt-and-suspenders re-checks that can't fire through the public
+        # API) don't need to drag a whole PR red.
+        target: 85%

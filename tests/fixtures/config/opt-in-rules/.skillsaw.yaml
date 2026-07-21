@@ -22,3 +22,5 @@ rules:
       - tier
   hooks-prohibited:
     enabled: true
+  content-missing-stop-condition:
+    enabled: true

@@ -17,6 +17,28 @@ Examples: adding missing frontmatter, renaming files to kebab-case, registering 
 
 Some fixes produce cascading changes — for example, renaming a skill name creates stale references in other files. These secondary fixes are marked **SUGGEST** confidence because simple name matching may replace occurrences that aren't actually skill name references. Use `--suggest --dry-run` to review these changes before applying them.
 
+## Fixable Markers in Lint Output
+
+`skillsaw lint` marks each autofixable violation so you know when a fix run is worthwhile, and the summary counts them by confidence:
+
+```
+Errors:
+  ✗ ERROR (agentskill-valid) [*] [skills/deploy/SKILL.md]: Missing required 'name' field
+
+Warnings:
+  ⚠ WARNING (content-broken-internal-reference) [?] [SKILL.md:8]: Broken internal link: [guide](docs/guid.md) — target does not exist (did you mean 'docs/guide.md'?)
+
+Summary:
+  Errors:   1
+  Warnings: 1
+  [*] 1 violation(s) fixable with `skillsaw fix` ([?] 1 more with `skillsaw fix --suggest`)
+```
+
+- `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
+- `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
+
+The JSON format carries the same information as an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
+
 !!! note "Removed in 0.15"
     The deprecated `skillsaw lint --fix` flag was removed. `skillsaw fix` is the single entry point for autofixes.
 

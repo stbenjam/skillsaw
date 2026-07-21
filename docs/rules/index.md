@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **54** builtin rules 
+skillsaw includes **62** built-in rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
@@ -11,12 +11,13 @@ organized into the following categories:
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
 - [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
+- [Hidden-Content Validation](hidden-content.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (17 rules)
+- [Content Intelligence](content-intelligence.md) (22 rules)
 - [CodeRabbit](coderabbit.md) (1 rule)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Settings](settings.md) (1 rule)
@@ -49,10 +50,13 @@ organized into the following categories:
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |
+| [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Hidden-Content Validation |
+| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments invisible to human review | warning (auto) | - | Hidden-Content Validation |
+| [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Hidden-Content Validation |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | [`rules-valid`](rules-valid.md) | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
-| [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the openclaw spec | warning (auto) | - | OpenClaw |
+| [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |
@@ -70,9 +74,14 @@ organized into the following categories:
 | [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - | Content Intelligence |
 | [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - | Content Intelligence |
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - | Content Intelligence |
+| [`content-instruction-drift`](content-instruction-drift.md) | Detect near-duplicate sections that have drifted apart across instruction files | info (auto) | - | Content Intelligence |
 | [`content-broken-internal-reference`](content-broken-internal-reference.md) | Detect markdown links where the target file does not exist | warning (auto) | auto | Content Intelligence |
 | [`content-unlinked-internal-reference`](content-unlinked-internal-reference.md) | Detect bare path-like strings not wrapped in markdown link syntax | info (auto) | auto | Content Intelligence |
 | [`content-placeholder-text`](content-placeholder-text.md) | Detect TODO markers, bracket placeholders, and unfilled template text | warning (auto) | - | Content Intelligence |
+| [`content-unclosed-fence`](content-unclosed-fence.md) | Detect code fences opened but never closed, hiding the rest of the file from content rules | warning (auto) | auto | Content Intelligence |
+| [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - | Content Intelligence |
+| [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
+| [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - | CodeRabbit |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
