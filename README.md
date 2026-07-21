@@ -1,5 +1,5 @@
 <table><tr>
-<td width="160" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="160"></td>
+<td width="200" valign="top"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/images/logo.png" alt="skillsaw logo" width="200"></td>
 <td valign="top">
 
 ### skillsaw
@@ -9,10 +9,14 @@
 A linter for the files that steer AI coding agents.
 
 </td>
-<td width="380" valign="middle"><a href="https://skillsaw.org/"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg" alt="skillsaw report card" width="380"></a></td>
-</tr></table>
+</tr>
+<tr>
+<td colspan="2">
 
 [![PyPI version](https://badge.fury.io/py/skillsaw.svg)](https://badge.fury.io/py/skillsaw) [![PyPI Downloads](https://img.shields.io/pypi/dm/skillsaw)](https://pypi.org/project/skillsaw/) [![Tests](https://github.com/stbenjam/skillsaw/workflows/Tests/badge.svg)](https://github.com/stbenjam/skillsaw/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/stbenjam/skillsaw/branch/main/graph/badge.svg)](https://codecov.io/gh/stbenjam/skillsaw) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+</td>
+</tr></table>
 
 Agent instructions behave like code, but most teams still review them like
 prose. skillsaw gives them a linter. It finds the structural errors and content
@@ -98,7 +102,10 @@ Every run produces a letter grade based on weighted violation density. The
 same data can be rendered as a self-contained report card for a README or
 project dashboard.
 
-The card above is skillsaw's own, generated with `skillsaw badge --large`.
+<a href="https://skillsaw.org/"><img src="https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg" alt="skillsaw report card" width="495"></a>
+
+*skillsaw's own report card, generated with `skillsaw badge --large`.*
+
 Learn how to generate a [grade badge and report
 card](https://skillsaw.org/cli/#skillsaw-badge) for your project.
 
