@@ -7,20 +7,31 @@ supposed to provide are missing, and no error is surfaced.
 
 ## Examples
 
-**Bad:**
+**Bad** — these imports reference files that don't exist in the repository:
 
 ```markdown
-@docs/old-guidelines.md
+@docs/not-exist.md
+
+- Review @docs/bad-path.md before release.
 ```
 
-**Good:**
+**Good** — the same imports updated to point to files that exist:
 
 ```markdown
 @docs/guidelines.md
+
+- Review @docs/checklist.md before release.
 ```
+
+Both line-start imports (`@docs/guidelines.md`) and mid-line references
+(`Review @docs/checklist.md`) are validated, matching the
+[Claude Code import semantics](https://docs.anthropic.com/en/docs/claude-code/memory#imports)
+where `@path` references are resolved regardless of position in the line.
 
 ## How to fix
 
 Update the import path to point to the correct file. If the file was
 deleted or renamed, either update the reference or remove the import
-line. Imports must not escape the repository root.
+line. Imports in loaded files are resolved relative to the file that
+contains them, and recursively imported files are checked up to four
+hops. Imports must not escape the repository root.

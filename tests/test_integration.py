@@ -1002,10 +1002,11 @@ class TestDotClaude:
         r = run_lint(repo)
         assert "instruction-imports-valid" in rule_ids(r)
         viol = by_rule(r)["instruction-imports-valid"]
-        assert len(viol) == 1
-        assert "AGENTS.md" in viol[0]["file_path"]
-        assert "missing-guide.md" in viol[0]["message"]
-        assert viol[0]["line"] == 6
+        assert len(viol) == 3
+        messages = [v["message"] for v in viol]
+        assert any("missing-guide.md" in message for message in messages)
+        assert any("missing-inline.md" in message for message in messages)
+        assert any("missing-nested.md" in message for message in messages)
 
     def test_agents_md_clean_imports_pass(self, tmp_path):
         repo = copy_fixture("dot-claude/agents-imports-clean", tmp_path)
