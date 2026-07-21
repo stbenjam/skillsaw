@@ -53,3 +53,27 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
 
+  # Users pin CI to stbenjam/skillsaw@v0 (docs/ci.md). That floating tag has to
+  # be re-pointed at every release or those users stay on the previous version.
+  # Runs after publish so @v0 never advertises a release that failed to ship.
+  floating-tag:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: github.event.release.prerelease == false
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Move floating major tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/move-floating-tag.sh "$RELEASE_TAG"
+
