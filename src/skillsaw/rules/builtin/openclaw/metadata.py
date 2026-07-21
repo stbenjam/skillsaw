@@ -8,6 +8,7 @@ from typing import List
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
+from skillsaw.utils import yaml_path_line_lookup
 
 VALID_OS_VALUES = {"darwin", "linux", "win32"}
 VALID_INSTALL_KINDS = {"brew", "node", "go", "uv", "download"}
@@ -79,31 +80,36 @@ class OpenclawMetadataRule(Rule):
             if openclaw is None:
                 continue
 
-            line_map = block.line_map()
+            # Exact dotted-path lookups (parsed once per block).  The flat
+            # block.line_map() is last-occurrence-wins across the whole
+            # frontmatter, which misattributes lines whenever the same key
+            # name repeats (e.g. `kind` in several install entries, or `os`
+            # both top-level and inside an entry).
+            node_line = yaml_path_line_lookup(block.read_frontmatter_text(), line_offset=1)
 
             if not isinstance(openclaw, dict):
                 violations.append(
                     self.violation(
                         "'metadata.openclaw' must be a mapping",
                         file_path=block.path,
-                        line=line_map.get("openclaw"),
+                        line=node_line("metadata.openclaw"),
                     )
                 )
                 continue
 
-            self._check_top_level(openclaw, block.path, line_map, violations)
-            self._check_requires(openclaw, block.path, line_map, violations)
-            self._check_install(openclaw, block.path, line_map, violations)
+            self._check_top_level(openclaw, block.path, node_line, violations, block.line_map())
+            self._check_requires(openclaw, block.path, node_line, violations)
+            self._check_install(openclaw, block.path, node_line, violations)
 
         return violations
 
-    def _check_top_level(self, openclaw, skill_md, line_map, violations):
+    def _check_top_level(self, openclaw, skill_md, node_line, violations, flat_line_map):
         if "always" in openclaw and not isinstance(openclaw["always"], bool):
             violations.append(
                 self.violation(
                     "'metadata.openclaw.always' must be a boolean",
                     file_path=skill_md,
-                    line=line_map.get("always"),
+                    line=node_line("metadata.openclaw.always"),
                 )
             )
 
@@ -112,7 +118,7 @@ class OpenclawMetadataRule(Rule):
                 self.violation(
                     "'metadata.openclaw.emoji' must be a string",
                     file_path=skill_md,
-                    line=line_map.get("emoji"),
+                    line=node_line("metadata.openclaw.emoji"),
                 )
             )
 
@@ -123,7 +129,7 @@ class OpenclawMetadataRule(Rule):
                     self.violation(
                         "'metadata.openclaw.homepage' must be a string",
                         file_path=skill_md,
-                        line=line_map.get("homepage"),
+                        line=node_line("metadata.openclaw.homepage"),
                     )
                 )
 
@@ -132,12 +138,12 @@ class OpenclawMetadataRule(Rule):
                 self.violation(
                     "'metadata.openclaw.primaryEnv' must be a string",
                     file_path=skill_md,
-                    line=line_map.get("primaryEnv"),
+                    line=node_line("metadata.openclaw.primaryEnv"),
                 )
             )
 
         if "os" in openclaw:
-            os_line = line_map.get("os")
+            os_line = node_line("metadata.openclaw.os")
             os_val = openclaw["os"]
             if not isinstance(os_val, list):
                 violations.append(
@@ -173,7 +179,7 @@ class OpenclawMetadataRule(Rule):
                     self.violation(
                         f"'metadata.openclaw.{str_field}' must be a string",
                         file_path=skill_md,
-                        line=line_map.get(str_field),
+                        line=node_line(f"metadata.openclaw.{str_field}"),
                     )
                 )
 
@@ -182,7 +188,7 @@ class OpenclawMetadataRule(Rule):
                 self.violation(
                     "'metadata.openclaw.hidden' must be a boolean",
                     file_path=skill_md,
-                    line=line_map.get("hidden"),
+                    line=node_line("metadata.openclaw.hidden"),
                 )
             )
 
@@ -196,16 +202,23 @@ class OpenclawMetadataRule(Rule):
                 continue
             match = difflib.get_close_matches(key, KNOWN_OPENCLAW_KEYS, n=1, cutoff=0.8)
             if match:
+                # Keys containing path syntax ('.' or '[') cannot be expressed
+                # as a dotted path — fall back to the flat line map, which is
+                # accurate for a key name that appears once.
+                if "." not in key and "[" not in key:
+                    key_line = node_line(f"metadata.openclaw.{key}")
+                else:
+                    key_line = flat_line_map.get(key)
                 violations.append(
                     self.violation(
                         f"'metadata.openclaw.{key}' is not a recognized key "
                         f"(did you mean '{match[0]}'?)",
                         file_path=skill_md,
-                        line=line_map.get(key),
+                        line=key_line,
                     )
                 )
 
-    def _check_requires(self, openclaw, skill_md, line_map, violations):
+    def _check_requires(self, openclaw, skill_md, node_line, violations):
         requires = openclaw.get("requires")
         if requires is None:
             return
@@ -215,7 +228,7 @@ class OpenclawMetadataRule(Rule):
                 self.violation(
                     "'metadata.openclaw.requires' must be a mapping",
                     file_path=skill_md,
-                    line=line_map.get("requires"),
+                    line=node_line("metadata.openclaw.requires"),
                 )
             )
             return
@@ -223,12 +236,13 @@ class OpenclawMetadataRule(Rule):
         for field in ("bins", "anyBins", "env", "config"):
             if field in requires:
                 val = requires[field]
+                field_line = node_line(f"metadata.openclaw.requires.{field}")
                 if not isinstance(val, list):
                     violations.append(
                         self.violation(
                             f"'metadata.openclaw.requires.{field}' must be a list",
                             file_path=skill_md,
-                            line=line_map.get(field),
+                            line=field_line,
                         )
                     )
                 elif not all(isinstance(v, str) for v in val):
@@ -236,16 +250,16 @@ class OpenclawMetadataRule(Rule):
                         self.violation(
                             f"'metadata.openclaw.requires.{field}' items must be strings",
                             file_path=skill_md,
-                            line=line_map.get(field),
+                            line=field_line,
                         )
                     )
 
-    def _check_install(self, openclaw, skill_md, line_map, violations):
+    def _check_install(self, openclaw, skill_md, node_line, violations):
         install = openclaw.get("install")
         if install is None:
             return
 
-        install_line = line_map.get("install")
+        install_line = node_line("metadata.openclaw.install")
         if not isinstance(install, list):
             violations.append(
                 self.violation(
@@ -257,12 +271,15 @@ class OpenclawMetadataRule(Rule):
             return
 
         for i, entry in enumerate(install):
+            entry_path = f"metadata.openclaw.install[{i}]"
+            entry_line = node_line(entry_path) or install_line
+
             if not isinstance(entry, dict):
                 violations.append(
                     self.violation(
                         f"'metadata.openclaw.install[{i}]' must be a mapping",
                         file_path=skill_md,
-                        line=install_line,
+                        line=entry_line,
                     )
                 )
                 continue
@@ -282,13 +299,17 @@ class OpenclawMetadataRule(Rule):
             else:
                 kind_field, raw_kind = None, None
 
+            kind_line = None
+            if kind_field is not None:
+                kind_line = node_line(f"{entry_path}.{kind_field}") or entry_line
+
             effective_kind = None
             if kind_field is None:
                 violations.append(
                     self.violation(
                         f"'metadata.openclaw.install[{i}]' must specify 'kind' or 'type'",
                         file_path=skill_md,
-                        line=install_line,
+                        line=entry_line,
                     )
                 )
             elif not isinstance(raw_kind, str):
@@ -296,7 +317,7 @@ class OpenclawMetadataRule(Rule):
                     self.violation(
                         f"'metadata.openclaw.install[{i}].{kind_field}' must be a string",
                         file_path=skill_md,
-                        line=line_map.get(kind_field),
+                        line=kind_line,
                     )
                 )
             else:
@@ -309,7 +330,7 @@ class OpenclawMetadataRule(Rule):
                             f"'metadata.openclaw.install[{i}].{kind_field}' is '{raw_kind}', "
                             f"expected one of: {sorted(VALID_INSTALL_KINDS)}",
                             file_path=skill_md,
-                            line=line_map.get(kind_field),
+                            line=kind_line,
                         )
                     )
 
@@ -324,13 +345,13 @@ class OpenclawMetadataRule(Rule):
                             f"'metadata.openclaw.install[{i}]' with kind "
                             f"'{effective_kind}' requires {needed}",
                             file_path=skill_md,
-                            line=line_map.get(kind_field),
+                            line=kind_line,
                         )
                     )
 
             if "os" in entry:
                 os_val = entry["os"]
-                os_line = line_map.get("os")
+                os_line = node_line(f"{entry_path}.os")
                 if not isinstance(os_val, list):
                     violations.append(
                         self.violation(
@@ -361,7 +382,7 @@ class OpenclawMetadataRule(Rule):
 
             if "archive" in entry:
                 archive = entry["archive"]
-                archive_line = line_map.get("archive")
+                archive_line = node_line(f"{entry_path}.archive")
                 if not isinstance(archive, str):
                     violations.append(
                         self.violation(
@@ -385,20 +406,22 @@ class OpenclawMetadataRule(Rule):
                     self.violation(
                         f"'metadata.openclaw.install[{i}].extract' must be a boolean",
                         file_path=skill_md,
-                        line=line_map.get("extract"),
+                        line=node_line(f"{entry_path}.extract"),
                     )
                 )
 
-            if "stripComponents" in entry and not isinstance(
-                entry["stripComponents"], (int, float)
-            ):
-                violations.append(
-                    self.violation(
-                        f"'metadata.openclaw.install[{i}].stripComponents' must be a number",
-                        file_path=skill_md,
-                        line=line_map.get("stripComponents"),
+            if "stripComponents" in entry:
+                strip_val = entry["stripComponents"]
+                # bool is an int subclass in Python, but `stripComponents: true`
+                # is not a strip depth — reject it explicitly.
+                if isinstance(strip_val, bool) or not isinstance(strip_val, (int, float)):
+                    violations.append(
+                        self.violation(
+                            f"'metadata.openclaw.install[{i}].stripComponents' must be a number",
+                            file_path=skill_md,
+                            line=node_line(f"{entry_path}.stripComponents"),
+                        )
                     )
-                )
 
             for str_field in (
                 "id",
@@ -415,13 +438,13 @@ class OpenclawMetadataRule(Rule):
                         self.violation(
                             f"'metadata.openclaw.install[{i}].{str_field}' must be a string",
                             file_path=skill_md,
-                            line=line_map.get(str_field),
+                            line=node_line(f"{entry_path}.{str_field}"),
                         )
                     )
 
             if "bins" in entry:
                 bins = entry["bins"]
-                bins_line = line_map.get("bins")
+                bins_line = node_line(f"{entry_path}.bins")
                 if not isinstance(bins, list):
                     violations.append(
                         self.violation(

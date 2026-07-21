@@ -3,12 +3,67 @@ Rule: marketplace-registration
 """
 
 import json
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.marketplace.json_valid import is_valid_plugin_root
+
+
+def _mutable_marketplace_data(original: str) -> Optional[dict]:
+    """Parse marketplace.json into a document ``fix()`` can extend.
+
+    Returns the parsed dict, or ``None`` when the file cannot be rewritten
+    safely — unparseable JSON, a non-object root, or a non-list ``plugins``
+    key.  marketplace-json-valid reports those malformed shapes; they need
+    manual repair, so registration violations against them must not
+    advertise fixability.
+
+    Shared by ``check()`` (to decide ``fixable``) and ``fix()`` so the two
+    cannot drift.
+    """
+    try:
+        data = json.loads(original)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if "plugins" in data and not isinstance(data["plugins"], list):
+        return None
+    return data
+
+
+def _source_base(context: RepositoryContext, data: dict) -> Path:
+    """Base directory that generated plugin sources are relative to.
+
+    metadata.pluginRoot is prepended to relative sources when Claude Code
+    resolves them, so generated sources must be relative to it.  Absolute
+    or traversing pluginRoots are invalid (marketplace-json-valid flags
+    them) and are ignored here.  Resolve the base because plugin node paths
+    are fully resolved and relative_to() compares lexically.
+    """
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
+        plugin_root = metadata["pluginRoot"]
+        if is_valid_plugin_root(plugin_root):
+            return (context.root_path / plugin_root).resolve()
+    return context.root_path
+
+
+def _relative_source(plugin_path: Path, source_base: Path) -> Optional[str]:
+    """Marketplace-relative source for the plugin, or ``None`` when it lives
+    outside the source base.
+
+    Spec consumers resolve every relative source under pluginRoot and '..'
+    is forbidden in sources, so no correct relative source exists for a
+    plugin outside it — registering one would resolve to the wrong location.
+    """
+    try:
+        return plugin_path.relative_to(source_base).as_posix()
+    except ValueError:
+        return None
 
 
 class MarketplaceRegistrationRule(Rule):
@@ -42,16 +97,38 @@ class MarketplaceRegistrationRule(Rule):
 
         marketplace_file = config_nodes[0].path
 
+        unregistered = []
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_name = context.get_plugin_name(plugin_node.path)
 
             if not context.is_registered_in_marketplace(plugin_name):
-                violations.append(
-                    self.violation(
-                        f"Plugin '{plugin_name}' not registered in marketplace.json",
-                        file_path=marketplace_file,
-                    )
+                unregistered.append((plugin_node, plugin_name))
+
+        if not unregistered:
+            return violations
+
+        # fix() bails on documents it cannot safely rewrite and on plugins
+        # with no valid relative source under metadata.pluginRoot, so
+        # fixability must be decided per violation by the same helpers fix()
+        # runs — otherwise lint output over-promises `[*] fixable with
+        # skillsaw fix`.
+        try:
+            data = _mutable_marketplace_data(marketplace_file.read_text(encoding="utf-8"))
+        except OSError:
+            data = None
+        source_base = _source_base(context, data) if data is not None else None
+
+        for plugin_node, plugin_name in unregistered:
+            fixable = (
+                data is not None and _relative_source(plugin_node.path, source_base) is not None
+            )
+            violations.append(
+                self.violation(
+                    f"Plugin '{plugin_name}' not registered in marketplace.json",
+                    file_path=marketplace_file,
+                    fixable=fixable,
                 )
+            )
 
         return violations
 
@@ -69,34 +146,17 @@ class MarketplaceRegistrationRule(Rule):
         marketplace_file = config_nodes[0].path
 
         original = marketplace_file.read_text(encoding="utf-8")
-        try:
-            data = json.loads(original)
-        except json.JSONDecodeError:
-            return results
-
-        # marketplace-json-valid reports malformed shapes; mutating a
-        # non-object document or non-list plugins would crash, so leave
-        # those for manual repair.
-        if not isinstance(data, dict):
+        data = _mutable_marketplace_data(original)
+        if data is None:
+            # Malformed document (invalid JSON, non-object root, or non-list
+            # plugins) — reported by marketplace-json-valid, left for manual
+            # repair.  check() marks these violations fixable=False.
             return results
 
         if "plugins" not in data:
             data["plugins"] = []
-        if not isinstance(data["plugins"], list):
-            return results
 
-        # metadata.pluginRoot is prepended to relative sources when Claude
-        # Code resolves them, so generated sources must be relative to it.
-        # Absolute or traversing pluginRoots are invalid (marketplace-json-valid
-        # flags them) and are ignored here. Resolve the base because
-        # plugin_node.path is fully resolved and relative_to() compares
-        # lexically.
-        source_base = context.root_path
-        metadata = data.get("metadata")
-        if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
-            plugin_root = metadata["pluginRoot"]
-            if is_valid_plugin_root(plugin_root):
-                source_base = (context.root_path / plugin_root).resolve()
+        source_base = _source_base(context, data)
 
         fixed_violations = []
         for v in violations:
@@ -111,16 +171,10 @@ class MarketplaceRegistrationRule(Rule):
             rel_source = plugin_name
             for plugin_node in context.lint_tree.find(PluginNode):
                 if context.get_plugin_name(plugin_node.path) == plugin_name:
-                    try:
-                        rel_source = str(plugin_node.path.relative_to(source_base))
-                    except ValueError:
-                        # The plugin lives outside metadata.pluginRoot. Spec
-                        # consumers resolve every relative source under
-                        # pluginRoot and '..' is forbidden in sources, so no
-                        # correct relative source exists — skip rather than
-                        # register an entry that resolves to the wrong
-                        # location.
-                        rel_source = None
+                    # None means the plugin lives outside metadata.pluginRoot;
+                    # skip rather than register an entry that resolves to the
+                    # wrong location.  check() marks it fixable=False.
+                    rel_source = _relative_source(plugin_node.path, source_base)
                     break
             if rel_source is None:
                 continue

@@ -3,6 +3,7 @@ Tests for the SVG report card (skillsaw.card) and the
 ``skillsaw badge --large`` subcommand.
 """
 
+import pathlib
 import subprocess
 import xml.etree.ElementTree as ET
 
@@ -51,6 +52,10 @@ def _texts_by_testid(svg):
         if testid is not None:
             found[testid] = "".join(el.itertext())
     return found
+
+
+def _circles(svg):
+    return list(ET.fromstring(svg).iter(f"{{{_SVG_NS}}}circle"))
 
 
 # ── Rendering ────────────────────────────────────────────────────
@@ -155,6 +160,38 @@ def test_card_truncates_long_names():
     assert len(fields["rule-0"]) < 50
 
 
+def test_card_ascii_truncation_behavior_unchanged():
+    # For pure-ASCII names the width-aware truncation must be identical
+    # to the old 30-character limit.
+    assert _texts_by_testid(_render(repo_name="x" * 100))["repo-name"] == "x" * 29 + "…"
+    exactly_thirty = "a" * 30
+    assert _texts_by_testid(_render(repo_name=exactly_thirty))["repo-name"] == exactly_thirty
+
+
+def test_card_truncates_wide_glyph_names_by_display_width():
+    # Regression: a 31-glyph CJK checkout-directory name (the fallback
+    # when there is no origin remote). CJK glyphs render ~2 ASCII columns
+    # wide at the title's 16px, so the old character-count limit kept
+    # ~480px of text starting at x=56 and overflowed the 495px viewBox.
+    from skillsaw.card import _display_width
+
+    name = "日本語プロジェクト管理支援用大規模開発環境設定集約リポジトリ超"
+    assert len(name) == 31
+    shown = _texts_by_testid(_render(repo_name=name))["repo-name"]
+    assert shown.endswith("…")
+    assert _display_width(shown) <= 30
+    # 14 double-width glyphs plus a single-column ellipsis = 29 columns.
+    assert shown == name[:14] + "…"
+
+
+def test_card_mixed_width_names_share_the_budget():
+    from skillsaw.card import _display_width
+
+    shown = _texts_by_testid(_render(repo_name="skill-日本語-" + "z" * 40))["repo-name"]
+    assert shown.endswith("…")
+    assert _display_width(shown) <= 30
+
+
 def test_card_without_violations_shows_clean_run():
     svg = _render(grade=compute_grade([], content_tokens=10_000), top_rules=[])
     fields = _texts_by_testid(svg)
@@ -177,6 +214,32 @@ def test_card_empty_repo_name_falls_back():
     assert fields["repo-name"] == "repository"
 
 
+def test_f_grade_draws_empty_ring_without_stray_dot():
+    # Regression: the last notch (F) has ring fraction exactly 0, and a
+    # zero-length dash on a stroke-linecap="round" circle renders as a
+    # dot at 12 o'clock per the SVG spec (the standard dotted-line
+    # technique). The empty ring must omit the progress arc entirely.
+    grade = compute_grade(_violations(errors=30), content_tokens=1_000)
+    assert grade.letter == "F"
+    svg = _render(grade=grade)
+    assert "stroke-dasharray" not in svg
+    assert "stroke-linecap" not in svg
+    circles = _circles(svg)
+    assert len(circles) == 1  # the faint background ring only
+    assert circles[0].get("stroke-opacity") == "0.25"
+
+
+def test_graded_card_keeps_progress_arc():
+    # Non-empty grades still draw the arc with a positive dash length.
+    svg = _render(grade=compute_grade(_violations(warnings=5, info=3), 12_345))
+    circles = _circles(svg)
+    assert len(circles) == 2
+    arcs = [c for c in circles if c.get("stroke-dasharray")]
+    assert len(arcs) == 1
+    assert float(arcs[0].get("stroke-dasharray").split()[0]) > 0
+    assert arcs[0].get("stroke-linecap") == "round"
+
+
 def test_card_survives_off_scale_grade():
     # render_card is a public function: an unexpected letter or color
     # must not crash it. Unknown letters draw the empty (last-notch)
@@ -191,7 +254,10 @@ def test_card_survives_off_scale_grade():
     fields = _texts_by_testid(svg)
     assert fields["grade-letter"] == "E"
     assert "#888888" in svg
-    assert 'stroke-dasharray="0.00' in svg
+    # The empty ring is drawn without a zero-length progress arc, which
+    # would render as a stray dot (see the F-grade regression test).
+    assert "stroke-dasharray" not in svg
+    assert len(_circles(svg)) == 1
 
 
 # ── CLI integration ──────────────────────────────────────────────
@@ -307,6 +373,29 @@ def test_run_badge_in_process_with_card(tmp_path, capsys):
     assert "RAW_URL_TO_YOUR_CARD_SVG" in out
     assert "Commit .skillsaw-badge.json and .skillsaw-card.svg" in out
     assert "camo" in out
+
+
+def test_badge_and_card_bytes_survive_windows_newline_translation(tmp_path, monkeypatch):
+    # Regression: both artifacts are committed and regenerated in CI, so
+    # they must be byte-identical across operating systems. Emulate
+    # Windows' default text-mode behavior (newline=None translates "\n"
+    # to "\r\n"): any write that goes through text mode without
+    # newline="" produces CRLF bytes and fails this test.
+    repo = copy_fixture("marketplace/clean", tmp_path)
+
+    def windows_write_text(self, data, encoding=None, errors=None, newline=None):
+        if newline is None:  # faithful to TextIOWrapper's translation rules
+            data = data.replace("\n", "\r\n")
+        self.write_bytes(data.encode(encoding or "utf-8", errors or "strict"))
+
+    monkeypatch.setattr(pathlib.Path, "write_text", windows_write_text)
+    assert run_badge_in_process(repo, "--large") == 0
+
+    for name in (".skillsaw-badge.json", ".skillsaw-card.svg"):
+        data = (repo / name).read_bytes()
+        assert b"\r" not in data, f"{name} contains CRLF line endings"
+        assert data.count(b"\n") > 1  # multi-line, LF only
+        assert data.endswith(b"\n")
 
 
 def test_run_badge_in_process_with_remote(tmp_path, capsys):

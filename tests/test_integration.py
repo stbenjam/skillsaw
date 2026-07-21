@@ -3064,12 +3064,21 @@ class TestColorOutput:
         assert "skillsaw explain" in output
 
     @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
-    def test_term_dumb_suppresses_hyperlinks_but_not_color(self, tmp_path):
+    def test_term_dumb_suppresses_color_and_hyperlinks(self, tmp_path):
+        # TERM=dumb advertises no escape-sequence support at all — neither
+        # SGR color nor OSC 8 hyperlinks (matching git/grep auto behavior).
         repo = copy_fixture(self.FIXTURE, tmp_path)
         output = _run_lint_in_pty(repo, _color_env(TERM="dumb"))
-        assert "\x1b[" in output
+        assert "\x1b[" not in output
         assert "\x1b]8" not in output
         assert "Rule docs" in output
+
+    @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
+    def test_term_dumb_force_color_still_wins(self, tmp_path):
+        # Explicit FORCE_COLOR overrides the TERM=dumb heuristic.
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        output = _run_lint_in_pty(repo, _color_env(TERM="dumb", FORCE_COLOR="1"))
+        assert "\x1b[" in output
 
     @pytest.mark.skipif(os.name != "posix", reason="pty requires POSIX")
     def test_no_color_on_tty(self, tmp_path):

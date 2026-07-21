@@ -1,7 +1,7 @@
 """AgentSkill name format validation rule"""
 
 import re
-from typing import List
+from typing import List, Optional, Tuple
 
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
@@ -54,6 +54,63 @@ def _parse_name_line(name_line: str):
     return value, suffix
 
 
+def _plan_name_fix(
+    original: Optional[str], directory_name: Optional[str] = None
+) -> Optional[Tuple[str, str, str]]:
+    """Compute the ``name:`` rewrite for a violation, or ``None`` when the
+    fix cannot be applied safely.
+
+    Shared by ``check()`` and ``fix()`` so their notions of fixability
+    cannot drift: every bail condition here makes ``fix()`` skip the
+    violation, and ``check()`` must therefore report that violation with
+    ``fixable=False`` so lint output never promises a fix that ``skillsaw
+    fix`` then refuses to make.
+
+    ``directory_name`` is the target name for directory-mismatch
+    violations; otherwise the old name is kebab-cased.
+
+    Returns ``(old_name, new_name, fixed_content)`` on success.
+    """
+    if original is None:
+        return None
+    # The old name must be the parsed YAML value the violation was
+    # raised against — a raw-line slice would fold an inline comment
+    # (``name: Deploy_Service # legacy``) into the rename manifest
+    # and the kebab-cased replacement (issue #322).
+    fm, _body, _err = parse_frontmatter(original)
+    old_name = fm.get("name") if fm else None
+    if not isinstance(old_name, str) or not old_name:
+        return None
+    new_name = directory_name if directory_name is not None else _to_kebab(old_name)
+    if new_name == old_name or not NAME_PATTERN.match(new_name):
+        return None
+    fm_text = frontmatter_text(original) or ""
+    line_match = re.search(r"^name[ \t]*:[^\r\n]*", fm_text, re.MULTILINE)
+    if not line_match:
+        return None
+    line_value, comment = _parse_name_line(line_match.group(0))
+    # The rewrite replaces exactly one line, so it is only safe when
+    # the whole value lives on that line.  A block scalar
+    # (``name: >-``), a value on the following line, or a duplicate
+    # ``name:`` key (PyYAML is last-wins, the regex is first-match)
+    # all make the line value differ from the parsed value — rewriting
+    # the key line would merge the leftover continuation lines into
+    # the new scalar and corrupt the frontmatter.  Skip those.
+    if line_value != old_name:
+        return None
+    fixed = replace_frontmatter_field(original, "name", f"name: {new_name}{comment}")
+    if fixed is None:
+        return None
+    # Convergence guard: the rewritten frontmatter must actually
+    # parse to the new name (duplicate identical ``name:`` keys pass
+    # the line-value check above but PyYAML still resolves to the
+    # untouched later key, so the fix would churn forever).
+    new_fm, _new_body, _new_err = parse_frontmatter(fixed)
+    if not new_fm or new_fm.get("name") != new_name:
+        return None
+    return old_name, new_name, fixed
+
+
 class AgentSkillNameRule(Rule):
     """Validate skill name format per agentskills.io spec"""
 
@@ -94,40 +151,60 @@ class AgentSkillNameRule(Rule):
 
             name_line = block.key_line("name")
 
-            if not NAME_PATTERN.match(name):
+            bad_format = not NAME_PATTERN.match(name)
+            trailing_hyphen = name.endswith("-")
+            consecutive_hyphens = bool(CONSECUTIVE_HYPHENS.search(name))
+            dir_mismatch = skill_node.path != context.root_path and name != skill_node.path.name
+            if not (bad_format or trailing_hyphen or consecutive_hyphens or dir_mismatch):
+                continue
+
+            # fix() only repairs a subset of violations (it bails on names
+            # that don't kebab-case to a valid name, block-scalar or
+            # duplicate ``name:`` keys, and directories whose own name is
+            # invalid), so fixability must be decided per violation by the
+            # same routine fix() runs — otherwise lint output over-promises
+            # `[*] fixable with skillsaw fix`.
+            original = read_text(block.path)
+            kebab_fixable = _plan_name_fix(original) is not None
+
+            if bad_format:
                 violations.append(
                     self.violation(
                         f"Name '{name}' must contain only lowercase letters, numbers, and hyphens",
                         block=block,
                         line=name_line,
+                        fixable=kebab_fixable,
                     )
                 )
                 continue
 
-            if name.endswith("-"):
+            if trailing_hyphen:
                 violations.append(
                     self.violation(
                         f"Name '{name}' must not end with a hyphen",
                         block=block,
                         line=name_line,
+                        fixable=kebab_fixable,
                     )
                 )
 
-            if CONSECUTIVE_HYPHENS.search(name):
+            if consecutive_hyphens:
                 violations.append(
                     self.violation(
                         f"Name '{name}' must not contain consecutive hyphens",
                         block=block,
                         line=name_line,
+                        fixable=kebab_fixable,
                     )
                 )
 
-            if skill_node.path != context.root_path and name != skill_node.path.name:
+            if dir_mismatch:
                 violations.append(
                     self.violation(
                         f"Name '{name}' does not match directory name '{skill_node.path.name}'",
                         block=block,
                         line=name_line,
+                        fixable=_plan_name_fix(original, skill_node.path.name) is not None,
                     )
                 )
 
@@ -146,46 +223,13 @@ class AgentSkillNameRule(Rule):
             # skips the fix for BOM files.  write_text_preserving restores
             # the BOM at apply time.
             original = read_text(v.file_path)
-            if original is None:
+            directory_name = (
+                v.file_path.parent.name if "does not match directory" in v.message else None
+            )
+            plan = _plan_name_fix(original, directory_name)
+            if plan is None:
                 continue
-            # The old name must be the parsed YAML value the violation was
-            # raised against — a raw-line slice would fold an inline comment
-            # (``name: Deploy_Service # legacy``) into the rename manifest
-            # and the kebab-cased replacement (issue #322).
-            fm, _body, _err = parse_frontmatter(original)
-            old_name = fm.get("name") if fm else None
-            if not isinstance(old_name, str) or not old_name:
-                continue
-            if "does not match directory" in v.message:
-                new_name = v.file_path.parent.name
-            else:
-                new_name = _to_kebab(old_name)
-            if new_name == old_name or not NAME_PATTERN.match(new_name):
-                continue
-            fm_text = frontmatter_text(original) or ""
-            line_match = re.search(r"^name[ \t]*:[^\r\n]*", fm_text, re.MULTILINE)
-            if not line_match:
-                continue
-            line_value, comment = _parse_name_line(line_match.group(0))
-            # The rewrite replaces exactly one line, so it is only safe when
-            # the whole value lives on that line.  A block scalar
-            # (``name: >-``), a value on the following line, or a duplicate
-            # ``name:`` key (PyYAML is last-wins, the regex is first-match)
-            # all make the line value differ from the parsed value — rewriting
-            # the key line would merge the leftover continuation lines into
-            # the new scalar and corrupt the frontmatter.  Skip those.
-            if line_value != old_name:
-                continue
-            fixed = replace_frontmatter_field(original, "name", f"name: {new_name}{comment}")
-            if fixed is None:
-                continue
-            # Convergence guard: the rewritten frontmatter must actually
-            # parse to the new name (duplicate identical ``name:`` keys pass
-            # the line-value check above but PyYAML still resolves to the
-            # untouched later key, so the fix would churn forever).
-            new_fm, _new_body, _new_err = parse_frontmatter(fixed)
-            if not new_fm or new_fm.get("name") != new_name:
-                continue
+            old_name, new_name, fixed = plan
 
             def _record_rename(root=context.root_path, old=old_name, new=new_name):
                 _add_rename(root, old, new)

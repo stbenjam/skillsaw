@@ -1,0 +1,6 @@
+{
+  "name": "log-analyzer",
+  "description": "Search and summarize application logs",
+  "version": "1.2.0",
+  "author": {"name": "Acme Engineering"}
+}

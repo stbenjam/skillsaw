@@ -30,7 +30,20 @@ while long digit-free runs are concatenated natural text (a camelCase
 identifier, a deep `/src/main/java/...` path). Two known-legitimate blob
 shapes are exempt: data-URI images (`data:image/png;base64,…` badges and
 logos) and integrity pins (`integrity="sha384-…"` SRI attributes,
-`image@sha256:…` digests).
+`image@sha256:…` digests). The exemption is anchored to the whole encoded
+token, not the sub-run a pattern happens to match, so an interior
+`/`-bounded fragment of a real image blob is still recognized as part of
+the exempt data URI.
+
+Entropy alone cannot catch hex-encoded *text*: hex of printable ASCII
+constrains high nibbles to `2`-`7` and measures only ~3.2-3.6 bits/char, at
+or below the hex gate calibrated for random hex — so a hex-encoded
+`curl … | sh` bootstrap or an injected `Ignore previous instructions…`
+string would slip past on entropy. A hex run below the gate is therefore
+decoded: if it resolves to ≥90% printable-ASCII bytes it is flagged as an
+encoded text payload regardless of entropy. Random hex (commit SHAs,
+sha256/sha512 digests, packed binary) decodes to mostly non-printable bytes
+and is never rescued this way.
 
 Blobs wrapped across multiple lines (PEM-style 64-char lines) are not
 detected in v1 — the run must sit on a single line.
@@ -76,6 +89,9 @@ rules:
     min-length: 120           # minimum run length considered (floor: 16)
     entropy-threshold: 4.5    # bits/char gate for base64 runs
     hex-entropy-threshold: 3.4  # bits/char gate for hex runs
+    hex-ascii-ratio: 0.9      # min printable-ASCII fraction a sub-gate hex
+                              # run must decode to before it is flagged;
+                              # set above 1.0 to disable the decode check
 ```
 
 Raise `min-length` if your content legitimately embeds long encoded values

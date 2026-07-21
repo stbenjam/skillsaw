@@ -1,0 +1,5 @@
+version: "0.17.0"
+rules:
+  security-invisible-unicode:
+    # Unquoted hex — YAML delivers the integer 8203 (U+200B).
+    allowed-codepoints: [0x200B]

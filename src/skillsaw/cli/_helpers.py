@@ -153,10 +153,14 @@ def color_enabled(stream, color: bool | None = None) -> bool:
        on, ``False`` forces off, ``None`` auto-detects)
     2. ``FORCE_COLOR`` — non-empty forces color on (``0`` forces it off)
     3. ``NO_COLOR`` — present (even empty) disables color
-    4. ``stream.isatty()``
+    4. ``TERM=dumb`` — disables color (the terminal renders escape codes
+       as literal ``^[[91m`` garbage; git, gcc, and CPython all honor it)
+    5. ``stream.isatty()``
 
     ``FORCE_COLOR`` outranks ``NO_COLOR`` so CI setups that export both
-    get the color they explicitly asked for.
+    get the color they explicitly asked for. ``TERM=dumb`` sits in the
+    terminal-heuristic tier: an explicit ``--color`` or ``FORCE_COLOR``
+    still wins.
     """
     if color is not None:
         return color
@@ -164,6 +168,8 @@ def color_enabled(stream, color: bool | None = None) -> bool:
     if force:
         return force != "0"
     if "NO_COLOR" in os.environ:
+        return False
+    if os.environ.get("TERM") == "dumb":
         return False
     try:
         return stream.isatty()

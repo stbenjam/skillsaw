@@ -15,6 +15,8 @@ class ContentEmphasisDensityRule(Rule):
     """Detect emphasis inflation — when everything is critical, nothing is"""
 
     formats = None
+    repo_types = None  # instruction content appears in every repo type
+    default_enabled = "auto"
     since = "0.17.0"
 
     _DEFAULT_MAX_RATIO = 0.2

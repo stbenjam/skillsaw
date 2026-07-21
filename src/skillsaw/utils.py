@@ -642,6 +642,32 @@ def yaml_node_line(
     return _resolve_path_line(data, path, line_offset)
 
 
+def yaml_path_line_lookup(
+    text: str,
+    *,
+    line_offset: int = 0,
+) -> Callable[[str], Optional[int]]:
+    """Parse *text* once and return a dotted-path -> line-number lookup.
+
+    Equivalent to calling :func:`yaml_node_line` for each path, but the
+    YAML is parsed a single time (ruamel round-trip parsing is expensive,
+    so per-path parses must be avoided in rule loops).
+
+    The returned callable accepts paths like
+    ``metadata.openclaw.install[0].kind`` and returns the 1-based line
+    number, or ``None`` when the path does not exist or its line cannot
+    be determined (e.g. keys introduced via YAML merge keys).
+    """
+    data = _ruamel_load(text)
+
+    def lookup(path: str) -> Optional[int]:
+        if data is None:
+            return None
+        return _resolve_path_line(data, path, line_offset)
+
+    return lookup
+
+
 def yaml_key_line_after(
     text: str,
     key: str,
@@ -741,7 +767,14 @@ def _build_line_map(node: Any, result: Dict[str, int], line_offset: int) -> None
     """Populate *result* mapping every key name to its 1-based line."""
     if isinstance(node, CommentedMap):
         for k in node:
-            result[k] = node.lc.key(k)[0] + 1 + line_offset
+            try:
+                result[k] = node.lc.key(k)[0] + 1 + line_offset
+            except (KeyError, TypeError):
+                # Keys introduced via YAML merge keys ('<<: *anchor') have no
+                # position of their own in this mapping — ruamel raises
+                # KeyError (or TypeError on some versions).  Skip them: an
+                # omitted line number is correct, a crash is not.
+                pass
             _build_line_map(node[k], result, line_offset)
     elif isinstance(node, (CommentedSeq, list)):
         for item in node:
@@ -792,8 +825,13 @@ def _resolve_path_line(node: Any, path: str, line_offset: int) -> Optional[int]:
             last_accessor = part
             current = current[part]
 
-    if isinstance(last_container, CommentedMap) and isinstance(last_accessor, str):
-        return last_container.lc.key(last_accessor)[0] + 1 + line_offset
-    if isinstance(last_container, CommentedSeq) and isinstance(last_accessor, int):
-        return last_container.lc.item(last_accessor)[0] + 1 + line_offset
+    try:
+        if isinstance(last_container, CommentedMap) and isinstance(last_accessor, str):
+            return last_container.lc.key(last_accessor)[0] + 1 + line_offset
+        if isinstance(last_container, CommentedSeq) and isinstance(last_accessor, int):
+            return last_container.lc.item(last_accessor)[0] + 1 + line_offset
+    except (KeyError, TypeError):
+        # Keys reachable only through a YAML merge key ('<<: *anchor') have
+        # no position in this mapping — report no line rather than crash.
+        return None
     return None

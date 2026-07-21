@@ -2,7 +2,8 @@
 Unit tests for the CLI color/hyperlink capability cascade (GH-415).
 
 ``color_enabled`` implements the standard precedence every mature CLI
-ships: --color/--no-color > FORCE_COLOR > NO_COLOR > stream.isatty().
+ships: --color/--no-color > FORCE_COLOR > NO_COLOR > terminal
+heuristics (``TERM=dumb`` disables, else stream.isatty()).
 ``hyperlinks_enabled`` additionally requires a real terminal that is not
 ``TERM=dumb`` — OSC 8 sequences are never forced through a pipe.
 """
@@ -44,6 +45,38 @@ def test_pipe_defaults_to_plain():
 
 def test_stream_without_isatty_defaults_to_plain():
     assert color_enabled(object()) is False
+
+
+# --- color_enabled: TERM=dumb sits in the terminal-heuristic tier ---
+
+
+def test_dumb_terminal_disables_color_on_tty(monkeypatch):
+    """Emacs shell-mode etc. set TERM=dumb on a real pty: escape codes
+    would render as literal ^[[91m garbage, so auto-detect stays plain."""
+    monkeypatch.setenv("TERM", "dumb")
+    assert color_enabled(TTY) is False
+
+
+def test_dumb_terminal_stays_plain_on_pipe(monkeypatch):
+    monkeypatch.setenv("TERM", "dumb")
+    assert color_enabled(PIPE) is False
+
+
+def test_force_color_beats_dumb_terminal(monkeypatch):
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert color_enabled(TTY) is True
+
+
+def test_color_flag_beats_dumb_terminal(monkeypatch):
+    monkeypatch.setenv("TERM", "dumb")
+    assert color_enabled(TTY, color=True) is True
+
+
+def test_capable_terminal_keeps_isatty_default(monkeypatch):
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert color_enabled(TTY) is True
+    assert color_enabled(PIPE) is False
 
 
 # --- color_enabled: NO_COLOR overrides isatty ---

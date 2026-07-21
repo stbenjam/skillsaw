@@ -1,0 +1,8 @@
+{
+  "name": "acme-tools",
+  "owner": {"name": "Acme Engineering"},
+  "metadata": {"pluginRoot": "./pkgs"},
+  "plugins": [
+    {"name": "doc-checker", "source": "./doc-checker"}
+  ]
+}

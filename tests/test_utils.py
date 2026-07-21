@@ -16,6 +16,7 @@ from skillsaw.rules.builtin.utils import (
     yaml_key_lines,
     yaml_line_map,
     yaml_node_line,
+    yaml_path_line_lookup,
     yaml_key_line_after,
     yaml_nth_key_line,
     yaml_nth_list_item_key_line,
@@ -402,6 +403,43 @@ def test_yaml_line_map_duplicate_keys_last_wins():
     assert result["bins"] == 4
 
 
+def test_yaml_line_map_merge_key_in_list_entry_no_crash():
+    """Merge-derived keys ('<<: *anchor') have no position in the merged
+    mapping; ruamel raises KeyError for them.  They must be skipped, not
+    crash the whole line map (issue: openclaw-metadata rule-execution-error)."""
+    text = (
+        "anchors:\n"  # 1
+        "  - &base\n"  # 2
+        "    kind: brew\n"  # 3
+        "    formula: rg\n"  # 4
+        "metadata:\n"  # 5
+        "  openclaw:\n"  # 6
+        "    install:\n"  # 7
+        "      - <<: *base\n"  # 8
+        "        id: two\n"  # 9
+    )
+    result = yaml_line_map(text)
+    # Real keys keep their lines; 'kind'/'formula' come from the anchor's
+    # own mapping, and the merge-derived copies in install[0] are skipped.
+    assert result["id"] == 9
+    assert result["kind"] == 3
+    assert result["metadata"] == 5
+
+
+def test_yaml_line_map_merge_key_in_mapping_no_crash():
+    text = (
+        "defaults: &defaults\n"  # 1
+        "  category: productivity\n"  # 2
+        "metadata:\n"  # 3
+        "  openclaw:\n"  # 4
+        "    <<: *defaults\n"  # 5
+        "    always: true\n"  # 6
+    )
+    result = yaml_line_map(text)
+    assert result["always"] == 6
+    assert result["category"] == 2
+
+
 # ---------------------------------------------------------------------------
 # yaml_node_line
 # ---------------------------------------------------------------------------
@@ -429,6 +467,49 @@ def test_yaml_node_line_missing_path():
 
 def test_yaml_node_line_invalid_yaml():
     assert yaml_node_line(":\n  bad: [unterminated\n", "bad") is None
+
+
+def test_yaml_node_line_merge_derived_key_returns_none():
+    """A key reachable only through '<<: *anchor' has no line of its own —
+    return None (omit the line) instead of raising KeyError."""
+    text = (
+        "anchors:\n"
+        "  - &base\n"
+        "    kind: brew\n"
+        "    formula: rg\n"
+        "metadata:\n"
+        "  openclaw:\n"
+        "    install:\n"
+        "      - <<: *base\n"
+        "        id: two\n"
+    )
+    assert yaml_node_line(text, "metadata.openclaw.install[0].kind") is None
+    # Non-merge siblings still resolve
+    assert yaml_node_line(text, "metadata.openclaw.install[0].id") == 9
+
+
+# ---------------------------------------------------------------------------
+# yaml_path_line_lookup
+# ---------------------------------------------------------------------------
+
+
+def test_yaml_path_line_lookup_resolves_multiple_paths():
+    text = "install:\n  - id: a\n    kind: node\n  - id: b\n    kind: brew\n"
+    lookup = yaml_path_line_lookup(text)
+    assert lookup("install[0].kind") == 3
+    assert lookup("install[1].kind") == 5
+    assert lookup("install[2].kind") is None
+    assert lookup("missing.path") is None
+
+
+def test_yaml_path_line_lookup_with_offset():
+    lookup = yaml_path_line_lookup("name: test\n", line_offset=1)
+    assert lookup("name") == 2
+
+
+def test_yaml_path_line_lookup_invalid_yaml():
+    lookup = yaml_path_line_lookup(":\n  bad: [unterminated\n")
+    assert lookup("bad") is None
 
 
 # ---------------------------------------------------------------------------

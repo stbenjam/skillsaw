@@ -18,14 +18,35 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 # Reuse the imperative-line definition from the instruction budget so the
-# two rules agree on what counts as a directive.
+# two rules agree on what counts as a directive.  This rule additionally
+# strips leading emphasis markers before the gate (see _LEAD_EMPHASIS_RE)
+# so bold-lead bullets are recognized.
 _IMPERATIVE_RE = InstructionBudgetAnalyzer._IMPERATIVE_RE
 
 _WORD_RE = re.compile(r"[a-z0-9']+")
 
+# Inline code span on a single line, for the parameterized-boilerplate
+# check ('Only if `resources` is selected' vs 'Only if `network` ...').
+_CODE_SPAN_RE = re.compile(r"`[^`\n]+`")
+
 # "Run 2: Failed tests = [...]" — an enumeration label, not an imperative.
 # The leading word only looks like a verb; lists of these are example data.
 _ENUMERATION_RE = re.compile(r"^\s*(?:[-*]\s*)?\w+\s+\d+\s*:")
+
+# Emphasis markers leading a directive ('- **Always run make test.**',
+# '**Never do X**') hide the verb from the imperative gate.  Strip them
+# for gating only — _normalize() is already emphasis-insensitive, so a
+# bolded directive and its plain twin compare equal.  The (?=\S) guard
+# keeps a bare '*' bullet marker ('- * item') from being treated as
+# emphasis.  [*_]+ matches the same strings as an alternation of
+# **/__/*/_ runs but linearly — the alternation form backtracks
+# exponentially on long marker runs (CodeQL js/redos-style finding).
+_LEAD_EMPHASIS_RE = re.compile(r"^(\s*[-*]?\s*)[*_]+(?=\S)")
+
+# A fence marker line inside an HTML block (CommonMark parses the whole
+# <Bad>```…```</Bad> region as one html_block token, so markdown-it
+# reports no fence there).
+_HTML_FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,})")
 
 # Wall-clock budget for each user-supplied cluster pattern (issue #316:
 # config regexes run against untrusted bodies with a backtracking engine).
@@ -43,7 +64,15 @@ _DEFAULT_CLUSTERS: List[Tuple[str, List[re.Pattern]]] = [
                 r"\bask\s+(?:the\s+user\s+)?(?:first|before)\b",
                 r"\bask\s+for\s+(?:approval|confirmation|permission)\b",
                 r"\bwait\s+for\s+(?:user\s+)?(?:approval|confirmation|permission)\b",
-                r"\b(?:get|obtain|require)s?\s+(?:explicit\s+)?(?:approval|confirmation|permission)\b",
+                # The trailing lookahead rejects incidental phrasing such
+                # as troubleshooting notes ("If you get permission errors,
+                # check your kubeconfig") — those describe a failure mode,
+                # not an approval policy.  The lookahead follows fixed
+                # literal alternations, so no backtrackable quantifier can
+                # truncate into a false accept.
+                r"\b(?:get|obtain|require)s?\s+(?:explicit\s+)?"
+                r"(?:approval|confirmation|permission)\b"
+                r"(?!\s+(?:errors?|denied|issues?|problems?)\b)",
                 r"\bconfirm\s+(?:with\s+the\s+user\s+)?before\b",
                 r"\bcheck\s+with\s+the\s+user\s+before\b",
                 r"\bdo\s+not\s+proceed\s+without\s+(?:approval|confirmation|asking)\b",
@@ -60,17 +89,29 @@ class _Directive:
     body_line: int
     text: str
     words: List[str] = field(repr=False)
+    # Words with code-span content collapsed to a placeholder: two
+    # directives equal here but different in `words` differ only in their
+    # code parameter and state different instructions.
+    masked: tuple = field(repr=False, default=())
 
 
 class ContentRepeatedDirectiveRule(Rule):
     """Detect the same directive stated more than once within a file"""
 
     formats = None
+    repo_types = None  # instruction content appears in every repo type
+    default_enabled = "auto"
     since = "0.17.0"
 
     _DEFAULT_THRESHOLD = 0.85
     _DEFAULT_MIN_WORDS = 4
     _DEFAULT_MIN_DISTANCE = 4
+    # High enough that realistic large instruction files (measured: a
+    # 2000-line CLAUDE.md with ~1150 directives) are still fully scanned,
+    # while bounding the O(n^2) similarity stage on degenerate or
+    # adversarial inputs whose word-multiset overlap defeats the
+    # quick_ratio prefilter.
+    _DEFAULT_MAX_DIRECTIVES = 1500
 
     config_schema = {
         "similarity-threshold": {
@@ -98,6 +139,16 @@ class ContentRepeatedDirectiveRule(Rule):
                 "Minimum number of lines between two directives before they "
                 "are compared — neighboring similar bullets are usually "
                 "intentional parallel structure, not repetition"
+            ),
+        },
+        "similarity-max-directives": {
+            "type": "int",
+            "default": _DEFAULT_MAX_DIRECTIVES,
+            "description": (
+                "Maximum number of directives per file entering pairwise "
+                "similarity comparison; directives beyond the cap are still "
+                "checked for exact repeats (a linear scan) but skip the "
+                "quadratic near-duplicate stage"
             ),
         },
         "extra-clusters": {
@@ -152,6 +203,19 @@ class ContentRepeatedDirectiveRule(Rule):
                 f"least 1, got {min_distance}"
             )
         self._min_distance = min_distance
+
+        max_directives = self.config.get("similarity-max-directives", self._DEFAULT_MAX_DIRECTIVES)
+        if not isinstance(max_directives, int) or isinstance(max_directives, bool):
+            raise ValueError(
+                f"'similarity-max-directives' for rule '{self.rule_id}' must "
+                f"be an integer, got {type(max_directives).__name__}"
+            )
+        if max_directives < 2:
+            raise ValueError(
+                f"'similarity-max-directives' for rule '{self.rule_id}' must "
+                f"be at least 2, got {max_directives}"
+            )
+        self._max_directives = max_directives
         self._extra_clusters = self._parse_extra_clusters()
 
     def _parse_extra_clusters(self) -> List[Tuple[str, List[re.Pattern]]]:
@@ -214,7 +278,52 @@ class ContentRepeatedDirectiveRule(Rule):
             fence_starts.add(fence.body_line_start)
             for i in range(fence.body_line_start - 1, min(fence.body_line_end, len(lines))):
                 lines[i] = ""
+        for start0, end0 in ContentRepeatedDirectiveRule._html_block_line_spans(cf.markdown):
+            ContentRepeatedDirectiveRule._blank_html_block_fences(lines, fence_starts, start0, end0)
         return "\n".join(lines), frozenset(fence_starts)
+
+    @staticmethod
+    def _html_block_line_spans(doc) -> List[Tuple[int, int]]:
+        """0-based (start, end) line spans of block-level HTML tokens.
+
+        A fenced example wrapped in an HTML tag with no intervening blank
+        line — the common <Bad>/<Good> pattern in skill-authoring docs —
+        is swallowed into one ``html_block`` token, so ``fences()`` never
+        reports the fence.
+        """
+        return doc.html_block_spans()
+
+    @staticmethod
+    def _blank_html_block_fences(
+        lines: List[str], fence_starts: set, start0: int, end0: int
+    ) -> None:
+        """Blank fence marker and interior lines inside an HTML block.
+
+        The quoted example text inside such a fence is illustrative, not a
+        live directive.  Non-fence lines of the HTML block (tags, prose)
+        keep their current treatment.
+        """
+        in_fence = False
+        fence_char = ""
+        fence_len = 0
+        for i in range(start0, min(end0, len(lines))):
+            stripped = lines[i].strip()
+            if not in_fence:
+                m = _HTML_FENCE_OPEN_RE.match(stripped)
+                if m:
+                    marker = m.group(1)
+                    fence_char = marker[0]
+                    fence_len = len(marker)
+                    in_fence = True
+                    fence_starts.add(i + 1)
+                    lines[i] = ""
+            else:
+                closes = (
+                    bool(stripped) and set(stripped) == {fence_char} and len(stripped) >= fence_len
+                )
+                lines[i] = ""
+                if closes:
+                    in_fence = False
 
     @staticmethod
     def _normalize(line: str) -> List[str]:
@@ -223,9 +332,13 @@ class ContentRepeatedDirectiveRule(Rule):
     def _extract_directives(self, body: str, fence_starts: frozenset) -> List[_Directive]:
         directives: List[_Directive] = []
         for line_num, line in enumerate(body.splitlines(), 1):
-            if not _IMPERATIVE_RE.match(line):
+            # Gate on a copy with leading emphasis markers stripped so
+            # '- **Always run make test.**' is recognized; the original
+            # line is kept for the message text and normalization.
+            gate = _LEAD_EMPHASIS_RE.sub(r"\1", line)
+            if not _IMPERATIVE_RE.match(gate):
                 continue
-            if _ENUMERATION_RE.match(line):
+            if _ENUMERATION_RE.match(gate):
                 continue
             # "Add to `customizations.vscode.extensions`:" followed by a
             # fence is a caption for the code below — parallel sections
@@ -234,10 +347,21 @@ class ContentRepeatedDirectiveRule(Rule):
                 line_num + 1 in fence_starts or line_num + 2 in fence_starts
             ):
                 continue
+            # A wholly-emphasized line ending in ':' ('**Build in
+            # build.sh:**') is a pseudo-heading labelling the content
+            # below, not an instruction — parallel sections repeat it by
+            # design.
+            if (
+                gate != line
+                and line.rstrip().endswith(("*", "_"))
+                and gate.rstrip().rstrip("*_").rstrip().endswith(":")
+            ):
+                continue
             words = self._normalize(line)
             if len(words) < self._min_words:
                 continue
-            directives.append(_Directive(line_num, line.strip(), words))
+            masked = tuple(self._normalize(_CODE_SPAN_RE.sub(" codespanparam ", line)))
+            directives.append(_Directive(line_num, line.strip(), words, masked))
         return directives
 
     @staticmethod
@@ -252,13 +376,18 @@ class ContentRepeatedDirectiveRule(Rule):
             return []
         threshold = self._threshold
         violations: List[RuleViolation] = []
+        # Bound the O(n^2) stage: only the first `similarity-max-directives`
+        # directives enter pairwise comparison.  Directives beyond the cap
+        # are still checked for exact repeats below — a linear scan — so
+        # the highest-signal finding survives on degenerate inputs.
+        compared = directives[: self._max_directives]
         matcher = SequenceMatcher(autojunk=False)
-        for j in range(1, len(directives)):
-            anchor = directives[j]
+        for j in range(1, len(compared)):
+            anchor = compared[j]
             matcher.set_seq2(anchor.words)
             anchor_len = len(anchor.words)
             for i in range(j):
-                other = directives[i]
+                other = compared[i]
                 if anchor.body_line - other.body_line < self._min_distance:
                     continue
                 if other.body_line in reported:
@@ -270,6 +399,11 @@ class ContentRepeatedDirectiveRule(Rule):
                     continue
                 matcher.set_seq1(other.words)
                 if matcher.quick_ratio() < threshold:
+                    continue
+                if anchor.words != other.words and anchor.masked == other.masked:
+                    # The pair differs only inside code spans — a
+                    # parameterized template ('Only if `resources` ...' /
+                    # 'Only if `network` ...'), not a restated instruction.
                     continue
                 ratio = matcher.ratio()
                 if ratio < threshold:
@@ -290,6 +424,49 @@ class ContentRepeatedDirectiveRule(Rule):
                 )
                 reported.add(anchor.body_line)
                 break
+        if len(directives) > len(compared):
+            violations.extend(
+                self._exact_repeat_violations(cf, directives, len(compared), reported)
+            )
+        return violations
+
+    def _exact_repeat_violations(
+        self, cf: ContentBlock, directives: List[_Directive], cap: int, reported: set
+    ) -> List[RuleViolation]:
+        """Exact-repeat detection for directives past the similarity cap.
+
+        A linear scan keyed on normalized words: each beyond-cap directive
+        is compared against the earliest earlier identical directive, the
+        same pair the pairwise loop would have reported first.
+        """
+        violations: List[RuleViolation] = []
+        first_seen: Dict[tuple, _Directive] = {}
+        for idx, directive in enumerate(directives):
+            key = tuple(directive.words)
+            if idx >= cap:
+                earlier = first_seen.get(key)
+                if (
+                    earlier is not None
+                    and directive.body_line - earlier.body_line >= self._min_distance
+                    and earlier.body_line not in reported
+                    and directive.body_line not in reported
+                ):
+                    violations.append(
+                        self.violation(
+                            f"Directive '{self._truncate(directive.text)}' repeats "
+                            f"the directive at line {cf.file_line(earlier.body_line)} — "
+                            f"state each instruction once",
+                            block=cf,
+                            line=directive.body_line,
+                            severity=(
+                                Severity.INFO
+                                if isinstance(cf, self._REFERENCE_BLOCK_TYPES)
+                                else None
+                            ),
+                        )
+                    )
+                    reported.add(directive.body_line)
+            first_seen.setdefault(key, directive)
         return violations
 
     def _cluster_violations(

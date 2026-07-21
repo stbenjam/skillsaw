@@ -442,7 +442,14 @@ class TestParityWithLegacyStrip:
        (legacy DOTALL regexes blanked across paragraph boundaries).
     4. Fences with >3 leading spaces in container contexts (lists/quotes)
        are now recognized as code.
+    5. Fence markers inside HTML blocks are prose to the AST (the block
+       swallows them), while the legacy line scanner treated them as fences
+       and blanked their content — allowed only for the fixtures listed in
+       _HTML_BLOCK_FENCE_FIXTURES.
     """
+
+    # Fixtures whose fences sit inside HTML blocks (divergence 5).
+    _HTML_BLOCK_FENCE_FIXTURES = frozenset({"content/repeated-directive-html-example/CLAUDE.md"})
 
     # Reference copy of the legacy regex-based strip (removed from
     # content_analysis.py in the GH-284 migration), kept here so the parity
@@ -503,8 +510,11 @@ class TestParityWithLegacyStrip:
         legacy = self._legacy_strip(text).split("\n")
         new = MarkdownDoc(text).prose_text().split("\n")
         assert len(legacy) == len(new), f"line count diverged for {md_file}"
+        html_block_fences = md_file in self._HTML_BLOCK_FENCE_FIXTURES
         for i, (legacy_line, new_line) in enumerate(zip(legacy, new), 1):
             if legacy_line != new_line:
+                if html_block_fences and legacy_line == "":
+                    continue  # divergence 5: legacy blanked an html-block fence
                 assert self._line_diff_explained(legacy_line, new_line), (
                     f"{md_file}:{i} unexplained divergence:\n"
                     f"  legacy: {legacy_line!r}\n  new:    {new_line!r}"
