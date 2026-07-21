@@ -6,4 +6,4 @@ import re
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 
-_IMPORT_RE = re.compile(r"^\s*@(\S+)")
+_IMPORT_RE = re.compile(r"(?<![\w./-])@([^\s`<>'\"(){}\[\],;:]+)")

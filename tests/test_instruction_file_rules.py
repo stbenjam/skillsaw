@@ -100,6 +100,12 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
 
+    def test_unreadable_instruction_file_skipped(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_bytes(b"\x80\x81\x82")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
     def test_valid_import_passes(self, temp_dir):
         docs_dir = temp_dir / "docs"
         docs_dir.mkdir()
@@ -116,6 +122,66 @@ class TestInstructionImportsValidRule:
         assert len(violations) == 1
         assert "non-existent" in violations[0].message.lower()
         assert violations[0].line == 3
+
+    def test_mid_line_missing_path_import_fails(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nFollow the workflow in @docs/missing.md before coding.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "docs/missing.md" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_missing_extension_import_fails(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nLoad @settings.yaml before changing config.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "settings.yaml" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_handle_like_token_not_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nAsk @platform-team before changing deploys.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_github_team_mention_not_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nAsk @org/platform-team before changing deploys.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_dotted_user_mention_not_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nAsk @jane.doe before changing deploys.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_punctuation_only_import_token_not_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\nSee @. before coding.\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_mid_line_bare_existing_import_is_followed(self, temp_dir):
+        (temp_dir / "README").write_text("# Overview\n\n@docs/missing.md\n")
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\nSee @README for project overview.\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].file_path == temp_dir / "README"
+        assert violations[0].line == 3
+        assert "docs/missing.md" in violations[0].message
 
     def test_multiple_imports_mixed(self, temp_dir):
         docs_dir = temp_dir / "docs"
@@ -190,8 +256,127 @@ class TestInstructionImportsValidRule:
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 1
 
+    def test_bare_import_in_list_item_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n- @missing\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "missing" in violations[0].message
+
+    def test_bare_import_in_blockquote_checked(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n> @missing\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "missing" in violations[0].message
+
     def test_inline_at_not_matched(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Contact user@example.com for help\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_nested_import_resolves_relative_to_importing_file(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "entry.md").write_text("# Entry\n\n@details.md\n")
+        (docs_dir / "details.md").write_text("# Details\n")
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_nested_missing_import_reported_on_importing_file(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "entry.md").write_text("# Entry\n\nUse @more/missing.md for detail.\n")
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].file_path == docs_dir / "entry.md"
+        assert violations[0].line == 3
+        assert "more/missing.md" in violations[0].message
+
+    def test_recursive_import_cycle_skipped(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "entry.md").write_text("# Entry\n\n@../CLAUDE.md\n")
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_unreadable_imported_file_skipped(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "entry.md").write_bytes(b"\x80\x81\x82")
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_mid_line_relative_import_reported(self, temp_dir):
+        # A mid-line ``@./…`` reference is unambiguously an import path.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\nLoad @./config.md before running.\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "config.md" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_slash_import_reported_when_parent_dir_exists(self, temp_dir):
+        # ``@docs/missing`` (no extension) is shaped like a GitHub team mention,
+        # but the ``docs/`` directory exists, so it's a broken import, not prose.
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nFollow the guide in @docs/missing before coding.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "docs/missing" in violations[0].message
+        assert violations[0].line == 3
+
+    def test_mid_line_slash_mention_not_checked_when_parent_dir_absent(self, temp_dir):
+        # ``@org/platform-team`` has no matching ``org/`` directory, so it reads
+        # as a team mention rather than an import and must stay quiet.
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Instructions\n\nAsk @org/platform-team before changing deploys.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_deep_then_shallow_path_revisits_for_nested_violation(self, temp_dir):
+        # ``hub.md`` is first reached at the hop limit (its children can't be
+        # followed), then again directly. The shallow re-entry must recurse into
+        # its child and surface the child's broken import (regression for the
+        # visited-set-by-path-only bug).
+        shared = temp_dir / "shared"
+        shared.mkdir()
+        (shared / "hub.md").write_text("# Hub\n\n@child.md\n")
+        (shared / "child.md").write_text("# Child\n\n@missing.md\n")
+        (temp_dir / "p1.md").write_text("# P1\n\n@p2.md\n")
+        (temp_dir / "p2.md").write_text("# P2\n\n@p3.md\n")
+        (temp_dir / "p3.md").write_text("# P3\n\n@shared/hub.md\n")
+        # Deep chain first (reaches hub at depth 4), then the direct import.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@p1.md\n@shared/hub.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].file_path == shared / "child.md"
+        assert "missing.md" in violations[0].message
+
+    def test_import_recursion_stops_at_hop_limit(self, temp_dir):
+        # A five-deep chain: the fifth file's broken import must not be reported
+        # because recursion stops after four hops.
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@a.md\n")
+        (temp_dir / "a.md").write_text("# A\n\n@b.md\n")
+        (temp_dir / "b.md").write_text("# B\n\n@c.md\n")
+        (temp_dir / "c.md").write_text("# C\n\n@d.md\n")
+        (temp_dir / "d.md").write_text("# D\n\n@e.md\n")
+        (temp_dir / "e.md").write_text("# E\n\n@beyond-the-limit.md\n")
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
@@ -246,3 +431,14 @@ class TestInstructionImportsValidRule:
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 0
+
+    def test_nested_import_escapes_repo_root(self, temp_dir):
+        docs_dir = temp_dir / "docs"
+        docs_dir.mkdir()
+        (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@docs/entry.md\n")
+        (docs_dir / "entry.md").write_text("# Entry\n\n@../../outside.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+        assert "escapes" in violations[0].message.lower()
+        assert violations[0].file_path == docs_dir / "entry.md"
