@@ -34,8 +34,10 @@ _ENUMERATION_RE = re.compile(r"^\s*(?:[-*]\s*)?\w+\s+\d+\s*:")
 # for gating only — _normalize() is already emphasis-insensitive, so a
 # bolded directive and its plain twin compare equal.  The (?=\S) guard
 # keeps a bare '*' bullet marker ('- * item') from being treated as
-# emphasis.
-_LEAD_EMPHASIS_RE = re.compile(r"^(\s*[-*]?\s*)(?:\*\*|__|\*|_)+(?=\S)")
+# emphasis.  [*_]+ matches the same strings as an alternation of
+# **/__/*/_ runs but linearly — the alternation form backtracks
+# exponentially on long marker runs (CodeQL js/redos-style finding).
+_LEAD_EMPHASIS_RE = re.compile(r"^(\s*[-*]?\s*)[*_]+(?=\S)")
 
 # A fence marker line inside an HTML block (CommonMark parses the whole
 # <Bad>```…```</Bad> region as one html_block token, so markdown-it

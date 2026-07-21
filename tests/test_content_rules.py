@@ -59,6 +59,18 @@ def copy_content_fixture(name, dest):
     return dst
 
 
+def _activate_apm_source(repo):
+    """Strip the ``.fixture`` suffix from stored APM source files.
+
+    Fixture ``*.instructions.md`` files are stored with a ``.fixture``
+    suffix because the repository's own ``apm compile`` (make update)
+    globs ``**/*.instructions.md`` as source primitives and would sweep
+    fixture content into the generated AGENTS.md (the verify-apm gate
+    catches this)."""
+    for stored in repo.rglob("*.instructions.md.fixture"):
+        stored.rename(stored.with_name(stored.name[: -len(".fixture")]))
+
+
 class TestContentWeakLanguageRule:
     def test_rule_metadata(self):
         rule = ContentWeakLanguageRule()
@@ -1307,6 +1319,7 @@ scenario touches in the fixture header comment block.
         own .apm/ source (regression: the marker regex previously required
         'do not edit' on the same line)."""
         repo = copy_content_fixture("instruction-drift-apm-generated", temp_dir)
+        _activate_apm_source(repo)
         context = RepositoryContext(repo)
         assert ContentInstructionDriftRule().check(context) == []
         # The pair HAS drifted (the source gained a clause after the last
@@ -1318,6 +1331,7 @@ scenario touches in the fixture header comment block.
     def test_unmarked_near_copy_still_fires(self, temp_dir):
         """A hand-written near-copy with no generated marker keeps firing."""
         repo = copy_content_fixture("instruction-drift-apm-generated", temp_dir)
+        _activate_apm_source(repo)
         copilot = repo / ".github" / "copilot-instructions.md"
         unmarked = "\n".join(
             line
@@ -2659,6 +2673,15 @@ class TestContentRepeatedDirectiveTuning:
         violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "repeats the directive at line 3" in violations[0].message
+
+    def test_long_emphasis_marker_run_completes(self, temp_dir):
+        """A line of hundreds of '*' must not hang the emphasis stripper
+        (regression: the alternation form of _LEAD_EMPHASIS_RE backtracked
+        exponentially on long marker runs — CodeQL finding)."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n- " + "*" * 500 + " \n\n- " + "_" * 500 + "\n"
+        )
+        assert ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir)) == []
 
     def test_bold_and_plain_twin_detected(self, temp_dir):
         """A bolded directive and its unbolded twin normalize identically."""
