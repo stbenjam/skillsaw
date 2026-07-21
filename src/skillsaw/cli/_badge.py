@@ -104,7 +104,11 @@ def _run_badge(args):
 
     badge_path = args.output or (context.root_path / _BADGE_FILENAME)
     badge_path.parent.mkdir(parents=True, exist_ok=True)
-    badge_path.write_text(json.dumps(grade.badge_json(), indent=2) + "\n", encoding="utf-8")
+    # Both artifacts are committed and regenerated in CI, so they must be
+    # byte-identical across operating systems. Write bytes directly —
+    # text mode without newline="" would CRLF-translate on Windows and
+    # every regeneration there would churn the whole file.
+    badge_path.write_bytes((json.dumps(grade.badge_json(), indent=2) + "\n").encode("utf-8"))
 
     card_path = None
     if getattr(args, "large", False):
@@ -114,7 +118,7 @@ def _run_badge(args):
         from ..lint_target import PluginNode, SkillNode
 
         card_path = badge_path.parent / _CARD_FILENAME
-        card_path.write_text(
+        card_path.write_bytes(
             render_card(
                 grade,
                 repo_name=_repo_display_name(context.root_path),
@@ -122,8 +126,7 @@ def _run_badge(args):
                 skill_count=len(context.lint_tree.find(SkillNode)),
                 top_rules=Counter(v.rule_id for v in violations).most_common(3),
                 theme=getattr(args, "theme", "dark"),
-            ),
-            encoding="utf-8",
+            ).encode("utf-8")
         )
 
     c = _ansi_colors(color_enabled(sys.stdout, args.color))

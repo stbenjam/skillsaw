@@ -22,6 +22,7 @@ Invariants:
 from __future__ import annotations
 
 import math
+import unicodedata
 from typing import Sequence, Tuple
 from xml.sax.saxutils import escape
 
@@ -66,10 +67,41 @@ _RING_RADIUS = 46
 _RING_CIRCUMFERENCE = 2 * math.pi * _RING_RADIUS
 
 
-def _truncate(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
+def _char_width(ch: str) -> int:
+    """Estimated display width of a glyph in ASCII-character columns.
+
+    East-Asian Wide and Fullwidth glyphs (CJK, most emoji) render at
+    roughly twice the advance width of an ASCII character in the card's
+    proportional font stack, so they count double toward the layout
+    budget. Everything else — including ambiguous-width characters,
+    which render narrow outside East Asian contexts — counts one.
+    """
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def _display_width(text: str) -> int:
+    return sum(_char_width(ch) for ch in text)
+
+
+def _truncate(text: str, max_width: int) -> str:
+    """Truncate *text* to an estimated display width, appending "…".
+
+    ``max_width`` is a budget in ASCII-character columns (see
+    :func:`_char_width`), not a character count — a checkout directory
+    named in CJK would otherwise keep enough double-width glyphs to run
+    past the card's fixed 495px viewBox. For pure-ASCII input this is
+    identical to a plain character-count limit.
+    """
+    if _display_width(text) <= max_width:
         return text
-    return text[: max_chars - 1] + "…"
+    width = 0
+    for i, ch in enumerate(text):
+        w = _char_width(ch)
+        # Reserve one column for the ellipsis.
+        if width + w > max_width - 1:
+            return text[:i] + "…"
+        width += w
+    return text  # pragma: no cover — the early return above always fires
 
 
 def _stat_row(y: int, label: str, value_markup: str) -> str:
@@ -104,14 +136,28 @@ def render_card(
     letter = escape(grade.letter)
 
     # Ring fill reflects the grade's position on the fixed notch scale
-    # (A+ = full ring, F = nearly empty). Letters off the scale draw the
+    # (A+ = full ring, F = empty). Letters off the scale draw the
     # empty (last-notch) ring.
     try:
         notch = LETTER_NOTCHES.index(grade.letter)
     except ValueError:
         notch = len(LETTER_NOTCHES) - 1
     fraction = 1.0 - notch / (len(LETTER_NOTCHES) - 1)
-    dash = f"{fraction * _RING_CIRCUMFERENCE:.2f}"
+
+    # A zero-length dash with stroke-linecap="round" renders as a dot at
+    # the 12 o'clock position (the standard SVG dotted-line technique),
+    # so the empty ring omits the progress arc entirely instead of
+    # drawing it with a zero dash.
+    progress_arc = []
+    if fraction > 0:
+        dash = f"{fraction * _RING_CIRCUMFERENCE:.2f}"
+        progress_arc = [
+            (
+                f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
+                f' stroke-width="7" stroke-linecap="round" transform="rotate(-90)"'
+                f' stroke-dasharray="{dash} {_RING_CIRCUMFERENCE:.2f}"/>'
+            )
+        ]
 
     if top_rules:
         rules_block = ['    <text x="24" y="139" class="label">Top rules</text>']
@@ -180,11 +226,7 @@ def render_card(
             f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
             ' stroke-opacity="0.25" stroke-width="7"/>'
         ),
-        (
-            f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'
-            f' stroke-width="7" stroke-linecap="round" transform="rotate(-90)"'
-            f' stroke-dasharray="{dash} {_RING_CIRCUMFERENCE:.2f}"/>'
-        ),
+        *progress_arc,
         (
             '    <text y="16" text-anchor="middle" class="grade-letter"'
             f' data-testid="grade-letter">{letter}</text>'
