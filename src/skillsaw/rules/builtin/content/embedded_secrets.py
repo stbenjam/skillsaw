@@ -255,7 +255,12 @@ class ContentEmbeddedSecretsRule(Rule):
         active = patterns_matching_anywhere(text, self._PATTERNS)
         if not active:
             return
-        for line_num, line in enumerate(text.splitlines(), 1):
+        # Split on "\n" only, not str.splitlines(), which also breaks on
+        # U+2028/U+2029/NEL/VT/FF — block file-line translation counts "\n",
+        # so those extra splits would misattribute a match to the wrong line
+        # (a payload could plant a U+2028 to point the finding elsewhere).
+        # read_body() has already normalized CRLF.
+        for line_num, line in enumerate(text.split("\n"), 1):
             for pattern, desc, is_generic in active:
                 if not is_generic:
                     if pattern.search(line):
