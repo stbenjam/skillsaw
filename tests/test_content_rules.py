@@ -2674,6 +2674,46 @@ class TestContentRepeatedDirectiveTuning:
         assert len(violations) == 1
         assert "repeats the directive at line 3" in violations[0].message
 
+    def test_bold_label_pseudo_heading_not_flagged(self, temp_dir):
+        """'**Build in build.sh:**' repeated across per-language sections
+        is a section label, not a directive (real-repo FP: prodsec-skills)."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Fuzzing\n\n"
+            "## C targets\n\n"
+            "**Build in build.sh:**\n\n"
+            "Compile with the harness flags described above.\n\n"
+            "## Go targets\n\n"
+            "**Build in build.sh:**\n\n"
+            "Use the native Go fuzzing integration instead.\n"
+        )
+        assert ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_code_span_parameterized_boilerplate_not_flagged(self, temp_dir):
+        """Per-section run conditions differing only in the backticked
+        parameter state different instructions (real-repo FP: ai-helpers)."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Analysis areas\n\n"
+            "**Run condition**: Only if `resources` area is selected or no areas are given.\n\n"
+            "Inspect resource usage in the archive.\n\n"
+            "**Run condition**: Only if `network` area is selected or no areas are given.\n\n"
+            "Inspect network configuration in the archive.\n\n"
+            "**Run condition**: Only if `system-config` area is selected or no areas are given.\n"
+        )
+        assert ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_identical_directive_with_same_code_span_still_flagged(self, temp_dir):
+        """Masking must not swallow genuine verbatim repeats."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Use `/teams:list-teams` to see the available team names first.\n\n"
+            "## Later section\n\n"
+            "Some other guidance goes here for the reader.\n\n"
+            "- Use `/teams:list-teams` to see the available team names first.\n"
+        )
+        violations = ContentRepeatedDirectiveRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "repeats the directive" in violations[0].message
+
     def test_long_emphasis_marker_run_completes(self, temp_dir):
         """A line of hundreds of '*' must not hang the emphasis stripper
         (regression: the alternation form of _LEAD_EMPHASIS_RE backtracked

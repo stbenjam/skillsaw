@@ -919,6 +919,19 @@ class MarkdownDoc:
         result.sort(key=lambda c: c.body_line_start)
         return result
 
+    def html_block_spans(self) -> List[Tuple[int, int]]:
+        """0-based (start, end) body-line spans of block-level HTML tokens.
+
+        CommonMark swallows content that follows an HTML tag with no
+        intervening blank line into the ``html_block`` token — including
+        fence markers, which ``fences()`` therefore never reports.
+        """
+        return [
+            (token.map[0], token.map[1])
+            for token in self._tokens
+            if token.type == "html_block" and token.map
+        ]
+
     # -- prose ---------------------------------------------------------------
 
     def _compute_prose(self) -> List[str]:

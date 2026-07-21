@@ -560,7 +560,7 @@ class TestAllowedCodepointIntegers:
         # 8203 must exempt U+200B, not U+8203 — so content containing
         # U+8203 has nothing flaggable and unrelated invisibles still fire.
         (temp_dir / "CLAUDE.md").write_text(
-            f"# Rules\n\nsoft­hyphen stays flagged.\n",
+            "# Rules\n\nsoft­hyphen stays flagged.\n",
             encoding="utf-8",
         )
         violations = _check(temp_dir, {"allowed-codepoints": [8203]})

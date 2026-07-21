@@ -25,6 +25,10 @@ _IMPERATIVE_RE = InstructionBudgetAnalyzer._IMPERATIVE_RE
 
 _WORD_RE = re.compile(r"[a-z0-9']+")
 
+# Inline code span on a single line, for the parameterized-boilerplate
+# check ('Only if `resources` is selected' vs 'Only if `network` ...').
+_CODE_SPAN_RE = re.compile(r"`[^`\n]+`")
+
 # "Run 2: Failed tests = [...]" — an enumeration label, not an imperative.
 # The leading word only looks like a verb; lists of these are example data.
 _ENUMERATION_RE = re.compile(r"^\s*(?:[-*]\s*)?\w+\s+\d+\s*:")
@@ -85,6 +89,10 @@ class _Directive:
     body_line: int
     text: str
     words: List[str] = field(repr=False)
+    # Words with code-span content collapsed to a placeholder: two
+    # directives equal here but different in `words` differ only in their
+    # code parameter and state different instructions.
+    masked: tuple = field(repr=False, default=())
 
 
 class ContentRepeatedDirectiveRule(Rule):
@@ -276,17 +284,12 @@ class ContentRepeatedDirectiveRule(Rule):
     def _html_block_line_spans(doc) -> List[Tuple[int, int]]:
         """0-based (start, end) line spans of block-level HTML tokens.
 
-        Read from the markdown-it token stream (MarkdownDoc exposes no
-        public html-block accessor): a fenced example wrapped in an HTML
-        tag with no intervening blank line — the common <Bad>/<Good>
-        pattern in skill-authoring docs — is swallowed into one
-        ``html_block`` token, so ``fences()`` never reports the fence.
+        A fenced example wrapped in an HTML tag with no intervening blank
+        line — the common <Bad>/<Good> pattern in skill-authoring docs —
+        is swallowed into one ``html_block`` token, so ``fences()`` never
+        reports the fence.
         """
-        return [
-            (t.map[0], t.map[1])
-            for t in getattr(doc, "_tokens", [])
-            if t.type == "html_block" and t.map
-        ]
+        return doc.html_block_spans()
 
     @staticmethod
     def _blank_html_block_fences(
@@ -342,10 +345,21 @@ class ContentRepeatedDirectiveRule(Rule):
                 line_num + 1 in fence_starts or line_num + 2 in fence_starts
             ):
                 continue
+            # A wholly-emphasized line ending in ':' ('**Build in
+            # build.sh:**') is a pseudo-heading labelling the content
+            # below, not an instruction — parallel sections repeat it by
+            # design.
+            if (
+                gate != line
+                and line.rstrip().endswith(("*", "_"))
+                and gate.rstrip().rstrip("*_").rstrip().endswith(":")
+            ):
+                continue
             words = self._normalize(line)
             if len(words) < self._min_words:
                 continue
-            directives.append(_Directive(line_num, line.strip(), words))
+            masked = tuple(self._normalize(_CODE_SPAN_RE.sub(" codespanparam ", line)))
+            directives.append(_Directive(line_num, line.strip(), words, masked))
         return directives
 
     @staticmethod
@@ -383,6 +397,11 @@ class ContentRepeatedDirectiveRule(Rule):
                     continue
                 matcher.set_seq1(other.words)
                 if matcher.quick_ratio() < threshold:
+                    continue
+                if anchor.words != other.words and anchor.masked == other.masked:
+                    # The pair differs only inside code spans — a
+                    # parameterized template ('Only if `resources` ...' /
+                    # 'Only if `network` ...'), not a restated instruction.
                     continue
                 ratio = matcher.ratio()
                 if ratio < threshold:

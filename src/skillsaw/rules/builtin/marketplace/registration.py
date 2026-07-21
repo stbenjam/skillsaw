@@ -61,7 +61,7 @@ def _relative_source(plugin_path: Path, source_base: Path) -> Optional[str]:
     plugin outside it — registering one would resolve to the wrong location.
     """
     try:
-        return str(plugin_path.relative_to(source_base))
+        return plugin_path.relative_to(source_base).as_posix()
     except ValueError:
         return None
 

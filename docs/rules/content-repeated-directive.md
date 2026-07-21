@@ -62,6 +62,16 @@ incidental phrasing like "if you get permission errors" (a
 troubleshooting note, not an approval policy) is excluded from the
 built-in `approval` cluster.
 
+Two further shapes of intentional repetition are excluded: a
+wholly-emphasized line ending in a colon (`**Build in build.sh:**`) is
+a pseudo-heading labelling the content below, and parallel sections
+repeat it by design; and near-duplicate directives whose only
+difference sits inside code spans (`Only if \`resources\` is
+selected` / `Only if \`network\` is selected`) are a parameterized
+template — the code parameter is the instruction's payload, so these
+state different instructions. Verbatim repeats, including their code
+spans, still fire.
+
 This differs from neighboring rules: `content-instruction-drift`
 compares whole sections *across* files; this rule compares individual
 directives *within* one file. `content-contradiction` flags directives
