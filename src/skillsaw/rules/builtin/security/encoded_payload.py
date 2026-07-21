@@ -25,7 +25,9 @@ _DEFAULT_MIN_LENGTH = 120
 # Entropy gates in bits/char over the matched run.  Random base64 measures
 # ~5.7-6.0 and random hex ~3.8-4.0 (a 16-symbol alphabet caps at 4.0), while
 # repeated filler ("AAAA…") measures near 0 and English-ish text stays well
-# below both gates.
+# below both gates.  Hex of printable-ASCII text measures only ~3.2-3.6 and
+# straddles the hex gate — those runs are caught by the decode check
+# (``_hex_decodes_to_ascii_text``) instead of the gate.
 _DEFAULT_BASE64_ENTROPY = 4.5
 _DEFAULT_HEX_ENTROPY = 3.4
 
@@ -51,6 +53,46 @@ _INTEGRITY_PREFIXES = ("sha256-", "sha384-", "sha512-")
 _DATA_URI_MARKER = "data:image/"
 _DATA_URI_WINDOW = 80
 
+# Union of both alphabets, used to expand a match to its containing maximal
+# encoded token before exemption marker lookup.  The two per-alphabet
+# patterns overlap: the base64url pattern matches an interior sub-run
+# (bounded by "/" or "+") of a standard-base64 blob, and that sub-run can
+# start more than _DATA_URI_WINDOW chars past the "data:image/" marker —
+# testing the marker window against the sub-run's own start would miss it.
+# "=" is deliberately excluded: padding only appears at a blob's tail, while
+# a "=" to the left of a run is an assignment ("integrity=sha384-…") whose
+# key must stay in the context window, not be swallowed into the token.
+_TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/_-")
+
+# Fraction of decoded bytes that must be printable ASCII before a hex run
+# below the entropy gate is still flagged as an encoded text payload.  Hex
+# of printable-ASCII text constrains high nibbles to 2-7 and measures only
+# ~3.2-3.6 bits/char — at or below the gate calibrated for random hex — so
+# entropy alone cannot catch the rule's core threat (hex-encoded shell
+# commands and injected instructions).  Decoding is decisive: text payloads
+# decode to almost entirely printable bytes, while random hex (commit SHAs,
+# sha256/sha512 digests) decodes to ~38% printable and never crosses this.
+_DEFAULT_HEX_ASCII_RATIO = 0.9
+_ASCII_TEXT_BYTES = frozenset(range(0x20, 0x7F)) | {0x09, 0x0A, 0x0D}
+
+
+def _hex_decodes_to_ascii_text(run: str, ratio: float) -> bool:
+    """True when *run* hex-decodes to at least *ratio* printable-ASCII bytes.
+
+    Odd-length runs are trimmed by one trailing char — hex tools emit whole
+    bytes, so a stray boundary character must not hide the payload.  A
+    *ratio* above 1.0 can never be satisfied, disabling the decode check.
+    """
+    trimmed = run[: len(run) - (len(run) % 2)]
+    try:
+        decoded = bytes.fromhex(trimmed)
+    except ValueError:
+        return False
+    if not decoded:
+        return False
+    printable = sum(1 for b in decoded if b in _ASCII_TEXT_BYTES)
+    return printable / len(decoded) >= ratio
+
 
 def _shannon_entropy(value: str) -> float:
     """Shannon entropy of *value* in bits per character.
@@ -68,8 +110,8 @@ def _shannon_entropy(value: str) -> float:
     return -sum((n / length) * math.log2(n / length) for n in counts.values())
 
 
-def _is_exempt(line: str, start: int, run: str) -> bool:
-    """True when the run starting at *start* on *line* is a legitimate blob."""
+def _exempt_at(line: str, start: int, run: str) -> bool:
+    """True when marker context at *start* marks *run* as a legitimate blob."""
     if run.lower().startswith(_INTEGRITY_PREFIXES):
         return True
     integrity_context = line[max(0, start - _INTEGRITY_WINDOW) : start].lower()
@@ -77,6 +119,28 @@ def _is_exempt(line: str, start: int, run: str) -> bool:
         return True
     data_uri_context = line[max(0, start - _DATA_URI_WINDOW) : start].lower()
     return _DATA_URI_MARKER in data_uri_context
+
+
+def _is_exempt(line: str, start: int, end: int) -> bool:
+    """True when the run spanning [*start*, *end*) on *line* is a legitimate blob.
+
+    Markers are checked at the match's own start first, then at the head of
+    the containing maximal encoded token (the match expanded over
+    ``_TOKEN_CHARS``).  The second check is what keeps the data-URI
+    exemption alive for realistic blobs: the base64url pattern matches
+    interior "/"-bounded sub-runs of standard-base64 image data, and only
+    the expanded token's start sits within the marker window.
+    """
+    if _exempt_at(line, start, line[start:end]):
+        return True
+    tok_start, tok_end = start, end
+    while tok_start > 0 and line[tok_start - 1] in _TOKEN_CHARS:
+        tok_start -= 1
+    while tok_end < len(line) and line[tok_end] in _TOKEN_CHARS:
+        tok_end += 1
+    if (tok_start, tok_end) == (start, end):
+        return False
+    return _exempt_at(line, tok_start, line[tok_start:tok_end])
 
 
 class SecurityEncodedPayloadRule(Rule):
@@ -111,6 +175,16 @@ class SecurityEncodedPayloadRule(Rule):
                 "be reported; the 16-symbol alphabet caps at 4.0"
             ),
         },
+        "hex-ascii-ratio": {
+            "type": "float",
+            "default": _DEFAULT_HEX_ASCII_RATIO,
+            "description": (
+                "Minimum fraction of printable-ASCII bytes a hex run below "
+                "the entropy gate must decode to before it is reported as an "
+                "encoded text payload; set above 1.0 to disable the decode "
+                "check"
+            ),
+        },
     }
 
     @property
@@ -143,6 +217,7 @@ class SecurityEncodedPayloadRule(Rule):
         min_length: int,
         base64_threshold: float,
         hex_threshold: float,
+        hex_ascii_ratio: float,
     ) -> Iterator[Tuple[int, str, str, float]]:
         """Yield ``(line_num, kind, run, entropy)`` — at most one per line.
 
@@ -199,8 +274,15 @@ class SecurityEncodedPayloadRule(Rule):
                     continue
                 entropy = _shannon_entropy(run)
                 if entropy < threshold:
-                    continue
-                if _is_exempt(line, m.start(), run):
+                    # Hex of printable-ASCII text sits below the entropy
+                    # gate calibrated for random hex (~3.2-3.6 vs 3.4) —
+                    # rescue it by decoding: a run that decodes to mostly
+                    # printable bytes is an encoded text payload no matter
+                    # what its entropy measures.
+                    if kind != "hex" or not _hex_decodes_to_ascii_text(run, hex_ascii_ratio):
+                        continue
+                    kind = "hex-ascii"
+                if _is_exempt(line, m.start(), m.end()):
                     continue
                 yield line_num, kind, run, entropy
                 break  # one violation per line max
@@ -208,14 +290,18 @@ class SecurityEncodedPayloadRule(Rule):
     @staticmethod
     def _describe(kind: str, run: str, entropy: float) -> str:
         # Never echo the full blob — a 20-char head is enough to locate it.
-        return (
-            f"{kind} run of {len(run)} chars " f'(entropy {entropy:.1f} bits/char): "{run[:20]}…"'
-        )
+        if kind == "hex-ascii":
+            kind = "hex"
+            detail = f"entropy {entropy:.1f} bits/char, decodes to ASCII text"
+        else:
+            detail = f"entropy {entropy:.1f} bits/char"
+        return f'{kind} run of {len(run)} chars ({detail}): "{run[:20]}…"'
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         min_length = max(self._int_config("min-length", _DEFAULT_MIN_LENGTH), _MIN_LENGTH_FLOOR)
         base64_threshold = self._float_config("entropy-threshold", _DEFAULT_BASE64_ENTROPY)
         hex_threshold = self._float_config("hex-entropy-threshold", _DEFAULT_HEX_ENTROPY)
+        hex_ascii_ratio = self._float_config("hex-ascii-ratio", _DEFAULT_HEX_ASCII_RATIO)
         # One pattern per encoding alphabet: standard base64 ("+"/"/") and
         # base64url (RFC 4648 §5: "-"/"_", used by JWTs and web tokens).
         # Deliberately NOT a single union class — no decoder accepts a mix
@@ -237,7 +323,7 @@ class SecurityEncodedPayloadRule(Rule):
             if not body:
                 continue
             for line_num, kind, run, entropy in self._scan_text(
-                body, patterns, min_length, base64_threshold, hex_threshold
+                body, patterns, min_length, base64_threshold, hex_threshold, hex_ascii_ratio
             ):
                 violations.append(
                     self.violation(
@@ -251,7 +337,7 @@ class SecurityEncodedPayloadRule(Rule):
             if len(text) < min_length:
                 continue
             for _line_num, kind, run, entropy in self._scan_text(
-                text, patterns, min_length, base64_threshold, hex_threshold
+                text, patterns, min_length, base64_threshold, hex_threshold, hex_ascii_ratio
             ):
                 violations.append(
                     self.violation(
