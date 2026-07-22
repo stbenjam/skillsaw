@@ -3,9 +3,10 @@
 
 # CodeRabbit
 
-Validates `.coderabbit.yaml` config files for YAML syntax. Instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) are automatically checked by the content-* rules. Auto-enabled when `.coderabbit.yaml` is detected.
+Validates `.coderabbit.yaml` config files for YAML syntax and, via `coderabbit-schema-valid`, near-miss unknown top-level keys and the `reviews.profile` enum against the CodeRabbit schema. Instruction text fields (`reviews.instructions`, per-path instructions, per-tool instructions, `chat.instructions`) are automatically checked by the content-* rules. Auto-enabled when `.coderabbit.yaml` is detected.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - |
+| [`coderabbit-schema-valid`](coderabbit-schema-valid.md) | .coderabbit.yaml keys and enums should match the CodeRabbit schema | warning (auto) | - |
 

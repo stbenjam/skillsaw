@@ -1,0 +1,12 @@
+language: en-US
+reviews:
+  # 'agressive' is a typo — CodeRabbit only accepts assertive, chill, or quiet,
+  # so this silently falls back to the default profile.
+  profile: agressive
+  request_changes_workflow: true
+# 'knowledge_bas' is a typo of 'knowledge_base'; because the schema is
+# additionalProperties:false, CodeRabbit ignores this whole block.
+knowledge_bas:
+  opt_out: false
+chat:
+  auto_reply: true

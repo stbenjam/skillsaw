@@ -71,6 +71,11 @@ rules:
     enabled: auto
     severity: error
 
+  # .coderabbit.yaml keys and enums should match the CodeRabbit schema
+  coderabbit-schema-valid:
+    enabled: auto
+    severity: warning
+
   # .coderabbit.yaml must be valid YAML
   coderabbit-yaml-valid:
     enabled: auto
