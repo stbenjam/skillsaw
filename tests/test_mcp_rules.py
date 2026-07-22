@@ -702,6 +702,33 @@ def test_reserved_workspace_name_warns(temp_dir):
     assert violations[0].severity == Severity.WARNING
 
 
+@pytest.mark.parametrize(
+    "reserved_name",
+    ["claude-in-chrome", "computer-use", "Claude Preview", "Claude Browser"],
+)
+def test_reserved_builtin_names_warn(temp_dir, reserved_name):
+    """All Claude Code built-in server names are reserved, not just 'workspace'"""
+    from skillsaw.rule import Severity
+
+    mcp_config = {"mcpServers": {reserved_name: {"command": "node", "args": ["server.js"]}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    violations = McpValidJsonRule().check(context)
+    assert len(violations) == 1
+    assert "reserved" in violations[0].message
+    assert reserved_name in violations[0].message
+    assert violations[0].severity == Severity.WARNING
+
+
+def test_non_reserved_name_no_warning(temp_dir):
+    """A normal server name close to but not a reserved name is not flagged"""
+    mcp_config = {"mcpServers": {"my-workspace": {"command": "node", "args": ["server.js"]}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    violations = McpValidJsonRule().check(context)
+    assert not any("reserved" in v.message for v in violations)
+
+
 def test_valid_headers_helper(temp_dir):
     """Test that valid headersHelper field passes"""
     mcp_config = {
