@@ -87,5 +87,5 @@ organized into the following categories:
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | [`promptfoo-metadata`](promptfoo-metadata.md) | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | [`settings-dangerous`](settings-dangerous.md) | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - | Settings |
-| [`apm-yaml-valid`](apm-yaml-valid.md) | apm.yml must exist with valid YAML and required fields (name, version, description) | error (auto) | - | APM (Agent Package Manager) |
-| [`apm-structure-valid`](apm-structure-valid.md) | .apm/ directory must contain skills/ or instructions/ with valid structure | warning (auto) | - | APM (Agent Package Manager) |
+| [`apm-yaml-valid`](apm-yaml-valid.md) | apm.yml must exist with valid YAML and required fields (name, version) | error (auto) | - | APM (Agent Package Manager) |
+| [`apm-structure-valid`](apm-structure-valid.md) | .apm/ directory must contain a recognized primitive subdirectory with valid structure | warning (auto) | - | APM (Agent Package Manager) |

@@ -61,12 +61,12 @@ rules:
     # required-fields: []
     # required-metadata: []
 
-  # .apm/ directory must contain skills/ or instructions/ with valid structure
+  # .apm/ directory must contain a recognized primitive subdirectory with valid structure
   apm-structure-valid:
     enabled: auto
     severity: warning
 
-  # apm.yml must exist with valid YAML and required fields (name, version, description)
+  # apm.yml must exist with valid YAML and required fields (name, version)
   apm-yaml-valid:
     enabled: auto
     severity: error

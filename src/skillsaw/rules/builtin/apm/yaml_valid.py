@@ -27,7 +27,7 @@ class ApmYamlValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "apm.yml must exist with valid YAML and required fields (name, version, description)"
+        return "apm.yml must exist with valid YAML and required fields (name, version)"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -77,8 +77,11 @@ class ApmYamlValidRule(Rule):
             )
             return violations
 
-        # Required fields
-        for field in ("name", "version", "description"):
+        # Required fields. Per the microsoft/apm manifest schema, only
+        # `name` and `version` are required at parse time; every other
+        # field (including `description`) is optional. Requiring
+        # `description` here produced false positives on valid manifests.
+        for field in ("name", "version"):
             if field not in data:
                 violations.append(
                     self.violation(
@@ -89,6 +92,17 @@ class ApmYamlValidRule(Rule):
                 continue
             value = data[field]
             if not isinstance(value, str):
+                violations.append(
+                    self.violation(
+                        f"Field '{field}' must be a string in apm.yml",
+                        file_path=apm_yml,
+                        line=_yaml_key_line(apm_yml, field),
+                    )
+                )
+
+        # Optional string fields: not required, but must be strings when present.
+        for field in ("description",):
+            if field in data and not isinstance(data[field], str):
                 violations.append(
                     self.violation(
                         f"Field '{field}' must be a string in apm.yml",

@@ -1,2 +1,2 @@
 name: incomplete-package
-version: 0.1.0
+description: Manifest intentionally missing the required version field
