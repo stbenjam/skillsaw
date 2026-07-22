@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from skillsaw.config import LinterConfig
@@ -92,9 +93,6 @@ class TestCoderabbitYamlValidRule:
 # ---------------------------------------------------------------------------
 
 
-import pytest
-
-
 class TestCoderabbitSchemaValidRule:
     def test_rule_metadata(self):
         rule = CoderabbitSchemaValidRule()
@@ -167,6 +165,31 @@ class TestCoderabbitSchemaValidRule:
         violations = CoderabbitSchemaValidRule().check(context)
         assert len(violations) == 1
         assert "profile" in violations[0].message
+
+    def test_multiple_violations(self, temp_dir):
+        # A near-miss top-level key and an invalid profile in one file should
+        # each be reported independently.
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "chatt:\n  auto_reply: true\nreviews:\n  profile: agressive\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 2
+        messages = " ".join(v.message for v in violations)
+        assert "chatt" in messages
+        assert "profile" in messages
+
+    def test_empty_document_delegated_no_violations(self, temp_dir):
+        # An empty document loads as None (not a dict) — well-formedness is
+        # coderabbit-yaml-valid's job, so stay silent.
+        (temp_dir / ".coderabbit.yaml").write_text("")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_null_document_delegated_no_violations(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("~\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
 
     def test_invalid_yaml_delegated_no_violations(self, temp_dir):
         # Well-formedness is coderabbit-yaml-valid's job — stay silent.

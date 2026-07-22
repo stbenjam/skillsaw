@@ -14,6 +14,7 @@ hand-copied snapshot.
 from __future__ import annotations
 
 import difflib
+from pathlib import Path
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -80,7 +81,9 @@ class CoderabbitSchemaValidRule(Rule):
 
         return violations
 
-    def _check_top_level_keys(self, data, cr_path, violations) -> None:
+    def _check_top_level_keys(
+        self, data: dict, cr_path: Path, violations: List[RuleViolation]
+    ) -> None:
         for key in data:
             if not isinstance(key, str) or key in KNOWN_TOP_LEVEL_KEYS:
                 continue
@@ -99,7 +102,9 @@ class CoderabbitSchemaValidRule(Rule):
                     )
                 )
 
-    def _check_review_profile(self, data, cr_path, violations) -> None:
+    def _check_review_profile(
+        self, data: dict, cr_path: Path, violations: List[RuleViolation]
+    ) -> None:
         reviews = data.get("reviews")
         if not isinstance(reviews, dict):
             return
