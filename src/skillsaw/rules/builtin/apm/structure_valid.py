@@ -9,10 +9,21 @@ from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import ApmNode
 
 # Primitive subdirectories APM recognizes under `.apm/` (microsoft/apm
-# package-anatomy). A package may provide any subset; requiring only
-# skills/ or instructions/ produced false positives on packages built
-# purely from prompts/, agents/, context/, or hooks/.
-APM_PRIMITIVE_DIRS = ("skills", "instructions", "prompts", "agents", "context", "hooks")
+# package-types / targets-matrix). A package may provide any subset;
+# requiring only skills/ or instructions/ produced false positives on
+# packages built purely from prompts/, agents/, context/, hooks/, or
+# extensions/. `extensions/` is the experimental "canvas" primitive
+# (gated by the canvas flag); it is a real source dir, so a package
+# built purely from it must not be flagged.
+APM_PRIMITIVE_DIRS = (
+    "skills",
+    "instructions",
+    "prompts",
+    "agents",
+    "context",
+    "hooks",
+    "extensions",
+)
 
 
 class ApmStructureValidRule(Rule):
