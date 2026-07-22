@@ -1514,6 +1514,7 @@ BROKEN_FIXTURES = [
     "dot-claude/broken",
     "dot-claude/agents-imports-broken",
     "coderabbit/broken",
+    "coderabbit/schema-broken",
     "apm/broken",
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",

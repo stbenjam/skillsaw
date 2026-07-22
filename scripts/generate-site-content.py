@@ -187,8 +187,10 @@ RULE_GROUPS = [
     (
         "CodeRabbit",
         "coderabbit",
-        ["coderabbit-yaml-valid"],
-        "Validates `.coderabbit.yaml` config files for YAML syntax. "
+        ["coderabbit-yaml-valid", "coderabbit-schema-valid"],
+        "Validates `.coderabbit.yaml` config files for YAML syntax and, via "
+        "`coderabbit-schema-valid`, near-miss unknown top-level keys and the "
+        "`reviews.profile` enum against the CodeRabbit schema. "
         "Instruction text fields (`reviews.instructions`, per-path "
         "instructions, per-tool instructions, `chat.instructions`) are "
         "automatically checked by the content-* rules. Auto-enabled "

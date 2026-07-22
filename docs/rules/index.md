@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **62** built-in rules 
+skillsaw includes **63** built-in rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
@@ -18,7 +18,7 @@ organized into the following categories:
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
 - [Content Intelligence](content-intelligence.md) (22 rules)
-- [CodeRabbit](coderabbit.md) (1 rule)
+- [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [Settings](settings.md) (1 rule)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
@@ -83,6 +83,7 @@ organized into the following categories:
 | [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
 | [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - | CodeRabbit |
+| [`coderabbit-schema-valid`](coderabbit-schema-valid.md) | .coderabbit.yaml keys and enums should match the CodeRabbit schema | warning (auto) | - | CodeRabbit |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | [`promptfoo-metadata`](promptfoo-metadata.md) | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |

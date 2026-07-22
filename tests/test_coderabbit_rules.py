@@ -2,12 +2,14 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from skillsaw.config import LinterConfig
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.coderabbit import (
+    CoderabbitSchemaValidRule,
     CoderabbitYamlValidRule,
 )
 from skillsaw.rules.builtin.content_analysis import (
@@ -84,6 +86,129 @@ class TestCoderabbitYamlValidRule:
         assert (
             "read" in violations[0].message.lower() or "encoding" in violations[0].message.lower()
         )
+
+
+# ---------------------------------------------------------------------------
+# CoderabbitSchemaValidRule
+# ---------------------------------------------------------------------------
+
+
+class TestCoderabbitSchemaValidRule:
+    def test_rule_metadata(self):
+        rule = CoderabbitSchemaValidRule()
+        assert rule.rule_id == "coderabbit-schema-valid"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.repo_types == {RepositoryType.CODERABBIT}
+
+    def test_no_file_passes(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_valid_config_passes(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "language: en-US\n"
+            "early_access: false\n"
+            "reviews:\n"
+            "  profile: assertive\n"
+            "chat:\n"
+            "  auto_reply: true\n"
+        )
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_newer_top_level_keys_pass(self, temp_dir):
+        # enable_free_tier / inheritance / issue_enrichment are recent schema keys.
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "enable_free_tier: true\n"
+            "inheritance:\n"
+            "  scope: []\n"
+            "issue_enrichment:\n"
+            "  enabled: true\n"
+        )
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_near_miss_top_level_key_flagged(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("review:\n  profile: chill\n")
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 1
+        assert "review" in violations[0].message
+        assert "reviews" in violations[0].message
+        assert violations[0].line == 1
+
+    def test_unfamiliar_key_not_flagged(self, temp_dir):
+        # A key far from every known key is left alone — a genuinely new upstream
+        # key must never false-positive against skillsaw's snapshot.
+        (temp_dir / ".coderabbit.yaml").write_text("totally_unrelated_option: true\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_invalid_review_profile_flagged(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  profile: agressive\n")
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 1
+        assert "profile" in violations[0].message
+        assert violations[0].line == 2
+
+    @pytest.mark.parametrize("profile", ["assertive", "chill", "quiet"])
+    def test_valid_review_profiles_pass(self, temp_dir, profile):
+        (temp_dir / ".coderabbit.yaml").write_text(f"reviews:\n  profile: {profile}\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_non_string_profile_flagged(self, temp_dir):
+        # A non-string profile is still outside the schema enum — flag it.
+        (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  profile:\n    - a\n")
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 1
+        assert "profile" in violations[0].message
+
+    def test_multiple_violations(self, temp_dir):
+        # A near-miss top-level key and an invalid profile in one file should
+        # each be reported independently.
+        (temp_dir / ".coderabbit.yaml").write_text(
+            "chatt:\n  auto_reply: true\nreviews:\n  profile: agressive\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 2
+        messages = " ".join(v.message for v in violations)
+        assert "chatt" in messages
+        assert "profile" in messages
+
+    def test_empty_document_delegated_no_violations(self, temp_dir):
+        # An empty document loads as None (not a dict) — well-formedness is
+        # coderabbit-yaml-valid's job, so stay silent.
+        (temp_dir / ".coderabbit.yaml").write_text("")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_null_document_delegated_no_violations(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("~\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_invalid_yaml_delegated_no_violations(self, temp_dir):
+        # Well-formedness is coderabbit-yaml-valid's job — stay silent.
+        (temp_dir / ".coderabbit.yaml").write_text("good: value\nbad: [unterminated\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_non_mapping_delegated_no_violations(self, temp_dir):
+        (temp_dir / ".coderabbit.yaml").write_text("- item1\n- item2\n")
+        context = RepositoryContext(temp_dir)
+        assert CoderabbitSchemaValidRule().check(context) == []
+
+    def test_default_config_auto(self):
+        config = LinterConfig.default()
+        assert config.get_rule_config("coderabbit-schema-valid").get("enabled") == "auto"
+
+    def test_default_config_severity_warning(self):
+        config = LinterConfig.default()
+        assert config.get_rule_config("coderabbit-schema-valid").get("severity") == "warning"
 
 
 # ---------------------------------------------------------------------------
