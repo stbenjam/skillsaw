@@ -106,7 +106,10 @@ class CoderabbitSchemaValidRule(Rule):
         if "profile" not in reviews:
             return
         profile = reviews["profile"]
-        if isinstance(profile, str) and profile not in VALID_REVIEW_PROFILES:
+        # The schema requires a string from a fixed enum, so any value outside
+        # VALID_REVIEW_PROFILES — including lists, mappings, numbers, booleans,
+        # and null — is invalid, not just misspelled strings.
+        if profile not in VALID_REVIEW_PROFILES:
             violations.append(
                 self.violation(
                     f"'reviews.profile' is '{profile}', expected one of: "

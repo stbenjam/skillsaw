@@ -160,10 +160,13 @@ class TestCoderabbitSchemaValidRule:
         context = RepositoryContext(temp_dir)
         assert CoderabbitSchemaValidRule().check(context) == []
 
-    def test_non_string_profile_not_flagged(self, temp_dir):
+    def test_non_string_profile_flagged(self, temp_dir):
+        # A non-string profile is still outside the schema enum — flag it.
         (temp_dir / ".coderabbit.yaml").write_text("reviews:\n  profile:\n    - a\n")
         context = RepositoryContext(temp_dir)
-        assert CoderabbitSchemaValidRule().check(context) == []
+        violations = CoderabbitSchemaValidRule().check(context)
+        assert len(violations) == 1
+        assert "profile" in violations[0].message
 
     def test_invalid_yaml_delegated_no_violations(self, temp_dir):
         # Well-formedness is coderabbit-yaml-valid's job — stay silent.
