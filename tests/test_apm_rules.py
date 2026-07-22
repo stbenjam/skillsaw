@@ -399,7 +399,7 @@ def test_apm_structure_empty_apm_dir_warns(temp_dir):
     assert "primitive subdirectory" in violations[0].message
 
 
-@pytest.mark.parametrize("primitive", ["prompts", "agents", "context", "hooks"])
+@pytest.mark.parametrize("primitive", ["prompts", "agents", "context", "hooks", "extensions"])
 def test_apm_structure_other_primitive_dirs_pass(temp_dir, primitive):
     """A package built from any recognized primitive dir (not just skills/instructions) passes"""
     repo = temp_dir / "apm-repo"
