@@ -25,7 +25,7 @@ jobs:
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet
             --max-turns 200
-            --model claude-fable-5
+            --model claude-opus-4-8
 
       - name: Upload execution log
         if: always()
