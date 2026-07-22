@@ -26,6 +26,17 @@ class McpValidJsonRule(Rule):
         "ws": "url",
     }
 
+    # Server names reserved for Claude Code's built-in servers. A user
+    # server that shadows one of these is ignored, so warn on it. See
+    # the Claude Code MCP docs (code.claude.com/docs/en/mcp).
+    RESERVED_SERVER_NAMES = (
+        "workspace",
+        "claude-in-chrome",
+        "computer-use",
+        "Claude Preview",
+        "Claude Browser",
+    )
+
     @property
     def rule_id(self) -> str:
         return "mcp-valid-json"
@@ -130,10 +141,11 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            if server_name == "workspace":
+            if server_name in self.RESERVED_SERVER_NAMES:
                 violations.append(
                     self.violation(
-                        f"MCP server name 'workspace' is reserved",
+                        f"MCP server name '{server_name}' is reserved "
+                        f"for a Claude Code built-in server",
                         file_path=file_path,
                         severity=Severity.WARNING,
                     )

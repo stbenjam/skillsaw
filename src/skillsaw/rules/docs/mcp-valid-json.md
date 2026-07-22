@@ -31,3 +31,8 @@ on them will silently fail.
 Fix the JSON syntax error or restructure the file to use the
 `mcpServers` top-level key with properly configured server entries.
 Each server needs at minimum a `command` field.
+
+Avoid naming a server after one of Claude Code's built-in servers
+(`workspace`, `claude-in-chrome`, `computer-use`, `Claude Preview`,
+`Claude Browser`) — those names are reserved and a user server that
+shadows one is ignored.
