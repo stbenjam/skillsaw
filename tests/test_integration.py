@@ -1062,7 +1062,7 @@ class TestApm:
         assert "apm-structure-valid" in ids
 
         apm_violations = by_rule(r)["apm-yaml-valid"]
-        assert any("description" in v["message"].lower() for v in apm_violations)
+        assert any("version" in v["message"].lower() for v in apm_violations)
 
     def test_apm_clean_hooks_pass(self, tmp_path):
         repo = copy_fixture("apm/hooks-clean", tmp_path)

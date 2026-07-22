@@ -310,8 +310,8 @@ class TestApmLineNumbers:
         context = RepositoryContext(repo)
         violations = ApmYamlValidRule().check(context)
         missing_violations = [v for v in violations if "Missing" in v.message]
-        # version and description should be missing
-        assert len(missing_violations) == 2
+        # version should be missing (description is optional per the APM schema)
+        assert len(missing_violations) == 1
         for v in missing_violations:
             assert v.line is None
 

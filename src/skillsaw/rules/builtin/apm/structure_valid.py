@@ -8,6 +8,12 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import ApmNode
 
+# Primitive subdirectories APM recognizes under `.apm/` (microsoft/apm
+# package-anatomy). A package may provide any subset; requiring only
+# skills/ or instructions/ produced false positives on packages built
+# purely from prompts/, agents/, context/, or hooks/.
+APM_PRIMITIVE_DIRS = ("skills", "instructions", "prompts", "agents", "context", "hooks")
+
 
 class ApmStructureValidRule(Rule):
     """Validate .apm/ directory structure"""
@@ -22,7 +28,9 @@ class ApmStructureValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return ".apm/ directory must contain skills/ or instructions/ with valid structure"
+        return (
+            ".apm/ directory must contain a recognized primitive subdirectory with valid structure"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -39,12 +47,14 @@ class ApmStructureValidRule(Rule):
         apm_dir = apm_nodes[0].path
 
         has_skills = (apm_dir / "skills").is_dir()
-        has_instructions = (apm_dir / "instructions").is_dir()
+        has_primitive = any((apm_dir / name).is_dir() for name in APM_PRIMITIVE_DIRS)
 
-        if not has_skills and not has_instructions:
+        if not has_primitive:
+            expected = ", ".join(f"'{name}/'" for name in APM_PRIMITIVE_DIRS)
             violations.append(
                 self.violation(
-                    ".apm/ directory should contain a 'skills/' or 'instructions/' subdirectory",
+                    f".apm/ directory should contain a recognized primitive subdirectory "
+                    f"({expected})",
                     file_path=apm_dir,
                 )
             )

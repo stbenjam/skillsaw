@@ -7,6 +7,6 @@ Validates repositories using the [APM](https://github.com/microsoft/apm) directo
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`apm-yaml-valid`](apm-yaml-valid.md) | apm.yml must exist with valid YAML and required fields (name, version, description) | error (auto) | - |
-| [`apm-structure-valid`](apm-structure-valid.md) | .apm/ directory must contain skills/ or instructions/ with valid structure | warning (auto) | - |
+| [`apm-yaml-valid`](apm-yaml-valid.md) | apm.yml must exist with valid YAML and required fields (name, version) | error (auto) | - |
+| [`apm-structure-valid`](apm-structure-valid.md) | .apm/ directory must contain a recognized primitive subdirectory with valid structure | warning (auto) | - |
 
