@@ -95,7 +95,7 @@ jobs:
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 200
-            --model claude-opus-4-8
+            --model claude-opus-5
 
       - name: Upload execution log
         if: always()
