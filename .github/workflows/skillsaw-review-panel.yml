@@ -42,7 +42,7 @@ jobs:
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Glob,Grep,TaskCreate,TaskUpdate,TaskList,TaskGet
             --max-turns 50
-            --model claude-opus-4-8
+            --model claude-opus-5
 
       - name: Upload execution log
         if: always()
