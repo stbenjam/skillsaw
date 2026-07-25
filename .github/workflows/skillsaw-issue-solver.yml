@@ -1,4 +1,4 @@
-name: Skillsaw Issue Solver
+name: Issue Solver
 
 on:
   schedule:
@@ -18,11 +18,11 @@ permissions:
   id-token: write
 
 jobs:
-  issue-solver:
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      issues: ${{ steps.activity.outputs.issues }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Get labeled issues with trusted content only
         id: activity
         env:
@@ -32,29 +32,26 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Get open issues labeled "issue-for-agent" (label = collaborator sign-off)
-          ISSUES=$(gh issue list --state open --label issue-for-agent \
-            --json number,title,body,author --jq '.')
+          # Get open issues labeled "agent" (label = collaborator sign-off)
+          ISSUES=$(gh issue list --state open --label agent \
+            --json number,title,body,author,labels --jq '.')
 
           ISSUE_COUNT=$(echo "$ISSUES" | jq length)
-          echo "Issues labeled issue-for-agent: $ISSUE_COUNT"
+          echo "Issues labeled agent: $ISSUE_COUNT"
 
           if [ "$ISSUE_COUNT" = "0" ]; then
-            echo "has_issues=false" >> "$GITHUB_OUTPUT"
-            echo "[]" > /tmp/issues-with-comments.json
+            echo "issues=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "has_issues=true" >> "$GITHUB_OUTPUT"
 
-          # For each issue, include trusted comments only:
-          # - Collaborator comments: always trusted (any time)
-          # - Non-collaborator comments: only before the label was added
+          # For each issue, build a matrix entry with trusted comments
+          MATRIX="[]"
           echo "$ISSUES" | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
 
-            # Find when issue-for-agent label was added
+            # Find when agent label was added
             LABEL_TIME=$(gh api "repos/${{ github.repository }}/issues/$NUM/events" \
-              --jq '[.[] | select(.event == "labeled" and .label.name == "issue-for-agent")] | last | .created_at')
+              --jq '[.[] | select(.event == "labeled" and .label.name == "agent")] | last | .created_at')
 
             if [ -z "$LABEL_TIME" ] || [ "$LABEL_TIME" = "null" ]; then
               echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
@@ -69,39 +66,80 @@ jobs:
               echo "$issue" | jq --arg lt "$LABEL_TIME" --argjson c "$COMMENTS" \
                 '. + {label_added_at: $lt, trusted_comments: $c}'
             fi
-          done | jq -s '.' > /tmp/issues-with-comments.json
+          done | jq -s -c '.' > /tmp/issues-with-comments.json
 
           echo "Prepared issues with trusted comments:"
           cat /tmp/issues-with-comments.json | jq '[.[] | {number, title, comment_count: (.trusted_comments | length)}]'
 
+          # Output matrix: one entry per issue with number, ultracode flag, and
+          # the full issue JSON written to a file (matrix values have a 256KB limit
+          # but are kept small here by passing only metadata).
+          MATRIX=$(cat /tmp/issues-with-comments.json | jq -c '[.[] | {
+            number: .number,
+            ultracode: ([.labels[].name] | any(. == "ultracode"))
+          }]')
+          echo "issues=$MATRIX" >> "$GITHUB_OUTPUT"
+
+          # Write each issue to its own file for the solve job to pick up
+          cat /tmp/issues-with-comments.json | jq -c '.[]' | while read -r issue; do
+            NUM=$(echo "$issue" | jq -r '.number')
+            echo "$issue" > "/tmp/issue-${NUM}.json"
+          done
+
+      - name: Upload issue data
+        if: steps.activity.outputs.issues != '[]'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-data
+          path: /tmp/issue-*.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  solve:
+    needs: discover
+    if: needs.discover.outputs.issues != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        issue: ${{ fromJson(needs.discover.outputs.issues) }}
+      max-parallel: 3
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download issue data
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: issue-data
+          path: /tmp
+
       - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
-        if: steps.activity.outputs.has_issues == 'true'
         with:
           prompt: |
             Use the skillsaw-issue-solver skill. Follow every step in the skill.
 
-            ## Issues to solve
+            ## Issue to solve
 
-            Each issue includes only trusted content: collaborator comments (any
+            This issue includes only trusted content: collaborator comments (any
             time) and non-collaborator comments from before the label was added.
-            Create a separate [Auto] PR for each. Skip any already addressed by
-            an open PR.
+            Create an [Auto] PR for it. Skip if already addressed by an open PR.
 
-            <issues>
-            $(cat /tmp/issues-with-comments.json)
-            </issues>
+            <issue>
+            $(cat /tmp/issue-${{ matrix.issue.number }}.json)
+            </issue>
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 200
             --model claude-opus-5
+            ${{ matrix.issue.ultracode && '--effort ultracode' || '' }}
 
       - name: Upload execution log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: claude-execution-log-${{ github.run_id }}
+          name: claude-execution-log-issue-${{ matrix.issue.number }}-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
           if-no-files-found: ignore
           retention-days: 30
