@@ -34,7 +34,8 @@ jobs:
 
           # Get open issues labeled "agent" (label = collaborator sign-off)
           ISSUES=$(gh issue list -R "${{ github.repository }}" --state open --label agent \
-            --json number,title,body,author,labels --jq '.')
+            --json number,title,body,author,labels \
+            --jq '[.[] | .body = (.body | gsub("(?s)<!--.*?-->"; ""))]')
 
           ISSUE_COUNT=$(echo "$ISSUES" | jq length)
           echo "Issues labeled agent: $ISSUE_COUNT"
@@ -61,7 +62,7 @@ jobs:
                 '[.[] | select(
                   (.user.login as $u | $collabs | index($u))
                   or (.created_at <= $lt)
-                ) | {user: .user.login, body, created_at}]')
+                ) | {user: .user.login, body: (.body | gsub("(?s)<!--.*?-->"; "")), created_at}]')
 
               echo "$issue" | jq --arg lt "$LABEL_TIME" --argjson c "$COMMENTS" \
                 '. + {label_added_at: $lt, trusted_comments: $c}'
