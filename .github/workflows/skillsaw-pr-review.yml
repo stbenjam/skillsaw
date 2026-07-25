@@ -18,17 +18,16 @@ permissions:
   id-token: write
 
 jobs:
-  pr-review:
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.activity.outputs.prs }}
+      since: ${{ steps.activity.outputs.since }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Restore last run timestamp
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .last-pr-review-run
-          # The save step below writes a per-run key, so an exact match never
-          # hits; restore the most recent entry via the shared prefix instead.
           key: pr-review-last-run-${{ github.run_id }}
           restore-keys: pr-review-last-run-
 
@@ -53,15 +52,9 @@ jobs:
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
             echo "No open PRs with agent label"
-            echo "has_prs=false" >> "$GITHUB_OUTPUT"
+            echo "prs=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "has_prs=true" >> "$GITHUB_OUTPUT"
-          echo "$PRS" > /tmp/open-prs.json
-
-          # Check if any PR has the "ultracode" label
-          HAS_ULTRACODE=$(echo "$PRS" | jq '[.[].labels[].name] | any(. == "ultracode")')
-          echo "has_ultracode=$HAS_ULTRACODE" >> "$GITHUB_OUTPUT"
 
           # New PR review comments from collaborators since last run
           gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
@@ -75,41 +68,47 @@ jobs:
             '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-pr-comments.json
 
+          # For each PR, write its data + relevant comments to a file
+          echo "$PRS" | jq -c '.[]' | while read -r pr; do
+            NUM=$(echo "$pr" | jq -r '.number')
+
+            # Filter review comments to this PR
+            PR_REVIEW_COMMENTS=$(cat /tmp/new-review-comments.json \
+              | jq --arg num "$NUM" '[.[] | select(.pull_request_url | endswith("/'" $NUM"'"))]')
+
+            # Filter PR-level comments to this PR
+            PR_COMMENTS=$(cat /tmp/new-pr-comments.json \
+              | jq --arg num "$NUM" '[.[] | select(.issue_url | endswith("/'" $NUM"'"))]')
+
+            echo "$pr" | jq \
+              --argjson rc "$PR_REVIEW_COMMENTS" \
+              --argjson pc "$PR_COMMENTS" \
+              '. + {review_comments: $rc, pr_comments: $pc}' \
+              > "/tmp/pr-${NUM}.json"
+          done
+
+          # Build matrix
+          MATRIX=$(echo "$PRS" | jq -c '[.[] | {
+            number: .number,
+            ultracode: ([.labels[].name] | any(. == "ultracode"))
+          }]')
+          echo "prs=$MATRIX" >> "$GITHUB_OUTPUT"
+
           echo "Open PRs with agent label:"
-          cat /tmp/open-prs.json | jq length
+          echo "$PRS" | jq length
           echo "New review comments from collaborators since $SINCE:"
           cat /tmp/new-review-comments.json | jq length
           echo "New PR comments from collaborators since $SINCE:"
           cat /tmp/new-pr-comments.json | jq length
 
-      - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
-        if: steps.activity.outputs.has_prs == 'true'
+      - name: Upload PR data
+        if: steps.activity.outputs.prs != '[]'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          prompt: |
-            Use the skillsaw-pr-review skill. Follow every step in the skill.
-
-            IMPORTANT: Only review the following PRs. Do NOT review any other PRs.
-
-            <open-prs>
-            $(cat /tmp/open-prs.json)
-            </open-prs>
-
-            ## New review comments from collaborators since ${{ steps.activity.outputs.since }}
-
-            <inline-review-comments>
-            $(cat /tmp/new-review-comments.json)
-            </inline-review-comments>
-
-            <pr-level-comments>
-            $(cat /tmp/new-pr-comments.json)
-            </pr-level-comments>
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          show_full_output: true
-          claude_args: |
-            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
-            --max-turns 100
-            --model claude-opus-5
-            ${{ steps.activity.outputs.has_ultracode == 'true' && '--effort ultracode' || '' }}
+          name: pr-data
+          path: /tmp/pr-*.json
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Save last run timestamp
         if: always()
@@ -122,11 +121,57 @@ jobs:
           path: .last-pr-review-run
           key: pr-review-last-run-${{ github.run_id }}
 
+  follow-up:
+    needs: discover
+    if: needs.discover.outputs.prs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pr: ${{ fromJson(needs.discover.outputs.prs) }}
+      max-parallel: 3
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download PR data
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: pr-data
+          path: /tmp
+
+      - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
+        with:
+          prompt: |
+            Use the skillsaw-pr-review skill. Follow every step in the skill.
+
+            IMPORTANT: Only review the following PR. Do NOT review any other PRs.
+
+            <pr>
+            $(cat /tmp/pr-${{ matrix.pr.number }}.json)
+            </pr>
+
+            ## New review comments from collaborators since ${{ needs.discover.outputs.since }}
+
+            <inline-review-comments>
+            $(cat /tmp/pr-${{ matrix.pr.number }}.json | jq '.review_comments')
+            </inline-review-comments>
+
+            <pr-level-comments>
+            $(cat /tmp/pr-${{ matrix.pr.number }}.json | jq '.pr_comments')
+            </pr-level-comments>
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
+            --max-turns 100
+            --model claude-opus-5
+            ${{ matrix.pr.ultracode && '--effort ultracode' || '' }}
+
       - name: Upload execution log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: claude-execution-log-${{ github.run_id }}
+          name: claude-execution-log-pr-${{ matrix.pr.number }}-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
           if-no-files-found: ignore
           retention-days: 30
