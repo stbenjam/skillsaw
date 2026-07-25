@@ -74,11 +74,11 @@ jobs:
 
             # Filter review comments to this PR
             PR_REVIEW_COMMENTS=$(cat /tmp/new-review-comments.json \
-              | jq --arg num "$NUM" '[.[] | select(.pull_request_url | endswith("/'" $NUM"'"))]')
+              | jq --arg num "$NUM" '[.[] | select(.pull_request_url | endswith("/" + $num))]')
 
             # Filter PR-level comments to this PR
             PR_COMMENTS=$(cat /tmp/new-pr-comments.json \
-              | jq --arg num "$NUM" '[.[] | select(.issue_url | endswith("/'" $NUM"'"))]')
+              | jq --arg num "$NUM" '[.[] | select(.issue_url | endswith("/" + $num))]')
 
             echo "$pr" | jq \
               --argjson rc "$PR_REVIEW_COMMENTS" \
