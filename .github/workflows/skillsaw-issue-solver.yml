@@ -23,8 +23,6 @@ jobs:
     outputs:
       issues: ${{ steps.activity.outputs.issues }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Get labeled issues with trusted content only
         id: activity
         env:
@@ -35,7 +33,7 @@ jobs:
           echo "Collaborators: $COLLABS"
 
           # Get open issues labeled "agent" (label = collaborator sign-off)
-          ISSUES=$(gh issue list --state open --label agent \
+          ISSUES=$(gh issue list -R "${{ github.repository }}" --state open --label agent \
             --json number,title,body,author,labels --jq '.')
 
           ISSUE_COUNT=$(echo "$ISSUES" | jq length)

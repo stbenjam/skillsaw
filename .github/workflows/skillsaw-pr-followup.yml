@@ -24,8 +24,6 @@ jobs:
       prs: ${{ steps.activity.outputs.prs }}
       since: ${{ steps.activity.outputs.since }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Restore last run timestamp
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -50,7 +48,7 @@ jobs:
           echo "Collaborators: $COLLABS"
 
           # Open PRs with agent label
-          PRS=$(gh pr list --state open --label agent --json number,title,author,labels)
+          PRS=$(gh pr list -R "${{ github.repository }}" --state open --label agent --json number,title,author,labels)
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
             echo "No open PRs with agent label"
