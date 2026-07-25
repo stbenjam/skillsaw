@@ -33,7 +33,7 @@ jobs:
           echo "Collaborators: $COLLABS"
 
           # Get open issues labeled "agent" (label = collaborator sign-off)
-          ISSUES=$(gh issue list --state open --label agent \
+          ISSUES=$(gh issue list -R "${{ github.repository }}" --state open --label agent \
             --json number,title,body,author,labels --jq '.')
 
           ISSUE_COUNT=$(echo "$ISSUES" | jq length)

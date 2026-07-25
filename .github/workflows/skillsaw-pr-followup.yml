@@ -27,17 +27,17 @@ jobs:
       - name: Restore last run timestamp
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .last-pr-review-run
-          key: pr-review-last-run-${{ github.run_id }}
-          restore-keys: pr-review-last-run-
+          path: .last-pr-followup-run
+          key: pr-followup-last-run-${{ github.run_id }}
+          restore-keys: pr-followup-last-run-
 
       - name: Get reviewable PRs and new activity
         id: activity
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f .last-pr-review-run ]; then
-            SINCE=$(cat .last-pr-review-run)
+          if [ -f .last-pr-followup-run ]; then
+            SINCE=$(cat .last-pr-followup-run)
           else
             SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
           fi
@@ -48,7 +48,7 @@ jobs:
           echo "Collaborators: $COLLABS"
 
           # Open PRs with agent label
-          PRS=$(gh pr list --state open --label agent --json number,title,author,labels)
+          PRS=$(gh pr list -R "${{ github.repository }}" --state open --label agent --json number,title,author,labels)
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
             echo "No open PRs with agent label"
@@ -112,14 +112,14 @@ jobs:
 
       - name: Save last run timestamp
         if: always()
-        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-pr-review-run
+        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-pr-followup-run
 
       - name: Cache last run timestamp
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .last-pr-review-run
-          key: pr-review-last-run-${{ github.run_id }}
+          path: .last-pr-followup-run
+          key: pr-followup-last-run-${{ github.run_id }}
 
   follow-up:
     needs: discover
@@ -142,7 +142,7 @@ jobs:
       - uses: anthropics/claude-code-action@558b1d6cab4085c7753fe402c10bef0fbb92ac7a # v1
         with:
           prompt: |
-            Use the skillsaw-pr-review skill. Follow every step in the skill.
+            Use the skillsaw-pr-followup skill. Follow every step in the skill.
 
             IMPORTANT: Only review the following PR. Do NOT review any other PRs.
 
