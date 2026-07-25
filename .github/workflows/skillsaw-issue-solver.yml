@@ -76,7 +76,8 @@ jobs:
           # but are kept small here by passing only metadata).
           MATRIX=$(cat /tmp/issues-with-comments.json | jq -c '[.[] | {
             number: .number,
-            ultracode: ([.labels[].name] | any(. == "ultracode"))
+            ultracode: ([.labels[].name] | any(. == "ultracode")),
+            fable: ([.labels[].name] | any(. == "fable-5"))
           }]')
           echo "issues=$MATRIX" >> "$GITHUB_OUTPUT"
 
@@ -130,9 +131,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
-            --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
-            --max-turns 200
-            --model claude-opus-5
+            --dangerously-skip-permissions
+            ${{ !matrix.issue.ultracode && '--max-turns 200' || '' }}
+            --model ${{ matrix.issue.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.issue.ultracode && '--effort ultracode' || '' }}
 
       - name: Upload execution log
