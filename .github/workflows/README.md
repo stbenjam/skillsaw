@@ -9,7 +9,7 @@ markdown file with YAML frontmatter (the agent's prompt is the body). It is
 **compiled** to the runnable `issue-triage.lock.yml` — that generated file is
 what GitHub Actions executes.
 
-**What it does.** When a maintainer applies the `triage-for-agent` label to an
+**What it does.** When a maintainer applies the `triage` label to an
 issue, the agent runs the **`skillsaw-issue-triage`** skill (auto-discovered by
 Copilot from `.agents/skills/`) to classify the issue (bug / feature /
 documentation / question / other), assess its claims against the code, enrich
@@ -19,10 +19,10 @@ interactively too.
 
 ### Operating it
 
-- **Trust gate.** It runs **only** on the `labeled` event for `triage-for-agent`,
+- **Trust gate.** It runs **only** on the `labeled` event for `triage`,
   and only when the actor has `write`/`maintain`/`admin` (`roles:`). Anonymous
   or attacker-authored issues never auto-trigger it — a human opts each issue in.
-  Create the label once: `gh label create triage-for-agent --color a371f7 --description "Approved for agent to triage"`.
+  Create the label once: `gh label create triage --color a371f7 --description "Approved for agent to triage"`.
 - **Model.** GLM 5.2 via OpenRouter, using the Copilot engine's BYOK mode. The
   only secret is `OPENROUTER_API_KEY` (repo secret). gh-aw excludes the provider
   key from the agent container, so the agent cannot read or exfiltrate it.

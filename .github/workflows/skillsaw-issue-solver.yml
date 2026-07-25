@@ -1,4 +1,4 @@
-name: Skillsaw Issue Solver
+name: Issue Solver
 
 on:
   schedule:
@@ -32,12 +32,12 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Get open issues labeled "issue-for-agent" (label = collaborator sign-off)
-          ISSUES=$(gh issue list --state open --label issue-for-agent \
-            --json number,title,body,author --jq '.')
+          # Get open issues labeled "agent" (label = collaborator sign-off)
+          ISSUES=$(gh issue list --state open --label agent \
+            --json number,title,body,author,labels --jq '.')
 
           ISSUE_COUNT=$(echo "$ISSUES" | jq length)
-          echo "Issues labeled issue-for-agent: $ISSUE_COUNT"
+          echo "Issues labeled agent: $ISSUE_COUNT"
 
           if [ "$ISSUE_COUNT" = "0" ]; then
             echo "has_issues=false" >> "$GITHUB_OUTPUT"
@@ -46,15 +46,19 @@ jobs:
           fi
           echo "has_issues=true" >> "$GITHUB_OUTPUT"
 
+          # Check if any issue has the "ultracode" label
+          HAS_ULTRACODE=$(echo "$ISSUES" | jq '[.[].labels[].name] | any(. == "ultracode")')
+          echo "has_ultracode=$HAS_ULTRACODE" >> "$GITHUB_OUTPUT"
+
           # For each issue, include trusted comments only:
           # - Collaborator comments: always trusted (any time)
           # - Non-collaborator comments: only before the label was added
           echo "$ISSUES" | jq -c '.[]' | while read -r issue; do
             NUM=$(echo "$issue" | jq -r '.number')
 
-            # Find when issue-for-agent label was added
+            # Find when agent label was added
             LABEL_TIME=$(gh api "repos/${{ github.repository }}/issues/$NUM/events" \
-              --jq '[.[] | select(.event == "labeled" and .label.name == "issue-for-agent")] | last | .created_at')
+              --jq '[.[] | select(.event == "labeled" and .label.name == "agent")] | last | .created_at')
 
             if [ -z "$LABEL_TIME" ] || [ "$LABEL_TIME" = "null" ]; then
               echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
@@ -96,6 +100,7 @@ jobs:
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 200
             --model claude-opus-5
+            ${{ steps.activity.outputs.has_ultracode == 'true' && '--effort ultracode' || '' }}
 
       - name: Upload execution log
         if: always()

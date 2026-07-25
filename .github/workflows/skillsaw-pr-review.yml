@@ -1,4 +1,4 @@
-name: Skillsaw PR Review
+name: PR Follow-up
 
 on:
   schedule:
@@ -48,16 +48,20 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
           echo "Collaborators: $COLLABS"
 
-          # Open PRs with pr-for-agent label
-          PRS=$(gh pr list --state open --label pr-for-agent --json number,title,author)
+          # Open PRs with agent label
+          PRS=$(gh pr list --state open --label agent --json number,title,author,labels)
 
           if [ -z "$PRS" ] || [ "$PRS" = "[]" ]; then
-            echo "No open PRs from claude"
+            echo "No open PRs with agent label"
             echo "has_prs=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "has_prs=true" >> "$GITHUB_OUTPUT"
           echo "$PRS" > /tmp/open-prs.json
+
+          # Check if any PR has the "ultracode" label
+          HAS_ULTRACODE=$(echo "$PRS" | jq '[.[].labels[].name] | any(. == "ultracode")')
+          echo "has_ultracode=$HAS_ULTRACODE" >> "$GITHUB_OUTPUT"
 
           # New PR review comments from collaborators since last run
           gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
@@ -71,7 +75,7 @@ jobs:
             '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body, created_at}]' \
             > /tmp/new-pr-comments.json
 
-          echo "Open PRs from claude:"
+          echo "Open PRs with agent label:"
           cat /tmp/open-prs.json | jq length
           echo "New review comments from collaborators since $SINCE:"
           cat /tmp/new-review-comments.json | jq length
@@ -105,6 +109,7 @@ jobs:
             --allowedTools Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Agent,Glob,Grep,TodoWrite,TodoRead,TaskCreate,TaskUpdate,TaskList,TaskGet,EnterWorktree,ExitWorktree
             --max-turns 100
             --model claude-opus-5
+            ${{ steps.activity.outputs.has_ultracode == 'true' && '--effort ultracode' || '' }}
 
       - name: Save last run timestamp
         if: always()
