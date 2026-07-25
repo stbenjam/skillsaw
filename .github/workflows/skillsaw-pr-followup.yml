@@ -29,9 +29,7 @@ jobs:
         with:
           path: .last-pr-followup-run
           key: pr-followup-last-run-${{ github.run_id }}
-          restore-keys: |
-            pr-followup-last-run-
-            pr-review-last-run-
+          restore-keys: pr-followup-last-run-
 
       - name: Get reviewable PRs and new activity
         id: activity
