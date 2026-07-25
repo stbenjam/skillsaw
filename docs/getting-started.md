@@ -51,6 +51,15 @@ fingerprinting works and configuration options.
 
     Then type **`/skillsaw-onboard`** and follow the prompts.
 
+=== "Codex"
+
+    ```bash
+    codex plugin marketplace add stbenjam/skillsaw
+    codex plugin add skillsaw@skillsaw-marketplace
+    ```
+
+    Start a new Codex session, then invoke **`$skillsaw-onboard`**.
+
 === "Other AI coding agents"
 
     Paste this into your coding agent:
