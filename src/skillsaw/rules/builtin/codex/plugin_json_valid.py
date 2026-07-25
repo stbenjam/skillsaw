@@ -1,0 +1,203 @@
+"""
+Rule: codex-plugin-json-valid
+"""
+
+from pathlib import Path
+from typing import Any, List, Tuple
+
+from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import CodexPluginConfigNode
+from skillsaw.rules.builtin.utils import read_json
+
+from ._helpers import CODEX_PLUGIN_REPO_TYPES, KEBAB_CASE, path_problem
+
+# Manifest fields that point at bundled components or assets. Every one of
+# them is documented as "relative to the plugin root", starting with "./".
+# ``hooks`` is excluded — it alone accepts inline objects as well as paths,
+# so it is unpacked separately.
+_PATH_FIELDS = ("skills", "mcpServers", "apps")
+# ``logoDark`` is undocumented but shipped by a quarter of the plugins in
+# openai/plugins, and it is an asset path like the documented two.
+_INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
+_INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
+
+
+class CodexPluginJsonValidRule(Rule):
+    """Check that .codex-plugin/plugin.json is valid"""
+
+    repo_types = CODEX_PLUGIN_REPO_TYPES
+    since = "0.18.0"
+
+    DEFAULT_RECOMMENDED_FIELDS = ["version", "description"]
+    config_schema = {
+        "recommended-fields": {
+            "type": "list",
+            "default": DEFAULT_RECOMMENDED_FIELDS,
+            "description": "Fields that trigger a warning if missing from plugin.json",
+        },
+        "check-paths-exist": {
+            "type": "bool",
+            "default": True,
+            "description": (
+                "Warn when a manifest path (skills, hooks, assets, ...) "
+                "points at a file or directory that is not in the repository"
+            ),
+        },
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "codex-plugin-json-valid"
+
+    @property
+    def description(self) -> str:
+        return ".codex-plugin/plugin.json must be valid JSON with required fields"
+
+    def default_severity(self) -> Severity:
+        return Severity.ERROR
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        violations: List[RuleViolation] = []
+        recommended_fields = self.config.get("recommended-fields", self.DEFAULT_RECOMMENDED_FIELDS)
+        check_paths_exist = self.config.get("check-paths-exist", True)
+
+        for node in context.lint_tree.find(CodexPluginConfigNode):
+            manifest = node.path
+            data, error = read_json(manifest)
+            if error:
+                violations.append(self.violation(f"Invalid JSON: {error}", file_path=manifest))
+                continue
+            if not isinstance(data, dict):
+                violations.append(
+                    self.violation("Expected JSON object in plugin.json", file_path=manifest)
+                )
+                continue
+
+            violations.extend(self._check_name(data, manifest))
+
+            for field in recommended_fields:
+                if field not in data:
+                    violations.append(
+                        self.violation(
+                            f"Missing recommended field '{field}'",
+                            file_path=manifest,
+                            severity=Severity.WARNING,
+                        )
+                    )
+
+            author = data.get("author")
+            if author is not None and not isinstance(author, (str, dict)):
+                violations.append(
+                    self.violation(
+                        "'author' must be a string or an object with 'name', " "'email' and 'url'",
+                        file_path=manifest,
+                    )
+                )
+
+            violations.extend(self._check_paths(data, manifest, node.plugin_dir, check_paths_exist))
+
+        return violations
+
+    def _check_name(self, data: dict, manifest: Path) -> List[RuleViolation]:
+        if "name" not in data:
+            return [self.violation("Missing required field 'name'", file_path=manifest)]
+        name = data["name"]
+        if not isinstance(name, str):
+            return [
+                self.violation(f"Plugin name must be a string, got {name!r}", file_path=manifest)
+            ]
+        if not KEBAB_CASE.match(name):
+            return [
+                self.violation(
+                    f"Plugin name '{name}' should use kebab-case — plugin hosts "
+                    "use it as the plugin identifier and component namespace",
+                    file_path=manifest,
+                    severity=Severity.WARNING,
+                )
+            ]
+        return []
+
+    def _check_paths(
+        self, data: dict, manifest: Path, plugin_dir: Path, check_exists: bool
+    ) -> List[RuleViolation]:
+        """Validate every manifest field that names a bundled path."""
+        violations: List[RuleViolation] = []
+
+        for field, value in self._iter_path_values(data):
+            if not isinstance(value, str):
+                # A warning, not an error: real plugins ship inline
+                # ``mcpServers`` maps and ``skills`` arrays. Neither shape is
+                # documented, but Codex mirrors Claude Code's plugin loader,
+                # so claiming they are invalid would overreach.
+                violations.append(
+                    self.violation(
+                        f"'{field}' is documented as a path string relative to "
+                        f"the plugin root, got {type(value).__name__}",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
+                    )
+                )
+                continue
+            if not value:
+                # "" resolves to the plugin root, so the existence check
+                # below would pass and the field would look fine.
+                violations.append(self.violation(f"'{field}' is an empty path", file_path=manifest))
+                continue
+            problem = path_problem(value, "plugin root")
+            if problem:
+                violations.append(self.violation(f"'{field}': {problem}", file_path=manifest))
+                continue
+            if not value.startswith("./"):
+                violations.append(
+                    self.violation(
+                        f"'{field}': path '{value}' should start with './'",
+                        file_path=manifest,
+                        severity=Severity.INFO,
+                    )
+                )
+            if check_exists and not (plugin_dir / value).exists():
+                violations.append(
+                    self.violation(
+                        f"'{field}': '{value}' does not exist in the plugin",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
+                    )
+                )
+
+        return violations
+
+    def _iter_path_values(self, data: dict) -> List[Tuple[str, Any]]:
+        """(field label, raw value) for every path-valued manifest field.
+
+        Arrays are flattened to one entry per element, so an array-valued
+        ``skills`` or a ``hooks`` list of paths is checked element by
+        element. Inline ``hooks`` objects are skipped: the field accepts "a
+        single path, an array of paths, an inline hooks object, or an array
+        of inline hooks objects", and only the path forms name a file.
+        """
+        found: List[Tuple[str, Any]] = []
+
+        def _flatten(label: str, value: Any, *, drop_objects: bool) -> None:
+            if isinstance(value, list):
+                for idx, item in enumerate(value):
+                    _flatten(f"{label}[{idx}]", item, drop_objects=drop_objects)
+                return
+            if drop_objects and isinstance(value, dict):
+                return
+            found.append((label, value))
+
+        for field in _PATH_FIELDS:
+            if field in data:
+                _flatten(field, data[field], drop_objects=False)
+
+        if "hooks" in data:
+            _flatten("hooks", data["hooks"], drop_objects=True)
+
+        interface = data.get("interface")
+        if isinstance(interface, dict):
+            for field in _INTERFACE_PATH_FIELDS + _INTERFACE_PATH_LIST_FIELDS:
+                if field in interface:
+                    _flatten(f"interface.{field}", interface[field], drop_objects=False)
+
+        return found

@@ -40,6 +40,8 @@ from .lint_target import (
     LintTarget,
     ApmConfigNode,
     ApmNode,
+    CodexMarketplaceConfigNode,
+    CodexPluginConfigNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -128,6 +130,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     if marketplace_json.exists() and not _is_excluded(marketplace_json):
         root.children.append(MarketplaceConfigNode(path=marketplace_json))
 
+    # --- Codex marketplace configs ---
+    # Not filtered by _is_in_compiled_dir even though ".agents" is an APM
+    # compiled root: APM generates .agents/skills/ and friends, never
+    # .agents/plugins/marketplace.json, which is hand-authored.
+    for codex_marketplace_json in context.codex_marketplace_paths():
+        if not _is_excluded(codex_marketplace_json):
+            root.children.append(CodexMarketplaceConfigNode(path=codex_marketplace_json))
+
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
@@ -169,6 +179,24 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             marketplace_node.children.append(plugin_node)
         else:
             root.children.append(plugin_node)
+
+    # --- Codex plugin manifests ---
+    # Addressed as manifest files, not directories, so a plugin that ships
+    # both .claude-plugin/ and .codex-plugin/ keeps one PluginNode subtree
+    # and the Codex manifest simply hangs off it.
+    for codex_plugin_path in context.codex_plugins:
+        manifest = codex_plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
+        if not manifest.is_file() or _is_excluded(manifest):
+            continue
+        node = CodexPluginConfigNode(path=manifest)
+        # Codex "checks that default file automatically", so a plugin can ship
+        # executable hooks without declaring them. They are the same
+        # supply-chain surface as a Claude plugin's hooks, so route them to
+        # the same rules. ``seen`` dedupes the dual-ecosystem case, where the
+        # PluginNode loop above already attached this file.
+        _add_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
+        parent = plugin_nodes.get(codex_plugin_path.resolve())
+        (parent or root).children.append(node)
 
     # --- Skills (nest inside parent plugin when applicable; skip .apm/) ---
     for skill_path in context.skills:

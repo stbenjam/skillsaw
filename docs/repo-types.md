@@ -78,6 +78,48 @@ marketplace/
 
 Plugins from `plugins/`, custom paths, and remote sources can coexist in one marketplace. Only local sources are validated.
 
+## OpenAI Codex Plugin
+
+Directories with a `.codex-plugin/plugin.json` manifest, per the [Codex plugin specification](https://developers.openai.com/plugins/build/plugins):
+
+```
+my-plugin/
+├── .codex-plugin/
+│   └── plugin.json       # Required — only this file belongs here
+├── skills/
+│   └── my-skill/
+│       └── SKILL.md
+├── hooks/
+│   └── hooks.json        # Optional
+├── .mcp.json             # Optional: bundled MCP servers
+├── .app.json             # Optional: registered MCP mappings
+└── assets/               # Optional: icons, screenshots
+```
+
+skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every local source the Codex marketplace declares.
+
+## OpenAI Codex Marketplace
+
+Repositories with a Codex catalog at `.agents/plugins/marketplace.json`:
+
+```
+marketplace/
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json
+└── plugins/
+    ├── plugin-one/
+    │   └── .codex-plugin/plugin.json
+    └── plugin-two/
+        └── .codex-plugin/plugin.json
+```
+
+Sibling `*.json` files in `.agents/plugins/` are read as catalogs too when they carry a `plugins` array — `openai/plugins` splits its catalog across `marketplace.json` and `api_marketplace.json`.
+
+Codex also reads `.claude-plugin/marketplace.json` for backward compatibility, but skillsaw leaves that path to the Claude `marketplace-*` rules: the two schemas disagree (Claude requires `owner`; Codex adds `policy`, `category`, and `interface`), so linting one file against both would report contradictory violations.
+
+Both Codex types are independent of the Claude types — a repository commonly ships both manifests, and skillsaw detects both.
+
 ## `.claude/` Directory
 
 Repositories with a `.claude/` directory containing commands, skills, hooks, agents, or rules. When APM is present, `.claude/` is treated as compiled output and this type is not detected.

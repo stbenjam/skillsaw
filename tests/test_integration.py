@@ -1524,6 +1524,7 @@ BROKEN_FIXTURES = [
     "content/repeated-directive",
     "content/emphasis-density",
     "security/malicious-skill",
+    "codex/broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -1540,6 +1541,7 @@ CLEAN_FIXTURES = [
     "apm/hooks-clean",
     "supply-chain-hooks/clean",
     "root-mcp/clean",
+    "codex/clean",
 ]
 
 OPT_IN_RULES = {

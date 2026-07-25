@@ -222,6 +222,40 @@ class SkillNode(LintTarget):
 
 
 @dataclass(eq=False)
+class CodexMarketplaceConfigNode(LintTarget):
+    """The .agents/plugins/marketplace.json manifest file (OpenAI Codex).
+
+    Codex reads its marketplace catalog from ``.agents/plugins/marketplace.json``.
+    It also accepts ``.claude-plugin/marketplace.json`` for Claude
+    compatibility, but that path stays owned by ``MarketplaceConfigNode`` —
+    the two schemas differ (Codex has no ``owner``, and adds ``policy``,
+    ``category`` and ``interface``), so linting one file against both would
+    contradict itself.
+    """
+
+    def tree_label(self) -> str:
+        return "marketplace.json [codex]"
+
+
+@dataclass(eq=False)
+class CodexPluginConfigNode(LintTarget):
+    """A .codex-plugin/plugin.json manifest file (OpenAI Codex).
+
+    The node addresses the manifest rather than the plugin directory so a
+    directory that is both a Claude and a Codex plugin keeps a single
+    ``PluginNode`` subtree; ``plugin_dir`` recovers the owning directory.
+    """
+
+    @property
+    def plugin_dir(self) -> Path:
+        """The plugin directory that owns this manifest."""
+        return self.path.parent.parent
+
+    def tree_label(self) -> str:
+        return "plugin.json [codex]"
+
+
+@dataclass(eq=False)
 class ApmConfigNode(LintTarget):
     """The apm.yml manifest file."""
 

@@ -3,13 +3,14 @@
 
 # Rules Reference
 
-skillsaw includes **63** built-in rules 
+skillsaw includes **67** built-in rules 
 organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
+- [OpenAI Codex](codex.md) (4 rules)
 - [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
 - [Hidden-Content Validation](hidden-content.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
@@ -45,6 +46,10 @@ organized into the following categories:
 | [`command-name-format`](command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Command Format |
 | [`marketplace-json-valid`](marketplace-json-valid.md) | Marketplace.json must be valid JSON with required fields | error (auto) | - | Marketplace |
 | [`marketplace-registration`](marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
+| [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | .codex-plugin/plugin.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
+| [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |
+| [`codex-marketplace-json-valid`](codex-marketplace-json-valid.md) | .agents/plugins/marketplace.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
+| [`codex-marketplace-registration`](codex-marketplace-registration.md) | Codex plugins must be registered in .agents/plugins/marketplace.json | error (auto) | auto | OpenAI Codex |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto | Skills, Agents, Hooks |
 | [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Skills, Agents, Hooks |
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |

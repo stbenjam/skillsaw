@@ -17,6 +17,7 @@ import os
 # pulls in nothing from skillsaw (importing rules.builtin here would trigger
 # that package's __init__ while ``context`` is still mid-import → cycle).
 from .formats.promptfoo import is_promptfoo_config
+from .utils import read_json
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
@@ -80,6 +81,8 @@ class RepositoryType(Enum):
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
     APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
+    CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
+    CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -101,6 +104,34 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_CODERABBIT,
     }
 )
+
+
+def _read_json_or_none(path: Path) -> Any:
+    """Parsed JSON at *path*, or ``None`` when absent or unparseable.
+
+    Goes through the shared cached reader so a UTF-8 BOM is stripped and
+    repeated reads of the same manifest cost nothing — discovery, the
+    validity rule, and the registration rule all read these files.
+    """
+    data, error = read_json(path)
+    return None if error else data
+
+
+def codex_local_source_path(source: Any) -> Optional[str]:
+    """Relative path of a Codex marketplace entry's *local* source.
+
+    Codex accepts either an object (``{"source": "local", "path": "./x"}``)
+    or, for local entries only, a bare path string. Returns ``None`` for
+    remote sources (``url``, ``git-subdir``, ``npm``) and malformed entries,
+    which have no local directory to resolve.
+    """
+    if isinstance(source, str):
+        return source or None
+    if isinstance(source, dict) and source.get("source") == "local":
+        path = source.get("path")
+        if isinstance(path, str) and path:
+            return path
+    return None
 
 
 class RepositoryContext:
@@ -151,6 +182,10 @@ class RepositoryContext:
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
+        # Codex discovery runs before type detection because the Codex repo
+        # types are derived from what it finds, not from a path probe.
+        self.codex_marketplace_data = self._load_codex_marketplace()
+        self.codex_plugins: List[Path] = self._discover_codex_plugins()
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
         )
@@ -259,6 +294,7 @@ class RepositoryContext:
         """
         if self.exclude_patterns:
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
+            self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
@@ -382,6 +418,15 @@ class RepositoryContext:
         if self._is_promptfoo_repo():
             types.add(RepositoryType.PROMPTFOO)
 
+        # Codex — independent of the Claude types above. A repo commonly
+        # ships both manifests side by side (skillsaw itself does), so these
+        # must not be part of the mutually exclusive marketplace/plugin
+        # chain.
+        if self.has_codex_marketplace():
+            types.add(RepositoryType.CODEX_MARKETPLACE)
+        if self.codex_plugins:
+            types.add(RepositoryType.CODEX_PLUGIN)
+
         if not types:
             types.add(RepositoryType.UNKNOWN)
 
@@ -469,6 +514,153 @@ class RepositoryContext:
     def has_marketplace(self) -> bool:
         """Check if repository has a marketplace"""
         return (self.root_path / ".claude-plugin" / "marketplace.json").exists()
+
+    # Codex reads a repo marketplace from ``.agents/plugins/marketplace.json``
+    # and a plugin manifest from ``<plugin>/.codex-plugin/plugin.json``.
+    # It also accepts ``.claude-plugin/marketplace.json`` for backward
+    # compatibility, but skillsaw leaves that path to the Claude rules —
+    # the schemas differ (Codex drops ``owner`` and adds ``policy``,
+    # ``category`` and ``interface``), so validating one file against both
+    # would report contradictory violations.
+    CODEX_MARKETPLACE_DIR = (".agents", "plugins")
+    CODEX_MARKETPLACE_FILENAME = "marketplace.json"
+    CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
+
+    def codex_marketplace_path(self) -> Path:
+        """Path the Codex repo marketplace manifest would live at."""
+        return self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR, self.CODEX_MARKETPLACE_FILENAME)
+
+    def has_codex_marketplace(self) -> bool:
+        """Check if repository has a Codex marketplace manifest.
+
+        Existence, not parseability — a marketplace with broken JSON must
+        still activate the Codex rules so they can report it.
+        """
+        return bool(self._discover_codex_marketplaces())
+
+    def _discover_codex_marketplaces(self) -> List[Path]:
+        """Codex marketplace manifests in ``.agents/plugins/``.
+
+        ``marketplace.json`` is the documented path and is always taken on
+        existence alone, so broken JSON still reaches the rules. Sibling
+        ``*.json`` files are admitted only when they duck-type as a
+        marketplace (an object carrying ``plugins``) — openai/plugins ships
+        a second catalog as ``api_marketplace.json``, but the directory is
+        not reserved, so unrelated JSON must not be linted as a catalog.
+        """
+        cached = self.__dict__.get("_codex_marketplace_paths")
+        if cached is not None:
+            return cached
+
+        found: List[Path] = []
+        primary = self.codex_marketplace_path()
+        if primary.is_file():
+            found.append(primary)
+
+        marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
+        if marketplace_dir.is_dir():
+            try:
+                siblings = sorted(marketplace_dir.glob("*.json"))
+            except OSError:
+                siblings = []
+            for candidate in siblings:
+                if candidate == primary:
+                    continue
+                data = _read_json_or_none(candidate)
+                if isinstance(data, dict) and isinstance(data.get("plugins"), list):
+                    found.append(candidate)
+
+        self.__dict__["_codex_marketplace_paths"] = found
+        return found
+
+    def codex_marketplace_paths(self) -> List[Path]:
+        """Every discovered Codex marketplace manifest."""
+        return list(self._discover_codex_marketplaces())
+
+    def _load_codex_marketplace(self) -> Optional[Dict[str, Any]]:
+        """Parsed ``.agents/plugins/marketplace.json``, or None if absent/unreadable."""
+        return _read_json_or_none(self.codex_marketplace_path())
+
+    def _discover_codex_plugins(self) -> List[Path]:
+        """Discover directories holding a ``.codex-plugin/plugin.json`` manifest.
+
+        Probes the documented layouts rather than walking the repository:
+        the repo root (single-plugin repos), ``plugins/*`` (the layout the
+        Codex docs prescribe for repo marketplaces), ``.codex/plugins/*``
+        (the documented personal-install pattern), and every local source
+        declared by the Codex marketplace. Explicit probes keep discovery
+        O(entries) instead of adding a second whole-repo walk.
+        """
+        found: List[Path] = []
+        seen: Set[Path] = set()
+
+        def _add(directory: Path) -> None:
+            if not directory.joinpath(*self.CODEX_PLUGIN_MANIFEST).is_file():
+                return
+            resolved = directory.resolve()
+            if resolved in seen:
+                return
+            seen.add(resolved)
+            found.append(directory)
+
+        _add(self.root_path)
+
+        for parent in (self.root_path / "plugins", self.root_path / ".codex" / "plugins"):
+            if not parent.is_dir():
+                continue
+            try:
+                entries = sorted(parent.iterdir())
+            except OSError:
+                continue
+            for item in entries:
+                if item.is_dir() and not item.name.startswith("."):
+                    _add(item)
+
+        for source in self._codex_local_sources():
+            _add(source)
+
+        return found
+
+    def _codex_local_sources(self) -> List[Path]:
+        """Local plugin directories declared by the Codex marketplace.
+
+        Codex resolves ``source.path`` against the *marketplace root* — the
+        repository root — not against ``.agents/plugins/``. Sources that
+        escape the root are dropped here; ``codex-marketplace-json-valid``
+        reports them.
+        """
+        resolved: List[Path] = []
+        for marketplace_file in self._discover_codex_marketplaces():
+            data = _read_json_or_none(marketplace_file)
+            if not isinstance(data, dict):
+                continue
+            entries = data.get("plugins")
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                path = codex_local_source_path(entry.get("source"))
+                if path is None:
+                    continue
+                candidate = (self.root_path / path).resolve()
+                if candidate == self.root_path or candidate.is_relative_to(self.root_path):
+                    resolved.append(candidate)
+        return resolved
+
+    def codex_plugin_name(self, plugin_dir: Path) -> str:
+        """Name a Codex plugin declares, falling back to its directory name."""
+        manifest = plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST)
+        try:
+            with open(manifest, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            data = None
+        if isinstance(data, dict):
+            name = data.get("name")
+            if isinstance(name, str) and name:
+                return name
+        return plugin_dir.name
 
     def _load_marketplace(self) -> Optional[Dict[str, Any]]:
         """Load marketplace.json if it exists"""

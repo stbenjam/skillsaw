@@ -35,6 +35,7 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 |---|---|---|
 | Agent Skills (agentskills.io) | [references/agentskills.md](references/agentskills.md) | `agentskills/` |
 | Claude Code (plugins, marketplace, .claude, hooks, mcp, skills, agents) | [references/claude.md](references/claude.md) | `plugins/`, `commands/`, `marketplace/`, `hooks/`, `mcp/`, `skills/`, `agents/` |
+| OpenAI Codex (plugins, marketplaces) | [references/codex.md](references/codex.md) | `codex/` |
 | OpenClaw | [references/openclaw.md](references/openclaw.md) | `openclaw/` |
 | Model Context Protocol | [references/mcp.md](references/mcp.md) | `mcp/` |
 | CodeRabbit (`.coderabbit.yaml`) | [references/coderabbit.md](references/coderabbit.md) | `coderabbit/` |
@@ -42,8 +43,14 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 
 Pay special attention to the **Sync notes** in each reference: rules that hand-copy
 upstream value sets (OpenClaw's install kinds/os/archive, MCP transport types, APM
-required fields) are the highest drift risk. OpenClaw is the top risk — it publishes no
-JSON Schema, so skillsaw's rule is the de-facto validator.
+required fields, Codex's policy enums) are the highest drift risk. OpenClaw is the top
+risk — it publishes no JSON Schema, so skillsaw's rule is the de-facto validator. Codex
+is second: it also publishes no schema, and its `policy.authentication` values are not
+documented at all.
+
+Each reference's **Deliberate non-checks** and **Regression check** sections are
+binding. A "missing" check listed there was left out on purpose; add it only when the
+upstream spec changes.
 
 ## Step 2: Identify gaps
 

@@ -1,0 +1,5 @@
+{
+  "name": "stray-manifest-dir",
+  "version": "1.0.0",
+  "description": "Keeps its hook config in the wrong directory."
+}

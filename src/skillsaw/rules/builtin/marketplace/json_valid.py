@@ -70,6 +70,15 @@ class MarketplaceJsonValidRule(Rule):
 
         config_nodes = context.lint_tree.find(MarketplaceConfigNode)
         if not config_nodes:
+            if RepositoryType.CODEX_MARKETPLACE in context.repo_types:
+                # MARKETPLACE was inferred from a bare plugins/ directory, and
+                # a Codex marketplace already explains that directory — the
+                # Codex docs prescribe storing plugins under
+                # $REPO_ROOT/plugins/. Demanding a Claude manifest here fired
+                # on 13 of 35 real Codex marketplaces surveyed, openai/plugins
+                # among them. codex-marketplace-json-valid validates the
+                # catalog those repositories do ship.
+                return violations
             violations.append(
                 self.violation(
                     "Marketplace file not found",

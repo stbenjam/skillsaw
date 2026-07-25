@@ -1,0 +1,50 @@
+## Why
+
+`.codex-plugin/plugin.json` is the required entry point for an OpenAI
+Codex plugin. Codex reads the plugin's name from it and resolves every
+bundled component through it, so a manifest that names a path outside the
+plugin root — or a path that does not ship — installs a plugin whose
+skills, hooks or assets silently never load.
+
+## Examples
+
+**Bad:**
+
+```json
+{
+  "name": "note_taker",
+  "skills": "../shared-skills/",
+  "interface": {"logo": "assets/logo.png"}
+}
+```
+
+**Good:**
+
+```json
+{
+  "name": "note-taker",
+  "version": "1.2.0",
+  "description": "Capture meeting notes and turn them into follow-ups.",
+  "skills": "./skills/",
+  "interface": {"logo": "./assets/logo.png"}
+}
+```
+
+## How to fix
+
+Add the missing field, or correct the path the violation names.
+
+`name` is required and should be kebab-case — plugin hosts use it as the
+plugin identifier and component namespace. `version` and `description`
+are reported as recommended; adjust `recommended-fields` to change that
+set.
+
+Manifest paths (`skills`, `mcpServers`, `apps`, `hooks`, and the
+`interface` asset fields) must resolve inside the plugin root and should
+start with `./`. An absolute path or one containing `..` is an error; a
+missing `./` prefix is informational. Paths that point at something not
+in the repository are reported as warnings — set `check-paths-exist:
+false` to skip that check when assets are generated at build time.
+
+`version` is deliberately not checked against semver: the Codex
+specification never constrains its format.

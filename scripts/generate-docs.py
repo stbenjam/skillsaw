@@ -49,6 +49,22 @@ RULE_GROUPS = [
         None,
     ),
     (
+        "OpenAI Codex",
+        [
+            "codex-plugin-json-valid",
+            "codex-plugin-structure",
+            "codex-marketplace-json-valid",
+            "codex-marketplace-registration",
+        ],
+        "Validates OpenAI Codex plugins (`.codex-plugin/plugin.json`) and "
+        "marketplaces (`.agents/plugins/marketplace.json`) against the "
+        "[Codex plugin specification]"
+        "(https://developers.openai.com/plugins/build/plugins). Codex uses a "
+        "different manifest layout and schema from Claude Code, so these "
+        "rules are separate from the `plugin-*` and `marketplace-*` rules "
+        "and auto-enable only when Codex manifests are present.",
+    ),
+    (
         "Skills, Agents, Hooks",
         [
             "skill-frontmatter",

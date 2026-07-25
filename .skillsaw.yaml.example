@@ -81,6 +81,37 @@ rules:
     enabled: auto
     severity: error
 
+  # .agents/plugins/marketplace.json must be valid JSON with required fields
+  codex-marketplace-json-valid:
+    enabled: auto
+    severity: error
+    # installation-values:
+    #   - AVAILABLE
+    #   - INSTALLED_BY_DEFAULT
+    #   - NOT_AVAILABLE
+    # authentication-values:
+    #   - ON_INSTALL
+    #   - ON_USE
+
+  # Codex plugins must be registered in .agents/plugins/marketplace.json
+  codex-marketplace-registration:
+    enabled: auto
+    severity: error
+
+  # .codex-plugin/plugin.json must be valid JSON with required fields
+  codex-plugin-json-valid:
+    enabled: auto
+    severity: error
+    # recommended-fields:
+    #   - version
+    #   - description
+    # check-paths-exist: true
+
+  # Only plugin.json belongs in .codex-plugin/
+  codex-plugin-structure:
+    enabled: auto
+    severity: warning
+
   # Command files must have valid frontmatter with description
   command-frontmatter:
     enabled: true

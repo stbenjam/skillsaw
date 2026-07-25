@@ -36,6 +36,21 @@ class PluginJsonRequiredRule(Rule):
             if not plugin_json.exists():
                 # Check if plugin has strict: false in marketplace metadata
                 resolved_path = plugin_path.resolve()
+
+                if (
+                    resolved_path not in getattr(context, "marketplace_entries", {})
+                    and plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file()
+                ):
+                    # A Codex plugin, swept up here only because it also ships
+                    # a commands/ or skills/ directory. It has no reason to
+                    # carry a Claude manifest, and codex-plugin-json-valid
+                    # validates the one it does carry. A plugin the Claude
+                    # marketplace lists is exempt from the exemption — the
+                    # author declared it a Claude plugin, so it needs the
+                    # Claude manifest (and `strict: false` below is the
+                    # designed opt-out).
+                    continue
+
                 if resolved_path in getattr(context, "plugin_metadata", {}):
                     marketplace_entry = context.plugin_metadata[resolved_path]
                     if marketplace_entry.get("strict", True) is False:
