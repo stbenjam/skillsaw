@@ -195,6 +195,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # the same rules. ``seen`` dedupes the dual-ecosystem case, where the
         # PluginNode loop above already attached this file.
         _add_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
+        # A manifest may point ``hooks`` at other files instead; those carry
+        # the same executable commands, so they get the same checks.
+        for declared_hooks in context.codex_declared_hook_files(codex_plugin_path):
+            _add_block(node, declared_hooks, HooksBlock)
         parent = plugin_nodes.get(codex_plugin_path.resolve())
         (parent or root).children.append(node)
 

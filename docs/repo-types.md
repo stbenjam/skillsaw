@@ -98,7 +98,9 @@ my-plugin/
 
 skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every local source the Codex marketplace declares.
 
-`.codex/plugins/*` is where Codex installs plugins into a checkout, so what it finds there is linted (an installed plugin's hooks are the same supply-chain surface as an authored one's) but never reported by `codex-marketplace-registration` — the repository did not author those plugins, so its published catalog has no business listing them.
+`.codex/plugins/*` is where Codex installs plugins into a checkout, so what it finds there is linted — its skills and hooks are the same supply-chain surface as an authored plugin's — but never reported by `codex-marketplace-registration`, because the repository did not author those plugins and its published catalog has no business listing them.
+
+Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, and at every path the manifest's `hooks` field declares. Inline hooks objects and paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports the latter.
 
 ## OpenAI Codex Marketplace
 

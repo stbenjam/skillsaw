@@ -218,7 +218,10 @@ class CodexMarketplaceJsonValidRule(Rule):
             ]
 
         source_type = source.get("source")
-        if not isinstance(source_type, str):
+        # An empty discriminator is missing, not unknown: Codex cannot
+        # resolve the entry either way, so it must not fall through to the
+        # forward-compatibility warning and pass a default ``fail-on: error``.
+        if not isinstance(source_type, str) or not source_type:
             return [
                 self.violation(
                     f"plugins[{idx}].source object missing required 'source' type field",

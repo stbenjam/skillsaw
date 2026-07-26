@@ -5,5 +5,7 @@
   "author": {
     "name": "Someone Else"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./custom-hooks.json"
 }

@@ -661,6 +661,30 @@ class RepositoryContext:
         resolved = plugin_dir.resolve()
         return resolved != install_root and resolved.is_relative_to(install_root)
 
+    def codex_declared_hook_files(self, plugin_dir: Path) -> List[Path]:
+        """Hook files a Codex plugin manifest declares through ``hooks``.
+
+        The field accepts "a single path, an array of paths, an inline
+        hooks object, or an array of inline hooks objects" — only the path
+        forms name a file, so objects are dropped. Paths that escape the
+        plugin root are dropped too: ``codex-plugin-json-valid`` reports
+        them, and the lint tree must not follow them out of the plugin.
+        """
+        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
+        if not isinstance(data, dict):
+            return []
+        declared = data.get("hooks")
+        candidates = declared if isinstance(declared, list) else [declared]
+        root = plugin_dir.resolve()
+        found: List[Path] = []
+        for item in candidates:
+            if not isinstance(item, str) or not item:
+                continue
+            candidate = (plugin_dir / item).resolve()
+            if candidate != root and candidate.is_relative_to(root) and candidate.is_file():
+                found.append(candidate)
+        return found
+
     def codex_plugin_name(self, plugin_dir: Path) -> str:
         """Name a Codex plugin declares, falling back to its directory name."""
         data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
@@ -1041,8 +1065,11 @@ class RepositoryContext:
                     continue
                 self._discover_skills_in_dir(skills_path, skills, discovered)
 
-        # For plugin repos, also discover embedded skills
-        for plugin_path in self.plugins:
+        # For plugin repos, also discover embedded skills. Codex plugins are
+        # included: an installed plugin under .codex/plugins/ lives in a
+        # hidden directory the repository-wide scan never walks, so its
+        # skills would otherwise never enter the lint tree.
+        for plugin_path in (*self.plugins, *self.codex_plugins):
             skills_dir = plugin_path / "skills"
             if skills_dir.is_dir():
                 self._discover_skills_in_dir(skills_dir, skills, discovered)
