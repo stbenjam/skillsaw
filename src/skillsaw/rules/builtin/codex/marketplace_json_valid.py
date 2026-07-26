@@ -3,7 +3,7 @@ Rule: codex-marketplace-json-valid
 """
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -71,6 +71,12 @@ class CodexMarketplaceJsonValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        # Shared across every catalog, not rebuilt per file: openai/plugins
+        # splits its listing across siblings, Codex aggregates them into one
+        # namespace, and ``skillsaw docs`` writes one page per name — so two
+        # catalogs claiming the same name silently lose a page. Maps the
+        # name to the (file, index) that claimed it first.
+        seen_names: Dict[str, Tuple[Path, int]] = {}
 
         for node in context.lint_tree.find(CodexMarketplaceConfigNode):
             marketplace_file = node.path
@@ -104,11 +110,19 @@ class CodexMarketplaceJsonValidRule(Rule):
                     self.violation("'interface' must be an object", file_path=marketplace_file)
                 )
 
-            violations.extend(self._check_plugins(data, marketplace_file, context.root_path))
+            violations.extend(
+                self._check_plugins(data, marketplace_file, context.root_path, seen_names)
+            )
 
         return violations
 
-    def _check_plugins(self, data: dict, marketplace_file: Path, root: Path) -> List[RuleViolation]:
+    def _check_plugins(
+        self,
+        data: dict,
+        marketplace_file: Path,
+        root: Path,
+        seen_names: Dict[str, Tuple[Path, int]],
+    ) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
         if "plugins" not in data:
@@ -117,7 +131,6 @@ class CodexMarketplaceJsonValidRule(Rule):
         if not isinstance(entries, list):
             return [self.violation("'plugins' must be an array", file_path=marketplace_file)]
 
-        seen_names: dict = {}
         for idx, entry in enumerate(entries):
             if not isinstance(entry, dict):
                 violations.append(
@@ -180,7 +193,11 @@ class CodexMarketplaceJsonValidRule(Rule):
         return []
 
     def _check_entry_name(
-        self, entry: dict, idx: int, marketplace_file: Path, seen_names: dict
+        self,
+        entry: dict,
+        idx: int,
+        marketplace_file: Path,
+        seen_names: Dict[str, Tuple[Path, int]],
     ) -> List[RuleViolation]:
         if "name" not in entry:
             return [
@@ -211,15 +228,22 @@ class CodexMarketplaceJsonValidRule(Rule):
         # the duplicate would hide the second until the first was fixed.
         violations: List[RuleViolation] = []
         if name in seen_names:
+            first_file, first_idx = seen_names[name]
+            # Name the file only when it is a different one, so the common
+            # single-catalog message reads exactly as it did before.
+            where = (
+                f"plugins[{first_idx}]"
+                if first_file == marketplace_file
+                else f"{first_file.name} plugins[{first_idx}]"
+            )
             violations.append(
                 self.violation(
-                    f"plugins[{idx}] duplicate plugin name '{name}' "
-                    f"(first defined at plugins[{seen_names[name]}])",
+                    f"plugins[{idx}] duplicate plugin name '{name}' " f"(first defined at {where})",
                     file_path=marketplace_file,
                 )
             )
         else:
-            seen_names[name] = idx
+            seen_names[name] = (marketplace_file, idx)
         if not KEBAB_CASE.match(name):
             violations.append(
                 self.violation(

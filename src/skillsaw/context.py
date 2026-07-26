@@ -551,7 +551,10 @@ class RepositoryContext:
 
         found: List[Path] = []
         primary = self.codex_marketplace_path()
-        if primary.is_file():
+        # Existence, not is_file(): the reserved entrypoint replaced by a
+        # directory is unusable, and dropping it here would declassify the
+        # repository instead of reporting it.
+        if primary.exists():
             found.append(primary)
 
         marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
@@ -700,7 +703,12 @@ class RepositoryContext:
             if not isinstance(item, str) or not item:
                 continue
             candidate = safe_resolve(plugin_dir / item)
-            if candidate is None or candidate == root or not candidate.is_relative_to(root):
+            if candidate is None or not candidate.is_relative_to(root):
+                continue
+            # ``"skills": "./"`` points at the plugin root, which is a legal
+            # place to keep a skill. A file-valued field naming the root is
+            # meaningless, so only directory-valued fields accept it.
+            if candidate == root and not want_dir:
                 continue
             if candidate.is_dir() if want_dir else candidate.is_file():
                 found.append(candidate)
@@ -1167,6 +1175,9 @@ class RepositoryContext:
                 self._discover_skills_in_dir(skills_dir, skills, discovered)
 
         for plugin_path in self.codex_plugins:
+            plugin_root = safe_resolve(plugin_path)
+            if plugin_root is None:
+                continue
             # ``skills/`` is only the default. A manifest may point the field
             # somewhere else entirely, and for a hidden install that path is
             # the sole route into the tree.
@@ -1179,31 +1190,46 @@ class RepositoryContext:
                 if (skills_dir / "SKILL.md").exists():
                     # A manifest may name one skill directly rather than a
                     # collection; descending would step straight past it.
-                    resolved = skills_dir.resolve()
-                    if resolved not in discovered:
+                    resolved = safe_resolve(skills_dir)
+                    if resolved is not None and resolved not in discovered:
                         skills.append(skills_dir)
                         discovered.add(resolved)
                     continue
-                self._discover_skills_in_dir(skills_dir, skills, discovered)
+                self._discover_skills_in_dir(
+                    skills_dir, skills, discovered, contain_within=plugin_root
+                )
 
         return skills
 
     def _discover_skills_in_dir(
-        self, parent: Path, skills: List[Path], discovered: Set[Path]
+        self,
+        parent: Path,
+        skills: List[Path],
+        discovered: Set[Path],
+        contain_within: Optional[Path] = None,
     ) -> None:
-        """Discover skill directories within a parent directory, recursively"""
+        """Discover skill directories within a parent directory, recursively.
+
+        *contain_within* rejects children that resolve outside it. Passed
+        for Codex plugins, where ``skills/external`` can be a symlink out
+        of the repository and the SKILL.md behind it would otherwise be
+        read as if the plugin shipped it. Left ``None`` on the call sites
+        that predate Codex support, so their behaviour is unchanged.
+        """
         try:
             for item in parent.iterdir():
                 if self._should_skip_dir(item):
                     continue
-                resolved = item.resolve()
-                if resolved in discovered:
+                resolved = safe_resolve(item)
+                if resolved is None or resolved in discovered:
+                    continue
+                if contain_within is not None and not resolved.is_relative_to(contain_within):
                     continue
                 if (item / "SKILL.md").exists():
                     skills.append(item)
                     discovered.add(resolved)
                 else:
-                    self._discover_skills_in_dir(item, skills, discovered)
+                    self._discover_skills_in_dir(item, skills, discovered, contain_within)
         except OSError:
             pass
 

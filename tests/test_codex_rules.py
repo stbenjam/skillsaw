@@ -15,7 +15,8 @@ import pytest
 
 from skillsaw.config import LinterConfig
 from skillsaw.docs.extractor import extract_docs
-from skillsaw.docs.markdown_renderer import render_markdown
+from skillsaw.docs.models import PluginDoc
+from skillsaw.docs.markdown_renderer import _plugin_filename, render_markdown
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
 from skillsaw.blocks import CodexInlineHooksBlock, McpBlock
 from skillsaw.lint_target import (
@@ -25,6 +26,8 @@ from skillsaw.lint_target import (
 )
 from skillsaw.linter import Linter
 from skillsaw.rule import Severity
+from skillsaw.formats.codex import safe_resolve
+from skillsaw.rules.builtin.codex._helpers import escapes_root
 from skillsaw.rules.builtin.codex import (
     CodexMarketplaceJsonValidRule,
     CodexMarketplaceRegistrationRule,
@@ -2235,3 +2238,205 @@ class TestCodexMarketplaceDocs:
             "from-declared": "servers.json",
             "inline-one": "plugin.json",
         }
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups, round four
+# ---------------------------------------------------------------------------
+
+
+class TestResolveFailureModes:
+    """`Path.resolve()` raises differently across the supported range.
+
+    A symlink loop is ``RuntimeError`` before Python 3.13 and ``OSError``
+    from 3.13 on (non-strict mode stopped raising entirely). skillsaw
+    supports 3.9-3.14, so the raising branches cannot be reproduced on any
+    single interpreter — they are injected instead of simulated with real
+    symlinks, which would only exercise whichever branch this runtime has.
+    """
+
+    @pytest.mark.parametrize("exc", [RuntimeError, OSError, ValueError])
+    def test_safe_resolve_swallows_every_documented_failure(self, monkeypatch, exc):
+        def boom(self, *a, **kw):
+            raise exc("nope")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert safe_resolve(Path("/anything")) is None
+
+    @pytest.mark.parametrize("exc", [RuntimeError, OSError, ValueError])
+    def test_escapes_root_fails_closed(self, monkeypatch, tmp_path, exc):
+        """Containment cannot be proven, so the check must fail closed."""
+
+        def boom(self, *a, **kw):
+            raise exc("nope")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert escapes_root("./loop", tmp_path) is True
+
+    def test_a_real_symlink_loop_does_not_abort_discovery(self, tmp_path):
+        """Whichever branch this interpreter takes, the lint must survive."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {"name": "cat", "plugins": [{"name": "loopy", "source": "./plugins/loop"}]},
+        )
+        (repo / "plugins").mkdir()
+        a = repo / "plugins" / "loop"
+        b = repo / "plugins" / "loop2"
+        a.symlink_to(b, target_is_directory=True)
+        b.symlink_to(a, target_is_directory=True)
+
+        context = RepositoryContext(repo)  # must not raise
+        assert context.codex_plugins == []
+
+
+class TestMalformedMarketplaceEntrypoint:
+    def test_a_directory_in_place_of_the_catalog_is_reported(self, tmp_path):
+        repo = tmp_path / "dir-catalog"
+        (repo / ".agents" / "plugins" / "marketplace.json").mkdir(parents=True)
+
+        context = RepositoryContext(repo)
+        assert RepositoryType.CODEX_MARKETPLACE in context.repo_types
+
+        found = messages(CodexMarketplaceJsonValidRule({}).check(context))
+        assert found, "the unusable entrypoint was reported by nothing"
+
+
+class TestSkillsPathNamingTheRoot:
+    def test_the_plugin_root_is_a_legal_skills_directory(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "rooted", "version": "1.0.0", "description": "x", "skills": "./"},
+        )
+        (repo / "SKILL.md").write_text(
+            "---\nname: rooted\ndescription: A skill at the plugin root\n---\n\n# Rooted\n",
+            encoding="utf-8",
+        )
+
+        assert repo in RepositoryContext(repo).skills
+
+    def test_a_file_valued_field_still_rejects_the_root(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "rooted", "version": "1.0.0", "description": "x", "hooks": "./"}
+        )
+        assert RepositoryContext(repo).codex_declared_hook_files(repo) == []
+
+
+class TestRecursiveSkillContainment:
+    def test_a_symlinked_child_of_skills_is_not_followed(self, tmp_path):
+        """The direct probes were fixed; the recursive scan was not."""
+        outside = tmp_path / "outside" / "leaked"
+        outside.mkdir(parents=True)
+        (outside / "SKILL.md").write_text(
+            "---\nname: leaked\ndescription: Outside the plugin entirely\n---\n\n# Leaked\n",
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        (plugin / "skills").mkdir()
+        (plugin / "skills" / "external").symlink_to(outside, target_is_directory=True)
+
+        assert RepositoryContext(repo).skills == []
+
+    def test_a_real_child_is_still_discovered(self, tmp_path):
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "real"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: real\ndescription: Genuinely inside the plugin\n---\n\n# Real\n",
+            encoding="utf-8",
+        )
+
+        assert RepositoryContext(repo).skills == [skill]
+
+
+class TestCrossCatalogDuplicateNames:
+    def test_two_catalogs_claiming_one_name_is_reported(self, tmp_path):
+        """Codex aggregates the catalogs, and docs writes one page per name."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "primary",
+                "plugins": [
+                    {
+                        "name": "shared",
+                        "source": {"source": "local", "path": "./plugins/one"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        (repo / ".agents" / "plugins" / "api_marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "secondary",
+                    "plugins": [
+                        {
+                            "name": "shared",
+                            "source": {"source": "local", "path": "./plugins/two"},
+                            "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "shared", "version": "1.0.0"})
+        _write_plugin(repo / "plugins" / "two", {"name": "shared", "version": "1.0.0"})
+
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        duplicates = [m for m in found if "duplicate plugin name 'shared'" in m]
+        assert len(duplicates) == 1
+        assert "marketplace.json" in duplicates[0], "the other catalog was not named"
+
+    def test_the_single_catalog_message_is_unchanged(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "same",
+                        "source": {"source": "url", "url": "https://example.com/a.git"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ]
+                * 2,
+            },
+        )
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert "plugins[1] duplicate plugin name 'same' (first defined at plugins[0])" in found
+
+
+class TestDocsAuthorshipAndFilenames:
+    def test_installed_plugins_are_not_published_as_catalog_members(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        installed = repo / ".codex" / "plugins" / "vendor"
+        installed.mkdir(parents=True)
+        _write_plugin(installed, {"name": "vendor", "version": "1.0.0", "description": "Theirs."})
+
+        docs = extract_docs(RepositoryContext(repo))
+        assert [p.name for p in docs.plugins] == []
+
+    @pytest.mark.parametrize(
+        "name", ["..\\\\..\\\\evil", "C:\\\\temp\\\\x", "../../evil", "a/b", ".."]
+    )
+    def test_a_hostile_plugin_name_cannot_escape_the_output_directory(self, name):
+        """A kebab-case violation is only a warning, so `docs` cannot assume
+        `lint` rejected the name first."""
+        doc = PluginDoc(name=name, path=Path("/x"), description="", version="")
+        filename = _plugin_filename(doc)
+
+        assert "/" not in filename
+        assert "\\" not in filename
+        assert ":" not in filename
+        assert ".." not in filename
+        assert not Path(filename).is_absolute()
+        assert (Path("/out") / filename).parent == Path("/out")

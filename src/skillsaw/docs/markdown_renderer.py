@@ -258,9 +258,20 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
 # -- Utilities --
 
 
+# Anything that could steer a filename out of the output directory on any
+# platform: both separators, the drive-letter colon, and the parent link.
+# A kebab-case violation is only a warning, so `docs` must not rely on
+# `lint` having rejected the name first.
+_UNSAFE_FILENAME_CHARS = str.maketrans({c: "-" for c in '/\\:<>"|?*'})
+
+
 def _plugin_filename(plugin: PluginDoc) -> str:
     # ``plugin.name`` is manifest-derived and may be a non-string (e.g. a
     # numeric ``"name": 123`` in marketplace.json); coerce before calling
     # string methods so ``docs`` doesn't crash on inputs ``lint`` tolerates.
-    safe = name_str(plugin.name).replace("/", "-").replace(" ", "-")
+    # It is also untrusted: a plugin named ``..\..\evil`` or ``C:\temp``
+    # would otherwise resolve outside the requested output directory when
+    # the caller joins it, and on Windows ``\`` is a real separator.
+    safe = name_str(plugin.name).translate(_UNSAFE_FILENAME_CHARS).replace(" ", "-")
+    safe = safe.replace("..", "-").strip(".-") or "plugin"
     return f"{safe}.md"

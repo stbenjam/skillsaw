@@ -38,14 +38,16 @@ def safe_resolve(path: Path) -> Optional[Path]:
     Discovery runs while ``RepositoryContext`` is being constructed, before
     any rule can report anything, and it resolves strings taken straight
     out of a manifest. ``Path.resolve()`` raises ``ValueError`` on an
-    embedded NUL and ``OSError`` on a symlink loop or an unreadable
-    parent — either one would abort the whole lint instead of producing
+    embedded NUL, ``OSError`` on an unreadable parent, and — on a symlink
+    loop — ``RuntimeError`` before Python 3.13 but ``OSError`` from 3.13
+    on. This project supports 3.9 through 3.14, so all three have to be
+    caught; any of them would abort the whole lint instead of producing
     the violation the manifest deserves. Returning ``None`` drops the
     candidate from discovery and leaves the reporting to the rules.
     """
     try:
         return path.resolve()
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):
         return None
 
 

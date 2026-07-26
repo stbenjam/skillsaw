@@ -120,6 +120,12 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     for node in context.lint_tree.find(CodexPluginConfigNode):
         if not node.path.is_file() or node.plugin_dir.resolve() in claude_dirs:
             continue
+        if context.is_codex_installed_plugin(node.plugin_dir):
+            # A personal install under .codex/plugins/. Publishing it as a
+            # member of the repository's catalog would misattribute someone
+            # else's plugin — the same authorship line the registration and
+            # manifest-quality rules already draw.
+            continue
         docs.append(_extract_codex_plugin(context, node))
     return docs
 

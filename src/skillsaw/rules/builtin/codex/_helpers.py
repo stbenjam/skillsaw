@@ -63,9 +63,10 @@ def escapes_root(value: str, root: Path) -> bool:
     try:
         resolved_root = root.resolve()
         candidate = (root / value).resolve()
-    except (OSError, ValueError):
-        # OSError: a symlink loop or an unreadable parent. ValueError: an
-        # embedded NUL. Either way containment cannot be proven, and
+    except (OSError, ValueError, RuntimeError):
+        # OSError: an unreadable parent, or a symlink loop on 3.13+.
+        # RuntimeError: a symlink loop before 3.13. ValueError: an embedded
+        # NUL. Containment cannot be proven in any of these cases, and
         # failing closed is the safe direction for a containment check.
         return True
     return candidate != resolved_root and not candidate.is_relative_to(resolved_root)
