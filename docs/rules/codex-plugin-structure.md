@@ -10,7 +10,7 @@ Only plugin.json belongs in .codex-plugin/
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.18.0 |
-| **Repo Types** | codex-plugin |
+| **Repo Types** | codex-marketplace, codex-plugin |
 | **Category** | [OpenAI Codex](codex.md) |
 
 ## Why

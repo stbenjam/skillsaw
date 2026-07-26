@@ -207,8 +207,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # ...or write them inline, which is the same surface again. Appended
         # directly rather than through _add_block: the payload has no file of
         # its own, so the manifest path it borrows is already claimed.
-        inline_hooks = context.codex_inline_hooks(codex_plugin_path)
-        if inline_hooks is not None:
+        for inline_hooks in context.codex_inline_hooks(codex_plugin_path):
             node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
         # The Codex docs put .mcp.json at the plugin root alongside hooks/
         # and skills/. When the directory is Codex-only there is no
@@ -220,8 +219,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # they get the same treatment as the hooks above.
         for declared_mcp in context.codex_declared_mcp_files(codex_plugin_path):
             _add_block(node, declared_mcp, McpBlock)
-        inline_mcp = context.codex_inline_mcp_servers(codex_plugin_path)
-        if inline_mcp is not None:
+        for inline_mcp in context.codex_inline_mcp_servers(codex_plugin_path):
             node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
         parent = plugin_nodes.get(codex_plugin_path.resolve())
         (parent or root).children.append(node)

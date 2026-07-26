@@ -18,6 +18,8 @@ from skillsaw.docs.models import (
     name_str,
 )
 
+_MARKETPLACE_TYPES = {RepositoryType.MARKETPLACE, RepositoryType.CODEX_MARKETPLACE}
+
 
 def render_markdown(docs: DocsOutput) -> Dict[str, str]:
     """Render documentation as Markdown files.
@@ -25,7 +27,7 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
     Returns a dict of {filename: markdown_content}.
     Marketplaces get an index + per-plugin files; others get a single index.
     """
-    if docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace:
+    if docs.marketplace and docs.repo_type in _MARKETPLACE_TYPES:
         return _render_marketplace(docs)
     return {"README.md": _render_single_page(docs)}
 

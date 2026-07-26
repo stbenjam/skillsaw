@@ -98,7 +98,17 @@ my-plugin/
 
 skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every local source the Codex marketplace declares.
 
-`.codex/plugins/*` is where Codex installs plugins into a checkout, so what it finds there is linted — its skills and hooks are the same supply-chain surface as an authored plugin's — but never reported by `codex-marketplace-registration`, because the repository did not author those plugins and its published catalog has no business listing them.
+`.codex/plugins/*` is where Codex installs plugins into a checkout, so the split there is between what the repository *runs* and what the repository *wrote*:
+
+| Rule | On an installed plugin | Why |
+|---|---|---|
+| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
+| `mcp-valid-json`, `mcp-prohibited` | **Runs** | Same — the host spawns these commands here. |
+| `agentskill-*` | **Runs** | These skills enter the agent's context window here. |
+| `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
+| `codex-marketplace-registration` | **Stands down** | The repository did not author the plugin; its published catalog has no business listing it. |
+
+The line is authorship, not discovery: skillsaw does not walk `.claude/plugins/*` at all, so a broken vendor manifest there is likewise not the repository's problem.
 
 Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, at every path the manifest's `hooks` field declares, and in the inline hooks objects that field also accepts — all three carry the same executable commands, so all three reach `hooks-dangerous`, `hooks-prohibited` and `hooks-json-valid`. Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
 

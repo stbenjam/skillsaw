@@ -13,7 +13,12 @@ from skillsaw.rules.builtin.marketplace.json_valid import (
     is_absolute_path,
 )
 
-CODEX_PLUGIN_REPO_TYPES = {RepositoryType.CODEX_PLUGIN}
+# A Codex marketplace repository contains the plugins it catalogs, so the
+# plugin rules have to fire there too — the same reason PLUGIN_REPO_TYPES
+# carries MARKETPLACE alongside SINGLE_PLUGIN. Without it, an explicit
+# ``--type codex-marketplace`` run discovers every local plugin and then
+# checks none of their manifests.
+CODEX_PLUGIN_REPO_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 
 # "Use a stable plugin `name` in kebab-case. Plugin hosts use it as the
@@ -58,6 +63,9 @@ def escapes_root(value: str, root: Path) -> bool:
     try:
         resolved_root = root.resolve()
         candidate = (root / value).resolve()
-    except OSError:
+    except (OSError, ValueError):
+        # OSError: a symlink loop or an unreadable parent. ValueError: an
+        # embedded NUL. Either way containment cannot be proven, and
+        # failing closed is the safe direction for a containment check.
         return True
     return candidate != resolved_root and not candidate.is_relative_to(resolved_root)

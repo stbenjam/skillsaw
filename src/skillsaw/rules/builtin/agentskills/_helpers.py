@@ -19,6 +19,10 @@ SKILL_REPO_TYPES = {
     RepositoryType.MARKETPLACE,
     RepositoryType.DOT_CLAUDE,
     RepositoryType.CODEX_PLUGIN,
+    # For the same reason MARKETPLACE is here: a catalog repository holds
+    # the plugins, and their skills are discovered whether or not the
+    # CODEX_PLUGIN type was also inferred.
+    RepositoryType.CODEX_MARKETPLACE,
 }
 
 NAME_MAX_LENGTH = 64

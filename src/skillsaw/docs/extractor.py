@@ -47,6 +47,12 @@ def extract_docs(
             owner=md.get("owner"),
             plugins=plugins,
         )
+    elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
+        # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json.
+        # Without this a Codex catalog fell through to the single-page
+        # renderer, which shows plugins[0] and silently drops every other
+        # plugin in the catalog.
+        marketplace = _codex_marketplace_doc(context, plugins)
 
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
@@ -80,6 +86,24 @@ def _default_title(
     if len(plugins) == 1 and plugins[0].name:
         return plugins[0].name
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
+
+
+def _codex_marketplace_doc(
+    context: RepositoryContext, plugins: List[PluginDoc]
+) -> Optional[MarketplaceDoc]:
+    """A MarketplaceDoc built from the Codex catalog.
+
+    Codex catalogs carry no ``owner`` — the field has no equivalent in the
+    schema — so only the name is read across. The first catalog wins when a
+    repository splits its listing across siblings, matching how
+    codex-marketplace-registration picks the primary.
+    """
+    for path in context.codex_marketplace_paths():
+        data, error = read_json(path)
+        if error or not isinstance(data, dict):
+            continue
+        return MarketplaceDoc(name=str(data.get("name", "") or ""), owner=None, plugins=plugins)
+    return None
 
 
 def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
@@ -328,13 +352,17 @@ def _extract_mcp_servers(plugin_node: PluginNode, plugin_meta: dict) -> List[Mcp
     seen: set = set()
 
     for block in plugin_node.find(McpBlock):
+        # Not hard-coded: a Codex manifest can point ``mcpServers`` at
+        # another file, or hold the map itself — in which case the block
+        # borrows the manifest's path and the source really is plugin.json.
+        source_file = block.path.name
         for srv in block.servers:
             servers.append(
                 McpServerDoc(
                     name=srv.name,
                     server_type=srv.type,
                     config={k: v for k, v in srv.__dict__.items() if v is not None and k != "name"},
-                    source_file=".mcp.json",
+                    source_file=source_file,
                 )
             )
             seen.add(srv.name)

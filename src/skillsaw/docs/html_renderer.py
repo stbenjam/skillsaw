@@ -394,7 +394,10 @@ def render_html(docs: DocsOutput, theme: Optional[str] = None) -> Dict[str, str]
 
 
 def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
-    is_marketplace = docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace is not None
+    is_marketplace = docs.marketplace is not None and docs.repo_type in (
+        RepositoryType.MARKETPLACE,
+        RepositoryType.CODEX_MARKETPLACE,
+    )
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag

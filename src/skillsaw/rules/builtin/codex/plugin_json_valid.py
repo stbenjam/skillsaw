@@ -22,6 +22,12 @@ _PATH_FIELDS = ("skills", "mcpServers", "apps")
 _INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
 _INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
 
+# What each field has to be on disk for the lint tree to follow it. Only
+# the fields the tree actually filters on are listed: ``apps`` and the
+# ``interface`` assets are undocumented enough that asserting a kind would
+# overreach, and nothing drops them silently.
+_EXPECTED_KIND = {"hooks": "file", "mcpServers": "file", "skills": "dir"}
+
 
 class CodexPluginJsonValidRule(Rule):
     """Check that .codex-plugin/plugin.json is valid"""
@@ -63,6 +69,14 @@ class CodexPluginJsonValidRule(Rule):
         check_paths_exist = self.config.get("check-paths-exist", True)
 
         for node in context.lint_tree.find(CodexPluginConfigNode):
+            if context.is_codex_installed_plugin(node.plugin_dir):
+                # Third-party content a developer installed into their own
+                # checkout. Its hooks and MCP servers are still linted —
+                # they execute here, so they are this checkout's problem —
+                # but a kebab-case name or a missing description in a
+                # manifest the developer cannot edit is not. skillsaw does
+                # not walk .claude/plugins/* at all for the same reason.
+                continue
             manifest = node.path
             if not manifest.is_file():
                 # The node exists because .codex-plugin/ does. Codex reads
@@ -174,10 +188,35 @@ class CodexPluginJsonValidRule(Rule):
                         severity=Severity.INFO,
                     )
                 )
-            if check_exists and not (plugin_dir / value).exists():
+            target = plugin_dir / value
+            if check_exists and not target.exists():
                 violations.append(
                     self.violation(
                         f"'{field}': '{value}' does not exist in the plugin",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
+                    )
+                )
+                continue
+            # Existing is not the same as usable. The lint tree follows
+            # ``hooks`` and ``mcpServers`` with is_file() and ``skills``
+            # with is_dir(), so a declaration of the wrong kind is dropped
+            # there — silently, unless it is reported right here.
+            wanted = _EXPECTED_KIND.get(field.split("[")[0])
+            if wanted is None or not target.exists():
+                continue
+            if wanted == "file" and not target.is_file():
+                violations.append(
+                    self.violation(
+                        f"'{field}': '{value}' is a directory — this field names a file",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
+                    )
+                )
+            elif wanted == "dir" and not target.is_dir():
+                violations.append(
+                    self.violation(
+                        f"'{field}': '{value}' is a file — this field names a directory",
                         file_path=manifest,
                         severity=Severity.WARNING,
                     )

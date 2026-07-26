@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
-from skillsaw.context import RepositoryContext, codex_local_source_path
+from skillsaw.context import RepositoryContext, codex_local_source_path, safe_resolve
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
@@ -209,7 +209,9 @@ class CodexMarketplaceRegistrationRule(Rule):
             for _, entry in _entries(node.path):
                 source = codex_local_source_path(entry.get("source"))
                 if source is not None:
-                    dirs.add((context.root_path / source).resolve())
+                    resolved = safe_resolve(context.root_path / source)
+                    if resolved is not None:
+                        dirs.add(resolved)
                     continue
                 name = entry.get("name")
                 if isinstance(name, str):
@@ -235,7 +237,9 @@ class CodexMarketplaceRegistrationRule(Rule):
             source = codex_local_source_path(entry.get("source"))
             if source is None:
                 continue  # remote source — nothing local to resolve
-            plugin_dir = (context.root_path / source).resolve()
+            plugin_dir = safe_resolve(context.root_path / source)
+            if plugin_dir is None:
+                continue  # unresolvable string — codex-marketplace-json-valid reports it
             if not (
                 plugin_dir == context.root_path or plugin_dir.is_relative_to(context.root_path)
             ):
@@ -386,8 +390,11 @@ def _relative_source(plugin_dir: Path, context: RepositoryContext) -> Optional[s
     Codex resolves ``source.path`` against the marketplace root — the
     repository root — not against ``.agents/plugins/``.
     """
+    resolved = safe_resolve(plugin_dir)
+    if resolved is None:
+        return None
     try:
-        relative = plugin_dir.resolve().relative_to(context.root_path)
+        relative = resolved.relative_to(context.root_path)
     except ValueError:
         return None
     return f"./{relative.as_posix()}" if relative.parts else "./"

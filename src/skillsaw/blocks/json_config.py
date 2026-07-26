@@ -194,6 +194,10 @@ class _InlineJsonPayload:
     where the config actually lives and where a violation should point.
     """
 
+    # Declared for type-checkers only — this class is not a dataclass, so
+    # this is a plain class attribute and never the copy that carries a
+    # value. Each dataclass subclass redeclares it as a real field; those
+    # declarations are load-bearing, not duplicates.
     inline_data: Optional[Dict[str, Any]] = None
 
     def _ensure_parsed(self) -> None:
