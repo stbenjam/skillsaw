@@ -168,6 +168,12 @@ class CodexMarketplaceRegistrationRule(Rule):
         found: List[Tuple[Path, str]] = []
         for plugin_node in context.lint_tree.find(CodexPluginConfigNode):
             plugin_dir = plugin_node.plugin_dir
+            if not plugin_node.path.is_file():
+                # A .codex-plugin/ directory with no manifest. There is
+                # nothing installable to register, and codex-plugin-json-valid
+                # already reports the missing entrypoint — stacking a second
+                # error on it would just say the same defect twice.
+                continue
             if plugin_dir.resolve() in registered_dirs:
                 continue
             if context.is_codex_installed_plugin(plugin_dir):
@@ -188,17 +194,26 @@ class CodexMarketplaceRegistrationRule(Rule):
         installs that directory; without it the plugin would be reported
         unregistered on top of the name-mismatch warning, and the autofix
         would append a duplicate entry for a directory already listed.
+
+        A *local* entry contributes only its directory, never its name. The
+        two are one registration, and crediting them independently lets a
+        crossed pair — ``name: "b"`` against ``path: "./plugins/a"`` — cover
+        both directories: A matches the path, B matches the name, and the
+        fact that B is not installable at all goes unreported. Only remote
+        entries (url, git-subdir, npm) register by name, because they name
+        no directory in this repository for the path half to match.
         """
         names: set = set()
         dirs: set = set()
         for node in context.lint_tree.find(CodexMarketplaceConfigNode):
             for _, entry in _entries(node.path):
-                name = entry.get("name")
-                if isinstance(name, str):
-                    names.add(name)
                 source = codex_local_source_path(entry.get("source"))
                 if source is not None:
                     dirs.add((context.root_path / source).resolve())
+                    continue
+                name = entry.get("name")
+                if isinstance(name, str):
+                    names.add(name)
         return names, dirs
 
     def _check_entries(

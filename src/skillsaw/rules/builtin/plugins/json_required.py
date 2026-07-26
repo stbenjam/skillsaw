@@ -39,16 +39,20 @@ class PluginJsonRequiredRule(Rule):
 
                 if (
                     resolved_path not in getattr(context, "marketplace_entries", {})
+                    and not (plugin_path / ".claude-plugin").is_dir()
                     and plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file()
                 ):
                     # A Codex plugin, swept up here only because it also ships
                     # a commands/ or skills/ directory. It has no reason to
                     # carry a Claude manifest, and codex-plugin-json-valid
-                    # validates the one it does carry. A plugin the Claude
-                    # marketplace lists is exempt from the exemption — the
-                    # author declared it a Claude plugin, so it needs the
-                    # Claude manifest (and `strict: false` below is the
-                    # designed opt-out).
+                    # validates the one it does carry. Two things take a
+                    # plugin back out of the exemption, both of them the
+                    # author declaring it a Claude plugin: the Claude
+                    # marketplace listing it, or the directory carrying a
+                    # ``.claude-plugin/`` of its own. In the second case the
+                    # manifest inside it was deleted or never added, and that
+                    # is precisely the defect this rule reports (with
+                    # `strict: false` below as the designed opt-out).
                     continue
 
                 if resolved_path in getattr(context, "plugin_metadata", {}):

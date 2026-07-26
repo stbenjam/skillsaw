@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import splice
 from skillsaw.rules.builtin.content_analysis import (
@@ -15,9 +15,10 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 from ._helpers import (
+    SKILL_REPO_TYPES,
+    _RENAMES_LOCK,
     _read_renames_manifest,
     _write_renames_manifest,
-    _RENAMES_LOCK,
 )
 
 # Characters that can be part of a skill name reference. A match is only a
@@ -33,12 +34,7 @@ def _name_pattern(old_name: str) -> re.Pattern:
 class AgentSkillRenameRefsRule(Rule):
     """Update stale skill name references after a rename"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     config_schema = {
         "autofix-min-segments": {

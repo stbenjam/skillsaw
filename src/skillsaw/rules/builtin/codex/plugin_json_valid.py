@@ -64,6 +64,18 @@ class CodexPluginJsonValidRule(Rule):
 
         for node in context.lint_tree.find(CodexPluginConfigNode):
             manifest = node.path
+            if not manifest.is_file():
+                # The node exists because .codex-plugin/ does. Codex reads
+                # the manifest from this exact path and loads nothing
+                # without it, so the entrypoint is simply missing.
+                violations.append(
+                    self.violation(
+                        "Missing .codex-plugin/plugin.json — Codex reads the "
+                        "plugin manifest from this path",
+                        file_path=manifest,
+                    )
+                )
+                continue
             data, error = read_json(manifest)
             if error:
                 violations.append(self.violation(f"Invalid JSON: {error}", file_path=manifest))
@@ -107,6 +119,12 @@ class CodexPluginJsonValidRule(Rule):
             return [
                 self.violation(f"Plugin name must be a string, got {name!r}", file_path=manifest)
             ]
+        if not name:
+            # An empty string is no more usable as the plugin identifier than
+            # a missing key, so it belongs with the required-field errors
+            # rather than falling through to the kebab-case warning — which
+            # a default ``fail-on: error`` would let pass.
+            return [self.violation("Required field 'name' is an empty string", file_path=manifest)]
         if not KEBAB_CASE.match(name):
             return [
                 self.violation(
@@ -144,7 +162,7 @@ class CodexPluginJsonValidRule(Rule):
                 # below would pass and the field would look fine.
                 violations.append(self.violation(f"'{field}' is an empty path", file_path=manifest))
                 continue
-            problem = path_problem(value, "plugin root")
+            problem = path_problem(value, "plugin root", plugin_dir)
             if problem:
                 violations.append(self.violation(f"'{field}': {problem}", file_path=manifest))
                 continue

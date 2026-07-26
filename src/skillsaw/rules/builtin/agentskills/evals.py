@@ -3,21 +3,18 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import read_json
+
+from ._helpers import SKILL_REPO_TYPES
 
 
 class AgentSkillEvalsRule(Rule):
     """Validate evals/evals.json structure"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

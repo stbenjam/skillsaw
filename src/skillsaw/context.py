@@ -151,6 +151,12 @@ class RepositoryContext:
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
+        # Below the Claude equivalents: a repository that is both keeps its
+        # Claude primary type, so existing output is unchanged. Listing them
+        # at all is what stops a Codex-only repo from reporting ``unknown``
+        # and drawing the CLI's "unrecognized repository" warning.
+        RepositoryType.CODEX_MARKETPLACE,
+        RepositoryType.CODEX_PLUGIN,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -545,11 +551,16 @@ class RepositoryContext:
         """Codex marketplace manifests in ``.agents/plugins/``.
 
         ``marketplace.json`` is the documented path and is always taken on
-        existence alone, so broken JSON still reaches the rules. Sibling
-        ``*.json`` files are admitted only when they duck-type as a
-        marketplace (an object carrying ``plugins``) — openai/plugins ships
-        a second catalog as ``api_marketplace.json``, but the directory is
-        not reserved, so unrelated JSON must not be linted as a catalog.
+        existence alone, so broken JSON still reaches the rules. A sibling
+        *named* like a catalog — openai/plugins ships a second one as
+        ``api_marketplace.json`` — is taken on existence for the same
+        reason: dropping it because its JSON is broken, or because
+        ``plugins`` is not an array, hides exactly the defect
+        codex-marketplace-json-valid exists to report, and where there is
+        no primary ``marketplace.json`` it disables Codex marketplace
+        detection outright. Any other ``*.json`` still has to duck-type as
+        a marketplace, because the directory is not reserved and unrelated
+        JSON must not be linted as a catalog.
         """
         if self._codex_marketplace_paths is not None:
             return self._codex_marketplace_paths
@@ -567,6 +578,9 @@ class RepositoryContext:
                 siblings = []
             for candidate in siblings:
                 if candidate == primary:
+                    continue
+                if candidate.name.lower().endswith(self.CODEX_MARKETPLACE_FILENAME):
+                    found.append(candidate)
                     continue
                 data = _read_json_or_none(candidate)
                 if isinstance(data, dict) and isinstance(data.get("plugins"), list):
@@ -588,12 +602,19 @@ class RepositoryContext:
         (the documented personal-install pattern), and every local source
         declared by the Codex marketplace. Explicit probes keep discovery
         O(entries) instead of adding a second whole-repo walk.
+
+        The reserved ``.codex-plugin/`` directory is the evidence, not the
+        manifest inside it. A directory whose ``plugin.json`` was deleted,
+        misspelled, or replaced by a directory is still a Codex plugin with
+        a broken entrypoint; dropping it here would take the repository's
+        ``CODEX_PLUGIN`` type with it and leave the defect unreported.
+        ``codex-plugin-json-valid`` reports the missing manifest.
         """
         found: List[Path] = []
         seen: Set[Path] = set()
 
         def _add(directory: Path) -> None:
-            if not directory.joinpath(*self.CODEX_PLUGIN_MANIFEST).is_file():
+            if not directory.joinpath(self.CODEX_PLUGIN_MANIFEST[0]).is_dir():
                 return
             resolved = directory.resolve()
             if resolved in seen:
@@ -684,6 +705,63 @@ class RepositoryContext:
             if candidate != root and candidate.is_relative_to(root) and candidate.is_file():
                 found.append(candidate)
         return found
+
+    def codex_declared_skill_dirs(self, plugin_dir: Path) -> List[Path]:
+        """Skill directories a Codex plugin manifest declares through ``skills``.
+
+        Like ``hooks``, the field takes a path or an array of paths, and it
+        does not have to say ``./skills`` — a plugin may bundle them under
+        ``./bundled-skills`` instead. Scanning only the literal ``skills/``
+        directory misses those, and for a plugin installed under the hidden
+        ``.codex/plugins/`` tree nothing else walks them, so their SKILL.md
+        files would reach no rule at all. Paths that escape the plugin root
+        are dropped; ``codex-plugin-json-valid`` reports them.
+        """
+        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
+        if not isinstance(data, dict):
+            return []
+        declared = data.get("skills")
+        candidates = declared if isinstance(declared, list) else [declared]
+        root = plugin_dir.resolve()
+        found: List[Path] = []
+        for item in candidates:
+            if not isinstance(item, str) or not item:
+                continue
+            candidate = (plugin_dir / item).resolve()
+            if candidate != root and candidate.is_relative_to(root) and candidate.is_dir():
+                found.append(candidate)
+        return found
+
+    def codex_inline_hooks(self, plugin_dir: Path) -> Optional[Dict[str, Any]]:
+        """Hooks a Codex plugin manifest declares inline, in hooks.json shape.
+
+        The ``hooks`` field accepts "a single path, an array of paths, an
+        inline hooks object, or an array of inline hooks objects".
+        ``codex_declared_hook_files`` covers the path forms; this covers the
+        object forms, which carry exactly the same executable commands and
+        so belong in front of the same hook rules. Without it a
+        ``curl | sh`` SessionStart hook written inline is invisible to
+        hooks-dangerous and hooks-prohibited.
+
+        Objects are accepted both as ``{"hooks": {...}}`` (mirroring a
+        hooks.json document) and as a bare event map, and an array of them
+        is merged into one document so the whole manifest is one block.
+        """
+        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
+        if not isinstance(data, dict):
+            return None
+        declared = data.get("hooks")
+        candidates = declared if isinstance(declared, list) else [declared]
+        merged: Dict[str, Any] = {}
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            nested = item.get("hooks")
+            events = nested if isinstance(nested, dict) else item
+            for event, configs in events.items():
+                if isinstance(configs, list):
+                    merged.setdefault(event, []).extend(configs)
+        return {"hooks": merged} if merged else None
 
     def codex_plugin_name(self, plugin_dir: Path) -> str:
         """Name a Codex plugin declares, falling back to its directory name."""
@@ -1069,9 +1147,29 @@ class RepositoryContext:
         # included: an installed plugin under .codex/plugins/ lives in a
         # hidden directory the repository-wide scan never walks, so its
         # skills would otherwise never enter the lint tree.
-        for plugin_path in (*self.plugins, *self.codex_plugins):
+        for plugin_path in self.plugins:
             skills_dir = plugin_path / "skills"
             if skills_dir.is_dir():
+                self._discover_skills_in_dir(skills_dir, skills, discovered)
+
+        for plugin_path in self.codex_plugins:
+            # ``skills/`` is only the default. A manifest may point the field
+            # somewhere else entirely, and for a hidden install that path is
+            # the sole route into the tree.
+            for skills_dir in (
+                plugin_path / "skills",
+                *self.codex_declared_skill_dirs(plugin_path),
+            ):
+                if not skills_dir.is_dir():
+                    continue
+                if (skills_dir / "SKILL.md").exists():
+                    # A manifest may name one skill directly rather than a
+                    # collection; descending would step straight past it.
+                    resolved = skills_dir.resolve()
+                    if resolved not in discovered:
+                        skills.append(skills_dir)
+                        discovered.add(resolved)
+                    continue
                 self._discover_skills_in_dir(skills_dir, skills, discovered)
 
         return skills

@@ -3,10 +3,10 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 
-from ._helpers import DEFAULT_ALLOWED_DIRS
+from ._helpers import DEFAULT_ALLOWED_DIRS, SKILL_REPO_TYPES
 
 
 class AgentSkillStructureRule(Rule):
@@ -14,12 +14,7 @@ class AgentSkillStructureRule(Rule):
 
     default_enabled = False
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
     config_schema = {
         "allowed_dirs": {
             "type": "list",

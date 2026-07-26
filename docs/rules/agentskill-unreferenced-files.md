@@ -10,7 +10,7 @@ Every bundled skill file should be referenced from SKILL.md, directly or transit
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.15.0 |
-| **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agentskills, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

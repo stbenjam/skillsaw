@@ -10,7 +10,7 @@ looks for them, so hooks and assets stored there never load.
 
 **Bad:**
 
-```
+```text
 my-plugin/
 ├── .codex-plugin/
 │   ├── plugin.json
@@ -20,7 +20,7 @@ my-plugin/
 
 **Good:**
 
-```
+```text
 my-plugin/
 ├── .codex-plugin/
 │   └── plugin.json

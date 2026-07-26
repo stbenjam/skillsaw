@@ -8,6 +8,7 @@ content-quality rules never see them.  Dedicated rules locate them with
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -181,6 +182,32 @@ class HooksBlock(JsonConfigBlock):
             if entries:
                 result[event_type] = entries
         return result
+
+
+@dataclass(eq=False)
+class CodexInlineHooksBlock(HooksBlock):
+    """Hooks written inline in a Codex ``.codex-plugin/plugin.json``.
+
+    Codex's ``hooks`` field takes paths *or* inline objects, and the inline
+    form ships the same executable commands as a hooks.json file — so it
+    gets the same rules rather than a parallel set. ``path`` stays the
+    manifest, which is where the commands actually live and where a
+    violation should point the reader.
+    """
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def _ensure_parsed(self) -> None:
+        # The payload was extracted from the manifest, not read from a file
+        # of its own, so the base class's read-and-parse must not run.
+        if self._parsed is None:
+            self._parsed = (self.inline_data, None)
+
+    def estimate_tokens(self) -> int:
+        return len(json.dumps(self.inline_data or {})) // 4
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline hooks)"
 
 
 @dataclass

@@ -15,6 +15,7 @@ from .blocks import (
     ChatmodeBlock,
     ClaudeMdBlock,
     CodeRabbitContentBlock,
+    CodexInlineHooksBlock,
     CommandBlock,
     ContextFileBlock,
     CursorRuleBlock,
@@ -186,7 +187,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # and the Codex manifest simply hangs off it.
     for codex_plugin_path in context.codex_plugins:
         manifest = codex_plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
-        if not manifest.is_file() or _is_excluded(manifest):
+        # Not gated on the manifest existing: discovery keys off the reserved
+        # .codex-plugin/ directory, so a plugin whose manifest is missing
+        # still reaches codex-plugin-json-valid to be reported as such.
+        if _is_excluded(manifest):
             continue
         node = CodexPluginConfigNode(path=manifest)
         # Codex "checks that default file automatically", so a plugin can ship
@@ -199,6 +203,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # the same executable commands, so they get the same checks.
         for declared_hooks in context.codex_declared_hook_files(codex_plugin_path):
             _add_block(node, declared_hooks, HooksBlock)
+        # ...or write them inline, which is the same surface again. Appended
+        # directly rather than through _add_block: the payload has no file of
+        # its own, so the manifest path it borrows is already claimed.
+        inline_hooks = context.codex_inline_hooks(codex_plugin_path)
+        if inline_hooks is not None:
+            node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
+        # The Codex docs put .mcp.json at the plugin root alongside hooks/
+        # and skills/. When the directory is Codex-only there is no
+        # PluginNode to have attached it above, so its MCP servers would
+        # otherwise reach neither the validity nor the security rules.
+        _add_block(node, codex_plugin_path / ".mcp.json", McpBlock)
         parent = plugin_nodes.get(codex_plugin_path.resolve())
         (parent or root).children.append(node)
 

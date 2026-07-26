@@ -82,7 +82,7 @@ Plugins from `plugins/`, custom paths, and remote sources can coexist in one mar
 
 Directories with a `.codex-plugin/plugin.json` manifest, per the [Codex plugin specification](https://developers.openai.com/plugins/build/plugins):
 
-```
+```text
 my-plugin/
 ├── .codex-plugin/
 │   └── plugin.json       # Required — only this file belongs here
@@ -100,13 +100,15 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 `.codex/plugins/*` is where Codex installs plugins into a checkout, so what it finds there is linted — its skills and hooks are the same supply-chain surface as an authored plugin's — but never reported by `codex-marketplace-registration`, because the repository did not author those plugins and its published catalog has no business listing them.
 
-Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, and at every path the manifest's `hooks` field declares. Inline hooks objects and paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports the latter.
+Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, at every path the manifest's `hooks` field declares, and in the inline hooks objects that field also accepts — all three carry the same executable commands, so all three reach `hooks-dangerous`, `hooks-prohibited` and `hooks-json-valid`. Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
+
+Skills are discovered at `skills/` and at every directory the manifest's `skills` field declares, so a plugin that bundles them somewhere else is still linted. A plugin's `.mcp.json` is linted whether or not the directory is also a Claude plugin.
 
 ## OpenAI Codex Marketplace
 
 Repositories with a Codex catalog at `.agents/plugins/marketplace.json`:
 
-```
+```text
 marketplace/
 ├── .agents/
 │   └── plugins/

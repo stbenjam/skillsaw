@@ -36,6 +36,18 @@
       "category": "Developer Tools"
     },
     {
+      "name": "inline-hooks",
+      "source": {
+        "source": "local",
+        "path": "./plugins/inline-hooks"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": ""
+    },
+    {
       "name": "from-registry",
       "source": {
         "source": "npm",

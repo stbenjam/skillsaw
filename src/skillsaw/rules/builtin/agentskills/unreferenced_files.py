@@ -102,11 +102,13 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType, _pattern_variants
+from skillsaw.context import RepositoryContext, _pattern_variants
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
+
+from ._helpers import SKILL_REPO_TYPES
 
 # A path mention must not be embedded in a longer word/path-like token:
 # `scripts/run.py` must not match inside `myscripts/run.py` or
@@ -148,12 +150,7 @@ _PY_FENCE_INFOS = {"", "python", "py", "python3"}
 class AgentSkillUnreferencedFilesRule(Rule):
     """Detect bundled skill files that SKILL.md never references"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
     since = "0.15.0"
 
     config_schema = {

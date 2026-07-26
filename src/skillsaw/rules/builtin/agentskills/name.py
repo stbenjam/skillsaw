@@ -8,7 +8,7 @@ from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.utils import (
@@ -18,7 +18,7 @@ from skillsaw.utils import (
     replace_frontmatter_field,
 )
 
-from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
+from ._helpers import CONSECUTIVE_HYPHENS, NAME_PATTERN, SKILL_REPO_TYPES, _add_rename, _to_kebab
 
 
 def _parse_name_line(name_line: str):
@@ -116,12 +116,7 @@ class AgentSkillNameRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

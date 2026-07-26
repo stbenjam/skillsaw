@@ -5,6 +5,22 @@ import re
 import threading
 from pathlib import Path
 
+from skillsaw.context import RepositoryType
+
+# Repository types whose lint tree can hold Agent Skills. One set shared by
+# every rule in this package so a newly supported host cannot be wired into
+# some of them and forgotten in the rest. CODEX_PLUGIN belongs here because
+# a Codex plugin ships ``skills/<name>/SKILL.md`` in the same format — most
+# visibly for a plugin installed under ``.codex/plugins/``, which no other
+# repository type covers.
+SKILL_REPO_TYPES = {
+    RepositoryType.AGENTSKILLS,
+    RepositoryType.SINGLE_PLUGIN,
+    RepositoryType.MARKETPLACE,
+    RepositoryType.DOT_CLAUDE,
+    RepositoryType.CODEX_PLUGIN,
+}
+
 NAME_MAX_LENGTH = 64
 DESCRIPTION_MAX_LENGTH = 1024
 COMPATIBILITY_MAX_LENGTH = 500

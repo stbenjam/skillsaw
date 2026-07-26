@@ -10,7 +10,7 @@ Skill directories should only contain recognized subdirectories (stricter than s
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agentskills, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

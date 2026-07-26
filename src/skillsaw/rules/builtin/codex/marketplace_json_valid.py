@@ -104,11 +104,11 @@ class CodexMarketplaceJsonValidRule(Rule):
                     self.violation("'interface' must be an object", file_path=marketplace_file)
                 )
 
-            violations.extend(self._check_plugins(data, marketplace_file))
+            violations.extend(self._check_plugins(data, marketplace_file, context.root_path))
 
         return violations
 
-    def _check_plugins(self, data: dict, marketplace_file: Path) -> List[RuleViolation]:
+    def _check_plugins(self, data: dict, marketplace_file: Path, root: Path) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
         if "plugins" not in data:
@@ -135,7 +135,7 @@ class CodexMarketplaceJsonValidRule(Rule):
                     )
                 )
             else:
-                violations.extend(self._check_source(entry["source"], idx, marketplace_file))
+                violations.extend(self._check_source(entry["source"], idx, marketplace_file, root))
 
             for field in _RECOMMENDED_ENTRY_FIELDS:
                 # ``None`` counts as absent throughout — an explicit null
@@ -152,9 +152,32 @@ class CodexMarketplaceJsonValidRule(Rule):
                         )
                     )
 
+            violations.extend(self._check_category(entry.get("category"), idx, marketplace_file))
             violations.extend(self._check_policy(entry.get("policy"), idx, marketplace_file))
 
         return violations
+
+    def _check_category(
+        self, category: Any, idx: int, marketplace_file: Path
+    ) -> List[RuleViolation]:
+        """A present ``category`` must be a non-empty string label.
+
+        The set of labels is open-ended, so their *values* stay
+        unconstrained — but ``""``, a number, or an array carries less
+        information than an absent key, which already warns. Without this
+        the presence-only check above reports nothing at all for them.
+        """
+        if category is None:
+            return []  # absence already warned about above
+        if not isinstance(category, str) or not category:
+            return [
+                self.violation(
+                    f"plugins[{idx}] 'category' must be a non-empty string, got {category!r}",
+                    file_path=marketplace_file,
+                    severity=Severity.WARNING,
+                )
+            ]
+        return []
 
     def _check_entry_name(
         self, entry: dict, idx: int, marketplace_file: Path, seen_names: dict
@@ -171,6 +194,15 @@ class CodexMarketplaceJsonValidRule(Rule):
             return [
                 self.violation(
                     f"plugins[{idx}] plugin name must be a string, got {name!r}",
+                    file_path=marketplace_file,
+                )
+            ]
+        if not name:
+            # Same reasoning as the plugin manifest: an empty identifier is a
+            # missing one, so it must not stop at the kebab-case warning.
+            return [
+                self.violation(
+                    f"plugins[{idx}] required field 'name' is an empty string",
                     file_path=marketplace_file,
                 )
             ]
@@ -198,14 +230,16 @@ class CodexMarketplaceJsonValidRule(Rule):
             )
         return violations
 
-    def _check_source(self, source: Any, idx: int, marketplace_file: Path) -> List[RuleViolation]:
+    def _check_source(
+        self, source: Any, idx: int, marketplace_file: Path, root: Path
+    ) -> List[RuleViolation]:
         """Validate an entry's source (bare local path string or typed object)."""
         violations: List[RuleViolation] = []
 
         if isinstance(source, str):
             # "For local entries, source can also be a plain string path."
             violations.extend(
-                self._check_local_path(source, f"plugins[{idx}].source", marketplace_file)
+                self._check_local_path(source, f"plugins[{idx}].source", marketplace_file, root)
             )
             return violations
 
@@ -263,7 +297,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if source_type == "local" and isinstance(source.get("path"), str) and source["path"]:
             violations.extend(
                 self._check_local_path(
-                    source["path"], f"plugins[{idx}].source.path", marketplace_file
+                    source["path"], f"plugins[{idx}].source.path", marketplace_file, root
                 )
             )
 
@@ -273,13 +307,13 @@ class CodexMarketplaceJsonValidRule(Rule):
         return violations
 
     def _check_local_path(
-        self, value: str, label: str, marketplace_file: Path
+        self, value: str, label: str, marketplace_file: Path, root: Path
     ) -> List[RuleViolation]:
         if not value:
             # "" resolves to the marketplace root, so nothing below rejects
             # it and an entry that can never install would pass as INFO.
             return [self.violation(f"{label} is an empty path", file_path=marketplace_file)]
-        problem = path_problem(value, "marketplace root")
+        problem = path_problem(value, "marketplace root", root)
         if problem:
             return [self.violation(f"{label}: {problem}", file_path=marketplace_file)]
         if not value.startswith("./"):
@@ -323,6 +357,18 @@ class CodexMarketplaceJsonValidRule(Rule):
         problems = []
         if parsed.scheme != "https":
             problems.append("must use https")
+        try:
+            hostname = parsed.hostname
+        except ValueError:
+            # A bracketed authority that survives urlparse can still fail
+            # when the host is decoded (e.g. "https://[::1"). Same reasoning
+            # as above: a raised exception here would abort the rule.
+            hostname = None
+        if not hostname:
+            # "https:registry.example.com" and "https:///registry" both parse
+            # with the right scheme and no host at all, so every other check
+            # here passes on a URL that can never be fetched.
+            problems.append("must name a host")
         if parsed.username or parsed.password:
             problems.append("must not embed credentials")
         if parsed.query:

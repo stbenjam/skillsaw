@@ -50,6 +50,7 @@ from .frontmatter import (
 from .json_config import (
     HookEventConfig,
     HookHandler,
+    CodexInlineHooksBlock,
     HooksBlock,
     JsonConfigBlock,
     McpBlock,
@@ -107,6 +108,7 @@ __all__ = [
     "HookHandler",
     "HookEventConfig",
     "JsonConfigBlock",
+    "CodexInlineHooksBlock",
     "HooksBlock",
     "McpServerConfig",
     "McpBlock",
