@@ -355,6 +355,21 @@ class TestBuildMergedContext:
         assert RepositoryType.AGENTSKILLS in result.repo_types
         assert RepositoryType.SINGLE_PLUGIN in result.repo_types
 
+    def test_codex_plugins_are_in_merged_formatter_context(self, tmp_path):
+        codex_root = tmp_path / "codex"
+        skill_root = tmp_path / "skill"
+        (codex_root / ".codex-plugin").mkdir(parents=True)
+        (codex_root / ".codex-plugin" / "plugin.json").write_text("{}")
+        skill_root.mkdir()
+        (skill_root / "SKILL.md").touch()
+
+        codex_context = RepositoryContext(codex_root)
+        skill_context = RepositoryContext(skill_root)
+        result = _build_merged_context([codex_context, skill_context])
+
+        assert result.codex_plugins == [codex_root]
+        assert result.all_plugins == [codex_root]
+
 
 class TestMergedContextRepoType:
     """The repo_type property should return the primary type by priority."""

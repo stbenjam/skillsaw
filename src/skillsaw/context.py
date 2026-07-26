@@ -75,6 +75,8 @@ class RepositoryType(Enum):
 
     SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
     MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
+    CODEX_PLUGIN = "codex-plugin"  # Codex plugin with .codex-plugin/plugin.json
+    CODEX_MARKETPLACE = "codex-marketplace"  # Codex .agents/plugins marketplace
     AGENTSKILLS = "agentskills"  # agentskills.io skill repo
     DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
     CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
@@ -115,6 +117,8 @@ class RepositoryContext:
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
         RepositoryType.SINGLE_PLUGIN,
+        RepositoryType.CODEX_MARKETPLACE,
+        RepositoryType.CODEX_PLUGIN,
         RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
         RepositoryType.AGENTSKILLS,
@@ -158,9 +162,14 @@ class RepositoryContext:
             "Detected repo types: %s", ", ".join(t.value for t in self.repo_types) or "none"
         )
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
+        self.codex_marketplace_data = (
+            self._load_codex_marketplace() if self.has_codex_marketplace() else None
+        )
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
         self.marketplace_entries: Dict[Path, Dict[str, Any]] = {}
         self.plugins = self._discover_plugins()
+        self.codex_marketplace_entries: Dict[Path, Dict[str, Any]] = {}
+        self.codex_plugins = self._discover_codex_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
         self.detected_formats: Set[str] = set()
@@ -205,6 +214,18 @@ class RepositoryContext:
             if t in self.repo_types:
                 return t
         return RepositoryType.UNKNOWN
+
+    @property
+    def all_plugins(self) -> List[Path]:
+        """All discovered Claude and Codex plugin roots, without duplicates."""
+        plugins: List[Path] = []
+        seen: Set[Path] = set()
+        for path in [*self.plugins, *self.codex_plugins]:
+            resolved = path.resolve()
+            if resolved not in seen:
+                plugins.append(path)
+                seen.add(resolved)
+        return plugins
 
     def repo_type_names(self, include_unknown: bool = True) -> List[str]:
         """Sorted names of all detected repository types, builtin and plugin.
@@ -259,6 +280,7 @@ class RepositoryContext:
         """
         if self.exclude_patterns:
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
+            self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
@@ -359,8 +381,16 @@ class RepositoryContext:
             types.add(RepositoryType.MARKETPLACE)
         elif (self.root_path / ".claude-plugin").exists():
             types.add(RepositoryType.SINGLE_PLUGIN)
-        elif (self.root_path / "plugins").is_dir():
+        elif (self.root_path / "plugins").is_dir() and not (
+            self.root_path / ".agents" / "plugins" / "marketplace.json"
+        ).exists():
             types.add(RepositoryType.MARKETPLACE)
+
+        # Codex plugins and marketplaces are separate formats from Claude's.
+        if (self.root_path / ".agents" / "plugins" / "marketplace.json").exists():
+            types.add(RepositoryType.CODEX_MARKETPLACE)
+        if self._has_codex_plugin_manifest_dir(self.root_path):
+            types.add(RepositoryType.CODEX_PLUGIN)
 
         # Agentskills
         if self._is_agentskills_repo():
@@ -481,6 +511,23 @@ class RepositoryContext:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return None
+
+    def has_codex_marketplace(self) -> bool:
+        """Check if the repository has a Codex marketplace manifest."""
+        return (self.root_path / ".agents" / "plugins" / "marketplace.json").exists()
+
+    def _load_codex_marketplace(self) -> Optional[Dict[str, Any]]:
+        """Load the Codex marketplace manifest when it is valid JSON."""
+        marketplace_file = self.root_path / ".agents" / "plugins" / "marketplace.json"
+        if not marketplace_file.exists():
+            return None
+
+        try:
+            with open(marketplace_file, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+        return data if isinstance(data, dict) else None
 
     def marketplace_plugin_root(self) -> Optional[str]:
         """
@@ -715,6 +762,125 @@ class RepositoryContext:
             plugins.append(plugin_path)
             discovered_paths.add(resolved_path)
 
+    def _resolve_codex_plugin_source(
+        self, source: Any, plugin_entry: Dict[str, Any]
+    ) -> Optional[Path]:
+        """Resolve a local Codex marketplace source inside the repository root."""
+        path_value: Optional[str]
+        if isinstance(source, str):
+            path_value = source
+        elif isinstance(source, dict) and source.get("source") == "local":
+            path_value = source.get("path")
+        else:
+            # url, git-subdir, and npm sources are remote packages. They are
+            # validated by the marketplace rule but cannot be linted locally.
+            return None
+
+        if not isinstance(path_value, str) or not path_value:
+            return None
+
+        candidate = (self.root_path / path_value).resolve()
+        try:
+            candidate.relative_to(self.root_path)
+        except ValueError:
+            logger.warning(
+                "Codex plugin '%s' source '%s' escapes repository root. Skipping.",
+                plugin_entry.get("name", "unknown"),
+                path_value,
+            )
+            return None
+        if not candidate.is_dir():
+            return None
+        return candidate
+
+    @staticmethod
+    def _has_codex_plugin_manifest_dir(path: Path) -> bool:
+        """Return whether .codex-plugin denotes a plugin, not a legacy marketplace."""
+        manifest_dir = path / ".codex-plugin"
+        return (manifest_dir / "plugin.json").is_file() or (
+            manifest_dir.is_dir() and not (manifest_dir / "marketplace.json").is_file()
+        )
+
+    @staticmethod
+    def _is_valid_codex_plugin_dir(path: Path) -> bool:
+        """Return whether *path* contains a Codex manifest or component."""
+        if RepositoryContext._has_codex_plugin_manifest_dir(path):
+            return True
+        markers = (
+            path / ".codex-plugin" / "plugin.json",
+            path / "skills",
+            path / "hooks",
+            path / ".mcp.json",
+            path / ".app.json",
+        )
+        return any(marker.exists() for marker in markers)
+
+    def _discover_codex_plugins(self) -> List[Path]:
+        """Discover Codex plugin roots without mixing them with Claude plugins."""
+        plugins: List[Path] = []
+        discovered: Set[Path] = set()
+
+        def add(path: Path, entry: Optional[Dict[str, Any]] = None) -> None:
+            resolved = path.resolve()
+            if entry is not None:
+                self.codex_marketplace_entries[resolved] = entry
+            if resolved in discovered or not self._is_valid_codex_plugin_dir(path):
+                return
+            plugins.append(path)
+            discovered.add(resolved)
+
+        if self._has_codex_plugin_manifest_dir(self.root_path):
+            add(self.root_path)
+
+        if RepositoryType.CODEX_MARKETPLACE not in self.repo_types:
+            return plugins
+
+        plugins_dir = self.root_path / "plugins"
+        if plugins_dir.is_dir():
+            for item in plugins_dir.iterdir():
+                if item.is_dir() and not item.name.startswith("."):
+                    add(item)
+
+        data = self.codex_marketplace_data
+        entries = data.get("plugins") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            return plugins
+
+        for entry in entries:
+            if not isinstance(entry, dict) or "source" not in entry:
+                continue
+            plugin_path = self._resolve_codex_plugin_source(entry["source"], entry)
+            if plugin_path is not None:
+                add(plugin_path, entry)
+
+        return plugins
+
+    def get_codex_plugin_name(self, plugin_path: Path) -> str:
+        """Get a Codex plugin's manifest name, then marketplace or directory name."""
+        plugin_json = plugin_path / ".codex-plugin" / "plugin.json"
+        if plugin_json.exists():
+            try:
+                with open(plugin_json, "r") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("name"), str):
+                    if data["name"]:
+                        return data["name"]
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        entry = self.codex_marketplace_entries.get(plugin_path.resolve())
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            return entry["name"]
+        return plugin_path.name
+
+    def is_registered_in_codex_marketplace(self, plugin_name: str) -> bool:
+        """Check whether *plugin_name* has a Codex marketplace entry."""
+        data = self.codex_marketplace_data
+        entries = data.get("plugins") if isinstance(data, dict) else None
+        return isinstance(entries, list) and any(
+            isinstance(entry, dict) and entry.get("name") == plugin_name for entry in entries
+        )
+
     def get_plugin_name(self, plugin_path: Path) -> str:
         """
         Get the name of a plugin from its path
@@ -842,7 +1008,7 @@ class RepositoryContext:
                 self._discover_skills_in_dir(skills_path, skills, discovered)
 
         # For plugin repos, also discover embedded skills
-        for plugin_path in self.plugins:
+        for plugin_path in [*self.plugins, *self.codex_plugins]:
             skills_dir = plugin_path / "skills"
             if skills_dir.is_dir():
                 self._discover_skills_in_dir(skills_dir, skills, discovered)
@@ -870,4 +1036,7 @@ class RepositoryContext:
 
     def __str__(self):
         """String representation of context"""
-        return f"RepositoryContext(type={self.repo_type.value}, plugins={len(self.plugins)}, skills={len(self.skills)})"
+        return (
+            f"RepositoryContext(type={self.repo_type.value}, "
+            f"plugins={len(self.all_plugins)}, skills={len(self.skills)})"
+        )

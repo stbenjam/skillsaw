@@ -361,6 +361,28 @@ class TestMarketplace:
         assert "marketplace-json-valid" in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 0
 
+    def test_clean_codex_marketplace(self, tmp_path):
+        """A documented Codex marketplace passes all Codex manifest rules."""
+        repo = copy_fixture("codex-marketplace/clean", tmp_path)
+        r = run_lint(repo)
+
+        codex_violations = {rule_id for rule_id in rule_ids(r) if rule_id.startswith("codex-")}
+        assert codex_violations == set()
+        assert "marketplace-json-valid" not in rule_ids(r)
+        assert len(r["out"]["stats"]["plugins"]) == 1
+
+    def test_broken_codex_marketplace(self, tmp_path):
+        """The CLI reports manifest, marketplace, and registration failures."""
+        repo = copy_fixture("codex-marketplace/broken", tmp_path)
+        r = run_lint(repo)
+
+        ids = rule_ids(r)
+        assert "codex-plugin-json-required" in ids
+        assert "codex-plugin-json-valid" in ids
+        assert "codex-marketplace-json-valid" in ids
+        assert "codex-marketplace-registration" in ids
+        assert "marketplace-json-valid" not in ids
+
 
 # ── Agentskills ──────────────────────────────────────────────────
 
@@ -1503,6 +1525,7 @@ class TestAssertDirectives:
 
 
 BROKEN_FIXTURES = [
+    "codex-marketplace/broken",
     "single-plugin/broken",
     "single-plugin/with-secrets",
     "single-plugin/content-violations",
@@ -1527,6 +1550,7 @@ BROKEN_FIXTURES = [
 ]
 
 CLEAN_FIXTURES = [
+    "codex-marketplace/clean",
     "single-plugin/clean",
     "marketplace/clean",
     "marketplace/plugin-root",

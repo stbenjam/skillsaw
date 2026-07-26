@@ -49,6 +49,16 @@ RULE_GROUPS = [
         None,
     ),
     (
+        "OpenAI Codex Plugins",
+        [
+            "codex-plugin-json-required",
+            "codex-plugin-json-valid",
+            "codex-marketplace-json-valid",
+            "codex-marketplace-registration",
+        ],
+        "Validates OpenAI Codex plugin manifests and local marketplace catalogs.",
+    ),
+    (
         "Skills, Agents, Hooks",
         [
             "skill-frontmatter",

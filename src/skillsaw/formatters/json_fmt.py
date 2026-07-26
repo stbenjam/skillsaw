@@ -27,7 +27,7 @@ def format_json(
         stats = {
             "repo_type": context.repo_type.value,
             "repo_types": repo_types_list,
-            "plugins": [str(p) for p in context.plugins],
+            "plugins": [str(p) for p in context.all_plugins],
             "skills": [str(s) for s in context.skills],
             "rules_run": [r.rule_id for r in rules],
         }
@@ -35,7 +35,7 @@ def format_json(
         stats = {
             "repo_type": context.repo_type.value,
             "repo_types": repo_types_list,
-            "plugins": len(context.plugins),
+            "plugins": len(context.all_plugins),
             "skills": len(context.skills),
             "rules_run": len(rules),
         }

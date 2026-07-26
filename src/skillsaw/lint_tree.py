@@ -5,6 +5,7 @@ Build the repository lint tree — single discovery entrypoint.
 from __future__ import annotations
 
 import fnmatch
+import json
 import logging
 from pathlib import Path
 from typing import Set, TYPE_CHECKING
@@ -40,6 +41,8 @@ from .lint_target import (
     LintTarget,
     ApmConfigNode,
     ApmNode,
+    CodexMarketplaceConfigNode,
+    CodexPluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -128,18 +131,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     if marketplace_json.exists() and not _is_excluded(marketplace_json):
         root.children.append(MarketplaceConfigNode(path=marketplace_json))
 
+    codex_marketplace_json = context.root_path / ".agents" / "plugins" / "marketplace.json"
+    if codex_marketplace_json.exists() and not _is_excluded(codex_marketplace_json):
+        root.children.append(CodexMarketplaceConfigNode(path=codex_marketplace_json))
+
     # --- Plugins (build first so skills can nest inside them) ---
-    plugin_nodes: dict[Path, PluginNode] = {}
+    plugin_nodes: dict[Path, LintTarget] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
     if context.has_marketplace() and marketplace_dir.is_dir():
         marketplace_node = MarketplaceNode(path=marketplace_dir)
         root.children.append(marketplace_node)
 
-    for plugin_path in context.plugins:
+    def _populate_plugin_node(plugin_node: LintTarget, plugin_path: Path) -> None:
+        """Attach shared plugin components without duplicating file blocks."""
         if _is_in_compiled_dir(plugin_path):
-            continue
-        plugin_node = PluginNode(path=plugin_path)
+            return
 
         commands_dir = plugin_path / "commands"
         if commands_dir.is_dir():
@@ -162,6 +169,53 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
         _add_block(plugin_node, plugin_path / "README.md", ReadmeBlock)
 
+    def _populate_codex_manifest_components(
+        plugin_node: CodexPluginNode, plugin_path: Path
+    ) -> None:
+        """Attach non-default MCP and hook files referenced by a Codex manifest."""
+        manifest = plugin_path / ".codex-plugin" / "plugin.json"
+        try:
+            with open(manifest, "r") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(data, dict):
+            return
+
+        plugin_root = plugin_path.resolve()
+
+        def safe_path(value: str) -> Path | None:
+            if not value.startswith("./"):
+                return None
+            candidate = (plugin_path / value).resolve()
+            try:
+                candidate.relative_to(plugin_root)
+            except ValueError:
+                return None
+            return candidate
+
+        mcp_path = data.get("mcpServers")
+        if isinstance(mcp_path, str):
+            resolved_mcp = safe_path(mcp_path)
+            if resolved_mcp is not None:
+                _add_block(plugin_node, resolved_mcp, McpBlock)
+
+        hook_values = data.get("hooks")
+        if isinstance(hook_values, str):
+            hook_values = [hook_values]
+        if isinstance(hook_values, list):
+            for hook_path in hook_values:
+                if isinstance(hook_path, str):
+                    resolved_hook = safe_path(hook_path)
+                    if resolved_hook is not None:
+                        _add_block(plugin_node, resolved_hook, HooksBlock)
+
+    for plugin_path in context.plugins:
+        if _is_in_compiled_dir(plugin_path):
+            continue
+        plugin_node = PluginNode(path=plugin_path)
+        _populate_plugin_node(plugin_node, plugin_path)
+
         plugin_nodes[plugin_path.resolve()] = plugin_node
         if marketplace_node is not None and plugin_path.resolve().is_relative_to(
             marketplace_dir.resolve()
@@ -169,6 +223,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             marketplace_node.children.append(plugin_node)
         else:
             root.children.append(plugin_node)
+
+    for plugin_path in context.codex_plugins:
+        if _is_in_compiled_dir(plugin_path):
+            continue
+        plugin_node = CodexPluginNode(path=plugin_path)
+        _populate_plugin_node(plugin_node, plugin_path)
+        _populate_codex_manifest_components(plugin_node, plugin_path)
+
+        # A repository can intentionally package the same root for Claude and
+        # Codex. Preserve the first node as the owner of shared skill blocks so
+        # content rules do not report every finding twice.
+        plugin_nodes.setdefault(plugin_path.resolve(), plugin_node)
+        root.children.append(plugin_node)
 
     # --- Skills (nest inside parent plugin when applicable; skip .apm/) ---
     for skill_path in context.skills:
@@ -386,7 +453,7 @@ def _build_promptfoo_nodes(
 
     # Pass 1c: evals/ inside plugins and skills
     for node in list(root.walk()):
-        if not isinstance(node, (PluginNode, SkillNode)):
+        if not isinstance(node, (PluginNode, CodexPluginNode, SkillNode)):
             continue
         _scan_evals_dir(node.path / "evals", node)
 

@@ -83,6 +83,17 @@ RULE_GROUPS = [
         None,
     ),
     (
+        "OpenAI Codex Plugins",
+        "codex-plugins",
+        [
+            "codex-plugin-json-required",
+            "codex-plugin-json-valid",
+            "codex-marketplace-json-valid",
+            "codex-marketplace-registration",
+        ],
+        "Validates OpenAI Codex plugin manifests and local marketplace catalogs.",
+    ),
+    (
         "Skills, Agents, Hooks",
         "skills-agents-hooks",
         [
@@ -440,7 +451,7 @@ def _params_table(rule_id, schema):
 def generate_rules_index(rules_data):
     """Generate docs/rules/index.md — overview of all rules."""
     lines = [GENERATED_HEADER, "# Rules Reference\n"]
-    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules ")
+    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules")
     lines.append("organized into the following categories:\n")
 
     for group_name, slug, rule_ids, description in RULE_GROUPS:

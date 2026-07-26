@@ -1,0 +1,11 @@
+{
+  "name": "research-helper",
+  "version": "1.2.0",
+  "description": "Summarize research into decisions and follow-up work",
+  "author": {
+    "name": "Example Team"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./config/mcp.json",
+  "hooks": "./config/hooks.json"
+}

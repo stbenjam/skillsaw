@@ -1,0 +1,12 @@
+{
+  "name": "Broken Marketplace",
+  "plugins": [
+    {
+      "name": "bad-plugin",
+      "source": {
+        "source": "local",
+        "path": "../outside"
+      }
+    }
+  ]
+}

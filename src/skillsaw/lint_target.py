@@ -134,8 +134,10 @@ class LintTarget:
         _COLORS = {
             "LintTarget": "#e8e8e8",
             "MarketplaceConfigNode": "#fff3cd",
+            "CodexMarketplaceConfigNode": "#ffe8a1",
             "MarketplaceNode": "#f8d7da",
             "PluginNode": "#d4edda",
+            "CodexPluginNode": "#c3e6cb",
             "SkillNode": "#cce5ff",
             "ApmConfigNode": "#fff3cd",
             "ApmNode": "#e2d9f3",
@@ -198,6 +200,14 @@ class MarketplaceConfigNode(LintTarget):
 
 
 @dataclass(eq=False)
+class CodexMarketplaceConfigNode(LintTarget):
+    """The .agents/plugins/marketplace.json manifest file."""
+
+    def tree_label(self) -> str:
+        return "marketplace.json [codex]"
+
+
+@dataclass(eq=False)
 class MarketplaceNode(LintTarget):
     """A marketplace plugins directory."""
 
@@ -211,6 +221,14 @@ class PluginNode(LintTarget):
 
     def tree_label(self) -> str:
         return f"{self.path.name}/ [plugin]"
+
+
+@dataclass(eq=False)
+class CodexPluginNode(LintTarget):
+    """A Codex plugin directory."""
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [codex-plugin]"
 
 
 @dataclass(eq=False)

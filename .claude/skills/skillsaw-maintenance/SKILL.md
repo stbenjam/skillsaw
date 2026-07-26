@@ -1,6 +1,6 @@
 ---
 name: skillsaw-maintenance
-description: Analyze upstream specs (agentskills.io, Claude Code plugin/marketplace format, OpenClaw, MCP, CodeRabbit, APM) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
+description: Analyze upstream specs (agentskills.io, Claude Code, OpenAI Codex plugins and marketplaces, OpenClaw, MCP, CodeRabbit, APM) for changes, identify gaps in skillsaw's rule coverage, and create or update PRs to close those gaps. Use when performing periodic maintenance on the skillsaw linter.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
@@ -35,6 +35,7 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 |---|---|---|
 | Agent Skills (agentskills.io) | [references/agentskills.md](references/agentskills.md) | `agentskills/` |
 | Claude Code (plugins, marketplace, .claude, hooks, mcp, skills, agents) | [references/claude.md](references/claude.md) | `plugins/`, `commands/`, `marketplace/`, `hooks/`, `mcp/`, `skills/`, `agents/` |
+| OpenAI Codex (plugins and marketplaces) | [references/codex.md](references/codex.md) | `codex/` |
 | OpenClaw | [references/openclaw.md](references/openclaw.md) | `openclaw/` |
 | Model Context Protocol | [references/mcp.md](references/mcp.md) | `mcp/` |
 | CodeRabbit (`.coderabbit.yaml`) | [references/coderabbit.md](references/coderabbit.md) | `coderabbit/` |

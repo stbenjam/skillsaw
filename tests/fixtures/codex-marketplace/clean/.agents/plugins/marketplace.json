@@ -1,0 +1,20 @@
+{
+  "name": "fixture-codex-marketplace",
+  "interface": {
+    "displayName": "Fixture Codex Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "research-helper",
+      "source": {
+        "source": "local",
+        "path": "./plugins/research-helper"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
