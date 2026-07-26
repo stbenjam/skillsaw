@@ -150,12 +150,19 @@ group the rest as a single NOTE rather than filing one per instance.
 - `SUGGESTION`: Review-history residue in shipped code, a docstring that
   misleads about behavior, or a cluster of tells that makes a doc section hard
   to read. The default for Part A findings.
-- `BLOCKING`: Only when a comment or docstring asserts something **factually
-  false** about the shipped code — a wrong invariant, a bug that never existed,
-  a stale measurement presented as current. That is a correctness defect, not a
-  style one, and the Architecture or Technical Writer findings should
-  corroborate it independently. Absent that corroboration, downgrade to
-  `SUGGESTION`.
+- `BLOCKING CANDIDATE`: A comment or docstring that asserts something
+  **factually false** about the shipped code — a wrong invariant, a bug that
+  never existed, a stale measurement presented as current. That is a
+  correctness defect, not a style one, so it warrants blocking *if* another
+  specialist independently reaches the same file.
+
+  Report it with this label and say plainly what corroboration would confirm
+  it. Do **not** decide the final severity, and do not downgrade it yourself:
+  specialists run isolated from one another, so this reviewer can never see
+  whether Architecture or the Technical Writer found the same thing. The
+  arbiter holds both sets of findings and is the only one that can judge.
+  Self-downgrading here is how a corroborated correctness defect ends up as a
+  suggestion under an `APPROVE`.
 
 Clean writing is a valid outcome. Say what was checked and move on rather than
 manufacturing findings.

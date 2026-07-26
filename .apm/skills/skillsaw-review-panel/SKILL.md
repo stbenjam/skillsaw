@@ -133,7 +133,13 @@ may not share the skill's working directory.
 #### Parallel mode (default)
 
 Launch **all 7 specialist sub-agents in a single message** so they
-run concurrently, using the Agent tool with `run_in_background: true`.
+run concurrently, using the Agent tool with `run_in_background: false`.
+
+One message makes them concurrent; `run_in_background: false` makes the
+call block until all return. Do **not** use `run_in_background: true` — a
+background agent returns at once, so the turn ends mid-review, and
+headlessly the turn ending ends the job. The run then exits green with no
+verdict posted.
 
 Each sub-agent gets:
 - The specialist role name and a one-line description of its lens
@@ -159,27 +165,14 @@ If the Agent tool is not available (e.g. running in Codex or another
 client that lacks sub-agent support), fall back to serial mode
 automatically.
 
-Wait for all sub-agents to complete before proceeding to the
-Completeness Gate (Step 4).
+Synchronous dispatch means all have returned by the time the call
+completes. Proceed to Step 4 only with every specialist's findings.
 
 #### Serial mode (`--serial`)
 
-Run all 7 specialists **inline in the main agent**, one after
-another. Do **not** launch sub-agents.
-
-For each specialist in roster order (Architecture, Python Expert,
-Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem,
-Palimpsest):
-
-1. Write the specialist name as a heading.
-2. **Read that specialist's `references/*.md` file now** — read the
-   detailed scope it holds. Do not review from the one-line lens alone.
-3. Review the diff and repo through that specialist's lens. Read files,
-   grep, and run git commands to gather evidence — context from earlier
-   specialists' file reads carries over.
-4. Write findings in the format above.
-5. If no issues found, say so and list what was checked.
-6. Move on to the next specialist.
+Run all specialists inline in the main agent instead of dispatching
+sub-agents. Read [`references/serial-mode.md`](references/serial-mode.md)
+for the procedure — it is only needed on this non-default path.
 
 ### Step 4 — Completeness Gate
 
@@ -191,6 +184,10 @@ retry it. If any specialist returned an error or a missing/malformed
 result, re-dispatch it **once**. If the retry also fails, record
 the failure and proceed.
 
+Never end the run here — a panel that stops after dispatching looks
+identical to a clean review. If specialists cannot be recovered, post the
+verdict anyway, naming which failed.
+
 ### Step 5 — Run Panel Arbiter Synthesis
 
 After all specialists complete, review and synthesize directly:
@@ -201,8 +198,13 @@ After all specialists complete, review and synthesize directly:
    findings, and issues already addressed in the branch.
 4. **Resolve conflicts** — corroboration strengthens; when specialists
    disagree, prefer the more conservative position.
-5. Set a disposition (see below).
-6. Include required actions (blocking) vs optional follow-ups.
+5. **Settle blocking candidates** — Palimpsest reports a factually false
+   comment as a `BLOCKING CANDIDATE`, since it cannot see other specialists.
+   Promote to `BLOCKING` when Architecture or the Technical Writer reached
+   the same claim; otherwise record as `SUGGESTION`. Leaving it unsettled is
+   not an option.
+6. Set a disposition (see below).
+7. Include required actions (blocking) vs optional follow-ups.
 
 **Follow these disposition criteria:**
 
