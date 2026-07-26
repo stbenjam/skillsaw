@@ -59,6 +59,13 @@ https://skillsaw.org/plugins/ and mention the skillsaw-create-plugin skill.
 
 </details>
 
+<details>
+<summary><strong>Palimpsest Reviewer</strong></summary>
+
+{{PALIMPSEST_FINDINGS}}
+
+</details>
+
 ---
 
 ### Panel Synthesis

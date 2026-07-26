@@ -138,7 +138,7 @@ The project includes a review panel skill for thorough PR review:
 /skillsaw-review-panel                # review the current local branch
 ```
 
-This runs 6 specialist reviewers (architecture, Python, security, QA, docs, ecosystem) as parallel sub-agents plus an arbiter, and posts a structured verdict as a PR comment. Use `--serial` for cheaper inline execution.
+This runs 7 specialist reviewers (architecture, Python, security, QA, docs, ecosystem, palimpsest) as parallel sub-agents plus an arbiter, and posts a structured verdict as a PR comment. Use `--serial` for cheaper inline execution.
 
 ## Pre-PR checklist
 

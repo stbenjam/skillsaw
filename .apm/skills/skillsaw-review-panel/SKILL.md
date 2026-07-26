@@ -1,6 +1,6 @@
 ---
 name: skillsaw-review-panel
-description: Use when reviewing a skillsaw PR. Dispatches 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
+description: Use when reviewing a skillsaw PR. Dispatches 7 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem, Palimpsest) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
@@ -13,7 +13,7 @@ metadata:
 
 **Read-only review — never modify files, never push to any remote.**
 
-Run **6 specialist reviewers + 1 arbiter** to review a skillsaw PR.
+Run **7 specialist reviewers + 1 arbiter** to review a skillsaw PR.
 
 **Two execution modes:**
 
@@ -49,6 +49,7 @@ the maintainer and PR author review and decide ship.
 | QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | [`references/qa-engineer.md`](references/qa-engineer.md) |
 | Technical Writer | Verify documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | [`references/technical-writer.md`](references/technical-writer.md) |
 | Ecosystem Reviewer | Review target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | [`references/ecosystem.md`](references/ecosystem.md) |
+| Palimpsest Reviewer | Catch review-history residue in code comments and AI-authored prose tells in docs, docstrings, and commit messages | [`references/palimpsest.md`](references/palimpsest.md) |
 | Panel Arbiter | Handle strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
 
 ## Run the Execution Procedure
@@ -117,6 +118,11 @@ If no issues found, say so and list what was checked.
   correctness issue. Keep this the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
 
+The Palimpsest Reviewer is advisory: its findings are `SUGGESTION` or `NOTE`
+by default and never set the disposition on their own. It may only reach
+`BLOCKING` when a comment or docstring is factually false about the shipped
+code, and another specialist corroborates the underlying issue.
+
 #### Prompt path resolution
 
 Resolve specialist scope files from the skill directory:
@@ -126,7 +132,7 @@ may not share the skill's working directory.
 
 #### Parallel mode (default)
 
-Launch **all 6 specialist sub-agents in a single message** so they
+Launch **all 7 specialist sub-agents in a single message** so they
 run concurrently, using the Agent tool with `run_in_background: true`.
 
 Each sub-agent gets:
@@ -158,11 +164,12 @@ Completeness Gate (Step 4).
 
 #### Serial mode (`--serial`)
 
-Run all 6 specialists **inline in the main agent**, one after
+Run all 7 specialists **inline in the main agent**, one after
 another. Do **not** launch sub-agents.
 
 For each specialist in roster order (Architecture, Python Expert,
-Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
+Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem,
+Palimpsest):
 
 1. Write the specialist name as a heading.
 2. **Read that specialist's `references/*.md` file now** — read the
@@ -247,4 +254,5 @@ Verify a change passes when:
 - [ ] QA Engineer: Verify adequate test coverage, edge cases addressed.
 - [ ] Technical Writer: Ensure documentation consistent with changes.
 - [ ] Ecosystem Reviewer: Check target tool is in scope for core, or redirect to a plugin with links to skillsaw.org/plugins/.
+- [ ] Palimpsest Reviewer: Check comments and docs describe shipped behavior, not the review history; check prose reads as human-written.
 - [ ] Panel Arbiter: Ratify trade-offs, set disposition.
