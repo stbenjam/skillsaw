@@ -602,20 +602,25 @@ class RepositoryContext:
 
         root = safe_resolve(self.root_path) or self.root_path
 
-        def _add(directory: Path) -> None:
-            if not directory.joinpath(self.CODEX_PLUGIN_MANIFEST[0]).is_dir():
-                return
-            resolved = safe_resolve(directory)
+        def _contained(path: Path) -> Optional[Path]:
+            resolved = safe_resolve(path)
             if resolved is None:
+                return None
+            return resolved if resolved == root or resolved.is_relative_to(root) else None
+
+        def _add(directory: Path) -> None:
+            # Both halves are checked, because either can be the symlink.
+            # ``plugins/foo`` pointing out of the repository is the obvious
+            # one; ``plugins/foo/.codex-plugin`` pointing out while ``foo``
+            # itself is a real directory is the subtler one, and ``is_dir()``
+            # follows it just the same. Either way skillsaw would read an
+            # out-of-tree manifest — and codex-plugin-structure would list
+            # the external directory's filenames under an in-repo path.
+            manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
+            if not manifest_dir.is_dir() or _contained(manifest_dir) is None:
                 return
-            # ``plugins/foo`` can be a symlink out of the repository, and
-            # ``is_dir()`` follows it. Discovering it would pull an external
-            # manifest, its hooks, its MCP servers and its skills into this
-            # repository's lint tree — the same escape the manifest-declared
-            # paths are already checked for.
-            if resolved != root and not resolved.is_relative_to(root):
-                return
-            if resolved in seen:
+            resolved = _contained(directory)
+            if resolved is None or resolved in seen:
                 return
             seen.add(resolved)
             found.append(directory)
@@ -678,8 +683,10 @@ class RepositoryContext:
         still worth linting, but the repository's published catalog has no
         business listing it, so registration checks must skip it.
         """
-        install_root = self.root_path.joinpath(*self.CODEX_INSTALL_DIR).resolve()
-        resolved = plugin_dir.resolve()
+        install_root = safe_resolve(self.root_path.joinpath(*self.CODEX_INSTALL_DIR))
+        resolved = safe_resolve(plugin_dir)
+        if install_root is None or resolved is None:
+            return False
         return resolved != install_root and resolved.is_relative_to(install_root)
 
     def _codex_declared_paths(self, plugin_dir: Path, field: str, want_dir: bool) -> List[Path]:

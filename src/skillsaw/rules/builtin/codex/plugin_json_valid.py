@@ -189,7 +189,8 @@ class CodexPluginJsonValidRule(Rule):
                     )
                 )
             target = plugin_dir / value
-            if check_exists and not target.exists():
+            exists = target.exists()
+            if check_exists and not exists:
                 violations.append(
                     self.violation(
                         f"'{field}': '{value}' does not exist in the plugin",
@@ -203,7 +204,7 @@ class CodexPluginJsonValidRule(Rule):
             # with is_dir(), so a declaration of the wrong kind is dropped
             # there — silently, unless it is reported right here.
             wanted = _EXPECTED_KIND.get(field.split("[")[0])
-            if wanted is None or not target.exists():
+            if wanted is None or not exists:
                 continue
             if wanted == "file" and not target.is_file():
                 violations.append(

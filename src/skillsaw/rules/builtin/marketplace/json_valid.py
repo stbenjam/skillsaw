@@ -3,25 +3,15 @@ Rule: marketplace-json-valid
 """
 
 import re
-from pathlib import PurePosixPath, PureWindowsPath
 from typing import List
 
+from skillsaw.paths import has_parent_traversal, is_absolute_path  # noqa: F401
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-
-
-def is_absolute_path(path: str) -> bool:
-    """True for POSIX-absolute (/x) or Windows-absolute (C:\\x, \\\\share) paths."""
-    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
-
-
-def has_parent_traversal(path: str) -> bool:
-    """True when the path contains a '..' component."""
-    return ".." in path.replace("\\", "/").split("/")
 
 
 def is_valid_plugin_root(plugin_root: str) -> bool:

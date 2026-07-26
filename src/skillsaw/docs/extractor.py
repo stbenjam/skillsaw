@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.formats.codex import safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -28,7 +29,7 @@ from skillsaw.blocks import (
     ReadmeBlock,
     SkillBlock,
 )
-from skillsaw.lint_target import CodexPluginConfigNode, PluginNode, SkillNode
+from skillsaw.lint_target import CodexPluginConfigNode, LintTarget, PluginNode, SkillNode
 
 
 def extract_docs(
@@ -117,8 +118,16 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     """
     claude_dirs = {pn.path.resolve() for pn in context.lint_tree.find(PluginNode)}
     docs: List[PluginDoc] = []
+    # Resolved once for the whole catalog rather than once per plugin: this
+    # was 99.2% of extract_docs runtime on a 180-plugin repository, because
+    # every plugin re-resolved every SkillNode in the tree — O(plugins x
+    # skills) stat calls where O(skills) suffices.
+    skill_nodes = [(safe_resolve(n.path), n) for n in context.lint_tree.find(SkillNode)]
+    resolved_skills = [(r, n) for r, n in skill_nodes if r is not None]
+
     for node in context.lint_tree.find(CodexPluginConfigNode):
-        if not node.path.is_file() or node.plugin_dir.resolve() in claude_dirs:
+        plugin_resolved = safe_resolve(node.plugin_dir)
+        if not node.path.is_file() or plugin_resolved is None or plugin_resolved in claude_dirs:
             continue
         if context.is_codex_installed_plugin(node.plugin_dir):
             # A personal install under .codex/plugins/. Publishing it as a
@@ -126,11 +135,16 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
             # else's plugin — the same authorship line the registration and
             # manifest-quality rules already draw.
             continue
-        docs.append(_extract_codex_plugin(context, node))
+        docs.append(_extract_codex_plugin(context, node, plugin_resolved, resolved_skills))
     return docs
 
 
-def _extract_codex_plugin(context: RepositoryContext, node: CodexPluginConfigNode) -> PluginDoc:
+def _extract_codex_plugin(
+    context: RepositoryContext,
+    node: CodexPluginConfigNode,
+    plugin_resolved: Path,
+    resolved_skills: List[Tuple[Path, SkillNode]],
+) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
     The Codex manifest carries the same descriptive fields as a Claude one,
@@ -159,7 +173,7 @@ def _extract_codex_plugin(context: RepositoryContext, node: CodexPluginConfigNod
         repository=str(meta.get("repository", "") or ""),
         license=str(meta.get("license", "") or ""),
         commands=[],
-        skills=_extract_codex_skills(context, plugin_dir),
+        skills=_extract_codex_skills(plugin_resolved, resolved_skills),
         agents=[],
         hooks=_extract_hooks(node),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
@@ -190,17 +204,19 @@ def _string_list(value) -> List[str]:
     return [str(v) for v in value if v]
 
 
-def _extract_codex_skills(context: RepositoryContext, plugin_dir: Path) -> List[SkillDoc]:
-    """Skills living under *plugin_dir*.
+def _extract_codex_skills(
+    plugin_resolved: Path, resolved_skills: List[Tuple[Path, SkillNode]]
+) -> List[SkillDoc]:
+    """Skills living under the plugin directory.
 
     A Codex-only plugin has no ``PluginNode`` for its skills to nest
     inside, so they hang off the tree root and have to be matched back by
-    path rather than by subtree.
+    path rather than by subtree. Both sides arrive pre-resolved — see the
+    caller for why.
     """
-    resolved = plugin_dir.resolve()
     docs = []
-    for skill_node in context.lint_tree.find(SkillNode):
-        if not skill_node.path.resolve().is_relative_to(resolved):
+    for skill_resolved, skill_node in resolved_skills:
+        if not skill_resolved.is_relative_to(plugin_resolved):
             continue
         doc = _extract_skill(skill_node)
         if doc:
@@ -329,7 +345,7 @@ def _extract_agents(plugin_node: PluginNode) -> List[AgentDoc]:
 # -- Hooks --
 
 
-def _extract_hooks(plugin_node: PluginNode) -> List[HookDoc]:
+def _extract_hooks(plugin_node: LintTarget) -> List[HookDoc]:
     docs = []
     for block in plugin_node.find(HooksBlock):
         for event_type in sorted(block.events):
@@ -353,7 +369,7 @@ def _extract_hooks(plugin_node: PluginNode) -> List[HookDoc]:
 # -- MCP Servers --
 
 
-def _extract_mcp_servers(plugin_node: PluginNode, plugin_meta: dict) -> List[McpServerDoc]:
+def _extract_mcp_servers(plugin_node: LintTarget, plugin_meta: dict) -> List[McpServerDoc]:
     servers: List[McpServerDoc] = []
     seen: set = set()
 

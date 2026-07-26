@@ -2055,6 +2055,38 @@ class TestDiscoveryRobustness:
 
         assert RepositoryContext(repo).codex_plugins == []
 
+    def test_a_symlinked_manifest_directory_is_not_followed(self, tmp_path):
+        """The reserved subdirectory itself can be the symlink.
+
+        ``plugins/victim`` is a genuine in-repo directory, so the guard on
+        the plugin directory passes — but ``.codex-plugin`` under it points
+        out of the tree, and ``is_dir()`` follows it. skillsaw would read an
+        out-of-tree manifest and, worse, codex-plugin-structure would
+        enumerate that external directory's filenames into lint output
+        under an in-repo-looking path.
+        """
+        outside = tmp_path / "secret-plugin"
+        outside.mkdir()
+        (outside / "plugin.json").write_text(
+            json.dumps({"name": "secret", "skills": "../../../etc"}), encoding="utf-8"
+        )
+        (outside / "NOTES.md").write_text("internal\n", encoding="utf-8")
+
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        victim = repo / "plugins" / "victim"
+        victim.mkdir(parents=True)
+        (victim / ".codex-plugin").symlink_to(outside, target_is_directory=True)
+
+        context = RepositoryContext(repo)
+        assert context.codex_plugins == []
+
+        config = LinterConfig.default()
+        config.version = "99.0.0"
+        violations = Linter(context, config=config).run()
+        assert not any(
+            "victim" in str(v.file_path) or "NOTES.md" in v.message for v in violations
+        ), "the external directory leaked into lint output"
+
     def test_a_real_subdirectory_is_still_discovered(self, tmp_path):
         repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
         plugin = _write_plugin(repo / "plugins" / "real", {"name": "real", "version": "1.0.0"})

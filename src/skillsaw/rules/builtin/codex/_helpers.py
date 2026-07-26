@@ -8,10 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from skillsaw.context import RepositoryType
-from skillsaw.rules.builtin.marketplace.json_valid import (
-    has_parent_traversal,
-    is_absolute_path,
-)
+from skillsaw.paths import has_parent_traversal, is_absolute_path
 
 # A Codex marketplace repository contains the plugins it catalogs, so the
 # plugin rules have to fire there too — the same reason PLUGIN_REPO_TYPES
