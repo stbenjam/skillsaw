@@ -102,7 +102,7 @@ Only the main agent posts the final verdict.
 
 Each specialist must produce findings in this format:
 
-- **Severity**: `BLOCKING` | `BLOCKING CANDIDATE` | `SUGGESTION` | `NOTE`
+- **Severity**: `BLOCKING` | `SUGGESTION` | `NOTE`
 - **File:line** — include the reference when applicable
 - **Finding** — write a description
 - **Recommended action** — make it explicit
@@ -111,20 +111,13 @@ If no issues found, say so and list what was checked.
 
 **Follow this severity calibration:**
 - `BLOCKING`: Correctness regressions, security vulnerabilities,
-  architectural faults that compound, or (for the Ecosystem Reviewer) a scope
-  violation that warrants redirect-to-plugin. Always include explicit rationale.
+  architectural faults that compound, (for the Ecosystem Reviewer) a scope
+  violation that warrants redirect-to-plugin, or (for the Slopinator) review
+  history and generated prose left in shipped text. Always include explicit
+  rationale.
 - `SUGGESTION`: Substantive feedback that improves the code but is not a
   correctness issue. Keep this the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
-- `BLOCKING CANDIDATE`: **Slopinator Reviewer only** — no other specialist
-  uses it. That reviewer is advisory: `SUGGESTION` or `NOTE` by default,
-  never setting the disposition itself. It reports this label for a comment
-  that is factually false about the shipped code, rather than deciding a
-  severity it cannot judge alone. Only the arbiter promotes it (Step 5).
-
-**Corroboration means another specialist independently reports the same
-underlying defect** — the same wrong behavior or false claim about the code,
-not merely a finding in the same file.
 
 #### Prompt path resolution
 
@@ -195,14 +188,8 @@ After all specialists complete, review and synthesize directly:
    findings, and issues already addressed in the branch.
 4. **Resolve conflicts** — corroboration strengthens; when specialists
    disagree, prefer the more conservative position.
-5. **Settle blocking candidates** — Slopinator reports a factually false
-   comment as a `BLOCKING CANDIDATE`, since it cannot see other specialists.
-   Promote to `BLOCKING` when any other specialist independently reported the
-   same underlying defect — the same wrong behavior or false claim, not merely
-   a finding in the same file. Otherwise record it as `SUGGESTION`. Leaving it
-   unsettled is not an option.
-6. Set a disposition (see below).
-7. Include required actions (blocking) vs optional follow-ups.
+5. Set a disposition (see below).
+6. Include required actions (blocking) vs optional follow-ups.
 
 #### Disposition criteria
 
