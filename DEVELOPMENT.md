@@ -133,11 +133,12 @@ src/skillsaw/
 The project includes a review panel skill for thorough PR review:
 
 ```
-/skillsaw-review-panel pr <number>    # review a PR
+/skillsaw-review-panel 42             # review PR #42 (parallel by default)
+/skillsaw-review-panel --serial 42    # cheaper serial mode
 /skillsaw-review-panel                # review the current local branch
 ```
 
-This runs 5 specialist reviewers (architecture, Python, security, QA, docs) plus an arbiter, and posts a structured verdict as a PR comment.
+This runs 6 specialist reviewers (architecture, Python, security, QA, docs, ecosystem) as parallel sub-agents plus an arbiter, and posts a structured verdict as a PR comment. Use `--serial` for cheaper inline execution.
 
 ## Pre-PR checklist
 
