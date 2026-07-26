@@ -72,15 +72,19 @@ jobs:
               echo "PR #${NUM}: first time — fetching all comments"
             fi
 
-            # Fetch review comments for this PR
-            PR_REVIEW_COMMENTS=$(gh api "repos/${{ github.repository }}/pulls/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate \
+            # Capture timestamp before fetching so comments posted during
+            # the API calls are included in the next run's window
+            NEXT_SINCE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+            # Fetch review comments for this PR (--slurp flattens paginated pages)
+            PR_REVIEW_COMMENTS=$(gh api "repos/${{ github.repository }}/pulls/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate --slurp \
               | jq --argjson collabs "$COLLABS" \
-              '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), path, line, created_at}]')
+              '[.[][] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), path, line, created_at}]')
 
             # Fetch PR-level comments for this PR
-            PR_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate \
+            PR_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate --slurp \
               | jq --argjson collabs "$COLLABS" \
-              '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), created_at}]')
+              '[.[][] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), created_at}]')
 
             echo "$pr" | jq \
               --argjson rc "$PR_REVIEW_COMMENTS" \
@@ -90,8 +94,8 @@ jobs:
 
             echo "  Review comments: $(echo "$PR_REVIEW_COMMENTS" | jq length), PR comments: $(echo "$PR_COMMENTS" | jq length)"
 
-            # Update per-PR timestamp for next run
-            date -u '+%Y-%m-%dT%H:%M:%SZ' > "$SINCE_FILE"
+            # Persist pre-fetch timestamp for next run
+            echo "$NEXT_SINCE" > "$SINCE_FILE"
           done
 
           # Build matrix
