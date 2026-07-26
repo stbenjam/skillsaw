@@ -24,8 +24,13 @@ Run **7 specialist reviewers + 1 arbiter** to review a skillsaw PR.
   Cheaper — codebase context is derived once and shared — but later
   specialists see earlier ones' file reads, which can bias them.
 
-Keep the panel **advisory**. It does not gate merge. It surfaces findings;
+Keep the panel **advisory** on everything except slop. It surfaces findings;
 the maintainer and PR author review and decide ship.
+
+**Slop is the exception.** Review-history residue and generated prose must not
+merge. A `BLOCKING` finding from the Slopinator gates the verdict: the
+disposition is `REQUEST_CHANGES` until the text is fixed, and no amount of
+agreement from the other specialists converts it into an `APPROVE`.
 
 ## Arguments
 
@@ -195,8 +200,11 @@ After all specialists complete, review and synthesize directly:
 
 **Follow these criteria:**
 
-- **APPROVE**: Set when no unresolved BLOCKING findings remain.
+- **APPROVE**: Set when no unresolved BLOCKING findings remain. An unresolved
+  Slopinator `BLOCKING` finding rules this out on its own — slop does not merge.
 - **REQUEST_CHANGES**: Set for BLOCKING findings that require code changes, but the change is in scope and fixable.
+  This is the disposition for unresolved slop, which is always in scope and
+  always fixable: the finding quotes the replacement text.
 - **NEEDS_DISCUSSION**: Set when findings need author input to resolve. The panel
   cannot decide without clarification — keep it here when the issue is neither a
   clean approve nor an outright change request or rejection.
@@ -213,6 +221,9 @@ After all specialists complete, review and synthesize directly:
 - Prefer existing patterns over novel ones.
 - Backward compatibility is paramount — breaking existing users is always blocking.
 - Keep core focused — prefer a plugin redirect over expanding core for niche tools.
+- Do not soften slop. A Slopinator `BLOCKING` finding is not a style nit to be
+  filtered as noise in Step 3, and it is not downgraded because the rest of the
+  change is good.
 
 Keep clean changes with no issues as a valid outcome — do not manufacture findings.
 
