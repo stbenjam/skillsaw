@@ -17,29 +17,47 @@ https://skillsaw.org/plugins/ and mention the skillsaw-create-plugin skill.
 
 ### Specialist Findings
 
-**Architecture Reviewer**
+<details>
+<summary><strong>Architecture Reviewer</strong></summary>
 
 {{ARCHITECTURE_FINDINGS}}
 
-**Python Expert**
+</details>
+
+<details>
+<summary><strong>Python Expert</strong></summary>
 
 {{PYTHON_FINDINGS}}
 
-**Security & Supply Chain Reviewer**
+</details>
+
+<details>
+<summary><strong>Security & Supply Chain Reviewer</strong></summary>
 
 {{SECURITY_FINDINGS}}
 
-**QA Engineer**
+</details>
+
+<details>
+<summary><strong>QA Engineer</strong></summary>
 
 {{QA_FINDINGS}}
 
-**Technical Writer**
+</details>
+
+<details>
+<summary><strong>Technical Writer</strong></summary>
 
 {{WRITER_FINDINGS}}
 
-**Ecosystem Reviewer**
+</details>
+
+<details>
+<summary><strong>Ecosystem Reviewer</strong></summary>
 
 {{ECOSYSTEM_FINDINGS}}
+
+</details>
 
 ---
 
