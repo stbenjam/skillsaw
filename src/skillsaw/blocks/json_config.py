@@ -108,7 +108,13 @@ class HookEventConfig:
                 if isinstance(h, dict):
                     handlers.append(HookHandler.from_dict(h))
         return cls(
-            matcher=d.get("matcher", ".*"),
+            # Coerced like the handler fields: a list-valued matcher reaches
+            # every consumer annotated ``str``, and the generated docs page
+            # lowercases it while searching, which kills search for the
+            # whole page. Codex uses the default when the field is absent,
+            # and an invalid value is no more specific than absent.
+            # hooks-json-valid reports it, so coercing hides nothing.
+            matcher=_as_str(d.get("matcher")) or ".*",
             handlers=handlers,
         )
 
@@ -135,7 +141,7 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
                 entries.append(HookEventConfig.from_dict(cfg))
             elif "type" in cfg:
                 handler = HookHandler.from_dict(cfg)
-                matcher = cfg.get("matcher", ".*")
+                matcher = _as_str(cfg.get("matcher")) or ".*"
                 entries.append(HookEventConfig(matcher=matcher, handlers=[handler]))
         if entries:
             result[event_type] = entries

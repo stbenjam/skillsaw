@@ -175,6 +175,18 @@ class HooksJsonValidRule(Rule):
                         )
                         continue
 
+                    if "matcher" in hook_config and not isinstance(hook_config["matcher"], str):
+                        # Annotated ``str`` everywhere downstream, and the
+                        # generated docs page lowercases it. Coerced at the
+                        # block boundary so nothing crashes; reported here
+                        # so coercing does not hide the defect.
+                        violations.append(
+                            self.violation(
+                                f"Event '{event_type}[{idx}].matcher' must be a string",
+                                file_path=block.path,
+                            )
+                        )
+
                     if "hooks" not in hook_config:
                         violations.append(
                             self.violation(

@@ -5,7 +5,6 @@ Rule: marketplace-json-valid
 import re
 from typing import List
 
-from skillsaw.formats.codex import safe_exists, safe_resolve
 from skillsaw.paths import has_parent_traversal, is_absolute_path
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -68,18 +67,19 @@ class MarketplaceJsonValidRule(Rule):
 
     @staticmethod
     def _has_codex_catalog(context: RepositoryContext) -> bool:
-        """Whether the repository ships a Codex catalog at the reserved path.
+        """Whether the repository ships a Codex catalog at all.
+
+        Every discovered catalog counts, not just the primary
+        ``marketplace.json``: a repository whose only catalog is a sibling
+        such as ``api_marketplace.json`` is no less a Codex marketplace,
+        and asking about the primary filename alone reported "Marketplace
+        file not found" on exactly the layout this exemption exists for.
 
         Existence, not validity: a broken catalog is still the author
         saying this is a Codex marketplace, and codex-marketplace-json-valid
         is the rule that reports what is wrong with it.
         """
-        catalog = context.codex_marketplace_path()
-        root = safe_resolve(context.root_path)
-        resolved = safe_resolve(catalog)
-        if root is None or resolved is None or not resolved.is_relative_to(root):
-            return False
-        return safe_exists(catalog)
+        return context.codex_catalog_exists()
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []

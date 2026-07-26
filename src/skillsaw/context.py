@@ -204,6 +204,7 @@ class RepositoryContext:
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
+        self._codex_roots: Optional[List[Path]] = None
         # An explicit --type override is a statement about what the caller
         # wants linted, not just which rules fire. Probing for Codex anyway
         # would attach its manifests, hooks, MCP files and skills to the
@@ -341,11 +342,19 @@ class RepositoryContext:
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
             ]
-            # The catalog list is memoized and filters exclusions at
-            # discovery time, so a caller that adds patterns afterwards
-            # would keep reading a catalog it has just excluded. Dropping
-            # the memo makes the next read apply the new patterns.
+            # Dropping the memo is not enough on its own. The catalogs
+            # filter exclusions at discovery time, and a plugin reachable
+            # only through a now-excluded catalog is still in
+            # ``codex_plugins`` — its own path was never excluded, so the
+            # filter above keeps it, and its manifest, hooks, MCP config
+            # and skills stay in the tree. Rediscovery is what drops it.
             self._codex_marketplace_paths = None
+            self._codex_install_root = _UNSET
+            self._codex_roots = None
+            if self._codex_discovery_enabled:
+                self.codex_plugins = [
+                    p for p in self._discover_codex_plugins() if not self.is_path_excluded(p)
+                ]
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -670,6 +679,57 @@ class RepositoryContext:
         self._codex_marketplace_paths = found
         return found
 
+    def codex_catalog_exists(self) -> bool:
+        """Whether any Codex catalog file is present in the checkout.
+
+        Deliberately independent of ``_codex_discovery_enabled``: this
+        answers "is this repository's catalog a Codex one", which the
+        Claude rules need in order to stand down, and an explicit
+        ``--type`` switches discovery off without changing the answer.
+        Reading it from discovery made ``--type marketplace`` resurrect
+        the false positive the stand-down exists to remove.
+
+        Every catalog counts, not just the primary ``marketplace.json`` —
+        a repository whose only catalog is a sibling such as
+        ``api_marketplace.json`` is no less a Codex marketplace.
+        """
+        root = safe_resolve(self.root_path)
+        if root is None:
+            return False
+
+        def _usable(path: Path) -> bool:
+            resolved = safe_resolve(path)
+            if resolved is None or not resolved.is_relative_to(root):
+                return False
+            if self.is_path_excluded(path):
+                return False
+            return safe_exists(path) or safe_is_symlink(path)
+
+        if _usable(self.codex_marketplace_path()):
+            return True
+        marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
+        if not safe_is_dir(marketplace_dir):
+            return False
+        try:
+            siblings = sorted(marketplace_dir.glob("*.json"))
+        except OSError:
+            return False
+        return any(_is_marketplace_filename(c.name) and _usable(c) for c in siblings)
+
+    def codex_plugin_roots(self) -> List[Path]:
+        """Resolved Codex plugin roots, computed once per context.
+
+        ``codex_plugin_owning`` runs per skill inside agentskill-evals and
+        agentskill-rename-refs, so resolving every root on each call costs
+        roughly ``2 x skills x plugins`` filesystem round-trips on a large
+        catalog.
+        """
+        if self._codex_roots is None:
+            self._codex_roots = [
+                r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None
+            ]
+        return self._codex_roots
+
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
         return list(self._discover_codex_marketplaces())
@@ -808,9 +868,7 @@ class RepositoryContext:
         if resolved is None:
             return None
         owners = [
-            r
-            for r in (safe_resolve(p) for p in self.codex_plugins)
-            if r is not None and (resolved == r or resolved.is_relative_to(r))
+            r for r in self.codex_plugin_roots() if resolved == r or resolved.is_relative_to(r)
         ]
         return max(owners, key=lambda r: len(r.parts)) if owners else None
 

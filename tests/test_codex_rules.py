@@ -4400,58 +4400,236 @@ class TestAuthorOnlyMetadataSurvives:
 
 class TestDeeplyNestedDocuments:
     """``json`` and ``yaml`` parse nested containers recursively, so a
-    document nested past the interpreter's stack limit raises
-    ``RecursionError`` rather than a decode error. Discovery reads these
-    files while ``RepositoryContext`` is still being constructed, outside
-    the rule-execution-error guard, so an escaping exception aborted the
-    whole lint with a traceback and reported nothing at all.
+    document the parser cannot descend raises ``RecursionError`` rather
+    than a decode error. Discovery reads these files while
+    ``RepositoryContext`` is being constructed, outside the
+    rule-execution-error guard, so an escaping exception aborted the whole
+    lint with a traceback and reported nothing at all.
+
+    The error is injected rather than provoked with a very deep document.
+    Python 3.14 raises on measured stack usage rather than a depth
+    counter, so the depth that overflows depends on the thread's stack
+    size — a level that overflows on one machine parses cleanly on
+    another, and ``sys.setrecursionlimit`` does not constrain the C
+    scanner. Injecting states the actual contract: a ``RecursionError``
+    from the parser becomes an error string.
     """
 
-    NESTING = 60000
+    @staticmethod
+    def _explode(*_args, **_kwargs):
+        raise RecursionError("Stack overflow")
 
-    def test_a_deeply_nested_catalog_is_reported(self, tmp_path):
+    def test_the_shared_json_reader_returns_an_error(self, tmp_path, monkeypatch):
+        import json as json_mod
+        from skillsaw.utils import read_json
+
+        target = tmp_path / "deep.json"
+        target.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(json_mod, "loads", self._explode)
+        assert read_json(target) == (None, "Nesting too deep to parse")
+
+    def test_the_shared_yaml_readers_return_an_error(self, tmp_path, monkeypatch):
+        import yaml as yaml_mod
+        from ruamel.yaml import YAML as _Ruamel
+        from skillsaw.utils import read_yaml, read_yaml_commented
+
+        target = tmp_path / "deep.yaml"
+        target.write_text("a: 1\n", encoding="utf-8")
+        monkeypatch.setattr(yaml_mod, "safe_load", self._explode)
+        assert read_yaml(target) == (None, "Nesting too deep to parse")
+
+        monkeypatch.setattr(_Ruamel, "load", self._explode)
+        other = tmp_path / "deep2.yaml"
+        other.write_text("a: 1\n", encoding="utf-8")
+        assert read_yaml_commented(other) == (None, "Nesting too deep to parse", None)
+
+    def test_an_unparseable_catalog_is_reported_not_raised(self, tmp_path, monkeypatch):
+        import skillsaw.utils as utils_mod
+
         repo = tmp_path / "repo"
         (repo / ".agents" / "plugins").mkdir(parents=True)
         (repo / ".agents" / "plugins" / "marketplace.json").write_text(
-            '{"x":' * self.NESTING + "1" + "}" * self.NESTING, encoding="utf-8"
+            '{"name": "cat", "plugins": []}', encoding="utf-8"
         )
+        monkeypatch.setattr(utils_mod.json, "loads", self._explode)
 
-        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        # Construction is the part that aborted: discovery reads the
+        # catalog inside __init__, where no guard can catch the exception.
+        context = RepositoryContext(repo)
+        found = messages(CodexMarketplaceJsonValidRule({}).check(context))
         assert any("too deep" in m for m in found), found
 
-    def test_a_deeply_nested_plugin_manifest_is_reported(self, tmp_path):
-        repo = tmp_path / "repo"
-        (repo / ".codex-plugin").mkdir(parents=True)
-        (repo / ".codex-plugin" / "plugin.json").write_text(
-            "[" * self.NESTING + "]" * self.NESTING, encoding="utf-8"
-        )
-
-        found = messages(run_rule(CodexPluginJsonValidRule, repo))
-        assert found, "an unparseable manifest must still be reported"
-
-    def test_the_shared_readers_return_an_error_rather_than_raising(self, tmp_path):
-        from skillsaw.utils import read_json, read_yaml, read_yaml_commented
-
-        deep_json = tmp_path / "deep.json"
-        deep_json.write_text("[" * self.NESTING + "]" * self.NESTING, encoding="utf-8")
-        deep_yaml = tmp_path / "deep.yaml"
-        deep_yaml.write_text("[" * self.NESTING + "]" * self.NESTING, encoding="utf-8")
-
-        assert read_json(deep_json) == (None, "Nesting too deep to parse")
-        assert read_yaml(deep_yaml) == (None, "Nesting too deep to parse")
-        assert read_yaml_commented(deep_yaml) == (None, "Nesting too deep to parse", None)
-
-    def test_a_deeply_nested_coderabbit_config_is_reported(self, tmp_path):
+    def test_an_unparseable_coderabbit_config_does_not_abort_tree_build(
+        self, tmp_path, monkeypatch
+    ):
+        import yaml as yaml_mod
         from skillsaw.rules.builtin.coderabbit.yaml_valid import CoderabbitYamlValidRule
 
         repo = tmp_path / "repo"
         repo.mkdir()
-        (repo / ".coderabbit.yaml").write_text(
-            "[" * self.NESTING + "]" * self.NESTING, encoding="utf-8"
-        )
+        (repo / ".coderabbit.yaml").write_text("reviews:\n  profile: chill\n", encoding="utf-8")
+        monkeypatch.setattr(yaml_mod, "safe_load", self._explode)
 
-        # Tree construction is the part that used to abort.
         context = RepositoryContext(repo)
         assert context.lint_tree is not None
         found = messages(CoderabbitYamlValidRule({}).check(context))
         assert any("too deep" in m for m in found), found
+
+
+class TestSiblingOnlyCatalogExempts:
+    """``openai/plugins`` splits its listing, so a repository whose only
+    catalog is a sibling is no less a Codex marketplace."""
+
+    def _repo(self, tmp_path, filename):
+        repo = tmp_path / "repo"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / filename).write_text(
+            json.dumps({"name": "cat", "plugins": []}), encoding="utf-8"
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+        return repo
+
+    @pytest.mark.parametrize("filename", ["marketplace.json", "api_marketplace.json"])
+    def test_no_claude_marketplace_is_demanded(self, tmp_path, filename):
+        repo = self._repo(tmp_path, filename)
+        assert MarketplaceJsonValidRule({}).check(RepositoryContext(repo)) == []
+
+    @pytest.mark.parametrize("filename", ["marketplace.json", "api_marketplace.json"])
+    def test_the_same_holds_under_an_explicit_type(self, tmp_path, filename):
+        """The probe must not read the discovery gate, which `--type` closes."""
+        repo = self._repo(tmp_path, filename)
+        forced = RepositoryContext(repo, repo_types={RepositoryType.MARKETPLACE})
+        assert MarketplaceJsonValidRule({}).check(forced) == []
+
+    def test_a_repo_with_no_codex_catalog_still_reports(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "plugins" / "one" / "commands").mkdir(parents=True)
+        (repo / "plugins" / "one" / "commands" / "go.md").write_text("Go.\n", encoding="utf-8")
+        found = messages(MarketplaceJsonValidRule({}).check(RepositoryContext(repo)))
+        assert "Marketplace file not found" in found
+
+    def test_an_excluded_catalog_does_not_exempt(self, tmp_path):
+        repo = self._repo(tmp_path, "marketplace.json")
+        context = RepositoryContext(repo, exclude_patterns=[".agents/plugins/**"])
+        assert not context.codex_catalog_exists()
+
+    def test_an_unrelated_sibling_does_not_exempt(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "notes.json").write_text("{}", encoding="utf-8")
+        assert not RepositoryContext(repo).codex_catalog_exists()
+
+
+class TestLateExcludesDropContributedPlugins:
+    """``apply_excludes`` runs again when a config arrives after
+    construction. A plugin reachable only through a now-excluded catalog
+    has no excluded path of its own, so filtering alone keeps it."""
+
+    def test_a_plugin_reached_only_through_an_excluded_catalog_is_dropped(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "cat",
+                    "plugins": [
+                        {
+                            "name": "extra",
+                            "source": {"source": "local", "path": "./extensions/extra"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        _write_plugin(repo / "extensions" / "extra", {"name": "extra", "version": "1.0.0"})
+
+        context = RepositoryContext(repo)
+        assert any(p.name == "extra" for p in context.codex_plugins)
+
+        context.exclude_patterns = [".agents/plugins/**"]
+        context.apply_excludes()
+        assert not any(p.name == "extra" for p in context.codex_plugins)
+
+    def test_a_plugin_in_a_conventional_location_survives(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        _write_plugin(repo / "plugins" / "kept", {"name": "kept", "version": "1.0.0"})
+
+        context = RepositoryContext(repo)
+        context.exclude_patterns = [".agents/plugins/**"]
+        context.apply_excludes()
+        assert any(p.name == "kept" for p in context.codex_plugins)
+
+
+class TestNonStringHookMatcher:
+    def _repo(self, tmp_path, matcher):
+        return _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "hooky",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": matcher,
+                                "hooks": [{"type": "command", "command": "echo hi"}],
+                            }
+                        ]
+                    }
+                },
+            },
+        )
+
+    @pytest.mark.parametrize("bad", [[], {}, 42])
+    def test_a_non_string_matcher_is_reported_and_coerced(self, tmp_path, bad):
+        from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule
+
+        context = RepositoryContext(self._repo(tmp_path, bad))
+        found = messages(HooksJsonValidRule({}).check(context))
+        assert any("matcher' must be a string" in m for m in found), found
+
+        # The docs model must carry a string, or the generated page's
+        # search calls .toLowerCase() on a list and stops rendering.
+        for plugin in extract_docs(context).plugins:
+            for hook in plugin.hooks:
+                for entry in hook.entries:
+                    assert isinstance(entry.matcher, str)
+
+    def test_a_real_matcher_is_untouched(self, tmp_path):
+        from skillsaw.rules.builtin.hooks.json_valid import HooksJsonValidRule
+
+        context = RepositoryContext(self._repo(tmp_path, "Write|Edit"))
+        assert HooksJsonValidRule({}).check(context) == []
+        matchers = [
+            e.matcher for p in extract_docs(context).plugins for h in p.hooks for e in h.entries
+        ]
+        assert "Write|Edit" in matchers
+
+
+class TestCodexRootsAreResolvedOnce:
+    def test_repeated_owner_lookups_do_not_re_resolve_the_roots(self, tmp_path, monkeypatch):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "holder", "version": "1.0.0", "description": "x"}
+        )
+        context = RepositoryContext(repo)
+        context.codex_plugin_roots()  # warm the memo
+
+        import skillsaw.context as ctx_mod
+
+        calls = {"n": 0}
+        real = ctx_mod.safe_resolve
+
+        def counting(path):
+            calls["n"] += 1
+            return real(path)
+
+        monkeypatch.setattr(ctx_mod, "safe_resolve", counting)
+        for _ in range(20):
+            context.codex_plugin_owning(repo / "skills" / "s")
+
+        # One resolve per lookup, for the queried path itself. Before the
+        # memo it was one per root per lookup as well, which two rules pay
+        # once per skill.
+        assert calls["n"] == 20
