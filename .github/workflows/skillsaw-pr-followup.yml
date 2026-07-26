@@ -22,26 +22,20 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       prs: ${{ steps.activity.outputs.prs }}
-      since: ${{ steps.activity.outputs.since }}
     steps:
-      - name: Restore last run timestamp
+      - name: Restore per-PR timestamps
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .last-pr-followup-run
-          key: pr-followup-last-run-${{ github.run_id }}
-          restore-keys: pr-followup-last-run-
+          path: .pr-followup-since/
+          key: pr-followup-since-${{ github.run_id }}
+          restore-keys: pr-followup-since-
 
       - name: Get reviewable PRs and new activity
         id: activity
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f .last-pr-followup-run ]; then
-            SINCE=$(cat .last-pr-followup-run)
-          else
-            SINCE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
-          fi
-          echo "since=$SINCE" >> "$GITHUB_OUTPUT"
+          mkdir -p .pr-followup-since
 
           # Get list of collaborators (trusted users only)
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
@@ -62,35 +56,42 @@ jobs:
             exit 0
           fi
 
-          # New PR review comments from collaborators since last run
-          gh api "repos/${{ github.repository }}/pulls/comments?since=$SINCE&per_page=100" \
-            | jq --argjson collabs "$COLLABS" \
-            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, pull_request_url, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), path, line, created_at}]' \
-            > /tmp/new-review-comments.json
-
-          # New PR-level comments from collaborators since last run
-          gh api "repos/${{ github.repository }}/issues/comments?since=$SINCE&per_page=100" \
-            | jq --argjson collabs "$COLLABS" \
-            '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, issue_url, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), created_at}]' \
-            > /tmp/new-pr-comments.json
-
-          # For each PR, write its data + relevant comments to a file
+          # For each PR, fetch comments using that PR's own since timestamp
           echo "$PRS" | jq -c '.[]' | while read -r pr; do
             NUM=$(echo "$pr" | jq -r '.number')
 
-            # Filter review comments to this PR
-            PR_REVIEW_COMMENTS=$(cat /tmp/new-review-comments.json \
-              | jq --arg num "$NUM" '[.[] | select(.pull_request_url | endswith("/" + $num))]')
+            # Per-PR since: use last-processed timestamp if available,
+            # otherwise fetch all comments (no since cutoff)
+            SINCE_FILE=".pr-followup-since/pr-${NUM}"
+            SINCE_PARAM=""
+            if [ -f "$SINCE_FILE" ]; then
+              PR_SINCE=$(cat "$SINCE_FILE")
+              SINCE_PARAM="&since=${PR_SINCE}"
+              echo "PR #${NUM}: fetching comments since ${PR_SINCE}"
+            else
+              echo "PR #${NUM}: first time — fetching all comments"
+            fi
 
-            # Filter PR-level comments to this PR
-            PR_COMMENTS=$(cat /tmp/new-pr-comments.json \
-              | jq --arg num "$NUM" '[.[] | select(.issue_url | endswith("/" + $num))]')
+            # Fetch review comments for this PR
+            PR_REVIEW_COMMENTS=$(gh api "repos/${{ github.repository }}/pulls/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate \
+              | jq --argjson collabs "$COLLABS" \
+              '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), path, line, created_at}]')
+
+            # Fetch PR-level comments for this PR
+            PR_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/${NUM}/comments?per_page=100${SINCE_PARAM}" --paginate \
+              | jq --argjson collabs "$COLLABS" \
+              '[.[] | select(.user.login as $u | $collabs | index($u)) | {id, user: .user.login, body: (.body // "" | gsub("(?s)<!--.*?-->"; "") | gsub("(?s)<!--.*"; "")), created_at}]')
 
             echo "$pr" | jq \
               --argjson rc "$PR_REVIEW_COMMENTS" \
               --argjson pc "$PR_COMMENTS" \
               '. + {review_comments: $rc, pr_comments: $pc}' \
               > "/tmp/pr-${NUM}.json"
+
+            echo "  Review comments: $(echo "$PR_REVIEW_COMMENTS" | jq length), PR comments: $(echo "$PR_COMMENTS" | jq length)"
+
+            # Update per-PR timestamp for next run
+            date -u '+%Y-%m-%dT%H:%M:%SZ' > "$SINCE_FILE"
           done
 
           # Build matrix
@@ -103,10 +104,6 @@ jobs:
 
           echo "Open PRs with agent label:"
           echo "$PRS" | jq length
-          echo "New review comments from collaborators since $SINCE:"
-          cat /tmp/new-review-comments.json | jq length
-          echo "New PR comments from collaborators since $SINCE:"
-          cat /tmp/new-pr-comments.json | jq length
 
       - name: Upload PR data
         if: steps.activity.outputs.prs != '[]'
@@ -117,16 +114,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-      - name: Save last run timestamp
-        if: always()
-        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > .last-pr-followup-run
-
-      - name: Cache last run timestamp
+      - name: Save per-PR timestamps
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .last-pr-followup-run
-          key: pr-followup-last-run-${{ github.run_id }}
+          path: .pr-followup-since/
+          key: pr-followup-since-${{ github.run_id }}
 
   follow-up:
     needs: discover
@@ -156,8 +149,6 @@ jobs:
             <pr>
             $(cat /tmp/pr-${{ matrix.pr.number }}.json)
             </pr>
-
-            ## New review comments from collaborators since ${{ needs.discover.outputs.since }}
 
             <inline-review-comments>
             $(cat /tmp/pr-${{ matrix.pr.number }}.json | jq '.review_comments')
