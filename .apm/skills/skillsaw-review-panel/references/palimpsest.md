@@ -13,8 +13,8 @@ for the one narrow case that escalates.
 
 ## Part A — Review-history residue in code
 
-The motivating case, from a real review on skillsaw PR #451. All four shipped
-and had to be removed afterward:
+Comments of this shape are the motivating case. Each says something true
+about a review conversation and nothing useful about the code:
 
 | Shipped comment | Why it is residue |
 |---|---|
