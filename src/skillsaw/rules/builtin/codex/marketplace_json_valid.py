@@ -174,24 +174,29 @@ class CodexMarketplaceJsonValidRule(Rule):
                     file_path=marketplace_file,
                 )
             ]
+        # A duplicate falls through to the casing check rather than returning:
+        # two entries named ``Bad_Name`` have both defects, and reporting only
+        # the duplicate would hide the second until the first was fixed.
+        violations: List[RuleViolation] = []
         if name in seen_names:
-            return [
+            violations.append(
                 self.violation(
                     f"plugins[{idx}] duplicate plugin name '{name}' "
                     f"(first defined at plugins[{seen_names[name]}])",
                     file_path=marketplace_file,
                 )
-            ]
-        seen_names[name] = idx
+            )
+        else:
+            seen_names[name] = idx
         if not KEBAB_CASE.match(name):
-            return [
+            violations.append(
                 self.violation(
                     f"plugins[{idx}] plugin name '{name}' should use kebab-case",
                     file_path=marketplace_file,
                     severity=Severity.WARNING,
                 )
-            ]
-        return []
+            )
+        return violations
 
     def _check_source(self, source: Any, idx: int, marketplace_file: Path) -> List[RuleViolation]:
         """Validate an entry's source (bare local path string or typed object)."""
@@ -267,6 +272,10 @@ class CodexMarketplaceJsonValidRule(Rule):
     def _check_local_path(
         self, value: str, label: str, marketplace_file: Path
     ) -> List[RuleViolation]:
+        if not value:
+            # "" resolves to the marketplace root, so nothing below rejects
+            # it and an entry that can never install would pass as INFO.
+            return [self.violation(f"{label} is an empty path", file_path=marketplace_file)]
         problem = path_problem(value, "marketplace root")
         if problem:
             return [self.violation(f"{label}: {problem}", file_path=marketplace_file)]
@@ -295,7 +304,19 @@ class CodexMarketplaceJsonValidRule(Rule):
                     file_path=marketplace_file,
                 )
             ]
-        parsed = urlparse(registry)
+        try:
+            parsed = urlparse(registry)
+        except ValueError:
+            # urlparse raises on an unbalanced '[' ("Invalid IPv6 URL").
+            # Letting it escape aborts the whole rule, so the credential and
+            # scheme checks below would fail open on exactly the malformed
+            # input they exist to catch.
+            return [
+                self.violation(
+                    f"plugins[{idx}].source.registry '{registry}' is not a valid URL",
+                    file_path=marketplace_file,
+                )
+            ]
         problems = []
         if parsed.scheme != "https":
             problems.append("must use https")
@@ -346,7 +367,10 @@ class CodexMarketplaceJsonValidRule(Rule):
                 violations.append(
                     self.violation(
                         f"plugins[{idx}].policy.{field}: unrecognized value "
-                        f"{value!r} (known values: {', '.join(known)})",
+                        # str(): the config schema declares a list without an
+                        # element type, so a user's non-string value must not
+                        # crash the rule inside its own error message.
+                        f"{value!r} (known values: {', '.join(str(v) for v in known)})",
                         file_path=marketplace_file,
                         severity=Severity.WARNING,
                     )

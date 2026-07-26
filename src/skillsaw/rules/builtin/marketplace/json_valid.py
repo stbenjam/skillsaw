@@ -8,7 +8,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.lint_target import MarketplaceConfigNode
+from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -61,6 +61,20 @@ class MarketplaceJsonValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
+    @staticmethod
+    def _has_claude_plugin(context: RepositoryContext) -> bool:
+        """Whether any discovered plugin carries a Claude manifest.
+
+        Shipping ``.claude-plugin/plugin.json`` is the author declaring the
+        directory a Claude plugin, which is what makes the missing Claude
+        marketplace a real defect rather than an artifact of a Codex repo
+        keeping its plugins where the Codex docs say to.
+        """
+        return any(
+            node.path.joinpath(".claude-plugin", "plugin.json").is_file()
+            for node in context.lint_tree.find(PluginNode)
+        )
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
@@ -70,14 +84,21 @@ class MarketplaceJsonValidRule(Rule):
 
         config_nodes = context.lint_tree.find(MarketplaceConfigNode)
         if not config_nodes:
-            if RepositoryType.CODEX_MARKETPLACE in context.repo_types:
+            if (
+                RepositoryType.CODEX_MARKETPLACE in context.repo_types
+                and not self._has_claude_plugin(context)
+            ):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the
                 # Codex docs prescribe storing plugins under
                 # $REPO_ROOT/plugins/. Demanding a Claude manifest here fired
                 # on 13 of 35 real Codex marketplaces surveyed, openai/plugins
                 # among them. codex-marketplace-json-valid validates the
-                # catalog those repositories do ship.
+                # catalog those repositories do ship. A repository that ships
+                # a real Claude plugin alongside its Codex catalog is exempt
+                # from the exemption — the author declared a Claude plugin, so
+                # the Claude marketplace that would publish it is still
+                # required (the same rule plugin-json-required applies).
                 return violations
             violations.append(
                 self.violation(

@@ -71,6 +71,12 @@ installs off the catalog name, so the mismatch is confusing rather than
 fatal. Remote sources (`url`, `git-subdir`, `npm`) are not resolved
 locally and are never reported here.
 
+Plugins under `.codex/plugins/` are never reported. That is where Codex
+installs plugins into a developer's checkout, so they are not the
+repository's to publish — their skills and hooks are still linted, but
+demanding the repository's catalog list them would fail the lint of
+anyone who installed one.
+
 ## Configuration
 
 ```yaml

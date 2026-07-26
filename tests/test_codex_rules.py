@@ -67,7 +67,27 @@ class TestCodexDiscovery:
 
         assert RepositoryType.CODEX_MARKETPLACE in context.repo_types
         assert RepositoryType.CODEX_PLUGIN in context.repo_types
-        assert {p.name for p in context.codex_plugins} == {"note-taker", "repo-policy"}
+        assert {p.name for p in context.codex_plugins} == {
+            "note-taker",
+            "repo-policy",
+            "installed-helper",
+        }
+
+    def test_installed_plugins_are_discovered_but_not_authored(self, tmp_path):
+        """``.codex/plugins/`` is where Codex installs plugins into a checkout.
+
+        Its content is still linted — an installed plugin's hooks are the
+        same supply-chain surface as an authored one's — but the repository
+        does not author it, so registration must not demand the repository's
+        own catalog list it.
+        """
+        repo = copy_fixture("codex/clean", tmp_path)
+        context = RepositoryContext(repo)
+        installed = repo / ".codex" / "plugins" / "installed-helper"
+
+        assert installed in context.codex_plugins
+        assert context.is_codex_installed_plugin(installed)
+        assert not context.is_codex_installed_plugin(repo / "plugins" / "note-taker")
 
     def test_lint_tree_carries_codex_nodes(self, tmp_path):
         repo = copy_fixture("codex/clean", tmp_path)
@@ -76,8 +96,11 @@ class TestCodexDiscovery:
         marketplaces = tree.find(CodexMarketplaceConfigNode)
         plugins = tree.find(CodexPluginConfigNode)
         assert [n.path.name for n in marketplaces] == ["marketplace.json"]
-        assert len(plugins) == 2
-        assert {n.plugin_dir.name for n in plugins} == {"note-taker", "repo-policy"}
+        assert {n.plugin_dir.name for n in plugins} == {
+            "note-taker",
+            "repo-policy",
+            "installed-helper",
+        }
 
     def test_plugin_hooks_reach_the_hook_rules(self, tmp_path):
         """A Codex plugin's hooks.json is executable supply-chain surface.
@@ -160,7 +183,7 @@ class TestCodexDiscovery:
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo, exclude_patterns=["plugins/repo-policy"])
 
-        assert {p.name for p in context.codex_plugins} == {"note-taker"}
+        assert {p.name for p in context.codex_plugins} == {"note-taker", "installed-helper"}
 
     @pytest.mark.parametrize(
         "source,expected",
@@ -352,6 +375,97 @@ class TestMarketplaceJsonValid:
         assert "must not embed credentials" in registry[0]
         assert "must not have a query string" in registry[0]
 
+    def test_unparseable_npm_registry_is_reported_not_crashed(self, tmp_path):
+        """``urlparse`` raises "Invalid IPv6 URL" on an unbalanced '['.
+
+        Letting it escape aborted the whole rule, so the credential and
+        scheme checks failed open on exactly the malformed input they exist
+        to catch, and every other finding in every catalog was replaced by a
+        rule-execution-error.
+        """
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "bad-registry",
+                "plugins": [
+                    {
+                        "name": "x",
+                        "source": {"source": "npm", "package": "x", "registry": "https://[oops"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        violations = run_rule(CodexMarketplaceJsonValidRule, repo)
+        assert messages(violations) == [
+            "plugins[0].source.registry 'https://[oops' is not a valid URL"
+        ]
+
+    def test_empty_bare_string_source_is_an_error(self, tmp_path):
+        """``""`` resolves to the marketplace root, so nothing else rejects it.
+
+        The object form is caught by the required-field check; only the bare
+        string branch degraded an unusable entry to an INFO about './'.
+        """
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "empty-source",
+                "plugins": [
+                    {
+                        "name": "x",
+                        "source": "",
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        violations = run_rule(CodexMarketplaceJsonValidRule, repo)
+        assert messages(violations) == ["plugins[0].source is an empty path"]
+        assert violations[0].severity is Severity.ERROR
+
+    def test_non_string_policy_values_config_does_not_crash(self, tmp_path):
+        """``config_schema`` declares a bare list, so elements can be anything."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "x",
+                        "source": {"source": "local", "path": "./plugins/x"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        violations = run_rule(CodexMarketplaceJsonValidRule, repo, {"installation-values": [1, 2]})
+        assert any("known values: 1, 2" in m for m in messages(violations))
+
+    def test_duplicate_name_still_reports_its_casing(self, tmp_path):
+        """Both defects are real; returning early hid the second one."""
+        entry = {
+            "source": {"source": "local", "path": "./plugins/x"},
+            "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+            "category": "Productivity",
+        }
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {"name": "Bad_Name", **entry},
+                    {"name": "Bad_Name", **entry},
+                ],
+            },
+        )
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert any("plugins[1] duplicate plugin name 'Bad_Name'" in m for m in found)
+        assert any("plugins[1] plugin name 'Bad_Name' should use kebab-case" in m for m in found)
+
     def test_unrecognized_policy_values_warn(self, violations):
         warnings = messages(by_severity(violations, Severity.WARNING))
         assert any("policy.installation" in m and "MAYBE" in m for m in warnings)
@@ -488,6 +602,25 @@ class TestMarketplaceRegistration:
         assert len(unregistered) == 1
         assert unregistered[0].severity is Severity.ERROR
         assert unregistered[0].fixable is True
+
+    def test_installed_plugin_is_not_demanded_in_the_catalog(self, tmp_path):
+        """A plugin under ``.codex/plugins/`` was installed, not authored.
+
+        Demanding registration here failed the lint of anyone who installed
+        a Codex plugin into their checkout, and the autofix wrote the
+        third-party install into the repository's published catalog.
+        """
+        repo = copy_fixture("codex/clean", tmp_path)
+        catalog = repo / ".agents" / "plugins" / "marketplace.json"
+        before = catalog.read_text(encoding="utf-8")
+
+        context = RepositoryContext(repo)
+        rule = CodexMarketplaceRegistrationRule({})
+        violations = rule.check(context)
+
+        assert [m for m in messages(violations) if "not registered" in m] == []
+        assert rule.fix(context, violations) == []
+        assert catalog.read_text(encoding="utf-8") == before
 
     def test_dangling_local_source_is_reported_and_not_fixable(self, broken):
         violations = run_rule(CodexMarketplaceRegistrationRule, broken)
@@ -843,6 +976,39 @@ class TestClaudeRulesStandDown:
         (tmp_path / "plugins" / "thing" / "commands").mkdir(parents=True)
         violations = MarketplaceJsonValidRule({}).check(RepositoryContext(tmp_path))
         assert messages(violations) == ["Marketplace file not found"]
+
+    def test_marketplace_file_not_found_still_fires_with_claude_plugins(self, tmp_path):
+        """The exemption is for repositories that ship no Claude plugin at all.
+
+        Shipping ``.claude-plugin/plugin.json`` declares the directory a
+        Claude plugin, and a Claude plugin needs the Claude marketplace that
+        would publish it — the same asymmetry plugin-json-required already
+        respects.
+        """
+        from skillsaw.rules.builtin.marketplace.json_valid import MarketplaceJsonValidRule
+
+        (tmp_path / ".agents" / "plugins").mkdir(parents=True)
+        (tmp_path / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps({"name": "codex-cat", "plugins": []}), encoding="utf-8"
+        )
+        (tmp_path / "plugins" / "claudeplug" / "commands").mkdir(parents=True)
+        (tmp_path / "plugins" / "claudeplug" / ".claude-plugin").mkdir()
+        (tmp_path / "plugins" / "claudeplug" / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "name": "claudeplug",
+                    "version": "1.0.0",
+                    "description": "A real Claude plugin in a Codex repository.",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        context = RepositoryContext(tmp_path)
+        assert RepositoryType.CODEX_MARKETPLACE in context.repo_types
+        assert messages(MarketplaceJsonValidRule({}).check(context)) == [
+            "Marketplace file not found"
+        ]
 
     def test_codex_plugin_is_not_asked_for_a_claude_manifest(self, tmp_path):
         from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule

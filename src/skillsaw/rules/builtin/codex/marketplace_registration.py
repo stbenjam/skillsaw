@@ -155,10 +155,22 @@ class CodexMarketplaceRegistrationRule(Rule):
     def _unregistered(
         self, context: RepositoryContext, registered_names: set, registered_dirs: set
     ) -> List[Tuple[Path, str]]:
+        """Discovered plugin directories no catalog covers.
+
+        Plugins under ``.codex/plugins/`` are skipped: that is where Codex
+        installs third-party plugins into a developer's checkout, so they
+        are not the repository's to publish. They stay discovered — their
+        hooks and skills are still linted — but demanding the repository
+        catalog them would fail the lint of anyone who installed one, and
+        the autofix would write a third-party install into the published
+        catalog.
+        """
         found: List[Tuple[Path, str]] = []
         for plugin_node in context.lint_tree.find(CodexPluginConfigNode):
             plugin_dir = plugin_node.plugin_dir
             if plugin_dir.resolve() in registered_dirs:
+                continue
+            if context.is_codex_installed_plugin(plugin_dir):
                 continue
             name = context.codex_plugin_name(plugin_dir)
             if name in registered_names:

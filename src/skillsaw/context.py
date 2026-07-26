@@ -182,9 +182,9 @@ class RepositoryContext:
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
+        self._codex_marketplace_paths: Optional[List[Path]] = None
         # Codex discovery runs before type detection because the Codex repo
         # types are derived from what it finds, not from a path probe.
-        self.codex_marketplace_data = self._load_codex_marketplace()
         self.codex_plugins: List[Path] = self._discover_codex_plugins()
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
@@ -525,6 +525,9 @@ class RepositoryContext:
     CODEX_MARKETPLACE_DIR = (".agents", "plugins")
     CODEX_MARKETPLACE_FILENAME = "marketplace.json"
     CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
+    # Where Codex installs plugins a developer added to their own checkout,
+    # as opposed to plugins the repository authors.
+    CODEX_INSTALL_DIR = (".codex", "plugins")
 
     def codex_marketplace_path(self) -> Path:
         """Path the Codex repo marketplace manifest would live at."""
@@ -548,9 +551,8 @@ class RepositoryContext:
         a second catalog as ``api_marketplace.json``, but the directory is
         not reserved, so unrelated JSON must not be linted as a catalog.
         """
-        cached = self.__dict__.get("_codex_marketplace_paths")
-        if cached is not None:
-            return cached
+        if self._codex_marketplace_paths is not None:
+            return self._codex_marketplace_paths
 
         found: List[Path] = []
         primary = self.codex_marketplace_path()
@@ -570,16 +572,12 @@ class RepositoryContext:
                 if isinstance(data, dict) and isinstance(data.get("plugins"), list):
                     found.append(candidate)
 
-        self.__dict__["_codex_marketplace_paths"] = found
+        self._codex_marketplace_paths = found
         return found
 
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
         return list(self._discover_codex_marketplaces())
-
-    def _load_codex_marketplace(self) -> Optional[Dict[str, Any]]:
-        """Parsed ``.agents/plugins/marketplace.json``, or None if absent/unreadable."""
-        return _read_json_or_none(self.codex_marketplace_path())
 
     def _discover_codex_plugins(self) -> List[Path]:
         """Discover directories holding a ``.codex-plugin/plugin.json`` manifest.
@@ -605,7 +603,10 @@ class RepositoryContext:
 
         _add(self.root_path)
 
-        for parent in (self.root_path / "plugins", self.root_path / ".codex" / "plugins"):
+        for parent in (
+            self.root_path / "plugins",
+            self.root_path.joinpath(*self.CODEX_INSTALL_DIR),
+        ):
             if not parent.is_dir():
                 continue
             try:
@@ -648,14 +649,21 @@ class RepositoryContext:
                     resolved.append(candidate)
         return resolved
 
+    def is_codex_installed_plugin(self, plugin_dir: Path) -> bool:
+        """Whether *plugin_dir* is an installed plugin rather than an authored one.
+
+        ``.codex/plugins/`` is the personal-install location — content a
+        developer added to their own checkout. Its skills and hooks are
+        still worth linting, but the repository's published catalog has no
+        business listing it, so registration checks must skip it.
+        """
+        install_root = self.root_path.joinpath(*self.CODEX_INSTALL_DIR).resolve()
+        resolved = plugin_dir.resolve()
+        return resolved != install_root and resolved.is_relative_to(install_root)
+
     def codex_plugin_name(self, plugin_dir: Path) -> str:
         """Name a Codex plugin declares, falling back to its directory name."""
-        manifest = plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST)
-        try:
-            with open(manifest, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            data = None
+        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
         if isinstance(data, dict):
             name = data.get("name")
             if isinstance(name, str) and name:
