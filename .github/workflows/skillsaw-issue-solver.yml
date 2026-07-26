@@ -133,7 +133,6 @@ jobs:
           show_full_output: true
           claude_args: |
             --dangerously-skip-permissions
-            ${{ !matrix.issue.ultracode && '--max-turns 200' || '' }}
             --model ${{ matrix.issue.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.issue.ultracode && '--effort ultracode' || '' }}
 
