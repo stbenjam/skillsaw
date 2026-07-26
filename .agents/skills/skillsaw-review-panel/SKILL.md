@@ -18,12 +18,11 @@ Run **7 specialist reviewers + 1 arbiter** to review a skillsaw PR.
 **Two execution modes:**
 
 - **Parallel (default)**: Each specialist runs as a dedicated sub-agent
-  concurrently. Thorough — each sub-agent independently explores the
-  codebase through its own lens without bias from other specialists.
-- **Serial (`--serial`)**: All specialists run inline in the main agent,
-  one after another. Cheaper because the codebase context is derived once
-  and shared across all specialists. Trade-off: later specialists can see
-  prior specialists' file reads (which may bias their analysis).
+  concurrently, exploring the codebase through its own lens without bias
+  from the others.
+- **Serial (`--serial`)**: Specialists run inline, one after another.
+  Cheaper — codebase context is derived once and shared — but later
+  specialists see earlier ones' file reads, which can bias them.
 
 Keep the panel **advisory**. It does not gate merge. It surfaces findings;
 the maintainer and PR author review and decide ship.
@@ -103,7 +102,7 @@ Only the main agent posts the final verdict.
 
 Each specialist must produce findings in this format:
 
-- **Severity**: `BLOCKING` | `SUGGESTION` | `NOTE`
+- **Severity**: `BLOCKING` | `BLOCKING CANDIDATE` | `SUGGESTION` | `NOTE`
 - **File:line** — include the reference when applicable
 - **Finding** — write a description
 - **Recommended action** — make it explicit
@@ -117,11 +116,15 @@ If no issues found, say so and list what was checked.
 - `SUGGESTION`: Substantive feedback that improves the code but is not a
   correctness issue. Keep this the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
+- `BLOCKING CANDIDATE`: **Palimpsest Reviewer only** — no other specialist
+  uses it. That reviewer is advisory: `SUGGESTION` or `NOTE` by default,
+  never setting the disposition itself. It reports this label for a comment
+  that is factually false about the shipped code, rather than deciding a
+  severity it cannot judge alone. Only the arbiter promotes it (Step 5).
 
-The Palimpsest Reviewer is advisory: its findings are `SUGGESTION` or `NOTE`
-by default and never set the disposition on their own. It may only reach
-`BLOCKING` when a comment or docstring is factually false about the shipped
-code, and another specialist corroborates the underlying issue.
+**Corroboration means another specialist independently reports the same
+underlying defect** — the same wrong behavior or false claim about the code,
+not merely a finding in the same file.
 
 #### Prompt path resolution
 
@@ -135,28 +138,25 @@ may not share the skill's working directory.
 Launch **all 7 specialist sub-agents in a single message** so they
 run concurrently, using the Agent tool with `run_in_background: false`.
 
-One message makes them concurrent; `run_in_background: false` makes the
-call block until all return. Do **not** use `run_in_background: true` — a
-background agent returns at once, so the turn ends mid-review, and
-headlessly the turn ending ends the job. The run then exits green with no
-verdict posted.
+One message makes them concurrent; `run_in_background: false` blocks until
+every sub-agent has finished. Do **not** use `run_in_background: true` — a
+background agent returns at once, so the turn ends mid-review, and headlessly
+that ends the job: the run exits green with no verdict posted. Do not start
+Step 4 while results are still arriving; a specialist that errors is handled
+there, not waited on.
 
 Each sub-agent gets:
 - The specialist role name and a one-line description of its lens
-- Instructions to read
-  `.apm/skills/skillsaw-review-panel/references/{specialist}.md`
-  for its detailed review scope
+- Instructions to read its scope file, at the path pattern above
 - The merge base ref and the command to read the diff
   (`git diff <base-ref>...HEAD`)
 - The PR number or branch name being reviewed
 - Any prior review findings (if detected in Step 2)
-- The findings format above
-- The read-only contract: must not modify files or push to remotes
+- The findings format above, and the read-only contract
 
-Sub-agents have full read access to the locally checked-out
-codebase. They explore the code on their own — read files, grep,
-and run git commands. Each specialist runs independently and cannot
-see the others' output.
+Sub-agents have full read access to the checked-out codebase — they read
+files, grep, and run git commands on their own. No specialist sees another's
+output.
 
 Use `subagent_type: "general-purpose"`. Do NOT set the `model`
 parameter.
@@ -164,9 +164,6 @@ parameter.
 If the Agent tool is not available (e.g. running in Codex or another
 client that lacks sub-agent support), fall back to serial mode
 automatically.
-
-Synchronous dispatch means all have returned by the time the call
-completes. Proceed to Step 4 only with every specialist's findings.
 
 #### Serial mode (`--serial`)
 
@@ -200,13 +197,16 @@ After all specialists complete, review and synthesize directly:
    disagree, prefer the more conservative position.
 5. **Settle blocking candidates** — Palimpsest reports a factually false
    comment as a `BLOCKING CANDIDATE`, since it cannot see other specialists.
-   Promote to `BLOCKING` when Architecture or the Technical Writer reached
-   the same claim; otherwise record as `SUGGESTION`. Leaving it unsettled is
-   not an option.
+   Promote to `BLOCKING` when any other specialist independently reported the
+   same underlying defect — the same wrong behavior or false claim, not merely
+   a finding in the same file. Otherwise record it as `SUGGESTION`. Leaving it
+   unsettled is not an option.
 6. Set a disposition (see below).
 7. Include required actions (blocking) vs optional follow-ups.
 
-**Follow these disposition criteria:**
+#### Disposition criteria
+
+**Follow these criteria:**
 
 - **APPROVE**: Set when no unresolved BLOCKING findings remain.
 - **REQUEST_CHANGES**: Set for BLOCKING findings that require code changes, but the change is in scope and fixable.

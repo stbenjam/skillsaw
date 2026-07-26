@@ -153,16 +153,18 @@ group the rest as a single NOTE rather than filing one per instance.
 - `BLOCKING CANDIDATE`: A comment or docstring that asserts something
   **factually false** about the shipped code — a wrong invariant, a bug that
   never existed, a stale measurement presented as current. That is a
-  correctness defect, not a style one, so it warrants blocking *if* another
-  specialist independently reaches the same file.
+  correctness defect, not a style one, so it warrants blocking *if* it is
+  corroborated. **Corroboration means any other specialist independently
+  reports the same underlying defect** — the same wrong behavior or false
+  claim about the code, not merely a finding in the same file.
 
-  Report it with this label and say plainly what corroboration would confirm
-  it. Do **not** decide the final severity, and do not downgrade it yourself:
+  Report it with this label and name the claim you would want corroborated. Do
+  **not** decide the final severity, and do not downgrade it yourself:
   specialists run isolated from one another, so this reviewer can never see
-  whether Architecture or the Technical Writer found the same thing. The
-  arbiter holds both sets of findings and is the only one that can judge.
-  Self-downgrading here is how a corroborated correctness defect ends up as a
-  suggestion under an `APPROVE`.
+  whether anyone else found the same thing. The arbiter holds every
+  specialist's findings and is the only one that can judge. Self-downgrading
+  here is how a corroborated correctness defect ends up as a suggestion under
+  an `APPROVE`.
 
 Clean writing is a valid outcome. Say what was checked and move on rather than
 manufacturing findings.
