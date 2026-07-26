@@ -59,6 +59,13 @@ https://skillsaw.org/plugins/ and mention the skillsaw-create-plugin skill.
 
 </details>
 
+<details>
+<summary><strong>Slopinator Reviewer</strong></summary>
+
+{{SLOPINATOR_FINDINGS}}
+
+</details>
+
 ---
 
 ### Panel Synthesis

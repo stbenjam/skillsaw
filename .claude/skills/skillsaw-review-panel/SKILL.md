@@ -1,6 +1,6 @@
 ---
 name: skillsaw-review-panel
-description: Use when reviewing a skillsaw PR. Dispatches 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
+description: Use when reviewing a skillsaw PR. Dispatches 7 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem, Slopinator) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
@@ -13,17 +13,16 @@ metadata:
 
 **Read-only review — never modify files, never push to any remote.**
 
-Run **6 specialist reviewers + 1 arbiter** to review a skillsaw PR.
+Run **7 specialist reviewers + 1 arbiter** to review a skillsaw PR.
 
 **Two execution modes:**
 
 - **Parallel (default)**: Each specialist runs as a dedicated sub-agent
-  concurrently. Thorough — each sub-agent independently explores the
-  codebase through its own lens without bias from other specialists.
-- **Serial (`--serial`)**: All specialists run inline in the main agent,
-  one after another. Cheaper because the codebase context is derived once
-  and shared across all specialists. Trade-off: later specialists can see
-  prior specialists' file reads (which may bias their analysis).
+  concurrently, exploring the codebase through its own lens without bias
+  from the others.
+- **Serial (`--serial`)**: Specialists run inline, one after another.
+  Cheaper — codebase context is derived once and shared — but later
+  specialists see earlier ones' file reads, which can bias them.
 
 Keep the panel **advisory**. It does not gate merge. It surfaces findings;
 the maintainer and PR author review and decide ship.
@@ -49,6 +48,7 @@ the maintainer and PR author review and decide ship.
 | QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | [`references/qa-engineer.md`](references/qa-engineer.md) |
 | Technical Writer | Verify documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | [`references/technical-writer.md`](references/technical-writer.md) |
 | Ecosystem Reviewer | Review target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | [`references/ecosystem.md`](references/ecosystem.md) |
+| Slopinator Reviewer | Catch review-history residue in code comments and AI-authored prose tells in docs, docstrings, and commit messages | [`references/slopinator.md`](references/slopinator.md) |
 | Panel Arbiter | Handle strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
 
 ## Run the Execution Procedure
@@ -111,8 +111,10 @@ If no issues found, say so and list what was checked.
 
 **Follow this severity calibration:**
 - `BLOCKING`: Correctness regressions, security vulnerabilities,
-  architectural faults that compound, or (for the Ecosystem Reviewer) a scope
-  violation that warrants redirect-to-plugin. Always include explicit rationale.
+  architectural faults that compound, (for the Ecosystem Reviewer) a scope
+  violation that warrants redirect-to-plugin, or (for the Slopinator) review
+  history and generated prose left in shipped text. Always include explicit
+  rationale.
 - `SUGGESTION`: Substantive feedback that improves the code but is not a
   correctness issue. Keep this the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
@@ -126,35 +128,28 @@ may not share the skill's working directory.
 
 #### Parallel mode (default)
 
-Launch **all 6 specialist sub-agents in a single message** so they
+Launch **all 7 specialist sub-agents in a single message** so they
 run concurrently, using the Agent tool with `run_in_background: false`.
 
-Both halves of that matter. A single message is what makes them run
-concurrently. `run_in_background: false` is what makes the dispatch
-*block* until every one returns.
-
-Do **not** use `run_in_background: true` here. A background agent
-returns immediately, so the dispatching turn ends with the reviews
-still running — and when the panel runs headlessly in CI, the turn
-ending ends the job. The workflow then exits green having posted no
-verdict at all, which is worse than failing loudly.
+One message makes them concurrent; `run_in_background: false` blocks until
+every sub-agent has finished. Do **not** use `run_in_background: true` — a
+background agent returns at once, so the turn ends mid-review, and headlessly
+that ends the job: the run exits green with no verdict posted. Do not start
+Step 4 while results are still arriving; a specialist that errors is handled
+there, not waited on.
 
 Each sub-agent gets:
 - The specialist role name and a one-line description of its lens
-- Instructions to read
-  `.apm/skills/skillsaw-review-panel/references/{specialist}.md`
-  for its detailed review scope
+- Instructions to read its scope file, at the path pattern above
 - The merge base ref and the command to read the diff
   (`git diff <base-ref>...HEAD`)
 - The PR number or branch name being reviewed
 - Any prior review findings (if detected in Step 2)
-- The findings format above
-- The read-only contract: must not modify files or push to remotes
+- The findings format above, and the read-only contract
 
-Sub-agents have full read access to the locally checked-out
-codebase. They explore the code on their own — read files, grep,
-and run git commands. Each specialist runs independently and cannot
-see the others' output.
+Sub-agents have full read access to the checked-out codebase — they read
+files, grep, and run git commands on their own. No specialist sees another's
+output.
 
 Use `subagent_type: "general-purpose"`. Do NOT set the `model`
 parameter.
@@ -163,27 +158,11 @@ If the Agent tool is not available (e.g. running in Codex or another
 client that lacks sub-agent support), fall back to serial mode
 automatically.
 
-Synchronous dispatch means all six have returned by the time the
-tool call completes. Proceed to the Completeness Gate (Step 4) only
-with six sets of findings in hand.
-
 #### Serial mode (`--serial`)
 
-Run all 6 specialists **inline in the main agent**, one after
-another. Do **not** launch sub-agents.
-
-For each specialist in roster order (Architecture, Python Expert,
-Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
-
-1. Write the specialist name as a heading.
-2. **Read that specialist's `references/*.md` file now** — read the
-   detailed scope it holds. Do not review from the one-line lens alone.
-3. Review the diff and repo through that specialist's lens. Read files,
-   grep, and run git commands to gather evidence — context from earlier
-   specialists' file reads carries over.
-4. Write findings in the format above.
-5. If no issues found, say so and list what was checked.
-6. Move on to the next specialist.
+Run all specialists inline in the main agent instead of dispatching
+sub-agents. Read [`references/serial-mode.md`](references/serial-mode.md)
+for the procedure — it is only needed on this non-default path.
 
 ### Step 4 — Completeness Gate
 
@@ -195,10 +174,9 @@ retry it. If any specialist returned an error or a missing/malformed
 result, re-dispatch it **once**. If the retry also fails, record
 the failure and proceed.
 
-Never end the run here. A panel that stops after dispatching has
-produced nothing a reviewer can act on, and it looks identical to a
-clean review from the outside. If specialists are missing and cannot
-be recovered, post the verdict anyway, naming which ones failed.
+Never end the run here — a panel that stops after dispatching looks
+identical to a clean review. If specialists cannot be recovered, post the
+verdict anyway, naming which failed.
 
 ### Step 5 — Run Panel Arbiter Synthesis
 
@@ -213,7 +191,9 @@ After all specialists complete, review and synthesize directly:
 5. Set a disposition (see below).
 6. Include required actions (blocking) vs optional follow-ups.
 
-**Follow these disposition criteria:**
+#### Disposition criteria
+
+**Follow these criteria:**
 
 - **APPROVE**: Set when no unresolved BLOCKING findings remain.
 - **REQUEST_CHANGES**: Set for BLOCKING findings that require code changes, but the change is in scope and fixable.
@@ -263,4 +243,5 @@ Verify a change passes when:
 - [ ] QA Engineer: Verify adequate test coverage, edge cases addressed.
 - [ ] Technical Writer: Ensure documentation consistent with changes.
 - [ ] Ecosystem Reviewer: Check target tool is in scope for core, or redirect to a plugin with links to skillsaw.org/plugins/.
+- [ ] Slopinator Reviewer: Check comments and docs describe shipped behavior, not the review history; check prose reads as human-written.
 - [ ] Panel Arbiter: Ratify trade-offs, set disposition.
