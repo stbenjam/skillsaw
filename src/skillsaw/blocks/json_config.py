@@ -207,6 +207,19 @@ class _InlineJsonPayload:
     def estimate_tokens(self) -> int:
         return len(json.dumps(self.inline_data or {})) // 4
 
+    # LintTarget compares by (type, resolved path), which assumes the path
+    # identifies the config. It does not here: a manifest can declare an
+    # array of inline objects, so several of these legitimately share one
+    # path while carrying different payloads. Under the inherited equality
+    # they compare equal, and any set() would silently drop all but one —
+    # losing hooks the security rules are meant to see. Identity is the
+    # honest key for config that has no file of its own.
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
+
 
 @dataclass(eq=False)
 class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):

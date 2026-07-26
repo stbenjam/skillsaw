@@ -2118,6 +2118,34 @@ class TestManifestPathKind:
         assert run_rule(CodexPluginJsonValidRule, repo) == []
 
 
+class TestInlineBlockIdentity:
+    def test_blocks_sharing_a_manifest_path_stay_distinct(self, tmp_path):
+        """LintTarget compares by (type, path), which is not a key here.
+
+        An array of inline objects legitimately puts several blocks on one
+        manifest path. Under the inherited equality they compare equal, so
+        any set() would drop all but one — and the dropped ones carry hooks
+        the security rules are meant to see.
+        """
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "dupes",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": [
+                    {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "a"}]}]}},
+                    {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "b"}]}]}},
+                ],
+            },
+        )
+        blocks = RepositoryContext(repo).lint_tree.find(CodexInlineHooksBlock)
+
+        assert len(blocks) == 2
+        assert blocks[0] != blocks[1]
+        assert len(set(blocks)) == 2
+
+
 class TestDuplicateInlineMcp:
     def test_a_repeated_server_name_keeps_both_configurations(self, tmp_path):
         """Merging by name dropped the second, hiding its structural error."""
