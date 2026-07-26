@@ -51,7 +51,7 @@ jobs:
 
           # Merge collaborators + trusted bots into a single allow-list
           COLLABS=$(echo "$COLLABS" "$TRUSTED_BOTS" | jq -s 'add | unique')
-          echo "Trusted users: $COLLABS"
+          echo "Trusted users: $(echo "$COLLABS" | jq 'length') entries"
 
           # Open PRs with agent label
           PRS=$(gh pr list -R "${{ github.repository }}" --state open --label agent --json number,title,author,labels)
