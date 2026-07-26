@@ -48,8 +48,7 @@ Check out the PR branch and critically review the changes:
 
    - **Inline review comments** (comments left on specific lines):
      - If you agree and can fix it: make the fix, push, then reply to the comment
-       with what you changed and resolve the thread:
-       `gh api repos/{owner}/{repo}/pulls/comments/{comment_id}/replies -f body="Fixed: ..."`
+       with what you changed. Then resolve the review thread.
      - If you disagree: reply explaining why and leave the thread open for discussion.
        Do NOT resolve threads you disagree with.
 
@@ -58,6 +57,9 @@ Check out the PR branch and critically review the changes:
 
    After addressing all feedback, re-run the test suite and formatting
    (same commands as step 1) and push changes if any were made.
+
+   After all comments are addressed, verify no unresolved threads remain
+   that you addressed. Resolve any that were missed.
 
 3. **Validate backward compatibility**
    - Test against ai-helpers: clone `openshift-eng/ai-helpers`, run `skillsaw` against it, ensure exit 0
