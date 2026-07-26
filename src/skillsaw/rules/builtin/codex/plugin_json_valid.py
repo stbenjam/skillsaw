@@ -242,10 +242,18 @@ class CodexPluginJsonValidRule(Rule):
         """
         found: List[Tuple[str, Any]] = []
 
-        def _flatten(label: str, value: Any, *, drop_objects: bool) -> None:
+        def _flatten(label: str, value: Any, *, drop_objects: bool, depth: int = 0) -> None:
             if isinstance(value, list):
+                if depth:
+                    # Only one array level is permitted. Recursing further
+                    # would validate the inner string as an ordinary path
+                    # while discovery, which inspects one level, drops it —
+                    # so an executable hook file would pass every check and
+                    # still never reach the hook rules.
+                    found.append((label, value))
+                    return
                 for idx, item in enumerate(value):
-                    _flatten(f"{label}[{idx}]", item, drop_objects=drop_objects)
+                    _flatten(f"{label}[{idx}]", item, drop_objects=drop_objects, depth=depth + 1)
                 return
             if drop_objects and isinstance(value, dict):
                 return

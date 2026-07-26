@@ -37,7 +37,15 @@ def extract_docs(
     title: Optional[str] = None,
 ) -> DocsOutput:
     """Extract documentation from a repository context."""
-    plugins = [_extract_plugin(context, pn) for pn in context.lint_tree.find(PluginNode)]
+    # A PluginNode with no Claude manifest but a Codex one is a Codex plugin
+    # that legacy discovery picked up for its commands/ or skills/ directory.
+    # _extract_codex_plugins handles it, and reading it through the Claude
+    # extractor as well would list it twice with empty metadata.
+    plugins = [
+        _extract_plugin(context, pn)
+        for pn in context.lint_tree.find(PluginNode)
+        if not _is_codex_only(context, pn.path)
+    ]
     plugins.extend(_extract_codex_plugins(context))
 
     marketplace = None
@@ -88,6 +96,16 @@ def _default_title(
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
 
 
+def _is_codex_only(context: RepositoryContext, plugin_path: Path) -> bool:
+    """Whether *plugin_path* is a Codex plugin with no Claude identity."""
+    if (plugin_path / ".claude-plugin" / "plugin.json").is_file():
+        return False
+    resolved = safe_resolve(plugin_path)
+    if resolved is not None and resolved in getattr(context, "marketplace_entries", {}):
+        return False
+    return plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file()
+
+
 def _codex_marketplace_doc(
     context: RepositoryContext, plugins: List[PluginDoc]
 ) -> Optional[MarketplaceDoc]:
@@ -98,13 +116,22 @@ def _codex_marketplace_doc(
     repository splits its listing across siblings, matching how
     codex-marketplace-registration picks the primary.
     """
+    name: Optional[str] = None
+    seen = {p.name for p in plugins}
+    remote: List[PluginDoc] = []
     for path in context.codex_marketplace_paths():
         data, error = read_json(path)
         if error or not isinstance(data, dict):
             continue
-        listed = plugins + _remote_entry_docs(data, {p.name for p in plugins})
-        return MarketplaceDoc(name=str(data.get("name", "") or ""), owner=None, plugins=listed)
-    return None
+        if name is None:
+            name = str(data.get("name", "") or "")
+        # Every catalog contributes its remote entries — a repository can
+        # split its listing across siblings, and a remote-only entry in the
+        # second one has no local node to be found any other way.
+        remote.extend(_remote_entry_docs(data, seen))
+    if name is None:
+        return None
+    return MarketplaceDoc(name=name, owner=None, plugins=plugins + remote)
 
 
 def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
@@ -150,7 +177,16 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     without this ``skillsaw docs`` emitted no plugin metadata, hooks or MCP
     servers for a repository it had just classified as ``codex-plugin``.
     """
-    claude_dirs = {pn.path.resolve() for pn in context.lint_tree.find(PluginNode)}
+    # A PluginNode alone does not mean a Claude plugin: legacy discovery
+    # creates one for any directory with commands/ or skills/. Only a real
+    # Claude manifest, or a marketplace entry claiming it, means the Claude
+    # extractor can read its metadata — otherwise the docs fall back to the
+    # directory name and lose everything the Codex manifest declares.
+    claude_dirs = {
+        pn.path.resolve()
+        for pn in context.lint_tree.find(PluginNode)
+        if not _is_codex_only(context, pn.path)
+    }
     docs: List[PluginDoc] = []
     # Resolved once for the whole catalog rather than once per plugin:
     # matching skills by path is O(plugins x skills) stat calls otherwise,

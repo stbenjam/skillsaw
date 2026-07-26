@@ -767,7 +767,7 @@ class TestMarketplaceRegistration:
         )
         (repo / "plugins" / "hollow").mkdir(parents=True)
         violations = run_rule(CodexMarketplaceRegistrationRule, repo)
-        assert any("has no .codex-plugin/plugin.json" in m for m in messages(violations))
+        assert any("has no usable .codex-plugin/plugin.json" in m for m in messages(violations))
 
     def test_name_mismatch_warns(self, tmp_path):
         repo = _codex_marketplace_repo(
@@ -987,11 +987,12 @@ class TestMarketplaceRegistrationAutofix:
         after = run_rule(CodexMarketplaceJsonValidRule, repo)
         assert len(after) == len(before)
 
-    def test_registers_a_name_containing_an_apostrophe(self, tmp_path):
-        """The name must not be parsed back out of the violation message.
+    def test_a_name_the_catalog_rule_would_reject_is_not_registered(self, tmp_path):
+        """Registering a non-kebab name trades one violation for another.
 
-        Splitting the message on `'` truncates such a name, so the plugin
-        would be skipped while check() still advertised it as fixable.
+        codex-marketplace-json-valid rejects it on the very next run, and
+        the identifier hosts use as the component namespace has been
+        published in the meantime.
         """
         repo = _codex_marketplace_repo(tmp_path, {"name": "quoted", "plugins": []})
         _write_plugin(
@@ -999,11 +1000,33 @@ class TestMarketplaceRegistrationAutofix:
             {"name": "chef's-kiss", "version": "1.0.0", "description": "Awkwardly named."},
         )
 
+        assert self._fix(repo) == []
+        entries = json.loads(
+            (repo / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
+        )["plugins"]
+        assert entries == []
+
+        reported = messages(run_rule(CodexMarketplaceRegistrationRule, repo))
+        assert any("not registered" in m for m in reported), "still reported, just not fixed"
+
+    def test_the_name_is_not_parsed_out_of_the_violation_message(self, tmp_path):
+        """fix() pairs violations by re-rendering check()'s message.
+
+        Parsing the name back out by splitting on `'` truncated any name
+        containing a quote, so the plugin was skipped while check() had
+        advertised it as fixable.
+        """
+        repo = _codex_marketplace_repo(tmp_path, {"name": "quoted", "plugins": []})
+        _write_plugin(
+            repo / "plugins" / "odd",
+            {"name": "well-named", "version": "1.0.0", "description": "Ordinary."},
+        )
+
         assert len(self._fix(repo)) == 1
         entries = json.loads(
             (repo / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
         )["plugins"]
-        assert [e["name"] for e in entries] == ["chef's-kiss"]
+        assert [e["name"] for e in entries] == ["well-named"]
 
     def test_preserves_non_ascii_in_untouched_entries(self, tmp_path):
         """fix() re-serializes the whole catalog, so ensure_ascii must be off."""
@@ -2816,3 +2839,197 @@ class TestInstalledSkillAutofix:
         assert violations, "the check must still report the defect"
         assert rule.fix(context, violations) == []
         assert (skill / "SKILL.md").read_text(encoding="utf-8") == original
+
+
+class TestFilenameAllocation:
+    def test_a_generated_suffix_cannot_collide_with_a_real_name(self, tmp_path):
+        """ "a/b" and "a:b" both want "a-b.md"; one gets "a-b-2.md" — which a
+        plugin genuinely named "a-b-2" also wants."""
+        names = ["a-b-2", "a/b", "a:b"]
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": n,
+                        "source": {"source": "url", "url": f"https://example.com/{i}.git"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                    for i, n in enumerate(names)
+                ],
+            },
+        )
+        pages = render_markdown(extract_docs(RepositoryContext(repo)))
+        assert len([k for k in pages if k != "README.md"]) == len(names)
+
+
+class TestCatalogAggregation:
+    def test_remote_entries_from_every_catalog_are_listed(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "primary",
+                "plugins": [
+                    {
+                        "name": "from-primary",
+                        "source": {"source": "npm", "package": "@x/a"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        (repo / ".agents" / "plugins" / "api_marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "secondary",
+                    "plugins": [
+                        {
+                            "name": "from-sibling",
+                            "source": {"source": "npm", "package": "@x/b"},
+                            "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        docs = extract_docs(RepositoryContext(repo))
+        assert {p.name for p in docs.marketplace.plugins} == {"from-primary", "from-sibling"}
+        assert docs.marketplace.name == "primary", "the first catalog names the marketplace"
+
+
+class TestSourceNormalizationPrecision:
+    def test_a_hidden_directory_is_not_confused_with_a_visible_one(self, tmp_path):
+        """`lstrip("./")` ate the dot, making ./.plugins/foo == ./plugins/foo."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "primary",
+                "plugins": [
+                    {
+                        "name": "shared",
+                        "source": {"source": "local", "path": "./.plugins/foo"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        (repo / ".agents" / "plugins" / "api_marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "secondary",
+                    "plugins": [
+                        {
+                            "name": "shared",
+                            "source": {"source": "local", "path": "./plugins/foo"},
+                            "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert any("duplicate plugin name 'shared'" in m for m in found)
+
+
+class TestEntrypointContainment:
+    def test_a_symlinked_skill_md_is_not_followed(self, tmp_path):
+        """The directory is contained; the entrypoint file is the escape."""
+        outside = tmp_path / "outside.md"
+        outside.write_text(
+            "---\nname: leaked\ndescription: Outside the plugin\n---\n\n# Leaked\n",
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "sneaky"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").symlink_to(outside)
+
+        assert RepositoryContext(repo).skills == []
+
+    def test_a_real_skill_md_is_still_discovered(self, tmp_path):
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "real"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: real\ndescription: Genuinely inside\n---\n\n# Real\n", encoding="utf-8"
+        )
+        assert RepositoryContext(repo).skills == [skill]
+
+
+class TestNestedManifestArrays:
+    def test_a_nested_array_is_reported_not_silently_dropped(self, tmp_path):
+        """The validator flattened recursively; discovery reads one level.
+
+        So the inner path validated clean and never became a HooksBlock —
+        executable commands passing every check while reaching no hook rule.
+        """
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "nested",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": [["./custom-hooks.json"]],
+            },
+        )
+        (repo / "custom-hooks.json").write_text(
+            json.dumps(
+                {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]}}
+            ),
+            encoding="utf-8",
+        )
+
+        found = messages(run_rule(CodexPluginJsonValidRule, repo))
+        assert any("documented as a path string" in m for m in found)
+        assert RepositoryContext(repo).codex_declared_hook_files(repo) == []
+
+    def test_a_single_array_level_still_works(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "flat",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": ["./custom-hooks.json"],
+            },
+        )
+        (repo / "custom-hooks.json").write_text('{"hooks": {}}', encoding="utf-8")
+
+        assert run_rule(CodexPluginJsonValidRule, repo) == []
+        assert len(RepositoryContext(repo).codex_declared_hook_files(repo)) == 1
+
+
+class TestCodexOnlyPluginNodeDocs:
+    def test_codex_metadata_is_read_when_a_plugin_node_exists_without_a_manifest(self, tmp_path):
+        """`commands/` alone creates a PluginNode — that is not a Claude plugin."""
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(
+            repo / "plugins" / "hybrid",
+            {
+                "name": "hybrid",
+                "version": "3.2.1",
+                "description": "Has commands but no Claude manifest.",
+                "license": "MIT",
+            },
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run it.\n", encoding="utf-8")
+
+        doc = next(p for p in extract_docs(RepositoryContext(repo)).plugins if p.name == "hybrid")
+        assert doc.version == "3.2.1"
+        assert doc.description == "Has commands but no Claude manifest."
+        assert doc.license == "MIT"

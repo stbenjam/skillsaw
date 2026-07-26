@@ -11,7 +11,7 @@ from skillsaw.context import RepositoryContext, codex_local_source_path, safe_re
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
-from ._helpers import CODEX_MARKETPLACE_REPO_TYPES
+from ._helpers import CODEX_MARKETPLACE_REPO_TYPES, KEBAB_CASE
 
 # What ``fix()`` writes for a newly registered plugin. Every entry in the
 # openai/plugins catalog carries these four keys, and the spec asks for
@@ -150,7 +150,14 @@ class CodexMarketplaceRegistrationRule(Rule):
         field is codex-plugin-json-valid's to report.
         """
         manifest = _read_manifest(plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST))
-        return isinstance(manifest.get("name"), str) and bool(manifest["name"])
+        name = manifest.get("name")
+        if not isinstance(name, str) or not name:
+            return False
+        # Writing a non-kebab name into the catalog trades one violation for
+        # another: codex-marketplace-json-valid rejects it on the next run,
+        # and the identifier hosts use as the component namespace is now
+        # published. The manifest name has to be corrected by hand first.
+        return bool(KEBAB_CASE.match(name))
 
     def _unregistered(
         self, context: RepositoryContext, registered_names: set, registered_dirs: set
@@ -255,10 +262,18 @@ class CodexMarketplaceRegistrationRule(Rule):
                 )
                 continue
 
-            if not plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file():
+            manifest = plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST)
+            manifest_resolved = safe_resolve(manifest)
+            if not manifest.is_file() or (
+                manifest_resolved is not None and not manifest_resolved.is_relative_to(plugin_dir)
+            ):
+                # This rule reads the manifest itself, so it needs its own
+                # containment check — discovery's does not cover this path,
+                # and a symlinked manifest would put an external file's name
+                # into a violation message.
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}] source '{source}' has no "
+                        f"plugins[{idx}] source '{source}' has no usable "
                         ".codex-plugin/plugin.json — Codex skips entries it "
                         "cannot resolve",
                         file_path=marketplace_file,

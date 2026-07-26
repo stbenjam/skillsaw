@@ -272,17 +272,21 @@ _UNSAFE_FILENAME_CHARS = str.maketrans({c: "-" for c in '/\\:<>"|?*'})
 
 def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:
     """One distinct page filename per plugin, keyed by object identity."""
-    used: Dict[str, int] = {}
+    used: set = set()
     out: Dict[int, str] = {}
     for plugin in plugins:
-        base = _plugin_filename(plugin)
-        if base not in used:
-            used[base] = 1
-            out[id(plugin)] = base
-            continue
-        stem = base[:-3] if base.endswith(".md") else base
-        used[base] += 1
-        out[id(plugin)] = f"{stem}-{used[base]}.md"
+        candidate = _plugin_filename(plugin)
+        if candidate in used:
+            # Probing rather than counting: a generated "a-b-2.md" can
+            # collide with a plugin genuinely named "a-b-2", so every name
+            # handed out has to be reserved and the next one re-checked.
+            stem = candidate[:-3] if candidate.endswith(".md") else candidate
+            n = 2
+            while f"{stem}-{n}.md" in used:
+                n += 1
+            candidate = f"{stem}-{n}.md"
+        used.add(candidate)
+        out[id(plugin)] = candidate
     return out
 
 

@@ -732,6 +732,9 @@ class RepositoryContext:
         plugin.
         """
         declared = self._codex_manifest(plugin_dir).get(field)
+        # One level only. The field permits a path or an array of paths, so
+        # a nested array is invalid — and flattening it here would diverge
+        # from codex-plugin-json-valid, which reports what it can reach.
         candidates = declared if isinstance(declared, list) else [declared]
         root = safe_resolve(plugin_dir)
         if root is None:
@@ -1229,7 +1232,10 @@ class RepositoryContext:
                     # A manifest may name one skill directly rather than a
                     # collection; descending would step straight past it.
                     resolved = safe_resolve(skills_dir)
+                    entrypoint = safe_resolve(skills_dir / "SKILL.md")
                     if resolved is None or not resolved.is_relative_to(plugin_root):
+                        continue
+                    if entrypoint is None or not entrypoint.is_relative_to(plugin_root):
                         continue
                     if resolved not in discovered:
                         skills.append(skills_dir)
@@ -1273,7 +1279,12 @@ class RepositoryContext:
                     continue
                 if contain_within is not None and not resolved.is_relative_to(contain_within):
                     continue
-                if (item / "SKILL.md").exists():
+                entrypoint = safe_resolve(item / "SKILL.md")
+                if entrypoint is not None and (item / "SKILL.md").exists():
+                    # The directory being contained is not enough: SKILL.md
+                    # can itself be a symlink out, and the tree follows it.
+                    if contain_within is not None and not entrypoint.is_relative_to(contain_within):
+                        continue
                     skills.append(item)
                     discovered.add(resolved)
                 else:

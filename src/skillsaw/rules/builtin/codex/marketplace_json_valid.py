@@ -52,7 +52,13 @@ def _source_identity(source: Any) -> str:
     """
     local = codex_local_source_path(source)
     if local is not None:
-        return "local:" + PurePosixPath(local.replace("\\", "/")).as_posix().lstrip("./")
+        # One exact "./" prefix, not lstrip("./") — that strips an arbitrary
+        # run of dots and slashes, so "./.plugins/foo" and "./plugins/foo"
+        # both became "plugins/foo" and a genuine conflict was suppressed.
+        normalised = PurePosixPath(local.replace("\\", "/")).as_posix()
+        if normalised.startswith("./"):
+            normalised = normalised[2:]
+        return "local:" + normalised
     return json.dumps(source, sort_keys=True, default=str)
 
 
