@@ -3347,3 +3347,110 @@ class TestGeneratedHtmlEscaping:
 
         assert "&#39;" not in html, "an entity-encoded quote decodes back to a live quote"
         assert "alert(document.domain)" not in html or "\\'" in html
+
+
+class TestGeneratedLinkSchemes:
+    @pytest.mark.parametrize("field", ["homepage", "repository"])
+    @pytest.mark.parametrize(
+        "url", ["javascript:alert(document.domain)", "JavaScript:alert(1)", "data:text/html,<x>"]
+    )
+    def test_an_unsafe_scheme_is_dropped(self, tmp_path, field, url):
+        """HTML-escaping an href stops attribute breakout, not the scheme."""
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "linky", "version": "1.0.0", "description": "x", field: url}
+        )
+        doc = extract_docs(RepositoryContext(repo)).plugins[0]
+        assert getattr(doc, field) == ""
+
+    @pytest.mark.parametrize(
+        "url", ["https://example.com", "http://example.com/x", "mailto:a@example.com", "./local"]
+    )
+    def test_a_safe_url_is_kept(self, tmp_path, url):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "linky", "version": "1.0.0", "description": "x", "homepage": url}
+        )
+        assert extract_docs(RepositoryContext(repo)).plugins[0].homepage == url
+
+
+class TestConventionalMcpNotDoubled:
+    def test_declaring_the_default_file_does_not_attach_it_twice(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "dbl",
+                "version": "1.0.0",
+                "description": "x",
+                "mcpServers": "./.mcp.json",
+            },
+        )
+        (repo / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"only": {"command": "node"}}}), encoding="utf-8"
+        )
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        assert len(blocks) == 1
+
+
+class TestReservedFilenames:
+    @pytest.mark.parametrize("name", ["con", "NUL", "com1", "LPT9", "aux"])
+    def test_a_windows_device_name_is_not_used_verbatim(self, tmp_path, name):
+        """`con.md` cannot be created on Windows — the whole run fails."""
+        doc = PluginDoc(name=name, path=Path("/x"), description="", version="")
+        assert _plugin_filename(doc).casefold() != f"{name.casefold()}.md"
+
+    def test_an_ordinary_name_is_untouched(self, tmp_path):
+        doc = PluginDoc(name="console", path=Path("/x"), description="", version="")
+        assert _plugin_filename(doc) == "console.md"
+
+
+class TestRecommendedFieldsConfig:
+    @pytest.mark.parametrize("bad", [None, 42, "version"])
+    def test_a_non_iterable_setting_does_not_crash_the_rule(self, tmp_path, bad):
+        repo = _codex_plugin_repo(tmp_path, {"name": "cfg", "version": "1.0.0", "description": "x"})
+        assert run_rule(CodexPluginJsonValidRule, repo, {"recommended-fields": bad}) == []
+
+
+class TestExemptionUsesContainedDiscovery:
+    def test_a_rejected_manifest_does_not_exempt_the_plugin(self, tmp_path):
+        """Discovery rejects the symlinked manifest, so no Codex rule covers
+        it — the Claude rule must not stand down as well."""
+        outside = tmp_path / "external.json"
+        outside.write_text(json.dumps({"name": "external"}), encoding="utf-8")
+        repo = tmp_path / "repo"
+        plugin = repo / "plugins" / "victim"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").symlink_to(outside)
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run it.\n", encoding="utf-8")
+
+        context = RepositoryContext(repo)
+        assert context.codex_plugins == []
+        assert messages(PluginJsonRequiredRule({}).check(context)) == ["Missing plugin.json"]
+
+    def test_a_real_codex_plugin_is_still_exempt(self, tmp_path):
+        repo = tmp_path / "repo"
+        plugin = _write_plugin(repo / "plugins" / "codexy", {"name": "codexy", "version": "1.0.0"})
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run it.\n", encoding="utf-8")
+
+        assert PluginJsonRequiredRule({}).check(RepositoryContext(repo)) == []
+
+
+class TestNestedPluginSkillAttribution:
+    def test_a_nested_plugins_skills_are_not_claimed_by_the_root(self, tmp_path):
+        """A root that is itself a plugin contains plugins/, so nested skills
+        are relative to both roots."""
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "root-plugin", "version": "1.0.0", "description": "x"}
+        )
+        nested = _write_plugin(repo / "plugins" / "nested", {"name": "nested", "version": "1.0.0"})
+        skill = nested / "skills" / "inner"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: inner\ndescription: Belongs to the nested plugin\n---\n\n# Inner\n",
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+        by_name = {p.name: p for p in docs.plugins}
+        assert [s.name for s in by_name["nested"].skills] == ["inner"]
+        assert by_name["root-plugin"].skills == []

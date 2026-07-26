@@ -66,6 +66,11 @@ class CodexPluginJsonValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         recommended_fields = self.config.get("recommended-fields", self.DEFAULT_RECOMMENDED_FIELDS)
+        if not isinstance(recommended_fields, (list, tuple, set)):
+            # Config loading does not enforce config_schema types, so a
+            # scalar here would fail at the loop below — before the
+            # per-entry string guard — and crash the rule for every manifest.
+            recommended_fields = self.DEFAULT_RECOMMENDED_FIELDS
         check_paths_exist = self.config.get("check-paths-exist", True)
 
         for node in context.lint_tree.find(CodexPluginConfigNode):

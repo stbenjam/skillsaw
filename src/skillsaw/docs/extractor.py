@@ -236,6 +236,8 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     # One pass, like the skill map above: scanning every legacy node per
     # Codex plugin is O(codex x legacy) filesystem resolutions, and a large
     # catalog has hundreds of each.
+    codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
+
     legacy_by_path: dict = {}
     for pn in context.lint_tree.find(PluginNode):
         resolved_pn = safe_resolve(pn.path)
@@ -253,7 +255,11 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
             # manifest-quality rules already draw.
             continue
         legacy = legacy_by_path.get(plugin_resolved, [])
-        docs.append(_extract_codex_plugin(context, node, plugin_resolved, resolved_skills, legacy))
+        docs.append(
+            _extract_codex_plugin(
+                context, node, plugin_resolved, resolved_skills, legacy, codex_roots
+            )
+        )
     return docs
 
 
@@ -286,6 +292,7 @@ def _extract_codex_plugin(
     plugin_resolved: Path,
     resolved_skills: List[Tuple[Path, SkillNode]],
     legacy_nodes: List[PluginNode],
+    codex_roots: List[Path],
 ) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
@@ -316,11 +323,11 @@ def _extract_codex_plugin(
         category=_interface_field(meta, "category") or str(meta.get("category", "") or ""),
         tags=_string_list(meta.get("tags")),
         keywords=_string_list(meta.get("keywords")),
-        homepage=str(meta.get("homepage", "") or ""),
-        repository=str(meta.get("repository", "") or ""),
+        homepage=_safe_url(meta.get("homepage")),
+        repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "") or ""),
         commands=[],
-        skills=_extract_codex_skills(plugin_resolved, resolved_skills),
+        skills=_extract_codex_skills(plugin_resolved, resolved_skills, codex_roots),
         agents=[],
         hooks=_extract_hooks(sources),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
@@ -345,6 +352,24 @@ def _interface_field(meta: dict, key: str) -> str:
     return ""
 
 
+# Schemes a generated documentation link may use. Anything else — most
+# pointedly ``javascript:`` — is dropped: HTML-escaping an href stops
+# attribute breakout but does nothing about the scheme, so a manifest that
+# a marketplace merely *accepted* could run script in the docs origin when
+# a reader clicks through.
+_SAFE_URL_SCHEMES = {"http", "https", "mailto"}
+
+
+def _safe_url(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    candidate = value.strip()
+    scheme, sep, _ = candidate.partition(":")
+    if not sep:
+        return candidate  # relative or bare host — no scheme to abuse
+    return candidate if scheme.lower() in _SAFE_URL_SCHEMES else ""
+
+
 def _string_list(value) -> List[str]:
     if not isinstance(value, list):
         return []
@@ -352,7 +377,9 @@ def _string_list(value) -> List[str]:
 
 
 def _extract_codex_skills(
-    plugin_resolved: Path, resolved_skills: List[Tuple[Path, SkillNode]]
+    plugin_resolved: Path,
+    resolved_skills: List[Tuple[Path, SkillNode]],
+    all_plugin_roots: List[Path],
 ) -> List[SkillDoc]:
     """Skills living under the plugin directory.
 
@@ -364,6 +391,17 @@ def _extract_codex_skills(
     docs = []
     for skill_resolved, skill_node in resolved_skills:
         if not skill_resolved.is_relative_to(plugin_resolved):
+            continue
+        # A repo root that is itself a plugin contains the nested plugins
+        # under plugins/, so their skills are relative to both roots.
+        # Nearest root wins, or the root plugin's page would duplicate and
+        # misattribute every nested plugin's skills.
+        owner = max(
+            (r for r in all_plugin_roots if skill_resolved.is_relative_to(r)),
+            key=lambda r: len(r.parts),
+            default=plugin_resolved,
+        )
+        if owner != plugin_resolved:
             continue
         doc = _extract_skill(skill_node)
         if doc:

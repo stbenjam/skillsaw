@@ -252,7 +252,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # attachment claims the path first, and its servers would then reach
         # neither mcp-valid-json nor mcp-prohibited. A second attachment is
         # made deliberately, tracked separately so it cannot double up.
+        # Seeded with the conventional file: it was just attached as an
+        # McpBlock above, so a manifest that also declares
+        # ``"mcpServers": "./.mcp.json"`` would otherwise get a second one
+        # and double every MCP violation and doc entry.
         codex_mcp_seen: Set[Path] = set()
+        conventional_mcp = safe_resolve(codex_plugin_path / ".mcp.json")
+        if conventional_mcp is not None:
+            codex_mcp_seen.add(conventional_mcp)
         for declared_mcp in context.codex_declared_mcp_files(codex_plugin_path):
             resolved_mcp = safe_resolve(declared_mcp)
             if resolved_mcp is None or resolved_mcp in codex_mcp_seen:

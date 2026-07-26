@@ -37,10 +37,18 @@ class PluginJsonRequiredRule(Rule):
                 # Check if plugin has strict: false in marketplace metadata
                 resolved_path = plugin_path.resolve()
 
+                # Codex identity comes from what discovery accepted, not a
+                # raw is_file(): that follows a manifest symlinked out of
+                # the plugin, which discovery rejects — so the plugin would
+                # be exempted here while no Codex rule covers it either, and
+                # nothing at all reports it.
+                codex_dirs = {
+                    r for r in (p.resolve() for p in context.codex_plugins) if r is not None
+                }
                 if (
                     resolved_path not in getattr(context, "marketplace_entries", {})
                     and not (plugin_path / ".claude-plugin").is_dir()
-                    and plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file()
+                    and resolved_path in codex_dirs
                 ):
                     # A Codex plugin, swept up here only because it also ships
                     # a commands/ or skills/ directory. It has no reason to
