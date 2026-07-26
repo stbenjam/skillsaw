@@ -102,7 +102,11 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, at every path the manifest's `hooks` field declares, and in the inline hooks objects that field also accepts — all three carry the same executable commands, so all three reach `hooks-dangerous`, `hooks-prohibited` and `hooks-json-valid`. Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
 
-Skills are discovered at `skills/` and at every directory the manifest's `skills` field declares, so a plugin that bundles them somewhere else is still linted. A plugin's `.mcp.json` is linted whether or not the directory is also a Claude plugin.
+Skills are discovered at `skills/` and at every directory the manifest's `skills` field declares, so a plugin that bundles them somewhere else is still linted.
+
+MCP servers get the same treatment as hooks: `.mcp.json` is read on sight, and the manifest's `mcpServers` field is followed whether it names a file or holds the server map itself — those servers are commands the host will spawn either way, so `mcp-valid-json` and `mcp-prohibited` see all three forms.
+
+`skillsaw docs` documents Codex-only plugins too, reading name, version, description, `interface.displayName`, author and license from the Codex manifest alongside the plugin's skills, hooks and MCP servers.
 
 ## OpenAI Codex Marketplace
 

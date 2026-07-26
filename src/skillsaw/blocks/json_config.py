@@ -184,27 +184,31 @@ class HooksBlock(JsonConfigBlock):
         return result
 
 
-@dataclass(eq=False)
-class CodexInlineHooksBlock(HooksBlock):
-    """Hooks written inline in a Codex ``.codex-plugin/plugin.json``.
+class _InlineJsonPayload:
+    """Config that arrived by value in a manifest field, not in a file.
 
-    Codex's ``hooks`` field takes paths *or* inline objects, and the inline
-    form ships the same executable commands as a hooks.json file — so it
-    gets the same rules rather than a parallel set. ``path`` stays the
-    manifest, which is where the commands actually live and where a
-    violation should point the reader.
+    Several Codex ``plugin.json`` fields take a path *or* the object
+    itself. The object form carries the same commands as the file form, so
+    it gets the same rules — this supplies the payload the base class would
+    otherwise have read off disk. ``path`` stays the manifest, which is
+    where the config actually lives and where a violation should point.
     """
 
     inline_data: Optional[Dict[str, Any]] = None
 
     def _ensure_parsed(self) -> None:
-        # The payload was extracted from the manifest, not read from a file
-        # of its own, so the base class's read-and-parse must not run.
         if self._parsed is None:
             self._parsed = (self.inline_data, None)
 
     def estimate_tokens(self) -> int:
         return len(json.dumps(self.inline_data or {})) // 4
+
+
+@dataclass(eq=False)
+class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
+    """Hooks written inline in a Codex ``.codex-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
 
     def tree_label(self) -> str:
         return f"{self.path.name} (inline hooks)"
@@ -270,6 +274,16 @@ class McpBlock(JsonConfigBlock):
     @property
     def server_names(self) -> Set[str]:
         return {s.name for s in self.servers}
+
+
+@dataclass(eq=False)
+class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
+    """MCP servers written inline in a Codex ``.codex-plugin/plugin.json``."""
+
+    inline_data: Optional[Dict[str, Any]] = None
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} (inline mcpServers)"
 
 
 @dataclass(eq=False)

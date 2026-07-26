@@ -682,19 +682,21 @@ class RepositoryContext:
         resolved = plugin_dir.resolve()
         return resolved != install_root and resolved.is_relative_to(install_root)
 
-    def codex_declared_hook_files(self, plugin_dir: Path) -> List[Path]:
-        """Hook files a Codex plugin manifest declares through ``hooks``.
+    def _codex_declared_paths(self, plugin_dir: Path, field: str, want_dir: bool) -> List[Path]:
+        """Contained paths a Codex manifest names in *field*.
 
-        The field accepts "a single path, an array of paths, an inline
-        hooks object, or an array of inline hooks objects" — only the path
-        forms name a file, so objects are dropped. Paths that escape the
-        plugin root are dropped too: ``codex-plugin-json-valid`` reports
-        them, and the lint tree must not follow them out of the plugin.
+        Three manifest fields — ``hooks``, ``skills`` and ``mcpServers`` —
+        share one shape: "a single path, an array of paths, an inline
+        object, or an array of inline objects". This resolves the path
+        forms; the object forms are read by ``_codex_inline_objects``.
+        Paths escaping the plugin root are dropped — ``codex-plugin-json-valid``
+        reports them, and the lint tree must not follow them out of the
+        plugin.
         """
         data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
         if not isinstance(data, dict):
             return []
-        declared = data.get("hooks")
+        declared = data.get(field)
         candidates = declared if isinstance(declared, list) else [declared]
         root = plugin_dir.resolve()
         found: List[Path] = []
@@ -702,41 +704,49 @@ class RepositoryContext:
             if not isinstance(item, str) or not item:
                 continue
             candidate = (plugin_dir / item).resolve()
-            if candidate != root and candidate.is_relative_to(root) and candidate.is_file():
+            if candidate == root or not candidate.is_relative_to(root):
+                continue
+            if candidate.is_dir() if want_dir else candidate.is_file():
                 found.append(candidate)
         return found
+
+    def _codex_inline_objects(self, plugin_dir: Path, field: str) -> List[Dict[str, Any]]:
+        """Inline object forms a Codex manifest gives for *field*."""
+        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
+        if not isinstance(data, dict):
+            return []
+        declared = data.get(field)
+        candidates = declared if isinstance(declared, list) else [declared]
+        return [item for item in candidates if isinstance(item, dict)]
+
+    def codex_declared_hook_files(self, plugin_dir: Path) -> List[Path]:
+        """Hook files a Codex plugin manifest declares through ``hooks``."""
+        return self._codex_declared_paths(plugin_dir, "hooks", want_dir=False)
 
     def codex_declared_skill_dirs(self, plugin_dir: Path) -> List[Path]:
         """Skill directories a Codex plugin manifest declares through ``skills``.
 
-        Like ``hooks``, the field takes a path or an array of paths, and it
-        does not have to say ``./skills`` — a plugin may bundle them under
-        ``./bundled-skills`` instead. Scanning only the literal ``skills/``
-        directory misses those, and for a plugin installed under the hidden
-        ``.codex/plugins/`` tree nothing else walks them, so their SKILL.md
-        files would reach no rule at all. Paths that escape the plugin root
-        are dropped; ``codex-plugin-json-valid`` reports them.
+        The field does not have to say ``./skills`` — a plugin may bundle
+        them under ``./bundled-skills`` instead. Scanning only the literal
+        ``skills/`` directory misses those, and for a plugin installed under
+        the hidden ``.codex/plugins/`` tree nothing else walks them, so
+        their SKILL.md files would reach no rule at all.
         """
-        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
-        if not isinstance(data, dict):
-            return []
-        declared = data.get("skills")
-        candidates = declared if isinstance(declared, list) else [declared]
-        root = plugin_dir.resolve()
-        found: List[Path] = []
-        for item in candidates:
-            if not isinstance(item, str) or not item:
-                continue
-            candidate = (plugin_dir / item).resolve()
-            if candidate != root and candidate.is_relative_to(root) and candidate.is_dir():
-                found.append(candidate)
-        return found
+        return self._codex_declared_paths(plugin_dir, "skills", want_dir=True)
+
+    def codex_declared_mcp_files(self, plugin_dir: Path) -> List[Path]:
+        """MCP config files a Codex plugin manifest declares through ``mcpServers``.
+
+        Only ``.mcp.json`` is conventional, and it is attached on sight.
+        A manifest may point the field at a different file, and those
+        servers are the same surface — a command the host will spawn — so
+        they reach mcp-valid-json and mcp-prohibited the same way.
+        """
+        return self._codex_declared_paths(plugin_dir, "mcpServers", want_dir=False)
 
     def codex_inline_hooks(self, plugin_dir: Path) -> Optional[Dict[str, Any]]:
         """Hooks a Codex plugin manifest declares inline, in hooks.json shape.
 
-        The ``hooks`` field accepts "a single path, an array of paths, an
-        inline hooks object, or an array of inline hooks objects".
         ``codex_declared_hook_files`` covers the path forms; this covers the
         object forms, which carry exactly the same executable commands and
         so belong in front of the same hook rules. Without it a
@@ -746,22 +756,51 @@ class RepositoryContext:
         Objects are accepted both as ``{"hooks": {...}}`` (mirroring a
         hooks.json document) and as a bare event map, and an array of them
         is merged into one document so the whole manifest is one block.
+        A malformed event value is carried through rather than filtered
+        out: ``codex-plugin-json-valid`` deliberately skips hook objects,
+        so dropping it here would leave the invalid shape unreported by
+        anything. hooks-json-valid is the rule that judges it.
         """
-        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
-        if not isinstance(data, dict):
+        inline = self._codex_inline_objects(plugin_dir, "hooks")
+        if not inline:
             return None
-        declared = data.get("hooks")
-        candidates = declared if isinstance(declared, list) else [declared]
         merged: Dict[str, Any] = {}
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
+        for item in inline:
             nested = item.get("hooks")
             events = nested if isinstance(nested, dict) else item
             for event, configs in events.items():
-                if isinstance(configs, list):
-                    merged.setdefault(event, []).extend(configs)
-        return {"hooks": merged} if merged else None
+                existing = merged.get(event)
+                if isinstance(configs, list) and isinstance(existing, list):
+                    existing.extend(configs)
+                elif isinstance(configs, list):
+                    # Copied, not aliased: the manifest dict comes from the
+                    # shared read cache and must not be mutated in place.
+                    merged[event] = list(configs)
+                elif event not in merged:
+                    merged[event] = configs
+        return {"hooks": merged}
+
+    def codex_inline_mcp_servers(self, plugin_dir: Path) -> Optional[Dict[str, Any]]:
+        """MCP servers a Codex plugin manifest declares inline.
+
+        ``mcpServers`` is documented as a path, but real plugins ship the
+        map inline the way Claude Code's loader accepts it. Those servers
+        name commands the host will spawn, so they belong in front of the
+        MCP rules whether they arrived by path or by value.
+
+        Both ``{"mcpServers": {...}}`` and a bare server map are accepted,
+        matching what ``McpBlock.servers`` already reads.
+        """
+        inline = self._codex_inline_objects(plugin_dir, "mcpServers")
+        if not inline:
+            return None
+        merged: Dict[str, Any] = {}
+        for item in inline:
+            nested = item.get("mcpServers")
+            servers = nested if isinstance(nested, dict) else item
+            for name, config in servers.items():
+                merged.setdefault(name, config)
+        return {"mcpServers": merged}
 
     def codex_plugin_name(self, plugin_dir: Path) -> str:
         """Name a Codex plugin declares, falling back to its directory name."""

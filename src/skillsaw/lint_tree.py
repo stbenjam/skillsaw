@@ -16,6 +16,7 @@ from .blocks import (
     ClaudeMdBlock,
     CodeRabbitContentBlock,
     CodexInlineHooksBlock,
+    CodexInlineMcpBlock,
     CommandBlock,
     ContextFileBlock,
     CursorRuleBlock,
@@ -214,6 +215,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # PluginNode to have attached it above, so its MCP servers would
         # otherwise reach neither the validity nor the security rules.
         _add_block(node, codex_plugin_path / ".mcp.json", McpBlock)
+        # ``mcpServers`` may name a different file, or hold the map itself.
+        # Either way those servers are commands the host will spawn, so
+        # they get the same treatment as the hooks above.
+        for declared_mcp in context.codex_declared_mcp_files(codex_plugin_path):
+            _add_block(node, declared_mcp, McpBlock)
+        inline_mcp = context.codex_inline_mcp_servers(codex_plugin_path)
+        if inline_mcp is not None:
+            node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
         parent = plugin_nodes.get(codex_plugin_path.resolve())
         (parent or root).children.append(node)
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Optional
 
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
     CommandDoc,
@@ -26,7 +28,7 @@ from skillsaw.blocks import (
     ReadmeBlock,
     SkillBlock,
 )
-from skillsaw.lint_target import PluginNode, SkillNode
+from skillsaw.lint_target import CodexPluginConfigNode, PluginNode, SkillNode
 
 
 def extract_docs(
@@ -35,6 +37,7 @@ def extract_docs(
 ) -> DocsOutput:
     """Extract documentation from a repository context."""
     plugins = [_extract_plugin(context, pn) for pn in context.lint_tree.find(PluginNode)]
+    plugins.extend(_extract_codex_plugins(context))
 
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
@@ -77,6 +80,102 @@ def _default_title(
     if len(plugins) == 1 and plugins[0].name:
         return plugins[0].name
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
+
+
+def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
+    """Plugin docs for Codex plugins that carry no Claude manifest.
+
+    A dual-ecosystem plugin already has a ``PluginNode`` and is documented
+    through it, so it is skipped here to avoid a duplicate entry. A
+    Codex-only plugin has nothing but its ``CodexPluginConfigNode``, and
+    without this ``skillsaw docs`` emitted no plugin metadata, hooks or MCP
+    servers for a repository it had just classified as ``codex-plugin``.
+    """
+    claude_dirs = {pn.path.resolve() for pn in context.lint_tree.find(PluginNode)}
+    docs: List[PluginDoc] = []
+    for node in context.lint_tree.find(CodexPluginConfigNode):
+        if not node.path.is_file() or node.plugin_dir.resolve() in claude_dirs:
+            continue
+        docs.append(_extract_codex_plugin(context, node))
+    return docs
+
+
+def _extract_codex_plugin(context: RepositoryContext, node: CodexPluginConfigNode) -> PluginDoc:
+    """Build a PluginDoc from a Codex manifest and its subtree.
+
+    The Codex manifest carries the same descriptive fields as a Claude one,
+    so the shape of the output is unchanged. Commands, agents and rule
+    files are always empty: Codex plugins ship skills, hooks and MCP
+    servers, and have no equivalent of those three.
+    """
+    plugin_dir = node.plugin_dir
+    meta = _read_json_dict(node)
+
+    author_val = meta.get("author")
+    if isinstance(author_val, str):
+        author_val = {"name": author_val}
+
+    return PluginDoc(
+        name=context.codex_plugin_name(plugin_dir),
+        path=plugin_dir,
+        description=str(meta.get("description", "") or ""),
+        version=str(v) if (v := meta.get("version")) is not None else "",
+        author=author_val if isinstance(author_val, dict) else None,
+        display_name=_interface_field(meta, "displayName"),
+        category=str(meta.get("category", "") or ""),
+        tags=_string_list(meta.get("tags")),
+        keywords=_string_list(meta.get("keywords")),
+        homepage=str(meta.get("homepage", "") or ""),
+        repository=str(meta.get("repository", "") or ""),
+        license=str(meta.get("license", "") or ""),
+        commands=[],
+        skills=_extract_codex_skills(context, plugin_dir),
+        agents=[],
+        hooks=_extract_hooks(node),
+        # meta is passed empty: the manifest's own ``mcpServers`` map is
+        # already in the tree as a CodexInlineMcpBlock, and feeding it here
+        # too would list every inline server twice.
+        mcp_servers=_extract_mcp_servers(node, {}),
+        rules=[],
+        has_readme=(plugin_dir / "README.md").is_file(),
+    )
+
+
+def _read_json_dict(node: CodexPluginConfigNode) -> dict:
+    data, error = read_json(node.path)
+    return data if not error and isinstance(data, dict) else {}
+
+
+def _interface_field(meta: dict, key: str) -> str:
+    """Codex keeps presentation fields under ``interface``."""
+    interface = meta.get("interface")
+    if isinstance(interface, dict):
+        return str(interface.get(key, "") or "")
+    return ""
+
+
+def _string_list(value) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(v) for v in value if v]
+
+
+def _extract_codex_skills(context: RepositoryContext, plugin_dir: Path) -> List[SkillDoc]:
+    """Skills living under *plugin_dir*.
+
+    A Codex-only plugin has no ``PluginNode`` for its skills to nest
+    inside, so they hang off the tree root and have to be matched back by
+    path rather than by subtree.
+    """
+    resolved = plugin_dir.resolve()
+    docs = []
+    for skill_node in context.lint_tree.find(SkillNode):
+        if not skill_node.path.resolve().is_relative_to(resolved):
+            continue
+        doc = _extract_skill(skill_node)
+        if doc:
+            docs.append(doc)
+    return sorted(docs, key=lambda d: d.name)
 
 
 def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> PluginDoc:

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from skillsaw.config import LinterConfig
+from skillsaw.docs.extractor import extract_docs
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
 from skillsaw.blocks import McpBlock
 from skillsaw.lint_target import (
@@ -1734,3 +1735,172 @@ class TestClaudeManifestStillRequired:
         (plugin / "commands" / "go.md").write_text("Run the thing.\n", encoding="utf-8")
 
         assert run_rule(PluginJsonRequiredRule, repo) == []
+
+
+class TestDeclaredAndInlineMcp:
+    """``mcpServers`` takes a path or the map itself; both spawn commands."""
+
+    @staticmethod
+    def _repo(tmp_path, mcp_servers, extra_files=None):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "mcp-host", "version": "1.0.0", "description": "x", "mcpServers": mcp_servers},
+        )
+        for name, payload in (extra_files or {}).items():
+            (repo / name).write_text(json.dumps(payload), encoding="utf-8")
+        return repo
+
+    def test_a_declared_path_becomes_an_mcp_block(self, tmp_path):
+        repo = self._repo(
+            tmp_path,
+            "./servers.json",
+            {"servers.json": {"mcpServers": {"local": {"command": "node", "args": ["s.js"]}}}},
+        )
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        assert {b.path.name for b in blocks} == {"servers.json"}
+        assert {s.name for b in blocks for s in b.servers} == {"local"}
+
+    def test_an_inline_map_becomes_an_mcp_block(self, tmp_path):
+        repo = self._repo(tmp_path, {"local": {"command": "node", "args": ["s.js"]}})
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        assert [b.path.name for b in blocks] == ["plugin.json"]
+        assert {s.name for b in blocks for s in b.servers} == {"local"}
+
+    def test_an_inline_map_reaches_the_mcp_rules(self, tmp_path):
+        repo = self._repo(tmp_path, {"broken": {"type": "stdio"}})
+        config = LinterConfig.default()
+        config.version = "99.0.0"
+        violations = Linter(RepositoryContext(repo), config=config).run()
+
+        mcp = [v for v in violations if v.rule_id.startswith("mcp-")]
+        assert mcp, "inline mcpServers reached no MCP rule"
+        assert Path(mcp[0].file_path).name == "plugin.json"
+
+    def test_a_nested_mcp_servers_key_is_accepted(self, tmp_path):
+        repo = self._repo(tmp_path, {"mcpServers": {"local": {"command": "node"}}})
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        assert {s.name for b in blocks for s in b.servers} == {"local"}
+
+    def test_a_path_escaping_the_plugin_is_not_followed(self, tmp_path):
+        outside = tmp_path / "outside.json"
+        outside.write_text(json.dumps({"mcpServers": {"leaked": {"command": "sh"}}}), "utf-8")
+        repo = self._repo(tmp_path, "../outside.json")
+
+        assert RepositoryContext(repo).lint_tree.find(McpBlock) == []
+
+
+class TestMalformedInlineHooks:
+    """An invalid inline shape must be reported, not filtered away."""
+
+    def test_a_non_list_event_reaches_hooks_json_valid(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "malformed",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": {"hooks": {"SessionStart": {"command": "echo hi"}}},
+            },
+        )
+        config = LinterConfig.default()
+        config.version = "99.0.0"
+        violations = Linter(RepositoryContext(repo), config=config).run()
+
+        found = [v.message for v in violations if v.rule_id == "hooks-json-valid"]
+        assert any("must have an array of hook configurations" in m for m in found)
+
+    def test_the_block_is_still_created(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "malformed",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": {"SessionStart": "not-a-list"},
+            },
+        )
+        assert RepositoryContext(repo).codex_inline_hooks(repo) == {
+            "hooks": {"SessionStart": "not-a-list"}
+        }
+
+    def test_merging_does_not_mutate_the_cached_manifest(self, tmp_path):
+        """The manifest dict comes from the shared read cache."""
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "twice",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": [
+                    {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "a"}]}]}},
+                    {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "b"}]}]}},
+                ],
+            },
+        )
+        context = RepositoryContext(repo)
+        first = context.codex_inline_hooks(repo)
+        second = context.codex_inline_hooks(repo)
+
+        assert len(first["hooks"]["SessionStart"]) == 2
+        assert first == second
+
+
+class TestCodexOnlyPluginDocs:
+    def test_docs_describe_a_codex_only_plugin(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "documented",
+                "version": "2.1.0",
+                "description": "Does a documented thing.",
+                "author": {"name": "Someone"},
+                "license": "MIT",
+                "interface": {"displayName": "Documented Plugin"},
+                "mcpServers": {"local": {"command": "node", "args": ["s.js"]}},
+                "hooks": {
+                    "hooks": {
+                        "SessionStart": [{"hooks": [{"type": "command", "command": "echo ready"}]}]
+                    }
+                },
+            },
+        )
+        skill = repo / "skills" / "capture"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: capture\ndescription: Capture a note\n---\n\n# Capture\n",
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert plugin.name == "documented"
+        assert plugin.version == "2.1.0"
+        assert plugin.description == "Does a documented thing."
+        assert plugin.display_name == "Documented Plugin"
+        assert plugin.license == "MIT"
+        assert [s.name for s in plugin.skills] == ["capture"]
+        assert [h.event_type for h in plugin.hooks] == ["SessionStart"]
+        assert [s.name for s in plugin.mcp_servers] == ["local"]
+
+    def test_a_dual_ecosystem_plugin_is_documented_once(self, tmp_path):
+        repo = tmp_path / "dual"
+        plugin = repo / "plugins" / "both"
+        _write_plugin(plugin, {"name": "both", "version": "1.0.0"})
+        (plugin / ".claude-plugin").mkdir()
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "both", "version": "1.0.0", "description": "Both."}),
+            encoding="utf-8",
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run the thing.\n", encoding="utf-8")
+
+        docs = extract_docs(RepositoryContext(repo))
+        assert [p.name for p in docs.plugins] == ["both"]
+
+    def test_a_manifestless_directory_is_not_documented(self, tmp_path):
+        repo = tmp_path / "hollow"
+        (repo / ".codex-plugin").mkdir(parents=True)
+
+        assert extract_docs(RepositoryContext(repo)).plugins == []
