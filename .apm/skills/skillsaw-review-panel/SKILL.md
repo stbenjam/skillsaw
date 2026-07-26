@@ -94,7 +94,9 @@ subsequent commits and which remain unresolved. Avoid re-raising resolved issues
 ### Step 3 — Dispatch Specialists
 
 Sub-agents and serial reviewers are read-only — no file modifications,
-no `git push` or force-push to any remote.
+no `git push` or force-push to any remote, and no `gh` write commands
+(`gh pr comment`, `gh pr edit`, `gh issue`, or direct API mutations).
+Only the main agent posts the final verdict.
 
 #### Findings format
 
@@ -146,6 +148,10 @@ see the others' output.
 
 Use `subagent_type: "general-purpose"`. Do NOT set the `model`
 parameter.
+
+If the Agent tool is not available (e.g. running in Codex or another
+client that lacks sub-agent support), fall back to serial mode
+automatically.
 
 Wait for all sub-agents to complete before proceeding to the
 Completeness Gate (Step 4).
