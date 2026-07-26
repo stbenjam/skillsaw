@@ -127,7 +127,17 @@ may not share the skill's working directory.
 #### Parallel mode (default)
 
 Launch **all 6 specialist sub-agents in a single message** so they
-run concurrently, using the Agent tool with `run_in_background: true`.
+run concurrently, using the Agent tool with `run_in_background: false`.
+
+Both halves of that matter. A single message is what makes them run
+concurrently. `run_in_background: false` is what makes the dispatch
+*block* until every one returns.
+
+Do **not** use `run_in_background: true` here. A background agent
+returns immediately, so the dispatching turn ends with the reviews
+still running — and when the panel runs headlessly in CI, the turn
+ending ends the job. The workflow then exits green having posted no
+verdict at all, which is worse than failing loudly.
 
 Each sub-agent gets:
 - The specialist role name and a one-line description of its lens
@@ -153,8 +163,9 @@ If the Agent tool is not available (e.g. running in Codex or another
 client that lacks sub-agent support), fall back to serial mode
 automatically.
 
-Wait for all sub-agents to complete before proceeding to the
-Completeness Gate (Step 4).
+Synchronous dispatch means all six have returned by the time the
+tool call completes. Proceed to the Completeness Gate (Step 4) only
+with six sets of findings in hand.
 
 #### Serial mode (`--serial`)
 
@@ -183,6 +194,11 @@ list with an explanation of what was checked is success — do **not**
 retry it. If any specialist returned an error or a missing/malformed
 result, re-dispatch it **once**. If the retry also fails, record
 the failure and proceed.
+
+Never end the run here. A panel that stops after dispatching has
+produced nothing a reviewer can act on, and it looks identical to a
+clean review from the outside. If specialists are missing and cannot
+be recovered, post the verdict anyway, naming which ones failed.
 
 ### Step 5 — Run Panel Arbiter Synthesis
 
