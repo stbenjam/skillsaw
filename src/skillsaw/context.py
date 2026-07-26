@@ -551,9 +551,9 @@ class RepositoryContext:
 
         found: List[Path] = []
         primary = self.codex_marketplace_path()
-        # Existence, not is_file(): the reserved entrypoint replaced by a
-        # directory is unusable, and dropping it here would declassify the
-        # repository instead of reporting it.
+        # Existence, not is_file(): a directory in place of the reserved
+        # entrypoint is unusable, and it has to stay discovered for
+        # codex-marketplace-json-valid to say so.
         if primary.exists():
             found.append(primary)
 

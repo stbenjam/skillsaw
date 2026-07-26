@@ -1244,11 +1244,7 @@ def _codex_marketplace_repo(tmp_path: Path, marketplace: dict) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Review follow-ups (PR #451)
-#
-# Each test below pins a defect a reviewer reproduced on this branch. They
-# are grouped here rather than scattered through the suite so the fix and
-# its regression guard read together.
+# Repository classification and manifest field shapes
 # ---------------------------------------------------------------------------
 
 
@@ -1931,7 +1927,7 @@ class TestCodexOnlyPluginDocs:
 
 
 # ---------------------------------------------------------------------------
-# Review follow-ups, round three
+# Authored vs. installed content, and rule activation
 # ---------------------------------------------------------------------------
 
 
@@ -2273,7 +2269,7 @@ class TestCodexMarketplaceDocs:
 
 
 # ---------------------------------------------------------------------------
-# Review follow-ups, round four
+# Hostile and malformed inputs
 # ---------------------------------------------------------------------------
 
 
@@ -2355,7 +2351,7 @@ class TestSkillsPathNamingTheRoot:
 
 class TestRecursiveSkillContainment:
     def test_a_symlinked_child_of_skills_is_not_followed(self, tmp_path):
-        """The direct probes were fixed; the recursive scan was not."""
+        """`skills/` may contain a symlink pointing out of the plugin."""
         outside = tmp_path / "outside" / "leaked"
         outside.mkdir(parents=True)
         (outside / "SKILL.md").write_text(
@@ -2428,11 +2424,11 @@ class TestCrossCatalogDuplicateNames:
         assert "marketplace.json" in duplicates[0], "the other catalog was not named"
 
     def test_the_same_plugin_listed_in_both_catalogs_is_not_a_duplicate(self, tmp_path):
-        """openai/plugins does this for 29 of its 180 plugins.
+        """A second listing of one source is a curated view, not a defect.
 
-        A second listing pointing at the same source is a curated view, not
-        an ambiguity — Codex resolves it to one plugin either way. Reporting
-        it put 29 spurious ERRORs on the official reference catalog.
+        Real catalogs split their index across sibling files and list a
+        plugin in both. Codex resolves either entry to the same plugin, so
+        there is nothing ambiguous to report.
         """
         entry = {
             "name": "shared",

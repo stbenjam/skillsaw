@@ -230,11 +230,11 @@ class CodexMarketplaceJsonValidRule(Rule):
         source_key = json.dumps(entry.get("source"), sort_keys=True, default=str)
         first = seen_names.get(name)
         # Across catalogs, one name pointing at one source is a curated
-        # second listing, not a defect — openai/plugins does exactly that
-        # for 29 of its 180 plugins. It is only ambiguous when the two
-        # entries resolve somewhere different: that is when Codex's
-        # aggregation has to pick one and ``docs`` loses a page. Within a
-        # single file any repeat stays a defect, exactly as before.
+        # second listing, not a defect — real catalogs split their index
+        # that way. It is only ambiguous when the two entries resolve
+        # somewhere different: that is when Codex's aggregation has to pick
+        # one and ``docs`` loses a page. Within a single file any repeat is
+        # a defect.
         if first is not None and (first[0] == marketplace_file or first[2] != source_key):
             first_file, first_idx, _ = first
             # Name the file only when it differs, so the single-catalog

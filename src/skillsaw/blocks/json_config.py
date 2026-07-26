@@ -194,10 +194,8 @@ class _InlineJsonPayload:
     where the config actually lives and where a violation should point.
     """
 
-    # Declared for type-checkers only — this class is not a dataclass, so
-    # this is a plain class attribute and never the copy that carries a
-    # value. Each dataclass subclass redeclares it as a real field; those
-    # declarations are load-bearing, not duplicates.
+    # Declared for type-checkers only: this class is not a dataclass, so
+    # each subclass must redeclare it as a real field.
     inline_data: Optional[Dict[str, Any]] = None
 
     def _ensure_parsed(self) -> None:
@@ -209,11 +207,9 @@ class _InlineJsonPayload:
 
     # LintTarget compares by (type, resolved path), which assumes the path
     # identifies the config. It does not here: a manifest can declare an
-    # array of inline objects, so several of these legitimately share one
-    # path while carrying different payloads. Under the inherited equality
-    # they compare equal, and any set() would silently drop all but one —
-    # losing hooks the security rules are meant to see. Identity is the
-    # honest key for config that has no file of its own.
+    # array of inline objects, so several of these share one path while
+    # carrying different payloads. Identity is the only honest key for
+    # config that has no file of its own.
     def __eq__(self, other: object) -> bool:
         return self is other
 

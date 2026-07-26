@@ -110,13 +110,17 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 The line is authorship, not discovery: skillsaw does not walk `.claude/plugins/*` at all, so a broken vendor manifest there is likewise not the repository's problem.
 
-Hooks are linted at `hooks/hooks.json`, which Codex loads automatically, at every path the manifest's `hooks` field declares, and in the inline hooks objects that field also accepts — all three carry the same executable commands, so all three reach `hooks-dangerous`, `hooks-prohibited` and `hooks-json-valid`. Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
+`hooks`, `skills` and `mcpServers` each accept a path, an array of paths, or the config inline. All three forms are followed, because a hook written inline runs exactly like one in a file:
 
-Skills are discovered at `skills/` and at every directory the manifest's `skills` field declares, so a plugin that bundles them somewhere else is still linted.
+| Field | Default location | Also followed |
+|---|---|---|
+| `hooks` | `hooks/hooks.json` | declared paths, inline objects |
+| `skills` | `skills/` | declared directories |
+| `mcpServers` | `.mcp.json` | declared paths, inline server maps |
 
-MCP servers get the same treatment as hooks: `.mcp.json` is read on sight, and the manifest's `mcpServers` field is followed whether it names a file or holds the server map itself — those servers are commands the host will spawn either way, so `mcp-valid-json` and `mcp-prohibited` see all three forms.
+Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
 
-`skillsaw docs` documents Codex-only plugins too, reading name, version, description, `interface.displayName`, author and license from the Codex manifest alongside the plugin's skills, hooks and MCP servers.
+`skillsaw docs` describes Codex-only plugins as well, reading name, version, description, `interface.displayName`, author and license from the Codex manifest.
 
 ## OpenAI Codex Marketplace
 

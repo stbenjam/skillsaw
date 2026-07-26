@@ -49,10 +49,9 @@ def extract_docs(
             plugins=plugins,
         )
     elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
-        # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json.
-        # Without this a Codex catalog fell through to the single-page
-        # renderer, which shows plugins[0] and silently drops every other
-        # plugin in the catalog.
+        # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json,
+        # so a Codex catalog needs its own MarketplaceDoc to reach the
+        # multi-page renderer.
         marketplace = _codex_marketplace_doc(context, plugins)
 
     standalone_skills: List[SkillDoc] = []
@@ -118,10 +117,9 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     """
     claude_dirs = {pn.path.resolve() for pn in context.lint_tree.find(PluginNode)}
     docs: List[PluginDoc] = []
-    # Resolved once for the whole catalog rather than once per plugin: this
-    # was 99.2% of extract_docs runtime on a 180-plugin repository, because
-    # every plugin re-resolved every SkillNode in the tree — O(plugins x
-    # skills) stat calls where O(skills) suffices.
+    # Resolved once for the whole catalog rather than once per plugin:
+    # matching skills by path is O(plugins x skills) stat calls otherwise,
+    # and a large catalog has hundreds of each.
     skill_nodes = [(safe_resolve(n.path), n) for n in context.lint_tree.find(SkillNode)]
     resolved_skills = [(r, n) for r, n in skill_nodes if r is not None]
 
