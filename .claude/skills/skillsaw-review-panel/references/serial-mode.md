@@ -9,7 +9,7 @@ another. Do **not** launch sub-agents.
 
 For each specialist in roster order (Architecture, Python Expert,
 Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem,
-Palimpsest):
+Slopinator):
 
 1. Write the specialist name as a heading.
 2. **Read that specialist's `references/*.md` file now** — read the

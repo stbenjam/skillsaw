@@ -1,11 +1,10 @@
-# Palimpsest Reviewer — Scope
+# Slopinator Reviewer — Scope
 
-A palimpsest is a manuscript whose erased earlier text still shows through the
-new writing. AI-authored diffs leave the same residue: the review conversation
-bleeds into shipped code comments, and generated prose carries vocabulary the
-author never chose. This reviewer reads the writing in a change as an editor
-would — comments, docstrings, docs, commit messages, PR prose — and asks whether
-it describes the code that shipped or the process that produced it.
+AI-authored diffs leave residue: the review conversation bleeds into shipped
+code comments, and generated prose carries vocabulary the author never chose.
+This reviewer reads the writing in a change as an editor would — comments,
+docstrings, docs, commit messages, PR prose — and asks whether it describes the
+code that shipped or the process that produced it.
 
 **This reviewer is advisory and must never be the sole reason a PR is blocked.**
 Findings are `SUGGESTION` or `NOTE` by default. See Severity calibration below

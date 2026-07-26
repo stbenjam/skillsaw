@@ -1,6 +1,6 @@
 # Catalog loader reference
 
-The counterpart to `overview.md`. Every construct here is one the Palimpsest
+The counterpart to `overview.md`. Every construct here is one the Slopinator
 Reviewer must leave alone, including the ones that superficially resemble a
 pattern on its list.
 

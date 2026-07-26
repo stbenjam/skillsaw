@@ -1,6 +1,6 @@
-# palimpsest-review-residue
+# slopinator-review-residue
 
-A small repo that contains, on purpose, what the Palimpsest Reviewer is meant
+A small repo that contains, on purpose, what the Slopinator Reviewer is meant
 to catch — and, beside it, what the reviewer must leave alone.
 
 | File | Role |
@@ -19,7 +19,7 @@ tests.
 ## What this fixture does and does not verify
 
 `tests/test_review_panel_skill.py` asserts that every pattern named in
-`references/palimpsest.md` has a concrete instance here, and that the clean
+`references/slopinator.md` has a concrete instance here, and that the clean
 files contain none of the residue markers. That keeps the scope file and this
 fixture from drifting apart: adding a pattern to the scope file without adding
 an example here fails the suite, and vice versa.

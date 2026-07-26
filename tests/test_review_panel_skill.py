@@ -18,8 +18,8 @@ SKILL_DIRS = [
     REPO_ROOT / d / "skills" / "skillsaw-review-panel" for d in (".apm", ".agents", ".claude")
 ]
 SOURCE = SKILL_DIRS[0]
-SCOPE = SOURCE / "references" / "palimpsest.md"
-FIXTURE = REPO_ROOT / "tests" / "fixtures" / "palimpsest-review-residue"
+SCOPE = SOURCE / "references" / "slopinator.md"
+FIXTURE = REPO_ROOT / "tests" / "fixtures" / "slopinator-review-residue"
 
 SPECIALISTS = [
     ("Architecture Reviewer", "architecture.md"),
@@ -28,7 +28,7 @@ SPECIALISTS = [
     ("QA Engineer", "qa-engineer.md"),
     ("Technical Writer", "technical-writer.md"),
     ("Ecosystem Reviewer", "ecosystem.md"),
-    ("Palimpsest Reviewer", "palimpsest.md"),
+    ("Slopinator Reviewer", "slopinator.md"),
 ]
 
 
@@ -167,14 +167,14 @@ class TestRoster:
             assert f"- [ ] {name}" in body or short in body
 
 
-class TestPalimpsestSeverityIsArbitrated:
+class TestSlopinatorSeverityIsArbitrated:
     """Specialists cannot see each other, so a corroboration condition the
     specialist evaluates itself can never be satisfied — it would always
     self-downgrade, and a corroborated correctness defect would ship as a
     suggestion under an APPROVE."""
 
     def test_it_reports_a_candidate_rather_than_deciding(self):
-        scope = (SOURCE / "references" / "palimpsest.md").read_text(encoding="utf-8")
+        scope = (SOURCE / "references" / "slopinator.md").read_text(encoding="utf-8")
         assert "BLOCKING CANDIDATE" in scope
         assert "do not downgrade it yourself" in scope
 
@@ -185,12 +185,12 @@ class TestPalimpsestSeverityIsArbitrated:
         assert "Leaving it unsettled is" in " ".join(body.split())
 
     def test_the_reviewer_stays_advisory_by_default(self):
-        scope = (SOURCE / "references" / "palimpsest.md").read_text(encoding="utf-8")
+        scope = (SOURCE / "references" / "slopinator.md").read_text(encoding="utf-8")
         assert "What NOT to flag" in scope
 
 
 class TestCorroborationContractIsConsistent:
-    """Three places state when a Palimpsest finding may block: the shared
+    """Three places state when a Slopinator finding may block: the shared
     severity list, the scope file, and the arbiter's settle step. If they
     disagree, the specialist and the arbiter apply different rules and the
     label means whatever the reader last happened to read.
@@ -241,9 +241,9 @@ class TestFindingsFormatCarriesEverySeverity:
         body = skill_md(SOURCE)
         assert "`BLOCKING` | `BLOCKING CANDIDATE` | `SUGGESTION` | `NOTE`" in body
 
-    def test_the_label_is_scoped_to_palimpsest_and_promoted_only_by_the_arbiter(self):
+    def test_the_label_is_scoped_to_slopinator_and_promoted_only_by_the_arbiter(self):
         body = " ".join(skill_md(SOURCE).split())
-        assert "**Palimpsest Reviewer only**" in body
+        assert "**Slopinator Reviewer only**" in body
         assert "no other specialist uses it" in body
         assert "Only the arbiter promotes it" in body
 
@@ -264,7 +264,7 @@ class TestDispatchGateDoesNotStallOnFailure:
         assert "post the verdict anyway, naming which failed" in body
 
 
-class TestPalimpsestFixture:
+class TestSlopinatorFixture:
     """A small repo carrying what the reviewer is meant to catch, beside what
     it must leave alone.
 
@@ -273,7 +273,7 @@ class TestPalimpsestFixture:
     assert that the reviewer *catches* anything. The panel is a prompt
     executed by an LLM, so recall and precision need a model in the loop and
     cannot be checked in a unit suite — point a live panel run at the fixture
-    instead. See ``tests/fixtures/palimpsest-review-residue/README.md``.
+    instead. See ``tests/fixtures/slopinator-review-residue/README.md``.
     """
 
     ALL_PATTERNS = dict(CODE_PATTERNS, **PROSE_PATTERNS, **SHAPE_PATTERNS)

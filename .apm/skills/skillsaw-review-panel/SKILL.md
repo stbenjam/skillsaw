@@ -1,6 +1,6 @@
 ---
 name: skillsaw-review-panel
-description: Use when reviewing a skillsaw PR. Dispatches 7 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem, Palimpsest) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
+description: Use when reviewing a skillsaw PR. Dispatches 7 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem, Slopinator) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
@@ -48,7 +48,7 @@ the maintainer and PR author review and decide ship.
 | QA Engineer | Test coverage gaps, untested error paths, edge cases, concrete test suggestions | [`references/qa-engineer.md`](references/qa-engineer.md) |
 | Technical Writer | Verify documentation accuracy, completeness, consistency with code changes, CLAUDE.md drift | [`references/technical-writer.md`](references/technical-writer.md) |
 | Ecosystem Reviewer | Review target-tool adoption in the current LLM landscape; core-vs-plugin scope boundary | [`references/ecosystem.md`](references/ecosystem.md) |
-| Palimpsest Reviewer | Catch review-history residue in code comments and AI-authored prose tells in docs, docstrings, and commit messages | [`references/palimpsest.md`](references/palimpsest.md) |
+| Slopinator Reviewer | Catch review-history residue in code comments and AI-authored prose tells in docs, docstrings, and commit messages | [`references/slopinator.md`](references/slopinator.md) |
 | Panel Arbiter | Handle strategic synthesis, disagreement resolution, final disposition | *(inline, below)* |
 
 ## Run the Execution Procedure
@@ -116,7 +116,7 @@ If no issues found, say so and list what was checked.
 - `SUGGESTION`: Substantive feedback that improves the code but is not a
   correctness issue. Keep this the default for real feedback.
 - `NOTE`: One-line polish, style nits, minor improvements.
-- `BLOCKING CANDIDATE`: **Palimpsest Reviewer only** — no other specialist
+- `BLOCKING CANDIDATE`: **Slopinator Reviewer only** — no other specialist
   uses it. That reviewer is advisory: `SUGGESTION` or `NOTE` by default,
   never setting the disposition itself. It reports this label for a comment
   that is factually false about the shipped code, rather than deciding a
@@ -195,7 +195,7 @@ After all specialists complete, review and synthesize directly:
    findings, and issues already addressed in the branch.
 4. **Resolve conflicts** — corroboration strengthens; when specialists
    disagree, prefer the more conservative position.
-5. **Settle blocking candidates** — Palimpsest reports a factually false
+5. **Settle blocking candidates** — Slopinator reports a factually false
    comment as a `BLOCKING CANDIDATE`, since it cannot see other specialists.
    Promote to `BLOCKING` when any other specialist independently reported the
    same underlying defect — the same wrong behavior or false claim, not merely
@@ -256,5 +256,5 @@ Verify a change passes when:
 - [ ] QA Engineer: Verify adequate test coverage, edge cases addressed.
 - [ ] Technical Writer: Ensure documentation consistent with changes.
 - [ ] Ecosystem Reviewer: Check target tool is in scope for core, or redirect to a plugin with links to skillsaw.org/plugins/.
-- [ ] Palimpsest Reviewer: Check comments and docs describe shipped behavior, not the review history; check prose reads as human-written.
+- [ ] Slopinator Reviewer: Check comments and docs describe shipped behavior, not the review history; check prose reads as human-written.
 - [ ] Panel Arbiter: Ratify trade-offs, set disposition.

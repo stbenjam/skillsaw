@@ -1,7 +1,7 @@
 """Plugin catalog loading.
 
 Every comment in this module is deliberately bad. It is fixture material for
-the Palimpsest Reviewer: each one is an instance of a pattern the reviewer's
+the Slopinator Reviewer: each one is an instance of a pattern the reviewer's
 scope file tells it to flag. Do not clean this file up.
 """
 

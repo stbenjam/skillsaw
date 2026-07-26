@@ -1,4 +1,4 @@
-"""Fixture tests, organized the way the Palimpsest Reviewer says not to.
+"""Fixture tests, organized the way the Slopinator Reviewer says not to.
 
 The section headings key tests to review iterations instead of to the
 behavior under test. Verbose-but-accurate names further down are the

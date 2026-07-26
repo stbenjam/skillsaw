@@ -1,7 +1,7 @@
 # Changelog
 
 A version-scoped document. Narrating change is the whole job here, so the
-Palimpsest Reviewer must not flag this file for diff-anchored writing.
+Slopinator Reviewer must not flag this file for diff-anchored writing.
 
 ## 2.0.0
 

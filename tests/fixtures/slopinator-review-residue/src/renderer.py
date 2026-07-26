@@ -1,6 +1,6 @@
 """Catalog rendering.
 
-The counterpart to ``catalog.py``: every comment here is one the Palimpsest
+The counterpart to ``catalog.py``: every comment here is one the Slopinator
 Reviewer must leave alone. Flagging anything in this file is a false positive.
 """
 
