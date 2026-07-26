@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, codex_local_source_path, safe_resolve
+from skillsaw.formats.codex import is_remote_source
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
@@ -221,6 +222,11 @@ class CodexMarketplaceRegistrationRule(Rule):
         fact that B is not installable at all goes unreported. Only remote
         entries (url, git-subdir, npm) register by name, because they name
         no directory in this repository for the path half to match.
+
+        A malformed entry registers nothing at all. ``{"source": "local"}``
+        with no ``path`` names no directory, and its ``name`` describes a
+        plugin the catalog cannot install; crediting it would silence the
+        unregistered-plugin report for a real directory of the same name.
         """
         names: set = set()
         dirs: set = set()
@@ -231,6 +237,8 @@ class CodexMarketplaceRegistrationRule(Rule):
                     resolved = safe_resolve(context.root_path / source)
                     if resolved is not None:
                         dirs.add(resolved)
+                    continue
+                if not is_remote_source(entry.get("source")):
                     continue
                 name = entry.get("name")
                 if isinstance(name, str):

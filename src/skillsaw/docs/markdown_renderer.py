@@ -280,7 +280,10 @@ def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:
     # macOS and Windows installs, so an exact-case set would hand out both
     # and the second page would overwrite the first. The chosen spelling is
     # still what gets written.
-    used: set = set()
+    # Seeded with the index page: a plugin named "readme" otherwise takes
+    # "README.md" and the index overwrites it, losing that plugin's page
+    # and every link to it.
+    used: set = {"readme.md"}
     out: Dict[int, str] = {}
     for plugin in plugins:
         candidate = _plugin_filename(plugin)

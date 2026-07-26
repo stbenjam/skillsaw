@@ -99,10 +99,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        for root in codex_roots:
-            if resolved == root or resolved.is_relative_to(root):
-                return root
-        return None
+        # Nearest root, not first match. A repository root that is itself a
+        # plugin contains the nested ones and is listed first, so first-match
+        # gave every nested skill to the outer root — and a reference could
+        # then leave the nested plugin while still passing the check. The
+        # docs extractor already picks the longest match.
+        owners = [r for r in codex_roots if resolved == r or resolved.is_relative_to(r)]
+        return max(owners, key=lambda r: len(r.parts)) if owners else None
 
     def _add_codex_block(parent: LintTarget, p: Path, block_cls: type) -> None:
         """``_add_block`` for a path that must stay inside its plugin.
@@ -280,18 +283,23 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             continue
         skill_node = SkillNode(path=skill_path)
         _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+        # Contained against the owning Codex plugin: agentskill-evals reads
+        # the eval document and agentskill-rename-refs can rewrite it, and
+        # the SAFE content fixes rewrite references in place — so a symlink
+        # here is a read *and* a write outside the checkout.
+        ref_root = _codex_owner(skill_path)
+
+        def _contained_in_plugin(candidate: Path) -> bool:
+            if ref_root is None:
+                return True
+            resolved = safe_resolve(candidate)
+            return resolved is not None and resolved.is_relative_to(ref_root)
+
         refs_dir = skill_path / "references"
         if refs_dir.is_dir():
-            # Contained against the owning Codex plugin: a symlinked
-            # reference would otherwise be read *and written* — the SAFE
-            # content fixes rewrite these files in place.
-            ref_root = _codex_owner(skill_path)
             for ref_file in sorted(refs_dir.glob("*.md")):
-                if ref_root is not None:
-                    resolved = safe_resolve(ref_file)
-                    if resolved is None or not resolved.is_relative_to(ref_root):
-                        continue
-                _add_block(skill_node, ref_file, SkillRefBlock)
+                if _contained_in_plugin(ref_file):
+                    _add_block(skill_node, ref_file, SkillRefBlock)
 
         # Nearest plugin ancestor via dict lookups — iterating all plugins
         # with is_relative_to() is O(skills x plugins) and dominated tree

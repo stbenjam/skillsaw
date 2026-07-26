@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.codex import codex_local_source_path, safe_resolve
@@ -41,10 +41,11 @@ def extract_docs(
     # that legacy discovery picked up for its commands/ or skills/ directory.
     # _extract_codex_plugins handles it, and reading it through the Claude
     # extractor as well would list it twice with empty metadata.
+    codex_roots = _codex_roots(context)
     plugins = [
         _extract_plugin(context, pn)
         for pn in context.lint_tree.find(PluginNode)
-        if not _is_codex_only(context, pn.path)
+        if not _is_codex_only(context, pn.path, codex_roots)
     ]
     plugins.extend(_extract_codex_plugins(context))
 
@@ -99,7 +100,17 @@ def _default_title(
     return context.repo_type.value.replace("-", " ").title() + " Documentation"
 
 
-def _is_codex_only(context: RepositoryContext, plugin_path: Path) -> bool:
+def _codex_roots(context: RepositoryContext) -> Set[Path]:
+    """Resolved Codex plugin roots, computed once per extraction.
+
+    ``_is_codex_only`` runs per legacy plugin node, and a marketplace can
+    hold hundreds of each; rebuilding this inside the predicate resolves
+    every Codex root once per legacy plugin.
+    """
+    return {r for r in (safe_resolve(p) for p in context.codex_plugins) if r}
+
+
+def _is_codex_only(context: RepositoryContext, plugin_path: Path, codex_roots: Set[Path]) -> bool:
     """Whether *plugin_path* is a Codex plugin with no Claude identity.
 
     Keyed on what discovery actually accepted, not a raw ``is_file()``: that
@@ -110,11 +121,11 @@ def _is_codex_only(context: RepositoryContext, plugin_path: Path) -> bool:
     if (plugin_path / ".claude-plugin" / "plugin.json").is_file():
         return False
     resolved = safe_resolve(plugin_path)
-    if resolved is not None and resolved in getattr(context, "marketplace_entries", {}):
+    if resolved is None:
         return False
-    return resolved is not None and resolved in {
-        r for r in (safe_resolve(p) for p in context.codex_plugins) if r
-    }
+    if resolved in getattr(context, "marketplace_entries", {}):
+        return False
+    return resolved in codex_roots
 
 
 def _codex_marketplace_doc(
@@ -221,10 +232,11 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     # Claude manifest, or a marketplace entry claiming it, means the Claude
     # extractor can read its metadata — otherwise the docs fall back to the
     # directory name and lose everything the Codex manifest declares.
+    codex_roots = _codex_roots(context)
     claude_dirs = {
         pn.path.resolve()
         for pn in context.lint_tree.find(PluginNode)
-        if not _is_codex_only(context, pn.path)
+        if not _is_codex_only(context, pn.path, codex_roots)
     }
     docs: List[PluginDoc] = []
     # Resolved once for the whole catalog rather than once per plugin:

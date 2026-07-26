@@ -652,13 +652,21 @@ class RepositoryContext:
             # repository: `plugins/a/.codex-plugin -> plugins/b/.codex-plugin`
             # stays in the checkout, so a repo-wide check accepts it and
             # plugin A is then discovered and documented using B's manifest.
+            #
+            # ``is_dir()`` is the wrong question for the first half: it is
+            # false for a regular file named ``.codex-plugin`` and for a
+            # dangling symlink, and both of those occupy the reserved name
+            # just as surely as a directory does. Discarding them silently
+            # un-types the repository, so a plugin whose manifest directory
+            # was clobbered reports nothing at all. Existence — or a symlink
+            # entry, which ``exists()`` denies when it dangles — keeps the
+            # plugin; codex-plugin-json-valid then reports the unreadable
+            # manifest.
             manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
+            if not (manifest_dir.exists() or manifest_dir.is_symlink()):
+                return
             manifest_dir_resolved = safe_resolve(manifest_dir)
-            if (
-                not manifest_dir.is_dir()
-                or manifest_dir_resolved is None
-                or not manifest_dir_resolved.is_relative_to(resolved)
-            ):
+            if manifest_dir_resolved is None or not manifest_dir_resolved.is_relative_to(resolved):
                 return
             # A missing manifest is still a plugin — codex-plugin-json-valid
             # reports it. One that resolves elsewhere is not.
@@ -720,6 +728,23 @@ class RepositoryContext:
                 if candidate == self.root_path or candidate.is_relative_to(self.root_path):
                     resolved.append(candidate)
         return resolved
+
+    def codex_plugin_owning(self, path: Path) -> Optional[Path]:
+        """The Codex plugin *path* sits in, nearest first, or ``None``.
+
+        Nearest rather than first: a repository root that is itself a plugin
+        contains the nested ones, so an outer match would let content escape
+        the plugin that actually ships it.
+        """
+        resolved = safe_resolve(path)
+        if resolved is None:
+            return None
+        owners = [
+            r
+            for r in (safe_resolve(p) for p in self.codex_plugins)
+            if r is not None and (resolved == r or resolved.is_relative_to(r))
+        ]
+        return max(owners, key=lambda r: len(r.parts)) if owners else None
 
     def is_codex_installed_plugin(self, plugin_dir: Path) -> bool:
         """Whether *plugin_dir* is an installed plugin rather than an authored one.

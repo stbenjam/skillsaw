@@ -8,7 +8,7 @@ from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import read_json
 
-from ._helpers import SKILL_REPO_TYPES
+from ._helpers import SKILL_REPO_TYPES, contained_eval_file
 
 
 class AgentSkillEvalsRule(Rule):
@@ -33,12 +33,15 @@ class AgentSkillEvalsRule(Rule):
         for skill_node in context.lint_tree.find(SkillNode):
             skill_path = skill_node.path
             evals_dir = skill_path / "evals"
-            evals_json = evals_dir / "evals.json"
 
             if not evals_dir.is_dir():
                 continue
 
-            if not evals_json.exists():
+            evals_json = contained_eval_file(context, skill_path)
+            if evals_json is None:
+                if (evals_dir / "evals.json").exists():
+                    # Present, but resolving outside the owning Codex plugin.
+                    continue
                 violations.append(
                     self.violation(
                         "evals/ directory exists but evals.json is missing",

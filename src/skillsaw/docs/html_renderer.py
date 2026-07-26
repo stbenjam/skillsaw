@@ -757,7 +757,7 @@ def _get_js() -> str:
     if (type === 'plugins' && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
       allPlugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">';
         html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+esc(pName(p))+'</div>';
         html += '<div class="search-result-subtitle">'+esc(p.description)+'</div></div></div>';
@@ -776,7 +776,7 @@ def _get_js() -> str:
       if (items.length) {
         html += '<div class="search-results-heading">'+label+' ('+items.length+')</div>';
         items.forEach(function(r) {
-          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
           html += '<div class="search-result-item"'+onclick+'>';
           html += '<div class="search-result-icon '+esc(r.icon)+'">'+esc(r.iconChar)+'</div>';
           html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
@@ -804,10 +804,10 @@ def _get_js() -> str:
     el.innerHTML = filterHtml + '<div class="plugins-grid" id="plugins-grid">' + plugins.map(function(p) {
       var counts = buildCountBadges(p);
       var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
+      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escJsAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
       var allTags = (p.tags||[]).concat(p.keywords||[]);
-      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
-      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">' +
+      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escJsAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<div class="plugin-card" data-category="'+(escAttr(p.category)||'')+'" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">' +
         '<div class="plugin-header"><div><div class="plugin-name">'+esc(pName(p))+'</div>'+ver+'</div>'+cat+'</div>' +
         '<div class="plugin-description">'+(p.description_html || esc(p.description) || '<em>No description</em>')+'</div>' +
         tagsHtml +
@@ -824,7 +824,7 @@ def _get_js() -> str:
   function renderCategoryFilter(cats) {
     var btns = '<button class="category-btn'+(activeCategory?'':' active')+'" onclick="navigateTo(\\'\\')">All</button>';
     cats.forEach(function(c) {
-      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escAttr(c)+'\\')">'+esc(c)+'</a>';
+      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escJsAttr(c)+'\\')">'+esc(c)+'</a>';
     });
     return '<div class="category-filter" id="category-filter">' + btns + '</div>';
   }
@@ -1035,7 +1035,7 @@ def _get_js() -> str:
     if (results.plugins.length && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">Plugins (' + results.plugins.length + ')</div>';
       results.plugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">';
         html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(pName(p),q)+'</div>';
         html += '<div class="search-result-subtitle">'+hi(p.description,q)+'</div></div></div>';
@@ -1045,7 +1045,7 @@ def _get_js() -> str:
     if (results.commands.length) {
       html += '<div class="search-results-heading">Commands (' + results.commands.length + ')</div>';
       results.commands.forEach(function(r) {
-        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon cmd">$</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.full_name || r.item.name, q)+'</div>';
@@ -1058,7 +1058,7 @@ def _get_js() -> str:
     if (results.skills.length) {
       html += '<div class="search-results-heading">Skills (' + results.skills.length + ')</div>';
       results.skills.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon skill">S</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1071,7 +1071,7 @@ def _get_js() -> str:
     if (results.agents.length) {
       html += '<div class="search-results-heading">Agents (' + results.agents.length + ')</div>';
       results.agents.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon agent">A</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1084,7 +1084,7 @@ def _get_js() -> str:
     if (results.hooks.length) {
       html += '<div class="search-results-heading">Hooks (' + results.hooks.length + ')</div>';
       results.hooks.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon hook">H</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.event_type,q)+'</div>';
@@ -1097,7 +1097,7 @@ def _get_js() -> str:
     if (results.rules.length) {
       html += '<div class="search-results-heading">Rules (' + results.rules.length + ')</div>';
       results.rules.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon rule">R</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1193,12 +1193,23 @@ def _get_js() -> str:
   }
 
   function escAttr(str) {
-    // Every call site puts this inside onclick="navigateTo('...')", which is
-    // a JS string nested in an HTML attribute. innerHTML decodes entities
-    // *before* the handler is compiled, so entity-encoding the quote does
-    // not contain it — "x');alert(1);//" would break out and run. Escape for
-    // JS first, then for HTML, so the decode step yields \' rather than '.
-    return esc(String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+    // HTML attribute context. esc() serialises a text node, which leaves the
+    // double quote alone — fine for element text, not for an attribute
+    // value, where it closes the attribute and a second handler can follow.
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function escJsAttr(str) {
+    // A JS string literal nested inside an HTML attribute — two contexts, so
+    // two escapes in that order. innerHTML decodes the entities before the
+    // handler compiles, so the JS escapes must survive that decode: \' stays
+    // \', while " arrives as a plain quote which cannot close a
+    // single-quoted JS string.
+    return escAttr(String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
   }
 
   init();

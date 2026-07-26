@@ -32,6 +32,21 @@ def codex_local_source_path(source: Any) -> Optional[str]:
     return None
 
 
+REMOTE_SOURCE_TYPES = frozenset({"url", "git-subdir", "npm"})
+
+
+def is_remote_source(source: Any) -> bool:
+    """Whether *source* is one of Codex's remote source types.
+
+    Deliberately narrower than "not local": a malformed entry (``source:
+    42``, ``{"source": "local"}`` with no path, a typo'd type) resolves to
+    no local directory *and* names nothing installable, so it is neither.
+    Callers that treat every non-local source as remote credit those
+    entries with a registration they do not provide.
+    """
+    return isinstance(source, dict) and source.get("source") in REMOTE_SOURCE_TYPES
+
+
 def safe_resolve(path: Path) -> Optional[Path]:
     """``path.resolve()``, or ``None`` when the path cannot be resolved.
 

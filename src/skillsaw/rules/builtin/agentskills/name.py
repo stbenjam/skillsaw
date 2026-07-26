@@ -166,8 +166,11 @@ class AgentSkillNameRule(Rule):
             # invalid), so fixability must be decided per violation by the
             # same routine fix() runs — otherwise lint output over-promises
             # `[*] fixable with skillsaw fix`.
+            # fix() also stands down on skills installed under
+            # `.codex/plugins/`, so that has to gate fixability here too.
             original = read_text(block.path)
-            kebab_fixable = _plan_name_fix(original) is not None
+            authored = not is_installed_plugin_skill(context, block.path)
+            kebab_fixable = authored and _plan_name_fix(original) is not None
 
             if bad_format:
                 violations.append(
@@ -206,7 +209,9 @@ class AgentSkillNameRule(Rule):
                         f"Name '{name}' does not match directory name '{skill_node.path.name}'",
                         block=block,
                         line=name_line,
-                        fixable=_plan_name_fix(original, skill_node.path.name) is not None,
+                        fixable=(
+                            authored and _plan_name_fix(original, skill_node.path.name) is not None
+                        ),
                     )
                 )
 

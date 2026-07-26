@@ -3454,3 +3454,265 @@ class TestNestedPluginSkillAttribution:
         by_name = {p.name: p for p in docs.plugins}
         assert [s.name for s in by_name["nested"].skills] == ["inner"]
         assert by_name["root-plugin"].skills == []
+
+
+class TestManifestDirectoryIsOccupied:
+    """The reserved name taken by a non-directory is still a Codex plugin."""
+
+    def test_a_regular_file_named_codex_plugin_keeps_the_plugin(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".codex-plugin").write_text("not a directory\n", encoding="utf-8")
+
+        context = RepositoryContext(repo)
+        assert context.codex_plugins == [repo]
+        assert RepositoryType.CODEX_PLUGIN in context.repo_types
+        assert messages(run_rule(CodexPluginJsonValidRule, repo))
+
+    def test_a_dangling_symlink_inside_the_plugin_keeps_the_plugin(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".codex-plugin").symlink_to(repo / "gone")
+
+        assert RepositoryContext(repo).codex_plugins == [repo]
+
+    def test_a_symlink_out_of_the_plugin_is_still_rejected(self, tmp_path):
+        outside = tmp_path / "external"
+        (outside / ".codex-plugin").mkdir(parents=True)
+        (outside / ".codex-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "external", "version": "1.0.0"}), encoding="utf-8"
+        )
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".codex-plugin").symlink_to(outside / ".codex-plugin")
+
+        assert RepositoryContext(repo).codex_plugins == []
+
+
+class TestEvalContainment:
+    """``evals/evals.json`` is read and rewritten — a symlink out of the
+    owning plugin is a read and a write outside the checkout."""
+
+    def _skill_with_escaping_evals(self, tmp_path):
+        outside = tmp_path / "outside.json"
+        outside.write_text(json.dumps({"skill_name": "elsewhere"}), encoding="utf-8")
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "holder", "version": "1.0.0", "description": "x"}
+        )
+        skill = repo / "skills" / "worker"
+        (skill / "evals").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: worker\ndescription: Does the work for the tests\n---\n\n# Worker\n",
+            encoding="utf-8",
+        )
+        (skill / "evals" / "evals.json").symlink_to(outside)
+        return repo, skill
+
+    def test_an_escaping_evals_file_is_not_read(self, tmp_path):
+        from skillsaw.rules.builtin.agentskills.evals import AgentSkillEvalsRule
+
+        repo, _ = self._skill_with_escaping_evals(tmp_path)
+        context = RepositoryContext(repo)
+        assert AgentSkillEvalsRule({}).check(context) == []
+
+    def test_a_contained_evals_file_is_still_validated(self, tmp_path):
+        from skillsaw.rules.builtin.agentskills.evals import AgentSkillEvalsRule
+
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "holder", "version": "1.0.0", "description": "x"}
+        )
+        skill = repo / "skills" / "worker"
+        (skill / "evals").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: worker\ndescription: Does the work for the tests\n---\n\n# Worker\n",
+            encoding="utf-8",
+        )
+        (skill / "evals" / "evals.json").write_text("{ not json", encoding="utf-8")
+
+        violations = AgentSkillEvalsRule({}).check(RepositoryContext(repo))
+        assert any("Invalid JSON" in m for m in messages(violations))
+
+
+class TestMalformedSourceRegistersNothing:
+    """An entry with no resolvable source names no installable plugin."""
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"source": "local"},
+            {"source": "local", "path": ""},
+            {"source": "typo", "url": "https://example.com"},
+            42,
+        ],
+    )
+    def test_a_malformed_entry_does_not_cover_a_real_directory(self, tmp_path, source):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [{"name": "one", "source": source}],
+            },
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+
+        violations = run_rule(CodexMarketplaceRegistrationRule, repo)
+        assert any("not registered" in m for m in messages(violations))
+
+    def test_a_remote_entry_still_registers_by_name(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {"name": "one", "source": {"source": "url", "url": "https://example.com/x"}}
+                ],
+            },
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+
+        violations = run_rule(CodexMarketplaceRegistrationRule, repo)
+        assert not any("not registered" in m for m in messages(violations))
+
+
+class TestInstalledSkillFixabilityIsAdvertisedHonestly:
+    def test_a_name_violation_on_an_installed_skill_is_not_marked_fixable(self, tmp_path):
+        repo = tmp_path / "repo"
+        skill = repo / ".codex" / "plugins" / "vendor" / "skills" / "Bad_Name"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: Bad_Name\ndescription: Vendor skill nobody here authored\n---\n\n# Bad\n",
+            encoding="utf-8",
+        )
+        _write_plugin(
+            repo / ".codex" / "plugins" / "vendor", {"name": "vendor", "version": "1.0.0"}
+        )
+
+        violations = AgentSkillNameRule({}).check(RepositoryContext(repo))
+        assert violations
+        assert not any(v.fixable for v in violations)
+
+    def test_an_authored_skill_is_still_marked_fixable(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "holder", "version": "1.0.0", "description": "x"}
+        )
+        skill = repo / "skills" / "Bad_Name"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: Bad_Name\ndescription: A skill this repository authored\n---\n\n# Bad\n",
+            encoding="utf-8",
+        )
+
+        violations = AgentSkillNameRule({}).check(RepositoryContext(repo))
+        assert any(v.fixable for v in violations)
+
+
+class TestIndexPageFilenameIsReserved:
+    def test_a_plugin_named_readme_does_not_overwrite_the_index(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {"name": "readme", "source": {"source": "local", "path": "./plugins/readme"}},
+                    {"name": "other", "source": {"source": "local", "path": "./plugins/other"}},
+                ],
+            },
+        )
+        _write_plugin(repo / "plugins" / "readme", {"name": "readme", "version": "1.0.0"})
+        _write_plugin(repo / "plugins" / "other", {"name": "other", "version": "1.0.0"})
+
+        pages = render_markdown(extract_docs(RepositoryContext(repo)))
+        assert "readme-2.md" in pages
+        assert "## Plugins" in pages["README.md"]
+
+
+class TestGeneratedHtmlAttributeEscaping:
+    """``esc()`` serialises a text node — the double quote it leaves alone
+    closes an attribute value, and a second handler can follow it.
+
+    The card markup is assembled by the page's own JavaScript, which no
+    Python test can execute, so the assertions are on the two halves that
+    together make the breakout impossible: every attribute value goes
+    through an attribute-context escaper, and that escaper escapes the
+    double quote.
+    """
+
+    def _rendered(self, tmp_path):
+        category = 'x" onmouseover="alert(document.domain)'
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "one",
+                        "source": {"source": "local", "path": "./plugins/one"},
+                        "category": category,
+                    }
+                ],
+            },
+        )
+        _write_plugin(
+            repo / "plugins" / "one",
+            {"name": "one", "version": "1.0.0", "interface": {"category": category}},
+        )
+        return "\n".join(render_html(extract_docs(RepositoryContext(repo))).values())
+
+    def test_attribute_values_use_an_attribute_context_escaper(self, tmp_path):
+        html = self._rendered(tmp_path)
+        for line in html.splitlines():
+            if "data-category=" in line and "+" in line:
+                assert "escAttr(" in line
+                break
+        else:
+            pytest.fail("no data-category assembly found in the generated page")
+
+    def test_the_attribute_escaper_escapes_the_double_quote(self, tmp_path):
+        html = self._rendered(tmp_path)
+        body = html.split("function escAttr", 1)[1].split("function", 1)[0]
+        assert "&quot;" in body
+
+
+class TestNearestOwningPlugin:
+    """A plugin nested inside another is the owner of its own content."""
+
+    def test_a_nested_plugins_content_is_owned_by_the_nested_plugin(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "outer", "version": "1.0.0", "description": "x"}
+        )
+        inner = _write_plugin(repo / "plugins" / "inner", {"name": "inner", "version": "1.0.0"})
+
+        context = RepositoryContext(repo)
+        owner = context.codex_plugin_owning(inner / "skills" / "s")
+        assert owner == safe_resolve(inner)
+
+    def test_content_outside_any_plugin_has_no_owner(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "outer", "version": "1.0.0", "description": "x"}
+        )
+        assert RepositoryContext(repo).codex_plugin_owning(tmp_path / "elsewhere") is None
+
+
+class TestInstalledSkillRenameFix:
+    def test_rename_autofix_stands_down_on_an_installed_plugin(self, tmp_path):
+        from skillsaw.rules.builtin.agentskills.rename_refs import AgentSkillRenameRefsRule
+        from skillsaw.rules.builtin.agentskills._helpers import _write_renames_manifest
+
+        repo = tmp_path / "repo"
+        skill = repo / ".codex" / "plugins" / "vendor" / "skills" / "reader"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: reader\ndescription: Vendor skill referencing old-tool-name\n---\n\n"
+            "Delegate to old-tool-name when parsing.\n",
+            encoding="utf-8",
+        )
+        _write_plugin(
+            repo / ".codex" / "plugins" / "vendor", {"name": "vendor", "version": "1.0.0"}
+        )
+        _write_renames_manifest(repo, [{"old": "old-tool-name", "new": "new-tool-name"}])
+
+        rule = AgentSkillRenameRefsRule({})
+        context = RepositoryContext(repo)
+        violations = rule.check(context)
+        assert violations, "the stale reference is still worth reporting"
+        assert rule.fix(context, violations) == []

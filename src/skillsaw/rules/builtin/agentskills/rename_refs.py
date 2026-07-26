@@ -19,6 +19,8 @@ from ._helpers import (
     _RENAMES_LOCK,
     _read_renames_manifest,
     _write_renames_manifest,
+    contained_eval_file,
+    is_installed_plugin_skill,
 )
 
 # Characters that can be part of a skill name reference. A match is only a
@@ -108,8 +110,8 @@ class AgentSkillRenameRefsRule(Rule):
                     referenced_olds.add(old)
 
         for skill_node in context.lint_tree.find(SkillNode):
-            evals_json = skill_node.path / "evals" / "evals.json"
-            if not evals_json.exists():
+            evals_json = contained_eval_file(context, skill_node.path)
+            if evals_json is None:
                 continue
             try:
                 raw = evals_json.read_text(encoding="utf-8")
@@ -164,6 +166,8 @@ class AgentSkillRenameRefsRule(Rule):
         by_file: Dict[Path, List[RuleViolation]] = {}
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             by_file.setdefault(v.file_path, []).append(v)
 

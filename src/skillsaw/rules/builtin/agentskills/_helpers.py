@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from skillsaw.context import RepositoryType
+from skillsaw.formats.codex import safe_resolve
 
 # Repository types whose lint tree can hold Agent Skills. One set shared by
 # every rule in this package so a newly supported host cannot be wired into
@@ -36,6 +37,26 @@ DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 RENAMES_MANIFEST = ".skillsaw-renames.json"
 _RENAMES_LOCK = threading.Lock()
+
+
+def contained_eval_file(context, skill_dir):
+    """``evals/evals.json`` for *skill_dir*, or ``None`` if it escapes.
+
+    agentskill-evals reads this document and agentskill-rename-refs can
+    rewrite it, so a symlink pointing out of the owning Codex plugin is a
+    read *and* a write outside the checkout. Skills that belong to no Codex
+    plugin are unaffected.
+    """
+    candidate = skill_dir / "evals" / "evals.json"
+    if not candidate.exists():
+        return None
+    root = context.codex_plugin_owning(skill_dir)
+    if root is None:
+        return candidate
+    resolved = safe_resolve(candidate)
+    if resolved is None or not resolved.is_relative_to(root):
+        return None
+    return candidate
 
 
 def is_installed_plugin_skill(context, path) -> bool:
