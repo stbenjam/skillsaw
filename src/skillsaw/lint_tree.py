@@ -92,6 +92,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen.add(resolved)
         parent.children.append(block_cls(path=p))
 
+    codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
+
+    def _codex_owner(path: Path) -> Path | None:
+        """The Codex plugin *path* belongs to, if any."""
+        resolved = safe_resolve(path)
+        if resolved is None:
+            return None
+        for root in codex_roots:
+            if resolved == root or resolved.is_relative_to(root):
+                return root
+        return None
+
     def _add_codex_block(parent: LintTarget, p: Path, block_cls: type) -> None:
         """``_add_block`` for a path that must stay inside its plugin.
 
@@ -235,7 +247,20 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # ``mcpServers`` may name a different file, or hold the map itself.
         # Either way those servers are commands the host will spawn, so
         # they get the same treatment as the hooks above.
+        # ``seen`` is keyed by path alone, and one document can legitimately
+        # be declared as both ``hooks`` and ``mcpServers`` — the hooks
+        # attachment claims the path first, and its servers would then reach
+        # neither mcp-valid-json nor mcp-prohibited. A second attachment is
+        # made deliberately, tracked separately so it cannot double up.
+        codex_mcp_seen: Set[Path] = set()
         for declared_mcp in context.codex_declared_mcp_files(codex_plugin_path):
+            resolved_mcp = safe_resolve(declared_mcp)
+            if resolved_mcp is None or resolved_mcp in codex_mcp_seen:
+                continue
+            codex_mcp_seen.add(resolved_mcp)
+            if resolved_mcp in seen and not _is_excluded(declared_mcp):
+                node.children.append(McpBlock(path=declared_mcp))
+                continue
             _add_block(node, declared_mcp, McpBlock)
         for inline_mcp in context.codex_inline_mcp_servers(codex_plugin_path):
             node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
@@ -250,7 +275,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
         refs_dir = skill_path / "references"
         if refs_dir.is_dir():
+            # Contained against the owning Codex plugin: a symlinked
+            # reference would otherwise be read *and written* — the SAFE
+            # content fixes rewrite these files in place.
+            ref_root = _codex_owner(skill_path)
             for ref_file in sorted(refs_dir.glob("*.md")):
+                if ref_root is not None:
+                    resolved = safe_resolve(ref_file)
+                    if resolved is None or not resolved.is_relative_to(ref_root):
+                        continue
                 _add_block(skill_node, ref_file, SkillRefBlock)
 
         # Nearest plugin ancestor via dict lookups — iterating all plugins

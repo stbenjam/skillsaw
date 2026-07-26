@@ -110,13 +110,13 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 The line is authorship, not discovery: skillsaw does not walk `.claude/plugins/*` at all, so a broken vendor manifest there is likewise not the repository's problem.
 
-`hooks`, `skills` and `mcpServers` each accept a path, an array of paths, or the config inline. All three forms are followed, because a hook written inline runs exactly like one in a file:
+`hooks` and `mcpServers` accept a path, an array of paths, or the config inline — all forms are followed, because a hook written inline runs exactly like one in a file. `skills` names directories:
 
 | Field | Default location | Also followed |
 |---|---|---|
 | `hooks` | `hooks/hooks.json` | declared paths, inline objects |
-| `skills` | `skills/` | declared directories |
 | `mcpServers` | `.mcp.json` | declared paths, inline server maps |
+| `skills` | `skills/` | declared directory paths |
 
 Paths that leave the plugin root are not followed; `codex-plugin-json-valid` reports them.
 

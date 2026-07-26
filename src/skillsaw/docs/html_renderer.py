@@ -1193,7 +1193,12 @@ def _get_js() -> str:
   }
 
   function escAttr(str) {
-    return esc(str).replace(/'/g, '&#39;');
+    // Every call site puts this inside onclick="navigateTo('...')", which is
+    // a JS string nested in an HTML attribute. innerHTML decodes entities
+    // *before* the handler is compiled, so entity-encoding the quote does
+    // not contain it — "x');alert(1);//" would break out and run. Escape for
+    // JS first, then for HTML, so the decode step yields \' rather than '.
+    return esc(String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
   }
 
   init();

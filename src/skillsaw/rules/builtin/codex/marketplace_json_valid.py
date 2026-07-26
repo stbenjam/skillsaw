@@ -473,6 +473,11 @@ class CodexMarketplaceJsonValidRule(Rule):
                 )
                 continue
             known = self.config.get(f"{field}-values", default)
+            if not isinstance(known, (list, tuple, set)):
+                # ``value not in known`` raises TypeError on a non-iterable,
+                # which the linter turns into a rule crash — every remaining
+                # entry in the catalog would then go unvalidated.
+                known = default
             if value not in known:
                 violations.append(
                     self.violation(

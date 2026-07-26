@@ -93,6 +93,13 @@ def test_files_regex_compiles(skillsaw_hook):
         "promptfooconfig.yaml",
         "evals/promptfooconfig.smoke.yml",
         "evals/regression.yaml",
+        # OpenAI Codex discovery inputs
+        ".codex-plugin/plugin.json",
+        "plugins/my-plugin/.codex-plugin/plugin.json",
+        ".agents/plugins/marketplace.json",
+        ".agents/plugins/api_marketplace.json",
+        ".codex/plugins/installed/.codex-plugin/plugin.json",
+        ".codex/plugins/installed/skills/summarize/SKILL.md",
     ],
 )
 def test_files_regex_matches_lintable_paths(skillsaw_hook, path):
@@ -113,6 +120,9 @@ def test_files_regex_matches_lintable_paths(skillsaw_hook, path):
         ".github/workflows/ci.yml",
         ".vscode/settings.json",
         "frontend/config/settings.json",
+        # .agents/ is also an APM compiled root — only its plugin catalogs
+        # are discovery inputs, not everything under it.
+        ".agents/skills/generated/SKILL.md.bak",
     ],
 )
 def test_files_regex_ignores_unrelated_paths(skillsaw_hook, path):

@@ -19,7 +19,7 @@ from skillsaw.docs.models import PluginDoc
 from skillsaw.docs.html_renderer import render_html
 from skillsaw.docs.markdown_renderer import _plugin_filename, render_markdown
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
-from skillsaw.blocks import CodexInlineHooksBlock, HooksBlock, McpBlock
+from skillsaw.blocks import CodexInlineHooksBlock, HooksBlock, McpBlock, SkillRefBlock
 from skillsaw.lint_target import (
     CodexMarketplaceConfigNode,
     CodexPluginConfigNode,
@@ -3201,3 +3201,149 @@ class TestCodexOnlyPluginConfigDocs:
         doc = next(p for p in extract_docs(RepositoryContext(repo)).plugins if p.name == "hybrid")
         assert [h.event_type for h in doc.hooks] == ["SessionStart"]
         assert [m.name for m in doc.mcp_servers] == ["local"]
+
+
+class TestReferenceContainment:
+    def test_a_symlinked_reference_is_not_attached(self, tmp_path):
+        """SAFE content fixes rewrite reference files in place, so following
+        a symlink here would write through it."""
+        outside = tmp_path / "outside.md"
+        outside.write_text("# External\n\nSome content.\n", encoding="utf-8")
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "s"
+        (skill / "references").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: s\ndescription: A skill with references\n---\n\n# S\n", encoding="utf-8"
+        )
+        (skill / "references" / "leaked.md").symlink_to(outside)
+
+        blocks = RepositoryContext(repo).lint_tree.find(SkillRefBlock)
+        assert blocks == []
+
+    def test_a_real_reference_is_still_attached(self, tmp_path):
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "s"
+        (skill / "references").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: s\ndescription: A skill with references\n---\n\n# S\n", encoding="utf-8"
+        )
+        (skill / "references" / "real.md").write_text("# Real\n\nInside.\n", encoding="utf-8")
+
+        blocks = RepositoryContext(repo).lint_tree.find(SkillRefBlock)
+        assert [b.path.name for b in blocks] == ["real.md"]
+
+
+class TestOneDocumentTwoRoles:
+    def test_a_file_declared_as_both_hooks_and_mcp_reaches_both(self, tmp_path):
+        """The hooks attachment claimed the path, so the servers reached
+        neither mcp-valid-json nor mcp-prohibited."""
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "dual",
+                "version": "1.0.0",
+                "description": "x",
+                "hooks": "./both.json",
+                "mcpServers": "./both.json",
+            },
+        )
+        (repo / "both.json").write_text(
+            json.dumps(
+                {
+                    "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]},
+                    "mcpServers": {"srv": {"command": "node"}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        tree = RepositoryContext(repo).lint_tree
+        assert [b.path.name for b in tree.find(HooksBlock)] == ["both.json"]
+        assert {s.name for b in tree.find(McpBlock) for s in b.servers} == {"srv"}
+
+
+class TestDanglingCatalogSymlink:
+    def test_it_is_still_reported(self, tmp_path):
+        repo = tmp_path / "dangling"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").symlink_to(repo / "missing.json")
+
+        context = RepositoryContext(repo)
+        assert RepositoryType.CODEX_MARKETPLACE in context.repo_types
+        assert messages(CodexMarketplaceJsonValidRule({}).check(context))
+
+
+class TestPolicyConfigRobustness:
+    @pytest.mark.parametrize("bad", [None, 42, "AVAILABLE"])
+    def test_a_non_iterable_value_set_does_not_crash_the_rule(self, tmp_path, bad):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "pkg",
+                        "source": {"source": "url", "url": "https://example.com/a.git"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        # must not raise
+        run_rule(CodexMarketplaceJsonValidRule, repo, {"installation-values": bad})
+
+
+class TestDocsBlockDeduplication:
+    def test_inline_config_is_not_listed_twice(self, tmp_path):
+        """The legacy PluginNode has the Codex node as a descendant, so
+        searching both returned the Codex node's blocks twice."""
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(
+            repo / "plugins" / "hybrid",
+            {
+                "name": "hybrid",
+                "version": "1.0.0",
+                "description": "x",
+                "mcpServers": {"only": {"command": "node"}},
+            },
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run it.\n", encoding="utf-8")
+
+        doc = next(p for p in extract_docs(RepositoryContext(repo)).plugins if p.name == "hybrid")
+        assert [m.name for m in doc.mcp_servers] == ["only"]
+
+
+class TestGeneratedHtmlEscaping:
+    @pytest.mark.parametrize("category", ["Developer's Tools", "x');alert(document.domain);//"])
+    def test_a_quote_in_a_category_cannot_break_out_of_the_handler(self, tmp_path, category):
+        """innerHTML decodes entities before the handler compiles, so
+        entity-encoding the quote does not contain it."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "one",
+                        "source": {"source": "local", "path": "./plugins/one"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": category,
+                    }
+                ],
+            },
+        )
+        _write_plugin(
+            repo / "plugins" / "one",
+            {"name": "one", "version": "1.0.0", "interface": {"category": category}},
+        )
+        html = "\n".join(render_html(extract_docs(RepositoryContext(repo))).values())
+
+        assert "&#39;" not in html, "an entity-encoded quote decodes back to a live quote"
+        assert "alert(document.domain)" not in html or "\\'" in html

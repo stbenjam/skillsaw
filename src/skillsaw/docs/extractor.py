@@ -100,13 +100,21 @@ def _default_title(
 
 
 def _is_codex_only(context: RepositoryContext, plugin_path: Path) -> bool:
-    """Whether *plugin_path* is a Codex plugin with no Claude identity."""
+    """Whether *plugin_path* is a Codex plugin with no Claude identity.
+
+    Keyed on what discovery actually accepted, not a raw ``is_file()``: that
+    follows a symlink out of the plugin, so a rejected manifest would still
+    mark the directory Codex-only — filtering out the legacy node with no
+    Codex node to replace it, and dropping the plugin from the docs.
+    """
     if (plugin_path / ".claude-plugin" / "plugin.json").is_file():
         return False
     resolved = safe_resolve(plugin_path)
     if resolved is not None and resolved in getattr(context, "marketplace_entries", {}):
         return False
-    return plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST).is_file()
+    return resolved is not None and resolved in {
+        r for r in (safe_resolve(p) for p in context.codex_plugins) if r
+    }
 
 
 def _codex_marketplace_doc(
@@ -225,6 +233,15 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     skill_nodes = [(safe_resolve(n.path), n) for n in context.lint_tree.find(SkillNode)]
     resolved_skills = [(r, n) for r, n in skill_nodes if r is not None]
 
+    # One pass, like the skill map above: scanning every legacy node per
+    # Codex plugin is O(codex x legacy) filesystem resolutions, and a large
+    # catalog has hundreds of each.
+    legacy_by_path: dict = {}
+    for pn in context.lint_tree.find(PluginNode):
+        resolved_pn = safe_resolve(pn.path)
+        if resolved_pn is not None:
+            legacy_by_path.setdefault(resolved_pn, []).append(pn)
+
     for node in context.lint_tree.find(CodexPluginConfigNode):
         plugin_resolved = safe_resolve(node.plugin_dir)
         if not node.path.is_file() or plugin_resolved is None or plugin_resolved in claude_dirs:
@@ -235,25 +252,31 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
             # else's plugin — the same authorship line the registration and
             # manifest-quality rules already draw.
             continue
-        legacy = [
-            pn
-            for pn in context.lint_tree.find(PluginNode)
-            if safe_resolve(pn.path) == plugin_resolved
-        ]
+        legacy = legacy_by_path.get(plugin_resolved, [])
         docs.append(_extract_codex_plugin(context, node, plugin_resolved, resolved_skills, legacy))
     return docs
 
 
 class _BlockSources:
-    """Several tree nodes searched as one for `find()`."""
+    """Several tree nodes searched as one for `find()`.
+
+    Deduplicated by node identity: a legacy ``PluginNode`` has the Codex
+    node as a descendant, so ``find()`` on both returns the Codex node's own
+    blocks twice and the docs would list those hooks and servers twice.
+    """
 
     def __init__(self, nodes):
         self._nodes = nodes
 
     def find(self, block_cls):
         out = []
+        seen = set()
         for node in self._nodes:
-            out.extend(node.find(block_cls))
+            for block in node.find(block_cls):
+                if id(block) in seen:
+                    continue
+                seen.add(id(block))
+                out.append(block)
         return out
 
 

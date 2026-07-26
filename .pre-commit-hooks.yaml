@@ -25,7 +25,10 @@
         (.*/)?(CLAUDE|AGENTS|GEMINI|SKILL)\.md|
         .*\.instructions\.md|
         (.*/)?\.claude-plugin/.*|
+        (.*/)?\.codex-plugin/.*|
         \.claude/.*|
+        \.codex/plugins/.*|
+        \.agents/plugins/.*\.json|
         plugins/.*|
         commands/.*|
         skills/.*|

@@ -10,7 +10,7 @@ Validate metadata.openclaw fields against the OpenClaw spec
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agentskills, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [OpenClaw](openclaw.md) |
 
 ## Why

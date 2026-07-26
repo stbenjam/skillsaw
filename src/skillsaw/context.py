@@ -579,7 +579,11 @@ class RepositoryContext:
         # Existence, not is_file(): a directory in place of the reserved
         # entrypoint is unusable, and it has to stay discovered for
         # codex-marketplace-json-valid to say so.
-        if primary.exists() and _inside(primary):
+        # ``is_symlink()`` as well as ``exists()``: a dangling in-repository
+        # symlink is an unusable catalog, and dropping it would declassify
+        # the repository rather than let the rule report it — the same
+        # reasoning plugin discovery applies to a missing manifest.
+        if (primary.exists() or primary.is_symlink()) and _inside(primary):
             found.append(primary)
 
         marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
