@@ -45,7 +45,13 @@ jobs:
 
           # Get list of collaborators (trusted users only)
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
-          echo "Collaborators: $COLLABS"
+
+          # Trusted bot accounts whose review comments should be processed
+          TRUSTED_BOTS='["coderabbitai[bot]", "codecov[bot]", "github-actions[bot]", "devin-ai-integration[bot]", "chatgpt-codex-connector[bot]"]'
+
+          # Merge collaborators + trusted bots into a single allow-list
+          COLLABS=$(echo "$COLLABS" "$TRUSTED_BOTS" | jq -s 'add | unique')
+          echo "Trusted users: $COLLABS"
 
           # Open PRs with agent label
           PRS=$(gh pr list -R "${{ github.repository }}" --state open --label agent --json number,title,author,labels)
