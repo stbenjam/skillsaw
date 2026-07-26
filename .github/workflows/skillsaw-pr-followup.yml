@@ -165,7 +165,6 @@ jobs:
           show_full_output: true
           claude_args: |
             --dangerously-skip-permissions
-            ${{ !matrix.pr.ultracode && '--max-turns 100' || '' }}
             --model ${{ matrix.pr.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.pr.ultracode && '--effort ultracode' || '' }}
 
