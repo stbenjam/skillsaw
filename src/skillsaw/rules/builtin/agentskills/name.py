@@ -18,7 +18,14 @@ from skillsaw.utils import (
     replace_frontmatter_field,
 )
 
-from ._helpers import CONSECUTIVE_HYPHENS, NAME_PATTERN, SKILL_REPO_TYPES, _add_rename, _to_kebab
+from ._helpers import (
+    CONSECUTIVE_HYPHENS,
+    NAME_PATTERN,
+    SKILL_REPO_TYPES,
+    _add_rename,
+    _to_kebab,
+    is_installed_plugin_skill,
+)
 
 
 def _parse_name_line(name_line: str):
@@ -211,6 +218,8 @@ class AgentSkillNameRule(Rule):
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             # utils.read_text strips a UTF-8 BOM (utf-8-sig); a raw
             # read_text(encoding="utf-8") would keep the stray U+FEFF, which

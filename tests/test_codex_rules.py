@@ -18,7 +18,7 @@ from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.models import PluginDoc
 from skillsaw.docs.markdown_renderer import _plugin_filename, render_markdown
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
-from skillsaw.blocks import CodexInlineHooksBlock, McpBlock
+from skillsaw.blocks import CodexInlineHooksBlock, HooksBlock, McpBlock
 from skillsaw.lint_target import (
     CodexMarketplaceConfigNode,
     CodexPluginConfigNode,
@@ -34,6 +34,7 @@ from skillsaw.rules.builtin.codex import (
     CodexPluginJsonValidRule,
     CodexPluginStructureRule,
 )
+from skillsaw.rules.builtin.agentskills.name import AgentSkillNameRule
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -2490,3 +2491,328 @@ class TestDocsAuthorshipAndFilenames:
         assert ".." not in filename
         assert not Path(filename).is_absolute()
         assert (Path("/out") / filename).parent == Path("/out")
+
+
+# ---------------------------------------------------------------------------
+# Containment, discovery scope and generated-docs fidelity
+# ---------------------------------------------------------------------------
+
+
+class TestCatalogContainment:
+    def test_a_symlinked_catalog_is_not_discovered(self, tmp_path):
+        """The registration autofix writes the catalog back.
+
+        Following a symlink out of the checkout would make `fix --suggest`
+        overwrite a file outside the repository.
+        """
+        outside = tmp_path / "external-catalog.json"
+        outside.write_text(json.dumps({"name": "external", "plugins": []}), encoding="utf-8")
+        repo = tmp_path / "linked"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").symlink_to(outside)
+
+        context = RepositoryContext(repo)
+        assert context.codex_marketplace_paths() == []
+        assert RepositoryType.CODEX_MARKETPLACE not in context.repo_types
+
+    def test_a_symlinked_manifest_file_is_not_read(self, tmp_path):
+        outside = tmp_path / "external-plugin.json"
+        outside.write_text(json.dumps({"name": "external", "version": "9.9.9"}), encoding="utf-8")
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = repo / "plugins" / "victim"
+        (plugin / ".codex-plugin").mkdir(parents=True)
+        (plugin / ".codex-plugin" / "plugin.json").symlink_to(outside)
+
+        assert RepositoryContext(repo).codex_plugins == []
+
+    def test_a_symlinked_hooks_file_is_not_attached(self, tmp_path):
+        outside = tmp_path / "external-hooks.json"
+        outside.write_text(
+            json.dumps(
+                {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]}}
+            ),
+            encoding="utf-8",
+        )
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "hooky", "version": "1.0.0", "description": "x"}
+        )
+        (repo / "hooks").mkdir()
+        (repo / "hooks" / "hooks.json").symlink_to(outside)
+
+        blocks = RepositoryContext(repo).lint_tree.find(HooksBlock)
+        assert blocks == []
+
+
+class TestSkillDiscoveryRobustness:
+    def test_a_symlinked_default_skills_dir_is_not_followed(self, tmp_path):
+        outside = tmp_path / "outside-skill"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: leaked\ndescription: Outside the plugin\n---\n\n# Leaked\n",
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        (plugin / "skills").symlink_to(outside, target_is_directory=True)
+
+        assert RepositoryContext(repo).skills == []
+
+    def test_a_directory_cycle_does_not_recurse_forever(self, tmp_path):
+        """`skills/a/loop -> ../..` stays inside the plugin and passes
+        containment, so only visit-tracking stops it."""
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        nest = plugin / "skills" / "a"
+        nest.mkdir(parents=True)
+        (nest / "loop").symlink_to(plugin / "skills", target_is_directory=True)
+
+        assert RepositoryContext(repo).skills == []  # must not raise RecursionError
+
+
+class TestExplicitTypeOverride:
+    def test_codex_content_is_not_discovered_under_a_non_codex_type(self, tmp_path):
+        """`--type single-plugin` is a statement about what to lint."""
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.SINGLE_PLUGIN})
+        assert context.codex_plugins == []
+        assert context.codex_marketplace_paths() == []
+        assert context.lint_tree.find(CodexPluginConfigNode) == []
+
+    def test_an_explicit_codex_type_still_discovers(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.CODEX_MARKETPLACE})
+        assert context.codex_plugins == [plugin]
+
+    def test_detection_is_unaffected(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        assert RepositoryType.CODEX_MARKETPLACE in RepositoryContext(repo).repo_types
+
+
+class TestSourceIdentity:
+    def test_equivalent_source_spellings_are_not_duplicates(self, tmp_path):
+        """`./plugins/foo` and the object form install the same directory."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "primary",
+                "plugins": [
+                    {
+                        "name": "shared",
+                        "source": "./plugins/one",
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        (repo / ".agents" / "plugins" / "api_marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "secondary",
+                    "plugins": [
+                        {
+                            "name": "shared",
+                            "source": {"source": "local", "path": "plugins/one"},
+                            "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "shared", "version": "1.0.0"})
+
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert not any("duplicate plugin name" in m for m in found)
+
+
+class TestConfigAndUrlEdgeCases:
+    def test_a_non_string_recommended_field_does_not_crash_the_rule(self, tmp_path):
+        repo = _codex_plugin_repo(tmp_path, {"name": "cfg", "version": "1.0.0", "description": "x"})
+        violations = run_rule(
+            CodexPluginJsonValidRule, repo, {"recommended-fields": [[], "version"]}
+        )
+        assert violations == []
+
+    @pytest.mark.parametrize(
+        "registry", ["https://r.example.com:not-a-port", "https://r.example.com:99999"]
+    )
+    def test_an_invalid_port_is_reported(self, tmp_path, registry):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "pkg",
+                        "source": {"source": "npm", "package": "@x/y", "registry": registry},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert any("invalid port" in m for m in found)
+
+    def test_a_valid_port_still_passes(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "pkg",
+                        "source": {
+                            "source": "npm",
+                            "package": "@x/y",
+                            "registry": "https://r.example.com:8443",
+                        },
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        assert run_rule(CodexMarketplaceJsonValidRule, repo) == []
+
+
+class TestAmbiguousInlineMcp:
+    def test_a_server_named_mcpservers_does_not_swallow_its_siblings(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "ambiguous",
+                "version": "1.0.0",
+                "description": "x",
+                "mcpServers": {
+                    "mcpServers": {"command": "node"},
+                    "blocked": {"command": "curl"},
+                },
+            },
+        )
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        names = {s.name for b in blocks for s in b.servers}
+        assert names == {"mcpServers", "blocked"}
+
+    def test_the_genuine_wrapper_is_still_unwrapped(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "wrapped",
+                "version": "1.0.0",
+                "description": "x",
+                "mcpServers": {"mcpServers": {"only": {"command": "node"}}},
+            },
+        )
+        blocks = RepositoryContext(repo).lint_tree.find(McpBlock)
+        assert {s.name for b in blocks for s in b.servers} == {"only"}
+
+
+class TestGeneratedDocsFidelity:
+    def test_the_interface_category_is_used(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "categorised",
+                "version": "1.0.0",
+                "description": "x",
+                "interface": {"displayName": "Categorised", "category": "Productivity"},
+            },
+        )
+        assert extract_docs(RepositoryContext(repo)).plugins[0].category == "Productivity"
+
+    def test_colliding_sanitized_names_get_distinct_pages(self, tmp_path):
+        """ "a/b" and "a:b" both sanitize to "a-b" — one page would win."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": n,
+                        "source": {"source": "url", "url": f"https://example.com/{i}.git"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                    for i, n in enumerate(["a/b", "a:b", "a-b"])
+                ],
+            },
+        )
+        pages = render_markdown(extract_docs(RepositoryContext(repo)))
+        plugin_pages = [k for k in pages if k != "README.md"]
+
+        assert len(plugin_pages) == 3, f"pages collided: {sorted(pages)}"
+
+    def test_remote_entries_appear_in_the_catalog(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "remote-one",
+                        "source": {"source": "npm", "package": "@x/y"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        docs = extract_docs(RepositoryContext(repo))
+        assert [p.name for p in docs.marketplace.plugins] == ["remote-one"]
+
+    def test_a_catalog_renders_fully_when_another_type_is_primary(self, tmp_path):
+        """APM outranks codex-marketplace for the primary type slot."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": name,
+                        "source": {"source": "local", "path": f"./plugins/{name}"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                    for name in ("alpha", "beta")
+                ],
+            },
+        )
+        for name in ("alpha", "beta"):
+            _write_plugin(repo / "plugins" / name, {"name": name, "version": "1.0.0"})
+        (repo / ".apm").mkdir()
+        (repo / "apm.yml").write_text("name: thing\n", encoding="utf-8")
+
+        docs = extract_docs(RepositoryContext(repo))
+        rendered = "\n".join(render_markdown(docs).values())
+        assert "alpha" in rendered and "beta" in rendered
+
+
+class TestInstalledSkillAutofix:
+    def test_autofix_does_not_rewrite_an_installed_skill(self, tmp_path):
+        """The manifest rules stand down there; the fixer must too."""
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "vendor"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "vendor", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "Bad_Name"
+        skill.mkdir(parents=True)
+        original = "---\nname: Bad_Name\ndescription: Wrong casing for a skill name\n---\n\n# Bad\n"
+        (skill / "SKILL.md").write_text(original, encoding="utf-8")
+
+        context = RepositoryContext(repo)
+        rule = AgentSkillNameRule({})
+        violations = rule.check(context)
+        assert violations, "the check must still report the defect"
+        assert rule.fix(context, violations) == []
+        assert (skill / "SKILL.md").read_text(encoding="utf-8") == original

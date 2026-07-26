@@ -72,5 +72,10 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         nested = item.get(key)
-        documents.append({key: nested if isinstance(nested, dict) else item})
+        # Only unwrap when the wrapper key is the *only* key. A bare map may
+        # legitimately hold a server or event named the same as the wrapper,
+        # and unwrapping on its presence alone would silently discard every
+        # sibling — including ones the security rules need to see.
+        wrapped = isinstance(nested, dict) and len(item) == 1
+        documents.append({key: nested if wrapped else item})
     return documents

@@ -33,6 +33,7 @@ from .blocks import (
     SkillBlock,
     SkillRefBlock,
 )
+from .formats.codex import safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,
@@ -90,6 +91,20 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
         seen.add(resolved)
         parent.children.append(block_cls(path=p))
+
+    def _add_codex_block(parent: LintTarget, p: Path, block_cls: type) -> None:
+        """``_add_block`` for a path that must stay inside its plugin.
+
+        The conventional Codex files (``hooks/hooks.json``, ``.mcp.json``)
+        are found by convention rather than declared, so nothing has
+        checked where they resolve to. A symlink would otherwise read an
+        external file under an in-repo path.
+        """
+        root = safe_resolve(parent.path.parent.parent)
+        resolved = safe_resolve(p)
+        if root is None or resolved is None or not resolved.is_relative_to(root):
+            return
+        _add_block(parent, p, block_cls)
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
@@ -199,7 +214,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # supply-chain surface as a Claude plugin's hooks, so route them to
         # the same rules. ``seen`` dedupes the dual-ecosystem case, where the
         # PluginNode loop above already attached this file.
-        _add_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
+        # Contained like the manifest-declared paths: _add_block resolves
+        # only to dedupe, so a symlinked hooks.json would otherwise pull an
+        # external file's commands into this plugin's findings.
+        _add_codex_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
         # A manifest may point ``hooks`` at other files instead; those carry
         # the same executable commands, so they get the same checks.
         for declared_hooks in context.codex_declared_hook_files(codex_plugin_path):
@@ -213,7 +231,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # and skills/. When the directory is Codex-only there is no
         # PluginNode to have attached it above, so its MCP servers would
         # otherwise reach neither the validity nor the security rules.
-        _add_block(node, codex_plugin_path / ".mcp.json", McpBlock)
+        _add_codex_block(node, codex_plugin_path / ".mcp.json", McpBlock)
         # ``mcpServers`` may name a different file, or hold the map itself.
         # Either way those servers are commands the host will spawn, so
         # they get the same treatment as the hooks above.

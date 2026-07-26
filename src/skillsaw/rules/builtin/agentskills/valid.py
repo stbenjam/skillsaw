@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.utils import (
 )
 
 from ._helpers import (
+    is_installed_plugin_skill,
     COMPATIBILITY_MAX_LENGTH,
     DESCRIPTION_MAX_LENGTH,
     NAME_MAX_LENGTH,
@@ -60,6 +61,8 @@ class AgentSkillValidRule(Rule):
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             if "Missing required 'name'" not in v.message:
                 continue

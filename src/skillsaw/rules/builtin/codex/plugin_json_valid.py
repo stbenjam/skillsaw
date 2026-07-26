@@ -103,6 +103,12 @@ class CodexPluginJsonValidRule(Rule):
             violations.extend(self._check_name(data, manifest))
 
             for field in recommended_fields:
+                if not isinstance(field, str):
+                    # ``field not in data`` raises TypeError on an unhashable
+                    # value, which the linter turns into a rule crash — so a
+                    # malformed config entry would stop every manifest from
+                    # being validated at all.
+                    continue
                 if field not in data:
                     violations.append(
                         self.violation(

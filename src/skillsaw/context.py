@@ -118,6 +118,9 @@ def _read_json_or_none(path: Path) -> Any:
     return None if error else data
 
 
+_CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
+
+
 class RepositoryContext:
     """
     Context information about the repository being linted
@@ -173,9 +176,18 @@ class RepositoryContext:
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
-        # Codex discovery runs before type detection because the Codex repo
-        # types are derived from what it finds, not from a path probe.
-        self.codex_plugins: List[Path] = self._discover_codex_plugins()
+        # An explicit --type override is a statement about what the caller
+        # wants linted, not just which rules fire. Probing for Codex anyway
+        # would attach its manifests, hooks, MCP files and skills to the
+        # tree, where the generic rules would lint content the override was
+        # meant to exclude. Detection, by contrast, has to probe first —
+        # the Codex types are derived from what discovery finds.
+        self._codex_discovery_enabled = (
+            bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
+        )
+        self.codex_plugins: List[Path] = (
+            self._discover_codex_plugins() if self._codex_discovery_enabled else []
+        )
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
         )
@@ -548,13 +560,26 @@ class RepositoryContext:
         """
         if self._codex_marketplace_paths is not None:
             return self._codex_marketplace_paths
+        if not self._codex_discovery_enabled:
+            self._codex_marketplace_paths = []
+            return self._codex_marketplace_paths
+
+        root = safe_resolve(self.root_path) or self.root_path
+
+        def _inside(path: Path) -> bool:
+            # A catalog that resolves outside the checkout is not this
+            # repository's to read — and codex-marketplace-registration
+            # writes the catalog back when it registers a plugin, so
+            # following a symlink out would overwrite an external file.
+            resolved = safe_resolve(path)
+            return resolved is not None and resolved.is_relative_to(root)
 
         found: List[Path] = []
         primary = self.codex_marketplace_path()
         # Existence, not is_file(): a directory in place of the reserved
         # entrypoint is unusable, and it has to stay discovered for
         # codex-marketplace-json-valid to say so.
-        if primary.exists():
+        if primary.exists() and _inside(primary):
             found.append(primary)
 
         marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
@@ -564,7 +589,7 @@ class RepositoryContext:
             except OSError:
                 siblings = []
             for candidate in siblings:
-                if candidate == primary:
+                if candidate == primary or not _inside(candidate):
                     continue
                 if candidate.name.lower().endswith(self.CODEX_MARKETPLACE_FILENAME):
                     found.append(candidate)
@@ -621,6 +646,12 @@ class RepositoryContext:
                 return
             resolved = _contained(directory)
             if resolved is None or resolved in seen:
+                return
+            # A missing manifest is still a plugin — codex-plugin-json-valid
+            # reports it. One that exists but resolves elsewhere is not:
+            # reading it would publish an external file's metadata.
+            manifest = directory.joinpath(*self.CODEX_PLUGIN_MANIFEST)
+            if manifest.exists() and _contained(manifest) is None:
                 return
             seen.add(resolved)
             found.append(directory)
@@ -1198,7 +1229,9 @@ class RepositoryContext:
                     # A manifest may name one skill directly rather than a
                     # collection; descending would step straight past it.
                     resolved = safe_resolve(skills_dir)
-                    if resolved is not None and resolved not in discovered:
+                    if resolved is None or not resolved.is_relative_to(plugin_root):
+                        continue
+                    if resolved not in discovered:
                         skills.append(skills_dir)
                         discovered.add(resolved)
                     continue
@@ -1214,6 +1247,7 @@ class RepositoryContext:
         skills: List[Path],
         discovered: Set[Path],
         contain_within: Optional[Path] = None,
+        visited: Optional[Set[Path]] = None,
     ) -> None:
         """Discover skill directories within a parent directory, recursively.
 
@@ -1223,12 +1257,19 @@ class RepositoryContext:
         read as if the plugin shipped it. Left ``None`` on the call sites
         that predate Codex support, so their behaviour is unchanged.
         """
+        # ``discovered`` only records directories that held a SKILL.md, so
+        # it cannot stop a cycle: ``skills/a/loop -> ../..`` stays inside
+        # the plugin, passes containment, and recurses until Python raises
+        # RecursionError during context construction. ``visited`` records
+        # every directory descended into, whether or not it held a skill.
+        if visited is None:
+            visited = set()
         try:
             for item in parent.iterdir():
                 if self._should_skip_dir(item):
                     continue
                 resolved = safe_resolve(item)
-                if resolved is None or resolved in discovered:
+                if resolved is None or resolved in discovered or resolved in visited:
                     continue
                 if contain_within is not None and not resolved.is_relative_to(contain_within):
                     continue
@@ -1236,7 +1277,8 @@ class RepositoryContext:
                     skills.append(item)
                     discovered.add(resolved)
                 else:
-                    self._discover_skills_in_dir(item, skills, discovered, contain_within)
+                    visited.add(resolved)
+                    self._discover_skills_in_dir(item, skills, discovered, contain_within, visited)
         except OSError:
             pass
 

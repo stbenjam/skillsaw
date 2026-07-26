@@ -38,6 +38,22 @@ RENAMES_MANIFEST = ".skillsaw-renames.json"
 _RENAMES_LOCK = threading.Lock()
 
 
+def is_installed_plugin_skill(context, path) -> bool:
+    """Whether *path* belongs to a plugin installed under ``.codex/plugins/``.
+
+    The Codex manifest and structure rules stand down there because the
+    repository did not author that content. Autofix has to follow the same
+    line, and more strictly: rewriting a third-party ``SKILL.md`` edits a
+    file the developer did not write and cannot meaningfully own, and the
+    rename bookkeeping would record it in this repository. The checks still
+    run — a hostile skill is still worth reporting — only the fix stands
+    down.
+    """
+    if path is None:
+        return False
+    return context.is_codex_installed_plugin(path)
+
+
 def _to_kebab(name: str) -> str:
     s = re.sub(r"([a-z])([A-Z])", r"\1-\2", name)
     s = re.sub(r"[^a-z0-9]+", "-", s.lower())

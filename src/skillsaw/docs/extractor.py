@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.formats.codex import safe_resolve
+from skillsaw.formats.codex import codex_local_source_path, safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -102,8 +102,43 @@ def _codex_marketplace_doc(
         data, error = read_json(path)
         if error or not isinstance(data, dict):
             continue
-        return MarketplaceDoc(name=str(data.get("name", "") or ""), owner=None, plugins=plugins)
+        listed = plugins + _remote_entry_docs(data, {p.name for p in plugins})
+        return MarketplaceDoc(name=str(data.get("name", "") or ""), owner=None, plugins=listed)
     return None
+
+
+def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
+    """Metadata-only docs for catalog entries with no local directory.
+
+    A ``url``, ``git-subdir`` or ``npm`` source is not checked out here, so
+    no CodexPluginConfigNode exists for it and it would be missing from the
+    rendered catalog entirely — leaving the index reporting fewer plugins
+    than the catalog lists. What the entry itself declares is enough to
+    list it.
+    """
+    entries = data.get("plugins")
+    if not isinstance(entries, list):
+        return []
+    docs: List[PluginDoc] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name or name in local_names:
+            continue
+        if codex_local_source_path(entry.get("source")) is not None:
+            continue  # local entry — the real plugin was extracted above
+        local_names.add(name)
+        docs.append(
+            PluginDoc(
+                name=name,
+                path=Path(name),
+                description=str(entry.get("description", "") or ""),
+                version=str(v) if (v := entry.get("version")) is not None else "",
+                category=str(entry.get("category", "") or ""),
+            )
+        )
+    return docs
 
 
 def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
@@ -164,7 +199,7 @@ def _extract_codex_plugin(
         version=str(v) if (v := meta.get("version")) is not None else "",
         author=author_val if isinstance(author_val, dict) else None,
         display_name=_interface_field(meta, "displayName"),
-        category=str(meta.get("category", "") or ""),
+        category=_interface_field(meta, "category") or str(meta.get("category", "") or ""),
         tags=_string_list(meta.get("tags")),
         keywords=_string_list(meta.get("keywords")),
         homepage=str(meta.get("homepage", "") or ""),

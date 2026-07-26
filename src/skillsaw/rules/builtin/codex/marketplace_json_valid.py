@@ -3,12 +3,12 @@ Rule: codex-marketplace-json-valid
 """
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, codex_local_source_path
 from skillsaw.lint_target import CodexMarketplaceConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
@@ -38,6 +38,22 @@ DEFAULT_AUTHENTICATION_VALUES = ["ON_INSTALL", "ON_USE"]
 # policy.authentication, and category on each plugin entry") but Codex still
 # loads an entry without them, so their absence is a warning.
 _RECOMMENDED_ENTRY_FIELDS = ("policy", "category")
+
+
+def _source_identity(source: Any) -> str:
+    """A comparable identity for an entry's source.
+
+    Codex accepts a local source as a bare string or as an object, and
+    ``./plugins/foo``, ``plugins/foo`` and ``{"source": "local", "path":
+    "./plugins/foo"}`` all install the same directory. Comparing raw JSON
+    would call those three different sources and report a duplicate name
+    that is not one, so local sources compare by their normalised path.
+    Remote sources have no such spellings and compare structurally.
+    """
+    local = codex_local_source_path(source)
+    if local is not None:
+        return "local:" + PurePosixPath(local.replace("\\", "/")).as_posix().lstrip("./")
+    return json.dumps(source, sort_keys=True, default=str)
 
 
 class CodexMarketplaceJsonValidRule(Rule):
@@ -227,7 +243,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         # two entries named ``Bad_Name`` have both defects, and reporting only
         # the duplicate would hide the second until the first was fixed.
         violations: List[RuleViolation] = []
-        source_key = json.dumps(entry.get("source"), sort_keys=True, default=str)
+        source_key = _source_identity(entry.get("source"))
         first = seen_names.get(name)
         # Across catalogs, one name pointing at one source is a curated
         # second listing, not a defect — real catalogs split their index
@@ -401,6 +417,13 @@ class CodexMarketplaceJsonValidRule(Rule):
             # with the right scheme and no host at all, so every other check
             # here passes on a URL that can never be fetched.
             problems.append("must name a host")
+        try:
+            parsed.port
+        except ValueError:
+            # ":not-a-port" and ":99999" reach here with a valid scheme and
+            # host. The port is only decoded on access, so nothing else in
+            # this check would ever look at it.
+            problems.append("has an invalid port")
         if parsed.username or parsed.password:
             problems.append("must not embed credentials")
         if parsed.query:

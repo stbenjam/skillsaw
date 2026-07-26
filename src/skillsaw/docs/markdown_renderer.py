@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from typing import Dict, List
 
-from skillsaw.context import RepositoryType
 from skillsaw.docs.models import (
     AgentDoc,
     CommandDoc,
@@ -18,8 +17,6 @@ from skillsaw.docs.models import (
     name_str,
 )
 
-_MARKETPLACE_TYPES = {RepositoryType.MARKETPLACE, RepositoryType.CODEX_MARKETPLACE}
-
 
 def render_markdown(docs: DocsOutput) -> Dict[str, str]:
     """Render documentation as Markdown files.
@@ -27,7 +24,10 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
     Returns a dict of {filename: markdown_content}.
     Marketplaces get an index + per-plugin files; others get a single index.
     """
-    if docs.marketplace and docs.repo_type in _MARKETPLACE_TYPES:
+    # Gated on the model, not the primary type. A Codex catalog in a repo
+    # that is also APM or dot-claude loses the primary-type slot to those,
+    # and the single-page renderer shows only plugins[0].
+    if docs.marketplace:
         return _render_marketplace(docs)
     return {"README.md": _render_single_page(docs)}
 
@@ -57,6 +57,11 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     pages: Dict[str, str] = {}
 
     sorted_plugins = sorted(mp.plugins, key=lambda p: name_str(p.name).lower())
+    # Sanitising is lossy — "a/b", "a\\b" and "a:b" all reduce to "a-b" —
+    # and pages are keyed by filename, so without this a later plugin
+    # silently replaces an earlier one's page while both index rows link
+    # to the survivor. Names are only warned about, never rejected.
+    filenames = _unique_filenames(sorted_plugins)
 
     # Index
     lines: List[str] = [f"# {mp.name or docs.title}", ""]
@@ -76,7 +81,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     lines.append("| Plugin | Description | Version |")
     lines.append("|--------|-------------|---------|")
     for plugin in sorted_plugins:
-        fname = _plugin_filename(plugin)
+        fname = filenames[id(plugin)]
         label = plugin.display_name or plugin.name
         desc = plugin.description or "-"
         ver = plugin.version or "-"
@@ -89,7 +94,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
 
     # Per-plugin pages
     for plugin in sorted_plugins:
-        fname = _plugin_filename(plugin)
+        fname = filenames[id(plugin)]
         heading = plugin.display_name or plugin.name
         plines: List[str] = [f"# {heading}", ""]
         plines.append(f"[&larr; Back to {mp.name or 'index'}](README.md)")
@@ -263,6 +268,22 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
 # A kebab-case violation is only a warning, so `docs` must not rely on
 # `lint` having rejected the name first.
 _UNSAFE_FILENAME_CHARS = str.maketrans({c: "-" for c in '/\\:<>"|?*'})
+
+
+def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:
+    """One distinct page filename per plugin, keyed by object identity."""
+    used: Dict[str, int] = {}
+    out: Dict[int, str] = {}
+    for plugin in plugins:
+        base = _plugin_filename(plugin)
+        if base not in used:
+            used[base] = 1
+            out[id(plugin)] = base
+            continue
+        stem = base[:-3] if base.endswith(".md") else base
+        used[base] += 1
+        out[id(plugin)] = f"{stem}-{used[base]}.md"
+    return out
 
 
 def _plugin_filename(plugin: PluginDoc) -> str:
