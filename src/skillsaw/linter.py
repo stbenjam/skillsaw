@@ -20,7 +20,6 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
-from .rules.builtin.agentskills._helpers import is_installed_plugin_skill
 from .utils import write_text_preserving
 
 if TYPE_CHECKING:
@@ -482,7 +481,7 @@ class Linter:
             return False
         cached = self._vendor_managed_cache.get(file_path)
         if cached is None:
-            cached = is_installed_plugin_skill(self.context, file_path)
+            cached = self.context.is_codex_installed_plugin(file_path)
             self._vendor_managed_cache[file_path] = cached
         return cached
 

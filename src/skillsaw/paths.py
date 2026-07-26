@@ -27,7 +27,13 @@ def is_absolute_path(path: str) -> bool:
     if PurePosixPath(path).is_absolute():
         return True
     windows = PureWindowsPath(path)
-    return windows.is_absolute() or bool(windows.root)
+    # Three separate shapes, and ``is_absolute()`` only covers the first:
+    #   C:\\x          drive + root  -> absolute
+    #   \\Windows\\x   root, no drive -> current drive's root
+    #   C:plugins\\x   drive, no root -> drive C's *current directory*
+    # The last two resolve somewhere this repository does not control, so
+    # a containment check that accepts them is not a containment check.
+    return windows.is_absolute() or bool(windows.root) or bool(windows.drive)
 
 
 def has_parent_traversal(path: str) -> bool:

@@ -45,8 +45,8 @@ Pay special attention to the **Sync notes** in each reference: rules that hand-c
 upstream value sets (OpenClaw's install kinds/os/archive, MCP transport types, APM
 required fields, Codex's policy enums) are the highest drift risk. OpenClaw is the top
 risk — it publishes no JSON Schema, so skillsaw's rule is the de-facto validator. Codex
-is second: it also publishes no schema, and one of its `policy.authentication` values
-appears only in the catalog.
+is second: its prose spec publishes no schema, while a separate field-level spec inside
+the `plugin-creator` skill is stricter — so the two can drift apart from each other.
 
 Where a reference marks a check as deliberately omitted, that omission is binding. A
 "missing" check listed there was left out on purpose; add it only when the upstream

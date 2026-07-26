@@ -39,6 +39,12 @@ def _mutable_marketplace_data(original: str) -> Optional[dict]:
         data = json.loads(original)
     except json.JSONDecodeError:
         return None
+    except RecursionError:
+        # The shared reader turns this into an ordinary parse error, but
+        # this reparses the raw text to keep ruamel out of the fix path.
+        # Letting it escape makes the rule a rule-execution-error instead
+        # of standing down on a catalog that is already invalid.
+        return None
     if not isinstance(data, dict):
         return None
     if "plugins" in data and not isinstance(data["plugins"], list):

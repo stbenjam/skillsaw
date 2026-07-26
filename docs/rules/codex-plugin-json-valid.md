@@ -61,8 +61,13 @@ missing `./` prefix is informational. Paths that point at something not
 in the repository are reported as warnings — set `check-paths-exist:
 false` to skip that check when assets are generated at build time.
 
-`version` is deliberately not checked against semver: the Codex
-specification never constrains its format.
+`version` is deliberately not checked against semver. Upstream is not
+silent on this: the public prose specification never constrains the
+format, but the field-level spec shipped inside `openai/codex`'s
+`plugin-creator` skill requires strict semver. skillsaw does not enforce
+it — a version scheme is not something a linter should argue with, and
+the two upstream documents disagree — but the constraint does exist, so
+this is a choice rather than an absence.
 
 ## Configuration
 

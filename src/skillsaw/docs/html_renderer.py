@@ -1221,6 +1221,34 @@ def _esc(text: str) -> str:
     return html.escape(str(text))
 
 
+# Mirrors extractor._SAFE_URL_SCHEMES; kept local so the renderer has no
+# import-time dependency on the extractor.
+_MD_SAFE_SCHEMES = {"http", "https", "mailto"}
+
+
+def _md_link(match: "re.Match") -> str:
+    """Render a markdown link, dropping the anchor for an unsafe scheme.
+
+    ``html.escape`` above stops the target breaking out of the attribute;
+    it says nothing about what the target *is*. A skill description
+    containing ``[click](javascript:...)`` produced a live anchor in the
+    generated page, which is inserted through ``innerHTML`` — one click
+    and it runs in the documentation's origin. The manifest URL fields are
+    filtered at extraction; markdown inside a description is not, because
+    nothing had parsed it until this page existed.
+
+    The link text is kept: dropping the whole thing would silently delete
+    content the author wrote.
+    """
+    text, target = match.group(1), match.group(2).strip()
+    scheme, sep, _rest = target.partition(":")
+    # An unescaped ":" cannot appear here — html.escape leaves it alone —
+    # so a bare "#anchor" or "./relative" has no scheme to abuse.
+    if sep and scheme.lower() not in _MD_SAFE_SCHEMES:
+        return text
+    return f'<a href="{target}">{text}</a>'
+
+
 def _md(text: str) -> str:
     """Convert inline markdown to HTML with XSS protection."""
     if not text:
@@ -1229,11 +1257,7 @@ def _md(text: str) -> str:
     safe = re.sub(r"`([^`]+)`", r"<code>\1</code>", safe)
     safe = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", safe)
     safe = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", safe)
-    safe = re.sub(
-        r"\[([^\]]+)\]\(([^)]+)\)",
-        r'<a href="\2">\1</a>',
-        safe,
-    )
+    safe = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _md_link, safe)
     paragraphs = re.split(r"\n{2,}", safe.strip())
     if len(paragraphs) <= 1:
         return safe.strip().replace("\n", "<br>")

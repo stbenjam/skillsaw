@@ -218,8 +218,8 @@ class RepositoryContext:
         # *is* Codex, so the entrypoint is seeded even when the marker file
         # is missing. Otherwise ``--type codex-plugin`` on a repository
         # whose ``.codex-plugin/`` was deleted found no plugin, created no
-        # node, and reported nothing at all — the flag asked for exactly
-        # the check that then never ran.
+        # node, and report nothing at all — the flag would ask for exactly
+        # the check that then never runs.
         self._codex_plugin_forced = repo_types is not None and (
             RepositoryType.CODEX_PLUGIN in repo_types
         )
@@ -325,6 +325,14 @@ class RepositoryContext:
         resolved = path.resolve()
         return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
+    @staticmethod
+    def _under_any(path: Path, roots: Set[Path]) -> bool:
+        """Whether *path* resolves inside any of *roots*."""
+        resolved = safe_resolve(path)
+        if resolved is None:
+            return False
+        return any(resolved == r or resolved.is_relative_to(r) for r in roots)
+
     def apply_excludes(self) -> None:
         """Filter discovery results by exclude_patterns and refresh derived state.
 
@@ -352,9 +360,19 @@ class RepositoryContext:
             self._codex_install_root = _UNSET
             self._codex_roots = None
             if self._codex_discovery_enabled:
+                before = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
                 self.codex_plugins = [
                     p for p in self._discover_codex_plugins() if not self.is_path_excluded(p)
                 ]
+                after = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
+                # Skills were discovered from the old plugin set. A skill
+                # under a plugin that just left it would otherwise stay in
+                # ``skills`` and be attached as a standalone node, so the
+                # generic skill and content rules kept linting exactly the
+                # vendor content the exclusion removed.
+                dropped = before - after
+                if dropped:
+                    self.skills = [sk for sk in self.skills if not self._under_any(sk, dropped)]
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -673,7 +691,13 @@ class RepositoryContext:
                 if isinstance(data, dict) and isinstance(data.get("plugins"), list):
                     found.append(candidate)
 
-        if not found and self._codex_marketplace_forced:
+        if not found and self._codex_marketplace_forced and _keep(primary):
+            # ``_keep``, not a bare exclusion check: it also enforces
+            # containment. The registration rule writes this file back when
+            # it registers a plugin, so seeding an unchecked path let
+            # ``fix --suggest`` rewrite a file outside the checkout through
+            # a symlinked catalog. An explicit --type says what format the
+            # repository is, not that its entrypoint may be anywhere.
             found.append(primary)
 
         self._codex_marketplace_paths = found
@@ -714,7 +738,19 @@ class RepositoryContext:
             siblings = sorted(marketplace_dir.glob("*.json"))
         except OSError:
             return False
-        return any(_is_marketplace_filename(c.name) and _usable(c) for c in siblings)
+        for candidate in siblings:
+            if not _usable(candidate):
+                continue
+            if _is_marketplace_filename(candidate.name):
+                return True
+            # The same duck-typing discovery applies to an arbitrarily named
+            # sibling. Recognising fewer catalogs here than discovery does
+            # leaves the Claude rule demanding a manifest for a repository
+            # skillsaw has already classified as a Codex marketplace.
+            data = _read_json_or_none(candidate)
+            if isinstance(data, dict) and isinstance(data.get("plugins"), list):
+                return True
+        return False
 
     def codex_plugin_roots(self) -> List[Path]:
         """Resolved Codex plugin roots, computed once per context.
@@ -824,7 +860,14 @@ class RepositoryContext:
             _add(source)
 
         if not found and self._codex_plugin_forced:
-            found.append(self.root_path)
+            # Only when the root has no marker at all. Discovery rejects a
+            # ``.codex-plugin`` that resolves outside the checkout, and
+            # seeding the root unconditionally would hand that rejected
+            # marker straight back, and every rule would then read the
+            # external manifest the containment gate exists to refuse.
+            marker = self.root_path / self.CODEX_PLUGIN_MANIFEST[0]
+            if not (safe_exists(marker) or safe_is_symlink(marker)) and _contained(self.root_path):
+                found.append(self.root_path)
 
         return found
 
@@ -888,8 +931,21 @@ class RepositoryContext:
                 self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
             )
         install_root = self._codex_install_root
+        if install_root is None:
+            return False
+        # Lexical first: ``.codex/plugins/foo`` symlinked to a plugin
+        # elsewhere in the checkout resolves *out* of the install root, so a
+        # resolved-only test would call it authored, then publish it and
+        # let autofixes rewrite it. How it was reached is what makes it an
+        # install, not where the bytes happen to live.
+        lexical = self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
+        try:
+            if plugin_dir != lexical and plugin_dir.is_relative_to(lexical):
+                return True
+        except ValueError:  # pragma: no cover - defensive
+            pass
         resolved = safe_resolve(plugin_dir)
-        if install_root is None or resolved is None:
+        if resolved is None:
             return False
         return resolved != install_root and resolved.is_relative_to(install_root)
 

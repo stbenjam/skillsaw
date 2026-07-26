@@ -64,7 +64,7 @@ def extract_docs(
         marketplace = MarketplaceDoc(
             name=md.get("name", ""),
             owner=md.get("owner"),
-            plugins=plugins + _codex_remote_docs(context, {p.name for p in plugins}),
+            plugins=plugins + _codex_remote_docs(context, {name_str(p.name) for p in plugins}),
         )
     elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
         # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json,
@@ -192,7 +192,10 @@ def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> 
         data, error = read_json(path)
         if error or not isinstance(data, dict):
             continue
-        for entry in data.get("plugins") or []:
+        entries = data.get("plugins")
+        if not isinstance(entries, list):
+            continue  # codex-marketplace-json-valid reports the shape
+        for entry in entries:
             if not isinstance(entry, dict):
                 continue
             source = codex_local_source_path(entry.get("source"))
@@ -324,6 +327,44 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     return docs
 
 
+class _OwnBlocks:
+    """A bare holder so a loose block can join ``_BlockSources``."""
+
+    def __init__(self, blocks):
+        self._blocks = blocks
+
+    def find(self, block_cls):
+        return [b for b in self._blocks if isinstance(b, block_cls)]
+
+
+def _root_claimed_blocks(context: RepositoryContext, plugin_dir: Path) -> List["_OwnBlocks"]:
+    """Conventional files the tree root claimed before the plugin could.
+
+    A Codex plugin *at the repository root* shares ``.mcp.json`` with the
+    repository itself, and the generic root attachment runs first — so the
+    block lands on the tree root, the lint tree's ``seen`` set keeps it off
+    the Codex node, and the rules find it while ``skillsaw docs`` does not.
+    Matching by path rather than adding the whole root as a source, which
+    would pull in every other plugin's blocks as well.
+    """
+    root = safe_resolve(plugin_dir)
+    if root is None or root != safe_resolve(context.root_path):
+        return []
+    wanted = {
+        safe_resolve(plugin_dir / ".mcp.json"),
+        safe_resolve(plugin_dir / "hooks" / "hooks.json"),
+    }
+    wanted.discard(None)
+    if not wanted:
+        return []
+    loose = [
+        b
+        for b in context.lint_tree.find(McpBlock) + context.lint_tree.find(HooksBlock)
+        if safe_resolve(b.path) in wanted
+    ]
+    return [_OwnBlocks(loose)] if loose else []
+
+
 class _BlockSources:
     """Several tree nodes searched as one for `find()`.
 
@@ -368,7 +409,7 @@ def _extract_codex_plugin(
     # does for any plugin shipping commands/ — that node claimed hooks.json
     # and .mcp.json first, and the lint tree's ``seen`` set kept them off
     # the Codex node. Both are searched so neither placement loses them.
-    sources = _BlockSources([node, *legacy_nodes])
+    sources = _BlockSources([node, *legacy_nodes, *_root_claimed_blocks(context, plugin_dir)])
 
     author_val = meta.get("author")
     if isinstance(author_val, str):
@@ -569,9 +610,15 @@ def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
         allowed_tools = [allowed_tools]
     if not isinstance(allowed_tools, list):
         allowed_tools = []
+    # Both renderers ", ".join() this, so one non-string element raises
+    # TypeError and takes documentation for the whole catalog with it.
+    # agentskill-valid reports the malformed entry; the docs just skip it.
+    allowed_tools = [t for t in allowed_tools if isinstance(t, str)]
 
     return SkillDoc(
-        name=block.field_value("name", skill_node.path.name),
+        # Normalized here, not only in sort keys: the value is serialized
+        # into the page data, and the search box lowercases it.
+        name=name_str(block.field_value("name", skill_node.path.name)),
         dir_path=skill_node.path,
         description=block.field_value("description", ""),
         license=block.field_value("license", ""),

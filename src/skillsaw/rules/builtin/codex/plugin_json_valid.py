@@ -18,15 +18,15 @@ from ._helpers import CODEX_PLUGIN_REPO_TYPES, KEBAB_CASE, path_problem
 # ``hooks`` is excluded — it alone accepts inline objects as well as paths,
 # so it is unpacked separately.
 _PATH_FIELDS = ("skills", "mcpServers", "apps")
-# ``logoDark`` is undocumented but shipped by a quarter of the plugins in
-# openai/plugins, and it is an asset path like the documented two.
+# All three are documented in plugin-json-spec.md, which also requires every
+# asset path to point at a real file inside the plugin.
 _INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
 _INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
 
 # What each field has to be on disk for the lint tree to follow it. Only
-# the fields the tree actually filters on are listed: ``apps`` and the
-# ``interface`` assets are undocumented enough that asserting a kind would
-# overreach, and nothing drops them silently.
+# the fields the tree actually filters on are listed. ``apps`` and the
+# ``interface`` assets are documented as paths but nothing drops them
+# silently, so asserting a kind on them would add noise without cover.
 _EXPECTED_KIND = {"hooks": "file", "mcpServers": "file", "skills": "dir"}
 
 
@@ -183,10 +183,17 @@ class CodexPluginJsonValidRule(Rule):
 
         for field, value in self._iter_path_values(data):
             if not isinstance(value, str):
-                # A warning, not an error: real plugins ship inline
-                # ``mcpServers`` maps and ``skills`` arrays. Neither shape is
-                # documented, but Codex mirrors Claude Code's plugin loader,
-                # so claiming they are invalid would overreach.
+                # ``mcpServers`` is documented as "string or object", with a
+                # worked inline example, so an object there is conformant
+                # and warning on it is the false-positive class this rule
+                # set exists to remove. The block is already routed to the
+                # MCP rules either way.
+                if field == "mcpServers" and isinstance(value, dict):
+                    continue
+                # Everything else: a warning, not an error. ``skills`` is
+                # typed as a string alone, but real plugins ship arrays and
+                # Codex mirrors Claude Code's plugin loader, so calling
+                # them invalid would overreach.
                 violations.append(
                     self.violation(
                         f"'{field}' is documented as a path string relative to "

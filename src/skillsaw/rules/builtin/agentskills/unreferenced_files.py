@@ -108,6 +108,8 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
+from skillsaw.formats.codex import safe_resolve
+
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
 
 # A path mention must not be embedded in a longer word/path-like token:
@@ -423,9 +425,14 @@ class AgentSkillUnreferencedFilesRule(Rule):
             target = target.split("#")[0]
             if not target:
                 continue
-            try:
-                resolved = (base_dir / target).resolve()
-            except OSError:
+            # ``safe_resolve`` rather than a bare ``.resolve()``: a symlink
+            # loop raises RuntimeError before Python 3.13 and OSError from
+            # 3.13 on, and this project supports 3.9 through 3.14. An
+            # escaping RuntimeError turns the rule into a
+            # rule-execution-error and discards all its findings — which
+            # this PR newly exposes by activating the rule on Codex skills.
+            resolved = safe_resolve(base_dir / target)
+            if resolved is None:
                 continue
             if not resolved.is_relative_to(skill_resolved) or resolved == skill_resolved:
                 continue

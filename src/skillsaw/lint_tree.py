@@ -227,8 +227,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Not gated on the manifest existing: discovery keys off the reserved
         # .codex-plugin/ directory, so a plugin whose manifest is missing
         # still reaches codex-plugin-json-valid to be reported as such.
-        if _is_excluded(manifest):
-            continue
+        # No plugin-wide skip when the manifest is excluded. The plugin's
+        # hooks.json and .mcp.json have their own paths, their own
+        # exclusion check in _add_block, and their own executable commands
+        # — dropping them with the manifest would put them out of reach
+        # of hooks-dangerous, hooks-prohibited and the MCP rules. Violations
+        # against the manifest itself, and against the inline payloads that
+        # borrow its path, are filtered by the linter's own path check.
         node = CodexPluginConfigNode(path=manifest)
         # Codex "checks that default file automatically", so a plugin can ship
         # executable hooks without declaring them. They are the same

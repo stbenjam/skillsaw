@@ -46,7 +46,13 @@ def is_remote_source(source: Any) -> bool:
     Callers that treat every non-local source as remote credit those
     entries with a registration they do not provide.
     """
-    return isinstance(source, dict) and source.get("source") in REMOTE_SOURCE_TYPES
+    if not isinstance(source, dict):
+        return False
+    # A JSON value need not be hashable, and ``{"source": []}`` against a
+    # frozenset raises TypeError — which becomes a rule-execution-error and
+    # aborts the rule instead of letting the validity rule report the shape.
+    kind = source.get("source")
+    return isinstance(kind, str) and kind in REMOTE_SOURCE_TYPES
 
 
 def safe_resolve(path: Path) -> Optional[Path]:

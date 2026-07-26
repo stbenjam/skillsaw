@@ -68,11 +68,8 @@ Hand-copied value sets that drift — re-check each against upstream:
   `plugin-json-spec.md` documents `logoDark` and requires every asset path to point at
   a real file inside the plugin. Watch for fields being added to that list.
 
-Deliberate non-checks — do not "fix" these without a spec change.
-
-These are choices, not gaps in the spec. Each says what upstream
-requires and why skillsaw does not enforce it, so a future maintainer can revisit the
-trade-off rather than re-derive the facts.
+Deliberate non-checks — do not "fix" these without a spec change. Each records what
+upstream requires and why skillsaw does not enforce it.
 
 - `version` is not validated against semver, though `plugin-json-spec.md` requires
   strict semver and the whole reference corpus conforms. Not enforced because the
