@@ -7,6 +7,7 @@ from typing import Any, List, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.formats.codex import safe_exists, safe_is_dir, safe_is_file
 from skillsaw.lint_target import CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
@@ -83,7 +84,7 @@ class CodexPluginJsonValidRule(Rule):
                 # not walk .claude/plugins/* at all for the same reason.
                 continue
             manifest = node.path
-            if not manifest.is_file():
+            if not safe_is_file(manifest):
                 # The node exists because .codex-plugin/ does. Codex reads
                 # the manifest from this exact path and loads nothing
                 # without it, so the entrypoint is simply missing.
@@ -129,6 +130,19 @@ class CodexPluginJsonValidRule(Rule):
                     self.violation(
                         "'author' must be a string or an object with 'name', " "'email' and 'url'",
                         file_path=manifest,
+                    )
+                )
+
+            # A non-object ``interface`` carries no displayName, category or
+            # asset paths, so every check below silently skips it and the
+            # plugin renders with none of its published identity.
+            interface = data.get("interface")
+            if interface is not None and not isinstance(interface, dict):
+                violations.append(
+                    self.violation(
+                        "'interface' must be an object",
+                        file_path=manifest,
+                        severity=Severity.WARNING,
                     )
                 )
 
@@ -200,7 +214,7 @@ class CodexPluginJsonValidRule(Rule):
                     )
                 )
             target = plugin_dir / value
-            exists = target.exists()
+            exists = safe_exists(target)
             if check_exists and not exists:
                 violations.append(
                     self.violation(
@@ -217,7 +231,7 @@ class CodexPluginJsonValidRule(Rule):
             wanted = _EXPECTED_KIND.get(field.split("[")[0])
             if wanted is None or not exists:
                 continue
-            if wanted == "file" and not target.is_file():
+            if wanted == "file" and not safe_is_file(target):
                 violations.append(
                     self.violation(
                         f"'{field}': '{value}' is a directory — this field names a file",
@@ -225,7 +239,7 @@ class CodexPluginJsonValidRule(Rule):
                         severity=Severity.WARNING,
                     )
                 )
-            elif wanted == "dir" and not target.is_dir():
+            elif wanted == "dir" and not safe_is_dir(target):
                 violations.append(
                     self.violation(
                         f"'{field}': '{value}' is a file — this field names a directory",

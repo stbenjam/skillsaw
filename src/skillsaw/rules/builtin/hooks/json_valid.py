@@ -216,7 +216,13 @@ class HooksJsonValidRule(Rule):
                         hook_type = hook["type"]
                         hook_path = f"{event_type}[{idx}].hooks[{hook_idx}]"
 
-                        if hook_type not in _VALID_HOOK_TYPES:
+                        # A JSON value is not necessarily hashable, and a
+                        # list- or dict-valued ``type`` reaches the set
+                        # membership test below as an unhashable key. The
+                        # resulting TypeError aborts the whole rule, so one
+                        # malformed hook silences hook validation for every
+                        # remaining block in the repository.
+                        if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
                             violations.append(
                                 self.violation(
                                     f"Event '{hook_path}' has invalid type '{hook_type}'. "

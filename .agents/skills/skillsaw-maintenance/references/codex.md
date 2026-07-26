@@ -54,9 +54,10 @@ Hand-copied value sets that drift — re-check each against upstream:
 - `DEFAULT_INSTALLATION_VALUES` = `AVAILABLE`, `INSTALLED_BY_DEFAULT`, `NOT_AVAILABLE`.
   The docs say "values such as", so this is open-ended by design — unrecognized values
   warn, and the list is configurable.
-- `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. The public docs enumerate
-  **neither**; both literals come from the openai/plugins catalog and its authoring
-  spec. Highest drift risk in this reference.
+- `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. The docs describe the field
+  in prose and use `ON_INSTALL` in their examples, but publish no enum. `ON_USE` appears
+  nowhere upstream — it comes from the openai/plugins catalog alone, and is the highest
+  drift risk in this reference.
 - `_PATH_FIELDS` / `_INTERFACE_PATH_FIELDS` in `codex/plugin_json_valid.py`.
   `logoDark` is in that list but is **undocumented** — it appears on roughly a quarter
   of openai/plugins' manifests. Watch for it being documented or dropped.

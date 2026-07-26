@@ -3603,3 +3603,88 @@ class TestNameAutofixMultilineScalar:
         assert any("folded-name" in f for f in remaining)
         assert any("next-line" in f for f in remaining)
         assert any("dup-keys" in f for f in remaining)
+
+
+# ── Codex marketplace registration autofix (CLI level) ───────────
+
+
+@pytest.mark.integration
+class TestCodexRegistrationAutofixCli:
+    """The unit harness applies fixes by hand. This exercises the path a
+    user actually runs: ``Linter.fix_and_apply`` multi-pass, per-file
+    conflict resolution, and ``write_text_preserving``'s BOM/CRLF restore.
+    """
+
+    def _catalog(self, repo: Path) -> Path:
+        return repo / ".agents" / "plugins" / "marketplace.json"
+
+    def _build(self, tmp_path, *, indent=2, bom=False, crlf=False) -> Path:
+        repo = tmp_path / "codex-reg"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        catalog = {
+            "name": "cat",
+            "plugins": [
+                {
+                    "name": "listed",
+                    "source": {"source": "local", "path": "./plugins/listed"},
+                    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                    "category": "Productivity",
+                }
+            ],
+        }
+        text = json.dumps(catalog, indent=indent) + "\n"
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        data = text.encode("utf-8")
+        if bom:
+            data = b"\xef\xbb\xbf" + data
+        self._catalog(repo).write_bytes(data)
+        for name in ("listed", "missing"):
+            manifest_dir = repo / "plugins" / name / ".codex-plugin"
+            manifest_dir.mkdir(parents=True)
+            (manifest_dir / "plugin.json").write_text(
+                json.dumps({"name": name, "version": "1.0.0", "description": "x"}, indent=2),
+                encoding="utf-8",
+            )
+        return repo
+
+    def test_fix_without_suggest_leaves_the_catalog_alone(self, tmp_path):
+        repo = self._build(tmp_path)
+        before = self._catalog(repo).read_bytes()
+        _run_fix(repo)
+        assert self._catalog(repo).read_bytes() == before
+
+    def test_fix_with_suggest_registers_and_is_idempotent(self, tmp_path):
+        repo = self._build(tmp_path)
+        _run_fix(repo, "--suggest")
+        after_once = self._catalog(repo).read_bytes()
+        names = [p["name"] for p in json.loads(after_once.decode("utf-8"))["plugins"]]
+        assert names == ["listed", "missing"]
+
+        _run_fix(repo, "--suggest")
+        assert self._catalog(repo).read_bytes() == after_once
+
+    def test_the_registration_violation_is_gone_after_the_fix(self, tmp_path):
+        repo = self._build(tmp_path)
+        _run_fix(repo, "--suggest")
+        r = run_lint(repo)
+        ids = {v["rule_id"] for v in r["out"]["violations"]}
+        assert "codex-marketplace-registration" not in ids
+
+    def test_a_bom_and_crlf_catalog_survives_the_fix(self, tmp_path):
+        repo = self._build(tmp_path, bom=True, crlf=True)
+        _run_fix(repo, "--suggest")
+        raw = self._catalog(repo).read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), "the BOM was dropped"
+        assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "line endings changed"
+
+    def test_a_four_space_catalog_is_reserialised_at_two(self, tmp_path):
+        """Pinning current behaviour, not endorsing it: ``fix()`` rewrites
+        the whole document with ``json.dumps(indent=2)``, so adding one
+        entry to a 4-space catalog reformats every line of it.
+        """
+        repo = self._build(tmp_path, indent=4)
+        _run_fix(repo, "--suggest")
+        text = self._catalog(repo).read_text(encoding="utf-8")
+        assert '\n  "name": "cat"' in text
+        assert '\n    "name": "cat"' not in text

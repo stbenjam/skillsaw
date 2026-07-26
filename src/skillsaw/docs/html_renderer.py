@@ -423,10 +423,16 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
     """Build the data structure for embedding as JSON."""
     plugins_data: List[Dict[str, Any]] = []
 
+    # The catalog's own membership when there is one, matching the Markdown
+    # renderer. ``docs.plugins`` holds only what was extracted from a local
+    # directory, so a remote-only catalog rendered an empty grid here while
+    # Markdown listed every entry.
+    source = docs.marketplace.plugins if docs.marketplace else docs.plugins
+
     # ``p.name`` is manifest-derived and may be a non-string (e.g. a numeric
     # ``"name": 123`` in plugin.json); coerce before ``.lower()`` so ``docs``
     # doesn't crash on inputs ``lint`` tolerates.
-    sorted_plugins = sorted(docs.plugins, key=lambda p: name_str(p.name).lower())
+    sorted_plugins = sorted(source, key=lambda p: name_str(p.name).lower())
 
     for plugin in sorted_plugins:
         p: Dict[str, Any] = {

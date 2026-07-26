@@ -33,7 +33,13 @@ from .blocks import (
     SkillBlock,
     SkillRefBlock,
 )
-from .formats.codex import safe_resolve
+from .formats.codex import (
+    codex_declared_hook_files,
+    codex_declared_mcp_files,
+    codex_inline_hooks,
+    codex_inline_mcp_servers,
+    safe_resolve,
+)
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,
@@ -235,12 +241,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_codex_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
         # A manifest may point ``hooks`` at other files instead; those carry
         # the same executable commands, so they get the same checks.
-        for declared_hooks in context.codex_declared_hook_files(codex_plugin_path):
+        for declared_hooks in codex_declared_hook_files(codex_plugin_path):
             _add_block(node, declared_hooks, HooksBlock)
         # ...or write them inline, which is the same surface again. Appended
         # directly rather than through _add_block: the payload has no file of
         # its own, so the manifest path it borrows is already claimed.
-        for inline_hooks in context.codex_inline_hooks(codex_plugin_path):
+        for inline_hooks in codex_inline_hooks(codex_plugin_path):
             node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
         # The Codex docs put .mcp.json at the plugin root alongside hooks/
         # and skills/. When the directory is Codex-only there is no
@@ -263,7 +269,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         conventional_mcp = safe_resolve(codex_plugin_path / ".mcp.json")
         if conventional_mcp is not None:
             codex_mcp_seen.add(conventional_mcp)
-        for declared_mcp in context.codex_declared_mcp_files(codex_plugin_path):
+        for declared_mcp in codex_declared_mcp_files(codex_plugin_path):
             resolved_mcp = safe_resolve(declared_mcp)
             if resolved_mcp is None or resolved_mcp in codex_mcp_seen:
                 continue
@@ -272,7 +278,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 node.children.append(McpBlock(path=declared_mcp))
                 continue
             _add_block(node, declared_mcp, McpBlock)
-        for inline_mcp in context.codex_inline_mcp_servers(codex_plugin_path):
+        for inline_mcp in codex_inline_mcp_servers(codex_plugin_path):
             node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
         parent = plugin_nodes.get(codex_plugin_path.resolve())
         (parent or root).children.append(node)

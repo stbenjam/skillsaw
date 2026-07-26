@@ -20,7 +20,10 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 
 # "Use a stable plugin `name` in kebab-case. Plugin hosts use it as the
 # plugin identifier and component namespace."
-KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+# ``\Z``, not ``$``: ``$`` also matches immediately before a trailing
+# newline, so ``"my-plugin\n"`` passed as kebab-case and the
+# registration autofix wrote it into the published catalog.
+KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 
 
 def path_problem(value: str, root_label: str, root: Optional[Path] = None) -> Optional[str]:

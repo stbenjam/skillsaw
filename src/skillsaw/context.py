@@ -16,7 +16,18 @@ import os
 # Dependency-light format helper — safe to import at module top because it
 # pulls in nothing from skillsaw (importing rules.builtin here would trigger
 # that package's __init__ while ``context`` is still mid-import → cycle).
-from .formats.codex import codex_local_source_path, inline_documents, safe_resolve
+from .formats.codex import (
+    CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
+    codex_declared_skill_dirs,
+    codex_local_source_path,
+    codex_plugin_name,
+    inline_documents,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
 from .formats.promptfoo import is_promptfoo_config
 from .utils import read_json
 
@@ -105,6 +116,21 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_CODERABBIT,
     }
 )
+
+
+def _is_marketplace_filename(name: str) -> bool:
+    """Whether *name* is a Codex catalog by name alone.
+
+    A bare ``endswith`` also claims ``notamarketplace.json``, which then
+    skips the duck-typing fallback and gets linted as a catalog on the
+    strength of its spelling. ``openai/plugins`` splits its listing into
+    ``api_marketplace.json``, so the qualifier is a real pattern — it just
+    has to end at a separator.
+    """
+    lowered = name.lower()
+    if lowered == "marketplace.json":
+        return True
+    return lowered.endswith("marketplace.json") and lowered[-17] in "-_."
 
 
 def _read_json_or_none(path: Path) -> Any:
@@ -526,7 +552,9 @@ class RepositoryContext:
     # would report contradictory violations.
     CODEX_MARKETPLACE_DIR = (".agents", "plugins")
     CODEX_MARKETPLACE_FILENAME = "marketplace.json"
-    CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
+    # Re-exported from formats.codex so existing ``context.CODEX_PLUGIN_MANIFEST``
+    # readers keep working; the definition lives with the readers that use it.
+    CODEX_PLUGIN_MANIFEST = _CODEX_PLUGIN_MANIFEST
     # Where Codex installs plugins a developer added to their own checkout,
     # as opposed to plugins the repository authors.
     CODEX_INSTALL_DIR = (".codex", "plugins")
@@ -574,6 +602,13 @@ class RepositoryContext:
             resolved = safe_resolve(path)
             return resolved is not None and resolved.is_relative_to(root)
 
+        def _keep(path: Path) -> bool:
+            # Exclusions are applied here rather than at each reader: the
+            # lint tree filtered them, but ``skillsaw docs`` reads this list
+            # directly and published pages for an excluded catalog — and
+            # could take the generated title from it.
+            return _inside(path) and not self.is_path_excluded(path)
+
         found: List[Path] = []
         primary = self.codex_marketplace_path()
         # Existence, not is_file(): a directory in place of the reserved
@@ -583,19 +618,27 @@ class RepositoryContext:
         # symlink is an unusable catalog, and dropping it would declassify
         # the repository rather than let the rule report it — the same
         # reasoning plugin discovery applies to a missing manifest.
-        if (primary.exists() or primary.is_symlink()) and _inside(primary):
+        if (safe_exists(primary) or safe_is_symlink(primary)) and _keep(primary):
             found.append(primary)
 
+        primary_resolved = safe_resolve(primary)
         marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
-        if marketplace_dir.is_dir():
+        if safe_is_dir(marketplace_dir):
             try:
                 siblings = sorted(marketplace_dir.glob("*.json"))
             except OSError:
                 siblings = []
             for candidate in siblings:
-                if candidate == primary or not _inside(candidate):
+                # Resolved comparison, not ``candidate == primary``: on a
+                # case-insensitive filesystem ``MARKETPLACE.JSON`` is the
+                # primary under a different spelling, and a path-equality
+                # test would list the same file twice.
+                candidate_resolved = safe_resolve(candidate)
+                if candidate_resolved is not None and candidate_resolved == primary_resolved:
                     continue
-                if candidate.name.lower().endswith(self.CODEX_MARKETPLACE_FILENAME):
+                if not _keep(candidate):
+                    continue
+                if _is_marketplace_filename(candidate.name):
                     found.append(candidate)
                     continue
                 data = _read_json_or_none(candidate)
@@ -663,7 +706,7 @@ class RepositoryContext:
             # plugin; codex-plugin-json-valid then reports the unreadable
             # manifest.
             manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
-            if not (manifest_dir.exists() or manifest_dir.is_symlink()):
+            if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
                 return
             manifest_dir_resolved = safe_resolve(manifest_dir)
             if manifest_dir_resolved is None or not manifest_dir_resolved.is_relative_to(resolved):
@@ -672,7 +715,7 @@ class RepositoryContext:
             # reports it. One that resolves elsewhere is not.
             manifest = directory.joinpath(*self.CODEX_PLUGIN_MANIFEST)
             manifest_resolved = safe_resolve(manifest)
-            if manifest.exists() and (
+            if safe_exists(manifest) and (
                 manifest_resolved is None or not manifest_resolved.is_relative_to(resolved)
             ):
                 return
@@ -760,121 +803,6 @@ class RepositoryContext:
             return False
         return resolved != install_root and resolved.is_relative_to(install_root)
 
-    def _codex_declared_paths(self, plugin_dir: Path, field: str, want_dir: bool) -> List[Path]:
-        """Contained paths a Codex manifest names in *field*.
-
-        Three manifest fields — ``hooks``, ``skills`` and ``mcpServers`` —
-        share one shape: "a single path, an array of paths, an inline
-        object, or an array of inline objects". This resolves the path
-        forms; the object forms are read by ``_codex_inline_objects``.
-        Paths escaping the plugin root are dropped — ``codex-plugin-json-valid``
-        reports them, and the lint tree must not follow them out of the
-        plugin.
-        """
-        declared = self._codex_manifest(plugin_dir).get(field)
-        # One level only. The field permits a path or an array of paths, so
-        # a nested array is invalid — and flattening it here would diverge
-        # from codex-plugin-json-valid, which reports what it can reach.
-        candidates = declared if isinstance(declared, list) else [declared]
-        root = safe_resolve(plugin_dir)
-        if root is None:
-            return []
-        found: List[Path] = []
-        for item in candidates:
-            if not isinstance(item, str) or not item:
-                continue
-            candidate = safe_resolve(plugin_dir / item)
-            if candidate is None or not candidate.is_relative_to(root):
-                continue
-            # ``"skills": "./"`` points at the plugin root, which is a legal
-            # place to keep a skill. A file-valued field naming the root is
-            # meaningless, so only directory-valued fields accept it.
-            if candidate == root and not want_dir:
-                continue
-            if candidate.is_dir() if want_dir else candidate.is_file():
-                found.append(candidate)
-        return found
-
-    def _codex_manifest(self, plugin_dir: Path) -> Dict[str, Any]:
-        """The plugin's parsed manifest, or ``{}`` when absent or unparseable."""
-        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
-        return data if isinstance(data, dict) else {}
-
-    def codex_declared_hook_files(self, plugin_dir: Path) -> List[Path]:
-        """Hook files a Codex plugin manifest declares through ``hooks``."""
-        return self._codex_declared_paths(plugin_dir, "hooks", want_dir=False)
-
-    def codex_declared_skill_dirs(self, plugin_dir: Path) -> List[Path]:
-        """Skill directories a Codex plugin manifest declares through ``skills``.
-
-        The field does not have to say ``./skills`` — a plugin may bundle
-        them under ``./bundled-skills`` instead. Scanning only the literal
-        ``skills/`` directory misses those, and for a plugin installed under
-        the hidden ``.codex/plugins/`` tree nothing else walks them, so
-        their SKILL.md files would reach no rule at all.
-        """
-        return self._codex_declared_paths(plugin_dir, "skills", want_dir=True)
-
-    def codex_declared_mcp_files(self, plugin_dir: Path) -> List[Path]:
-        """MCP config files a Codex plugin manifest declares through ``mcpServers``.
-
-        Only ``.mcp.json`` is conventional, and it is attached on sight.
-        A manifest may point the field at a different file, and those
-        servers are the same surface — a command the host will spawn — so
-        they reach mcp-valid-json and mcp-prohibited the same way.
-        """
-        return self._codex_declared_paths(plugin_dir, "mcpServers", want_dir=False)
-
-    def codex_inline_hooks(self, plugin_dir: Path) -> List[Dict[str, Any]]:
-        """Hooks a Codex plugin manifest declares inline, in hooks.json shape.
-
-        ``codex_declared_hook_files`` covers the path forms; this covers the
-        object forms, which carry exactly the same executable commands and
-        so belong in front of the same hook rules. Without it a
-        ``curl | sh`` SessionStart hook written inline is invisible to
-        hooks-dangerous and hooks-prohibited.
-
-        One document per declared object, never a merge. Merging looked
-        tidier but silently dropped occurrences: an array that repeats an
-        event has to lose one of the two values, and whichever rule loses
-        is a defect nothing else reports — ``codex-plugin-json-valid``
-        deliberately skips hook objects, so a malformed ``SessionStart``
-        overwritten by a later valid one goes unreported, and a valid one
-        overwritten by a malformed one loses its commands to
-        hooks-dangerous. Separate blocks let every occurrence be judged.
-
-        Both ``{"hooks": {...}}`` (mirroring a hooks.json document) and a
-        bare event map are accepted.
-        """
-        return inline_documents(self._codex_manifest(plugin_dir).get("hooks"), "hooks")
-
-    def codex_inline_mcp_servers(self, plugin_dir: Path) -> List[Dict[str, Any]]:
-        """MCP servers a Codex plugin manifest declares inline.
-
-        ``mcpServers`` is documented as a path, but real plugins ship the
-        map inline the way Claude Code's loader accepts it. Those servers
-        name commands the host will spawn, so they belong in front of the
-        MCP rules whether they arrived by path or by value.
-
-        One document per declared object, for the reason spelled out in
-        ``codex_inline_hooks``: merging by server name would drop a second
-        ``same`` entry missing its ``command``, hiding exactly the
-        structural error mcp-valid-json exists to report.
-
-        Both ``{"mcpServers": {...}}`` and a bare server map are accepted,
-        matching what ``McpBlock.servers`` already reads.
-        """
-        return inline_documents(self._codex_manifest(plugin_dir).get("mcpServers"), "mcpServers")
-
-    def codex_plugin_name(self, plugin_dir: Path) -> str:
-        """Name a Codex plugin declares, falling back to its directory name."""
-        data = _read_json_or_none(plugin_dir.joinpath(*self.CODEX_PLUGIN_MANIFEST))
-        if isinstance(data, dict):
-            name = data.get("name")
-            if isinstance(name, str) and name:
-                return name
-        return plugin_dir.name
-
     def _load_marketplace(self) -> Optional[Dict[str, Any]]:
         """Load marketplace.json if it exists"""
         marketplace_file = self.root_path / ".claude-plugin" / "marketplace.json"
@@ -939,7 +867,7 @@ class RepositoryContext:
                 # escapes the repository, so a traversing pluginRoot cannot
                 # smuggle a source outside the root.
                 composed = (self.root_path / plugin_root / source).resolve()
-                if composed.exists() or not candidate.exists():
+                if safe_exists(composed) or not safe_exists(candidate):
                     candidate = composed
 
             # Disallow escaping the repo with .. paths
@@ -953,13 +881,13 @@ class RepositoryContext:
                 )
                 return None
 
-            if not candidate.exists():
+            if not safe_exists(candidate):
                 logger.info(
                     "Plugin '%s' source '%s' not found locally. Skipping.", plugin_name, source
                 )
                 return None
 
-            if not candidate.is_dir():
+            if not safe_is_dir(candidate):
                 logger.info(
                     "Plugin '%s' source '%s' is not a directory. Skipping.", plugin_name, source
                 )
@@ -1264,7 +1192,7 @@ class RepositoryContext:
             # the sole route into the tree.
             for skills_dir in (
                 plugin_path / "skills",
-                *self.codex_declared_skill_dirs(plugin_path),
+                *codex_declared_skill_dirs(plugin_path),
             ):
                 if not skills_dir.is_dir():
                     continue

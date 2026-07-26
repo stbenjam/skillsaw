@@ -5,7 +5,8 @@ Rule: marketplace-json-valid
 import re
 from typing import List
 
-from skillsaw.paths import has_parent_traversal, is_absolute_path  # noqa: F401
+from skillsaw.formats.codex import safe_exists, safe_resolve
+from skillsaw.paths import has_parent_traversal, is_absolute_path
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
@@ -65,6 +66,21 @@ class MarketplaceJsonValidRule(Rule):
             for node in context.lint_tree.find(PluginNode)
         )
 
+    @staticmethod
+    def _has_codex_catalog(context: RepositoryContext) -> bool:
+        """Whether the repository ships a Codex catalog at the reserved path.
+
+        Existence, not validity: a broken catalog is still the author
+        saying this is a Codex marketplace, and codex-marketplace-json-valid
+        is the rule that reports what is wrong with it.
+        """
+        catalog = context.codex_marketplace_path()
+        root = safe_resolve(context.root_path)
+        resolved = safe_resolve(catalog)
+        if root is None or resolved is None or not resolved.is_relative_to(root):
+            return False
+        return safe_exists(catalog)
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
@@ -74,10 +90,12 @@ class MarketplaceJsonValidRule(Rule):
 
         config_nodes = context.lint_tree.find(MarketplaceConfigNode)
         if not config_nodes:
-            if (
-                RepositoryType.CODEX_MARKETPLACE in context.repo_types
-                and not self._has_claude_plugin(context)
-            ):
+            # Asked of the filesystem, not of repo_types: an explicit
+            # ``--type marketplace`` drops CODEX_MARKETPLACE from the set,
+            # and the exemption went with it — resurrecting this very
+            # false positive on a repository the default invocation calls
+            # clean.
+            if self._has_codex_catalog(context) and not self._has_claude_plugin(context):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the
                 # Codex docs prescribe storing plugins under

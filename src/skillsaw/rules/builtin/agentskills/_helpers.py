@@ -4,9 +4,13 @@ import json
 import re
 import threading
 from pathlib import Path
+from typing import Optional, TYPE_CHECKING
 
 from skillsaw.context import RepositoryType
 from skillsaw.formats.codex import safe_resolve
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
+    from skillsaw.context import RepositoryContext
 
 # Repository types whose lint tree can hold Agent Skills. One set shared by
 # every rule in this package so a newly supported host cannot be wired into
@@ -39,7 +43,7 @@ RENAMES_MANIFEST = ".skillsaw-renames.json"
 _RENAMES_LOCK = threading.Lock()
 
 
-def contained_eval_file(context, skill_dir):
+def contained_eval_file(context: "RepositoryContext", skill_dir: Path) -> Optional[Path]:
     """``evals/evals.json`` for *skill_dir*, or ``None`` if it escapes.
 
     agentskill-evals reads this document and agentskill-rename-refs can
@@ -59,7 +63,7 @@ def contained_eval_file(context, skill_dir):
     return candidate
 
 
-def is_installed_plugin_skill(context, path) -> bool:
+def is_installed_plugin_skill(context: "RepositoryContext", path: Path) -> bool:
     """Whether *path* belongs to a plugin installed under ``.codex/plugins/``.
 
     The Codex manifest and structure rules stand down there because the

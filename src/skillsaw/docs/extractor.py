@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.formats.codex import codex_local_source_path, safe_resolve
+from skillsaw.formats.codex import (
+    codex_declared_hook_files,
+    codex_declared_mcp_files,
+    codex_inline_hooks,
+    codex_inline_mcp_servers,
+    codex_local_source_path,
+    codex_plugin_name,
+    is_remote_source,
+    safe_resolve,
+)
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -19,6 +28,7 @@ from skillsaw.docs.models import (
     PluginDoc,
     RuleFileDoc,
     SkillDoc,
+    name_str,
 )
 from skillsaw.blocks import (
     AgentBlock,
@@ -69,11 +79,24 @@ def extract_docs(
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
         plugin_skill_paths = {s.dir_path.resolve() for p in plugins for s in p.skills}
+        # Skipping an installed plugin above leaves its skills matched by no
+        # PluginDoc, so the standalone pass would publish someone else's
+        # skills as this repository's own top-level content — undoing the
+        # authorship line the skip was there to draw.
+        installed_roots = [
+            r
+            for p in context.codex_plugins
+            if context.is_codex_installed_plugin(p) and (r := safe_resolve(p)) is not None
+        ]
         for skill_node in context.lint_tree.find(SkillNode):
-            if skill_node.path.resolve() not in plugin_skill_paths:
-                doc = _extract_skill(skill_node)
-                if doc:
-                    standalone_skills.append(doc)
+            resolved = safe_resolve(skill_node.path)
+            if resolved is None or resolved in plugin_skill_paths:
+                continue
+            if any(resolved.is_relative_to(root) for root in installed_roots):
+                continue
+            doc = _extract_skill(skill_node)
+            if doc:
+                standalone_skills.append(doc)
 
     resolved_title = title or _default_title(context, marketplace, plugins)
 
@@ -147,8 +170,48 @@ def _codex_marketplace_doc(
         break
     if name is None:
         return None
-    remote = _codex_remote_docs(context, {p.name for p in plugins})
-    return MarketplaceDoc(name=name, owner=None, plugins=plugins + remote)
+    listed = _codex_listed_docs(context, plugins)
+    remote = _codex_remote_docs(context, {name_str(p.name) for p in listed})
+    return MarketplaceDoc(name=name, owner=None, plugins=listed + remote)
+
+
+def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> List[PluginDoc]:
+    """The extracted docs the catalog actually lists, in catalog order.
+
+    Membership is what the catalog's ``plugins`` array says, not what
+    discovery happened to find. A repository that is also ``dot-claude``
+    has a ``PluginNode`` for ``.claude/`` itself, and publishing every
+    discovered plugin listed that directory as a catalog entry.
+
+    A listing's ``category`` is overlaid onto the matched doc: the field is
+    required on a catalog entry and frequently lives only there, so reading
+    it from the plugin manifest alone left locally-sourced plugins
+    uncategorised and missing from the rendered category filter — while
+    remote entries, which have no manifest to consult, showed theirs.
+    """
+    by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
+    listed: List[PluginDoc] = []
+    seen: Set[int] = set()
+    for path in context.codex_marketplace_paths():
+        data, error = read_json(path)
+        if error or not isinstance(data, dict):
+            continue
+        for entry in data.get("plugins") or []:
+            if not isinstance(entry, dict):
+                continue
+            source = codex_local_source_path(entry.get("source"))
+            if source is None:
+                continue  # remote or malformed — _codex_remote_docs decides
+            resolved = safe_resolve(context.root_path / source)
+            doc = by_path.get(resolved) if resolved is not None else None
+            if doc is None or id(doc) in seen:
+                continue
+            seen.add(id(doc))
+            category = entry.get("category")
+            if isinstance(category, str) and category and not doc.category:
+                doc.category = category
+            listed.append(doc)
+    return listed
 
 
 def _codex_remote_docs(context: RepositoryContext, local_names: set) -> List[PluginDoc]:
@@ -165,16 +228,6 @@ def _codex_remote_docs(context: RepositoryContext, local_names: set) -> List[Plu
             continue
         docs.extend(_remote_entry_docs(data, local_names))
     return docs
-
-
-# Source types that name something outside this repository. Anything else
-# claiming to be local, but without a usable path, is malformed rather than
-# remote.
-_REMOTE_SOURCE_TYPES = {"url", "git-subdir", "npm"}
-
-
-def _is_remote_source(source: Any) -> bool:
-    return isinstance(source, dict) and source.get("source") in _REMOTE_SOURCE_TYPES
 
 
 def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
@@ -199,7 +252,7 @@ def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
         source = entry.get("source")
         if codex_local_source_path(source) is not None:
             continue  # local entry — the real plugin was extracted above
-        if not _is_remote_source(source):
+        if not is_remote_source(source):
             # ``{"source": "local"}`` with no path, or an empty one, is a
             # broken local entry rather than a remote one. Codex skips it
             # and codex-marketplace-json-valid reports it; publishing a page
@@ -250,7 +303,7 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     # catalog has hundreds of each.
     codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
 
-    legacy_by_path: dict = {}
+    legacy_by_path: Dict[Path, List[PluginNode]] = {}
     for pn in context.lint_tree.find(PluginNode):
         resolved_pn = safe_resolve(pn.path)
         if resolved_pn is not None:
@@ -326,7 +379,7 @@ def _extract_codex_plugin(
         author_val = {"name": author_val}
 
     return PluginDoc(
-        name=context.codex_plugin_name(plugin_dir),
+        name=codex_plugin_name(plugin_dir),
         path=plugin_dir,
         description=str(meta.get("description", "") or ""),
         version=str(v) if (v := meta.get("version")) is not None else "",
@@ -418,7 +471,7 @@ def _extract_codex_skills(
         doc = _extract_skill(skill_node)
         if doc:
             docs.append(doc)
-    return sorted(docs, key=lambda d: d.name)
+    return sorted(docs, key=lambda d: name_str(d.name))
 
 
 def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> PluginDoc:
@@ -483,7 +536,7 @@ def _extract_commands(plugin_node: PluginNode) -> List[CommandDoc]:
                 body=body_text,
             )
         )
-    return sorted(docs, key=lambda d: d.name)
+    return sorted(docs, key=lambda d: name_str(d.name))
 
 
 # -- Skills --
@@ -495,7 +548,7 @@ def _extract_skills(plugin_node: PluginNode) -> List[SkillDoc]:
         doc = _extract_skill(skill_node)
         if doc:
             docs.append(doc)
-    return sorted(docs, key=lambda d: d.name)
+    return sorted(docs, key=lambda d: name_str(d.name))
 
 
 def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
@@ -536,7 +589,7 @@ def _extract_agents(plugin_node: PluginNode) -> List[AgentDoc]:
                 body=block.body_text.strip(),
             )
         )
-    return sorted(docs, key=lambda d: d.name)
+    return sorted(docs, key=lambda d: name_str(d.name))
 
 
 # -- Hooks --
@@ -621,7 +674,7 @@ def _extract_rules(plugin_node: PluginNode) -> List[RuleFileDoc]:
                 body=block.body_text.strip(),
             )
         )
-    return sorted(docs, key=lambda d: d.name)
+    return sorted(docs, key=lambda d: name_str(d.name))
 
 
 # -- Helpers --

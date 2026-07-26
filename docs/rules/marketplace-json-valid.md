@@ -58,6 +58,21 @@ and, like sources, must not be an absolute path (values like
 `/tmp/plugins` are invalid) and must not escape the repository with
 `..`.
 
+## Codex marketplaces
+
+A Codex catalog at `.agents/plugins/marketplace.json` is validated by
+`codex-marketplace-json-valid`, not by this rule: the two schemas
+disagree, and Codex's `{"source": "local", "path": "./x"}` would be
+reported here as an unknown source type on every entry. A repository
+that ships a Codex catalog therefore stops seeing this rule's
+"Marketplace file not found" and unknown-source errors.
+
+The legacy path `.claude-plugin/marketplace.json`, which Codex also
+reads for backward compatibility, stays with this rule. A Codex-schema
+catalog written to *that* path will be checked against the Claude
+schema and will report a missing `owner` and an unknown `local` source
+type — move it to `.agents/plugins/marketplace.json`.
+
 ## Configuration
 
 ```yaml

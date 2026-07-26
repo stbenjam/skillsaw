@@ -4,11 +4,16 @@ Rule: codex-marketplace-registration
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext, codex_local_source_path, safe_resolve
-from skillsaw.formats.codex import is_remote_source
+from skillsaw.formats.codex import (
+    codex_plugin_name,
+    is_remote_source,
+    safe_is_dir,
+    safe_is_file,
+)
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
@@ -173,7 +178,10 @@ class CodexMarketplaceRegistrationRule(Rule):
         return bool(KEBAB_CASE.match(name))
 
     def _unregistered(
-        self, context: RepositoryContext, registered_names: set, registered_dirs: set
+        self,
+        context: RepositoryContext,
+        registered_names: Set[str],
+        registered_dirs: Set[Path],
     ) -> List[Tuple[Path, str]]:
         """Discovered plugin directories no catalog covers.
 
@@ -198,13 +206,13 @@ class CodexMarketplaceRegistrationRule(Rule):
                 continue
             if context.is_codex_installed_plugin(plugin_dir):
                 continue
-            name = context.codex_plugin_name(plugin_dir)
+            name = codex_plugin_name(plugin_dir)
             if name in registered_names:
                 continue
             found.append((plugin_dir, name))
         return found
 
-    def _registered(self, context: RepositoryContext) -> Tuple[set, set]:
+    def _registered(self, context: RepositoryContext) -> Tuple[Set[str], Set[Path]]:
         """Names and plugin directories the repository's catalogs already cover.
 
         A plugin counts as registered when *any* catalog names it — openai/
@@ -228,8 +236,8 @@ class CodexMarketplaceRegistrationRule(Rule):
         plugin the catalog cannot install; crediting it would silence the
         unregistered-plugin report for a real directory of the same name.
         """
-        names: set = set()
-        dirs: set = set()
+        names: Set[str] = set()
+        dirs: Set[Path] = set()
         for node in context.lint_tree.find(CodexMarketplaceConfigNode):
             for _, entry in _entries(node.path):
                 source = codex_local_source_path(entry.get("source"))
@@ -272,7 +280,7 @@ class CodexMarketplaceRegistrationRule(Rule):
             ):
                 continue  # escapes the repo — codex-marketplace-json-valid reports it
 
-            if not plugin_dir.is_dir():
+            if not safe_is_dir(plugin_dir):
                 violations.append(
                     self.violation(
                         f"plugins[{idx}] source '{source}' does not exist",
@@ -284,7 +292,7 @@ class CodexMarketplaceRegistrationRule(Rule):
 
             manifest = plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST)
             manifest_resolved = safe_resolve(manifest)
-            if not manifest.is_file() or (
+            if not safe_is_file(manifest) or (
                 manifest_resolved is not None and not manifest_resolved.is_relative_to(plugin_dir)
             ):
                 # This rule reads the manifest itself, so it needs its own
@@ -303,7 +311,7 @@ class CodexMarketplaceRegistrationRule(Rule):
                 continue
 
             entry_name = entry.get("name")
-            manifest_name = context.codex_plugin_name(plugin_dir)
+            manifest_name = codex_plugin_name(plugin_dir)
             if isinstance(entry_name, str) and entry_name != manifest_name:
                 violations.append(
                     self.violation(
@@ -397,7 +405,7 @@ def _read_text(path: Path) -> str:
     return read_text(path) or ""
 
 
-def _read_manifest(path: Path) -> dict:
+def _read_manifest(path: Path) -> Dict[str, Any]:
     data, error = read_json(path)
     return data if not error and isinstance(data, dict) else {}
 
