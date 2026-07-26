@@ -1,6 +1,6 @@
 ---
 name: skillsaw-review-panel
-description: Multi-specialist code review panel for skillsaw PRs. Dispatches 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
+description: Use when reviewing a skillsaw PR. Dispatches 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true

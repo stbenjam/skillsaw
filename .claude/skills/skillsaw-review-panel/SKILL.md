@@ -1,27 +1,41 @@
 ---
 name: skillsaw-review-panel
-description: Serial multi-specialist code review panel for skillsaw PRs. Runs 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) inline then synthesizes a single verdict.
+description: Use when reviewing a skillsaw PR. Dispatches 6 specialist reviewers (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem) as parallel sub-agents by default, then synthesizes a single verdict. Use --serial for cheaper inline execution.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true
 metadata:
   author: stbenjam
-  version: "2.0"
+  version: "3.0"
 ---
 
-# Review Panel — Serial Multi-Specialist Review
+# Review Panel — Multi-Specialist Review
 
-Run **6 specialist reviewers + 1 arbiter** inline in the main agent, one
-after another. Keep the review serial by design — derive the repo context
-once and share it across all specialists to keep token cost low. Each specialist
-can read prior specialists' file reads (though not their findings).
+Run **6 specialist reviewers + 1 arbiter** to review a skillsaw PR.
 
-Read each specialist's detailed scope from the `references/` directory
-alongside this skill; load it **only when that specialist runs**
-(progressive disclosure) — keep this file lean and pull the scope in on demand.
+**Two execution modes:**
+
+- **Parallel (default)**: Each specialist runs as a dedicated sub-agent
+  concurrently. Thorough — each sub-agent independently explores the
+  codebase through its own lens without bias from other specialists.
+- **Serial (`--serial`)**: All specialists run inline in the main agent,
+  one after another. Cheaper because the codebase context is derived once
+  and shared across all specialists. Trade-off: later specialists can see
+  prior specialists' file reads (which may bias their analysis).
 
 Keep the panel **advisory**. It does not gate merge. It surfaces findings;
 the maintainer and PR author review and decide ship.
+
+## Arguments
+
+```text
+/skillsaw-review-panel [--serial] [pr-number]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--serial` | Run all specialists inline instead of as parallel sub-agents |
+| pr-number | GitHub PR number. Optional — defaults to current branch |
 
 ## Specialist Roster
 
@@ -39,7 +53,10 @@ the maintainer and PR author review and decide ship.
 
 Follow these steps in order. Do not skip ahead.
 
-### Step 1 — Determine Base Ref and Read the Diff
+### Step 1 — Parse Arguments and Determine Base Ref
+
+Parse the argument string. `--serial` sets serial mode. A bare
+integer is the PR number.
 
 Check what the changes are being compared against:
 
@@ -72,40 +89,39 @@ gh pr view <number> --json comments --jq '.comments[] | select(.body | contains(
 If prior reviews exist, note which findings have been addressed by
 subsequent commits and which remain unresolved. Avoid re-raising resolved issues.
 
-### Step 3 — Run Specialists Serially
+### Step 3 — Dispatch Specialists
 
-Run each specialist in roster order (Architecture, Python Expert, Security & Supply Chain, QA Engineer, Technical Writer, Ecosystem):
+Follow [references/dispatch.md](references/dispatch.md) for dispatch
+rules covering both parallel and serial modes, the findings JSON
+schema, and sub-agent prompt construction.
 
-1. Write the specialist name as a heading.
-2. **Read that specialist's `references/*.md` file now** (in the `references/`
-   directory alongside this skill) — read the detailed scope it holds. Do not
-   review from the one-line lens alone.
-3. Review the diff and repo through that specialist's lens. Read files,
-   grep, and run git commands to gather the evidence the scope calls for — context from earlier specialists' file reads carries over.
-4. Write findings in this format:
-   - **Severity**: set `BLOCKING` | `SUGGESTION` | `NOTE`
-   - **File:line** — include the reference when applicable
-   - **Finding** — write a description
-   - **Recommended action** — make it explicit
-5. If no issues found, say so and review what you checked.
-6. Move on to the next specialist.
+**Sub-agents and serial reviewers MUST NOT modify any files, and
+MUST NOT run remote-write git commands** (`git push`, force-push
+variants, push to protected branches, or pushes to any remote).
+They are read-only reviewers.
 
-**Follow this severity calibration:**
-- `BLOCKING`: Set for correctness regressions, security vulnerabilities,
-  architectural faults that compound, or (for the Ecosystem Reviewer) a scope
-  violation that warrants redirect-to-plugin. Always include explicit rationale for why this blocks.
-- `SUGGESTION`: Set for substantive feedback that improves the code but is not a
-  correctness issue. Keep this the default for real feedback.
-- `NOTE`: Set for one-line polish, style nits, minor improvements.
+### Step 4 — Completeness Gate
 
-### Step 4 — Run Panel Arbiter Synthesis
+After all specialists return (sub-agents complete or serial reviews
+finish), verify that every specialist produced findings (or an
+explicit "no issues" with what was checked). A valid empty findings
+list with an explanation of what was checked is success — do **not**
+retry it. If any specialist returned an error or a missing/malformed
+result, re-dispatch it **once**. If the retry also fails, record
+the failure and proceed.
+
+### Step 5 — Run Panel Arbiter Synthesis
 
 After all specialists complete, review and synthesize directly:
 
 1. Read all specialist findings.
-2. Review and resolve any conflicts between specialists.
-3. Set a disposition (see below).
-4. Include required actions (blocking) vs optional follow-ups.
+2. **Deduplicate** — merge duplicates across specialists, keep strongest evidence.
+3. **Filter noise** — remove false positives, style nitpicks, speculative
+   findings, and issues already addressed in the branch.
+4. **Resolve conflicts** — corroboration strengthens; when specialists
+   disagree, prefer the more conservative position.
+5. Set a disposition (see below).
+6. Include required actions (blocking) vs optional follow-ups.
 
 **Follow these disposition criteria:**
 
@@ -130,7 +146,7 @@ After all specialists complete, review and synthesize directly:
 
 Keep clean changes with no issues as a valid outcome — do not manufacture findings.
 
-### Step 5 — Write and Post the Verdict
+### Step 6 — Write and Post the Verdict
 
 Read `verdict-template.md` (same directory as this skill) and fill the
 placeholders with findings and synthesis. Write the rendered verdict as exactly ONE PR comment:
