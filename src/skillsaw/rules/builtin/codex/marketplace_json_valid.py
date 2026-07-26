@@ -2,6 +2,7 @@
 Rule: codex-marketplace-json-valid
 """
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
@@ -71,12 +72,11 @@ class CodexMarketplaceJsonValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        # Shared across every catalog, not rebuilt per file: openai/plugins
-        # splits its listing across siblings, Codex aggregates them into one
-        # namespace, and ``skillsaw docs`` writes one page per name — so two
-        # catalogs claiming the same name silently lose a page. Maps the
-        # name to the (file, index) that claimed it first.
-        seen_names: Dict[str, Tuple[Path, int]] = {}
+        # Shared across every catalog, not rebuilt per file: Codex aggregates
+        # siblings into one namespace and ``skillsaw docs`` writes one page
+        # per name, so two catalogs claiming a name can silently lose a page.
+        # Maps a name to the (file, index, source) that claimed it first.
+        seen_names: Dict[str, Tuple[Path, int, str]] = {}
 
         for node in context.lint_tree.find(CodexMarketplaceConfigNode):
             marketplace_file = node.path
@@ -121,7 +121,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         data: dict,
         marketplace_file: Path,
         root: Path,
-        seen_names: Dict[str, Tuple[Path, int]],
+        seen_names: Dict[str, Tuple[Path, int, str]],
     ) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
@@ -197,7 +197,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         entry: dict,
         idx: int,
         marketplace_file: Path,
-        seen_names: Dict[str, Tuple[Path, int]],
+        seen_names: Dict[str, Tuple[Path, int, str]],
     ) -> List[RuleViolation]:
         if "name" not in entry:
             return [
@@ -227,10 +227,18 @@ class CodexMarketplaceJsonValidRule(Rule):
         # two entries named ``Bad_Name`` have both defects, and reporting only
         # the duplicate would hide the second until the first was fixed.
         violations: List[RuleViolation] = []
-        if name in seen_names:
-            first_file, first_idx = seen_names[name]
-            # Name the file only when it is a different one, so the common
-            # single-catalog message reads exactly as it did before.
+        source_key = json.dumps(entry.get("source"), sort_keys=True, default=str)
+        first = seen_names.get(name)
+        # Across catalogs, one name pointing at one source is a curated
+        # second listing, not a defect — openai/plugins does exactly that
+        # for 29 of its 180 plugins. It is only ambiguous when the two
+        # entries resolve somewhere different: that is when Codex's
+        # aggregation has to pick one and ``docs`` loses a page. Within a
+        # single file any repeat stays a defect, exactly as before.
+        if first is not None and (first[0] == marketplace_file or first[2] != source_key):
+            first_file, first_idx, _ = first
+            # Name the file only when it differs, so the single-catalog
+            # message reads exactly as it did before.
             where = (
                 f"plugins[{first_idx}]"
                 if first_file == marketplace_file
@@ -242,8 +250,8 @@ class CodexMarketplaceJsonValidRule(Rule):
                     file_path=marketplace_file,
                 )
             )
-        else:
-            seen_names[name] = (marketplace_file, idx)
+        elif first is None:
+            seen_names[name] = (marketplace_file, idx, source_key)
         if not KEBAB_CASE.match(name):
             violations.append(
                 self.violation(

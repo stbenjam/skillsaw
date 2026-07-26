@@ -2395,6 +2395,28 @@ class TestCrossCatalogDuplicateNames:
         assert len(duplicates) == 1
         assert "marketplace.json" in duplicates[0], "the other catalog was not named"
 
+    def test_the_same_plugin_listed_in_both_catalogs_is_not_a_duplicate(self, tmp_path):
+        """openai/plugins does this for 29 of its 180 plugins.
+
+        A second listing pointing at the same source is a curated view, not
+        an ambiguity — Codex resolves it to one plugin either way. Reporting
+        it put 29 spurious ERRORs on the official reference catalog.
+        """
+        entry = {
+            "name": "shared",
+            "source": {"source": "local", "path": "./plugins/one"},
+            "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+            "category": "Productivity",
+        }
+        repo = _codex_marketplace_repo(tmp_path, {"name": "primary", "plugins": [entry]})
+        (repo / ".agents" / "plugins" / "api_marketplace.json").write_text(
+            json.dumps({"name": "secondary", "plugins": [entry]}), encoding="utf-8"
+        )
+        _write_plugin(repo / "plugins" / "one", {"name": "shared", "version": "1.0.0"})
+
+        found = messages(run_rule(CodexMarketplaceJsonValidRule, repo))
+        assert not any("duplicate plugin name" in m for m in found)
+
     def test_the_single_catalog_message_is_unchanged(self, tmp_path):
         repo = _codex_marketplace_repo(
             tmp_path,
