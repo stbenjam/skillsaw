@@ -16,6 +16,7 @@ import pytest
 from skillsaw.config import LinterConfig
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.models import PluginDoc
+from skillsaw.docs.html_renderer import render_html
 from skillsaw.docs.markdown_renderer import _plugin_filename, render_markdown
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
 from skillsaw.blocks import CodexInlineHooksBlock, HooksBlock, McpBlock
@@ -3033,3 +3034,170 @@ class TestCodexOnlyPluginNodeDocs:
         assert doc.version == "3.2.1"
         assert doc.description == "Has commands but no Claude manifest."
         assert doc.license == "MIT"
+
+
+class TestCrossPluginContainment:
+    def test_a_manifest_symlinked_from_another_plugin_is_rejected(self, tmp_path):
+        """Staying inside the repository is not enough — it must stay inside
+        *this* plugin, or A is discovered using B's manifest."""
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        real = _write_plugin(repo / "plugins" / "b", {"name": "b", "version": "1.0.0"})
+        victim = repo / "plugins" / "a"
+        victim.mkdir(parents=True)
+        (victim / ".codex-plugin").symlink_to(real / ".codex-plugin", target_is_directory=True)
+
+        assert RepositoryContext(repo).codex_plugins == [real]
+
+
+class TestFilenameCaseFolding:
+    def test_names_differing_only_by_case_get_distinct_files(self, tmp_path):
+        """`Foo.md` and `foo.md` are one file on default macOS and Windows."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": n,
+                        "source": {"source": "url", "url": f"https://example.com/{i}.git"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                    for i, n in enumerate(["Foo", "foo"])
+                ],
+            },
+        )
+        pages = render_markdown(extract_docs(RepositoryContext(repo)))
+        keys = [k.casefold() for k in pages if k != "README.md"]
+        assert len(set(keys)) == 2, f"case-insensitive collision: {sorted(pages)}"
+
+
+class TestMarketplaceDocMerging:
+    def test_codex_remotes_survive_a_claude_marketplace(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "codex-cat",
+                "plugins": [
+                    {
+                        "name": "remote-only",
+                        "source": {"source": "npm", "package": "@x/y"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        (repo / ".claude-plugin").mkdir()
+        (repo / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps({"name": "claude-cat", "owner": {"name": "someone"}, "plugins": []}),
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+        assert docs.marketplace.name == "claude-cat"
+        assert "remote-only" in {p.name for p in docs.marketplace.plugins}
+
+    def test_a_malformed_local_entry_is_not_published_as_remote(self, tmp_path):
+        """`{"source": "local"}` with no path is broken, not remote."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "ghost",
+                        "source": {"source": "local"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        docs = extract_docs(RepositoryContext(repo))
+        assert "ghost" not in {p.name for p in docs.marketplace.plugins}
+
+
+class TestHtmlMarketplaceMode:
+    def test_a_codex_catalog_renders_as_a_marketplace_under_another_primary_type(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": n,
+                        "source": {"source": "local", "path": f"./plugins/{n}"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                    for n in ("alpha", "beta")
+                ],
+            },
+        )
+        for n in ("alpha", "beta"):
+            _write_plugin(repo / "plugins" / n, {"name": n, "version": "1.0.0"})
+        (repo / ".apm").mkdir()
+        (repo / "apm.yml").write_text("name: thing\n", encoding="utf-8")
+
+        pages = render_html(extract_docs(RepositoryContext(repo)))
+        html = "\n".join(pages.values())
+        assert "var IS_MARKETPLACE = true" in html
+
+
+class TestNoOpFixIsNotAdvertised:
+    def test_a_name_the_catalog_already_lists_is_not_fixable(self, tmp_path):
+        """The fixer skips it at the duplicate check, so offering the fix
+        would hand the user a no-op that leaves the violation standing."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "same",
+                        "source": {"source": "local", "path": "./plugins/a"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        _write_plugin(repo / "plugins" / "a", {"name": "same", "version": "1.0.0"})
+        _write_plugin(repo / "plugins" / "b", {"name": "same", "version": "1.0.0"})
+
+        unregistered = [
+            v
+            for v in run_rule(CodexMarketplaceRegistrationRule, repo)
+            if "not registered" in v.message
+        ]
+        assert unregistered, "the second directory is still reported"
+        assert all(v.fixable is False for v in unregistered)
+
+
+class TestCodexOnlyPluginConfigDocs:
+    def test_hooks_and_mcp_survive_a_legacy_plugin_node(self, tmp_path):
+        """Legacy discovery claims hooks.json/.mcp.json first for any plugin
+        shipping commands/, and the tree's `seen` set keeps them off the
+        Codex node."""
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(
+            repo / "plugins" / "hybrid",
+            {"name": "hybrid", "version": "1.0.0", "description": "x"},
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text("Run it.\n", encoding="utf-8")
+        (plugin / "hooks").mkdir()
+        (plugin / "hooks" / "hooks.json").write_text(
+            json.dumps(
+                {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo"}]}]}}
+            ),
+            encoding="utf-8",
+        )
+        (plugin / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"local": {"command": "node"}}}), encoding="utf-8"
+        )
+
+        doc = next(p for p in extract_docs(RepositoryContext(repo)).plugins if p.name == "hybrid")
+        assert [h.event_type for h in doc.hooks] == ["SessionStart"]
+        assert [m.name for m in doc.mcp_servers] == ["local"]

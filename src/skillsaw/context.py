@@ -641,17 +641,28 @@ class RepositoryContext:
             # follows it just the same. Either way skillsaw would read an
             # out-of-tree manifest — and codex-plugin-structure would list
             # the external directory's filenames under an in-repo path.
-            manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
-            if not manifest_dir.is_dir() or _contained(manifest_dir) is None:
-                return
             resolved = _contained(directory)
             if resolved is None or resolved in seen:
                 return
+            # Contained within *this plugin*, not merely within the
+            # repository: `plugins/a/.codex-plugin -> plugins/b/.codex-plugin`
+            # stays in the checkout, so a repo-wide check accepts it and
+            # plugin A is then discovered and documented using B's manifest.
+            manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
+            manifest_dir_resolved = safe_resolve(manifest_dir)
+            if (
+                not manifest_dir.is_dir()
+                or manifest_dir_resolved is None
+                or not manifest_dir_resolved.is_relative_to(resolved)
+            ):
+                return
             # A missing manifest is still a plugin — codex-plugin-json-valid
-            # reports it. One that exists but resolves elsewhere is not:
-            # reading it would publish an external file's metadata.
+            # reports it. One that resolves elsewhere is not.
             manifest = directory.joinpath(*self.CODEX_PLUGIN_MANIFEST)
-            if manifest.exists() and _contained(manifest) is None:
+            manifest_resolved = safe_resolve(manifest)
+            if manifest.exists() and (
+                manifest_resolved is None or not manifest_resolved.is_relative_to(resolved)
+            ):
                 return
             seen.add(resolved)
             found.append(directory)

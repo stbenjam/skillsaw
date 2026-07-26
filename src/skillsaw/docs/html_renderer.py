@@ -394,10 +394,10 @@ def render_html(docs: DocsOutput, theme: Optional[str] = None) -> Dict[str, str]
 
 
 def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
-    is_marketplace = docs.marketplace is not None and docs.repo_type in (
-        RepositoryType.MARKETPLACE,
-        RepositoryType.CODEX_MARKETPLACE,
-    )
+    # Gated on the model alone, matching the Markdown renderer. A Codex
+    # catalog in a repo whose primary type is APM or dot-claude still needs
+    # the grid, navigation, category filter and search.
+    is_marketplace = docs.marketplace is not None
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag

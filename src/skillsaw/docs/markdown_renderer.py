@@ -272,20 +272,24 @@ _UNSAFE_FILENAME_CHARS = str.maketrans({c: "-" for c in '/\\:<>"|?*'})
 
 def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:
     """One distinct page filename per plugin, keyed by object identity."""
+    # Reserved case-folded: "Foo.md" and "foo.md" are one file on default
+    # macOS and Windows installs, so an exact-case set would hand out both
+    # and the second page would overwrite the first. The chosen spelling is
+    # still what gets written.
     used: set = set()
     out: Dict[int, str] = {}
     for plugin in plugins:
         candidate = _plugin_filename(plugin)
-        if candidate in used:
+        if candidate.casefold() in used:
             # Probing rather than counting: a generated "a-b-2.md" can
             # collide with a plugin genuinely named "a-b-2", so every name
             # handed out has to be reserved and the next one re-checked.
             stem = candidate[:-3] if candidate.endswith(".md") else candidate
             n = 2
-            while f"{stem}-{n}.md" in used:
+            while f"{stem}-{n}.md".casefold() in used:
                 n += 1
             candidate = f"{stem}-{n}.md"
-        used.add(candidate)
+        used.add(candidate.casefold())
         out[id(plugin)] = candidate
     return out
 

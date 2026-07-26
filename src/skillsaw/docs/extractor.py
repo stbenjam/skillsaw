@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.codex import codex_local_source_path, safe_resolve
@@ -51,10 +51,13 @@ def extract_docs(
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
         md = context.marketplace_data
+        # Codex remote-only entries have no lint-tree node, so they are not
+        # in ``plugins`` and would be dropped entirely when a Claude
+        # marketplace supplies the catalog identity.
         marketplace = MarketplaceDoc(
             name=md.get("name", ""),
             owner=md.get("owner"),
-            plugins=plugins,
+            plugins=plugins + _codex_remote_docs(context, {p.name for p in plugins}),
         )
     elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
         # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json,
@@ -117,21 +120,42 @@ def _codex_marketplace_doc(
     codex-marketplace-registration picks the primary.
     """
     name: Optional[str] = None
-    seen = {p.name for p in plugins}
-    remote: List[PluginDoc] = []
     for path in context.codex_marketplace_paths():
         data, error = read_json(path)
         if error or not isinstance(data, dict):
             continue
-        if name is None:
-            name = str(data.get("name", "") or "")
-        # Every catalog contributes its remote entries — a repository can
-        # split its listing across siblings, and a remote-only entry in the
-        # second one has no local node to be found any other way.
-        remote.extend(_remote_entry_docs(data, seen))
+        name = str(data.get("name", "") or "")
+        break
     if name is None:
         return None
+    remote = _codex_remote_docs(context, {p.name for p in plugins})
     return MarketplaceDoc(name=name, owner=None, plugins=plugins + remote)
+
+
+def _codex_remote_docs(context: RepositoryContext, local_names: set) -> List[PluginDoc]:
+    """Remote-entry docs from every discovered Codex catalog.
+
+    A repository can split its listing across sibling files, and a
+    remote-only entry in any of them has no local directory and so no
+    lint-tree node — nothing else would find it.
+    """
+    docs: List[PluginDoc] = []
+    for path in context.codex_marketplace_paths():
+        data, error = read_json(path)
+        if error or not isinstance(data, dict):
+            continue
+        docs.extend(_remote_entry_docs(data, local_names))
+    return docs
+
+
+# Source types that name something outside this repository. Anything else
+# claiming to be local, but without a usable path, is malformed rather than
+# remote.
+_REMOTE_SOURCE_TYPES = {"url", "git-subdir", "npm"}
+
+
+def _is_remote_source(source: Any) -> bool:
+    return isinstance(source, dict) and source.get("source") in _REMOTE_SOURCE_TYPES
 
 
 def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
@@ -153,8 +177,15 @@ def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
         name = entry.get("name")
         if not isinstance(name, str) or not name or name in local_names:
             continue
-        if codex_local_source_path(entry.get("source")) is not None:
+        source = entry.get("source")
+        if codex_local_source_path(source) is not None:
             continue  # local entry — the real plugin was extracted above
+        if not _is_remote_source(source):
+            # ``{"source": "local"}`` with no path, or an empty one, is a
+            # broken local entry rather than a remote one. Codex skips it
+            # and codex-marketplace-json-valid reports it; publishing a page
+            # for it would advertise a plugin that cannot be installed.
+            continue
         local_names.add(name)
         docs.append(
             PluginDoc(
@@ -204,8 +235,26 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
             # else's plugin — the same authorship line the registration and
             # manifest-quality rules already draw.
             continue
-        docs.append(_extract_codex_plugin(context, node, plugin_resolved, resolved_skills))
+        legacy = [
+            pn
+            for pn in context.lint_tree.find(PluginNode)
+            if safe_resolve(pn.path) == plugin_resolved
+        ]
+        docs.append(_extract_codex_plugin(context, node, plugin_resolved, resolved_skills, legacy))
     return docs
+
+
+class _BlockSources:
+    """Several tree nodes searched as one for `find()`."""
+
+    def __init__(self, nodes):
+        self._nodes = nodes
+
+    def find(self, block_cls):
+        out = []
+        for node in self._nodes:
+            out.extend(node.find(block_cls))
+        return out
 
 
 def _extract_codex_plugin(
@@ -213,6 +262,7 @@ def _extract_codex_plugin(
     node: CodexPluginConfigNode,
     plugin_resolved: Path,
     resolved_skills: List[Tuple[Path, SkillNode]],
+    legacy_nodes: List[PluginNode],
 ) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
@@ -223,6 +273,11 @@ def _extract_codex_plugin(
     """
     plugin_dir = node.plugin_dir
     meta = _read_json_dict(node)
+    # When legacy discovery also built a PluginNode for this directory — it
+    # does for any plugin shipping commands/ — that node claimed hooks.json
+    # and .mcp.json first, and the lint tree's ``seen`` set kept them off
+    # the Codex node. Both are searched so neither placement loses them.
+    sources = _BlockSources([node, *legacy_nodes])
 
     author_val = meta.get("author")
     if isinstance(author_val, str):
@@ -244,11 +299,11 @@ def _extract_codex_plugin(
         commands=[],
         skills=_extract_codex_skills(plugin_resolved, resolved_skills),
         agents=[],
-        hooks=_extract_hooks(node),
+        hooks=_extract_hooks(sources),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
         # already in the tree as a CodexInlineMcpBlock, and feeding it here
         # too would list every inline server twice.
-        mcp_servers=_extract_mcp_servers(node, {}),
+        mcp_servers=_extract_mcp_servers(sources, {}),
         rules=[],
         has_readme=(plugin_dir / "README.md").is_file(),
     )

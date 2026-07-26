@@ -116,13 +116,25 @@ class CodexMarketplaceRegistrationRule(Rule):
         if _mutable_marketplace_data(_read_text(marketplace_file)) is None:
             return {}
 
+        # Every name the catalog spells, local entries included. This is a
+        # different question from ``_registered()``, which deliberately
+        # ignores local entries' names — here the point is that ``fix()``
+        # refuses to append a name already present, so advertising the fix
+        # would offer a no-op that leaves the violation standing.
+        catalog_names = {
+            entry.get("name")
+            for node in context.lint_tree.find(CodexMarketplaceConfigNode)
+            for _, entry in _entries(node.path)
+            if isinstance(entry.get("name"), str)
+        }
+
         counts: Dict[str, int] = {}
         for _, name in unregistered:
             counts[name] = counts.get(name, 0) + 1
 
         registerable: Dict[str, Path] = {}
         for plugin_dir, name in unregistered:
-            if counts[name] > 1:
+            if counts[name] > 1 or name in catalog_names:
                 continue
             if not self._has_declared_name(context, plugin_dir):
                 continue
