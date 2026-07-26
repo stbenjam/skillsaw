@@ -116,6 +116,11 @@ class CodeRabbitContentBlock(ContentBlock):
             cr_data = yaml.safe_load(cr_raw)
         except yaml.YAMLError:
             return []
+        except RecursionError:
+            # Runs during lint-tree construction, so an escaping exception
+            # aborts the whole run rather than producing a violation.
+            # coderabbit-yaml-valid reports the unparseable config.
+            return []
         if not cr_data:
             return []
         cr_lines = cr_raw.splitlines()

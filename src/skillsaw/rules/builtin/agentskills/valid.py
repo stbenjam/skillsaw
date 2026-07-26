@@ -15,7 +15,6 @@ from skillsaw.rules.builtin.utils import (
 from ._helpers import (
     is_installed_plugin_skill,
     COMPATIBILITY_MAX_LENGTH,
-    DESCRIPTION_MAX_LENGTH,
     NAME_MAX_LENGTH,
     SKILL_REPO_TYPES,
     _to_kebab,

@@ -12,7 +12,13 @@ skillsaw's rules hedge where the docs hedge (see Sync notes).
 - Spec: https://developers.openai.com/plugins/build/plugins — the `.md` twin at
   https://developers.openai.com/plugins/build/plugins.md is the authoritative text;
   the rendered HTML page summarizes poorly and has produced invented constraints
-  (a "semver" requirement and an `ON_FIRST_USE` value that appear nowhere in the source).
+  (an `ON_FIRST_USE` value that appears nowhere in either source).
+- Field-level spec: `codex-rs/skills/src/assets/samples/plugin-creator/references/plugin-json-spec.md`
+  in https://github.com/openai/codex. Shipped inside the `plugin-creator` skill rather
+  than on the docs site, so it is easy to miss — and it is stricter than the prose spec:
+  it enumerates `policy.authentication` as `ON_INSTALL` / `ON_USE`, documents `logoDark`,
+  and requires strict semver for `version`. Check it on every sync; the two can drift
+  apart from each other.
 - Reference corpus: https://github.com/openai/plugins — the official catalog (180
   plugins across `marketplace.json` and `api_marketplace.json`). It is the de-facto
   conformance suite: skillsaw must stay silent on it.
@@ -54,19 +60,26 @@ Hand-copied value sets that drift — re-check each against upstream:
 - `DEFAULT_INSTALLATION_VALUES` = `AVAILABLE`, `INSTALLED_BY_DEFAULT`, `NOT_AVAILABLE`.
   The docs say "values such as", so this is open-ended by design — unrecognized values
   warn, and the list is configurable.
-- `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. The docs describe the field
-  in prose and use `ON_INSTALL` in their examples, but publish no enum. `ON_USE` appears
-  nowhere upstream — it comes from the openai/plugins catalog alone, and is the highest
-  drift risk in this reference.
+- `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. `plugin-json-spec.md`
+  publishes exactly this pair as an enum; the prose spec only describes the field and
+  uses `ON_INSTALL` in its examples. Two upstream documents of differing strictness,
+  so check both.
 - `_PATH_FIELDS` / `_INTERFACE_PATH_FIELDS` in `codex/plugin_json_valid.py`.
-  `logoDark` is in that list but is **undocumented** — it appears on roughly a quarter
-  of openai/plugins' manifests. Watch for it being documented or dropped.
+  `plugin-json-spec.md` documents `logoDark` and requires every asset path to point at
+  a real file inside the plugin. Watch for fields being added to that list.
 
-Deliberate non-checks — do not "fix" these without a spec change:
+Deliberate non-checks — do not "fix" these without a spec change.
 
-- `version` is not validated against semver. The spec never constrains its format.
-- `category` values are not validated. No enum is published, and openai/plugins alone
-  uses eleven distinct values.
+These are choices, not gaps in the spec. Each says what upstream
+requires and why skillsaw does not enforce it, so a future maintainer can revisit the
+trade-off rather than re-derive the facts.
+
+- `version` is not validated against semver, though `plugin-json-spec.md` requires
+  strict semver and the whole reference corpus conforms. Not enforced because the
+  prose spec is silent and a version scheme is the kind of thing a plugin author
+  should not have a linter argue with. Enforcing it would be defensible.
+- `category` values are not validated. No enum is published anywhere, and openai/plugins
+  alone uses eleven distinct values.
 - Undocumented-but-real shapes (an inline `mcpServers` object, an array-valued
   `skills`) warn rather than error, because Codex mirrors Claude Code's plugin loader.
 

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, codex_local_source_path
+from skillsaw.formats.codex import safe_exists
 from skillsaw.lint_target import CodexMarketplaceConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
@@ -54,7 +55,7 @@ def _source_identity(source: Any) -> str:
     if local is not None:
         # One exact "./" prefix, not lstrip("./") — that strips an arbitrary
         # run of dots and slashes, so "./.plugins/foo" and "./plugins/foo"
-        # both became "plugins/foo" and a genuine conflict was suppressed.
+        # would both reduce to "plugins/foo", suppressing a genuine conflict.
         normalised = PurePosixPath(local.replace("\\", "/")).as_posix()
         if normalised.startswith("./"):
             normalised = normalised[2:]
@@ -104,9 +105,16 @@ class CodexMarketplaceJsonValidRule(Rule):
             marketplace_file = node.path
             data, error = read_json(marketplace_file)
             if error:
-                violations.append(
-                    self.violation(f"Invalid JSON: {error}", file_path=marketplace_file)
+                # An absent file is not a syntax error. The node exists
+                # because ``--type codex-marketplace`` said the format is
+                # Codex, so "Invalid JSON: Failed to read" would describe
+                # the wrong defect entirely.
+                message = (
+                    "Invalid JSON: {}".format(error)
+                    if safe_exists(marketplace_file)
+                    else "Marketplace file not found — Codex reads the catalog from this path"
                 )
+                violations.append(self.violation(message, file_path=marketplace_file))
                 continue
             if not isinstance(data, dict):
                 violations.append(

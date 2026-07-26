@@ -17,6 +17,22 @@ from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_text, read_json
 
 
+def _as_str(value: Any) -> Optional[str]:
+    """*value* when it is a string, else ``None``."""
+    return value if isinstance(value, str) else None
+
+
+def _as_str_list(value: Any) -> Optional[List[str]]:
+    """*value* as a list of strings, or ``None`` when it is neither.
+
+    A bare string is not a list of arguments — iterating it would split
+    the value into characters and scan each one.
+    """
+    if not isinstance(value, list):
+        return None
+    return [v for v in value if isinstance(v, str)]
+
+
 @dataclass
 class HookHandler:
     """A single hook handler entry."""
@@ -42,25 +58,37 @@ class HookHandler:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "HookHandler":
+        """Build a handler from raw JSON, dropping values of the wrong type.
+
+        The annotations here are a contract the JSON cannot be trusted to
+        honour: ``{"type": "command", "command": ["curl", "..."]}`` is
+        syntactically fine, and every consumer that joins or regex-scans
+        ``command`` as a string raises ``TypeError`` on it. In
+        ``hooks-dangerous`` that becomes a rule crash, which stops the scan
+        before it reaches later blocks — so one malformed handler can hide
+        a real ``curl | sh`` behind it. Dropping the value here leaves the
+        field falsy, which every consumer already handles, and
+        ``hooks-json-valid`` reads the raw document and reports the shape.
+        """
         return cls(
-            type=d.get("type", ""),
-            command=d.get("command"),
-            args=d.get("args"),
-            url=d.get("url"),
+            type=_as_str(d.get("type")) or "",
+            command=_as_str(d.get("command")),
+            args=_as_str_list(d.get("args")),
+            url=_as_str(d.get("url")),
             headers=d.get("headers"),
-            server=d.get("server"),
-            tool=d.get("tool"),
+            server=_as_str(d.get("server")),
+            tool=_as_str(d.get("tool")),
             input=d.get("input"),
-            prompt=d.get("prompt"),
-            model=d.get("model"),
+            prompt=_as_str(d.get("prompt")),
+            model=_as_str(d.get("model")),
             timeout=d.get("timeout"),
             async_=d.get("async"),
             async_rewake=d.get("asyncRewake"),
             once=d.get("once"),
-            if_=d.get("if"),
-            status_message=d.get("statusMessage"),
-            shell=d.get("shell"),
-            allowed_env_vars=d.get("allowedEnvVars"),
+            if_=_as_str(d.get("if")),
+            status_message=_as_str(d.get("statusMessage")),
+            shell=_as_str(d.get("shell")),
+            allowed_env_vars=_as_str_list(d.get("allowedEnvVars")),
         )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Dict, List
 
@@ -267,6 +268,10 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
 # platform: both separators, the drive-letter colon, and the parent link.
 # A kebab-case violation is only a warning, so `docs` must not rely on
 # `lint` having rejected the name first.
+# 255 bytes is the near-universal component limit (ext4, APFS, NTFS).
+# The ".md" suffix and any "-2" the allocator appends have to fit too.
+_MAX_STEM_BYTES = 240
+
 _WINDOWS_RESERVED_NAMES = {"con", "prn", "aux", "nul"} | {
     f"{stem}{n}" for stem in ("com", "lpt") for n in range(1, 10)
 }
@@ -310,6 +315,15 @@ def _plugin_filename(plugin: PluginDoc) -> str:
     # the caller joins it, and on Windows ``\`` is a real separator.
     safe = name_str(plugin.name).translate(_UNSAFE_FILENAME_CHARS).replace(" ", "-")
     safe = safe.replace("..", "-").strip(".-") or "plugin"
+    if len(safe.encode("utf-8")) > _MAX_STEM_BYTES:
+        # A kebab-case name longer than the filesystem's component limit is
+        # valid to codex-plugin-json-valid but unwritable: write_text()
+        # raises ENAMETOOLONG and documentation generation dies for the
+        # whole catalog. The digest keeps distinct long names distinct; the
+        # allocator's own probing still resolves any collision it creates.
+        digest = hashlib.sha256(safe.encode("utf-8")).hexdigest()[:12]
+        head = safe.encode("utf-8")[: _MAX_STEM_BYTES - len(digest) - 1].decode("utf-8", "ignore")
+        safe = f"{head}-{digest}"
     if safe.casefold() in _WINDOWS_RESERVED_NAMES:
         # `con`, `nul`, `com1` and friends stay reserved even with an
         # extension, so `con.md` cannot be created on Windows at all and

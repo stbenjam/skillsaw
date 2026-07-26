@@ -20,11 +20,8 @@ from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_declared_skill_dirs,
     codex_local_source_path,
-    codex_plugin_name,
-    inline_documents,
     safe_exists,
     safe_is_dir,
-    safe_is_file,
     safe_is_symlink,
     safe_resolve,
 )
@@ -146,6 +143,10 @@ def _read_json_or_none(path: Path) -> Any:
 
 _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 
+# Distinguishes "not computed yet" from a computed ``None`` (the install
+# directory does not resolve), which is a perfectly normal answer.
+_UNSET = object()
+
 
 class RepositoryContext:
     """
@@ -202,6 +203,7 @@ class RepositoryContext:
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
+        self._codex_install_root: Any = _UNSET
         # An explicit --type override is a statement about what the caller
         # wants linted, not just which rules fire. Probing for Codex anyway
         # would attach its manifests, hooks, MCP files and skills to the
@@ -210,6 +212,18 @@ class RepositoryContext:
         # the Codex types are derived from what discovery finds.
         self._codex_discovery_enabled = (
             bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
+        )
+        # An explicit type is also the caller's statement that the format
+        # *is* Codex, so the entrypoint is seeded even when the marker file
+        # is missing. Otherwise ``--type codex-plugin`` on a repository
+        # whose ``.codex-plugin/`` was deleted found no plugin, created no
+        # node, and reported nothing at all — the flag asked for exactly
+        # the check that then never ran.
+        self._codex_plugin_forced = repo_types is not None and (
+            RepositoryType.CODEX_PLUGIN in repo_types
+        )
+        self._codex_marketplace_forced = repo_types is not None and (
+            RepositoryType.CODEX_MARKETPLACE in repo_types
         )
         self.codex_plugins: List[Path] = (
             self._discover_codex_plugins() if self._codex_discovery_enabled else []
@@ -327,6 +341,11 @@ class RepositoryContext:
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
             ]
+            # The catalog list is memoized and filters exclusions at
+            # discovery time, so a caller that adds patterns afterwards
+            # would keep reading a catalog it has just excluded. Dropping
+            # the memo makes the next read apply the new patterns.
+            self._codex_marketplace_paths = None
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -604,9 +623,9 @@ class RepositoryContext:
 
         def _keep(path: Path) -> bool:
             # Exclusions are applied here rather than at each reader: the
-            # lint tree filtered them, but ``skillsaw docs`` reads this list
-            # directly and published pages for an excluded catalog — and
-            # could take the generated title from it.
+            # lint tree filters them, but ``skillsaw docs`` reads this list
+            # directly, so an excluded catalog would otherwise still supply
+            # published pages and the generated title.
             return _inside(path) and not self.is_path_excluded(path)
 
         found: List[Path] = []
@@ -644,6 +663,9 @@ class RepositoryContext:
                 data = _read_json_or_none(candidate)
                 if isinstance(data, dict) and isinstance(data.get("plugins"), list):
                     found.append(candidate)
+
+        if not found and self._codex_marketplace_forced:
+            found.append(primary)
 
         self._codex_marketplace_paths = found
         return found
@@ -741,6 +763,9 @@ class RepositoryContext:
         for source in self._codex_local_sources():
             _add(source)
 
+        if not found and self._codex_plugin_forced:
+            found.append(self.root_path)
+
         return found
 
     def _codex_local_sources(self) -> List[Path]:
@@ -797,7 +822,14 @@ class RepositoryContext:
         still worth linting, but the repository's published catalog has no
         business listing it, so registration checks must skip it.
         """
-        install_root = safe_resolve(self.root_path.joinpath(*self.CODEX_INSTALL_DIR))
+        if self._codex_install_root is _UNSET:
+            # Resolved once. This runs per SkillNode inside agentskill-name,
+            # so re-resolving it per call is a filesystem round-trip for
+            # every skill in the repository.
+            self._codex_install_root = safe_resolve(
+                self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
+            )
+        install_root = self._codex_install_root
         resolved = safe_resolve(plugin_dir)
         if install_root is None or resolved is None:
             return False

@@ -7,10 +7,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.codex import (
-    codex_declared_hook_files,
-    codex_declared_mcp_files,
-    codex_inline_hooks,
-    codex_inline_mcp_servers,
     codex_local_source_path,
     codex_plugin_name,
     is_remote_source,
@@ -425,10 +421,21 @@ def _interface_field(meta: dict, key: str) -> str:
 _SAFE_URL_SCHEMES = {"http", "https", "mailto"}
 
 
+# A URL that carries one of these is not a URL. Scheme validation stops
+# ``javascript:``; it says nothing about a quote inside an otherwise
+# allowed ``https:`` value, which closes the ``href`` attribute it is
+# written into and opens an event handler after it. The renderers escape
+# for attribute context, and rejecting here means a value that ever
+# reaches a sink through some other path is already not weaponisable.
+_URL_FORBIDDEN = set("\"'<>`") | {chr(c) for c in range(0x21)} | {chr(0x7F)}
+
+
 def _safe_url(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         return ""
     candidate = value.strip()
+    if _URL_FORBIDDEN & set(candidate):
+        return ""
     scheme, sep, _ = candidate.partition(":")
     if not sep:
         return candidate  # relative or bare host — no scheme to abuse

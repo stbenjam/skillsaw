@@ -92,9 +92,9 @@ class MarketplaceJsonValidRule(Rule):
         if not config_nodes:
             # Asked of the filesystem, not of repo_types: an explicit
             # ``--type marketplace`` drops CODEX_MARKETPLACE from the set,
-            # and the exemption went with it — resurrecting this very
-            # false positive on a repository the default invocation calls
-            # clean.
+            # and an exemption read from repo_types would go with it —
+            # resurrecting this very false positive on a repository the
+            # default invocation calls clean.
             if self._has_codex_catalog(context) and not self._has_claude_plugin(context):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the

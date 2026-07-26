@@ -108,7 +108,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
-from ._helpers import SKILL_REPO_TYPES
+from ._helpers import SKILL_REPO_TYPES, contained_skill_file
 
 # A path mention must not be embedded in a longer word/path-like token:
 # `scripts/run.py` must not match inside `myscripts/run.py` or
@@ -212,8 +212,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 continue
 
             roots = [skill_md]
-            readme = skill_path / "README.md"
-            if readme.is_file():
+            # Contained, like the eval file: this README is read, and what
+            # it references suppresses findings about the skill's own
+            # files. A symlink out of the owning Codex plugin would let an
+            # arbitrary external document decide what this rule reports.
+            readme = contained_skill_file(context, skill_path, "README.md")
+            if readme is not None:
                 roots.append(readme)
             referenced = self._reachable_files(
                 skill_node, skill_path, roots, all_files, directory_covers

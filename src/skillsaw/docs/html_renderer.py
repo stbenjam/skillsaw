@@ -425,8 +425,7 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
 
     # The catalog's own membership when there is one, matching the Markdown
     # renderer. ``docs.plugins`` holds only what was extracted from a local
-    # directory, so a remote-only catalog rendered an empty grid here while
-    # Markdown listed every entry.
+    # directory, so a remote-only catalog has no entries there at all.
     source = docs.marketplace.plugins if docs.marketplace else docs.plugins
 
     # ``p.name`` is manifest-derived and may be a non-string (e.g. a numeric
@@ -461,18 +460,10 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
             p["repository"] = plugin.repository
         if plugin.license:
             p["license"] = plugin.license
-        has_marketplace_meta = any(
-            [
-                plugin.display_name,
-                plugin.category,
-                plugin.tags,
-                plugin.keywords,
-                plugin.homepage,
-                plugin.repository,
-                plugin.license,
-            ]
-        )
-        if has_marketplace_meta and plugin.author:
+        # The author stands on its own. Gating it on some *other* metadata
+        # field being present dropped it for a Codex manifest that declares
+        # an author and nothing else — Markdown showed it, HTML did not.
+        if plugin.author:
             p["author"] = plugin.author
 
         for cmd in plugin.commands:
@@ -891,7 +882,7 @@ def _get_js() -> str:
   function renderPluginSections(p, forModal) {
     var h = '';
     var wrap = forModal ? function(cls, inner) { return '<div class="modal-section-items" data-filtered="false">' + inner + '</div>'; } : function(cls, inner) { return inner; };
-    var dataAttr = forModal ? function(text) { return ' data-search="'+esc(text.toLowerCase())+'"'; } : function() { return ''; };
+    var dataAttr = forModal ? function(text) { return ' data-search="'+escAttr(text.toLowerCase())+'"'; } : function() { return ''; };
     if (p.commands.length) {
       h += '<div class="section-title">Commands</div>';
       var cmds = '';
@@ -1136,8 +1127,8 @@ def _get_js() -> str:
     html += '</div></div>';
 
     var metaLinks = [];
-    if (p.homepage) metaLinks.push('<a href="'+esc(p.homepage)+'">Homepage</a>');
-    if (p.repository) metaLinks.push('<a href="'+esc(p.repository)+'">Repository</a>');
+    if (p.homepage) metaLinks.push('<a href="'+escAttr(p.homepage)+'">Homepage</a>');
+    if (p.repository) metaLinks.push('<a href="'+escAttr(p.repository)+'">Repository</a>');
     if (p.author) {
       var authorText = typeof p.author === 'object' ? (p.author.name||'') : p.author;
       if (authorText) metaLinks.push('Author: '+esc(authorText));

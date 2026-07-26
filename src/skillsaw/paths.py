@@ -3,8 +3,8 @@
 These answer questions about a path *string* — is it absolute, does it
 escape its root — without touching the filesystem. They live here rather
 than in a rule module because two independent rule packages need them,
-and a rule package importing from another rule package is the only such
-edge in the tree. ``skillsaw.formats.codex.safe_resolve`` is the
+and neither should have to import the other's private helpers to get at
+a pure predicate. ``skillsaw.formats.codex.safe_resolve`` is the
 filesystem-touching companion.
 """
 
@@ -14,8 +14,20 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 
 def is_absolute_path(path: str) -> bool:
-    """True for POSIX-absolute (/x) or Windows-absolute (C:\\x, \\\\share) paths."""
-    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+    """True for POSIX-absolute (/x) or Windows-absolute (C:\\x, \\\\share) paths.
+
+    ``PureWindowsPath.is_absolute()`` is False for a drive-relative path
+    like ``\\Windows\\System32``: it has a root but no drive, so Windows
+    resolves it against the *current* drive. That is still rooted, and
+    still outside the plugin. Testing the root as well as ``is_absolute()``
+    catches it on any host — linting on Linux, the backslashes would
+    otherwise read as ordinary filename characters and the containment
+    check would pass a path Codex resolves out of the checkout on Windows.
+    """
+    if PurePosixPath(path).is_absolute():
+        return True
+    windows = PureWindowsPath(path)
+    return windows.is_absolute() or bool(windows.root)
 
 
 def has_parent_traversal(path: str) -> bool:

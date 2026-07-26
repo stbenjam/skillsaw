@@ -48,9 +48,9 @@ and, like sources, must not be an absolute path (values like
 A Codex catalog at `.agents/plugins/marketplace.json` is validated by
 `codex-marketplace-json-valid`, not by this rule: the two schemas
 disagree, and Codex's `{"source": "local", "path": "./x"}` would be
-reported here as an unknown source type on every entry. A repository
-that ships a Codex catalog therefore stops seeing this rule's
-"Marketplace file not found" and unknown-source errors.
+reported here as an unknown source type on every entry. This rule
+raises neither "Marketplace file not found" nor an unknown-source error
+on a repository whose catalog is Codex's.
 
 The legacy path `.claude-plugin/marketplace.json`, which Codex also
 reads for backward compatibility, stays with this rule. A Codex-schema

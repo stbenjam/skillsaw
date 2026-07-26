@@ -20,6 +20,7 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
+from .rules.builtin.agentskills._helpers import is_installed_plugin_skill
 from .utils import write_text_preserving
 
 if TYPE_CHECKING:
@@ -62,6 +63,7 @@ class Linter:
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
         self._plugin_load_violations: List[RuleViolation] = []
+        self._vendor_managed_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
         self._baseline_suppressed_count: int = 0
         # Prefer contexts constructed with the config's filters (see
@@ -465,6 +467,25 @@ class Linter:
             return False
         return smap.is_suppressed(violation.rule_id, file_line)
 
+    def _is_vendor_managed(self, file_path: Optional[Path]) -> bool:
+        """Whether *file_path* belongs to a plugin installed into this checkout.
+
+        Content under ``.codex/plugins/`` is run by this repository but was
+        not written by it. The Codex-specific rules already stand down on
+        it, and so do the Agent Skill fixers — but a skill installed there
+        is an ordinary ``SkillBlock``, so every generic ``content-*`` fix
+        applied to it as well, rewriting a vendor-managed file the
+        developer cannot own. Drawing the line here covers every rule,
+        including ones added later that never think about Codex.
+        """
+        if file_path is None:
+            return False
+        cached = self._vendor_managed_cache.get(file_path)
+        if cached is None:
+            cached = is_installed_plugin_skill(self.context, file_path)
+            self._vendor_managed_cache[file_path] = cached
+        return cached
+
     def _filter_violations(
         self, violations: List[RuleViolation], record_baseline: bool = True
     ) -> List[RuleViolation]:
@@ -496,6 +517,12 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
+            elif self._is_vendor_managed(v.file_path):
+                # Still reported — a hostile third-party skill is worth
+                # knowing about — but never advertised as fixable, because
+                # fix() is about to stand down on it.
+                v.fixable = False
+                kept.append(v)
             else:
                 kept.append(v)
         if len(kept) < len(violations):
@@ -619,7 +646,11 @@ class Linter:
 
             if visible and rule.supports_autofix:
                 try:
-                    fixes = rule.fix(self.context, visible)
+                    fixes = [
+                        f
+                        for f in rule.fix(self.context, visible)
+                        if not self._is_vendor_managed(f.file_path)
+                    ]
                     all_fixes.extend(fixes)
                     fixed_violations = {id(v) for fix in fixes for v in fix.violations_fixed}
                     remaining = [v for v in visible if id(v) not in fixed_violations]

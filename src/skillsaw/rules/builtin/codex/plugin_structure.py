@@ -34,7 +34,8 @@ class CodexPluginStructureRule(Rule):
         for node in context.lint_tree.find(CodexPluginConfigNode):
             if context.is_codex_installed_plugin(node.plugin_dir):
                 # Layout of a plugin the repository installed rather than
-                # wrote — not its to fix. See codex-plugin-json-valid.
+                # wrote, so its structure is not this repository's to fix.
+                # See codex-plugin-json-valid.
                 continue
             manifest_dir = node.path.parent
             try:

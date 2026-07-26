@@ -107,9 +107,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return None
         # Nearest root, not first match. A repository root that is itself a
         # plugin contains the nested ones and is listed first, so first-match
-        # gave every nested skill to the outer root — and a reference could
-        # then leave the nested plugin while still passing the check. The
-        # docs extractor already picks the longest match.
+        # would give every nested skill to the outer root — and a reference
+        # could then leave the nested plugin while still passing the check.
+        # The docs extractor already picks the longest match.
         owners = [r for r in codex_roots if resolved == r or resolved.is_relative_to(r)]
         return max(owners, key=lambda r: len(r.parts)) if owners else None
 

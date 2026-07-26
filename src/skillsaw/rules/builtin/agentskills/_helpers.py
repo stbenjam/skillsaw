@@ -43,15 +43,19 @@ RENAMES_MANIFEST = ".skillsaw-renames.json"
 _RENAMES_LOCK = threading.Lock()
 
 
-def contained_eval_file(context: "RepositoryContext", skill_dir: Path) -> Optional[Path]:
-    """``evals/evals.json`` for *skill_dir*, or ``None`` if it escapes.
+def contained_skill_file(
+    context: "RepositoryContext", skill_dir: Path, *parts: str
+) -> Optional[Path]:
+    """A file under *skill_dir*, or ``None`` when it escapes the plugin.
 
-    agentskill-evals reads this document and agentskill-rename-refs can
-    rewrite it, so a symlink pointing out of the owning Codex plugin is a
-    read *and* a write outside the checkout. Skills that belong to no Codex
-    plugin are unaffected.
+    Rules that read one of a skill's own documents — and in one case
+    rewrite it — need the document to actually belong to the skill. A
+    symlink pointing out of the owning Codex plugin makes the read, and any
+    write, land outside the checkout, and lets an external file decide what
+    the rule reports about files that are inside it. Skills belonging to no
+    Codex plugin are unaffected.
     """
-    candidate = skill_dir / "evals" / "evals.json"
+    candidate = skill_dir.joinpath(*parts)
     if not candidate.exists():
         return None
     root = context.codex_plugin_owning(skill_dir)
@@ -61,6 +65,11 @@ def contained_eval_file(context: "RepositoryContext", skill_dir: Path) -> Option
     if resolved is None or not resolved.is_relative_to(root):
         return None
     return candidate
+
+
+def contained_eval_file(context: "RepositoryContext", skill_dir: Path) -> Optional[Path]:
+    """``evals/evals.json`` for *skill_dir*, or ``None`` if it escapes."""
+    return contained_skill_file(context, skill_dir, "evals", "evals.json")
 
 
 def is_installed_plugin_skill(context: "RepositoryContext", path: Path) -> bool:

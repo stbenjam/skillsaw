@@ -193,6 +193,11 @@ def write_text_preserving(file_path: Path, content: str) -> None:
     file_path.write_bytes(data)
 
 
+# Reported instead of the traceback when a document nests past the
+# interpreter's stack limit.
+_TOO_DEEP = "Nesting too deep to parse"
+
+
 @_file_cache.cached
 def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached JSON file read. Returns (data, error)."""
@@ -203,6 +208,15 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return json.loads(content), None
     except json.JSONDecodeError as e:
         return None, str(e)
+    except RecursionError:
+        # ``json`` parses nested containers recursively, so a document
+        # nested past the interpreter's stack limit raises here rather
+        # than returning a decode error. Discovery reads manifests while
+        # RepositoryContext is still being constructed, outside the
+        # rule-execution-error guard, so letting this propagate aborts the
+        # whole lint with a traceback and reports nothing at all. Every
+        # caller already handles the error string.
+        return None, _TOO_DEEP
 
 
 @_file_cache.cached
@@ -215,6 +229,12 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return yaml.safe_load(content), None
     except yaml.YAMLError as e:
         return None, str(e)
+    except RecursionError:
+        # Same hazard as read_json: nested collections are parsed
+        # recursively, and the reader is called from discovery, where an
+        # escaping exception aborts the run instead of producing a
+        # violation. See the note there.
+        return None, _TOO_DEEP
 
 
 @_file_cache.cached
@@ -240,6 +260,8 @@ def read_yaml_commented(
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             line = e.problem_mark.line + 1
         return None, str(e), line
+    except RecursionError:
+        return None, _TOO_DEEP, None
 
 
 def commented_key_line(node: Any, key: str) -> Optional[int]:

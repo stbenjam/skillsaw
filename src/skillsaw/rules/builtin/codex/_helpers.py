@@ -21,8 +21,8 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 # "Use a stable plugin `name` in kebab-case. Plugin hosts use it as the
 # plugin identifier and component namespace."
 # ``\Z``, not ``$``: ``$`` also matches immediately before a trailing
-# newline, so ``"my-plugin\n"`` passed as kebab-case and the
-# registration autofix wrote it into the published catalog.
+# newline, so ``"my-plugin\n"`` would pass as kebab-case and the
+# registration autofix would write it into the published catalog.
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 
 

@@ -12,6 +12,11 @@ from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.utils import read_json
 
 
+def _is_usable(value: Any) -> bool:
+    """Whether a required connection field names something spawnable."""
+    return isinstance(value, str) and bool(value.strip())
+
+
 class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
@@ -166,6 +171,23 @@ class McpValidJsonRule(Rule):
                     violations.append(
                         self.violation(
                             f"MCP server '{server_name}' with type '{server_type}' must have a '{required_field}' field",
+                            file_path=file_path,
+                        )
+                    )
+                # Present is not the same as usable. ``"command": []`` and
+                # ``"command": ""`` satisfy a key-existence check while
+                # naming nothing the host can spawn, so the server failed
+                # silently at run time with nothing reported here — the
+                # same gap the 'url' and 'cwd' type checks below close.
+                #
+                # A non-string ``url`` is left to the dedicated check
+                # below, so one defect still yields one violation.
+                elif not _is_usable(server_config[required_field]) and not (
+                    required_field == "url" and not isinstance(server_config["url"], str)
+                ):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{server_name}' '{required_field}' must be a non-empty string",
                             file_path=file_path,
                         )
                     )
