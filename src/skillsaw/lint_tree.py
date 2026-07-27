@@ -172,8 +172,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
 
         def _contained(p: Path) -> bool:
+            """Inside this plugin, and not inside a nested claimed plugin.
+
+            The recursive ``rules/`` scan of a repo-root plugin would
+            otherwise claim a catalog-sourced nested plugin's files —
+            tagging them with the outer owner and poisoning ``seen`` before
+            the nested plugin's own pass could attach them. Provenance owns
+            that boundary: any claimed plugin directory strictly between the
+            file and this plugin's root means the file is the nested
+            plugin's to attach. ``seen_plugin_dirs`` is fully populated
+            before the plugin loop makes the first call here.
+            """
             resolved = safe_resolve(p)
-            return resolved is not None and resolved.is_relative_to(plugin_resolved)
+            if resolved is None:
+                return False
+            for ancestor in resolved.parents:
+                if ancestor == plugin_resolved:
+                    return True
+                if ancestor in seen_plugin_dirs:
+                    return False
+            return False
 
         for dirname, block_cls, pattern in (
             ("commands", CommandBlock, "*.md"),

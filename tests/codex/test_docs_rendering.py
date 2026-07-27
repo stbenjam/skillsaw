@@ -4,10 +4,12 @@ import json
 
 import pytest
 
+from skillsaw.blocks import PluginRuleBlock
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.docs.html_renderer import render_html
 from skillsaw.docs.markdown_renderer import render_markdown
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import CodexPluginNode
 
 from ._helpers import _write_plugin, _codex_plugin_repo, _codex_marketplace_repo
 
@@ -712,6 +714,61 @@ class TestDocsRenderTotality:
         joined = "\n".join(md_pages.values())
         assert "go" in joined
         assert "helper" in joined  # name fell back to the file stem
+
+
+class TestNestedPluginUnderRules:
+    def test_a_nested_plugins_files_are_not_claimed_by_the_root_scan(self, tmp_path):
+        """A catalog-sourced plugin nested below a repo-root plugin's rules/
+        keeps its own files: the root's recursive rules/**/*.md scan must
+        not tag them with the outer owner (which would also poison the
+        ``seen`` set and block the nested plugin's own attach), and the
+        generated docs must attribute them to the nested plugin only."""
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "outer", "version": "1.0.0", "description": "The outer plugin."},
+        )
+        (repo / "rules").mkdir()
+        (repo / "rules" / "policy.md").write_text(
+            "Always follow the outer repository policy.\n", encoding="utf-8"
+        )
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "cat",
+                    "plugins": [
+                        {
+                            "name": "inner-plugin",
+                            "source": {"source": "local", "path": "./rules/nested"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        nested = _write_plugin(
+            repo / "rules" / "nested",
+            {"name": "inner-plugin", "version": "1.0.0", "description": "The nested plugin."},
+        )
+        (nested / "rules").mkdir()
+        (nested / "rules" / "inner.md").write_text(
+            "Always follow the inner plugin rule.\n", encoding="utf-8"
+        )
+
+        context = RepositoryContext(repo)
+
+        # Lint tree: each rule file is owned by, and attached under, the
+        # plugin that ships it.
+        owners = {b.path.name: b.plugin_owner for b in context.lint_tree.find(PluginRuleBlock)}
+        assert owners == {"policy.md": repo.resolve(), "inner.md": nested.resolve()}
+        nested_containers = context.lint_tree.find(CodexPluginNode)
+        assert [n.path for n in nested_containers] == [nested]
+        assert {b.path.name for b in nested_containers[0].find(PluginRuleBlock)} == {"inner.md"}
+
+        # Docs: no duplication, no misattribution.
+        docs = extract_docs(context)
+        rules_by_plugin = {p.name: [r.name for r in p.rules] for p in docs.plugins}
+        assert rules_by_plugin == {"outer": ["policy"], "inner-plugin": ["inner"]}
 
 
 class TestNonStringNamesDoNotCrashSorting:
