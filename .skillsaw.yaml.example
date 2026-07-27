@@ -42,7 +42,6 @@ rules:
     enabled: false
     severity: warning
     # allowed_dirs:
-    #   - agents
     #   - assets
     #   - evals
     #   - references

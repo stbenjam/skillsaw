@@ -3,8 +3,9 @@
 The formal Agent Skills specification permits arbitrary directories. This
 disabled-by-default rule is an optional packaging policy for repositories that
 want to limit skill-root directories to a configured allowlist. Its defaults
-cover common Agent Skills directories, the evaluation-guide `evals/`
-convention, and OpenAI's `agents/` metadata directory.
+cover common Agent Skills directories and the evaluation-guide `evals/`
+convention. OpenAI's `agents/` host-metadata directory is accepted separately;
+it is not repository-authored package content governed by this policy.
 
 ## Examples
 

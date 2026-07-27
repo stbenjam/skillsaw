@@ -8,6 +8,8 @@ from skillsaw.lint_target import SkillNode
 
 from ._helpers import DEFAULT_ALLOWED_DIRS, SKILL_REPO_TYPES
 
+_HOST_METADATA_DIRS = {"agents"}
+
 
 class AgentSkillStructureRule(Rule):
     """Validate skill directory structure (stricter than spec)"""
@@ -44,7 +46,11 @@ class AgentSkillStructureRule(Rule):
             skill_path = skill_node.path
             try:
                 for item in skill_path.iterdir():
-                    if not item.is_dir() or item.name.startswith("."):
+                    if (
+                        not item.is_dir()
+                        or item.name.startswith(".")
+                        or item.name in _HOST_METADATA_DIRS
+                    ):
                         continue
                     if item.name not in allowed:
                         violations.append(

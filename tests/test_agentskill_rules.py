@@ -612,7 +612,9 @@ def test_structure_unknown_dir_warns(temp_dir):
     context = RepositoryContext(skill)
     violations = AgentSkillStructureRule().check(context)
     assert len(violations) == 1
-    assert "random-stuff" in violations[0].message
+    assert violations[0].message == (
+        "Unrecognized directory 'random-stuff' " "(expected: assets, evals, references, scripts)"
+    )
 
 
 def test_structure_custom_allowed_dirs(temp_dir):
@@ -1669,7 +1671,12 @@ def test_agents_is_a_recognized_optional_skill_directory(temp_dir):
     (skill / "agents").mkdir()
     (skill / "agents" / "openai.yaml").write_text("interface: {}\n", encoding="utf-8")
 
-    assert AgentSkillStructureRule({}).check(RepositoryContext(skill)) == []
+    # Host metadata remains valid even when a repository narrows its package
+    # content allowlist. Keeping it outside that list also preserves existing
+    # violation messages and baseline fingerprints when a host extension is
+    # added.
+    rule = AgentSkillStructureRule({"allowed_dirs": []})
+    assert rule.check(RepositoryContext(skill)) == []
 
 
 def test_code_span_reference(temp_dir):

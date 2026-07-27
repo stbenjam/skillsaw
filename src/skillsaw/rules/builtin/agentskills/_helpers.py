@@ -37,7 +37,7 @@ COMPATIBILITY_MAX_LENGTH = 500
 # hyphen — digit-leading names like "3d-printing" are valid.
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 CONSECUTIVE_HYPHENS = re.compile(r"--")
-DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals", "agents"}
+DEFAULT_ALLOWED_DIRS = {"scripts", "references", "assets", "evals"}
 
 RENAMES_MANIFEST = ".skillsaw-renames.json"
 _RENAMES_LOCK = threading.Lock()

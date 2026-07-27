@@ -18,8 +18,9 @@ Skill directories should only contain recognized subdirectories (stricter than s
 The formal Agent Skills specification permits arbitrary directories. This
 disabled-by-default rule is an optional packaging policy for repositories that
 want to limit skill-root directories to a configured allowlist. Its defaults
-cover common Agent Skills directories, the evaluation-guide `evals/`
-convention, and OpenAI's `agents/` metadata directory.
+cover common Agent Skills directories and the evaluation-guide `evals/`
+convention. OpenAI's `agents/` host-metadata directory is accepted separately;
+it is not repository-authored package content governed by this policy.
 
 ## Examples
 
@@ -58,7 +59,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `allowed_dirs` | Directory names allowed in the skill root | `["agents", "assets", "evals", "references", "scripts"]` |
+| `allowed_dirs` | Directory names allowed in the skill root | `["assets", "evals", "references", "scripts"]` |
 
 
 *Run `skillsaw explain agentskill-structure` to see this documentation and the rule's effective configuration in your terminal.*
