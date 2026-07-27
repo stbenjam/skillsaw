@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
+from skillsaw.rule import (
+    Rule,
+    RuleViolation,
+    Severity,
+    AutofixResult,
+    AutofixConfidence,
+)
 from skillsaw.context import RepositoryContext, codex_local_source_path, safe_resolve
 from skillsaw.formats.codex import (
     codex_plugin_name,
@@ -26,18 +32,38 @@ _NEW_ENTRY_POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"
 _NEW_ENTRY_CATEGORY = "Productivity"
 
 
+def _reject_nonfinite_json_number(value: str) -> None:
+    """Reject JavaScript number extensions that strict JSON does not allow."""
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    """Build one JSON object, rejecting keys the decoder would collapse."""
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
 def _mutable_marketplace_data(original: str) -> Optional[dict]:
     """Parse a marketplace manifest into a document ``fix()`` can extend.
 
     ``None`` when the file cannot be rewritten safely — unparseable JSON, a
-    non-object root, or a non-list ``plugins`` key. codex-marketplace-json-valid
-    reports those shapes; they need manual repair, so registration violations
-    against them must not advertise fixability. Shared by ``check()`` (to
-    decide ``fixable``) and ``fix()`` so the two cannot drift.
+    duplicate object key, a non-object root, or a non-list ``plugins`` key.
+    codex-marketplace-json-valid reports malformed shapes; they need manual
+    repair, so registration violations against them must not advertise
+    fixability. Shared by ``check()`` (to decide ``fixable``) and ``fix()`` so
+    the two cannot drift.
     """
     try:
-        data = json.loads(original)
-    except json.JSONDecodeError:
+        data = json.loads(
+            original,
+            parse_constant=_reject_nonfinite_json_number,
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
+    except (json.JSONDecodeError, ValueError):
         return None
     except RecursionError:
         # The shared reader turns this into an ordinary parse error, but
@@ -212,6 +238,12 @@ class CodexMarketplaceRegistrationRule(Rule):
                 continue
             if context.is_codex_installed_plugin(plugin_dir):
                 continue
+            if context.is_path_excluded(plugin_node.path):
+                # Registration files its violation against the catalog, not
+                # the excluded manifest, so the linter's path filter cannot
+                # enforce this boundary for us. Skipping here also keeps the
+                # fixer from publishing an excluded plugin.
+                continue
             name = codex_plugin_name(plugin_dir)
             if name in registered_names:
                 continue
@@ -384,16 +416,25 @@ class CodexMarketplaceRegistrationRule(Rule):
             fixed.append(violation)
 
         if fixed:
+            try:
+                # Python's encoder otherwise emits NaN and Infinity, which
+                # JavaScript accepts but the JSON standard and Codex manifests
+                # do not. Parsing is strict above; allow_nan=False is the final
+                # guard before returning content that the autofix will write.
+                fixed_content = (
+                    json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+                )
+            except (ValueError, RecursionError):
+                return results
             results.append(
                 AutofixResult(
                     rule_id=self.rule_id,
                     file_path=marketplace_file,
                     confidence=AutofixConfidence.SUGGEST,
                     original_content=original,
-                    # ensure_ascii=False: the whole document is re-serialized,
-                    # so the default would rewrite every accented character
-                    # in untouched entries as a \uXXXX escape.
-                    fixed_content=json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                    # ensure_ascii=False above preserves non-ASCII text in
+                    # untouched entries when the whole document is serialized.
+                    fixed_content=fixed_content,
                     description=(f"Registered {len(fixed)} plugin(s) in {marketplace_file.name}"),
                     violations_fixed=fixed,
                 )

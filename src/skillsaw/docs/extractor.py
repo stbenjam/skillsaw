@@ -48,23 +48,31 @@ def extract_docs(
     # _extract_codex_plugins handles it, and reading it through the Claude
     # extractor as well would list it twice with empty metadata.
     codex_roots = _codex_roots(context)
-    plugins = [
+    claude_plugins = [
         _extract_plugin(context, pn)
         for pn in context.lint_tree.find(PluginNode)
         if not _is_codex_only(context, pn.path, codex_roots)
     ]
-    plugins.extend(_extract_codex_plugins(context))
+    codex_plugins = _extract_codex_plugins(context)
+    plugins = claude_plugins + codex_plugins
 
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
         md = context.marketplace_data
+        # A mixed repository has two independent catalogs. Claude plugin
+        # docs remain governed by the Claude marketplace, while Codex-only
+        # docs must be filtered and enriched through the Codex catalog just
+        # as they are when no Claude marketplace is present. Otherwise an
+        # unregistered Codex directory appears merely because discovery
+        # found it.
+        listed = claude_plugins + _codex_listed_docs(context, codex_plugins)
         # Codex remote-only entries have no lint-tree node, so they are not
         # in ``plugins`` and would be dropped entirely when a Claude
         # marketplace supplies the catalog identity.
         marketplace = MarketplaceDoc(
             name=md.get("name", ""),
             owner=md.get("owner"),
-            plugins=plugins + _codex_remote_docs(context, {name_str(p.name) for p in plugins}),
+            plugins=listed + _codex_remote_docs(context, {name_str(p.name) for p in listed}),
         )
     elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
         # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json,
@@ -120,13 +128,8 @@ def _default_title(
 
 
 def _codex_roots(context: RepositoryContext) -> Set[Path]:
-    """Resolved Codex plugin roots, computed once per extraction.
-
-    ``_is_codex_only`` runs per legacy plugin node, and a marketplace can
-    hold hundreds of each; rebuilding this inside the predicate resolves
-    every Codex root once per legacy plugin.
-    """
-    return {r for r in (safe_resolve(p) for p in context.codex_plugins) if r}
+    """Return the context's cached, resolved Codex plugin roots."""
+    return set(context.codex_plugin_roots())
 
 
 def _is_codex_only(context: RepositoryContext, plugin_path: Path, codex_roots: Set[Path]) -> bool:
@@ -275,9 +278,8 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
 
     A dual-ecosystem plugin already has a ``PluginNode`` and is documented
     through it, so it is skipped here to avoid a duplicate entry. A
-    Codex-only plugin has nothing but its ``CodexPluginConfigNode``, and
-    without this ``skillsaw docs`` emitted no plugin metadata, hooks or MCP
-    servers for a repository it had just classified as ``codex-plugin``.
+    Codex-only plugin has nothing but its ``CodexPluginConfigNode``; this
+    extractor emits its plugin metadata, hooks, and MCP servers.
     """
     # A PluginNode alone does not mean a Claude plugin: legacy discovery
     # creates one for any directory with commands/ or skills/. Only a real
@@ -614,13 +616,19 @@ def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
     # TypeError and takes documentation for the whole catalog with it.
     # agentskill-valid reports the malformed entry; the docs just skip it.
     allowed_tools = [t for t in allowed_tools if isinstance(t, str)]
+    description = block.field_value("description", "")
+    if not isinstance(description, str):
+        # Invalid frontmatter is reported by agentskill-valid, but docs
+        # generation must remain total: Markdown joins this value as text
+        # and the HTML search index lowercases it.
+        description = ""
 
     return SkillDoc(
         # Normalized here, not only in sort keys: the value is serialized
         # into the page data, and the search box lowercases it.
         name=name_str(block.field_value("name", skill_node.path.name)),
         dir_path=skill_node.path,
-        description=block.field_value("description", ""),
+        description=description,
         license=block.field_value("license", ""),
         compatibility=block.field_value("compatibility", ""),
         metadata=block.field_value("metadata", {}),

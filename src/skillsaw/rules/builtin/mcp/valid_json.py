@@ -71,9 +71,21 @@ class McpValidJsonRule(Rule):
                 continue
 
             if "mcpServers" in data:
-                violations.extend(self._validate_mcp_structure(data, block.path))
+                violations.extend(
+                    self._validate_mcp_structure(
+                        data,
+                        block.path,
+                        require_usable=context.codex_plugin_owning(block.path) is not None,
+                    )
+                )
             else:
-                violations.extend(self._validate_mcp_structure({"mcpServers": data}, block.path))
+                violations.extend(
+                    self._validate_mcp_structure(
+                        {"mcpServers": data},
+                        block.path,
+                        require_usable=context.codex_plugin_owning(block.path) is not None,
+                    )
+                )
 
         # Also check mcpServers embedded in plugin.json (not a separate file node)
         for plugin_node in context.lint_tree.find(PluginNode):
@@ -110,7 +122,13 @@ class McpValidJsonRule(Rule):
 
         return violations
 
-    def _validate_mcp_structure(self, data: Dict[str, Any], file_path: Path) -> List[RuleViolation]:
+    def _validate_mcp_structure(
+        self,
+        data: Dict[str, Any],
+        file_path: Path,
+        *,
+        require_usable: bool = False,
+    ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
 
@@ -182,8 +200,10 @@ class McpValidJsonRule(Rule):
                 #
                 # A non-string ``url`` is left to the dedicated check
                 # below, so one defect still yields one violation.
-                elif not _is_usable(server_config[required_field]) and not (
-                    required_field == "url" and not isinstance(server_config["url"], str)
+                elif (
+                    require_usable
+                    and not _is_usable(server_config[required_field])
+                    and not (required_field == "url" and not isinstance(server_config["url"], str))
                 ):
                     violations.append(
                         self.violation(

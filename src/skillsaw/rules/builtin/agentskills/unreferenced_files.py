@@ -84,12 +84,12 @@ and anything under a ``testdata/`` directory at any depth (bundled
 scripts routinely ship self-tests and fixtures nothing documents —
 e.g. ai-helpers' ``scripts/test_validate.py`` + ``scripts/testdata/``),
 hidden files or directories, and symlinks (which are also never
-followed).  The ``exclude`` config option adds glob patterns on top of
+followed). The ``exclude`` config option adds glob patterns on top of
 (not replacing) these defaults.
 
-A skill-root README.md additionally counts as a reference root alongside
-SKILL.md: it is standard human-facing documentation, so a bundled file
-documented there is neither dead weight nor hidden from review.
+A skill-root README.md and OpenAI ``agents/openai.yaml`` additionally count
+as reference roots alongside SKILL.md: human-facing documentation and host
+metadata are both legitimate entrypoints into the package.
 """
 
 import ast
@@ -221,6 +221,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
             readme = contained_skill_file(context, skill_path, "README.md")
             if readme is not None:
                 roots.append(readme)
+            openai_metadata = contained_skill_file(context, skill_path, "agents", "openai.yaml")
+            if openai_metadata is not None and not context.is_path_excluded(openai_metadata):
+                roots.append(openai_metadata)
             referenced = self._reachable_files(
                 skill_node, skill_path, roots, all_files, directory_covers
             )
@@ -317,7 +320,10 @@ class AgentSkillUnreferencedFilesRule(Rule):
         all_dirs = self._candidate_dirs(rel_of.values())
         block_by_path = {block.path.resolve(): block for block in skill_node.find(ContentBlock)}
 
-        referenced: Set[Path] = set()
+        root_paths = {root.resolve() for root in roots}
+        referenced: Set[Path] = {
+            candidate for candidate in all_files if resolved_of[candidate] in root_paths
+        }
         covered_dirs: Set[str] = set()
         queue: deque = deque(roots)
         processed: Set[Path] = set()
@@ -429,8 +435,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
             # loop raises RuntimeError before Python 3.13 and OSError from
             # 3.13 on, and this project supports 3.9 through 3.14. An
             # escaping RuntimeError turns the rule into a
-            # rule-execution-error and discards all its findings — which
-            # this PR newly exposes by activating the rule on Codex skills.
+            # rule-execution-error and discards all its findings.
             resolved = safe_resolve(base_dir / target)
             if resolved is None:
                 continue

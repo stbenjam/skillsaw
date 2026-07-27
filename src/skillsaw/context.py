@@ -44,16 +44,19 @@ def _pattern_variants(pattern: str) -> Tuple[str, ...]:
     at the start of a relative path: ``**/templates/**`` misses a top-level
     ``templates/``. To honor gitignore-style semantics where ``**/`` also
     matches zero leading directories, a variant with the ``**/`` prefix
-    stripped is tried as well. A trailing ``/**`` needs no variant: ``*``
-    crosses ``/``, so it already matches the directory's contents at any
-    depth. The original pattern is always kept, making the expansion a
-    strict superset of plain fnmatch — every path a pattern matched before
-    still matches.
+    stripped is tried as well. A trailing ``/**`` also needs a variant
+    without the suffix: fnmatch matches the directory's contents, but not
+    the directory entry itself. Discovery often tests that entry before it
+    reaches the contents. The original pattern is always kept, making the
+    expansion a strict superset of plain fnmatch.
     """
-    variants = [pattern]
+    variants = {pattern}
     if pattern.startswith("**/"):
-        variants.append(pattern[3:])
-    return tuple(variants)
+        variants.add(pattern[3:])
+    for variant in tuple(variants):
+        if variant.endswith("/**"):
+            variants.add(variant[:-3])
+    return tuple(sorted(variants))
 
 
 def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
@@ -217,9 +220,8 @@ class RepositoryContext:
         # An explicit type is also the caller's statement that the format
         # *is* Codex, so the entrypoint is seeded even when the marker file
         # is missing. Otherwise ``--type codex-plugin`` on a repository
-        # whose ``.codex-plugin/`` was deleted found no plugin, created no
-        # node, and report nothing at all — the flag would ask for exactly
-        # the check that then never runs.
+        # without ``.codex-plugin/`` would discover no plugin, create no
+        # node, and report nothing — the requested check would never run.
         self._codex_plugin_forced = repo_types is not None and (
             RepositoryType.CODEX_PLUGIN in repo_types
         )
@@ -344,35 +346,48 @@ class RepositoryContext:
         excluded paths are not rediscovered.
         """
         if self.exclude_patterns:
+            codex_before = list(self.codex_plugins)
+            roots_before = {r for r in (safe_resolve(p) for p in codex_before) if r}
+            marketplaces_before = tuple(self._codex_marketplace_paths or ())
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
             self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
             ]
-            # Dropping the memo is not enough on its own. The catalogs
-            # filter exclusions at discovery time, and a plugin reachable
-            # only through a now-excluded catalog is still in
-            # ``codex_plugins`` — its own path was never excluded, so the
-            # filter above keeps it, and its manifest, hooks, MCP config
-            # and skills stay in the tree. Rediscovery is what drops it.
-            self._codex_marketplace_paths = None
-            self._codex_install_root = _UNSET
-            self._codex_roots = None
-            if self._codex_discovery_enabled:
-                before = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
+            codex_paths_changed = self.codex_plugins != codex_before
+            codex_catalog_changed = any(self.is_path_excluded(path) for path in marketplaces_before)
+            codex_set_changed = codex_paths_changed or codex_catalog_changed
+            # Most excludes do not affect Codex discovery, so avoid probing
+            # every plugin directory again. A newly excluded catalog is the
+            # exception: it may be the only source for a plugin whose own path
+            # does not match the exclusion.
+            if codex_catalog_changed:
+                self._codex_marketplace_paths = None
+            if self._codex_discovery_enabled and codex_set_changed:
+                self._codex_install_root = _UNSET
                 self.codex_plugins = [
                     p for p in self._discover_codex_plugins() if not self.is_path_excluded(p)
                 ]
-                after = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
+            roots_after = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
+            dropped = roots_before - roots_after
+            if dropped:
                 # Skills were discovered from the old plugin set. A skill
                 # under a plugin that just left it would otherwise stay in
                 # ``skills`` and be attached as a standalone node, so the
-                # generic skill and content rules kept linting exactly the
-                # vendor content the exclusion removed.
-                dropped = before - after
-                if dropped:
-                    self.skills = [sk for sk in self.skills if not self._under_any(sk, dropped)]
+                # generic skill and content rules would keep linting exactly
+                # the vendor content the exclusion removed.
+                # A dual-host plugin may leave the Codex set while remaining
+                # an active Claude plugin. Its skills still have a surviving
+                # owner and must not be pruned with Codex-only content.
+                claude_roots = {r for r in (safe_resolve(p) for p in self.plugins) if r}
+                self.skills = [
+                    sk
+                    for sk in self.skills
+                    if not self._under_any(sk, dropped) or self._under_any(sk, claude_roots)
+                ]
+            if codex_set_changed:
+                self._codex_roots = None
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -469,7 +484,7 @@ class RepositoryContext:
             types.add(RepositoryType.MARKETPLACE)
         elif (self.root_path / ".claude-plugin").exists():
             types.add(RepositoryType.SINGLE_PLUGIN)
-        elif (self.root_path / "plugins").is_dir():
+        elif self._has_legacy_claude_plugins_dir():
             types.add(RepositoryType.MARKETPLACE)
 
         # Agentskills
@@ -524,6 +539,37 @@ class RepositoryContext:
 
         # Recurse into non-dot subdirectories looking for SKILL.md
         return self._has_skill_md_recursive(self.root_path)
+
+    def _is_legacy_claude_plugin_candidate(self, item: Path) -> bool:
+        """Whether a ``plugins/`` child carries Claude provenance.
+
+        ``commands/`` is a legacy Claude marker, but it is not evidence of
+        Claude when Codex explicitly claims that directory. An explicit
+        ``.claude-plugin`` marker still makes a dual-host plugin.
+        """
+        resolved = safe_resolve(item)
+        if resolved is None or not resolved.is_relative_to(self.root_path):
+            return False
+        if (item / ".claude-plugin").exists():
+            return True
+        if not (item / "commands").exists():
+            return False
+        claims = [*self.codex_plugins, *self._codex_local_sources()]
+        return all(safe_resolve(claim) != resolved for claim in claims)
+
+    def _has_legacy_claude_plugins_dir(self) -> bool:
+        plugins_dir = self.root_path / "plugins"
+        if not plugins_dir.is_dir():
+            return False
+        try:
+            return any(
+                item.is_dir()
+                and not item.name.startswith(".")
+                and self._is_legacy_claude_plugin_candidate(item)
+                for item in plugins_dir.iterdir()
+            )
+        except OSError:
+            return False
 
     def _is_dot_claude(self) -> bool:
         """Check if this is a .claude/ directory or a repo containing one.
@@ -694,7 +740,7 @@ class RepositoryContext:
         if not found and self._codex_marketplace_forced and _keep(primary):
             # ``_keep``, not a bare exclusion check: it also enforces
             # containment. The registration rule writes this file back when
-            # it registers a plugin, so seeding an unchecked path let
+            # it registers a plugin, so seeding an unchecked path would let
             # ``fix --suggest`` rewrite a file outside the checkout through
             # a symlinked catalog. An explicit --type says what format the
             # repository is, not that its entrypoint may be anywhere.
@@ -710,7 +756,7 @@ class RepositoryContext:
         answers "is this repository's catalog a Codex one", which the
         Claude rules need in order to stand down, and an explicit
         ``--type`` switches discovery off without changing the answer.
-        Reading it from discovery made ``--type marketplace`` resurrect
+        Reading it from discovery would make ``--type marketplace`` restore
         the false positive the stand-down exists to remove.
 
         Every catalog counts, not just the primary ``marketplace.json`` —
@@ -871,16 +917,24 @@ class RepositoryContext:
 
         return found
 
-    def _codex_local_sources(self) -> List[Path]:
+    def _codex_local_sources(self, marketplace_paths: Optional[List[Path]] = None) -> List[Path]:
         """Local plugin directories declared by the Codex marketplace.
 
         Codex resolves ``source.path`` against the *marketplace root* — the
         repository root — not against ``.agents/plugins/``. Sources that
         escape the root are dropped here; ``codex-marketplace-json-valid``
         reports them.
+
+        ``marketplace_paths`` lets exclusion filtering compare the old and
+        retained catalogs without rerunning whole-plugin discovery.
         """
         resolved: List[Path] = []
-        for marketplace_file in self._discover_codex_marketplaces():
+        catalogs = (
+            marketplace_paths
+            if marketplace_paths is not None
+            else self._discover_codex_marketplaces()
+        )
+        for marketplace_file in catalogs:
             data = _read_json_or_none(marketplace_file)
             if not isinstance(data, dict):
                 continue
@@ -1139,8 +1193,7 @@ class RepositoryContext:
             if not item.is_dir() or item.name.startswith("."):
                 continue
 
-            # Must have .claude-plugin or commands directory
-            if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
+            if not self._is_legacy_claude_plugin_candidate(item):
                 continue
 
             resolved_path = item.resolve()

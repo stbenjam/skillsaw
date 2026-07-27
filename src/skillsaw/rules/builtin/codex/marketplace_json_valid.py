@@ -412,7 +412,7 @@ class CodexMarketplaceJsonValidRule(Rule):
             # input they exist to catch.
             return [
                 self.violation(
-                    f"plugins[{idx}].source.registry '{registry}' is not a valid URL",
+                    f"plugins[{idx}].source.registry is not a valid URL",
                     file_path=marketplace_file,
                 )
             ]
@@ -448,7 +448,7 @@ class CodexMarketplaceJsonValidRule(Rule):
             return []
         return [
             self.violation(
-                f"plugins[{idx}].source.registry '{registry}': " + ", ".join(problems),
+                f"plugins[{idx}].source.registry: " + ", ".join(problems),
                 file_path=marketplace_file,
             )
         ]

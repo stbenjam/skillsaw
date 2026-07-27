@@ -37,6 +37,9 @@ Summary:
 - `[*]` — a **SAFE** fix exists; `skillsaw fix` resolves it.
 - `[?]` — a **SUGGEST** fix exists; it is only applied with `skillsaw fix --suggest`.
 
+Autofix never rewrites vendor-managed plugins under `.codex/plugins/`, even
+when a rule reports a finding there.
+
 The JSON format carries the same information as an additive `fixable` boolean (plus `fix_confidence`: `safe` or `suggest` when fixable) on each violation. Fixability is per violation, not per rule — a rule that can only fix some shapes of a problem (e.g. `content-unlinked-internal-reference` only wraps references whose target file exists) marks only those violations. Because `skillsaw fix` batches several violations into one fix per file, its `Fixed N issue(s)` count can differ from the number of marked violations.
 
 !!! note "Removed in 0.15"

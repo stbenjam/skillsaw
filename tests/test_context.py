@@ -808,6 +808,7 @@ class TestPathMatchesPatterns:
         assert not self._match(temp_dir, "other/x/SKILL.md", ["**/templates/**"])
 
     def test_trailing_star_star_matches_contents_at_any_depth(self, temp_dir):
+        assert self._match(temp_dir, "templates", ["**/templates/**"])
         assert self._match(temp_dir, "templates/SKILL.md", ["**/templates/**"])
         assert self._match(temp_dir, "templates/deep/nested/file.md", ["**/templates/**"])
 

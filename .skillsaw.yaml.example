@@ -42,6 +42,7 @@ rules:
     enabled: false
     severity: warning
     # allowed_dirs:
+    #   - agents
     #   - assets
     #   - evals
     #   - references
@@ -95,6 +96,11 @@ rules:
 
   # Codex plugins must be registered in .agents/plugins/marketplace.json
   codex-marketplace-registration:
+    enabled: auto
+    severity: error
+
+  # Validate skill openai.yaml and catalog-compatible plugin metadata
+  codex-openai-metadata:
     enabled: auto
     severity: error
 

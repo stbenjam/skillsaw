@@ -1662,6 +1662,16 @@ def test_fenced_code_block_reference(temp_dir):
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
 
 
+def test_agents_is_a_recognized_optional_skill_directory(temp_dir):
+    from skillsaw.rules.builtin.agentskills.structure import AgentSkillStructureRule
+
+    skill = _make_skill(temp_dir)
+    (skill / "agents").mkdir()
+    (skill / "agents" / "openai.yaml").write_text("interface: {}\n", encoding="utf-8")
+
+    assert AgentSkillStructureRule({}).check(RepositoryContext(skill)) == []
+
+
 def test_code_span_reference(temp_dir):
     skill = _make_skill(temp_dir, body="Use `scripts/helper.sh` to prepare the workspace.")
     (skill / "scripts").mkdir()

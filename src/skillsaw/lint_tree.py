@@ -7,7 +7,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 from pathlib import Path
-from typing import Set, TYPE_CHECKING
+from typing import Set, TYPE_CHECKING, Tuple
 
 from .blocks import (
     AgentBlock,
@@ -25,6 +25,7 @@ from .blocks import (
     HooksBlock,
     InstructionBlock,
     McpBlock,
+    OpenAIMetadataBlock,
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
@@ -38,6 +39,7 @@ from .formats.codex import (
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
+    safe_is_file,
     safe_resolve,
 )
 from .formats.promptfoo import (
@@ -75,6 +77,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     root = LintTarget(path=context.root_path)
     seen: Set[Path] = set()
+    seen_roles: Set[Tuple[Path, type]] = set()
+    openai_seen: Set[Tuple[Path, Path]] = set()
 
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
@@ -96,6 +100,29 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if resolved in seen or not p.exists() or _is_excluded(p):
             return
         seen.add(resolved)
+        seen_roles.add((resolved, block_cls))
+        parent.children.append(block_cls(path=p))
+
+    def _add_parser_block(
+        parent: LintTarget,
+        p: Path,
+        block_cls: type,
+    ) -> None:
+        """Attach a structured document once for each parser role.
+
+        A JSON document may legitimately contain both hooks and MCP servers.
+        Path-only deduplication would hide whichever parser runs second, while
+        role-aware deduplication still prevents duplicate findings when two
+        discovery paths select the same parser.
+        """
+        resolved = safe_resolve(p)
+        if resolved is None:
+            return
+        role = (resolved, block_cls)
+        if role in seen_roles or not safe_is_file(p) or _is_excluded(p):
+            return
+        seen.add(resolved)
+        seen_roles.add(role)
         parent.children.append(block_cls(path=p))
 
     codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
@@ -114,7 +141,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         return max(owners, key=lambda r: len(r.parts)) if owners else None
 
     def _add_codex_block(parent: LintTarget, p: Path, block_cls: type) -> None:
-        """``_add_block`` for a path that must stay inside its plugin.
+        """Role-aware block attachment for a path that must stay inside its plugin.
 
         The conventional Codex files (``hooks/hooks.json``, ``.mcp.json``)
         are found by convention rather than declared, so nothing has
@@ -125,7 +152,39 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p)
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
-        _add_block(parent, p, block_cls)
+        _add_parser_block(parent, p, block_cls)
+
+    def _add_openai_metadata(
+        parent: LintTarget,
+        path: Path,
+        *,
+        metadata_root: Path,
+        containment_root: Path,
+    ) -> None:
+        """Attach structured OpenAI metadata."""
+        resolved = safe_resolve(path)
+        root = safe_resolve(containment_root)
+        owner = safe_resolve(metadata_root)
+        if (
+            resolved is None
+            or root is None
+            or owner is None
+            or (resolved, owner) in openai_seen
+            or not safe_is_file(path)
+            or _is_excluded(path)
+            or not resolved.is_relative_to(root)
+        ):
+            return
+        # Metadata paths have owner-relative semantics, so the same contained
+        # file may need validation once for each skill that links to it. Keep
+        # this separate from the content-block dedupe set for the same reason.
+        openai_seen.add((resolved, owner))
+        block = OpenAIMetadataBlock(
+            path=path,
+            metadata_root=metadata_root,
+            containment_root=containment_root,
+        )
+        parent.children.append(block)
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
@@ -228,26 +287,31 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # .codex-plugin/ directory, so a plugin whose manifest is missing
         # still reaches codex-plugin-json-valid to be reported as such.
         # No plugin-wide skip when the manifest is excluded. The plugin's
-        # hooks.json and .mcp.json have their own paths, their own
-        # exclusion check in _add_block, and their own executable commands
-        # — dropping them with the manifest would put them out of reach
-        # of hooks-dangerous, hooks-prohibited and the MCP rules. Violations
-        # against the manifest itself, and against the inline payloads that
-        # borrow its path, are filtered by the linter's own path check.
+        # hooks.json and .mcp.json have their own paths, exclusion checks,
+        # and executable commands — dropping them with the manifest would
+        # put them out of reach of the security rules. The linter filters
+        # violations filed against the excluded manifest; rules that file
+        # against another path must honor the plugin exclusion themselves.
         node = CodexPluginConfigNode(path=manifest)
+        _add_openai_metadata(
+            node,
+            codex_plugin_path / "agents" / "openai.yaml",
+            metadata_root=codex_plugin_path,
+            containment_root=codex_plugin_path,
+        )
         # Codex "checks that default file automatically", so a plugin can ship
         # executable hooks without declaring them. They are the same
         # supply-chain surface as a Claude plugin's hooks, so route them to
-        # the same rules. ``seen`` dedupes the dual-ecosystem case, where the
-        # PluginNode loop above already attached this file.
-        # Contained like the manifest-declared paths: _add_block resolves
+        # the same rules. Parser-role deduplication handles the dual-ecosystem
+        # case, where the PluginNode loop above already attached this file.
+        # Contained like the manifest-declared paths: parser attachment resolves
         # only to dedupe, so a symlinked hooks.json would otherwise pull an
         # external file's commands into this plugin's findings.
         _add_codex_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
         # A manifest may point ``hooks`` at other files instead; those carry
         # the same executable commands, so they get the same checks.
         for declared_hooks in codex_declared_hook_files(codex_plugin_path):
-            _add_block(node, declared_hooks, HooksBlock)
+            _add_parser_block(node, declared_hooks, HooksBlock)
         # ...or write them inline, which is the same surface again. Appended
         # directly rather than through _add_block: the payload has no file of
         # its own, so the manifest path it borrows is already claimed.
@@ -261,28 +325,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # ``mcpServers`` may name a different file, or hold the map itself.
         # Either way those servers are commands the host will spawn, so
         # they get the same treatment as the hooks above.
-        # ``seen`` is keyed by path alone, and one document can legitimately
-        # be declared as both ``hooks`` and ``mcpServers`` — the hooks
-        # attachment claims the path first, and its servers would then reach
-        # neither mcp-valid-json nor mcp-prohibited. A second attachment is
-        # made deliberately, tracked separately so it cannot double up.
-        # Seeded with the conventional file: it was just attached as an
-        # McpBlock above, so a manifest that also declares
-        # ``"mcpServers": "./.mcp.json"`` would otherwise get a second one
-        # and double every MCP violation and doc entry.
-        codex_mcp_seen: Set[Path] = set()
-        conventional_mcp = safe_resolve(codex_plugin_path / ".mcp.json")
-        if conventional_mcp is not None:
-            codex_mcp_seen.add(conventional_mcp)
+        # One document can legitimately be declared as both ``hooks`` and
+        # ``mcpServers``. Attach it once per parser role so both rule families
+        # see it without doubling either family.
         for declared_mcp in codex_declared_mcp_files(codex_plugin_path):
-            resolved_mcp = safe_resolve(declared_mcp)
-            if resolved_mcp is None or resolved_mcp in codex_mcp_seen:
-                continue
-            codex_mcp_seen.add(resolved_mcp)
-            if resolved_mcp in seen and not _is_excluded(declared_mcp):
-                node.children.append(McpBlock(path=declared_mcp))
-                continue
-            _add_block(node, declared_mcp, McpBlock)
+            _add_parser_block(node, declared_mcp, McpBlock)
         for inline_mcp in codex_inline_mcp_servers(codex_plugin_path):
             node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
         parent = plugin_nodes.get(codex_plugin_path.resolve())
@@ -299,6 +346,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # the SAFE content fixes rewrite references in place — so a symlink
         # here is a read *and* a write outside the checkout.
         ref_root = _codex_owner(skill_path)
+
+        _add_openai_metadata(
+            skill_node,
+            skill_path / "agents" / "openai.yaml",
+            metadata_root=skill_path,
+            containment_root=ref_root or skill_path,
+        )
 
         def _contained_in_plugin(candidate: Path) -> bool:
             if ref_root is None:

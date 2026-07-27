@@ -121,6 +121,7 @@ class HooksJsonValidRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(HooksBlock):
+            validate_codex_shapes = context.codex_plugin_owning(block.path) is not None
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
@@ -175,7 +176,11 @@ class HooksJsonValidRule(Rule):
                         )
                         continue
 
-                    if "matcher" in hook_config and not isinstance(hook_config["matcher"], str):
+                    if (
+                        validate_codex_shapes
+                        and "matcher" in hook_config
+                        and not isinstance(hook_config["matcher"], str)
+                    ):
                         # Annotated ``str`` everywhere downstream, and the
                         # generated docs page lowercases it. Coerced at the
                         # block boundary so nothing crashes; reported here

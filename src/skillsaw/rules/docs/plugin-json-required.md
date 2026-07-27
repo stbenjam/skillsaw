@@ -37,8 +37,8 @@ scaffold a new plugin with the correct structure.
 A directory that carries a `.codex-plugin/plugin.json` manifest is an
 OpenAI Codex plugin, and this rule stands down on it — it has a
 manifest, just not a Claude one, and `codex-plugin-json-valid`
-validates it instead. The exemption is withdrawn in two cases: when
+validates it instead. The exemption is withdrawn when
 `.codex-plugin/plugin.json` resolves outside the plugin directory
 (discovery rejects it, so no Codex rule covers the directory either),
-and when the directory also carries a Claude `.claude-plugin/`
-manifest, which this rule is then entitled to check.
+when a Claude marketplace lists the directory, or when the directory also
+carries a Claude `.claude-plugin/` directory whose manifest is missing.

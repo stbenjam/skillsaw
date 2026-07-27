@@ -1,9 +1,10 @@
 ## Why
 
-The agentskills.io specification defines a fixed set of recognized
-subdirectories inside a skill directory (`evals/`, `references/`,
-etc.). Unrecognized subdirectories may be silently ignored by skill
-loaders or cause validation errors in stricter runtimes.
+The formal Agent Skills specification permits arbitrary directories. This
+disabled-by-default rule is an optional packaging policy for repositories that
+want to limit skill-root directories to a configured allowlist. Its defaults
+cover common Agent Skills directories, the evaluation-guide `evals/`
+convention, and OpenAI's `agents/` metadata directory.
 
 ## Examples
 
@@ -12,8 +13,8 @@ loaders or cause validation errors in stricter runtimes.
 ```
 my-skill/
   SKILL.md
-  helpers/       # not in spec
-  test-data/     # not in spec
+  helpers/       # not allowed by this project's configured policy
+  test-data/     # not allowed by this project's configured policy
 ```
 
 **Good:**
@@ -27,7 +28,6 @@ my-skill/
 
 ## How to fix
 
-Move files into recognized subdirectories or up to the skill root.
-If the extra directory is intentional, consider whether its contents
-belong in `references/` or should live outside the skill directory
-entirely.
+Move files into one of the configured directories, add the intentional
+directory to `allowed_dirs`, or disable this opt-in rule. This policy is not a
+requirement of the formal Agent Skills specification.

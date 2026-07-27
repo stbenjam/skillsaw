@@ -473,7 +473,7 @@ class Linter:
         not written by it. The Codex-specific rules already stand down on
         it, and so do the Agent Skill fixers — but a skill installed there
         is an ordinary ``SkillBlock``, so every generic ``content-*`` fix
-        applied to it as well, rewriting a vendor-managed file the
+        would otherwise apply to it and rewrite a vendor-managed file the
         developer cannot own. Drawing the line here covers every rule,
         including ones added later that never think about Codex.
         """

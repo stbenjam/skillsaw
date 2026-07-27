@@ -12,7 +12,7 @@ my-skill/
 ├── scripts/              # Optional: executable code
 ├── references/           # Optional: documentation
 ├── assets/               # Optional: templates, resources
-├── evals/                # Optional: evaluation tests
+├── evals/                # Optional convention from the evaluation guide
 │   └── evals.json
 └── <any-dir>/            # Arbitrary directories allowed per spec
 ```
@@ -102,13 +102,15 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 
 | Rule | On an installed plugin | Why |
 |---|---|---|
-| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
-| `mcp-valid-json`, `mcp-prohibited` | **Runs** | Same — the host spawns these commands here. |
-| `agentskill-*` | **Runs** | These skills enter the agent's context window here. |
+| `hooks-dangerous`, `hooks-prohibited`, `hooks-json-valid` | **Runs (no autofix)** | These commands execute in this checkout. Whoever wrote them, they are this checkout's exposure. |
+| `mcp-valid-json`, `mcp-prohibited` | **Runs (no autofix)** | Same — the host spawns these commands here. |
+| `agentskill-*` | **Runs (no autofix)** | These skills enter the agent's context window here. |
 | `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
 | `codex-marketplace-registration` | **Stands down** | The repository did not author the plugin; its published catalog has no business listing it. |
 
 The line is authorship, not discovery: skillsaw does not walk `.claude/plugins/*` at all, so a broken vendor manifest there is likewise not the repository's problem.
+Findings under `.codex/plugins/*` are diagnostic only; autofix never rewrites
+vendor-managed installed content.
 
 `hooks` and `mcpServers` accept a path, an array of paths, or the config inline — all forms are followed, because a hook written inline runs exactly like one in a file. `skills` names directories:
 

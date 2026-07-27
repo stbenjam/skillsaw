@@ -461,8 +461,8 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
         if plugin.license:
             p["license"] = plugin.license
         # The author stands on its own. Gating it on some *other* metadata
-        # field being present dropped it for a Codex manifest that declares
-        # an author and nothing else — Markdown showed it, HTML did not.
+        # field would drop it for a Codex manifest that declares an author
+        # and nothing else.
         if plugin.author:
             p["author"] = plugin.author
 
@@ -1231,11 +1231,11 @@ def _md_link(match: "re.Match") -> str:
 
     ``html.escape`` above stops the target breaking out of the attribute;
     it says nothing about what the target *is*. A skill description
-    containing ``[click](javascript:...)`` produced a live anchor in the
-    generated page, which is inserted through ``innerHTML`` — one click
-    and it runs in the documentation's origin. The manifest URL fields are
-    filtered at extraction; markdown inside a description is not, because
-    nothing had parsed it until this page existed.
+    containing ``[click](javascript:...)`` would produce a live anchor in
+    the generated page, which is inserted through ``innerHTML`` — one click
+    would run it in the documentation's origin. The manifest URL fields are
+    filtered at extraction; this function applies the same policy to links
+    parsed from markdown descriptions.
 
     The link text is kept: dropping the whole thing would silently delete
     content the author wrote.

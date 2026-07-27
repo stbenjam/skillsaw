@@ -153,6 +153,8 @@ be defined:
 | `.mcp.json` (repo root) | mcp-prohibited, mcp-valid-json |
 | Plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
+| Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
+| Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
 

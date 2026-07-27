@@ -276,10 +276,10 @@ def codex_manifest_is_contained(plugin_dir: Path) -> bool:
 
     The authorship evidence the Claude rules stand down on, asked directly
     of the filesystem rather than of discovery. Discovery is switched off
-    by an explicit ``--type`` override, and reading the exemption from it
-    meant ``skillsaw lint --type marketplace`` resurrected on a Codex repo
-    exactly the false positives the exemption exists to remove — the same
-    repository, answered two different ways by two invocations.
+    by an explicit ``--type`` override; reading the exemption from it would
+    make ``skillsaw lint --type marketplace`` restore exactly the false
+    positives this exemption removes — the same repository would get two
+    different answers from two invocations.
 
     Containment is checked the way discovery checks it: a ``.codex-plugin``
     or a ``plugin.json`` symlinked out of the plugin is not this plugin's

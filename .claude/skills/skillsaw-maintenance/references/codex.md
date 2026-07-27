@@ -29,8 +29,8 @@ skillsaw's rules hedge where the docs hedge (see Sync notes).
 - **Manifest paths**: `.codex-plugin/plugin.json` and `$REPO_ROOT/.agents/plugins/marketplace.json`.
   Codex also reads `~/.agents/plugins/marketplace.json` (out of scope — not in a repo)
   and `$REPO_ROOT/.claude-plugin/marketplace.json` (owned by the Claude rules).
-- **plugin.json fields**: new top-level or `interface` fields; any newly stated
-  requiredness or format constraint (today only `name` kebab-case is stated).
+- **plugin.json fields**: new top-level or `interface` fields; re-check the
+  constraints and deliberate non-checks recorded in the Sync notes below.
 - **Path rules**: the "start with `./`, resolve relative to the plugin root, stay
   inside the plugin root" wording, and which fields it covers.
 - **`.codex-plugin/` exclusivity**: the "Only `plugin.json` belongs in `.codex-plugin/`"
@@ -77,8 +77,10 @@ upstream requires and why skillsaw does not enforce it.
   should not have a linter argue with. Enforcing it would be defensible.
 - `category` values are not validated. No enum is published anywhere, and openai/plugins
   alone uses eleven distinct values.
-- Undocumented-but-real shapes (an inline `mcpServers` object, an array-valued
-  `skills`) warn rather than error, because Codex mirrors Claude Code's plugin loader.
+- `mcpServers` accepts a path string or an inline object per `plugin-json-spec.md`;
+  skillsaw accepts both and routes the object through `CodexInlineMcpBlock`.
+- For compatibility with the loader and the official corpus, an array-valued `skills`
+  is flattened and every element is checked as a path.
 
 ## Regression check
 Clone https://github.com/openai/plugins and run skillsaw's `codex-*` rules against it.

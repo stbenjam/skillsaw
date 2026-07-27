@@ -86,18 +86,19 @@ RULE_GROUPS = [
         "OpenAI Codex",
         "codex",
         [
+            "codex-openai-metadata",
             "codex-plugin-json-valid",
             "codex-plugin-structure",
             "codex-marketplace-json-valid",
             "codex-marketplace-registration",
         ],
-        "Validates OpenAI Codex plugins (`.codex-plugin/plugin.json`) and "
-        "marketplaces (`.agents/plugins/marketplace.json`) against the "
-        "[Codex plugin specification]"
-        "(https://developers.openai.com/plugins/build/plugins). Codex uses a "
-        "different manifest layout and schema from Claude Code, so these "
-        "rules are separate from the `plugin-*` and `marketplace-*` rules "
-        "and auto-enable only when Codex manifests are present.",
+        "Validates OpenAI's optional "
+        "[skill metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata) "
+        "in `agents/openai.yaml`, plus Codex plugins and marketplaces against "
+        "the [Codex plugin specification]"
+        "(https://developers.openai.com/plugins/build/plugins). The metadata "
+        "rule auto-enables for Agent Skills; the plugin and marketplace rules "
+        "auto-enable only when their Codex manifests are present.",
     ),
     (
         "Skills, Agents, Hooks",
@@ -457,8 +458,10 @@ def _params_table(rule_id, schema):
 def generate_rules_index(rules_data):
     """Generate docs/rules/index.md — overview of all rules."""
     lines = [GENERATED_HEADER, "# Rules Reference\n"]
-    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules ")
-    lines.append("organized into the following categories:\n")
+    lines.append(
+        f"skillsaw includes **{len(rules_data)}** built-in rules "
+        "organized into the following categories:\n"
+    )
 
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         count = len(rule_ids)

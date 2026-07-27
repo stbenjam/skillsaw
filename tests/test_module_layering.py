@@ -122,22 +122,23 @@ def test_utils_shim_reexports_core_utils():
 
 
 def _core_module_files():
-    """Every core blocks/* submodule plus the promptfoo format helper."""
-    files = sorted(str(p.relative_to(SRC)) for p in (SRC / "blocks").glob("*.py"))
+    """Every top-level core module, blocks/*, and the promptfoo format helper."""
+    files = sorted(str(p.relative_to(SRC)) for p in SRC.glob("*.py"))
+    files.extend(sorted(str(p.relative_to(SRC)) for p in (SRC / "blocks").glob("*.py")))
     files.append("formats/promptfoo.py")
     return files
 
 
 @pytest.mark.parametrize("rel_path", _core_module_files())
 def test_core_module_does_not_import_rules_package(rel_path):
-    """The blocks package / formats.promptfoo must never import from rules.builtin.
+    """Core modules must not import rules.builtin at module load time.
 
-    That edge is exactly the inverted layer this refactor removed; re-adding it
-    would resurrect the import cycle.
+    Function-local imports are deliberate lazy dependencies. A top-level edge
+    is the inverted layer that creates an import cycle.
     """
     tree = ast.parse((SRC / rel_path).read_text())
     offenders = []
-    for node in ast.walk(tree):
+    for node in tree.body:
         # `from skillsaw.rules.builtin... import x`
         if isinstance(node, ast.ImportFrom) and node.module and "rules.builtin" in node.module:
             offenders.append(node.module)

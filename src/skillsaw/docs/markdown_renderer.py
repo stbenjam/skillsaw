@@ -83,9 +83,9 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     lines.append("|--------|-------------|---------|")
     for plugin in sorted_plugins:
         fname = filenames[id(plugin)]
-        label = plugin.display_name or plugin.name
-        desc = plugin.description or "-"
-        ver = plugin.version or "-"
+        label = _table_cell(plugin.display_name or plugin.name)
+        desc = _table_cell(plugin.description or "-")
+        ver = _table_cell(plugin.version or "-")
         lines.append(f"| [{label}]({fname}) | {desc} | {ver} |")
     lines.append("")
 
@@ -108,6 +108,11 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
         pages[fname] = "\n".join(plines) + "\n"
 
     return pages
+
+
+def _table_cell(value: object) -> str:
+    """Make catalog metadata safe for a Markdown table cell."""
+    return " ".join(str(value).splitlines()).replace("|", r"\|")
 
 
 # -- Plugin content --

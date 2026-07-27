@@ -306,6 +306,16 @@ def test_valid_mcp_json_flat_format_stdio(temp_dir):
     assert len(violations) == 0
 
 
+def test_empty_command_check_is_codex_scoped(temp_dir):
+    """The Codex tightening must not change established Claude results."""
+    plugin_dir = _create_plugin_with_mcp(
+        temp_dir,
+        {"mcpServers": {"legacy": {"type": "stdio", "command": ""}}},
+    )
+    violations = McpValidJsonRule().check(RepositoryContext(plugin_dir))
+    assert not any("non-empty string" in v.message for v in violations)
+
+
 def test_valid_mcp_in_plugin_json(plugin_with_mcp_in_plugin_json):
     """Test that valid mcpServers in plugin.json passes validation"""
     context = RepositoryContext(plugin_with_mcp_in_plugin_json)

@@ -166,6 +166,33 @@ def test_valid_hooks_json(plugin_with_valid_hooks):
     assert len(violations) == 0
 
 
+def test_matcher_type_check_is_codex_scoped(temp_dir):
+    """The Codex tightening must not change established Claude results."""
+    plugin = temp_dir / "legacy-plugin"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "legacy-plugin"}', encoding="utf-8"
+    )
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "matcher": [],
+                            "hooks": [{"type": "command", "command": "echo hi"}],
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    violations = HooksJsonValidRule().check(RepositoryContext(plugin))
+    assert not any("matcher' must be a string" in v.message for v in violations)
+
+
 def test_invalid_json(plugin_with_invalid_json):
     """Test that invalid JSON is detected"""
     context = RepositoryContext(plugin_with_invalid_json)
