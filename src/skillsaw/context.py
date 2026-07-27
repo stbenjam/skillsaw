@@ -76,7 +76,12 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
         return False
     try:
         rel = str(path.resolve().relative_to(root))
-    except ValueError:
+    except (ValueError, OSError, RuntimeError):
+        # OSError/RuntimeError: a symlink loop under *path* (version-
+        # dependent which one). Violation filtering runs this on every
+        # reported path, so raising here aborts the lint that was about
+        # to report the loop's own diagnostic. Unresolvable paths simply
+        # never match an exclude.
         return False
     return any(
         fnmatch.fnmatch(rel, variant) for pat in patterns for variant in _pattern_variants(pat)

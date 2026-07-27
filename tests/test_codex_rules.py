@@ -358,6 +358,34 @@ class TestPluginJsonValid:
         assert "Missing recommended field 'version'" in warnings
         assert "Missing recommended field 'description'" in warnings
 
+    def test_an_oversized_integer_is_invalid_json_not_a_crash(self, tmp_path):
+        """On 3.11+ an integer past the digit limit raises bare ValueError,
+        not JSONDecodeError — discovery-time reads must report, not abort."""
+        repo = tmp_path / "plugin-repo"
+        (repo / ".codex-plugin").mkdir(parents=True)
+        (repo / ".codex-plugin" / "plugin.json").write_text(
+            '{"name":"demo","version":"1.0.0","description":"x","score":' + "1" * 5000 + "}",
+            encoding="utf-8",
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        assert violations and violations[0].message.startswith("Invalid JSON:")
+
+    def test_a_self_symlinked_manifest_with_excludes_does_not_abort(self, tmp_path):
+        """The retained missing-manifest violation flows through exclusion
+        matching, whose Path.resolve() raised on the symlink loop."""
+        repo = tmp_path / "plugin-repo"
+        (repo / ".codex-plugin").mkdir(parents=True)
+        manifest = repo / ".codex-plugin" / "plugin.json"
+        manifest.symlink_to(manifest)
+
+        from skillsaw.config import LinterConfig
+        from skillsaw.linter import Linter
+
+        config = LinterConfig.default()
+        config.exclude_patterns = ["vendor/**"]
+        violations = Linter(RepositoryContext(repo), config).run()  # must not raise
+        assert any("plugin.json" in str(v.file_path) for v in violations)
+
     def test_a_self_symlinked_manifest_does_not_abort_the_lint(self, tmp_path):
         """A plugin.json symlinked to itself must yield a diagnostic, not a
         RuntimeError from Path.resolve() inside the file-read cache that

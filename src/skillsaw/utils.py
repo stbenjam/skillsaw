@@ -215,7 +215,11 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, f"Failed to read {file_path.name}"
     try:
         return json.loads(content), None
-    except json.JSONDecodeError as e:
+    except ValueError as e:
+        # ValueError, not just its JSONDecodeError subclass: on 3.11+ an
+        # integer literal past the interpreter's digit limit raises bare
+        # ValueError, and discovery calls this while RepositoryContext is
+        # still being constructed — letting it escape aborts the CLI.
         return None, str(e)
     except RecursionError:
         # ``json`` parses nested containers recursively, so a document

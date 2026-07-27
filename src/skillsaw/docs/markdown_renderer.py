@@ -122,15 +122,20 @@ def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
     if plugin.description:
         lines.append(f"> {plugin.description}")
         lines.append("")
+    # Structured scalar fields fold through _table_cell: a remote catalog
+    # entry controls these strings, and a newline in ``version`` would end
+    # the meta line and inject block-level Markdown into the page.
+    # ``description`` stays raw — it is prose, rendered as Markdown by
+    # design.
     meta = []
     if plugin.version:
-        meta.append(f"**Version:** {plugin.version}")
+        meta.append(f"**Version:** {_table_cell(plugin.version)}")
     if plugin.author and plugin.author.get("name"):
-        meta.append(f"**Author:** {plugin.author['name']}")
+        meta.append(f"**Author:** {_table_cell(plugin.author['name'])}")
     if plugin.license:
-        meta.append(f"**License:** {plugin.license}")
+        meta.append(f"**License:** {_table_cell(plugin.license)}")
     if plugin.category:
-        meta.append(f"**Category:** {plugin.category}")
+        meta.append(f"**Category:** {_table_cell(plugin.category)}")
     if meta:
         lines.append(" | ".join(meta))
         lines.append("")
@@ -144,7 +149,7 @@ def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
         lines.append("")
     all_tags = (plugin.tags or []) + (plugin.keywords or [])
     if all_tags:
-        lines.append("**Tags:** " + ", ".join(f"`{t}`" for t in all_tags))
+        lines.append("**Tags:** " + ", ".join(f"`{_table_cell(t)}`" for t in all_tags))
         lines.append("")
 
 

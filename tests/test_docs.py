@@ -829,6 +829,25 @@ class TestMarkdownRenderer:
         assert "codex-plug" in listed
         assert "claude-only" not in listed
 
+    def test_remote_metadata_newlines_cannot_inject_markdown(self):
+        """A remote catalog entry controls version/license/category — a
+        newline in one would end the meta line and inject block Markdown."""
+        from skillsaw.docs.markdown_renderer import _append_plugin_meta
+        from skillsaw.docs.models import PluginDoc
+
+        doc = PluginDoc(
+            name="remote-plug",
+            path=Path("plugins/remote-plug"),
+            version="1.0\n\n![track](https://tracker.example/pixel)",
+            license="MIT",
+        )
+        lines: list = []
+        _append_plugin_meta(lines, doc)
+        assert not any(line.startswith("![") for line in lines)
+        meta_line = next(line for line in lines if "**Version:**" in line)
+        assert "![track]" in meta_line  # folded onto the meta line, no block breakout
+        assert "**License:** MIT" in meta_line
+
     def test_mcp_table_escapes_pipes_and_newlines(self):
         """A valid command may contain '|' or a newline; neither may corrupt
         the table — the pipe adds a column, the newline ends the row."""
