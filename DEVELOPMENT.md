@@ -122,6 +122,7 @@ src/skillsaw/
 ├── __main__.py          # CLI entry point
 ├── config.py            # Config loading, rule enabling logic
 ├── context.py           # Repo type detection
+├── discovery/           # State-free ecosystem discovery (codex.py)
 ├── linter.py            # Orchestration
 ├── rule.py              # Base Rule class
 ├── rules/builtin/       # All builtin rules

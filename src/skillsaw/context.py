@@ -14,8 +14,12 @@ import json
 import logging
 import os
 
-# Safe to import at module top: formats.codex pulls in nothing from
-# skillsaw, so no import cycle while ``context`` is mid-import.
+# Safe to import at module top: discovery and formats.codex pull in nothing
+# from skillsaw.context, so no import cycle while ``context`` is mid-import.
+# ``merge_plugin_dirs`` and ``codex_local_source_path`` are re-exported here
+# for callers that import them from ``skillsaw.context``.
+from .discovery import merge_plugin_dirs
+from .discovery import codex as codex_discovery
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_declared_skill_dirs,
@@ -23,27 +27,12 @@ from .formats.codex import (
     codex_manifest_is_contained,
 )
 from .formats.promptfoo import is_promptfoo_config
-from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_symlink, safe_resolve
-from .utils import read_json
+from .paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
 
 logger = logging.getLogger(__name__)
-
-
-def merge_plugin_dirs(plugins: List[Path], codex_plugins: List[Path]) -> List[Path]:
-    """Claude and Codex plugin directories, deduplicated by resolved path.
-
-    Shared by the CLI's merged multi-path context and
-    :meth:`RepositoryContext.distinct_plugin_dirs`.
-    """
-    seen: Dict[Path, Path] = {}
-    for p in (*plugins, *codex_plugins):
-        key = safe_resolve(p) or p
-        if key not in seen:
-            seen[key] = p
-    return list(seen.values())
 
 
 @functools.lru_cache(maxsize=None)
@@ -141,45 +130,6 @@ ALL_INSTRUCTION_FORMATS = frozenset(
         HAS_CODERABBIT,
     }
 )
-
-
-def _is_marketplace_filename(name: str) -> bool:
-    """Whether *name* is a Codex catalog by name alone.
-
-    Qualified names (``openai/plugins`` ships ``api_marketplace.json``) must
-    end at a separator — a bare ``endswith`` would also claim
-    ``notamarketplace.json`` and lint it as a catalog on spelling alone.
-    """
-    lowered = name.lower()
-    if lowered == "marketplace.json":
-        return True
-    return lowered.endswith("marketplace.json") and lowered[-17] in "-_."
-
-
-def _looks_like_codex_catalog(data: Any) -> bool:
-    """Positive catalog evidence: a ``plugins`` list with a sourced entry.
-
-    The key shape alone also matches version-pin siblings like
-    ``plugin-versions.json`` ({name, version} entries, no sources), which
-    Codex never reads. One predicate shared by discovery and
-    ``codex_catalog_exists`` so the Claude stand-down can never trigger on
-    a sibling discovery itself refuses to lint.
-    """
-    return (
-        isinstance(data, dict)
-        and isinstance(data.get("plugins"), list)
-        and any(isinstance(entry, dict) and "source" in entry for entry in data["plugins"])
-    )
-
-
-def _read_json_or_none(path: Path) -> Any:
-    """Parsed JSON at *path*, or ``None`` when absent or unparseable.
-
-    Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
-    of the same manifest cost nothing.
-    """
-    data, error = read_json(path)
-    return None if error else data
 
 
 @dataclass(frozen=True)
@@ -697,24 +647,16 @@ class RepositoryContext:
         """Check if repository has a marketplace"""
         return (self.root_path / ".claude-plugin" / "marketplace.json").exists()
 
-    # Codex reads a repo marketplace from ``.agents/plugins/marketplace.json``
-    # and a plugin manifest from ``<plugin>/.codex-plugin/plugin.json``.
-    # It also accepts ``.claude-plugin/marketplace.json`` for backward
-    # compatibility, but skillsaw leaves that path to the Claude rules —
-    # the schemas differ (Codex drops ``owner`` and adds ``policy``,
-    # ``category`` and ``interface``), so validating one file against both
-    # would report contradictory violations.
-    CODEX_MARKETPLACE_DIR = (".agents", "plugins")
-    CODEX_MARKETPLACE_FILENAME = "marketplace.json"
-    # Alias for the formats.codex definition, one import site for callers.
+    # Aliases for the discovery.codex and formats.codex definitions, one
+    # import site for callers.
+    CODEX_MARKETPLACE_DIR = codex_discovery.CODEX_MARKETPLACE_DIR
+    CODEX_MARKETPLACE_FILENAME = codex_discovery.CODEX_MARKETPLACE_FILENAME
     CODEX_PLUGIN_MANIFEST = _CODEX_PLUGIN_MANIFEST
-    # Where Codex installs plugins a developer added to their own checkout,
-    # as opposed to plugins the repository authors.
-    CODEX_INSTALL_DIR = (".codex", "plugins")
+    CODEX_INSTALL_DIR = codex_discovery.CODEX_INSTALL_DIR
 
     def codex_marketplace_path(self) -> Path:
         """Path the Codex repo marketplace manifest would live at."""
-        return self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR, self.CODEX_MARKETPLACE_FILENAME)
+        return codex_discovery.codex_marketplace_path(self.root_path)
 
     def has_codex_marketplace(self) -> bool:
         """Check if repository has a Codex marketplace manifest.
@@ -729,7 +671,18 @@ class RepositoryContext:
         ``--type`` gate, caches per context, and seeds the primary
         entrypoint when the type was forced.
         """
-        return self._enumerate_codex_catalogs(honor_discovery_gate=True)
+        if self._codex_marketplace_paths is None:
+            if not self._codex_discovery_enabled:
+                self._codex_marketplace_paths = []
+            else:
+                root = safe_resolve(self.root_path) or self.root_path
+                self._codex_marketplace_paths = codex_discovery.enumerate_codex_catalogs(
+                    self.root_path,
+                    root,
+                    self.is_path_excluded,
+                    seed_forced_primary=self._codex_marketplace_forced,
+                )
+        return self._codex_marketplace_paths
 
     def _codex_catalog_files(self) -> List[Path]:
         """Codex catalog files present in the checkout, asked of the
@@ -740,93 +693,15 @@ class RepositoryContext:
         *declarations*, which a ``--type`` override does not change —
         reading them from discovery would make ``--type marketplace``
         restore the false positives the stand-downs exist to remove.
-        """
-        return self._enumerate_codex_catalogs(honor_discovery_gate=False)
-
-    def _enumerate_codex_catalogs(self, *, honor_discovery_gate: bool) -> List[Path]:
-        """The one enumeration of Codex catalog files, parameterized by gating.
-
-        ``marketplace.json`` and marketplace-named siblings (openai/plugins
-        ships ``api_marketplace.json``) are taken on existence alone, so
-        broken JSON still reaches codex-marketplace-json-valid instead of
-        hiding the very defect it reports. Any other ``*.json`` must
-        duck-type as a marketplace — the directory is not reserved, and
-        unrelated JSON must not be linted as a catalog. Every catalog
-        counts, not just the primary.
-
-        With ``honor_discovery_gate`` the result is the *discovery* answer:
-        gated on the ``--type`` override, cached, and seeded with the
-        primary entrypoint when the marketplace type was forced. Without it
-        the result is the *declaration* answer the provenance path needs —
-        filesystem-first and ``--type``-invariant, never cached through the
+        This declaration-side answer is never cached through the
         discovery slot.
         """
-        if honor_discovery_gate:
-            if self._codex_marketplace_paths is not None:
-                return self._codex_marketplace_paths
-            if not self._codex_discovery_enabled:
-                self._codex_marketplace_paths = []
-                return self._codex_marketplace_paths
-            root = safe_resolve(self.root_path) or self.root_path
-        else:
-            resolved_root = safe_resolve(self.root_path)
-            if resolved_root is None:
-                return []
-            root = resolved_root
-
-        def _inside(path: Path) -> bool:
-            # A catalog resolving outside the checkout is not this
-            # repository's to read — and codex-marketplace-registration
-            # writes the catalog back, so following a symlink out would
-            # overwrite an external file.
-            return contained_resolve(path, root) is not None
-
-        def _keep(path: Path) -> bool:
-            # Exclusions applied here, not at each reader: ``skillsaw docs``
-            # reads this list directly, so an excluded catalog would
-            # otherwise still supply published pages and the generated title.
-            return _inside(path) and not self.is_path_excluded(path)
-
-        found: List[Path] = []
-        primary = self.codex_marketplace_path()
-        # Existence or a (possibly dangling) symlink, not is_file(): a
-        # directory or dangling link at the reserved entrypoint is an
-        # unusable catalog, and dropping it would declassify the repository
-        # instead of letting codex-marketplace-json-valid report it.
-        if (safe_exists(primary) or safe_is_symlink(primary)) and _keep(primary):
-            found.append(primary)
-
-        primary_resolved = safe_resolve(primary)
-        marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
-        if safe_is_dir(marketplace_dir):
-            try:
-                siblings = sorted(marketplace_dir.glob("*.json"))
-            except OSError:
-                siblings = []
-            for candidate in siblings:
-                # Resolved comparison: on a case-insensitive filesystem
-                # ``MARKETPLACE.JSON`` is the primary under a different
-                # spelling, and path equality would list the file twice.
-                candidate_resolved = safe_resolve(candidate)
-                if candidate_resolved is not None and candidate_resolved == primary_resolved:
-                    continue
-                if not _keep(candidate):
-                    continue
-                if _is_marketplace_filename(candidate.name):
-                    found.append(candidate)
-                    continue
-                if _looks_like_codex_catalog(_read_json_or_none(candidate)):
-                    found.append(candidate)
-
-        if honor_discovery_gate:
-            if not found and self._codex_marketplace_forced and _keep(primary):
-                # ``_keep`` also enforces containment: the registration rule
-                # writes this file back, so seeding an unchecked path would
-                # let ``fix --suggest`` rewrite a file outside the checkout
-                # through a symlinked catalog.
-                found.append(primary)
-            self._codex_marketplace_paths = found
-        return found
+        resolved_root = safe_resolve(self.root_path)
+        if resolved_root is None:
+            return []
+        return codex_discovery.enumerate_codex_catalogs(
+            self.root_path, resolved_root, self.is_path_excluded
+        )
 
     def codex_catalog_exists(self) -> bool:
         """Whether any Codex catalog file is present in the checkout."""
@@ -858,124 +733,20 @@ class RepositoryContext:
         return list(self._discover_codex_marketplaces())
 
     def _discover_codex_plugins(self) -> List[Path]:
-        """Discover directories holding a ``.codex-plugin/plugin.json`` manifest.
-
-        Probes the documented layouts rather than walking the repository —
-        the repo root, ``plugins/*``, ``.codex/plugins/*``, and every local
-        source declared by the Codex marketplace — keeping discovery
-        O(entries) instead of a second whole-repo walk.
-
-        The reserved ``.codex-plugin/`` directory is the evidence, not the
-        manifest inside it: a directory whose ``plugin.json`` is missing or
-        broken is still a Codex plugin, and dropping it here would take the
-        ``CODEX_PLUGIN`` type with it and leave the defect unreported
-        (``codex-plugin-json-valid`` reports the missing manifest).
+        """Directories holding a Codex manifest, probed by the documented
+        layouts (see :func:`skillsaw.discovery.codex.discover_codex_plugins`).
         """
-        found: List[Path] = []
-        seen: Set[Path] = set()
-
-        root = safe_resolve(self.root_path) or self.root_path
-
-        def _contained(path: Path) -> Optional[Path]:
-            resolved = safe_resolve(path)
-            if resolved is None:
-                return None
-            return resolved if resolved == root or resolved.is_relative_to(root) else None
-
-        def _add(directory: Path) -> None:
-            # Either half can be the symlink out of the repository:
-            # ``plugins/foo`` itself, or ``plugins/foo/.codex-plugin`` under
-            # a real directory. Both would make skillsaw read an out-of-tree
-            # manifest, so both are containment-checked.
-            resolved = _contained(directory)
-            if resolved is None or resolved in seen:
-                return
-            # The marker must resolve within *this plugin*, not merely the
-            # repository: `plugins/a/.codex-plugin -> plugins/b/.codex-plugin`
-            # stays in the checkout, and a repo-wide check would let plugin A
-            # be discovered and documented using B's manifest.
-            #
-            # Existence-or-symlink, not ``is_dir()``: a regular file or
-            # dangling symlink occupies the reserved name just as surely as
-            # a directory, and discarding it would silently un-type the
-            # repository; keeping it lets codex-plugin-json-valid report the
-            # unreadable manifest.
-            manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
-            if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
-                return
-            if contained_resolve(manifest_dir, resolved) is None:
-                return
-            # A missing manifest is still a plugin — codex-plugin-json-valid
-            # reports it. One that resolves elsewhere is not.
-            manifest = directory.joinpath(*self.CODEX_PLUGIN_MANIFEST)
-            manifest_resolved = safe_resolve(manifest)
-            if safe_exists(manifest) and (
-                manifest_resolved is None or not manifest_resolved.is_relative_to(resolved)
-            ):
-                return
-            seen.add(resolved)
-            found.append(directory)
-
-        _add(self.root_path)
-
-        for parent in (
-            self.root_path / "plugins",
-            self.root_path.joinpath(*self.CODEX_INSTALL_DIR),
-        ):
-            if not parent.is_dir():
-                continue
-            try:
-                entries = sorted(parent.iterdir())
-            except OSError:
-                continue
-            for item in entries:
-                if item.is_dir() and not item.name.startswith("."):
-                    _add(item)
-
-        for source in self._codex_local_sources():
-            _add(source)
-
-        if not found and self._codex_plugin_forced:
-            # Seed only when the root has no marker at all: discovery
-            # rejects a ``.codex-plugin`` that resolves outside the
-            # checkout, and unconditional seeding would hand that rejected
-            # marker straight back past the containment gate.
-            marker = self.root_path / self.CODEX_PLUGIN_MANIFEST[0]
-            if not (safe_exists(marker) or safe_is_symlink(marker)) and _contained(self.root_path):
-                found.append(self.root_path)
-
-        return found
+        return codex_discovery.discover_codex_plugins(
+            self.root_path,
+            self._codex_local_sources(),
+            forced=self._codex_plugin_forced,
+        )
 
     def _codex_local_sources(self) -> List[Path]:
-        """Local plugin directories declared by the Codex marketplace.
-
-        Codex resolves ``source.path`` against the *marketplace root* — the
-        repository root — not against ``.agents/plugins/``. Sources that
-        escape the root are dropped here; ``codex-marketplace-json-valid``
-        reports them.
-        """
-        resolved: List[Path] = []
+        """Local plugin directories declared by the Codex marketplace."""
         # Filesystem-enumerated, not discovery-gated: these feed the
         # provenance claim set, which must be ``--type``-invariant.
-        for marketplace_file in self._codex_catalog_files():
-            data = _read_json_or_none(marketplace_file)
-            if not isinstance(data, dict):
-                continue
-            entries = data.get("plugins")
-            if not isinstance(entries, list):
-                continue
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                path = codex_local_source_path(entry.get("source"))
-                if path is None:
-                    continue
-                candidate = safe_resolve(self.root_path / path)
-                if candidate is None:
-                    continue  # codex-marketplace-json-valid reports the path
-                if candidate == self.root_path or candidate.is_relative_to(self.root_path):
-                    resolved.append(candidate)
-        return resolved
+        return codex_discovery.codex_local_sources(self.root_path, self._codex_catalog_files())
 
     def _codex_claim_set(self) -> Set[Path]:
         """Every resolved directory Codex claims, computed once per context.
@@ -1120,27 +891,10 @@ class RepositoryContext:
         if self._codex_install_root is _UNSET:
             # Resolved once — this runs per SkillNode, so re-resolving per
             # call costs a filesystem round-trip for every skill.
-            self._codex_install_root = safe_resolve(
-                self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
-            )
-        install_root = self._codex_install_root
-        if install_root is None:
-            return False
-        # Lexical first: ``.codex/plugins/foo`` symlinked elsewhere in the
-        # checkout resolves *out* of the install root, and a resolved-only
-        # test would call it authored, publish it, and let autofixes rewrite
-        # it. How it was reached makes it an install, not where the bytes
-        # live.
-        lexical = self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
-        try:
-            if plugin_dir != lexical and plugin_dir.is_relative_to(lexical):
-                return True
-        except ValueError:  # pragma: no cover - defensive
-            pass
-        resolved = safe_resolve(plugin_dir)
-        if resolved is None:
-            return False
-        return resolved != install_root and resolved.is_relative_to(install_root)
+            self._codex_install_root = codex_discovery.codex_install_root(self.root_path)
+        return codex_discovery.is_installed_codex_plugin(
+            plugin_dir, self.root_path, self._codex_install_root
+        )
 
     def _load_marketplace(self) -> Optional[Dict[str, Any]]:
         """Load marketplace.json if it exists"""

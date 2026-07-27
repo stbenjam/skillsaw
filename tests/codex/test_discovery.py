@@ -648,3 +648,38 @@ class TestSymlinkedInstallIsStillAnInstall:
         repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
         plugin = _write_plugin(repo / "plugins" / "mine", {"name": "mine", "version": "1.0.0"})
         assert not RepositoryContext(repo).is_codex_installed_plugin(plugin)
+
+
+class TestDiscoveryModuleIsStateFree:
+    """The discovery module supplies evidence; the context renders verdicts.
+
+    ``skillsaw.discovery`` must never import ``skillsaw.context`` — the
+    context imports it, and a reverse import would be a cycle that also
+    tempts discovery functions into reading context state instead of
+    taking explicit arguments.
+    """
+
+    def test_discovery_never_imports_context(self):
+        import ast
+
+        import skillsaw.discovery
+        import skillsaw.discovery.codex
+
+        for module in (skillsaw.discovery, skillsaw.discovery.codex):
+            tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    # The bound names matter too: ``from skillsaw import
+                    # context`` and the relative ``from .. import context``
+                    # carry no "context" in ``node.module``.
+                    names = [node.module or ""]
+                    names += [f"{node.module or ''}.{alias.name}" for alias in node.names]
+                else:
+                    continue
+                for name in names:
+                    assert "context" not in name.split("."), (
+                        f"{module.__name__} imports {name}; discovery must stay "
+                        "state-free and import nothing from skillsaw.context"
+                    )

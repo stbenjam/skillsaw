@@ -149,6 +149,12 @@ question with a fresh filesystem probe in a rule or in the tree builder —
 two call sites probing independently is how a directory falls between
 per-ecosystem attach paths and loses its content silently.
 
+- **Discovery is state-free and lives in `src/skillsaw/discovery/`**
+  (`discovery/codex.py`): functions take a root path and callbacks and
+  return data, holding no caches and importing nothing from `context`.
+  `RepositoryContext` is the stateful orchestrator — its methods wrap
+  the discovery functions with the per-context caches and render the
+  provenance verdicts over the evidence they gather.
 - **Evidence is filesystem-first and `--type`-invariant.** An override
   changes what discovery walks, not what the author declared, so
   provenance reads markers, contained manifests, and catalog files
@@ -173,8 +179,12 @@ per-ecosystem attach paths and loses its content silently.
   dual-manifest plugins keep their established Claude results
   (`TestDualManifestBackwardCompat` pins this).
 
-**Adding an ecosystem** (the next Codex): add its evidence probe to
-`RepositoryContext.provenance()` and its catalog enumeration beside
+**Adding an ecosystem** (the next Codex): put its discovery leg — the
+state-free plugin/manifest walks, catalog enumeration, local-source
+resolution, and install-location helpers — in a new
+`src/skillsaw/discovery/<ecosystem>.py` beside `discovery/codex.py`;
+add its evidence probe to `RepositoryContext.provenance()` and its
+context wrappers (caching, `--type` gating) beside
 `_codex_catalog_files()`; add its config-file cluster to the single
 plugin pass in `build_lint_tree` (attached through a contained helper);
 teach `RepositoryContext.in_format_scope` nothing — it already reads the

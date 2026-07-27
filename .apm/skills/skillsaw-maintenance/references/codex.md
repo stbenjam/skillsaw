@@ -57,9 +57,10 @@ hedge (see Sync notes).
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
   `codex-plugin-structure`, `codex-marketplace-json-valid`,
   `codex-marketplace-registration`, `codex-openai-metadata`.
-- Detection and discovery — `src/skillsaw/context.py`
-  (`RepositoryType.CODEX_PLUGIN`, `RepositoryType.CODEX_MARKETPLACE`,
-  `_discover_codex_plugins`, `_discover_codex_marketplaces`).
+- Detection — `src/skillsaw/context.py` (`RepositoryType.CODEX_PLUGIN`,
+  `RepositoryType.CODEX_MARKETPLACE`, `_discover_codex_plugins`,
+  `_discover_codex_marketplaces`); the state-free discovery walks live
+  in `src/skillsaw/discovery/codex.py`.
 - Lint tree nodes — `src/skillsaw/lint_target.py` (`CodexPluginNode`, the
   container every prose attachment and provenance gate hangs off;
   `CodexPluginConfigNode`; `CodexMarketplaceConfigNode`), built in
