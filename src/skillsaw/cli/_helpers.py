@@ -68,13 +68,12 @@ def _resolve_lint_paths(paths):
                 widened = resolved.parent
             elif resolved.name == "plugins" and resolved.parent.name == ".agents":
                 widened = resolved.parent.parent
-            # Bounded: Codex documents a *user-level* catalog at
+            # Bounded: Codex documents a user-level catalog at
             # ``~/.agents/plugins/marketplace.json``, and widening that
             # walks all of $HOME — printing findings (and secrets) from
             # unrelated private projects. Same for the filesystem root.
-            # Resolved comparison: a symlinked $HOME (routine on macOS and
-            # NFS) otherwise slips past the bound and the walk covers the
-            # entire home directory.
+            # Resolved comparison, or a symlinked $HOME slips past the
+            # bound.
             if widened is not resolved:
                 try:
                     bounds = (Path.home().resolve(), Path(widened.anchor))

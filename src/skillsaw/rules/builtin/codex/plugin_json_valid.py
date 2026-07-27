@@ -30,9 +30,8 @@ _INTERFACE_PATH_FIELDS = ("composerIcon", "logo", "logoDark")
 _INTERFACE_PATH_LIST_FIELDS = ("screenshots",)
 
 # What each field has to be on disk for the lint tree to follow it. Only
-# the fields the tree actually filters on are listed. ``apps`` and the
-# ``interface`` assets are documented as paths but nothing drops them
-# silently, so asserting a kind on them would add noise without cover.
+# fields the tree actually filters on are listed — nothing drops ``apps``
+# or the ``interface`` assets silently.
 _EXPECTED_KIND = {"hooks": "file", "mcpServers": "file", "skills": "dir"}
 
 
@@ -74,26 +73,22 @@ class CodexPluginJsonValidRule(Rule):
         violations: List[RuleViolation] = []
         recommended_fields = self.config.get("recommended-fields", self.DEFAULT_RECOMMENDED_FIELDS)
         if not isinstance(recommended_fields, (list, tuple, set)):
-            # Config loading does not enforce config_schema types, so a
-            # scalar here would fail at the loop below — before the
-            # per-entry string guard — and crash the rule for every manifest.
+            # Config loading does not enforce config_schema types; a scalar
+            # here would crash the rule for every manifest.
             recommended_fields = self.DEFAULT_RECOMMENDED_FIELDS
         check_paths_exist = self.config.get("check-paths-exist", True)
 
         for node in context.lint_tree.find(CodexPluginConfigNode):
             if context.is_codex_installed_plugin(node.plugin_dir):
-                # Third-party content a developer installed into their own
-                # checkout. Its hooks and MCP servers are still linted —
-                # they execute here, so they are this checkout's problem —
-                # but a kebab-case name or a missing description in a
-                # manifest the developer cannot edit is not. skillsaw does
-                # not walk .claude/plugins/* at all for the same reason.
+                # Third-party content a developer installed. Its hooks and
+                # MCP servers are still linted — they execute here — but a
+                # naming or description defect in a manifest the developer
+                # cannot edit is not this checkout's problem.
                 continue
             manifest = node.path
             if not safe_is_file(manifest):
-                # The node exists because .codex-plugin/ does. Codex reads
-                # the manifest from this exact path and loads nothing
-                # without it, so the entrypoint is simply missing.
+                # The node exists because .codex-plugin/ does; Codex loads
+                # nothing without the manifest at this exact path.
                 violations.append(
                     self.violation(
                         "Missing .codex-plugin/plugin.json — Codex reads the "
@@ -122,10 +117,8 @@ class CodexPluginJsonValidRule(Rule):
 
             for field in recommended_fields:
                 if not isinstance(field, str):
-                    # ``field not in data`` raises TypeError on an unhashable
-                    # value, which the linter turns into a rule crash — so a
-                    # malformed config entry would stop every manifest from
-                    # being validated at all.
+                    # ``field not in data`` raises TypeError on an
+                    # unhashable value — a rule crash for every manifest.
                     continue
                 if field not in data:
                     violations.append(
@@ -173,10 +166,9 @@ class CodexPluginJsonValidRule(Rule):
                 )
             ]
         if not name:
-            # An empty string is no more usable as the plugin identifier than
-            # a missing key, so it belongs with the required-field errors
-            # rather than falling through to the kebab-case warning — which
-            # a default ``fail-on: error`` would let pass.
+            # An empty identifier is a missing one: it belongs with the
+            # required-field errors, not the kebab-case warning a default
+            # ``fail-on: error`` would let pass.
             return [self.violation("Required field 'name' is an empty string", file_path=manifest)]
         if not KEBAB_CASE.match(name):
             return [
@@ -197,19 +189,15 @@ class CodexPluginJsonValidRule(Rule):
 
         for field, value in self._iter_path_values(data):
             if not isinstance(value, str):
-                # ``mcpServers`` is documented as "string or object", with a
-                # worked inline example, so an object there is conformant
-                # and warning on it is the false-positive class this rule
-                # set exists to remove. The block is already routed to the
-                # MCP rules either way. Base name, not exact label: an array
-                # element arrives as ``mcpServers[1]``, and a mixed
-                # ``["./servers.json", {...}]`` declaration is supported.
+                # ``mcpServers`` is documented as "string or object", so an
+                # inline object is conformant (and already routed to the MCP
+                # rules). Base name, not exact label: an array element
+                # arrives as ``mcpServers[1]``.
                 if field.split("[", 1)[0] == "mcpServers" and isinstance(value, dict):
                     continue
-                # Everything else: a warning, not an error. ``skills`` is
-                # typed as a string alone, but real plugins ship arrays and
-                # Codex mirrors Claude Code's plugin loader, so calling
-                # them invalid would overreach.
+                # A warning, not an error: ``skills`` is typed as a string
+                # alone, but real plugins ship arrays and Codex mirrors
+                # Claude Code's loader.
                 violations.append(
                     self.violation(
                         f"'{field}' is documented as a path string relative to "

@@ -122,10 +122,9 @@ class HooksJsonValidRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(HooksBlock):
-            # Conditional strictness, not a skip: the shared gate applies
-            # the Codex-tightened shape checks only inside Codex-ONLY
-            # plugins, so a dual-manifest plugin keeps its established
-            # Claude results (see in_codex_only_plugin's docstring).
+            # Conditional strictness, not a skip: Codex-tightened shape
+            # checks apply only inside Codex-ONLY plugins, so dual-manifest
+            # plugins keep their established Claude results.
             validate_codex_shapes = context.in_codex_only_plugin(block.path)
             if block.parse_error:
                 violations.append(
@@ -186,10 +185,9 @@ class HooksJsonValidRule(Rule):
                         and "matcher" in hook_config
                         and not isinstance(hook_config["matcher"], str)
                     ):
-                        # Annotated ``str`` everywhere downstream, and the
-                        # generated docs page lowercases it. Coerced at the
-                        # block boundary so nothing crashes; reported here
-                        # so coercing does not hide the defect.
+                        # The block boundary coerces a non-string matcher so
+                        # nothing crashes; reporting here keeps the coercion
+                        # from hiding the defect.
                         violations.append(
                             self.violation(
                                 f"Event '{event_type}[{idx}].matcher' must be a string",
@@ -238,17 +236,14 @@ class HooksJsonValidRule(Rule):
                         hook_type = hook["type"]
                         hook_path = f"{event_type}[{idx}].hooks[{hook_idx}]"
 
-                        # A JSON value is not necessarily hashable, and a
-                        # list- or dict-valued ``type`` reaches the set
-                        # membership test below as an unhashable key. The
-                        # resulting TypeError aborts the whole rule, so one
-                        # malformed hook silences hook validation for every
-                        # remaining block in the repository.
+                        # An unhashable ``type`` (list/dict) would raise
+                        # TypeError in the set membership test — a rule
+                        # crash that silences hook validation for every
+                        # remaining block.
                         if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
-                            # A non-string type is echoed as its repr, and a
-                            # dict value can carry a credentialed URL into
-                            # text/JSON/SARIF output — route it through the
-                            # diagnostic redactor like every manifest value.
+                            # A dict value can carry a credentialed URL into
+                            # text/JSON/SARIF output — redact like every
+                            # manifest value.
                             violations.append(
                                 self.violation(
                                     f"Event '{hook_path}' has invalid type "

@@ -1,12 +1,9 @@
 """OpenAI Codex plugin-format helpers.
 
-Functions over Codex manifest and marketplace values that need no
-repository state — only a plugin directory. ``context`` uses them while
-building the lint tree; rules and the docs extractor import them directly.
-
-Kept out of ``context.py`` deliberately: these are state-free readers
-of a ``plugin_dir``, and rules use them without holding a
-``RepositoryContext``.
+State-free readers over Codex manifest and marketplace values — they need
+only a plugin directory, never a ``RepositoryContext``. ``context`` uses
+them while building the lint tree; rules and the docs extractor import
+them directly.
 """
 
 from __future__ import annotations
@@ -65,11 +62,10 @@ def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
     like the file the field could have named instead — a nested *key* is
     used as-is, and a bare body is wrapped.
 
-    One document per object, never a merge. Merging read tidier but had to
-    discard occurrences when an array repeated an event or a server name,
-    and either loss hides a defect: the dropped occurrence is never
-    validated, and if the dropped one was the valid one its commands never
-    reach the security rules.
+    One document per object, NEVER a merge: merging must discard
+    occurrences when an array repeats an event or server name, and the
+    dropped occurrence is either never validated or never reaches the
+    security rules with its commands.
     """
     candidates = declared if isinstance(declared, list) else [declared]
     documents: List[Dict[str, Any]] = []
@@ -94,9 +90,8 @@ CODEX_PLUGIN_MANIFEST = (".codex-plugin", "plugin.json")
 def codex_manifest(plugin_dir: Path) -> Dict[str, Any]:
     """A Codex plugin's parsed manifest, or ``{}`` when absent or unparseable.
 
-    Goes through the shared cached reader so a UTF-8 BOM is stripped and
-    repeated reads cost nothing — discovery, the validity rule and the
-    registration rule all read these files.
+    Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
+    cost nothing.
     """
     data, error = read_json(plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST))
     return data if not error and isinstance(data, dict) else {}
@@ -175,19 +170,13 @@ def codex_inline_hooks(plugin_dir: Path) -> List[Dict[str, Any]]:
     """Hooks a Codex plugin manifest declares inline, in hooks.json shape.
 
     :func:`codex_declared_hook_files` covers the path forms; this covers
-    the object forms, which carry exactly the same executable commands and
-    so belong in front of the same hook rules. Without it a ``curl | sh``
-    SessionStart hook written inline is invisible to hooks-dangerous and
-    hooks-prohibited.
+    the object forms, which carry exactly the same executable commands —
+    without it a ``curl | sh`` SessionStart hook written inline is
+    invisible to hooks-dangerous and hooks-prohibited.
 
-    One document per declared object, never a merge. Merging looked tidier
-    but silently dropped occurrences: an array that repeats an event has to
-    lose one of the two values, and whichever rule loses is a defect
-    nothing else reports — ``codex-plugin-json-valid`` deliberately skips
-    hook objects, so a malformed ``SessionStart`` overwritten by a later
-    valid one goes unreported, and a valid one overwritten by a malformed
-    one loses its commands to hooks-dangerous. Separate blocks let every
-    occurrence be judged.
+    One document per declared object, never a merge (see
+    :func:`inline_documents`): separate blocks let every occurrence be
+    judged.
 
     Both ``{"hooks": {...}}`` (mirroring a hooks.json document) and a bare
     event map are accepted.
@@ -203,13 +192,9 @@ def codex_inline_mcp_servers(plugin_dir: Path) -> List[Dict[str, Any]]:
     commands the host will spawn, so they belong in front of the MCP rules
     whether they arrived by path or by value.
 
-    One document per declared object, for the reason spelled out in
-    :func:`codex_inline_hooks`: merging by server name would drop a second
-    ``same`` entry missing its ``command``, hiding exactly the structural
-    error mcp-valid-json exists to report.
-
-    Both ``{"mcpServers": {...}}`` and a bare server map are accepted,
-    matching what ``McpBlock.servers`` already reads.
+    One document per declared object, never a merge (see
+    :func:`inline_documents`). Both ``{"mcpServers": {...}}`` and a bare
+    server map are accepted, matching what ``McpBlock.servers`` reads.
     """
     return inline_documents(codex_manifest(plugin_dir).get("mcpServers"), "mcpServers")
 
@@ -218,11 +203,8 @@ def codex_manifest_is_contained(plugin_dir: Path) -> bool:
     """Whether *plugin_dir* carries a Codex manifest of its own.
 
     The authorship evidence the Claude rules stand down on, asked directly
-    of the filesystem rather than of discovery. Discovery is switched off
-    by an explicit ``--type`` override; reading the exemption from it would
-    make ``skillsaw lint --type marketplace`` restore exactly the false
-    positives this exemption removes — the same repository would get two
-    different answers from two invocations.
+    of the filesystem rather than of discovery — discovery is switched off
+    by a ``--type`` override, and the answer must be override-invariant.
 
     Containment is checked the way discovery checks it: a ``.codex-plugin``
     or a ``plugin.json`` symlinked out of the plugin is not this plugin's

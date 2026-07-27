@@ -52,17 +52,15 @@ class CodexOpenAIMetadataRule(Rule):
         violations: List[RuleViolation] = []
         for block in context.lint_tree.find(OpenAIMetadataBlock):
             if context.is_codex_installed_plugin(block.metadata_root):
-                # Vendor-installed under .codex/plugins/: authored-manifest
-                # quality is the vendor's to fix, the same stand-down every
-                # other manifest-quality rule applies there. Executable
-                # hooks/MCP checks are unaffected — this rule has none.
+                # Vendor-installed under .codex/plugins/: manifest quality
+                # is the vendor's to fix — the same stand-down every other
+                # manifest-quality rule applies there.
                 continue
             if block.parse_error:
                 violations.append(
                     self.violation(
-                        # Parser diagnostics quote source text, which a
-                        # malformed document controls — same redaction as
-                        # every other manifest-value echo.
+                        # Parser diagnostics quote source text a malformed
+                        # document controls — redact like any value echo.
                         f"Invalid YAML: {safe_display(block.parse_error)}",
                         file_path=block.path,
                         line=block.error_line,
@@ -72,8 +70,7 @@ class CodexOpenAIMetadataRule(Rule):
             data = block.raw_data
             if data is None:
                 # An empty document ("", a lone comment, a bare "---")
-                # declares nothing — there is no metadata to validate and
-                # nothing Codex would reject, so it is not an error.
+                # declares nothing to validate — not an error.
                 continue
             if not isinstance(data, dict):
                 violations.append(

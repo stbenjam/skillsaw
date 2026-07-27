@@ -41,12 +41,10 @@ class FileCache:
             try:
                 resolved = file_path.resolve() if isinstance(file_path, Path) else None
             except (OSError, RuntimeError, ValueError):
-                # A symlink loop (OSError on 3.13+, RuntimeError before),
-                # an embedded NUL. The wrapped reader has its own error
-                # handling and returns a diagnostic for unreadable input —
-                # raising here instead aborts the whole lint from a cache
-                # key lookup. Key on the unresolved path; correctness only
-                # loses alias deduplication for a path that cannot resolve.
+                # Symlink loop or embedded NUL: raising here aborts the
+                # whole lint from a cache key lookup, while the wrapped
+                # reader already diagnoses unreadable input. Key on the
+                # unresolved path — that only loses alias deduplication.
                 resolved = file_path
             sub_key = (args[1:], tuple(sorted(kwargs.items())))
             with self._lock:
@@ -222,13 +220,10 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         # still being constructed — letting it escape aborts the CLI.
         return None, str(e)
     except RecursionError:
-        # ``json`` parses nested containers recursively, so a document
-        # nested past the interpreter's stack limit raises here rather
-        # than returning a decode error. Discovery reads manifests while
-        # RepositoryContext is still being constructed, outside the
+        # ``json`` parses nested containers recursively. Discovery reads
+        # manifests during RepositoryContext construction, outside the
         # rule-execution-error guard, so letting this propagate aborts the
-        # whole lint with a traceback and reports nothing at all. Every
-        # caller already handles the error string.
+        # whole lint with a traceback.
         return None, _TOO_DEEP
 
 
@@ -243,10 +238,7 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     except yaml.YAMLError as e:
         return None, str(e)
     except RecursionError:
-        # Same hazard as read_json: nested collections are parsed
-        # recursively, and the reader is called from discovery, where an
-        # escaping exception aborts the run instead of producing a
-        # violation. See the note there.
+        # Same hazard as read_json — see the note there.
         return None, _TOO_DEEP
 
 

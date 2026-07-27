@@ -70,10 +70,9 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            # Conditional strictness, not a skip: the shared gate applies
-            # the tightened non-empty-string checks only inside Codex-ONLY
-            # plugins, so a dual-manifest plugin keeps its established
-            # Claude results (see in_codex_only_plugin's docstring).
+            # Conditional strictness, not a skip: the tightened
+            # non-empty-string checks apply only inside Codex-ONLY plugins,
+            # so dual-manifest plugins keep their established Claude results.
             require_usable = context.in_codex_only_plugin(block.path)
             if "mcpServers" in data:
                 violations.extend(
@@ -193,14 +192,11 @@ class McpValidJsonRule(Rule):
                             file_path=file_path,
                         )
                     )
-                # Present is not the same as usable. ``"command": []`` and
+                # Present is not the same as usable: ``"command": []`` and
                 # ``"command": ""`` satisfy a key-existence check while
-                # naming nothing the host can spawn, so the server failed
-                # silently at run time with nothing reported here — the
-                # same gap the 'url' and 'cwd' type checks below close.
-                #
-                # A non-string ``url`` is left to the dedicated check
-                # below, so one defect still yields one violation.
+                # naming nothing the host can spawn. A non-string ``url``
+                # is left to the dedicated check below, so one defect
+                # still yields one violation.
                 elif (
                     require_usable
                     and not _is_usable(server_config[required_field])

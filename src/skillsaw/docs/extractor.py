@@ -45,10 +45,9 @@ def extract_docs(
     title: Optional[str] = None,
 ) -> DocsOutput:
     """Extract documentation from a repository context."""
-    # A PluginNode with no Claude manifest but a Codex one is a Codex plugin
-    # that legacy discovery picked up for its commands/ or skills/ directory.
-    # _extract_codex_plugins handles it, and reading it through the Claude
-    # extractor as well would list it twice with empty metadata.
+    # A PluginNode with a Codex manifest but no Claude one belongs to
+    # _extract_codex_plugins; reading it through the Claude extractor as
+    # well would list it twice with empty metadata.
     codex_roots = _codex_roots(context)
     claude_plugins = [
         _extract_plugin(context, pn)
@@ -61,34 +60,29 @@ def extract_docs(
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
         md = context.marketplace_data
-        # A mixed repository has two independent catalogs. Claude plugin
-        # docs remain governed by the Claude marketplace, while Codex-only
-        # docs must be filtered and enriched through the Codex catalog just
-        # as they are when no Claude marketplace is present. Otherwise an
+        # A mixed repository has two independent catalogs: Claude docs are
+        # governed by the Claude marketplace, Codex-only docs are filtered
+        # and enriched through the Codex catalog — otherwise an
         # unregistered Codex directory appears merely because discovery
-        # found it.
+        # found it. Remote-only Codex entries have no lint-tree node and
+        # must be added from the catalog.
         listed = claude_plugins + _codex_listed_docs(context, codex_plugins)
-        # Codex remote-only entries have no lint-tree node, so they are not
-        # in ``plugins`` and would be dropped entirely when a Claude
-        # marketplace supplies the catalog identity.
         marketplace = MarketplaceDoc(
             name=md.get("name", ""),
             owner=md.get("owner"),
             plugins=listed + _codex_remote_docs(context, {name_str(p.name) for p in listed}),
         )
     elif RepositoryType.CODEX_MARKETPLACE in context.repo_types:
-        # ``marketplace_data`` only ever loads .claude-plugin/marketplace.json,
-        # so a Codex catalog needs its own MarketplaceDoc to reach the
-        # multi-page renderer.
+        # ``marketplace_data`` only ever loads the Claude marketplace, so a
+        # Codex catalog needs its own MarketplaceDoc.
         marketplace = _codex_marketplace_doc(context, plugins)
 
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
         plugin_skill_paths = {s.dir_path.resolve() for p in plugins for s in p.skills}
-        # Skipping an installed plugin above leaves its skills matched by no
-        # PluginDoc, so the standalone pass would publish someone else's
-        # skills as this repository's own top-level content — undoing the
-        # authorship line the skip was there to draw.
+        # An installed plugin's skills match no PluginDoc, and the
+        # standalone pass would publish someone else's skills as this
+        # repository's own top-level content.
         installed_roots = [
             r
             for p in context.codex_plugins
@@ -137,17 +131,13 @@ def _codex_roots(context: RepositoryContext) -> Set[Path]:
 def _is_codex_only(context: RepositoryContext, plugin_path: Path, codex_roots: Set[Path]) -> bool:
     """Whether *plugin_path* is a Codex plugin with no Claude identity.
 
-    Keyed on what discovery actually accepted, not a raw ``is_file()``: that
-    follows a symlink out of the plugin, so a rejected manifest would still
-    mark the directory Codex-only — filtering out the legacy node with no
-    Codex node to replace it, and dropping the plugin from the docs.
+    Keyed on what discovery actually accepted, not a raw ``is_file()``:
+    that follows a symlink out of the plugin, so a rejected manifest would
+    still mark the directory Codex-only and drop the plugin from the docs.
     """
     resolved = safe_resolve(plugin_path)
     if resolved is None:
         return False
-    # Claude identity (marker or marketplace listing) is the shared
-    # predicate's question; the codex_roots membership keeps the
-    # docstring's discovery-accepted requirement.
     return resolved in codex_roots and context.is_codex_only_plugin(plugin_path)
 
 
@@ -179,15 +169,12 @@ def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> 
     """The extracted docs the catalog actually lists, in catalog order.
 
     Membership is what the catalog's ``plugins`` array says, not what
-    discovery happened to find. A repository that is also ``dot-claude``
-    has a ``PluginNode`` for ``.claude/`` itself, and publishing every
-    discovered plugin listed that directory as a catalog entry.
+    discovery happened to find — publishing every discovered plugin listed
+    ``.claude/`` itself as a catalog entry on dot-claude repositories.
 
-    A listing's ``category`` is overlaid onto the matched doc: the field is
-    required on a catalog entry and frequently lives only there, so reading
-    it from the plugin manifest alone left locally-sourced plugins
-    uncategorised and missing from the rendered category filter — while
-    remote entries, which have no manifest to consult, showed theirs.
+    A listing's ``category`` is overlaid onto the matched doc: the field
+    frequently lives only in the catalog, and reading the manifest alone
+    left locally-sourced plugins missing from the rendered category filter.
     """
     by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
     codex_roots = _codex_roots(context)
@@ -208,12 +195,10 @@ def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> 
                 continue  # remote or malformed — _codex_remote_docs decides
             resolved = safe_resolve(context.root_path / source)
             if resolved is None or resolved not in codex_roots:
-                # A listed directory without a usable Codex manifest — a
-                # Claude-only plugin, say. Codex cannot install it, and
-                # codex-marketplace-registration reports the unusable
-                # source; publishing it in the Codex index would advertise
-                # what the catalog cannot deliver. Dual-host plugins are
-                # Codex roots and stay listed.
+                # A listed directory without a usable Codex manifest: Codex
+                # cannot install it, and publishing it would advertise what
+                # the catalog cannot deliver. Dual-host plugins are Codex
+                # roots and stay listed.
                 continue
             doc = by_path.get(resolved)
             if doc is None or id(doc) in seen:
@@ -246,10 +231,8 @@ def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
     """Metadata-only docs for catalog entries with no local directory.
 
     A ``url``, ``git-subdir`` or ``npm`` source is not checked out here, so
-    no CodexPluginConfigNode exists for it and it would be missing from the
-    rendered catalog entirely — leaving the index reporting fewer plugins
-    than the catalog lists. What the entry itself declares is enough to
-    list it.
+    no CodexPluginConfigNode exists for it; what the entry itself declares
+    is enough to list it.
     """
     entries = data.get("plugins")
     if not isinstance(entries, list):
@@ -265,10 +248,9 @@ def _remote_entry_docs(data: dict, local_names: set) -> List[PluginDoc]:
         if codex_local_source_path(source) is not None:
             continue  # local entry — the real plugin was extracted above
         if not is_remote_source(source):
-            # ``{"source": "local"}`` with no path, or an empty one, is a
-            # broken local entry rather than a remote one. Codex skips it
-            # and codex-marketplace-json-valid reports it; publishing a page
-            # for it would advertise a plugin that cannot be installed.
+            # ``{"source": "local"}`` with no path is a broken local entry,
+            # not a remote one — publishing a page for it would advertise a
+            # plugin that cannot be installed.
             continue
         local_names.add(name)
         docs.append(
@@ -287,15 +269,13 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     """Plugin docs for Codex plugins that carry no Claude manifest.
 
     A dual-ecosystem plugin already has a ``PluginNode`` and is documented
-    through it, so it is skipped here to avoid a duplicate entry. A
-    Codex-only plugin has nothing but its ``CodexPluginConfigNode``; this
-    extractor emits its plugin metadata, hooks, and MCP servers.
+    through it; skipping it here avoids a duplicate entry. A Codex-only
+    plugin has nothing but its ``CodexPluginConfigNode``.
     """
-    # A PluginNode alone does not mean a Claude plugin: legacy discovery
-    # creates one for any directory with commands/ or skills/. Only a real
-    # Claude manifest, or a marketplace entry claiming it, means the Claude
-    # extractor can read its metadata — otherwise the docs fall back to the
-    # directory name and lose everything the Codex manifest declares.
+    # A PluginNode alone does not mean a Claude plugin — legacy discovery
+    # creates one for any directory with commands/ or skills/, and reading
+    # such a directory through the Claude extractor would lose everything
+    # the Codex manifest declares.
     codex_roots = _codex_roots(context)
     claude_dirs = {
         pn.path.resolve()
@@ -304,17 +284,15 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     }
     docs: List[PluginDoc] = []
     for node in context.lint_tree.find(CodexPluginConfigNode):
-        # The build tagged the manifest node with its owning plugin root
-        # when it attached the Codex cluster — the tree's ownership
-        # decision, read back rather than re-derived from the path.
+        # The tree's ownership decision, read back rather than re-derived
+        # from the path.
         plugin_resolved = node.plugin_owner
         if not node.path.is_file() or plugin_resolved is None or plugin_resolved in claude_dirs:
             continue
         if context.is_codex_installed_plugin(node.plugin_dir):
-            # A personal install under .codex/plugins/. Publishing it as a
-            # member of the repository's catalog would misattribute someone
-            # else's plugin — the same authorship line the registration and
-            # manifest-quality rules already draw.
+            # A personal install under .codex/plugins/ — publishing it in
+            # the repository's catalog would misattribute someone else's
+            # plugin.
             continue
         docs.append(_extract_codex_plugin(context, node, plugin_resolved))
     return docs
@@ -328,11 +306,10 @@ def _owned_blocks(
 ) -> list:
     """Blocks the tree assigned to this plugin, the manifest subtree first.
 
-    Prose attaches to the plugin's container and config to the manifest
-    node, and a repo-root plugin's conventional ``.mcp.json`` was claimed
-    by the generic root attach before the plugin pass ran — all of them
-    carry the ``plugin_owner`` tag the build recorded, so one owner scan
-    finds every placement. The manifest subtree is listed first (and
+    Prose attaches to the plugin's container, config to the manifest node,
+    and a repo-root plugin's conventional ``.mcp.json`` to the tree root —
+    all carry the ``plugin_owner`` tag the build recorded, so one owner
+    scan finds every placement. The manifest subtree is listed first (and
     deduplicated by identity) to keep the established document order.
     """
     blocks = node.find(block_cls)
@@ -352,11 +329,9 @@ def _extract_codex_plugin(
 ) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
-    The Codex manifest carries the same descriptive fields as a Claude one,
-    so the shape of the output is unchanged. Commands, agents and rule
-    files attach when the plugin ships them — Codex reuses the Claude
-    directory conventions, and dropping them would publish empty pages
-    for plugins whose prose the lint tree already holds.
+    The Codex manifest carries the same descriptive fields as a Claude
+    one, so the shape of the output is unchanged; commands, agents and
+    rule files attach when the plugin ships them.
     """
     plugin_dir = node.plugin_dir
     meta = _read_json_dict(node)
@@ -382,8 +357,8 @@ def _extract_codex_plugin(
         skills=_extract_codex_skills(context, plugin_resolved),
         agents=_agent_docs(_owned_blocks(context, node, AgentBlock, plugin_resolved)),
         hooks=_extract_hooks(_owned_blocks(context, node, HooksBlock, plugin_resolved)),
-        # meta is passed empty: the manifest's own ``mcpServers`` map is
-        # already in the tree as a CodexInlineMcpBlock, and feeding it here
+        # meta is passed empty: the manifest's ``mcpServers`` map is
+        # already in the tree as a CodexInlineMcpBlock — feeding it here
         # too would list every inline server twice.
         mcp_servers=_extract_mcp_servers(
             _owned_blocks(context, node, McpBlock, plugin_resolved), {}
@@ -462,10 +437,8 @@ def _string_list(value) -> List[str]:
 def _extract_codex_skills(context: RepositoryContext, plugin_resolved: Path) -> List[SkillDoc]:
     """Skills the tree assigned to this plugin.
 
-    A nested plugin's skills nest under its container, while a repo-root
-    plugin's hang off the tree root; either way the build tagged each
-    ``SkillNode`` with its owning plugin root, so membership is a read,
-    not a path match.
+    The build tagged each ``SkillNode`` with its owning plugin root, so
+    membership is a read, not a path match.
     """
     docs = []
     for skill_node in context.lint_tree.find(SkillNode):
