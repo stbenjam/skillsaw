@@ -62,8 +62,15 @@ def _redact_userinfo(text: str) -> str:
         if at == -1:
             out.append(text[emitted:])
             return "".join(out)
-        start = max(text.rfind(ch, emitted, at) for ch in ("/", " ", "\t", "\n", "@")) + 1
-        start = max(start, emitted)
+        # The backward window is floored like the forward host cap below:
+        # without it, a delimiter-free prefix is rescanned for every ``@``
+        # and the scan goes quadratic on adversarial input. When the
+        # clipped window holds no delimiter the credential may extend past
+        # it, so redact from the last emit point — never clamp ``start``
+        # into the middle of a secret and emit its head.
+        floor = max(emitted, at - 512)
+        found = max(text.rfind(ch, floor, at) for ch in ("/", " ", "\t", "\n", "@"))
+        start = found + 1 if found != -1 else emitted
         userinfo = text[start:at]
         if not userinfo:
             search_from = at + 1
@@ -95,9 +102,24 @@ def safe_display(value: object) -> str:
     replaced so a crafted value cannot smuggle terminal escapes through
     the text formatter, and the result is length-bounded.
     """
-    text = _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", str(value))
+    raw = str(value)
+    truncated = len(raw) > _MAX_DISPLAY
+    # Truncate before scanning so the display cap bounds the *work*, not
+    # just the output — redaction over the full value is quadratic-ish in
+    # the worst case, and a multi-megabyte manifest value must not buy
+    # minutes of CPU for one diagnostic.
+    text = raw[:_MAX_DISPLAY]
+    if truncated:
+        # The cut can sever a credential ahead of its ``@`` — the window
+        # then holds a bare colon-bearing segment redaction would never
+        # match. Treat the cut like an ``@``: redact a colon-bearing tail
+        # segment. Over-redacting a truncated tail is the safe direction.
+        start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
+        if ":" in text[start:]:
+            text = text[:start] + "[redacted]"
+    text = _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", text)
     text = _redact_userinfo(text)
-    if len(text) > _MAX_DISPLAY:
+    if truncated or len(text) > _MAX_DISPLAY:
         text = text[:_MAX_DISPLAY] + "…"
     return text
 

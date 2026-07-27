@@ -1207,7 +1207,7 @@ def _get_js() -> str:
     // handler compiles, so the JS escapes must survive that decode: \' stays
     // \', while " arrives as a plain quote which cannot close a
     // single-quoted JS string.
-    return escAttr(String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+    return escAttr(String(str).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
   }
 
   init();

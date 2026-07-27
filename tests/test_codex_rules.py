@@ -373,7 +373,7 @@ class TestPluginJsonValid:
 
     def test_a_self_symlinked_manifest_with_excludes_does_not_abort(self, tmp_path):
         """The retained missing-manifest violation flows through exclusion
-        matching, whose Path.resolve() raised on the symlink loop."""
+        matching, which must not raise on the symlink loop."""
         repo = tmp_path / "plugin-repo"
         (repo / ".codex-plugin").mkdir(parents=True)
         manifest = repo / ".codex-plugin" / "plugin.json"
@@ -3087,8 +3087,8 @@ class TestCodexMarketplaceDocs:
             assert name in rendered, f"{name} missing from rendered docs"
 
     def test_mcp_servers_report_their_real_source(self, tmp_path):
-        """`.mcp.json` was hard-coded, so inline and custom-path servers
-        were attributed to a file that need not exist."""
+        """An inline or custom-path server is attributed to the file that
+        actually declares it, never to a `.mcp.json` that need not exist."""
         repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
         plugin = _write_plugin(
             repo / "plugins" / "sources",
@@ -4281,7 +4281,7 @@ class TestPolicyConfigRobustness:
 class TestDocsBlockDeduplication:
     def test_inline_config_is_not_listed_twice(self, tmp_path):
         """The legacy PluginNode has the Codex node as a descendant, so
-        searching both returned the Codex node's blocks twice."""
+        searching both must not list the Codex node's blocks twice."""
         repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
         plugin = _write_plugin(
             repo / "plugins" / "hybrid",
@@ -5017,14 +5017,11 @@ class TestVisiblePluginSkillContainment:
         _, plugin, _ = self._symlinked_skills(tmp_path)
         assert codex_declared_skill_dirs(plugin) == []
 
-    @pytest.mark.xfail(
-        reason="generic Agent Skills discovery has no containment boundary "
-        "(contain_within=None), so a symlinked directory anywhere in the repo "
-        "is followed out of the checkout; only Codex plugin discovery passes "
-        "a boundary.",
-        strict=True,
-    )
     def test_the_agentskills_walk_does_not_follow_the_symlink(self, tmp_path):
+        # Formerly a strict xfail: the generic walk had no containment
+        # boundary. _discover_skills_in_dir now derives one from
+        # provenance whenever it starts in or descends into a Codex-only
+        # directory, closing this route too.
         repo, _, outside = self._symlinked_skills(tmp_path)
         discovered = {safe_resolve(p) for p in RepositoryContext(repo).skills}
         assert safe_resolve(outside) not in discovered
@@ -5916,7 +5913,7 @@ class TestRegistrationSurvivesUnparseableCatalogs:
         monkeypatch.setattr(mod.json, "loads", real)
 
 
-class TestPanelFourRegressions:
+class TestEvalsBaselineStability:
     def test_wrong_shape_evals_baseline_survives_message_rewording(self, tmp_path):
         """The violation fingerprints on the file's root-line content, so a
         baseline written against an older message keeps suppressing."""
@@ -5943,13 +5940,23 @@ class TestPanelFourRegressions:
         remaining, _ = filter_baselined_violations(found, baseline, skill)
         assert remaining == []
 
+
+class TestRegistrationFixSymlinkRefusal:
     def test_fix_declines_a_symlinked_catalog(self, tmp_path):
         """The registration autofix must never write through a symlink —
-        the link target, in or out of the repo, is not the catalog."""
-        target = tmp_path / "unrelated.json"
-        target.write_text(json.dumps({"name": "cat", "plugins": []}), encoding="utf-8")
+        the link target, in or out of the repo, is not the catalog.
+
+        The link points at an in-repo sibling so discovery still attaches
+        the catalog and ``check()`` reports the unregistered plugin —
+        ``fix()`` must then reach its symlink refusal and decline, rather
+        than being saved by the catalog never entering the tree.
+        """
         repo = tmp_path / "marketplace-repo"
         (repo / ".agents" / "plugins").mkdir(parents=True)
+        target = repo / ".agents" / "plugins" / "shared.json"
+        target.write_text(
+            json.dumps({"name": "cat", "plugins": []}, indent=2) + "\n", encoding="utf-8"
+        )
         (repo / ".agents" / "plugins" / "marketplace.json").symlink_to(target)
         _write_plugin(
             repo / "plugins" / "new",
@@ -5959,10 +5966,14 @@ class TestPanelFourRegressions:
         context = RepositoryContext(repo)
         rule = CodexMarketplaceRegistrationRule({})
         violations = rule.check(context)
+        assert any("not registered" in v.message for v in violations), messages(violations)
         before = target.read_bytes()
-        rule.fix(context, violations)
-        assert target.read_bytes() == before, "wrote through a symlinked catalog"
+        applied = [r for r in rule.fix(context, violations) if getattr(r, "applied", True)]
+        assert applied == [], "fix wrote through a symlinked catalog"
+        assert target.read_bytes() == before
 
+
+class TestLintPathWidening:
     def test_a_user_level_catalog_is_not_widened_to_home(self, tmp_path, monkeypatch):
         """lint ~/.agents/plugins/marketplace.json roots at the catalog
         directory, never at $HOME."""
@@ -5978,25 +5989,60 @@ class TestPanelFourRegressions:
         (roots := _resolve_lint_paths([catalog]))
         assert roots == [fake_home / ".agents" / "plugins"]
 
-    def test_redaction_is_linear_on_adversarial_values(self):
-        """A 60 KB value with no dots or colons must redact (or pass) in
-        linear time — the regex it replaces was quadratic.
 
-        The bound is deliberately loose: the quadratic scan took >14 s
-        bare on these inputs, while the linear one takes ~0.25 s even
-        under coverage tracing on Python <=3.11 (no sys.monitoring),
-        where every bytecode line costs a Python-level trace call.
+class TestSafeDisplay:
+    def test_redaction_work_is_bounded_on_adversarial_values(self):
+        """Adversarial values must cost near-constant work: the display
+        cap is applied before the scan, so input size buys nothing.
+
+        A scaling ratio, not a wall-clock bound — absolute timings are
+        instrumentation-dependent (coverage tracing on Python <=3.11 has
+        no sys.monitoring backend and multiplies per-line cost), and a
+        wall-clock assertion here was once misread as a timing flake
+        while it was correctly reporting quadratic behavior.
         """
         import time
 
         from skillsaw.rules.builtin.codex._helpers import safe_display
 
-        for adversarial in ("a" * 60000, "a@" * 30000, "@" * 60000, "u:p@h.c/" * 7000):
-            start = time.perf_counter()
-            out = safe_display(adversarial)
-            assert time.perf_counter() - start < 10.0
-            assert len(out) <= 501  # bounded output
+        def cost(n: int) -> float:
+            best = float("inf")
+            for _ in range(3):
+                for pattern in ("a", "a@", "@", "u:p@h.c/"):
+                    s = (pattern * (n // len(pattern) + 1))[:n]
+                    start = time.perf_counter()
+                    out = safe_display(s)
+                    best_candidate = time.perf_counter() - start
+                    assert len(out) <= 501  # bounded output
+                    best = min(best, best_candidate)
+            return best
 
+        t1, t4 = cost(60_000), cost(240_000)
+        # Truncate-first makes this near-constant (ratio ~1); the old
+        # quadratic scan lands near 16. 8 leaves headroom for noise.
+        assert t4 < 8 * max(t1, 1e-4), (t1, t4)
+
+    def test_truncation_does_not_leak_a_severed_credential(self):
+        """A credential whose ``@`` falls beyond the display cap must not
+        surface its head — the cut edge is treated like an ``@``."""
+        from skillsaw.rules.builtin.codex._helpers import safe_display
+
+        value = "x" * 490 + "user:" + "S" * 600 + "@host.example/path"
+        out = safe_display(value)
+        assert "SSSS" not in out
+        assert "[redacted]" in out
+
+    def test_a_long_delimiterless_credential_is_fully_redacted(self):
+        """A >512-char userinfo must not have its head emitted when the
+        backward search window is clipped."""
+        from skillsaw.rules.builtin.codex._helpers import _redact_userinfo
+
+        out = _redact_userinfo("u:" + "T" * 600 + "@h.example")
+        assert "TTTT" not in out
+        assert out == "[redacted]@h.example"
+
+
+class TestRendererHardening:
     def test_unsafe_urls_are_neutralized_on_both_extraction_paths(self, tmp_path):
         """javascript: and paren-bearing URLs from either a Claude or a
         Codex manifest must not reach generated Markdown or HTML."""
@@ -6055,3 +6101,278 @@ class TestPanelFourRegressions:
         for content in (*md_pages.values(), *html_pages.values()):
             assert "javascript:alert" not in content
             assert "https://evil/p" not in content
+
+    def test_entity_encoded_schemes_are_neutralized_in_both_renderers(self, tmp_path):
+        """``javascript&#58;alert&#40;1&#41;`` carries no literal colon or
+        paren, so it must be caught by entity decoding, not the character
+        filter — in Markdown and HTML output alike."""
+        from skillsaw.docs.html_renderer import render_html
+
+        repo = tmp_path / "entities"
+        for name, homepage in (
+            ("colon-plug", "javascript&#58;alert&#40;1&#41;"),
+            ("letter-plug", "&#106;avascript:alert(1)"),
+        ):
+            claude = repo / "plugins" / name / ".claude-plugin"
+            claude.mkdir(parents=True)
+            (claude / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "name": name,
+                        "version": "1.0.0",
+                        "description": "A plugin.",
+                        "homepage": homepage,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / "plugins" / name / "commands").mkdir()
+
+        docs = extract_docs(RepositoryContext(repo))
+        for content in (*render_markdown(docs).values(), *render_html(docs).values()):
+            assert "javascript&#58;" not in content
+            assert "&#106;avascript" not in content
+            assert "javascript:alert" not in content
+
+    def test_emitted_page_script_survives_backslash_escaping(self, tmp_path):
+        """The JS template is a non-raw Python string — backslash halving
+        once shipped an unparseable script and a blank page. Pin the
+        emitted (post-halving) escJsAttr line, and parse every script
+        block with node when it is available."""
+        import re
+        import shutil
+        import subprocess
+
+        from skillsaw.docs.html_renderer import _get_js
+
+        assert ".replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\")" in _get_js()
+
+        node = shutil.which("node")
+        if node is None:
+            pytest.skip("node not available")
+        repo = tmp_path / "page"
+        _write_plugin(repo, {"name": "page", "version": "1.0.0", "description": "A plugin."})
+        docs = extract_docs(RepositoryContext(repo))
+        from skillsaw.docs.html_renderer import render_html
+
+        for content in render_html(docs).values():
+            for i, script in enumerate(re.findall(r"<script>(.*?)</script>", content, re.S)):
+                js = tmp_path / f"block{i}.js"
+                js.write_text(script, encoding="utf-8")
+                proc = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+                assert proc.returncode == 0, proc.stderr
+
+
+class TestSkillDiscoveryContainment:
+    """Every skill-discovery route honors the Codex plugin-root boundary,
+    while Claude plugins keep their established uncontained discovery."""
+
+    def test_legacy_plugin_skill_scan_contains_codex_claimed_directories(self, tmp_path):
+        """A commands/-marked Codex plugin enters the legacy plugin list,
+        whose skill scan predates containment — a skills/ symlink must not
+        pull an out-of-checkout SKILL.md into the tree through it."""
+        outside = tmp_path / "outside-skill"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: external\ndescription: Escaped content.\n---\nBody.\n",
+            encoding="utf-8",
+        )
+
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "cx",
+                        "source": {"source": "local", "path": "./plugins/cx"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        plugin = repo / "plugins" / "cx"
+        (plugin / "commands").mkdir(parents=True)
+        (plugin / "commands" / "go.md").write_text(
+            "---\ndescription: Run the thing.\n---\nDo it.\n", encoding="utf-8"
+        )
+        (plugin / "skills").mkdir()
+        (plugin / "skills" / "external").symlink_to(outside, target_is_directory=True)
+
+        context = RepositoryContext(repo)
+        assert plugin in context.plugins  # the legacy list claimed it
+        resolved_outside = outside.resolve()
+        assert all(
+            s.resolve() != resolved_outside for s in context.skills
+        ), "escaping symlinked skill entered discovery uncontained"
+
+    def test_claude_plugin_symlinked_skills_keep_established_discovery(self, tmp_path):
+        """The containment above is Codex-only — Claude plugins keep their
+        established uncontained skill discovery."""
+        outside = tmp_path / "shared-skill"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: Shared content.\n---\nBody.\n",
+            encoding="utf-8",
+        )
+
+        repo = tmp_path / "claude-repo"
+        plugin = repo / "plugins" / "cl"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "cl", "version": "1.0.0", "description": "A plugin."}),
+            encoding="utf-8",
+        )
+        (plugin / "skills").mkdir()
+        (plugin / "skills" / "shared").symlink_to(outside, target_is_directory=True)
+
+        context = RepositoryContext(repo)
+        resolved_outside = outside.resolve()
+        assert any(s.resolve() == resolved_outside for s in context.skills)
+
+
+class TestDocsRenderTotality:
+    def test_docs_survive_non_scalar_prose_frontmatter(self, tmp_path):
+        """A list-valued command description must not reach the Markdown
+        renderer's line list, where it aborts generation with TypeError."""
+        repo = tmp_path / "claude-repo"
+        plugin = repo / "plugins" / "cl"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "cl", "version": "1.0.0", "description": "A plugin."}),
+            encoding="utf-8",
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text(
+            "---\ndescription: [not, text]\n---\nBody prose.\n", encoding="utf-8"
+        )
+        (plugin / "agents").mkdir()
+        (plugin / "agents" / "helper.md").write_text(
+            "---\nname: [also, wrong]\ndescription: {nested: map}\n---\nAgent prose.\n",
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+        md_pages = render_markdown(docs)  # must not raise
+        render_html(docs)
+        joined = "\n".join(md_pages.values())
+        assert "go" in joined
+        assert "helper" in joined  # name fell back to the file stem
+
+
+class TestSafeUrlEntityDecoding:
+    def test_safe_url_decodes_entities_before_scheme_validation(self):
+        """CommonMark decodes character references in link destinations, so
+        entity-encoded schemes must be rejected, single- or double-encoded."""
+        from skillsaw.docs.extractor import _safe_url
+
+        assert _safe_url("javascript&colon;alert(1)") == ""
+        assert _safe_url("javascript&amp;colon;alert(1)") == ""
+        assert _safe_url("javascript&#58;alert(1)") == ""
+        # Legitimate URLs survive, decoded to their rendered form.
+        assert _safe_url("https://ok.example/?a=1&amp;b=2") == "https://ok.example/?a=1&b=2"
+        assert _safe_url("https://ok.example/path") == "https://ok.example/path"
+
+
+class TestHookDiagnosticRedaction:
+    def test_non_string_hook_type_is_redacted_in_diagnostics(self, tmp_path):
+        """A dict-valued hook type carrying a credentialed URL must not
+        echo the secret into the violation message."""
+        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+
+        repo = tmp_path / "claude-repo"
+        plugin = repo / "plugins" / "cl"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "cl", "version": "1.0.0", "description": "A plugin."}),
+            encoding="utf-8",
+        )
+        (plugin / "hooks").mkdir()
+        (plugin / "hooks" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": ".*",
+                                "hooks": [
+                                    {
+                                        "type": {"url": "https://user:sekrit123@host.example/x"},
+                                        "command": "echo test",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        violations = HooksJsonValidRule().check(RepositoryContext(repo))
+        assert violations
+        invalid = [v for v in violations if "invalid type" in v.message]
+        assert invalid
+        assert all("sekrit123" not in v.message for v in violations)
+        # A plain string typo still reads back verbatim for the author.
+        assert any("url" in v.message for v in invalid)
+
+
+class TestDualManifestBackwardCompat:
+    """A directory with both manifests keeps its established Claude
+    results — the ecosystem-tightened hooks/MCP checks fire only for
+    Codex-only plugins. Each test pins its precondition so a discovery
+    change cannot quietly turn the assertions vacuous."""
+
+    def _fixture(self, tmp_path):
+        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+        from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
+
+        repo = copy_fixture("codex/dual-manifest", tmp_path)
+        context = RepositoryContext(repo)
+        # Preconditions, not assumptions: the plugin must genuinely be
+        # dual-provenance and its hooks file Codex-owned, or the gates
+        # under test short-circuit before their codex-only conjunct.
+        assert context.provenance(repo).ecosystems == frozenset({"claude", "codex"})
+        assert context.codex_plugin_owning(repo / "hooks" / "hooks.json") is not None
+        return repo, context, HooksJsonValidRule, McpValidJsonRule
+
+    def test_dual_manifest_hooks_keep_claude_results(self, tmp_path):
+        repo, context, hooks_rule, _ = self._fixture(tmp_path)
+        found = messages(hooks_rule().check(context))
+        assert not any("matcher" in m and "must be a string" in m for m in found), found
+
+    def test_dual_manifest_mcp_keeps_claude_results(self, tmp_path):
+        repo, context, _, mcp_rule = self._fixture(tmp_path)
+        found = messages(mcp_rule().check(context))
+        assert not any("non-empty string" in m for m in found), found
+
+    def test_codex_only_twin_gets_the_tightened_checks(self, tmp_path):
+        """The same directory minus `.claude-plugin/` crosses the gate:
+        both tightened violations must appear — this is the half of the
+        conjunction the dual tests prove is *not* firing above."""
+        repo, _, hooks_rule, mcp_rule = self._fixture(tmp_path)
+        shutil.rmtree(repo / ".claude-plugin")
+        context = RepositoryContext(repo)
+        assert context.provenance(repo).codex_only
+        hooks_found = messages(hooks_rule().check(context))
+        assert any("matcher" in m and "must be a string" in m for m in hooks_found), hooks_found
+        mcp_found = messages(mcp_rule().check(context))
+        assert any("non-empty string" in m for m in mcp_found), mcp_found
+
+    def test_claude_only_twin_matches_dual_results_exactly(self, tmp_path):
+        """Strongest form of the compat claim: deleting `.codex-plugin/`
+        must not change either rule's messages at all."""
+        repo, context, hooks_rule, mcp_rule = self._fixture(tmp_path)
+        dual_msgs = (
+            sorted(messages(hooks_rule().check(context))),
+            sorted(messages(mcp_rule().check(context))),
+        )
+        shutil.rmtree(repo / ".codex-plugin")
+        claude_context = RepositoryContext(repo)
+        claude_msgs = (
+            sorted(messages(hooks_rule().check(claude_context))),
+            sorted(messages(mcp_rule().check(claude_context))),
+        )
+        assert dual_msgs == claude_msgs

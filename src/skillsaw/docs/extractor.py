@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -333,7 +335,17 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
         legacy = legacy_by_path.get(plugin_resolved, [])
         docs.append(
             _extract_codex_plugin(
-                context, node, plugin_resolved, resolved_skills, legacy, plugin_roots
+                context,
+                node,
+                plugin_resolved,
+                resolved_skills,
+                legacy,
+                plugin_roots,
+                # Every plugin root, Claude and Codex: a root-level plugin's
+                # container is the tree root, and prose scoping must stop at
+                # the nearest owning plugin of either ecosystem or a nested
+                # plugin's files are republished under the root plugin.
+                set(plugin_roots) | set(legacy_by_path),
             )
         )
     return docs
@@ -407,14 +419,18 @@ def _extract_codex_plugin(
     resolved_skills: List[Tuple[Path, SkillNode]],
     legacy_nodes: List[PluginNode],
     codex_roots: List[Path],
+    prose_roots: Optional[Set[Path]] = None,
 ) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
     The Codex manifest carries the same descriptive fields as a Claude one,
     so the shape of the output is unchanged. Commands, agents and rule
-    files are always empty: Codex plugins ship skills, hooks and MCP
-    servers, and have no equivalent of those three.
+    files attach when the plugin ships them — Codex reuses the Claude
+    directory conventions, and dropping them would publish empty pages
+    for plugins whose prose the lint tree already holds.
     """
+    if prose_roots is None:
+        prose_roots = set(codex_roots)
     plugin_dir = node.plugin_dir
     meta = _read_json_dict(node)
     # When legacy discovery also built a PluginNode for this directory — it
@@ -440,26 +456,33 @@ def _extract_codex_plugin(
         homepage=_safe_url(meta.get("homepage")),
         repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "") or ""),
-        commands=_command_docs(_scoped_prose(node, CommandBlock, plugin_resolved)),
+        commands=_command_docs(_scoped_prose(node, CommandBlock, plugin_resolved, prose_roots)),
         skills=_extract_codex_skills(plugin_resolved, resolved_skills, codex_roots),
-        agents=_agent_docs(_scoped_prose(node, AgentBlock, plugin_resolved)),
+        agents=_agent_docs(_scoped_prose(node, AgentBlock, plugin_resolved, prose_roots)),
         hooks=_extract_hooks(sources),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
         # already in the tree as a CodexInlineMcpBlock, and feeding it here
         # too would list every inline server twice.
         mcp_servers=_extract_mcp_servers(sources, {}),
-        rules=_rule_docs(_scoped_prose(node, PluginRuleBlock, plugin_resolved)),
+        rules=_rule_docs(_scoped_prose(node, PluginRuleBlock, plugin_resolved, prose_roots)),
         has_readme=(plugin_dir / "README.md").is_file(),
     )
 
 
-def _scoped_prose(node: CodexPluginConfigNode, block_cls: type, plugin_resolved: Path):
-    """Prose blocks attached to *node*'s container, scoped to this plugin.
+def _scoped_prose(
+    node: CodexPluginConfigNode,
+    block_cls: type,
+    plugin_resolved: Path,
+    prose_roots: Set[Path],
+):
+    """Prose blocks attached to *node*'s container, owned by this plugin.
 
     The single tree pass attaches a Codex-only plugin's prose to its
     container (a CodexPluginNode, or the tree root for a root-level
-    plugin). The root case can hold other plugins' blocks too, so scope
-    by path containment rather than trusting the container's extent.
+    plugin). The root case can hold other plugins' blocks too, and for a
+    repo-root plugin bare containment is vacuously true for all of them —
+    so ownership uses the nearest plugin root, exactly as
+    ``_extract_codex_skills`` matches skills.
     """
     container = node.parent
     if container is None:
@@ -467,7 +490,13 @@ def _scoped_prose(node: CodexPluginConfigNode, block_cls: type, plugin_resolved:
     scoped = []
     for block in container.find(block_cls):
         resolved = safe_resolve(block.path)
-        if resolved is not None and resolved.is_relative_to(plugin_resolved):
+        if resolved is None or not resolved.is_relative_to(plugin_resolved):
+            continue
+        owner = next(
+            (c for c in resolved.parents if c in prose_roots),
+            plugin_resolved,
+        )
+        if owner == plugin_resolved:
             scoped.append(block)
     return scoped
 
@@ -506,6 +535,18 @@ def _safe_url(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         return ""
     candidate = value.strip()
+    # CommonMark decodes character references in link destinations, so
+    # ``javascript&colon;alert(1)`` carries no literal colon here yet
+    # renders as a script-executing link. Validate and emit the decoded
+    # form; the loop is bounded so ``&amp;colon;``-style nesting cannot
+    # smuggle a scheme past a single decode either.
+    for _ in range(5):
+        decoded = html.unescape(candidate)
+        if decoded == candidate:
+            break
+        candidate = decoded
+    else:
+        return ""
     if _URL_FORBIDDEN & set(candidate):
         return ""
     # Parentheses survive the character filter but delimit the Markdown
@@ -622,7 +663,7 @@ def _command_docs(blocks) -> List[CommandDoc]:
             CommandDoc(
                 name=block.path.stem,
                 file_path=block.path,
-                description=block.field_value("description", ""),
+                description=_scalar_str(block.field_value("description", "")),
                 full_name=full_name,
                 synopsis=synopsis,
                 body=body_text,
@@ -691,9 +732,9 @@ def _agent_docs(blocks) -> List[AgentDoc]:
     for block in blocks:
         docs.append(
             AgentDoc(
-                name=block.field_value("name", block.path.stem),
+                name=_scalar_str(block.field_value("name", "")) or block.path.stem,
                 file_path=block.path,
-                description=block.field_value("description", ""),
+                description=_scalar_str(block.field_value("description", "")),
                 body=block.body_text.strip(),
             )
         )
@@ -781,7 +822,7 @@ def _rule_docs(blocks) -> List[RuleFileDoc]:
             RuleFileDoc(
                 name=block.path.stem,
                 file_path=block.path,
-                description=block.field_value("description", ""),
+                description=_scalar_str(block.field_value("description", "")),
                 globs=globs,
                 body=block.body_text.strip(),
             )
@@ -790,6 +831,16 @@ def _rule_docs(blocks) -> List[RuleFileDoc]:
 
 
 # -- Helpers --
+
+
+def _scalar_str(value: Any) -> str:
+    """A frontmatter value the renderers may join as text, or ``""``.
+
+    Same totality contract as skill descriptions above: the frontmatter
+    rules report the malformed value; docs generation must not crash on
+    a list- or dict-valued field reaching ``"\\n".join()``.
+    """
+    return value if isinstance(value, str) else ""
 
 
 def _strip_fences(text: str) -> str:

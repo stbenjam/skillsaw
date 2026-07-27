@@ -305,11 +305,11 @@ class CodexMarketplaceRegistrationRule(Rule):
                     resolved = safe_resolve(context.root_path / source)
                     if resolved is not None:
                         dirs.add(resolved)
-                    # The name is deliberately NOT credit — see above — but
-                    # it is remembered: a directory whose name the catalog
-                    # lists under a non-matching path is a different defect
-                    # from one the catalog never mentions, and reporting
-                    # the second message for the first sends the author
+                    # The name is remembered without crediting the
+                    # directory: a directory whose name the catalog lists
+                    # under a non-matching path is a different defect from
+                    # one the catalog never mentions, and reporting the
+                    # second message for the first sends the author
                     # grepping a catalog that already contains the name.
                     name = entry.get("name")
                     if isinstance(name, str):

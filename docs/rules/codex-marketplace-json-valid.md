@@ -76,8 +76,11 @@ credentials, query string, or fragment.
 
 The spec asks for `policy.installation`, `policy.authentication`, and
 `category` on every entry, so their absence is a warning. Unrecognized
-policy values are warnings too — both value sets are open-ended upstream.
-Use `installation-values` and `authentication-values` to adjust them.
+policy values are warnings too: the upstream sources disagree on
+strictness — the prose spec offers the values as examples ("such as"),
+while the field-level `plugin-json-spec.md` publishes closed enums — and
+a warning is the safe intersection of the two. Use
+`installation-values` and `authentication-values` to adjust the sets.
 
 ## Configuration
 

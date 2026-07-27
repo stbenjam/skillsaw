@@ -60,7 +60,8 @@ rules:
     enabled: false
 ```
 
-See the Agent Skills [evaluating skills guide](https://agentskills.io/skill-creation/evaluating-skills).
+See the Agent Skills guide on
+[evaluating skills](https://agentskills.io/skill-creation/evaluating-skills).
 
 ## Configuration
 

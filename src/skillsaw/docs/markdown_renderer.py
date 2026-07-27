@@ -36,7 +36,9 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
 def _render_single_page(docs: DocsOutput) -> str:
     lines: List[str] = []
     if docs.title:
-        lines += [f"# {docs.title}", ""]
+        # The title can fall back to plugins[0].name — third-party data on
+        # a marketplace page, so it folds like every other metadata scalar.
+        lines += [f"# {_table_cell(docs.title)}", ""]
     plugin = docs.plugins[0] if docs.plugins else None
 
     if plugin:
@@ -67,7 +69,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     # Index
     lines: List[str] = [f"# {_table_cell(mp.name or docs.title)}", ""]
     if mp.owner and mp.owner.get("name"):
-        lines.append(f"**Owner:** {mp.owner['name']}")
+        lines.append(f"**Owner:** {_table_cell(mp.owner['name'])}")
         lines.append("")
 
     total_cmds = sum(len(p.commands) for p in sorted_plugins)
@@ -127,6 +129,18 @@ def _table_cell(value: object) -> str:
     return folded
 
 
+def _link_dest(url: str) -> str:
+    """An extractor-validated URL made inert in a link destination.
+
+    CommonMark decodes character references inside destinations, so a
+    literal ``&`` must be re-encoded to survive the render round-trip —
+    and any entity-shaped text that slips past ``_safe_url`` decodes to
+    its literal self instead of reassembling a scheme. The sink guards
+    itself rather than trusting the extractor to be the only control.
+    """
+    return url.replace("&", "&amp;")
+
+
 # -- Plugin content --
 
 
@@ -153,9 +167,9 @@ def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
         lines.append("")
     link_parts = []
     if plugin.homepage:
-        link_parts.append(f"[Homepage]({plugin.homepage})")
+        link_parts.append(f"[Homepage]({_link_dest(plugin.homepage)})")
     if plugin.repository:
-        link_parts.append(f"[Repository]({plugin.repository})")
+        link_parts.append(f"[Repository]({_link_dest(plugin.repository)})")
     if link_parts:
         lines.append(" | ".join(link_parts))
         lines.append("")

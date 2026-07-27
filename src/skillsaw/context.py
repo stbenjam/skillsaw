@@ -219,9 +219,9 @@ class PluginProvenance:
     override changes what discovery walks, not what the author declared.
 
     Adding an ecosystem means adding its evidence probe to
-    ``RepositoryContext._compute_provenance`` and its format-rule family
-    to the gates that read ``ecosystems`` — see the "Ecosystem
-    provenance" section of the development rules
+    ``RepositoryContext.provenance`` and its format-rule family to the
+    gates that read ``ecosystems`` — see the "Ecosystem provenance"
+    section of the development rules
     (.apm/instructions/development.instructions.md).
     """
 
@@ -1069,8 +1069,8 @@ class RepositoryContext:
 
         The union of discovered plugin roots and the catalogs' local
         sources. Provenance checks consult this once per ``plugins/``
-        child, and rebuilding the claim list on each call made repository
-        detection quadratic in the catalog size.
+        child, and rebuilding the claim list on each call would make
+        repository detection quadratic in the catalog size.
         """
         if self._codex_claims is None:
             claims = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
@@ -1156,6 +1156,21 @@ class RepositoryContext:
         for candidate in (resolved, *resolved.parents):
             if candidate in roots:
                 return candidate
+        return None
+
+    def _codex_claim_boundary(self, parent: Path) -> Optional[Path]:
+        """Resolved root of the Codex-only plugin owning *parent*, if any.
+
+        A lexical ancestor walk, nearest first, deliberately *not*
+        resolution-based like ``codex_plugin_owning`` — resolving first
+        would follow the very symlinks the boundary exists to reject.
+        Ownership itself comes from :meth:`provenance`, per the doctrine.
+        """
+        for candidate in (parent, *parent.parents):
+            if self.provenance(candidate).codex_only:
+                return safe_resolve(candidate)
+            if candidate == self.root_path or candidate.parent == candidate:
+                break
         return None
 
     def is_codex_installed_plugin(self, plugin_dir: Path) -> bool:
@@ -1632,8 +1647,11 @@ class RepositoryContext:
         *contain_within* rejects children that resolve outside it. Passed
         for Codex plugins, where ``skills/external`` can be a symlink out
         of the repository and the SKILL.md behind it would otherwise be
-        read as if the plugin shipped it. ``None`` disables the containment
-        boundary, for discovery paths with no owning Codex plugin.
+        read as if the plugin shipped it. ``None`` means no caller-imposed
+        boundary — the walk still derives one from provenance below, so
+        every route into a Codex-only directory (the AGENTSKILLS root
+        walk, the legacy plugin loop, a claimed repository root) honors
+        the same containment without each call site knowing to ask.
         """
         # ``discovered`` only records directories that held a SKILL.md, so
         # it cannot stop a cycle: ``skills/a/loop -> ../..`` stays inside
@@ -1642,6 +1660,11 @@ class RepositoryContext:
         # every directory descended into, whether or not it held a skill.
         if visited is None:
             visited = set()
+            if contain_within is None:
+                # Top-level call: the scan may *start* inside a claimed
+                # directory (``plugin/skills``), where the descent check
+                # below never sees the claimed ancestor.
+                contain_within = self._codex_claim_boundary(parent)
         try:
             for item in parent.iterdir():
                 if self._should_skip_dir(item):
@@ -1661,7 +1684,13 @@ class RepositoryContext:
                     discovered.add(resolved)
                 else:
                     visited.add(resolved)
-                    self._discover_skills_in_dir(item, skills, discovered, contain_within, visited)
+                    child_bound = contain_within
+                    if child_bound is None and self.provenance(item).codex_only:
+                        # An unbounded walk is entering a Codex-only
+                        # directory: from here down, everything must
+                        # resolve inside it.
+                        child_bound = resolved
+                    self._discover_skills_in_dir(item, skills, discovered, child_bound, visited)
         except OSError:
             pass
 

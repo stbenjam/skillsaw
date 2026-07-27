@@ -6,6 +6,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.rules.builtin.codex._helpers import safe_display
 from skillsaw.rules.builtin.content_analysis import HooksBlock
 
 # Valid hook event types
@@ -245,9 +246,14 @@ class HooksJsonValidRule(Rule):
                         # malformed hook silences hook validation for every
                         # remaining block in the repository.
                         if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
+                            # A non-string type is echoed as its repr, and a
+                            # dict value can carry a credentialed URL into
+                            # text/JSON/SARIF output — route it through the
+                            # diagnostic redactor like every manifest value.
                             violations.append(
                                 self.violation(
-                                    f"Event '{hook_path}' has invalid type '{hook_type}'. "
+                                    f"Event '{hook_path}' has invalid type "
+                                    f"'{safe_display(hook_type)}'. "
                                     f"Valid types: {', '.join(sorted(_VALID_HOOK_TYPES))}",
                                     file_path=block.path,
                                 )

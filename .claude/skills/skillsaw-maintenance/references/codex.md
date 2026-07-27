@@ -60,8 +60,10 @@ hedge (see Sync notes).
 - Detection and discovery — `src/skillsaw/context.py`
   (`RepositoryType.CODEX_PLUGIN`, `RepositoryType.CODEX_MARKETPLACE`,
   `_discover_codex_plugins`, `_discover_codex_marketplaces`).
-- Lint tree nodes — `src/skillsaw/lint_target.py` (`CodexPluginConfigNode`,
-  `CodexMarketplaceConfigNode`), built in `src/skillsaw/lint_tree.py`.
+- Lint tree nodes — `src/skillsaw/lint_target.py` (`CodexPluginNode`, the
+  container every prose attachment and provenance gate hangs off;
+  `CodexPluginConfigNode`; `CodexMarketplaceConfigNode`), built in
+  `src/skillsaw/lint_tree.py`.
 - Docs: `src/skillsaw/rules/docs/codex-*.md`.
 
 ## Sync notes
@@ -72,10 +74,14 @@ Hand-copied value sets that drift — re-check each against upstream:
   than error, so a type added upstream produces one warning instead of failing the
   lint until skillsaw catches up.
 - `DEFAULT_INSTALLATION_VALUES` = `AVAILABLE`, `INSTALLED_BY_DEFAULT`, `NOT_AVAILABLE`.
-  `plugins.md` publishes exactly these three as a closed enum. skillsaw still only
-  warns on unrecognized values, and the list is configurable, so an upstream addition
-  degrades to one warning per entry rather than failing the lint until skillsaw
-  catches up.
+  The two upstream sources disagree on strictness: the prose spec (`plugins.md`)
+  hedges — "Use `policy.installation` values **such as** `AVAILABLE`, …" — an open
+  list, while the field-level spec (`openai/codex` `plugin-json-spec.md`) closes it
+  ("Allowed values: `NOT_AVAILABLE`, `AVAILABLE`, `INSTALLED_BY_DEFAULT`"). skillsaw
+  warns on unrecognized values as the intersection of the two, and the list is
+  configurable, so an upstream addition degrades to one warning per entry rather
+  than failing the lint until skillsaw catches up. On the next sync, check both
+  documents.
 - `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. `plugin-json-spec.md`
   publishes exactly this pair as an enum; the prose spec only describes the field and
   uses `ON_INSTALL` in its examples. Two upstream documents of differing strictness,

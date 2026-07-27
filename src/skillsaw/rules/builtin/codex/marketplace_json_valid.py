@@ -30,15 +30,17 @@ _SOURCE_REQUIRED_FIELDS = {
     "npm": ("package",),
 }
 
+# The upstream sources disagree on strictness: the prose spec hedges —
 # "Use policy.installation values such as AVAILABLE, INSTALLED_BY_DEFAULT,
-# or NOT_AVAILABLE" — the docs hedge with "such as", so an unrecognized
-# value is a warning, not an error, and the set is configurable.
+# or NOT_AVAILABLE" — while plugin-json-spec.md closes the same three as
+# "Allowed values". A warning on an unrecognized value is the safe
+# intersection, and the set is configurable.
 DEFAULT_INSTALLATION_VALUES = ["AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"]
 
-# The public docs describe policy.authentication only in prose ("whether auth
-# happens on install or first use"); these two literals are the ones the
-# openai/plugins catalog and its authoring spec actually use. Open-ended for
-# the same reason as installation, so unrecognized values warn.
+# Same split for policy.authentication: prose describes the field ("whether
+# auth happens on install or first use"), plugin-json-spec.md publishes
+# exactly this pair as an enum. Unrecognized values warn for the same
+# reason as installation.
 DEFAULT_AUTHENTICATION_VALUES = ["ON_INSTALL", "ON_USE"]
 
 # The docs mandate these on every entry ("Always include policy.installation,
