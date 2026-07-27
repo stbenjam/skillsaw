@@ -5980,7 +5980,13 @@ class TestPanelFourRegressions:
 
     def test_redaction_is_linear_on_adversarial_values(self):
         """A 60 KB value with no dots or colons must redact (or pass) in
-        linear time — the regex it replaces was quadratic."""
+        linear time — the regex it replaces was quadratic.
+
+        The bound is deliberately loose: the quadratic scan took >14 s
+        bare on these inputs, while the linear one takes ~0.25 s even
+        under coverage tracing on Python <=3.11 (no sys.monitoring),
+        where every bytecode line costs a Python-level trace call.
+        """
         import time
 
         from skillsaw.rules.builtin.codex._helpers import safe_display
@@ -5988,7 +5994,7 @@ class TestPanelFourRegressions:
         for adversarial in ("a" * 60000, "a@" * 30000, "@" * 60000, "u:p@h.c/" * 7000):
             start = time.perf_counter()
             out = safe_display(adversarial)
-            assert time.perf_counter() - start < 1.0
+            assert time.perf_counter() - start < 10.0
             assert len(out) <= 501  # bounded output
 
     def test_unsafe_urls_are_neutralized_on_both_extraction_paths(self, tmp_path):
