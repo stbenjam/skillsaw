@@ -273,6 +273,31 @@ jobs:
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
+      - name: Test openai/plugins (Codex rules gate)
+        run: |
+          git clone --depth 1 https://github.com/openai/plugins.git /tmp/openai-plugins
+
+          # The flagship Codex catalog (~180 plugins, ~580 skills). The five
+          # codex-* rules are clean on it and must stay that way — a finding
+          # here means a rule change regressed against the format's largest
+          # real-world corpus. Scoped to the codex rules: the catalog's
+          # third-party skill *content* is not ours to gate on.
+          skillsaw --format json --no-custom-rules \
+            --rule codex-plugin-json-valid \
+            --rule codex-plugin-structure \
+            --rule codex-marketplace-json-valid \
+            --rule codex-marketplace-registration \
+            --rule codex-openai-metadata \
+            /tmp/openai-plugins | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert r['stats']['plugins'] > 0, 'no plugins scanned'
+          assert 'codex-marketplace' in r['stats']['repo_types'], f\"not detected as a Codex marketplace: {r['stats']['repo_types']}\"
+          assert r['stats']['rules_run'] == 5, f\"expected the 5 codex rules, ran {r['stats']['rules_run']}\"
+          assert r['violations'] == [], f\"codex rules regressed: {[(v['rule_id'], v['message']) for v in r['violations'][:5]]}\"
+          print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills — codex rules clean\")
+          "
+
       - name: Test jeremylongshore/claude-code-plugins-plus-skills (huge marketplace)
         run: |
           git clone --depth 1 https://github.com/jeremylongshore/claude-code-plugins-plus-skills.git /tmp/ccpps

@@ -6,12 +6,18 @@ this layout part of skill validity. When a project adopts the guide convention,
 malformed JSON or an incompatible structure prevents tooling for that convention
 from using it reliably.
 
+Other eval formats exist under the same filename in the wild — openai/plugins
+ships top-level arrays and `cases`/`skill`/`version` documents. Those still
+violate this rule: the violation message distinguishes "valid JSON in a
+different format" from a syntax error, and projects standardized on another
+format can disable the rule.
+
 ## Examples
 
-**Bad:**
+**Bad (valid JSON, but not the evals format):**
 
 ```json
-[{"input": "deploy to staging"}]
+[{"id": "case-1", "question": "Deploy to staging"}]
 ```
 
 **Good:**
@@ -33,11 +39,17 @@ from using it reliably.
 
 ## How to fix
 
-To use the guide convention supported by this rule, provide a top-level `evals`
-array. skillsaw expects each case to have a numeric `id` and string `prompt`,
-with optional `expected_output`, `files`, and `assertions`; `skill_name` may
-name the skill being evaluated. This is validation of that convention, not a
-requirement of the formal Agent Skills specification. The violation message
-identifies the specific structural problem.
+Provide a top-level `evals` array. skillsaw expects each case to have a numeric
+`id` and string `prompt`, with optional `expected_output`, `files`, and
+`assertions`; `skill_name` may name the skill being evaluated. This is
+validation of that convention, not a requirement of the formal Agent Skills
+specification — if your project uses a different eval format, disable this
+rule:
+
+```yaml
+rules:
+  agentskill-evals:
+    enabled: false
+```
 
 See the Agent Skills [evaluating skills guide](https://agentskills.io/skill-creation/evaluating-skills).

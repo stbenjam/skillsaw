@@ -78,7 +78,7 @@ jobs:
           mkdir -p /tmp/repos /tmp/out/base /tmp/out/head /tmp/out/sha
           for r in openshift-eng/ai-helpers auth0/agent-skills \
                    opendatahub-io/agent-eval-harness kubernetes-sigs/maintainer-tools \
-                   RedHatProductSecurity/prodsec-skills; do
+                   RedHatProductSecurity/prodsec-skills openai/plugins; do
             name=$(basename "$r")
             slug=${r//\//__}  # encode org/repo into the filename for the report
             git clone --quiet --depth 1 "https://github.com/$r.git" "/tmp/repos/$name"

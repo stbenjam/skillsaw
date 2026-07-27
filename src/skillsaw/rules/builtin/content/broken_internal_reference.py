@@ -2,10 +2,14 @@
 
 import difflib
 import os
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import quote, unquote
+
+# RFC 3986 scheme, but two-plus characters so ``C:/path`` stays a file path.
+_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
 
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -58,8 +62,16 @@ class ContentBrokenInternalReferenceRule(Rule):
                 continue
             for link in cf.markdown.links():
                 target = link.href.strip()
-                # Skip URLs, anchors, and mailto
-                if not target or target.startswith(("http://", "https://", "#", "mailto:")):
+                # Skip anchors and anything with a URI scheme — not just
+                # http(s)/mailto: Codex skills link connector apps as
+                # ``app://<id>``, and editors/tools use ``vscode://`` and
+                # the like. None of these name a file in the repository.
+                # Two-plus characters before the colon so a Windows drive
+                # path (``C:/...``) is still treated as a file path, and a
+                # protocol-relative ``//host/...`` URL is a URL.
+                if not target or target.startswith(("#", "//")):
+                    continue
+                if _URI_SCHEME.match(target):
                     continue
                 # Strip anchor from path (e.g., "file.md#section")
                 target_path = target.split("#")[0]

@@ -169,6 +169,44 @@ def test_text_includes_stats(valid_plugin):
     assert "Rules run:" in output
 
 
+def test_text_counts_codex_plugins(tmp_path):
+    """A Codex-only catalog must not report ``Plugins: 0`` — openai/plugins
+    holds 180 plugins, all discovered through the Codex manifest path."""
+    import json as _json
+
+    (tmp_path / ".agents" / "plugins").mkdir(parents=True)
+    (tmp_path / ".agents" / "plugins" / "marketplace.json").write_text(
+        _json.dumps(
+            {
+                "name": "codex-cat",
+                "plugins": [
+                    {
+                        "name": "note-keeper",
+                        "source": {"source": "local", "path": "./plugins/note-keeper"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_dir = tmp_path / "plugins" / "note-keeper" / ".codex-plugin"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "plugin.json").write_text(
+        _json.dumps({"name": "note-keeper", "version": "1.0.0", "description": "Keeps notes."}),
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(tmp_path)
+    config = LinterConfig.default()
+    linter = Linter(context, config)
+    violations = linter.run()
+
+    output = format_text(violations, context, linter.rules, "0.0.0")
+    assert "Plugins:   1" in output
+
+
 def test_text_includes_summary(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()

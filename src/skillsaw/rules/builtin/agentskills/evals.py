@@ -58,8 +58,19 @@ class AgentSkillEvalsRule(Rule):
                 continue
 
             if not isinstance(data, dict):
+                # Valid JSON, wrong shape. Say so precisely — "must be a
+                # JSON object" reads as a syntax complaint to an author
+                # whose file parses fine (openai/plugins ships top-level
+                # arrays from other eval harnesses). Projects using a
+                # different eval format can disable this rule.
                 violations.append(
-                    self.violation("evals.json must be a JSON object", file_path=evals_json)
+                    self.violation(
+                        "evals.json is valid JSON but not the Agent Skills "
+                        "evals format — expected an object with an 'evals' "
+                        "array, got a "
+                        f"{'JSON array' if isinstance(data, list) else 'JSON scalar'}",
+                        file_path=evals_json,
+                    )
                 )
                 continue
 

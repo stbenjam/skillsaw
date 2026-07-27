@@ -23,11 +23,12 @@ def format_json(
 
     repo_types_list = context.repo_type_names()
 
+    plugin_dirs = context.distinct_plugin_dirs()
     if verbose:
         stats = {
             "repo_type": context.repo_type.value,
             "repo_types": repo_types_list,
-            "plugins": [str(p) for p in context.plugins],
+            "plugins": [str(p) for p in plugin_dirs],
             "skills": [str(s) for s in context.skills],
             "rules_run": [r.rule_id for r in rules],
         }
@@ -35,7 +36,7 @@ def format_json(
         stats = {
             "repo_type": context.repo_type.value,
             "repo_types": repo_types_list,
-            "plugins": len(context.plugins),
+            "plugins": len(plugin_dirs),
             "skills": len(context.skills),
             "rules_run": len(rules),
         }

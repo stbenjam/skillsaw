@@ -1424,6 +1424,30 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
 
+    def test_uri_scheme_links_skipped(self, temp_dir):
+        """Any URI scheme is external, not just http(s)/mailto.
+
+        Codex skills link connector apps as ``app://<id>`` (real-repo FP:
+        openai/plugins), and ``vscode://``/``ssh://`` links appear in
+        instruction files. None of them name a file in the repository."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Linear requires the native [$linear](app://asdk_app_69a089a326dc8191) app.\n"
+            "Open [settings](vscode://settings/editor) or clone "
+            "[the repo](ssh://git@example.com/repo.git).\n"
+            "Protocol-relative [link](//example.com/docs) is a URL too.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_windows_drive_style_target_is_still_a_file_path(self, temp_dir):
+        """``C:/...`` must not be mistaken for a URI scheme — it stays a
+        file reference (and one that points outside the repository)."""
+        (temp_dir / "CLAUDE.md").write_text("See [notes](C:/notes.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+
     def test_template_dir_skipped(self, temp_dir):
         tmpl_dir = temp_dir / "templates"
         tmpl_dir.mkdir()

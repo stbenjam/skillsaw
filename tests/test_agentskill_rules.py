@@ -785,6 +785,52 @@ def test_evals_missing_evals_array_fails(temp_dir):
     assert any("evals" in v.message and "array" in v.message.lower() for v in violations)
 
 
+def test_evals_array_root_is_reported_as_wrong_format_not_bad_json(temp_dir):
+    """openai/plugins ships evals.json files that are top-level arrays of
+    eval cases (another harness's format). That still violates this rule,
+    but the message must say the format is wrong — "must be a JSON object"
+    reads as a syntax complaint about a file that parses fine."""
+    skill = temp_dir / "array-evals"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: array-evals\ndescription: Array evals\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "deploy-001-install-asks-mode",
+                    "question": "I want to install the tool.",
+                    "expected_skill": "array-evals",
+                    "ground_truth": "The agent asks how the user wants to run it.",
+                    "expected_behavior": ["Routes to array-evals", "Asks the mode question"],
+                }
+            ]
+        )
+    )
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert len(violations) == 1
+    assert "valid JSON but not the Agent Skills evals format" in violations[0].message
+    assert "JSON array" in violations[0].message
+
+
+def test_evals_scalar_root_is_reported_as_wrong_format(temp_dir):
+    skill = temp_dir / "scalar-evals"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: scalar-evals\ndescription: Scalar evals\n---\n")
+    evals_dir = skill / "evals"
+    evals_dir.mkdir()
+    (evals_dir / "evals.json").write_text('"see evals.yaml"')
+
+    context = RepositoryContext(skill)
+    violations = AgentSkillEvalsRule().check(context)
+    assert len(violations) == 1
+    assert "valid JSON but not the Agent Skills evals format" in violations[0].message
+    assert "JSON scalar" in violations[0].message
+
+
 def test_evals_entry_missing_id_warns(temp_dir):
     skill = temp_dir / "no-id"
     skill.mkdir()

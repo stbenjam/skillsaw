@@ -85,12 +85,25 @@ def _is_subpath(child, parent):
 class _MergedContext:
     """Duck-typed context for formatters when linting multiple paths."""
 
-    def __init__(self, root_path, repo_types, plugins, skills, plugin_repo_types=frozenset()):
+    def __init__(
+        self,
+        root_path,
+        repo_types,
+        plugins,
+        skills,
+        plugin_repo_types=frozenset(),
+        codex_plugins=(),
+    ):
         self.root_path = root_path
         self.repo_types = repo_types
         self.plugins = plugins
         self.skills = skills
         self.plugin_repo_types = set(plugin_repo_types)
+        self.codex_plugins = list(codex_plugins)
+
+    # Same contract as RepositoryContext.distinct_plugin_dirs — formatters
+    # call it on whichever context they receive.
+    distinct_plugin_dirs = RepositoryContext.distinct_plugin_dirs
 
     @property
     def repo_type(self):
@@ -120,12 +133,14 @@ def _build_merged_context(contexts):
     plugin_repo_types = set()
     plugins = []
     skills = []
+    codex_plugins = []
     for ctx in contexts:
         repo_types |= ctx.repo_types
         plugin_repo_types |= ctx.plugin_repo_types
         plugins.extend(ctx.plugins)
         skills.extend(ctx.skills)
-    return _MergedContext(root_path, repo_types, plugins, skills, plugin_repo_types)
+        codex_plugins.extend(ctx.codex_plugins)
+    return _MergedContext(root_path, repo_types, plugins, skills, plugin_repo_types, codex_plugins)
 
 
 def _dedup_rules(rules):

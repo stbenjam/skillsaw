@@ -832,6 +832,20 @@ class RepositoryContext:
             ]
         return self._codex_roots
 
+    def distinct_plugin_dirs(self) -> List[Path]:
+        """Every discovered plugin directory, Claude and Codex, deduplicated.
+
+        A dual-ecosystem directory appears once. This is what the scan
+        statistics report — counting only ``self.plugins`` told a Codex-only
+        catalog it held zero plugins.
+        """
+        seen: Dict[Path, Path] = {}
+        for p in (*self.plugins, *self.codex_plugins):
+            key = safe_resolve(p) or p
+            if key not in seen:
+                seen[key] = p
+        return list(seen.values())
+
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
         return list(self._discover_codex_marketplaces())
