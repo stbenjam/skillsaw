@@ -671,7 +671,11 @@ class TestDiscoveryModuleIsStateFree:
                 if isinstance(node, ast.Import):
                     names = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom):
+                    # The bound names matter too: ``from skillsaw import
+                    # context`` and the relative ``from .. import context``
+                    # carry no "context" in ``node.module``.
                     names = [node.module or ""]
+                    names += [f"{node.module or ''}.{alias.name}" for alias in node.names]
                 else:
                     continue
                 for name in names:
