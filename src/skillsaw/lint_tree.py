@@ -315,7 +315,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         *context.codex_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
     ):
-        resolved_candidate = candidate.resolve()
+        resolved_candidate = safe_resolve(candidate)
+        if resolved_candidate is None:
+            # A claim that cannot resolve (symlink loop, unreadable
+            # parent) must not abort tree construction for the whole
+            # repository.
+            continue
         if resolved_candidate in seen_plugin_dirs:
             continue
         if not safe_is_dir(candidate):
@@ -332,7 +337,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # is its own provenance and keeps the directory.
         if _is_in_compiled_dir(plugin_path) and not prov.codex:
             continue
-        resolved_plugin = plugin_path.resolve()
+        resolved_plugin = safe_resolve(plugin_path)
+        if resolved_plugin is None:
+            continue
 
         # Container type: a Claude identity (or no ecosystem claim at all)
         # keeps the PluginNode and its Claude-only rules; a Codex-only

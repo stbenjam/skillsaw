@@ -124,6 +124,11 @@ def _table_cell(value: object) -> str:
     otherwise rewrite the index row's link target.
     """
     folded = " ".join(str(value).splitlines())
+    # Backticks are replaced, not escaped: several sinks wrap this value
+    # in a code span, where a backslash escape does not work and any
+    # literal backtick terminates the span — the breakout this exists to
+    # prevent.
+    folded = folded.replace("`", "'")
     for ch in ("\\", "|", "[", "]", "(", ")"):
         folded = folded.replace(ch, "\\" + ch)
     return folded

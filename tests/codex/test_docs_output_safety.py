@@ -502,3 +502,28 @@ class TestSafeUrlEntityDecoding:
         # Legitimate URLs survive, decoded to their rendered form.
         assert _safe_url("https://ok.example/?a=1&amp;b=2") == "https://ok.example/?a=1&b=2"
         assert _safe_url("https://ok.example/path") == "https://ok.example/path"
+
+
+class TestCodeSpanBreakout:
+    def test_backticks_in_metadata_cannot_escape_code_spans(self, tmp_path):
+        """Tags and MCP values render inside code spans, where a literal
+        backtick terminates the span and injects raw Markdown."""
+        repo = tmp_path / "claude-repo"
+        plugin = repo / "plugins" / "cl"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "name": "cl",
+                    "version": "1.0.0",
+                    "description": "A plugin.",
+                    "keywords": ["safe", "x` [evil](https://evil.example) `y"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (plugin / "commands").mkdir()
+
+        docs = extract_docs(RepositoryContext(repo))
+        for content in render_markdown(docs).values():
+            assert "[evil](https://evil.example)" not in content
