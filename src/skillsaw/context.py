@@ -1103,6 +1103,12 @@ class RepositoryContext:
             resolved is not None and resolved in getattr(self, "marketplace_entries", {})
         ):
             ecosystems.add("claude")
+        elif resolved is not None and resolved == safe_resolve(self.root_path / ".claude"):
+            # The .claude/ directory is Claude by definition — a Codex
+            # catalog listing "./.claude" as a local source must not turn
+            # the repository's own command and agent content Codex-only
+            # and switch its Claude-format checks off.
+            ecosystems.add("claude")
         if codex_manifest_is_contained(plugin_dir) or (
             resolved is not None and resolved in self._codex_claim_set()
         ):

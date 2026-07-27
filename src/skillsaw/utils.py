@@ -280,7 +280,13 @@ def read_yaml_commented(
 def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
-        return node.lc.key(key)[0] + 1
+        try:
+            return node.lc.key(key)[0] + 1
+        except KeyError:
+            # A value inherited through a YAML merge key (``<<: *anchor``)
+            # is visible to ``in``/``get`` but has no local position —
+            # omit the line rather than crash the rule.
+            return None
     return None
 
 

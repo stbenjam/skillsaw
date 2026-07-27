@@ -282,9 +282,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # directory falls between attach paths and loses its content silently.
     plugin_dirs: list[Path] = []
     seen_plugin_dirs: set[Path] = set()
-    for candidate in (*context.plugins, *context.codex_plugins):
+    # Catalog claims come last in the union: a local source with no
+    # manifest and no legacy marker is still a claimed directory whose
+    # hooks, prose, and skills the rules must see — the registration rule
+    # already reasons about it, and a container-less claim would skip all
+    # of that silently. The claim set is resolved and contained already.
+    for candidate in (
+        *context.plugins,
+        *context.codex_plugins,
+        *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
+    ):
         resolved_candidate = candidate.resolve()
         if resolved_candidate in seen_plugin_dirs:
+            continue
+        if not safe_is_dir(candidate):
+            # A dangling catalog claim names no directory to lint;
+            # codex-marketplace-registration reports the entry itself.
             continue
         seen_plugin_dirs.add(resolved_candidate)
         plugin_dirs.append(candidate)
@@ -319,17 +332,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # directory.
         _add_plugin_prose(container, plugin_path)
 
-        # Claude-side configs. Hooks and MCP stand down only when the
-        # Codex cluster below re-attaches them with its containment check
-        # — which requires a contained manifest, so a plugin claimed only
-        # by a catalog entry keeps this attach and its executable hooks
-        # stay scanned. settings.json is a Claude-side concept with no
-        # Codex counterpart and always attaches.
-        if not (prov.codex_only and codex_manifest_is_contained(plugin_path)):
+        # Conventional configs. Codex-claimed directories get hooks and
+        # MCP exclusively through the Codex cluster below — it attaches
+        # with the containment check for dual-manifest and manifest-less
+        # claims alike, so a symlinked hooks.json cannot parse an external
+        # file's commands into CI diagnostics. Pure-Claude plugins keep
+        # their established attach.
+        if not prov.codex:
             _add_block(container, plugin_path / "hooks" / "hooks.json", HooksBlock)
             _add_block(container, plugin_path / ".mcp.json", McpBlock)
-        _add_block(container, plugin_path / "settings.json", SettingsBlock)
-        _add_block(container, plugin_path / "settings.local.json", SettingsBlock)
+        # settings.json is Claude-side configuration with no Codex
+        # counterpart: attached only for Claude-style directories, which
+        # also keeps _add_block's bare resolve() away from content a
+        # hostile Codex-only checkout controls.
+        if prov.claude or not prov.codex:
+            _add_block(container, plugin_path / "settings.json", SettingsBlock)
+            _add_block(container, plugin_path / "settings.local.json", SettingsBlock)
 
         # Codex manifest cluster, for any directory Codex claims (dual
         # directories hang it off their PluginNode).
@@ -518,8 +536,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             logger.warning("Ignoring invalid content path glob %r: %s", glob_pattern, e)
             continue
         for extra in matches:
-            if extra.is_file():
-                _add_block(root, extra, ExtraBlock)
+            if not extra.is_file():
+                continue
+            extra_resolved = safe_resolve(extra)
+            if extra_resolved is not None and any(
+                claimed == extra_resolved for claimed, _ in seen_roles
+            ):
+                # Already attached under a structured parser role (hooks,
+                # MCP): a broad content glob matching the same JSON must
+                # not re-attach it as prose — every content-quality rule
+                # would then lint structured config as instruction text.
+                continue
+            _add_block(root, extra, ExtraBlock)
 
     # --- Plugin tree contributors ---
     # Contributors return pre-constructed nodes (typically ContentBlock or

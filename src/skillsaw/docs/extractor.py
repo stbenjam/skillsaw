@@ -440,17 +440,36 @@ def _extract_codex_plugin(
         homepage=_safe_url(meta.get("homepage")),
         repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "") or ""),
-        commands=[],
+        commands=_command_docs(_scoped_prose(node, CommandBlock, plugin_resolved)),
         skills=_extract_codex_skills(plugin_resolved, resolved_skills, codex_roots),
-        agents=[],
+        agents=_agent_docs(_scoped_prose(node, AgentBlock, plugin_resolved)),
         hooks=_extract_hooks(sources),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
         # already in the tree as a CodexInlineMcpBlock, and feeding it here
         # too would list every inline server twice.
         mcp_servers=_extract_mcp_servers(sources, {}),
-        rules=[],
+        rules=_rule_docs(_scoped_prose(node, PluginRuleBlock, plugin_resolved)),
         has_readme=(plugin_dir / "README.md").is_file(),
     )
+
+
+def _scoped_prose(node: CodexPluginConfigNode, block_cls: type, plugin_resolved: Path):
+    """Prose blocks attached to *node*'s container, scoped to this plugin.
+
+    The single tree pass attaches a Codex-only plugin's prose to its
+    container (a CodexPluginNode, or the tree root for a root-level
+    plugin). The root case can hold other plugins' blocks too, so scope
+    by path containment rather than trusting the container's extent.
+    """
+    container = node.parent
+    if container is None:
+        return []
+    scoped = []
+    for block in container.find(block_cls):
+        resolved = safe_resolve(block.path)
+        if resolved is not None and resolved.is_relative_to(plugin_resolved):
+            scoped.append(block)
+    return scoped
 
 
 def _read_json_dict(node: CodexPluginConfigNode) -> dict:
@@ -589,8 +608,12 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
 
 
 def _extract_commands(plugin_node: PluginNode) -> List[CommandDoc]:
+    return _command_docs(plugin_node.find(CommandBlock))
+
+
+def _command_docs(blocks) -> List[CommandDoc]:
     docs = []
-    for block in plugin_node.find(CommandBlock):
+    for block in blocks:
         name_lines = block.section("Name").strip().splitlines()
         full_name = name_lines[0] if name_lines else ""
         synopsis = _strip_fences(block.section("Synopsis"))
@@ -660,8 +683,12 @@ def _extract_skill(skill_node: SkillNode) -> Optional[SkillDoc]:
 
 
 def _extract_agents(plugin_node: PluginNode) -> List[AgentDoc]:
+    return _agent_docs(plugin_node.find(AgentBlock))
+
+
+def _agent_docs(blocks) -> List[AgentDoc]:
     docs = []
-    for block in plugin_node.find(AgentBlock):
+    for block in blocks:
         docs.append(
             AgentDoc(
                 name=block.field_value("name", block.path.stem),
@@ -740,8 +767,12 @@ def _extract_mcp_servers(plugin_node: LintTarget, plugin_meta: dict) -> List[Mcp
 
 
 def _extract_rules(plugin_node: PluginNode) -> List[RuleFileDoc]:
+    return _rule_docs(plugin_node.find(PluginRuleBlock))
+
+
+def _rule_docs(blocks) -> List[RuleFileDoc]:
     docs = []
-    for block in plugin_node.find(PluginRuleBlock):
+    for block in blocks:
         globs: List[str] = []
         paths = block.field_value("paths", [])
         if isinstance(paths, list):

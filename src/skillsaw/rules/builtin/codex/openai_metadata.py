@@ -61,7 +61,10 @@ class CodexOpenAIMetadataRule(Rule):
             if block.parse_error:
                 violations.append(
                     self.violation(
-                        f"Invalid YAML: {block.parse_error}",
+                        # Parser diagnostics quote source text, which a
+                        # malformed document controls — same redaction as
+                        # every other manifest-value echo.
+                        f"Invalid YAML: {safe_display(block.parse_error)}",
                         file_path=block.path,
                         line=block.error_line,
                     )
