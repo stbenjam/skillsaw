@@ -58,11 +58,13 @@ another type is a warning, and its documented fields are then checked
 individually. An empty string in a path field is an error (there is
 nothing to resolve), and a non-string value in one is a warning.
 
-A path can also exist and still be reported for its *kind*: fields that
-name a file (`hooks`, the `interface` asset paths) are warned about
-when they resolve to a directory, and fields that name a directory
-(`skills`, `apps`) when they resolve to a file. The path is fine —
-point the field at the right kind of filesystem object.
+A path can also exist and still be reported for its *kind*: `hooks` and
+a path-valued `mcpServers` name a file and are warned about when they
+resolve to a directory, and `skills` names a directory and is warned
+about when it resolves to a file. The path is fine — point the field at
+the right kind of filesystem object. Other path fields (`apps`, the
+`interface` asset paths) are checked for containment and existence but
+not for kind, because Codex accepts more than one shape for them.
 
 `version` is deliberately not checked against semver. The public prose
 specification does not constrain the format, while the field-level spec

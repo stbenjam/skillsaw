@@ -611,9 +611,9 @@ class TestCodexRootsAreResolvedOnce:
         for _ in range(20):
             context.codex_plugin_owning(repo / "skills" / "s")
 
-        # One resolve per lookup, for the queried path itself. Before the
-        # memo it was one per root per lookup as well, which two rules pay
-        # once per skill.
+        # One resolve per lookup, for the queried path itself: the
+        # memoized root set must not re-resolve every root per lookup,
+        # which two rules pay once per skill.
         assert calls["n"] == 20
 
 

@@ -319,10 +319,8 @@ class TestSafeDisplay:
         cap is applied before the scan, so input size buys nothing.
 
         A scaling ratio, not a wall-clock bound — absolute timings are
-        instrumentation-dependent (coverage tracing on Python <=3.11 has
-        no sys.monitoring backend and multiplies per-line cost), and a
-        wall-clock assertion here was once misread as a timing flake
-        while it was correctly reporting quadratic behavior.
+        instrumentation-dependent: coverage tracing on Python <=3.11
+        has no sys.monitoring backend and multiplies per-line cost.
         """
         import time
 
@@ -341,8 +339,8 @@ class TestSafeDisplay:
             return best
 
         t1, t4 = cost(60_000), cost(240_000)
-        # Truncate-first makes this near-constant (ratio ~1); the old
-        # quadratic scan lands near 16. 8 leaves headroom for noise.
+        # Truncate-first keeps this near-constant (ratio ~1); a
+        # quadratic scan would land near 16. 8 leaves headroom for noise.
         assert t4 < 8 * max(t1, 1e-4), (t1, t4)
 
     def test_truncation_does_not_leak_a_severed_credential(self):
@@ -527,3 +525,42 @@ class TestCodeSpanBreakout:
         docs = extract_docs(RepositoryContext(repo))
         for content in render_markdown(docs).values():
             assert "[evil](https://evil.example)" not in content
+
+
+class TestMarkdownRendererHostileMetadata:
+    def test_hostile_metadata_scalars_are_inert_in_markdown(self, tmp_path):
+        """The Markdown renderer is a published sink too: metadata
+        scalars must not carry raw HTML or active-scheme links into a
+        generated page (T15). Description fields are author prose by
+        design and excluded — see the threat model."""
+        repo = tmp_path / "hostile"
+        plugin = repo / "plugins" / "evil"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "name": "evil",
+                    "version": "<script>alert(1)</script>",
+                    "description": "A plugin.",
+                    "author": {"name": "<img src=x onerror=alert(1)>"},
+                    "license": "<script>x</script>",
+                    "category": "<b>cat</b>",
+                    "keywords": ["<script>tag</script>"],
+                    "homepage": "javascript:alert(1)",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "go.md").write_text(
+            "---\ndescription: Run it.\n---\nBody.\n", encoding="utf-8"
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+        for content in render_markdown(docs).values():
+            # No raw tag can form: angle brackets are entity-encoded, so
+            # an ``onerror`` payload survives only as inert text.
+            assert "<script" not in content
+            assert "<img" not in content
+            assert "<b>" not in content
+            assert "javascript:alert" not in content

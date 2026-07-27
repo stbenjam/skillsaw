@@ -562,12 +562,24 @@ class TestDirectManifestInputs:
         r = run_lint(catalog)
         assert "codex-marketplace-json-valid" in {v["rule_id"] for v in violations(r)}
 
-    def test_claude_manifest_file_input_roots_at_the_plugin(self, tmp_path):
+    def test_claude_manifest_file_input_is_not_widened(self, tmp_path):
+        """Widening is Codex-only. A Claude manifest path keeps its
+        established scope: lint reads what the caller named, and ``fix``
+        cannot reach files outside it."""
         repo = tmp_path / "clplug"
         (repo / ".claude-plugin").mkdir(parents=True)
         (repo / ".claude-plugin" / "plugin.json").write_text('{"name": "demo"', encoding="utf-8")
+        (repo / "commands").mkdir()
+        command = repo / "commands" / "deploy.md"
+        command.write_text("---\ndescription: Deploy it.\n---\nBody.\n", encoding="utf-8")
+        before = command.read_bytes()
+
         r = run_lint(repo / ".claude-plugin" / "plugin.json")
-        assert "plugin-json-valid" in {v["rule_id"] for v in violations(r)}
+        assert all(
+            not str(v.get("file_path", "")).endswith("deploy.md") for v in violations(r)
+        ), violations(r)
+        _run_fix(repo / ".claude-plugin" / "plugin.json")
+        assert command.read_bytes() == before, "fix wrote outside the named path"
 
 
 class TestMergedContextCodexCounts:

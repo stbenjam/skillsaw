@@ -276,10 +276,9 @@ class TestVisiblePluginSkillContainment:
         assert codex_declared_skill_dirs(plugin) == []
 
     def test_the_agentskills_walk_does_not_follow_the_symlink(self, tmp_path):
-        # Formerly a strict xfail: the generic walk had no containment
-        # boundary. _discover_skills_in_dir now derives one from
+        # _discover_skills_in_dir derives a containment boundary from
         # provenance whenever it starts in or descends into a Codex-only
-        # directory, closing this route too.
+        # directory, so the generic walk honors it too.
         repo, _, outside = self._symlinked_skills(tmp_path)
         discovered = {safe_resolve(p) for p in RepositoryContext(repo).skills}
         assert safe_resolve(outside) not in discovered

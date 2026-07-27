@@ -717,9 +717,22 @@ class RepositoryContext:
         each call would cost ~``skills x plugins`` filesystem round-trips.
         """
         if self._codex_roots is None:
-            self._codex_roots = [
-                r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None
-            ]
+            roots = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
+            # Codex-exclusive catalog claims count as roots too: a
+            # manifest-less claimed directory is a container in the lint
+            # tree, and ownership questions (skill containment, docs
+            # attribution) must see the same boundary — a claim-only
+            # plugin falling out of the root set is exactly the
+            # fell-between-paths class provenance exists to prevent.
+            # Dual-identity claims stay out: their Claude manifest owns
+            # them (docs deliberately refuse to publish a claim Codex
+            # cannot install). The claim set is already resolved.
+            roots |= {
+                p
+                for p in self._codex_claim_set()
+                if not self.is_path_excluded(p) and self.provenance(p).codex_only
+            }
+            self._codex_roots = sorted(roots)
         return self._codex_roots
 
     def distinct_plugin_dirs(self) -> List[Path]:

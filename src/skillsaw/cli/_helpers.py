@@ -63,8 +63,12 @@ def _resolve_lint_paths(paths):
             # expects it — parenting ``.codex-plugin/plugin.json`` at
             # ``.codex-plugin/`` makes discovery probe for a *nested*
             # marker and find nothing, so no manifest rule would run.
+            # Codex surfaces only: widening ``.claude-plugin`` too would
+            # silently expand what an existing ``skillsaw lint <repo>/
+            # .claude-plugin/plugin.json`` invocation reads — and what
+            # ``skillsaw fix`` writes — beyond the path the caller named.
             widened = resolved
-            if resolved.name in (".codex-plugin", ".claude-plugin"):
+            if resolved.name == ".codex-plugin":
                 widened = resolved.parent
             elif resolved.name == "plugins" and resolved.parent.name == ".agents":
                 widened = resolved.parent.parent

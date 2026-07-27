@@ -131,7 +131,10 @@ def _table_cell(value: object) -> str:
     folded = folded.replace("`", "'")
     for ch in ("\\", "|", "[", "]", "(", ")"):
         folded = folded.replace(ch, "\\" + ch)
-    return folded
+    # Markdown passes raw HTML through, so an angle bracket in a metadata
+    # scalar is an element, not text. Entity-encode rather than
+    # backslash-escape: a backslash does not disarm a tag.
+    return folded.replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _link_dest(url: str) -> str:
@@ -222,9 +225,9 @@ def _append_plugin_sections(lines: List[str], plugin: PluginDoc) -> None:
 
 
 def _append_command(lines: List[str], cmd: CommandDoc) -> None:
-    title = f"### {cmd.name}"
+    title = f"### {_table_cell(cmd.name)}"
     if cmd.full_name:
-        title += f" (`{cmd.full_name}`)"
+        title += f" (`{_table_cell(cmd.full_name)}`)"
     lines.append(title)
     lines.append("")
     if cmd.description:
@@ -244,25 +247,26 @@ def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
     for skill in sorted(skills, key=lambda s: name_str(s.name).lower()):
-        lines.append(f"### {skill.name}")
+        lines.append(f"### {_table_cell(skill.name)}")
         lines.append("")
         if skill.description:
             lines.append(skill.description)
             lines.append("")
         meta = []
         if skill.license:
-            meta.append(f"**License:** {skill.license}")
+            meta.append(f"**License:** {_table_cell(skill.license)}")
         if skill.compatibility:
-            meta.append(f"**Compatibility:** {skill.compatibility}")
+            meta.append(f"**Compatibility:** {_table_cell(skill.compatibility)}")
         if skill.allowed_tools:
-            meta.append(f"**Allowed tools:** {', '.join(skill.allowed_tools)}")
+            tools = ", ".join(_table_cell(t) for t in skill.allowed_tools)
+            meta.append(f"**Allowed tools:** {tools}")
         if meta:
             lines.append(" | ".join(meta))
             lines.append("")
 
 
 def _append_agent(lines: List[str], agent: AgentDoc) -> None:
-    lines.append(f"### {agent.name}")
+    lines.append(f"### {_table_cell(agent.name)}")
     lines.append("")
     if agent.description:
         lines.append(agent.description)
