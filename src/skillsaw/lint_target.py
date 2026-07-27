@@ -80,6 +80,18 @@ class LintTarget:
             child.parent = self
             child.set_parents()
 
+    def provenance_dir(self) -> Optional[Path]:
+        """Directory whose :class:`PluginProvenance` governs this node's format.
+
+        ``None`` means the node is not plugin-scoped content, so every
+        ecosystem's format conventions stay in scope (repo-level
+        instruction files, ``.apm/`` content, and so on). Overridden by
+        the node types the format-scoped rules iterate — consumed only
+        through ``RepositoryContext.in_format_scope``, which reads the
+        cached provenance record for this directory.
+        """
+        return None
+
     def content_blocks(self) -> list:
         """Prose blocks for content-quality rules.
 
@@ -209,6 +221,9 @@ class MarketplaceNode(LintTarget):
 @dataclass(eq=False)
 class PluginNode(LintTarget):
     """A plugin directory."""
+
+    def provenance_dir(self) -> Optional[Path]:
+        return self.path
 
     def tree_label(self) -> str:
         return f"{self.path.name}/ [plugin]"

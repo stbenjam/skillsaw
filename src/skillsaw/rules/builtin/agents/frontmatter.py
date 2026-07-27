@@ -9,7 +9,6 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.content_analysis import AgentBlock
 from skillsaw.rules.builtin.utils import frontmatter_text, insert_frontmatter_fields, read_text
 
@@ -18,6 +17,8 @@ class AgentFrontmatterRule(Rule):
     """Check that agent .md files have valid frontmatter"""
 
     default_enabled = True
+
+    provenance_scope = "claude"
 
     autofix_confidence = AutofixConfidence.SAFE
 
@@ -35,13 +36,7 @@ class AgentFrontmatterRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(AgentBlock):
-            if context.is_codex_only_plugin(block.path.parent.parent):
-                # Codex-only provenance: Claude agent frontmatter conventions do not
-                # apply to a plugin Claude never loads — wherever the block
-                # is attached (PluginNode or Codex container). Content and
-                # security rules still read the file.
-                continue
+        for block in self.scoped_find(context, AgentBlock):
             if block.frontmatter_error:
                 # fix() only adds missing frontmatter/fields — malformed YAML
                 # needs a human.
