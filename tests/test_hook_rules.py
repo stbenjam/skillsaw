@@ -6,6 +6,7 @@ import pytest
 import json
 from pathlib import Path
 
+from skillsaw.blocks import HooksBlock
 from skillsaw.rules.builtin.hooks import HooksJsonValidRule, HooksDangerousRule, HooksProhibitedRule
 from skillsaw.rule import Severity
 from skillsaw.context import RepositoryContext
@@ -189,7 +190,12 @@ def test_matcher_type_check_is_codex_scoped(temp_dir):
         ),
         encoding="utf-8",
     )
-    violations = HooksJsonValidRule().check(RepositoryContext(plugin))
+    context = RepositoryContext(plugin)
+    # Guard against the test passing vacuously: the absence assertion below
+    # means nothing unless the hooks file was actually parsed into the tree.
+    hooks_blocks = [b for b in context.lint_tree.find(HooksBlock) if b.path.name == "hooks.json"]
+    assert hooks_blocks, "hooks/hooks.json was not attached to the lint tree"
+    violations = HooksJsonValidRule().check(context)
     assert not any("matcher' must be a string" in v.message for v in violations)
 
 

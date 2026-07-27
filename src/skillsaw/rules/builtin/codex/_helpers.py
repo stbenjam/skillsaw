@@ -26,6 +26,16 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 
 
+def reject_nonfinite_json_number(value: str) -> None:
+    """Reject JavaScript number extensions that strict JSON does not allow.
+
+    ``json.loads`` accepts ``NaN``/``Infinity``/``-Infinity`` by default;
+    Codex's strict parser does not. Passed as ``parse_constant`` so both the
+    validity rule and the registration fixer reject the same documents.
+    """
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
 def path_problem(value: str, root_label: str, root: Optional[Path] = None) -> Optional[str]:
     """Why *value* is not a usable manifest path, or ``None`` if it is.
 

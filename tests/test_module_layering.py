@@ -138,11 +138,19 @@ def test_core_module_does_not_import_rules_package(rel_path):
     """
     tree = ast.parse((SRC / rel_path).read_text())
     offenders = []
-    for node in tree.body:
+    # Module-level includes imports nested in top-level `try:`/`if` blocks —
+    # those still execute at load time — but not function/class bodies.
+    scopes = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    stack = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, scopes):
+            continue
         # `from skillsaw.rules.builtin... import x`
         if isinstance(node, ast.ImportFrom) and node.module and "rules.builtin" in node.module:
             offenders.append(node.module)
         # `import skillsaw.rules.builtin...`
         elif isinstance(node, ast.Import):
             offenders.extend(a.name for a in node.names if "rules.builtin" in a.name)
+        stack.extend(ast.iter_child_nodes(node))
     assert not offenders, f"{rel_path} imports from the rules package: {offenders}"

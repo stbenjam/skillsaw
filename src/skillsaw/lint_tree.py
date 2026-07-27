@@ -126,22 +126,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_roles.add(role)
         parent.children.append(block_cls(path=p))
 
-    codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
+    # Nearest-root ownership, with the roots resolved once per context.
+    _codex_owner = context.codex_plugin_owning
 
-    def _codex_owner(path: Path) -> Path | None:
-        """The Codex plugin *path* belongs to, if any."""
-        resolved = safe_resolve(path)
-        if resolved is None:
-            return None
-        # Nearest root, not first match. A repository root that is itself a
-        # plugin contains the nested ones and is listed first, so first-match
-        # would give every nested skill to the outer root — and a reference
-        # could then leave the nested plugin while still passing the check.
-        # The docs extractor already picks the longest match.
-        owners = [r for r in codex_roots if resolved == r or resolved.is_relative_to(r)]
-        return max(owners, key=lambda r: len(r.parts)) if owners else None
-
-    def _add_codex_block(parent: LintTarget, p: Path, block_cls: type) -> None:
+    def _add_codex_block(parent: CodexPluginConfigNode, p: Path, block_cls: type) -> None:
         """Role-aware block attachment for a path that must stay inside its plugin.
 
         The conventional Codex files (``hooks/hooks.json``, ``.mcp.json``)
@@ -149,7 +137,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         checked where they resolve to. A symlink would otherwise read an
         external file under an in-repo path.
         """
-        root = safe_resolve(parent.path.parent.parent)
+        root = safe_resolve(parent.plugin_dir)
         resolved = safe_resolve(p)
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
@@ -371,7 +359,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             containment_root=ref_root or skill_path,
         )
 
-        def _contained_in_plugin(candidate: Path) -> bool:
+        def _contained_in_plugin(candidate: Path, ref_root: Path | None = ref_root) -> bool:
             if ref_root is None:
                 return True
             resolved = safe_resolve(candidate)

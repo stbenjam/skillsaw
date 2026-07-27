@@ -282,8 +282,8 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     # --- docs ---
     docs_parser = subparsers.add_parser(
         "docs",
-        help="Generate documentation for a Claude or Codex plugin or marketplace",
-        description="Generate documentation for a Claude or Codex plugin or marketplace",
+        help="Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository",
+        description="Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     docs_parser.add_argument(

@@ -301,8 +301,10 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
 
     # One pass, like the skill map above: scanning every legacy node per
     # Codex plugin is O(codex x legacy) filesystem resolutions, and a large
-    # catalog has hundreds of each.
-    codex_roots = [r for r in (safe_resolve(p) for p in context.codex_plugins) if r]
+    # catalog has hundreds of each. A distinct name from the set consumed by
+    # _is_codex_only above — rebinding it would silently change what that
+    # check sees on any future reordering.
+    plugin_roots = context.codex_plugin_roots()
 
     legacy_by_path: Dict[Path, List[PluginNode]] = {}
     for pn in context.lint_tree.find(PluginNode):
@@ -323,7 +325,7 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
         legacy = legacy_by_path.get(plugin_resolved, [])
         docs.append(
             _extract_codex_plugin(
-                context, node, plugin_resolved, resolved_skills, legacy, codex_roots
+                context, node, plugin_resolved, resolved_skills, legacy, plugin_roots
             )
         )
     return docs

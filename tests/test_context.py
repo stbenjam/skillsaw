@@ -59,6 +59,52 @@ def test_unknown_repository(temp_dir):
     assert len(context.plugins) == 0
 
 
+def _write_codex_manifest(plugin: Path) -> None:
+    (plugin / ".codex-plugin").mkdir(parents=True)
+    (plugin / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "version": "1.0.0", "description": "A Codex plugin."}),
+        encoding="utf-8",
+    )
+
+
+def _write_conventional_skill(root: Path) -> None:
+    skill = root / "skills" / "demo-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: demo-skill\ndescription: A conventional skill\n---\n",
+        encoding="utf-8",
+    )
+
+
+def test_codex_plugin_with_skills_is_primarily_codex(temp_dir):
+    """An authored Codex plugin whose skills also match the Agent Skills
+    convention is a Codex plugin first — the generic AGENTSKILLS fallback
+    must not become the primary type in HTML/JSON/SARIF output."""
+    _write_codex_manifest(temp_dir)
+    _write_conventional_skill(temp_dir)
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.CODEX_PLUGIN in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    assert context.repo_type == RepositoryType.CODEX_PLUGIN
+
+
+def test_dual_ecosystem_plugin_keeps_claude_primary_type(temp_dir):
+    """A repository that is both a Claude and a Codex plugin keeps its Claude
+    primary type, so existing output is unchanged."""
+    (temp_dir / ".claude-plugin").mkdir()
+    (temp_dir / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo", "version": "1.0.0", "description": "A Claude plugin."}),
+        encoding="utf-8",
+    )
+    _write_codex_manifest(temp_dir)
+    _write_conventional_skill(temp_dir)
+
+    context = RepositoryContext(temp_dir)
+    assert RepositoryType.CODEX_PLUGIN in context.repo_types
+    assert context.repo_type == RepositoryType.SINGLE_PLUGIN
+
+
 def test_flat_structure_discovery(flat_structure_marketplace):
     """Test discovery of flat structure plugins (source: './')"""
     context = RepositoryContext(flat_structure_marketplace)

@@ -54,12 +54,15 @@ class MarketplaceJsonValidRule(Rule):
 
     @staticmethod
     def _has_claude_plugin(context: RepositoryContext) -> bool:
-        """Whether any discovered plugin carries a Claude manifest.
+        """Whether any discovered plugin carries a ``.claude-plugin`` marker.
 
-        Shipping ``.claude-plugin/plugin.json`` is the author declaring the
-        directory a Claude plugin, which is what makes the missing Claude
-        marketplace a real defect rather than an artifact of a Codex repo
-        keeping its plugins where the Codex docs say to.
+        The marker directory — not the manifest inside it — is the signal:
+        it has no purpose other than Claude tooling, so its presence declares
+        Claude intent even when ``plugin.json`` is missing (a defect that
+        plugin-json-required reports on exactly the same evidence). That
+        declared intent is what makes the missing Claude marketplace a real
+        defect rather than an artifact of a Codex repo keeping its plugins
+        where the Codex docs say to.
         """
         for node in context.lint_tree.find(PluginNode):
             plugin_root = safe_resolve(node.path)

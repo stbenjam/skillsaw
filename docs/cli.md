@@ -67,7 +67,7 @@ Show documentation and effective configuration for a rule
 
 ## `skillsaw docs`
 
-Generate documentation for a Claude or Codex plugin or marketplace
+Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository
 
 | Flag | Description | Default |
 |------|-------------|---------|

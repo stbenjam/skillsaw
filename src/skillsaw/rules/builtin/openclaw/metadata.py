@@ -6,8 +6,7 @@ import difflib
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.agentskills._helpers import SKILL_REPO_TYPES
+from skillsaw.context import RepositoryContext, SKILL_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
 from skillsaw.utils import yaml_path_line_lookup
 

@@ -6,12 +6,15 @@ from pathlib import Path
 from typing import List
 
 from skillsaw.blocks import OpenAIMetadataBlock
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, SKILL_REPO_TYPES
 from skillsaw.formats.codex import safe_is_file, safe_resolve
 from skillsaw.paths import is_absolute_path
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.agentskills._helpers import SKILL_REPO_TYPES
-from skillsaw.rules.builtin.utils import commented_item_line, commented_key_line
+from skillsaw.rules.builtin.utils import (
+    commented_item_line,
+    commented_key_line,
+    commented_root_line,
+)
 
 _INTERFACE_STRINGS = (
     "display_name",
@@ -55,7 +58,11 @@ class CodexOpenAIMetadataRule(Rule):
             data = block.raw_data
             if not isinstance(data, dict):
                 violations.append(
-                    self.violation("openai.yaml must be a YAML mapping", file_path=block.path)
+                    self.violation(
+                        "openai.yaml must be a YAML mapping",
+                        file_path=block.path,
+                        line=commented_root_line(data),
+                    )
                 )
                 continue
             self._validate_interface(block, data, violations)

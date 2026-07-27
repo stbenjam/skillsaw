@@ -517,6 +517,35 @@ class TestMarketplaceJsonValid:
         assert "must not embed credentials" in registry[0]
         assert "must not have a query string" in registry[0]
 
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_non_finite_constants_are_invalid_json(self, tmp_path, literal):
+        """Codex's strict parser rejects what Python's lenient reader accepts.
+
+        Without this a catalog passes validity while the registration fixer
+        refuses to reserialize it, so the two rules disagree about the same
+        bytes.
+        """
+        repo = _codex_marketplace_repo(tmp_path, {"name": "numbers", "plugins": []})
+        marketplace = repo / ".agents" / "plugins" / "marketplace.json"
+        marketplace.write_text(
+            '{"name":"numbers","interface":{"score":' + literal + '},"plugins":[]}\n',
+            encoding="utf-8",
+        )
+        violations = run_rule(CodexMarketplaceJsonValidRule, repo)
+        assert messages(violations) == [f"Invalid JSON: non-finite JSON number: {literal}"]
+
+    def test_a_quoted_nan_inside_a_string_is_still_valid(self, tmp_path):
+        """The substring prefilter only gates the strict reparse."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "nan-string",
+                "interface": {"display_name": "NaN and Infinity dashboards"},
+                "plugins": [],
+            },
+        )
+        assert run_rule(CodexMarketplaceJsonValidRule, repo) == []
+
     def test_unparseable_npm_registry_is_reported_not_crashed(self, tmp_path):
         """``urlparse`` raises "Invalid IPv6 URL" on an unbalanced '['.
 

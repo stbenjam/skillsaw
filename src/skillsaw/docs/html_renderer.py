@@ -1193,6 +1193,7 @@ def _get_js() -> str:
     // HTML attribute context. esc() serialises a text node, which leaves the
     // double quote alone — fine for element text, not for an attribute
     // value, where it closes the attribute and a second handler can follow.
+    if (!str) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/"/g, '&quot;')

@@ -6,29 +6,11 @@ import threading
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-from skillsaw.context import RepositoryType
-from skillsaw.formats.codex import safe_resolve
+from skillsaw.context import SKILL_REPO_TYPES  # noqa: F401  — re-export for package rules
+from skillsaw.formats.codex import safe_exists, safe_resolve
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
     from skillsaw.context import RepositoryContext
-
-# Repository types whose lint tree can hold Agent Skills. One set shared by
-# every rule in this package so a newly supported host cannot be wired into
-# some of them and forgotten in the rest. CODEX_PLUGIN belongs here because
-# a Codex plugin ships ``skills/<name>/SKILL.md`` in the same format — most
-# visibly for a plugin installed under ``.codex/plugins/``, which no other
-# repository type covers.
-SKILL_REPO_TYPES = {
-    RepositoryType.AGENTSKILLS,
-    RepositoryType.SINGLE_PLUGIN,
-    RepositoryType.MARKETPLACE,
-    RepositoryType.DOT_CLAUDE,
-    RepositoryType.CODEX_PLUGIN,
-    # For the same reason MARKETPLACE is here: a catalog repository holds
-    # the plugins, and their skills are discovered whether or not the
-    # CODEX_PLUGIN type was also inferred.
-    RepositoryType.CODEX_MARKETPLACE,
-}
 
 NAME_MAX_LENGTH = 64
 DESCRIPTION_MAX_LENGTH = 1024
@@ -56,7 +38,7 @@ def contained_skill_file(
     Codex plugin are unaffected.
     """
     candidate = skill_dir.joinpath(*parts)
-    if not candidate.exists():
+    if not safe_exists(candidate):
         return None
     root = context.codex_plugin_owning(skill_dir)
     if root is None:

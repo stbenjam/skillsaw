@@ -98,6 +98,26 @@ class RepositoryType(Enum):
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
+# Repository types whose lint tree can hold Agent Skills. One shared set so a
+# newly supported host cannot be wired into some skill rules and forgotten in
+# the rest. Defined here rather than in a rule package because independent
+# rule packages (agentskills, openclaw, codex) all need it, and none should
+# import another's private helpers. CODEX_PLUGIN belongs here because a Codex
+# plugin ships ``skills/<name>/SKILL.md`` in the same format — most visibly
+# for a plugin installed under ``.codex/plugins/``, which no other repository
+# type covers. CODEX_MARKETPLACE for the same reason MARKETPLACE is here: a
+# catalog repository holds the plugins, and their skills are discovered
+# whether or not the CODEX_PLUGIN type was also inferred.
+SKILL_REPO_TYPES = {
+    RepositoryType.AGENTSKILLS,
+    RepositoryType.SINGLE_PLUGIN,
+    RepositoryType.MARKETPLACE,
+    RepositoryType.DOT_CLAUDE,
+    RepositoryType.CODEX_PLUGIN,
+    RepositoryType.CODEX_MARKETPLACE,
+}
+
+
 HAS_CURSOR = "HAS_CURSOR"
 HAS_COPILOT = "HAS_COPILOT"
 HAS_GEMINI = "HAS_GEMINI"
@@ -165,15 +185,15 @@ class RepositoryContext:
         RepositoryType.SINGLE_PLUGIN,
         RepositoryType.APM,
         RepositoryType.DOT_CLAUDE,
+        # Below the Claude equivalents, so a repository that is both keeps
+        # its Claude primary type — but above the generic fallbacks: an
+        # authored Codex plugin whose skills also match the Agent Skills
+        # convention is a Codex plugin first, not an agentskills.io repo.
+        RepositoryType.CODEX_MARKETPLACE,
+        RepositoryType.CODEX_PLUGIN,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
-        # Below the Claude equivalents: a repository that is both keeps its
-        # Claude primary type, so existing output is unchanged. Listing them
-        # at all is what stops a Codex-only repo from reporting ``unknown``
-        # and drawing the CLI's "unrecognized repository" warning.
-        RepositoryType.CODEX_MARKETPLACE,
-        RepositoryType.CODEX_PLUGIN,
     ]
 
     # Compiled output directories that APM generates from .apm/ sources.
@@ -1427,8 +1447,8 @@ class RepositoryContext:
         *contain_within* rejects children that resolve outside it. Passed
         for Codex plugins, where ``skills/external`` can be a symlink out
         of the repository and the SKILL.md behind it would otherwise be
-        read as if the plugin shipped it. Left ``None`` on the call sites
-        that predate Codex support, so their behaviour is unchanged.
+        read as if the plugin shipped it. ``None`` disables the containment
+        boundary, for discovery paths with no owning Codex plugin.
         """
         # ``discovered`` only records directories that held a SKILL.md, so
         # it cannot stop a cycle: ``skills/a/loop -> ../..`` stays inside

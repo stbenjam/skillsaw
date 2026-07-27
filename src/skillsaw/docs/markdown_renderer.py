@@ -250,7 +250,11 @@ def _append_mcp_table(lines: List[str], servers: List[McpServerDoc]) -> None:
     lines.append("|------|------|----------|--------|")
     for srv in servers:
         endpoint = srv.config.get("command", srv.config.get("url", ""))
-        lines.append(f"| {srv.name} | `{srv.server_type}` | `{endpoint}` | {srv.source_file} |")
+        name = _table_cell(srv.name)
+        server_type = _table_cell(srv.server_type)
+        endpoint_cell = _table_cell(endpoint)
+        source = _table_cell(srv.source_file)
+        lines.append(f"| {name} | `{server_type}` | `{endpoint_cell}` | {source} |")
     lines.append("")
 
 

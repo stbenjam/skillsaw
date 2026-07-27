@@ -519,8 +519,10 @@ class Linter:
             elif self._is_vendor_managed(v.file_path):
                 # Still reported — a hostile third-party skill is worth
                 # knowing about — but never advertised as fixable, because
-                # fix() is about to stand down on it.
+                # fix() is about to stand down on it. Confidence goes with
+                # fixability, or JSON/SARIF would still claim SAFE/SUGGEST.
                 v.fixable = False
+                v.fix_confidence = None
                 kept.append(v)
             else:
                 kept.append(v)

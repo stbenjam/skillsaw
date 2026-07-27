@@ -23,7 +23,7 @@ def _as_str(value: Any) -> Optional[str]:
 
 
 def _as_str_list(value: Any) -> Optional[List[str]]:
-    """*value* as a list of strings, or ``None`` when it is neither.
+    """*value* with non-string members filtered out, or ``None`` for non-lists.
 
     A bare string is not a list of arguments — iterating it would split
     the value into characters and scan each one.

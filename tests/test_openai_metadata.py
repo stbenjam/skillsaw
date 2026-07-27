@@ -146,14 +146,26 @@ def test_documented_sections_must_be_mappings(tmp_path, body, message, line):
     assert [(v.message, v.line) for v in violations] == [(message, line)]
 
 
-@pytest.mark.parametrize("body", ["[]\n", "plain text\n", "42\n"])
-def test_document_root_must_be_a_mapping(tmp_path, body):
+@pytest.mark.parametrize(
+    ("body", "line"),
+    [
+        # A container root carries a ruamel position; a plain scalar does
+        # not, and the line must then be omitted rather than fabricated.
+        ("[]\n", 1),
+        ("- entry\n", 1),
+        ("plain text\n", None),
+        ("42\n", None),
+    ],
+)
+def test_document_root_must_be_a_mapping(tmp_path, body, line):
     skill = _write_skill(tmp_path)
     _write_metadata(skill, body)
 
     violations = _check(skill)
 
-    assert [v.message for v in violations] == ["openai.yaml must be a YAML mapping"]
+    assert [(v.message, v.line) for v in violations] == [
+        ("openai.yaml must be a YAML mapping", line)
+    ]
 
 
 def test_malformed_yaml_reports_the_parser_line(tmp_path):

@@ -278,6 +278,18 @@ def commented_item_line(node: Any, index: int) -> Optional[int]:
     return None
 
 
+def commented_root_line(node: Any) -> Optional[int]:
+    """Get the 1-based line number of the document root, when ruamel kept one.
+
+    Plain scalars carry no position, so the line is ``None`` for them —
+    callers must omit the line rather than fabricate one.
+    """
+    lc = getattr(node, "lc", None)
+    if lc is not None and lc.line is not None:
+        return lc.line + 1
+    return None
+
+
 def _fast_top_level_key_nodes(
     text: str,
 ) -> Optional[Dict[str, Tuple[yaml.Node, yaml.Node]]]:

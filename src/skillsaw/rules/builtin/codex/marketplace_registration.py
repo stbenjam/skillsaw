@@ -23,18 +23,13 @@ from skillsaw.formats.codex import (
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
-from ._helpers import CODEX_MARKETPLACE_REPO_TYPES, KEBAB_CASE
+from ._helpers import CODEX_MARKETPLACE_REPO_TYPES, KEBAB_CASE, reject_nonfinite_json_number
 
 # What ``fix()`` writes for a newly registered plugin. Every entry in the
 # openai/plugins catalog carries these four keys, and the spec asks for
 # policy.installation, policy.authentication and category on every entry.
 _NEW_ENTRY_POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 _NEW_ENTRY_CATEGORY = "Productivity"
-
-
-def _reject_nonfinite_json_number(value: str) -> None:
-    """Reject JavaScript number extensions that strict JSON does not allow."""
-    raise ValueError(f"non-finite JSON number: {value}")
 
 
 def _reject_duplicate_json_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
@@ -60,7 +55,7 @@ def _mutable_marketplace_data(original: str) -> Optional[dict]:
     try:
         data = json.loads(
             original,
-            parse_constant=_reject_nonfinite_json_number,
+            parse_constant=reject_nonfinite_json_number,
             object_pairs_hook=_reject_duplicate_json_keys,
         )
     except (json.JSONDecodeError, ValueError):

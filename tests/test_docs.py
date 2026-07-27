@@ -446,6 +446,20 @@ class TestHtmlRenderer:
         assert "<script>alert" not in page
         assert "&lt;script&gt;" in page
 
+    def test_escattr_guards_missing_values(self, valid_plugin):
+        """escAttr(undefined) must render '', not the literal 'undefined'.
+
+        The card template calls escAttr(p.category) for every plugin, and
+        String(undefined) is the truthy string "undefined" — so without the
+        falsy guard an omitted category becomes data-category="undefined".
+        The JS runs client-side, so assert on the shipped helper source.
+        """
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+        escattr = page.split("function escAttr(str) {", 1)[1].split("function", 1)[0]
+        assert "if (!str) return '';" in escattr
+
     def test_dot_claude_sections(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)
         docs = extract_docs(ctx)
@@ -740,6 +754,33 @@ class TestMarkdownRenderer:
         pos_one = md.index("plugin-one")
         pos_two = md.index("plugin-two")
         assert pos_one < pos_two
+
+    def test_mcp_table_escapes_pipes_and_newlines(self):
+        """A valid command may contain '|' or a newline; neither may corrupt
+        the table — the pipe adds a column, the newline ends the row."""
+        from skillsaw.docs.markdown_renderer import _append_mcp_table
+        from skillsaw.docs.models import McpServerDoc
+
+        lines: list = []
+        _append_mcp_table(
+            lines,
+            [
+                McpServerDoc(
+                    name="log|ger",
+                    server_type="stdio",
+                    config={"command": "node server.js | tee log\nrm -rf /"},
+                    source_file=".mcp.json",
+                )
+            ],
+        )
+        rows = [line for line in lines if line.startswith("|")]
+        # Header, separator, and exactly one data row — the newline must not
+        # have split the entry into a second row.
+        assert len(rows) == 3
+        data_row = rows[2]
+        assert data_row.count(" | ") == 3
+        assert r"log\|ger" in data_row
+        assert "rm -rf /" in data_row  # folded onto the same line, not lost
 
     def test_skill_metadata_in_markdown(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)
