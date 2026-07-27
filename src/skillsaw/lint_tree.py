@@ -39,6 +39,7 @@ from .formats.codex import (
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
+    codex_manifest_is_contained,
     safe_is_dir,
     safe_is_file,
     safe_resolve,
@@ -147,15 +148,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
         _add_parser_block(parent, p, block_cls)
 
-    def _add_codex_prose(parent: LintTarget, plugin_dir: Path) -> None:
-        """Prose blocks for a Codex plugin no PluginNode covers.
+    def _add_plugin_prose(parent: LintTarget, plugin_dir: Path) -> None:
+        """The one prose attach for every plugin container.
 
-        A plugin at the repository root, or reached through a catalog
-        source outside ``plugins/*``, ships the same ``commands/``,
-        ``agents/`` and ``rules/`` prose — the content and security rules
-        must read it. Containment mirrors ``_add_codex_block``: these
-        paths are found by convention, so a symlink would pull an external
-        file under an in-repo name.
+        ``commands/``, ``agents/``, ``rules/`` and README follow the same
+        conventions in both ecosystems, so every claimed directory gets
+        them here — the content and security rules must read this prose
+        whoever owns it. Containment mirrors ``_add_codex_block``: the
+        paths are found by convention, so a symlink would pull an
+        external file under an in-repo name.
         """
         plugin_resolved = safe_resolve(plugin_dir)
         if plugin_resolved is None:
@@ -274,113 +275,109 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         marketplace_node = MarketplaceNode(path=marketplace_dir)
         root.children.append(marketplace_node)
 
-    for plugin_path in context.plugins:
-        if _is_in_compiled_dir(plugin_path):
+    # --- Plugins: one pass over every claimed directory ---
+    # Exactly one container per directory, with prose and config attached
+    # here from its provenance. There are deliberately no per-ecosystem
+    # loops: two loops that must complement each other exactly are how a
+    # directory falls between attach paths and loses its content silently.
+    plugin_dirs: list[Path] = []
+    seen_plugin_dirs: set[Path] = set()
+    for candidate in (*context.plugins, *context.codex_plugins):
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate in seen_plugin_dirs:
             continue
-        plugin_node = PluginNode(path=plugin_path)
+        seen_plugin_dirs.add(resolved_candidate)
+        plugin_dirs.append(candidate)
 
-        commands_dir = plugin_path / "commands"
-        if commands_dir.is_dir():
-            for cmd_file in sorted(commands_dir.glob("*.md")):
-                _add_block(plugin_node, cmd_file, CommandBlock)
+    for plugin_path in plugin_dirs:
+        prov = context.provenance(plugin_path)
+        # Compiled-output filtering is a Claude/APM concept; a Codex claim
+        # is its own provenance and keeps the directory.
+        if _is_in_compiled_dir(plugin_path) and not prov.codex:
+            continue
+        resolved_plugin = plugin_path.resolve()
 
-        agents_dir = plugin_path / "agents"
-        if agents_dir.is_dir():
-            for agent_file in sorted(agents_dir.glob("*.md")):
-                _add_block(plugin_node, agent_file, AgentBlock)
-
-        rules_dir = plugin_path / "rules"
-        if rules_dir.is_dir():
-            for rule_file in sorted(rules_dir.rglob("*.md")):
-                _add_block(plugin_node, rule_file, PluginRuleBlock)
-
-        if not context.is_codex_only_plugin(plugin_path):
-            _add_block(plugin_node, plugin_path / "hooks" / "hooks.json", HooksBlock)
-            _add_block(plugin_node, plugin_path / "settings.json", SettingsBlock)
-            _add_block(plugin_node, plugin_path / "settings.local.json", SettingsBlock)
-            _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
-        # Codex-only: the manifest loop below attaches hooks and MCP with a
-        # containment check — a symlinked hooks.json must not pull an
-        # external file's commands under an in-repo name. Prose stays here.
-        _add_block(plugin_node, plugin_path / "README.md", ReadmeBlock)
-
-        plugin_nodes[plugin_path.resolve()] = plugin_node
-        if marketplace_node is not None and plugin_path.resolve().is_relative_to(
-            marketplace_dir.resolve()
-        ):
-            marketplace_node.children.append(plugin_node)
-        else:
-            root.children.append(plugin_node)
-
-    # --- Codex plugin manifests ---
-    # A dual-host directory keeps one PluginNode subtree and the Codex
-    # manifest hangs off it. Codex-only directories get a distinct container
-    # type so their owned config and skills have a useful hierarchy without
-    # becoming targets of Claude-only PluginNode rules.
-    for codex_plugin_path in context.codex_plugins:
-        manifest = codex_plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
-        # Not gated on the manifest existing: discovery keys off the reserved
-        # .codex-plugin/ directory, so a plugin whose manifest is missing
-        # still reaches codex-plugin-json-valid to be reported as such.
-        # No plugin-wide skip when the manifest is excluded. The plugin's
-        # hooks.json and .mcp.json have their own paths, exclusion checks,
-        # and executable commands — dropping them with the manifest would
-        # put them out of reach of the security rules. The linter filters
-        # violations filed against the excluded manifest; rules that file
-        # against another path must honor the plugin exclusion themselves.
-        node = CodexPluginConfigNode(path=manifest)
-        _add_openai_metadata(
-            node,
-            codex_plugin_path / "agents" / "openai.yaml",
-            metadata_root=codex_plugin_path,
-            containment_root=codex_plugin_path,
-        )
-        # Codex "checks that default file automatically", so a plugin can ship
-        # executable hooks without declaring them. They are the same
-        # supply-chain surface as a Claude plugin's hooks, so route them to
-        # the same rules. Parser-role deduplication handles the dual-ecosystem
-        # case, where the PluginNode loop above already attached this file.
-        # Contained like the manifest-declared paths: parser attachment resolves
-        # only to dedupe, so a symlinked hooks.json would otherwise pull an
-        # external file's commands into this plugin's findings.
-        _add_codex_block(node, codex_plugin_path / "hooks" / "hooks.json", HooksBlock)
-        # A manifest may point ``hooks`` at other files instead; those carry
-        # the same executable commands, so they get the same checks.
-        for declared_hooks in codex_declared_hook_files(codex_plugin_path):
-            _add_parser_block(node, declared_hooks, HooksBlock)
-        # ...or write them inline, which is the same surface again. Appended
-        # directly rather than through _add_block: the payload has no file of
-        # its own, so the manifest path it borrows is already claimed.
-        for inline_hooks in codex_inline_hooks(codex_plugin_path):
-            node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
-        # The Codex docs put .mcp.json at the plugin root alongside hooks/
-        # and skills/. When the directory is Codex-only there is no
-        # PluginNode to have attached it above, so its MCP servers would
-        # otherwise reach neither the validity nor the security rules.
-        _add_codex_block(node, codex_plugin_path / ".mcp.json", McpBlock)
-        # ``mcpServers`` may name a different file, or hold the map itself.
-        # Either way those servers are commands the host will spawn, so
-        # they get the same treatment as the hooks above.
-        # One document can legitimately be declared as both ``hooks`` and
-        # ``mcpServers``. Attach it once per parser role so both rule families
-        # see it without doubling either family.
-        for declared_mcp in codex_declared_mcp_files(codex_plugin_path):
-            _add_parser_block(node, declared_mcp, McpBlock)
-        for inline_mcp in codex_inline_mcp_servers(codex_plugin_path):
-            node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
-        resolved_plugin = codex_plugin_path.resolve()
-        parent = plugin_nodes.get(resolved_plugin)
-        if parent is not None:
-            # A PluginNode already attached this directory's prose.
-            parent.children.append(node)
+        # Container type: a Claude identity (or no ecosystem claim at all
+        # — legacy discovery) keeps the PluginNode and the Claude-only
+        # PluginNode rules; a Codex-only directory gets the Codex
+        # container; a Codex-only plugin that IS the repository root hangs
+        # directly off the tree root.
+        container: LintTarget
+        if prov.claude or not prov.codex:
+            container = PluginNode(path=plugin_path)
+            plugin_nodes[resolved_plugin] = container
         elif resolved_plugin == root.resolved_path:
-            root.children.append(node)
-            _add_codex_prose(root, codex_plugin_path)
+            container = root
         else:
-            container = CodexPluginNode(path=codex_plugin_path)
-            container.children.append(node)
-            _add_codex_prose(container, codex_plugin_path)
+            container = CodexPluginNode(path=plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
+
+        # Prose: the conventions are identical in both ecosystems, so one
+        # attach covers commands/, agents/, rules/ and README — with
+        # containment, because a symlinked command file is an external
+        # file under an in-repo name whichever ecosystem claims the
+        # directory.
+        _add_plugin_prose(container, plugin_path)
+
+        # Claude-side configs. Hooks and MCP stand down only when the
+        # Codex cluster below re-attaches them with its containment check
+        # — which requires a contained manifest, so a plugin claimed only
+        # by a catalog entry keeps this attach and its executable hooks
+        # stay scanned. settings.json is a Claude-side concept with no
+        # Codex counterpart and always attaches.
+        if not (prov.codex_only and codex_manifest_is_contained(plugin_path)):
+            _add_block(container, plugin_path / "hooks" / "hooks.json", HooksBlock)
+            _add_block(container, plugin_path / ".mcp.json", McpBlock)
+        _add_block(container, plugin_path / "settings.json", SettingsBlock)
+        _add_block(container, plugin_path / "settings.local.json", SettingsBlock)
+
+        # Codex manifest cluster, for any directory Codex claims (dual
+        # directories hang it off their PluginNode).
+        if prov.codex:
+            manifest = plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
+            # Not gated on the manifest existing: discovery keys off the
+            # reserved .codex-plugin/ directory (or a catalog claim), so a
+            # plugin whose manifest is missing still reaches
+            # codex-plugin-json-valid to be reported as such. No
+            # plugin-wide skip when the manifest is excluded, either — the
+            # plugin's hooks and MCP files have their own paths, exclusion
+            # checks, and executable commands; the linter filters
+            # violations filed against the excluded manifest itself.
+            node = CodexPluginConfigNode(path=manifest)
+            _add_openai_metadata(
+                node,
+                plugin_path / "agents" / "openai.yaml",
+                metadata_root=plugin_path,
+                containment_root=plugin_path,
+            )
+            # Codex "checks that default file automatically", so a plugin
+            # can ship executable hooks without declaring them — the same
+            # supply-chain surface as a Claude plugin's hooks. Parser-role
+            # deduplication keeps the dual-ecosystem attach above from
+            # doubling findings; containment keeps a symlinked hooks.json
+            # from pulling an external file's commands into this plugin.
+            _add_codex_block(node, plugin_path / "hooks" / "hooks.json", HooksBlock)
+            # A manifest may point ``hooks`` at other files, or write them
+            # inline; both carry the same executable commands. Inline
+            # payloads have no file of their own, so they borrow the
+            # manifest path, which is already claimed — appended directly.
+            for declared_hooks in codex_declared_hook_files(plugin_path):
+                _add_parser_block(node, declared_hooks, HooksBlock)
+            for inline_hooks in codex_inline_hooks(plugin_path):
+                node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
+            # Same treatment for MCP: the conventional .mcp.json, declared
+            # files, and inline maps are all commands the host will spawn.
+            # One document can legitimately be declared as both ``hooks``
+            # and ``mcpServers``; one attach per parser role lets both
+            # rule families see it without doubling either.
+            _add_codex_block(node, plugin_path / ".mcp.json", McpBlock)
+            for declared_mcp in codex_declared_mcp_files(plugin_path):
+                _add_parser_block(node, declared_mcp, McpBlock)
+            for inline_mcp in codex_inline_mcp_servers(plugin_path):
+                node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
+            container.children.append(node)
+
+        if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(
                 marketplace_dir.resolve()
             ):

@@ -37,15 +37,14 @@ class PluginJsonRequiredRule(Rule):
                 # Check if plugin has strict: false in marketplace metadata
                 resolved_path = plugin_path.resolve()
 
-                # is_codex_only_plugin() is filesystem-first, so the
-                # exemption survives a ``--type`` override that switches
-                # Codex discovery off; the claim half additionally covers a
+                # is_codex_only_plugin() is filesystem-first (so the
+                # exemption survives a ``--type`` override) and already
+                # treats a Claude-marketplace listing as a Claude
+                # declaration; the claim half additionally covers a
                 # directory a catalog lists but that ships no manifest yet —
                 # codex-plugin-json-valid owns that defect, one report per
                 # ecosystem.
-                if resolved_path not in getattr(
-                    context, "marketplace_entries", {}
-                ) and context.is_codex_only_plugin(plugin_path):
+                if context.is_codex_only_plugin(plugin_path):
                     # A Codex plugin, swept up here only because it also ships
                     # a commands/ or skills/ directory. It has no reason to
                     # carry a Claude manifest, and codex-plugin-json-valid

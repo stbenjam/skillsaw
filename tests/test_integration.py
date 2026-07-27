@@ -538,12 +538,12 @@ class TestFilePathArgument:
 
 @pytest.mark.integration
 class TestDirectManifestInputs:
-    """A manifest path given directly must lint like its owning directory.
+    """A manifest path given directly lints like its owning directory.
 
-    Parenting ``.codex-plugin/plugin.json`` at ``.codex-plugin/`` made
-    discovery probe for a nested marker and find nothing, so the documented
-    file-path input form reported A+ on a manifest whose directory form
-    reported errors."""
+    Discovery keys on marker directories under the root, so the file-path
+    input form must root the context at the plugin (or repository) that
+    owns the manifest — bounded so it never widens to $HOME or the
+    filesystem root."""
 
     def test_codex_manifest_file_input_roots_at_the_plugin(self, tmp_path):
         repo = tmp_path / "plug"

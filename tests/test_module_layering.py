@@ -125,7 +125,7 @@ def _core_module_files():
     """Every top-level core module, blocks/*, and the promptfoo format helper."""
     files = sorted(str(p.relative_to(SRC)) for p in SRC.glob("*.py"))
     files.extend(sorted(str(p.relative_to(SRC)) for p in (SRC / "blocks").glob("*.py")))
-    files.append("formats/promptfoo.py")
+    files.extend(sorted(str(p.relative_to(SRC)) for p in (SRC / "formats").glob("*.py")))
     return files
 
 

@@ -1,9 +1,11 @@
 ## Why
 
-A plugin must have a `.claude-plugin/plugin.json` manifest so the
-host application can discover its metadata, commands, and
+A Claude plugin must have a `.claude-plugin/plugin.json` manifest so
+the host application can discover its metadata, commands, and
 capabilities. Without this file the plugin directory is just a
-collection of unregistered files.
+collection of unregistered files. The requirement is scoped to
+directories with Claude provenance — see "Codex plugins" below before
+adding a manifest to a directory another ecosystem owns.
 
 ## Examples
 

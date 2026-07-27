@@ -8,7 +8,8 @@ import fnmatch
 import functools
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Iterator, Optional, List, Dict, Any, FrozenSet, Set, Tuple, TYPE_CHECKING
 import json
 import logging
 import os
@@ -202,6 +203,43 @@ def _read_json_or_none(path: Path) -> Any:
     return None if error else data
 
 
+@dataclass(frozen=True)
+class PluginProvenance:
+    """Who claims a plugin directory, decided once and read everywhere.
+
+    The single source of truth for every ecosystem-provenance question:
+    which ecosystems declared the directory (``claude``, ``codex``), on
+    what evidence, and whether it is vendor-installed content. Rules and
+    the lint tree consult this record — never a fresh filesystem probe —
+    so two call sites cannot disagree about ownership, and a directory
+    can never fall between per-ecosystem attach paths.
+
+    Evidence is filesystem-first (markers, contained manifests, catalog
+    listings), deliberately independent of ``--type`` overrides: an
+    override changes what discovery walks, not what the author declared.
+
+    Adding an ecosystem means adding its evidence probe to
+    ``RepositoryContext._compute_provenance`` and its format-rule family
+    to the gates that read ``ecosystems`` — see DEVELOPMENT.md,
+    "Ecosystem provenance".
+    """
+
+    ecosystems: FrozenSet[str]
+    installed: bool = False
+
+    @property
+    def codex_only(self) -> bool:
+        return self.ecosystems == frozenset({"codex"})
+
+    @property
+    def claude(self) -> bool:
+        return "claude" in self.ecosystems
+
+    @property
+    def codex(self) -> bool:
+        return "codex" in self.ecosystems
+
+
 _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 
 # Distinguishes "not computed yet" from a computed ``None`` (the install
@@ -267,6 +305,7 @@ class RepositoryContext:
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
+        self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # An explicit --type override is a statement about what the caller
         # wants linted, not just which rules fire. Probing for Codex anyway
         # would attach its manifests, hooks, MCP files and skills to the
@@ -450,6 +489,7 @@ class RepositoryContext:
         # The claim set folds in both plugin roots and catalog sources, and
         # excludes can drop either — always recompute on the next consult.
         self._codex_claims = None
+        self._provenance_cache.clear()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -807,15 +847,17 @@ class RepositoryContext:
         self._codex_marketplace_paths = found
         return found
 
-    def codex_catalog_exists(self) -> bool:
-        """Whether any Codex catalog file is present in the checkout.
+    def _codex_catalog_files(self) -> List[Path]:
+        """Codex catalog files present in the checkout, asked of the
+        filesystem.
 
-        Deliberately independent of ``_codex_discovery_enabled``: this
-        answers "is this repository's catalog a Codex one", which the
-        Claude rules need in order to stand down, and an explicit
-        ``--type`` switches discovery off without changing the answer.
-        Reading it from discovery would make ``--type marketplace`` restore
-        the false positive the stand-down exists to remove.
+        Deliberately independent of ``_codex_discovery_enabled``: the
+        provenance claim set and ``codex_catalog_exists()`` read author
+        *declarations*, which a ``--type`` override does not change —
+        reading them from discovery would make ``--type marketplace``
+        restore the false positives the stand-downs exist to remove. The
+        lint tree's node discovery uses ``_discover_codex_marketplaces()``,
+        which honors the override.
 
         Every catalog counts, not just the primary ``marketplace.json`` —
         a repository whose only catalog is a sibling such as
@@ -823,7 +865,7 @@ class RepositoryContext:
         """
         root = safe_resolve(self.root_path)
         if root is None:
-            return False
+            return []
 
         def _usable(path: Path) -> bool:
             resolved = safe_resolve(path)
@@ -833,27 +875,33 @@ class RepositoryContext:
                 return False
             return safe_exists(path) or safe_is_symlink(path)
 
-        if _usable(self.codex_marketplace_path()):
-            return True
+        found: List[Path] = []
+        primary = self.codex_marketplace_path()
+        primary_resolved = safe_resolve(primary)
+        if _usable(primary):
+            found.append(primary)
         marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
         if not safe_is_dir(marketplace_dir):
-            return False
+            return found
         try:
             siblings = sorted(marketplace_dir.glob("*.json"))
         except OSError:
-            return False
+            return found
         for candidate in siblings:
+            candidate_resolved = safe_resolve(candidate)
+            if candidate_resolved is not None and candidate_resolved == primary_resolved:
+                continue
             if not _usable(candidate):
                 continue
-            if _is_marketplace_filename(candidate.name):
-                return True
-            # The same duck-typing discovery applies to an arbitrarily named
-            # sibling — the shared predicate keeps the two in lockstep, so
-            # the Claude stand-down can neither miss a catalog discovery
-            # lints nor trigger on a sibling discovery refuses to claim.
-            if _looks_like_codex_catalog(_read_json_or_none(candidate)):
-                return True
-        return False
+            if _is_marketplace_filename(candidate.name) or _looks_like_codex_catalog(
+                _read_json_or_none(candidate)
+            ):
+                found.append(candidate)
+        return found
+
+    def codex_catalog_exists(self) -> bool:
+        """Whether any Codex catalog file is present in the checkout."""
+        return bool(self._codex_catalog_files())
 
     def codex_plugin_roots(self) -> List[Path]:
         """Resolved Codex plugin roots, computed once per context.
@@ -992,7 +1040,10 @@ class RepositoryContext:
         reports them.
         """
         resolved: List[Path] = []
-        for marketplace_file in self._discover_codex_marketplaces():
+        # Filesystem-enumerated, not discovery-gated: these feed the
+        # provenance claim set, which must answer identically under any
+        # ``--type`` override.
+        for marketplace_file in self._codex_catalog_files():
             data = _read_json_or_none(marketplace_file)
             if not isinstance(data, dict):
                 continue
@@ -1026,31 +1077,59 @@ class RepositoryContext:
             self._codex_claims = claims
         return self._codex_claims
 
-    def is_codex_claimed(self, path: Path) -> bool:
-        """Whether a Codex manifest or a local catalog source claims *path*.
+    def provenance(self, plugin_dir: Path) -> PluginProvenance:
+        """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 
-        Asked of the filesystem first, deliberately independent of
-        ``--type``: a contained ``.codex-plugin/plugin.json`` declares the
-        directory Codex whatever discovery was told to look for — the same
-        reasoning as ``codex_catalog_exists()``. Otherwise an explicit
-        ``--type marketplace`` would resurrect every Claude-format false
-        positive this predicate exists to remove.
+        The one place ecosystem-ownership evidence is gathered; every
+        predicate below is a view over this record. Evidence, in
+        declaration strength order:
+
+        * ``claude`` — a ``.claude-plugin`` marker, or a listing in the
+          Claude marketplace (``marketplace_entries``).
+        * ``codex`` — a contained ``.codex-plugin/plugin.json``, or a
+          local-source listing in any Codex catalog.
+
+        Filesystem-first and independent of ``--type``: an override
+        changes what discovery walks, not what the author declared.
         """
-        if codex_manifest_is_contained(path):
-            return True
-        resolved = safe_resolve(path)
-        return resolved is not None and resolved in self._codex_claim_set()
+        resolved = safe_resolve(plugin_dir)
+        key = resolved if resolved is not None else plugin_dir
+        cached = self._provenance_cache.get(key)
+        if cached is not None:
+            return cached
+
+        ecosystems = set()
+        if safe_exists(plugin_dir / ".claude-plugin") or (
+            resolved is not None and resolved in getattr(self, "marketplace_entries", {})
+        ):
+            ecosystems.add("claude")
+        if codex_manifest_is_contained(plugin_dir) or (
+            resolved is not None and resolved in self._codex_claim_set()
+        ):
+            ecosystems.add("codex")
+        record = PluginProvenance(
+            ecosystems=frozenset(ecosystems),
+            installed=self.is_codex_installed_plugin(plugin_dir),
+        )
+        self._provenance_cache[key] = record
+        return record
+
+    def is_codex_claimed(self, path: Path) -> bool:
+        """Whether a Codex manifest or a local catalog source claims *path*."""
+        return self.provenance(path).codex
 
     def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
         """Codex-claimed with no ``.claude-plugin`` marker.
 
-        The provenance line the Claude-format rules gate on: a dual-marker
-        directory keeps every Claude check, while a Codex-only one is
-        exempt from Claude manifest, frontmatter, and naming requirements —
-        the ecosystem-neutral content and security rules still read its
-        prose either way.
+        The provenance line the Claude-format rules gate on: a
+        ``.claude-plugin`` marker or a ``.claude-plugin/marketplace.json``
+        listing is the author declaring Claude, so such a directory keeps
+        every Claude check. A Codex-only one is exempt from Claude
+        manifest, frontmatter, and naming requirements — the
+        ecosystem-neutral content and security rules still read its prose
+        either way.
         """
-        return not safe_exists(plugin_dir / ".claude-plugin") and self.is_codex_claimed(plugin_dir)
+        return self.provenance(plugin_dir).codex_only
 
     def codex_plugin_owning(self, path: Path) -> Optional[Path]:
         """The Codex plugin *path* sits in, nearest first, or ``None``.

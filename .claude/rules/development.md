@@ -135,3 +135,36 @@ preserve them. Keep JSON rules at file-level reporting.
   no-ops there, by design. A new rule's fix needs no guard of its own for that
   case, and a "fix didn't apply" report from such a path is expected behavior,
   not a bug.
+
+## Ecosystem provenance
+
+"Which ecosystem owns this plugin directory" is decided in exactly one
+place: `RepositoryContext.provenance()`, which returns a cached
+`PluginProvenance` record per directory. Never answer an ownership
+question with a fresh filesystem probe in a rule or in the tree builder —
+two call sites probing independently is how a directory falls between
+per-ecosystem attach paths and loses its content silently.
+
+- **Evidence is filesystem-first and `--type`-invariant.** An override
+  changes what discovery walks, not what the author declared, so
+  provenance reads markers, contained manifests, and catalog files
+  directly (`_codex_catalog_files()`), never discovery output.
+- **The lint tree builds plugins in ONE pass** over the union of claimed
+  directories. Each directory gets one container; prose (`commands/`,
+  `agents/`, `rules/`, README) attaches once with containment; config
+  files attach per claiming ecosystem through the contained helpers.
+  Never add a second per-ecosystem plugin loop.
+- **Format rules gate on provenance, not on tool names in-line.**
+  Claude-format rules skip `context.is_codex_only_plugin(...)`
+  directories; ecosystem-tightened checks (hooks/MCP shapes) apply only
+  to that ecosystem's exclusive directories, so dual-manifest plugins
+  keep their established results.
+
+**Adding an ecosystem** (the next Codex): add its evidence probe to
+`RepositoryContext.provenance()` and its catalog enumeration beside
+`_codex_catalog_files()`; add its config-file cluster to the single
+plugin pass in `build_lint_tree` (attached through a contained helper);
+gate its format rules on its provenance and keep them out of
+`is_codex_only_plugin`-exempt directories; extend the union in
+`merge_plugin_dirs` callers if it discovers plugin directories of its
+own. Prose needs no work — every claimed directory already gets it.

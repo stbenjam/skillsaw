@@ -143,10 +143,9 @@ def _is_codex_only(context: RepositoryContext, plugin_path: Path, codex_roots: S
     resolved = safe_resolve(plugin_path)
     if resolved is None:
         return False
-    if resolved in getattr(context, "marketplace_entries", {}):
-        return False
-    # Claude identity is the shared predicate's question; the codex_roots
-    # membership keeps the docstring's discovery-accepted requirement.
+    # Claude identity (marker or marketplace listing) is the shared
+    # predicate's question; the codex_roots membership keeps the
+    # docstring's discovery-accepted requirement.
     return resolved in codex_roots and context.is_codex_only_plugin(plugin_path)
 
 

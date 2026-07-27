@@ -28,13 +28,16 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 
 
-# Userinfo in a URL-shaped value: everything between "://" and an "@" that
-# precedes the first path separator. Matched anywhere in the string — the
-# object form ("./https://u:pw@host/x" as a *path*) leaks the same way the
-# bare form does. Unbounded on purpose: a pasted JWT is far longer than any
-# sane cap, and a cap turns exactly those into the values that escape
-# redaction. The single character class cannot backtrack.
-_URL_USERINFO = re.compile(r"(?<=://)[^/@\s]+@")
+# Userinfo before a host: covers every URL-ish spelling a manifest value
+# can carry — scheme-full ("https://u:tok@h/x"), scheme-relative
+# ("//u:tok@h/x"), bare ("u:tok@h/x"), and scp-style
+# ("tok@github.com:o/r.git") — by requiring only that something host-like
+# (a dot or colon ahead) follows the "@". Over-redacting an email-shaped
+# value in a path field is the safe direction. Unbounded on purpose: a
+# pasted JWT is far longer than any sane cap, and a cap turns exactly
+# those into the values that escape redaction. The single character class
+# cannot backtrack.
+_URL_USERINFO = re.compile(r"(?:[^/@\s:]+:[^@\s]*@)|(?:[^/@\s]+@(?=[^@\s]*[.:]))")
 # C0, DEL, C1, and the Unicode bidi overrides — any of them can reorder
 # or hide message text in a terminal or a rendered SARIF viewer.
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")

@@ -1399,18 +1399,24 @@ class TestClaudeRulesStandDown:
     def test_codex_plugin_is_not_asked_for_a_claude_manifest(self, tmp_path):
         # The fixture ships note-taker/commands/, the shape openai/plugins
         # uses. Its Codex manifest supplies the provenance: the directory
-        # still gets a PluginNode — its prose must reach every content and
-        # security rule — but the Claude manifest requirement stands down.
+        # gets the Codex container — so the Claude-only PluginNode rules
+        # never see it — while its prose still reaches every content and
+        # security rule through that container.
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo)
 
-        assert context.lint_tree.find(PluginNode) != []
+        assert context.lint_tree.find(PluginNode) == []
+        containers = context.lint_tree.find(CodexPluginNode)
+        assert containers and any(
+            b.path.name == "capture.md" for c in containers for b in c.find(ContentBlock)
+        )
         assert PluginJsonRequiredRule({}).check(context) == []
 
     def test_codex_only_plugin_prose_is_still_linted(self, tmp_path):
-        """Dropping the PluginNode silenced secret scanning on a Codex
-        plugin's commands/, agents/, rules/ and README — every content and
-        security rule must still read that prose."""
+        """A Codex-only plugin's commands/, agents/, rules/ and README
+        stay in the tree: every content and security rule must read that
+        prose even though the Claude-format rules stand down on the
+        directory."""
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo)
 
@@ -1447,10 +1453,28 @@ class TestClaudeRulesStandDown:
         )
         (plugin / "commands").mkdir()
 
+        # A second directory claimed ONLY by the catalog (no manifest), so
+        # the invariance claim is exercised for the claim-set half too —
+        # with a manifest present the filesystem probe alone would pass.
+        catalog = repo / ".agents" / "plugins" / "marketplace.json"
+        data = json.loads(catalog.read_text(encoding="utf-8"))
+        data["plugins"].append(
+            {
+                "name": "claimed-bare",
+                "source": {"source": "local", "path": "./plugins/claimed-bare"},
+                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                "category": "Productivity",
+            }
+        )
+        catalog.write_text(json.dumps(data), encoding="utf-8")
+        bare = repo / "plugins" / "claimed-bare"
+        (bare / "commands").mkdir(parents=True)
+
         default_ctx = RepositoryContext(repo)
         forced = RepositoryContext(repo, repo_types={RepositoryType.MARKETPLACE})
-        assert default_ctx.is_codex_only_plugin(plugin) is True
-        assert forced.is_codex_only_plugin(plugin) is True
+        for ctx in (default_ctx, forced):
+            assert ctx.is_codex_only_plugin(plugin) is True
+            assert ctx.is_codex_only_plugin(bare) is True
 
     def test_root_level_codex_plugin_prose_is_still_linted(self, tmp_path):
         """A Codex plugin at the repository root lives outside plugins/*,
@@ -2032,14 +2056,50 @@ class TestCrossedRegistration:
             encoding="utf-8",
         )
 
+        # A second entry carrying the secret through fields the other rules
+        # echo: a name (kebab warning), a source path, and an escape
+        # sequence, so the terminal-control assertion below has a live
+        # payload.
+        catalog = repo / ".agents" / "plugins" / "marketplace.json"
+        data = json.loads(catalog.read_text(encoding="utf-8"))
+        data["plugins"].append(
+            {
+                # The escape sequence rides in the name (control-char
+                # strip); the credential rides in the URL-shaped path
+                # (userinfo redaction) — names are identifiers, not
+                # credential carriers, and are echoed as written.
+                "name": "Bad_Name\x1b[31m",
+                "source": {"source": "local", "path": f"./u:{secret}@host.example/x"},
+                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                "category": "Productivity",
+            }
+        )
+        catalog.write_text(json.dumps(data), encoding="utf-8")
+        from skillsaw.utils import invalidate_read_caches
+
+        invalidate_read_caches(catalog)
+
         context = RepositoryContext(repo)
+        # Every message every Codex rule produces — not an enumerated
+        # branch list, which is how the leaking site keeps being the one
+        # absent from the fixture.
+        from skillsaw.rules.builtin.codex import (
+            CodexMarketplaceJsonValidRule as _MJV,
+            CodexPluginStructureRule as _PS,
+        )
+
         rules = [
             CodexMarketplaceRegistrationRule({}),
             CodexPluginJsonValidRule({}),
             CodexOpenAIMetadataRule({}),
+            _MJV({}),
+            _PS({}),
         ]
         violations = [v for rule in rules for v in rule.check(context)]
         assert violations, "expected echo-site violations to exercise redaction"
+        for v in violations:
+            assert secret not in v.message, v.message
+            assert "\x1b" not in v.message, v.message
         # A pasted JWT is far longer than any redaction cap — the bound
         # itself was the escape hatch.
         long_secret = "eyJ" + "b" * 400  # notsecret
@@ -2055,8 +2115,8 @@ class TestCrossedRegistration:
     def test_dual_distribution_by_remote_entry_is_not_an_error(self, tmp_path):
         """The standard dual-distribution layout: the catalog lists the
         plugin by name with a REMOTE source while the same plugin ships
-        locally. 'Not registered' was factually wrong — measured at 40% of
-        this rule's hard errors on a random ecosystem sample."""
+        locally. A remote entry registers the plugin, so reporting it as
+        unregistered is wrong."""
         repo = _codex_marketplace_repo(
             tmp_path,
             {
@@ -4942,8 +5002,9 @@ class TestUrlValuesCannotBreakOutOfAnAttribute:
 
 
 class TestVendorManagedContentIsNeverRewritten:
-    """The Codex rules and the Agent Skill fixers already stand down on
-    installed content. Every other rule's fixer did not."""
+    """No rule's fix() rewrites content under .codex/plugins/. The
+    stand-down is drawn in the linter, so it covers the generic content-*
+    fixers and any rule added later."""
 
     def _repo_with_installed_skill(self, tmp_path):
         repo = tmp_path / "repo"

@@ -39,6 +39,15 @@ case-sensitive systems.
 Rename the plugin to use kebab-case in `plugin.json` and rename the
 plugin directory to match.
 
+## Codex plugins
+
+This is a Claude-format convention. A directory claimed only by OpenAI
+Codex — a `.codex-plugin/plugin.json`, or a local-source listing in a
+Codex catalog, with no `.claude-plugin` marker or Claude marketplace
+listing — is exempt: Claude never loads it, so codex-plugin-json-valid already checks the manifest name, and a second directory-name report would double up. A dual-manifest
+directory keeps this check, and the ecosystem-neutral content and
+security rules read every plugin's files regardless of provenance.
+
 ## Configuration
 
 ```yaml
