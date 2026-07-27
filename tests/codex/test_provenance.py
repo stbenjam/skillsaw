@@ -6,7 +6,7 @@ import shutil
 import pytest
 
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.blocks import AgentBlock, McpBlock, OpenAIMetadataBlock
+from skillsaw.blocks import AgentBlock, CommandBlock, McpBlock, OpenAIMetadataBlock
 from skillsaw.lint_target import (
     CodexPluginConfigNode,
     CodexPluginNode,
@@ -722,3 +722,102 @@ class TestLateExcludesDropContributedPlugins:
         context.apply_excludes()
 
         assert context.codex_plugins == before
+
+
+class TestProvenanceScopeMechanism:
+    """Format-scope gating is declarative: a rule states the ecosystem
+    whose conventions it enforces (``provenance_scope``) and iterates its
+    targets through ``Rule.scoped_find``. The ownership answer itself is
+    one view over the cached provenance record
+    (``RepositoryContext.in_format_scope``) — no inline guards in rule
+    bodies, and no fresh filesystem probes."""
+
+    def _context(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        codex_only = _write_plugin(
+            repo / "plugins" / "codex-only",
+            {"name": "codex-only", "version": "1.0.0", "description": "x"},
+        )
+        (codex_only / "commands").mkdir()
+        (codex_only / "commands" / "codex-cmd.md").write_text("# Codex\n", encoding="utf-8")
+        dual = _write_plugin(
+            repo / "plugins" / "dual",
+            {"name": "dual", "version": "1.0.0", "description": "x"},
+        )
+        (dual / ".claude-plugin").mkdir()
+        (dual / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "dual", "version": "1.0.0", "description": "x"}),
+            encoding="utf-8",
+        )
+        (dual / "commands").mkdir()
+        (dual / "commands" / "dual-cmd.md").write_text("# Dual\n", encoding="utf-8")
+        context = RepositoryContext(repo)
+        # Preconditions, not assumptions: both prose blocks must be in the
+        # tree or the filtering assertions below are vacuous.
+        assert sorted(b.path.name for b in context.lint_tree.find(CommandBlock)) == [
+            "codex-cmd.md",
+            "dual-cmd.md",
+        ]
+        return context
+
+    def test_scoped_find_drops_codex_only_prose_and_keeps_dual(self, tmp_path):
+        from skillsaw.rules.builtin.commands.frontmatter import CommandFrontmatterRule
+
+        context = self._context(tmp_path)
+        rule = CommandFrontmatterRule({})
+        assert rule.provenance_scope == "claude"
+        scoped = rule.scoped_find(context, CommandBlock)
+        assert [b.path.name for b in scoped] == ["dual-cmd.md"]
+
+    def test_neutral_scope_sees_every_block(self, tmp_path):
+        from skillsaw.rules.builtin.hooks import HooksJsonValidRule
+
+        context = self._context(tmp_path)
+        rule = HooksJsonValidRule({})
+        # Conditional-strictness rules stay ecosystem-neutral — tightening
+        # is their semantic, not a skip.
+        assert rule.provenance_scope is None
+        scoped = rule.scoped_find(context, CommandBlock)
+        assert sorted(b.path.name for b in scoped) == ["codex-cmd.md", "dual-cmd.md"]
+
+    def test_scoped_find_filters_plugin_nodes_by_their_own_path(self, tmp_path):
+        context = self._context(tmp_path)
+        rule = PluginJsonRequiredRule({})
+        assert rule.provenance_scope == "claude"
+        scoped = rule.scoped_find(context, PluginNode)
+        assert [n.path.name for n in scoped] == ["dual"]
+        # The Codex-only directory is a CodexPluginNode, never a
+        # PluginNode — but scope filtering must hold even for PluginNodes
+        # a ``--type`` override might create, so it is asserted on the
+        # nodes themselves rather than on container typing alone.
+        assert [n.path.name for n in context.lint_tree.find(CodexPluginNode)] == ["codex-only"]
+
+    def test_claude_format_rules_declare_their_scope(self):
+        """The declarative pin: deleting a ``provenance_scope`` declaration
+        (or inventing an unknown one) must fail here, not silently re-run
+        Claude checks on Codex-only content."""
+        from skillsaw.rules.builtin import BUILTIN_RULES
+
+        claude_scoped = {
+            cls({}).rule_id for cls in BUILTIN_RULES if cls.provenance_scope == "claude"
+        }
+        assert claude_scoped == {
+            "agent-frontmatter",
+            "command-frontmatter",
+            "command-name-format",
+            "command-naming",
+            "command-sections",
+            "marketplace-registration",
+            "plugin-json-required",
+            "plugin-naming",
+        }
+        assert all(cls.provenance_scope in (None, "claude") for cls in BUILTIN_RULES)
+
+    def test_in_codex_only_plugin_gates_on_the_nearest_owner(self, tmp_path):
+        context = self._context(tmp_path)
+        root = context.root_path
+        assert context.in_codex_only_plugin(
+            root / "plugins" / "codex-only" / "hooks" / "hooks.json"
+        )
+        assert not context.in_codex_only_plugin(root / "plugins" / "dual" / "hooks" / "hooks.json")
+        assert not context.in_codex_only_plugin(root / "README.md")

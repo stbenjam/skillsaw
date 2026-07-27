@@ -216,9 +216,10 @@ class PluginProvenance:
     override changes what discovery walks, not what the author declared.
 
     Adding an ecosystem means adding its evidence probe to
-    ``RepositoryContext.provenance`` and its format-rule family to the
-    gates that read ``ecosystems`` — see the "Ecosystem provenance"
-    section of the development rules
+    ``RepositoryContext.provenance`` — the declarative format gates
+    (``Rule.provenance_scope`` via ``in_format_scope``) read
+    ``ecosystems`` and need no per-rule visits. See the "Ecosystem
+    provenance" section of the development rules
     (.apm/instructions/development.instructions.md).
     """
 
@@ -1117,6 +1118,38 @@ class RepositoryContext:
         either way.
         """
         return self.provenance(plugin_dir).codex_only
+
+    def in_format_scope(self, node: "LintTarget", ecosystem: str) -> bool:
+        """Whether *ecosystem*'s format conventions govern *node*.
+
+        The one gate behind ``Rule.provenance_scope``, read through
+        ``Rule.scoped_find``: a node whose ``provenance_dir()`` is claimed
+        exclusively by other ecosystems is out of scope, so a Codex-only
+        plugin is exempt from Claude manifest, frontmatter, and naming
+        requirements. Unclaimed content (no ecosystem declared it) stays
+        in every scope, and a dual-manifest directory stays in scope for
+        each of its ecosystems — dual plugins keep their established
+        Claude results. Ownership itself comes from :meth:`provenance`,
+        per the doctrine: no fresh filesystem probes here.
+        """
+        owner_dir = node.provenance_dir()
+        if owner_dir is None:
+            return True
+        ecosystems = self.provenance(owner_dir).ecosystems
+        return not ecosystems or ecosystem in ecosystems
+
+    def in_codex_only_plugin(self, path: Path) -> bool:
+        """Whether *path* sits inside a Codex-ONLY plugin, nearest owner first.
+
+        The conditional-strictness gate shared by the ecosystem-tightened
+        hooks/MCP shape checks: they apply only where the owning Codex
+        plugin is Codex-exclusive, so a dual-manifest plugin keeps its
+        established Claude results — ``since`` gates rules rather than
+        checks, and a new hard error inside an old rule would break
+        previously green dual repositories.
+        """
+        owner = self.codex_plugin_owning(path)
+        return owner is not None and self.provenance(owner).codex_only
 
     def codex_plugin_owning(self, path: Path) -> Optional[Path]:
         """The Codex plugin *path* sits in, nearest first, or ``None``.

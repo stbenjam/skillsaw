@@ -5,7 +5,6 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import read_text
 
 
@@ -13,6 +12,8 @@ class CommandSectionsRule(Rule):
     """Check that command files have recommended sections"""
 
     default_enabled = False
+
+    provenance_scope = "claude"
 
     @property
     def rule_id(self) -> str:
@@ -32,13 +33,7 @@ class CommandSectionsRule(Rule):
 
         required_sections = ["Name", "Synopsis", "Description", "Implementation"]
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
-            if context.is_codex_only_plugin(cmd_block.path.parent.parent):
-                # Codex-only provenance: Claude command section conventions do not
-                # apply to a plugin Claude never loads — wherever the block
-                # is attached (PluginNode or Codex container). Content and
-                # security rules still read the file.
-                continue
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             content = read_text(cmd_file)
             if content is None:

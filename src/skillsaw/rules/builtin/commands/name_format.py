@@ -14,6 +14,8 @@ class CommandNameFormatRule(Rule):
 
     default_enabled = False
 
+    provenance_scope = "claude"
+
     @property
     def rule_id(self) -> str:
         return "command-name-format"
@@ -30,14 +32,10 @@ class CommandNameFormatRule(Rule):
 
         violations = []
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             parent_plugin = context.lint_tree.find_parent(cmd_block, PluginNode)
             if parent_plugin is None:
-                continue
-            if context.is_codex_only_plugin(parent_plugin.path):
-                # Codex-only provenance: the Claude name-format convention
-                # does not apply to a plugin Claude never loads.
                 continue
             plugin_name = context.get_plugin_name(parent_plugin.path)
             cmd_name = cmd_file.stem

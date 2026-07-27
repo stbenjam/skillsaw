@@ -313,6 +313,13 @@ class CommandBlock(FrontmatteredBlock):
 
     category: str = "command"
 
+    def provenance_dir(self) -> Optional[Path]:
+        # Attached from ``<claimed dir>/commands/*.md`` (one level — see
+        # ``_add_plugin_prose``), so ``parent.parent`` is the claimed
+        # directory wherever the block hangs in the tree (PluginNode,
+        # CodexPluginNode, or the tree root for a root-level Codex plugin).
+        return self.path.parent.parent
+
     def section(self, heading: str, level: int = 2) -> str:
         content = read_text(self.path)
         if content is None:
@@ -325,6 +332,11 @@ class AgentBlock(FrontmatteredBlock):
     """agents/*.md in plugins or APM agent files."""
 
     category: str = "agent"
+
+    def provenance_dir(self) -> Optional[Path]:
+        # Same one-level layout as CommandBlock. APM agent files land on
+        # ``.apm/``, which no ecosystem claims, keeping them in every scope.
+        return self.path.parent.parent
 
 
 @dataclass(eq=False)

@@ -17,18 +17,6 @@ def _is_usable(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _codex_only_owner(context: RepositoryContext, path) -> bool:
-    """Whether *path* belongs to a Codex-ONLY plugin.
-
-    The tightened non-empty-string checks apply there alone: a
-    dual-manifest plugin keeps its established Claude results, because
-    ``since`` gates rules rather than checks and a new hard error inside
-    an old rule would break previously green dual repositories.
-    """
-    owner = context.codex_plugin_owning(path)
-    return owner is not None and context.is_codex_only_plugin(owner)
-
-
 class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
@@ -82,20 +70,21 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
+            # Conditional strictness, not a skip: the shared gate applies
+            # the tightened non-empty-string checks only inside Codex-ONLY
+            # plugins, so a dual-manifest plugin keeps its established
+            # Claude results (see in_codex_only_plugin's docstring).
+            require_usable = context.in_codex_only_plugin(block.path)
             if "mcpServers" in data:
                 violations.extend(
-                    self._validate_mcp_structure(
-                        data,
-                        block.path,
-                        require_usable=_codex_only_owner(context, block.path),
-                    )
+                    self._validate_mcp_structure(data, block.path, require_usable=require_usable)
                 )
             else:
                 violations.extend(
                     self._validate_mcp_structure(
                         {"mcpServers": data},
                         block.path,
-                        require_usable=_codex_only_owner(context, block.path),
+                        require_usable=require_usable,
                     )
                 )
 

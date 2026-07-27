@@ -5,13 +5,14 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
-from skillsaw.lint_target import PluginNode
 
 
 class CommandNamingRule(Rule):
     """Check that command files use kebab-case naming"""
 
     default_enabled = True
+
+    provenance_scope = "claude"
 
     autofix_confidence = AutofixConfidence.SUGGEST
 
@@ -31,13 +32,7 @@ class CommandNamingRule(Rule):
 
         violations = []
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
-            if context.is_codex_only_plugin(cmd_block.path.parent.parent):
-                # Codex-only provenance: Claude command naming conventions do not
-                # apply to a plugin Claude never loads — wherever the block
-                # is attached (PluginNode or Codex container). Content and
-                # security rules still read the file.
-                continue
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             cmd_name = cmd_file.stem
             if not self._is_kebab_case(cmd_name):
