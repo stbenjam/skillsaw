@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json
 
 
@@ -53,64 +54,6 @@ def is_remote_source(source: Any) -> bool:
     # aborts the rule instead of letting the validity rule report the shape.
     kind = source.get("source")
     return isinstance(kind, str) and kind in REMOTE_SOURCE_TYPES
-
-
-def safe_resolve(path: Path) -> Optional[Path]:
-    """``path.resolve()``, or ``None`` when the path cannot be resolved.
-
-    Discovery runs while ``RepositoryContext`` is being constructed, before
-    any rule can report anything, and it resolves strings taken straight
-    out of a manifest. ``Path.resolve()`` raises ``ValueError`` on an
-    embedded NUL, ``OSError`` on an unreadable parent, and — on a symlink
-    loop — ``RuntimeError`` before Python 3.13 but ``OSError`` from 3.13
-    on. This project supports 3.9 through 3.14, so all three have to be
-    caught; any of them would abort the whole lint instead of producing
-    the violation the manifest deserves. Returning ``None`` drops the
-    candidate from discovery and leaves the reporting to the rules.
-    """
-    try:
-        return path.resolve()
-    except (OSError, ValueError, RuntimeError):
-        return None
-
-
-def _safe_stat(path: Path, predicate: str) -> bool:
-    """``path.<predicate>()``, or ``False`` when the path cannot be stat'd.
-
-    ``safe_resolve`` is not enough on its own: ``Path.resolve()`` does not
-    stat, so it happily returns a path that the very next ``is_dir()``
-    raises on. ``pathlib`` swallows only ``ENOENT``/``ENOTDIR``/``EBADF``/
-    ``ELOOP`` on Python 3.9 through 3.12, so a manifest declaring a
-    4000-character path raises ``ENAMETOOLONG`` there — from inside
-    ``RepositoryContext.__init__``, where the ``rule-execution-error``
-    guard cannot reach it. The whole lint aborts with a traceback and
-    reports nothing at all, on a repository whose only defect is one
-    over-long string in a JSON file.
-    """
-    try:
-        return bool(getattr(path, predicate)())
-    except (OSError, ValueError):
-        return False
-
-
-def safe_is_dir(path: Path) -> bool:
-    """``path.is_dir()``, or ``False`` when the path cannot be stat'd."""
-    return _safe_stat(path, "is_dir")
-
-
-def safe_is_file(path: Path) -> bool:
-    """``path.is_file()``, or ``False`` when the path cannot be stat'd."""
-    return _safe_stat(path, "is_file")
-
-
-def safe_exists(path: Path) -> bool:
-    """``path.exists()``, or ``False`` when the path cannot be stat'd."""
-    return _safe_stat(path, "exists")
-
-
-def safe_is_symlink(path: Path) -> bool:
-    """``path.is_symlink()``, or ``False`` when the path cannot be stat'd."""
-    return _safe_stat(path, "is_symlink")
 
 
 def inline_documents(declared: Any, key: str) -> List[Dict[str, Any]]:
@@ -187,8 +130,8 @@ def codex_declared_paths(plugin_dir: Path, field: str, want_dir: bool) -> List[P
     for item in candidates:
         if not isinstance(item, str) or not item:
             continue
-        candidate = safe_resolve(plugin_dir / item)
-        if candidate is None or not candidate.is_relative_to(root):
+        candidate = contained_resolve(plugin_dir / item, root)
+        if candidate is None:
             continue
         # ``"skills": "./"`` points at the plugin root, which is a legal
         # place to keep a skill. A file-valued field naming the root is
@@ -290,11 +233,9 @@ def codex_manifest_is_contained(plugin_dir: Path) -> bool:
     if root is None:
         return False
     manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
-    resolved_dir = safe_resolve(manifest_dir)
-    if resolved_dir is None or not resolved_dir.is_relative_to(root):
+    if contained_resolve(manifest_dir, root) is None:
         return False
     manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
-    resolved = safe_resolve(manifest)
-    if resolved is None or not resolved.is_relative_to(root):
+    if contained_resolve(manifest, root) is None:
         return False
     return safe_is_file(manifest)

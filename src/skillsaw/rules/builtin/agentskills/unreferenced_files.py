@@ -108,7 +108,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
-from skillsaw.formats.codex import safe_resolve
+from skillsaw.paths import safe_resolve
 
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
 

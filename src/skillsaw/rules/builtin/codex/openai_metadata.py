@@ -8,10 +8,9 @@ from typing import List
 
 from skillsaw.blocks import OpenAIMetadataBlock
 from skillsaw.context import RepositoryContext, SKILL_REPO_TYPES
-from skillsaw.formats.codex import safe_is_file, safe_resolve
-from skillsaw.paths import is_absolute_path
+from skillsaw.diagnostics import safe_display
+from skillsaw.paths import is_absolute_path, safe_is_file, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.codex._helpers import safe_display
 from skillsaw.rules.builtin.utils import (
     commented_item_line,
     commented_key_line,

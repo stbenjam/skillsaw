@@ -14,21 +14,20 @@ from skillsaw.rule import (
     AutofixResult,
     AutofixConfidence,
 )
-from skillsaw.context import RepositoryContext, codex_local_source_path, safe_resolve
+from skillsaw.context import RepositoryContext, codex_local_source_path
+from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
     codex_plugin_name,
     is_remote_source,
-    safe_is_dir,
-    safe_is_file,
 )
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
+from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.utils import read_json, read_text
 
 from ._helpers import (
     CODEX_MARKETPLACE_REPO_TYPES,
     KEBAB_CASE,
     reject_nonfinite_json_number,
-    safe_display,
 )
 
 # What ``fix()`` writes for a newly registered plugin. Every entry in the

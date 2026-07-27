@@ -9,8 +9,9 @@ from urllib.parse import urlparse
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, codex_local_source_path
-from skillsaw.formats.codex import safe_exists
+from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import CodexMarketplaceConfigNode
+from skillsaw.paths import safe_exists
 from skillsaw.rules.builtin.utils import read_json
 
 from ._helpers import (
@@ -18,7 +19,6 @@ from ._helpers import (
     KEBAB_CASE,
     nonfinite_constant_error,
     path_problem,
-    safe_display,
 )
 
 # Required fields per documented source type. Unknown types warn rather than

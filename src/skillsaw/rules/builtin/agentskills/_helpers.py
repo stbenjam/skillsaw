@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from skillsaw.context import SKILL_REPO_TYPES  # noqa: F401  — re-export for package rules
-from skillsaw.formats.codex import safe_exists, safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime
     from skillsaw.context import RepositoryContext
@@ -43,8 +43,7 @@ def contained_skill_file(
     root = context.codex_plugin_owning(skill_dir)
     if root is None:
         return candidate
-    resolved = safe_resolve(candidate)
-    if resolved is None or not resolved.is_relative_to(root):
+    if contained_resolve(candidate, root) is None:
         return None
     return candidate
 
