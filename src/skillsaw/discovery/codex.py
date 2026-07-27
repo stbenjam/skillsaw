@@ -266,6 +266,10 @@ def codex_local_sources(root_path: Path, catalog_files: Iterable[Path]) -> List[
     escape the root are dropped here; ``codex-marketplace-json-valid``
     reports them.
     """
+    # Containment compares resolved candidates, so the boundary must be
+    # resolved too — a symlinked root passed unresolved would silently
+    # drop every local source.
+    root_path = safe_resolve(root_path) or root_path
     resolved: List[Path] = []
     for marketplace_file in catalog_files:
         data = _read_json_or_none(marketplace_file)

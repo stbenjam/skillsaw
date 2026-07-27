@@ -168,6 +168,10 @@ per-ecosystem attach paths and loses its content silently.
   each node's `provenance_dir()`), so a Codex-only directory is exempt
   while dual-manifest and unclaimed directories keep every check.
   `TestProvenanceScopeMechanism` pins which rules declare the scope.
+  The mechanism fails open by node type: `provenance_dir()` is
+  overridden only on `PluginNode`, `CommandBlock`, and `AgentBlock` —
+  a scope-declaring rule iterating any other node type silently gets
+  no filtering, so add the override for that type first.
 - **Conditional strictness is not a skip.** The ecosystem-tightened
   checks (hooks/MCP shapes) stay `provenance_scope = None` and gate the
   tightened checks alone on `context.in_codex_only_plugin(path)` — the

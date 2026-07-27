@@ -87,7 +87,8 @@ class CodexPluginJsonValidRule(Rule):
                 continue
             manifest = node.path
             if not safe_is_file(manifest):
-                # The node exists because .codex-plugin/ does; Codex loads
+                # The node exists because ``.codex-plugin/`` does or because
+                # a catalog claims the directory; either way Codex loads
                 # nothing without the manifest at this exact path.
                 violations.append(
                     self.violation(

@@ -356,15 +356,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # those blocks live on the tree root but the ownership is this
             # plugin's, decided here once.
             root_plugin_owner = resolved_plugin
-            claimed = {
-                safe_resolve(plugin_path / ".mcp.json"),
-                safe_resolve(plugin_path / "hooks" / "hooks.json"),
-            } - {None}
+            # Only ``.mcp.json`` needs re-tagging: the generic root attach
+            # never adds a HooksBlock (hooks/hooks.json attaches under the
+            # Codex cluster with containment).
+            claimed = {safe_resolve(plugin_path / ".mcp.json")} - {None}
             for child in root.children:
-                if (
-                    isinstance(child, (McpBlock, HooksBlock))
-                    and safe_resolve(child.path) in claimed
-                ):
+                if isinstance(child, McpBlock) and safe_resolve(child.path) in claimed:
                     child.plugin_owner = resolved_plugin
 
         _add_plugin_prose(container, plugin_path, resolved_plugin)

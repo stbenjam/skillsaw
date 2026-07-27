@@ -236,9 +236,12 @@ class RepositoryContext:
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
-        # An explicit --type override states what the caller wants linted:
-        # probing for Codex anyway would attach manifests, hooks, MCP files
-        # and skills the override was meant to exclude.
+        # An explicit --type override gates *discovery* (which catalogs are
+        # walked, which Codex rules activate), not *declaration*: the
+        # provenance claim set stays --type-invariant, so a catalog-claimed
+        # directory still gets its container and prose in the lint tree —
+        # content and security rules read it, while Codex-format rules
+        # remain repo-type-gated and quiet.
         self._codex_discovery_enabled = (
             bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
         )
@@ -403,6 +406,10 @@ class RepositoryContext:
                 self._codex_roots = None
         # The claim set folds in both plugin roots and catalog sources, and
         # excludes can drop either — always recompute on the next consult.
+        # The unconditional clear is also load-bearing for __init__ ordering:
+        # type detection consults provenance before marketplace_entries
+        # exists, and this end-of-init clear is what discards those early
+        # records. Never scope it under ``if self.exclude_patterns:``.
         self._codex_claims = None
         self._provenance_cache.clear()
         self.detected_formats = self._detect_formats()
@@ -654,10 +661,6 @@ class RepositoryContext:
     CODEX_PLUGIN_MANIFEST = _CODEX_PLUGIN_MANIFEST
     CODEX_INSTALL_DIR = codex_discovery.CODEX_INSTALL_DIR
 
-    def codex_marketplace_path(self) -> Path:
-        """Path the Codex repo marketplace manifest would live at."""
-        return codex_discovery.codex_marketplace_path(self.root_path)
-
     def has_codex_marketplace(self) -> bool:
         """Check if repository has a Codex marketplace manifest.
 
@@ -803,10 +806,6 @@ class RepositoryContext:
         )
         self._provenance_cache[key] = record
         return record
-
-    def is_codex_claimed(self, path: Path) -> bool:
-        """Whether a Codex manifest or a local catalog source claims *path*."""
-        return self.provenance(path).codex
 
     def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
         """Codex-claimed with no ``.claude-plugin`` marker.
