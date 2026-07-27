@@ -326,7 +326,7 @@ class TestSafeDisplay:
         """
         import time
 
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         def cost(n: int) -> float:
             best = float("inf")
@@ -348,7 +348,7 @@ class TestSafeDisplay:
     def test_truncation_does_not_leak_a_severed_credential(self):
         """A credential whose ``@`` falls beyond the display cap must not
         surface its head — the cut edge is treated like an ``@``."""
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         value = "x" * 490 + "user:" + "S" * 600 + "@host.example/path"
         out = safe_display(value)
@@ -358,7 +358,7 @@ class TestSafeDisplay:
     def test_a_long_delimiterless_credential_is_fully_redacted(self):
         """A >512-char userinfo must not have its head emitted when the
         backward search window is clipped."""
-        from skillsaw.rules.builtin.codex._helpers import _redact_userinfo
+        from skillsaw.diagnostics import _redact_userinfo
 
         out = _redact_userinfo("u:" + "T" * 600 + "@h.example")
         assert "TTTT" not in out
