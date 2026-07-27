@@ -37,10 +37,9 @@ _SOURCE_REQUIRED_FIELDS = {
 # intersection, and the set is configurable.
 DEFAULT_INSTALLATION_VALUES = ["AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"]
 
-# Same split for policy.authentication: prose describes the field ("whether
-# auth happens on install or first use"), plugin-json-spec.md publishes
-# exactly this pair as an enum. Unrecognized values warn for the same
-# reason as installation.
+# Same split for policy.authentication: the prose spec describes the field,
+# plugin-json-spec.md publishes exactly this pair as an enum. Unrecognized
+# values warn for the same reason as installation.
 DEFAULT_AUTHENTICATION_VALUES = ["ON_INSTALL", "ON_USE"]
 
 # The docs mandate these on every entry ("Always include policy.installation,
@@ -52,12 +51,10 @@ _RECOMMENDED_ENTRY_FIELDS = ("policy", "category")
 def _source_identity(source: Any) -> str:
     """A comparable identity for an entry's source.
 
-    Codex accepts a local source as a bare string or as an object, and
     ``./plugins/foo``, ``plugins/foo`` and ``{"source": "local", "path":
-    "./plugins/foo"}`` all install the same directory. Comparing raw JSON
-    would call those three different sources and report a duplicate name
-    that is not one, so local sources compare by their normalised path.
-    Remote sources have no such spellings and compare structurally.
+    "./plugins/foo"}`` all install the same directory, so local sources
+    compare by normalised path — raw JSON comparison would report a
+    duplicate name that is not one. Remote sources compare structurally.
     """
     local = codex_local_source_path(source)
     if local is not None:
@@ -113,10 +110,9 @@ class CodexMarketplaceJsonValidRule(Rule):
             marketplace_file = node.path
             data, error = read_json(marketplace_file)
             if error:
-                # An absent file is not a syntax error. The node exists
-                # because ``--type codex-marketplace`` said the format is
-                # Codex, so "Invalid JSON: Failed to read" would describe
-                # the wrong defect entirely.
+                # An absent file (a --type-seeded node) is not a syntax
+                # error — "Invalid JSON: Failed to read" would describe the
+                # wrong defect.
                 message = (
                     "Invalid JSON: {}".format(error)
                     if safe_exists(marketplace_file)
@@ -196,8 +192,7 @@ class CodexMarketplaceJsonValidRule(Rule):
 
             for field in _RECOMMENDED_ENTRY_FIELDS:
                 # ``None`` counts as absent throughout — an explicit null
-                # carries no more information than a missing key, and
-                # treating it as present would skip every check below it.
+                # carries no more information than a missing key.
                 if entry.get(field) is None:
                     violations.append(
                         self.violation(
@@ -221,8 +216,7 @@ class CodexMarketplaceJsonValidRule(Rule):
 
         The set of labels is open-ended, so their *values* stay
         unconstrained — but ``""``, a number, or an array carries less
-        information than an absent key, which already warns. Without this
-        the presence-only check above reports nothing at all for them.
+        information than an absent key, which already warns.
         """
         if category is None:
             return []  # absence already warned about above
@@ -259,30 +253,27 @@ class CodexMarketplaceJsonValidRule(Rule):
                 )
             ]
         if not name:
-            # Same reasoning as the plugin manifest: an empty identifier is a
-            # missing one, so it must not stop at the kebab-case warning.
+            # An empty identifier is a missing one — it must not stop at
+            # the kebab-case warning.
             return [
                 self.violation(
                     f"plugins[{idx}] required field 'name' is an empty string",
                     file_path=marketplace_file,
                 )
             ]
-        # A duplicate falls through to the casing check rather than returning:
-        # two entries named ``Bad_Name`` have both defects, and reporting only
-        # the duplicate would hide the second until the first was fixed.
+        # A duplicate falls through to the casing check rather than
+        # returning: two entries named ``Bad_Name`` have both defects.
         violations: List[RuleViolation] = []
         source_key = _source_identity(entry.get("source"))
         first = seen_names.get(name)
         # Across catalogs, one name pointing at one source is a curated
-        # second listing, not a defect — real catalogs split their index
-        # that way. It is only ambiguous when the two entries resolve
-        # somewhere different: that is when Codex's aggregation has to pick
-        # one and ``docs`` loses a page. Within a single file any repeat is
-        # a defect.
+        # second listing, not a defect. It is only ambiguous when the two
+        # entries resolve somewhere different — then Codex's aggregation
+        # has to pick one and ``docs`` loses a page. Within a single file
+        # any repeat is a defect.
         if first is not None and (first[0] == marketplace_file or first[2] != source_key):
             first_file, first_idx, _ = first
-            # Name the file only when it differs, so the single-catalog
-            # message reads exactly as it did before.
+            # Name the file only when it differs.
             where = (
                 f"plugins[{first_idx}]"
                 if first_file == marketplace_file
@@ -329,9 +320,9 @@ class CodexMarketplaceJsonValidRule(Rule):
             ]
 
         source_type = source.get("source")
-        # An empty discriminator is missing, not unknown: Codex cannot
-        # resolve the entry either way, so it must not fall through to the
-        # forward-compatibility warning and pass a default ``fail-on: error``.
+        # An empty discriminator is missing, not unknown: it must not fall
+        # through to the forward-compatibility warning and pass a default
+        # ``fail-on: error``.
         if not isinstance(source_type, str) or not source_type:
             return [
                 self.violation(
@@ -352,9 +343,7 @@ class CodexMarketplaceJsonValidRule(Rule):
 
         for required in _SOURCE_REQUIRED_FIELDS[source_type]:
             value = source.get(required)
-            # ``None`` counts as absent: an explicit null is no more usable
-            # than a missing key, and reporting it as present would let it
-            # through every check below.
+            # ``None`` counts as absent, as above.
             if value is None:
                 violations.append(
                     self.violation(
@@ -497,9 +486,9 @@ class CodexMarketplaceJsonValidRule(Rule):
                 continue
             known = self.config.get(f"{field}-values", default)
             if not isinstance(known, (list, tuple, set)):
-                # ``value not in known`` raises TypeError on a non-iterable,
-                # which the linter turns into a rule crash — every remaining
-                # entry in the catalog would then go unvalidated.
+                # ``value not in known`` raises TypeError on a non-iterable
+                # — a rule crash that leaves the rest of the catalog
+                # unvalidated.
                 known = default
             if value not in known:
                 violations.append(

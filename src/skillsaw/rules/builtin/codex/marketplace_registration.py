@@ -66,10 +66,8 @@ def _mutable_marketplace_data(original: str) -> Optional[dict]:
     except (json.JSONDecodeError, ValueError):
         return None
     except RecursionError:
-        # The shared reader turns this into an ordinary parse error, but
-        # this reparses the raw text to keep ruamel out of the fix path.
-        # Letting it escape makes the rule a rule-execution-error instead
-        # of standing down on a catalog that is already invalid.
+        # Letting this escape turns the rule into a rule-execution-error
+        # instead of standing down on an already-invalid catalog.
         return None
     if not isinstance(data, dict):
         return None
@@ -116,12 +114,10 @@ class CodexMarketplaceRegistrationRule(Rule):
         registerable = self._registerable(context, truly_unregistered, primary)
         for plugin_dir, name in unregistered:
             if name in local_names:
-                # The catalog lists the name but its local source path does
-                # not resolve to this directory. "Not registered" would be
-                # factually wrong — the name is right there — and fix()
-                # skips this by design (appending a second entry for a
-                # listed name would create a duplicate), so per the
-                # invariant it must not be a hard ERROR either.
+                # The catalog lists the name but its source path does not
+                # resolve to this directory — "not registered" would be
+                # factually wrong, and fix() skips it (a second entry for a
+                # listed name would be a duplicate).
                 violations.append(
                     self.violation(
                         f"Plugin '{safe_display(name)}' is listed in {primary.name} but the "
@@ -174,11 +170,9 @@ class CodexMarketplaceRegistrationRule(Rule):
         if _mutable_marketplace_data(_read_text(marketplace_file)) is None:
             return {}
 
-        # Every name the catalog spells, local entries included. This is a
-        # different question from ``_registered()``, which deliberately
-        # ignores local entries' names — here the point is that ``fix()``
-        # refuses to append a name already present, so advertising the fix
-        # would offer a no-op that leaves the violation standing.
+        # Every name the catalog spells, local entries included (unlike
+        # ``_registered()``): ``fix()`` refuses to append a name already
+        # present, so advertising that fix would offer a no-op.
         catalog_names = {
             entry.get("name")
             for node in context.lint_tree.find(CodexMarketplaceConfigNode)
@@ -223,10 +217,9 @@ class CodexMarketplaceRegistrationRule(Rule):
         name = manifest.get("name")
         if not isinstance(name, str) or not name:
             return False
-        # Writing a non-kebab name into the catalog trades one violation for
-        # another: codex-marketplace-json-valid rejects it on the next run,
-        # and the identifier hosts use as the component namespace is now
-        # published. The manifest name has to be corrected by hand first.
+        # A non-kebab name trades one violation for another:
+        # codex-marketplace-json-valid rejects it on the next run. The
+        # manifest name has to be corrected by hand first.
         return bool(KEBAB_CASE.match(name))
 
     def _unregistered(
@@ -249,20 +242,19 @@ class CodexMarketplaceRegistrationRule(Rule):
         for plugin_node in context.lint_tree.find(CodexPluginConfigNode):
             plugin_dir = plugin_node.plugin_dir
             if not plugin_node.path.is_file():
-                # A .codex-plugin/ directory with no manifest. There is
-                # nothing installable to register, and codex-plugin-json-valid
-                # already reports the missing entrypoint — stacking a second
-                # error on it would just say the same defect twice.
+                # No manifest: nothing installable to register, and
+                # codex-plugin-json-valid already reports the missing
+                # entrypoint.
                 continue
             if plugin_dir.resolve() in registered_dirs:
                 continue
             if context.is_codex_installed_plugin(plugin_dir):
                 continue
             if context.is_path_excluded(plugin_node.path):
-                # Registration files its violation against the catalog, not
-                # the excluded manifest, so the linter's path filter cannot
-                # enforce this boundary for us. Skipping here also keeps the
-                # fixer from publishing an excluded plugin.
+                # The violation is filed against the catalog, not the
+                # excluded manifest, so the linter's path filter cannot
+                # enforce this; skipping also keeps the fixer from
+                # publishing an excluded plugin.
                 continue
             name = codex_plugin_name(plugin_dir)
             if name in registered_names:
@@ -273,26 +265,20 @@ class CodexMarketplaceRegistrationRule(Rule):
     def _registered(self, context: RepositoryContext) -> Tuple[Set[str], Set[Path], Set[str]]:
         """Names and plugin directories the repository's catalogs already cover.
 
-        A plugin counts as registered when *any* catalog names it — openai/
-        plugins splits its catalog across two files — or when an entry's
-        local source resolves to its directory. The second half matters
-        because an entry whose ``name`` disagrees with the manifest still
-        installs that directory; without it the plugin would be reported
-        unregistered on top of the name-mismatch warning, and the autofix
-        would append a duplicate entry for a directory already listed.
+        A plugin counts as registered when *any* catalog names it (openai/
+        plugins splits its catalog across two files) or when an entry's
+        local source resolves to its directory — an entry whose ``name``
+        disagrees with the manifest still installs that directory.
 
-        A *local* entry contributes only its directory, never its name. The
-        two are one registration, and crediting them independently lets a
-        crossed pair — ``name: "b"`` against ``path: "./plugins/a"`` — cover
-        both directories: A matches the path, B matches the name, and the
-        fact that B is not installable at all goes unreported. Only remote
-        entries (url, git-subdir, npm) register by name, because they name
-        no directory in this repository for the path half to match.
+        A *local* entry contributes only its directory, never its name:
+        crediting both independently lets a crossed pair — ``name: "b"``
+        against ``path: "./plugins/a"`` — cover both directories while B is
+        not installable at all. Only remote entries (url, git-subdir, npm)
+        register by name, since they name no directory here to match.
 
-        A malformed entry registers nothing at all. ``{"source": "local"}``
-        with no ``path`` names no directory, and its ``name`` describes a
-        plugin the catalog cannot install; crediting it would silence the
-        unregistered-plugin report for a real directory of the same name.
+        A malformed entry registers nothing: ``{"source": "local"}`` with
+        no ``path`` names no directory, and crediting its ``name`` would
+        silence the unregistered report for a real directory of that name.
         """
         names: Set[str] = set()
         dirs: Set[Path] = set()
@@ -304,12 +290,9 @@ class CodexMarketplaceRegistrationRule(Rule):
                     resolved = safe_resolve(context.root_path / source)
                     if resolved is not None:
                         dirs.add(resolved)
-                    # The name is remembered without crediting the
-                    # directory: a directory whose name the catalog lists
-                    # under a non-matching path is a different defect from
-                    # one the catalog never mentions, and reporting the
-                    # second message for the first sends the author
-                    # grepping a catalog that already contains the name.
+                    # Remember the name without crediting the directory: a
+                    # name listed under a non-matching path is a different
+                    # defect from one the catalog never mentions.
                     name = entry.get("name")
                     if isinstance(name, str):
                         local_names.add(name)
@@ -406,11 +389,10 @@ class CodexMarketplaceRegistrationRule(Rule):
             return results
         marketplace_file = config_nodes[0].path
 
-        # Never write through a symlink: a catalog entry symlinked at an
-        # unrelated file — inside or outside the checkout — would receive
-        # this rule's appended JSON at whatever the link points to. The
-        # lexical path is what the repository ships; if resolution moves
-        # it, the write is declined and the violation stays manual.
+        # Never write through a symlink: the appended JSON would land at
+        # whatever the link points to. The lexical path is what the
+        # repository ships; if resolution moves it, the write is declined
+        # and the violation stays manual.
         lexical = Path(os.path.abspath(marketplace_file))
         resolved_target = safe_resolve(marketplace_file)
         if resolved_target is None or resolved_target != lexical:
@@ -419,8 +401,7 @@ class CodexMarketplaceRegistrationRule(Rule):
         original = _read_text(marketplace_file)
         data = _mutable_marketplace_data(original)
         if data is None:
-            # Malformed document — reported by codex-marketplace-json-valid
-            # and left for manual repair. check() marks these fixable=False.
+            # Malformed document — left for manual repair.
             return results
         data.setdefault("plugins", [])
 
@@ -431,9 +412,9 @@ class CodexMarketplaceRegistrationRule(Rule):
         unregistered = [
             (d, n)
             for d, n in self._unregistered(context, registered_names, registered_dirs)
-            # Name-listed entries get the WARNING path in check(), never a
-            # catalog write — appending a second entry for a listed name
-            # would create the duplicate the validity rule rejects.
+            # Name-listed entries never get a catalog write — a second
+            # entry for a listed name is the duplicate the validity rule
+            # rejects.
             if n not in local_names
         ]
         registerable = self._registerable(context, unregistered, marketplace_file)
@@ -464,10 +445,10 @@ class CodexMarketplaceRegistrationRule(Rule):
 
         if fixed:
             try:
-                # Python's encoder otherwise emits NaN and Infinity, which
-                # JavaScript accepts but the JSON standard and Codex manifests
-                # do not. Parsing is strict above; allow_nan=False is the final
-                # guard before returning content that the autofix will write.
+                # allow_nan=False: Python's encoder otherwise emits NaN and
+                # Infinity, which the JSON standard and Codex manifests
+                # reject. ensure_ascii=False preserves non-ASCII text in
+                # untouched entries.
                 fixed_content = (
                     json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
                 )
@@ -479,8 +460,6 @@ class CodexMarketplaceRegistrationRule(Rule):
                     file_path=marketplace_file,
                     confidence=AutofixConfidence.SUGGEST,
                     original_content=original,
-                    # ensure_ascii=False above preserves non-ASCII text in
-                    # untouched entries when the whole document is serialized.
                     fixed_content=fixed_content,
                     description=(f"Registered {len(fixed)} plugin(s) in {marketplace_file.name}"),
                     violations_fixed=fixed,

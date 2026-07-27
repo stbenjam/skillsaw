@@ -4,10 +4,7 @@ The pure predicates answer questions about a path *string* — is it
 absolute, does it escape its root — without touching the filesystem.
 The ``safe_*`` wrappers are their filesystem-touching companions:
 ``pathlib`` calls that never raise, so discovery and rules can probe
-manifest-supplied paths without aborting the lint. They live here
-rather than in a format or rule module because independent packages
-need them, and none should have to import another's private helpers
-to get at an ecosystem-neutral utility.
+manifest-supplied paths without aborting the lint.
 """
 
 from __future__ import annotations
@@ -129,9 +126,8 @@ def escapes_root(value: str, root: Path) -> bool:
         resolved_root = root.resolve()
         candidate = (root / value).resolve()
     except (OSError, ValueError, RuntimeError):
-        # OSError: an unreadable parent, or a symlink loop on 3.13+.
-        # RuntimeError: a symlink loop before 3.13. ValueError: an embedded
-        # NUL. Containment cannot be proven in any of these cases, and
-        # failing closed is the safe direction for a containment check.
+        # Unreadable parent, symlink loop (OSError on 3.13+, RuntimeError
+        # before), or embedded NUL: containment cannot be proven, so fail
+        # closed.
         return True
     return candidate != resolved_root and not candidate.is_relative_to(resolved_root)

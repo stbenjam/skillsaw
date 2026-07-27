@@ -14,9 +14,8 @@ import json
 import logging
 import os
 
-# Dependency-light format helper — safe to import at module top because it
-# pulls in nothing from skillsaw (importing rules.builtin here would trigger
-# that package's __init__ while ``context`` is still mid-import → cycle).
+# Safe to import at module top: formats.codex pulls in nothing from
+# skillsaw, so no import cycle while ``context`` is mid-import.
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_declared_skill_dirs,
@@ -36,9 +35,8 @@ logger = logging.getLogger(__name__)
 def merge_plugin_dirs(plugins: List[Path], codex_plugins: List[Path]) -> List[Path]:
     """Claude and Codex plugin directories, deduplicated by resolved path.
 
-    Module-level so the CLI's merged multi-path context can share it with
-    :meth:`RepositoryContext.distinct_plugin_dirs` without borrowing a
-    method across duck types.
+    Shared by the CLI's merged multi-path context and
+    :meth:`RepositoryContext.distinct_plugin_dirs`.
     """
     seen: Dict[Path, Path] = {}
     for p in (*plugins, *codex_plugins):
@@ -52,21 +50,17 @@ def merge_plugin_dirs(plugins: List[Path], codex_plugins: List[Path]) -> List[Pa
 def _pattern_variants(pattern: str) -> Tuple[str, ...]:
     """Expand *pattern* into the fnmatch patterns it is tried as.
 
-    :mod:`fnmatch` has no special handling for ``**`` — it behaves exactly
-    like ``*`` (which already crosses ``/``) — so a leading ``**/`` demands
-    at least one directory before the rest of the pattern and never matches
-    at the start of a relative path: ``**/templates/**`` misses a top-level
-    ``templates/``. To honor gitignore-style semantics where ``**/`` also
-    matches zero leading directories, a variant with the ``**/`` prefix
-    stripped is tried as well. The original pattern is always kept, making
-    the expansion a strict superset of plain fnmatch.
+    :mod:`fnmatch` treats ``**`` exactly like ``*`` (which already crosses
+    ``/``), so a leading ``**/`` demands at least one directory and misses a
+    top-level match. To honor gitignore semantics where ``**/`` also matches
+    zero leading directories, a variant with the prefix stripped is tried as
+    well; the original pattern is always kept, so the expansion is a strict
+    superset of plain fnmatch.
 
-    Deliberately NOT expanded: a trailing ``/**`` matches strictly inside
-    the directory, never the directory entry itself. Widening it silently
-    suppressed violations *addressed to* a directory — the built-in
-    ``**/template/**`` content exclude swallowed a ``Missing SKILL.md``
-    error for any skill directory named ``template``, with no user
-    configuration involved.
+    A trailing ``/**`` must NOT be widened to match the directory entry
+    itself: doing so suppressed violations addressed to the directory — the
+    built-in ``**/template/**`` content exclude swallowed ``Missing
+    SKILL.md`` for any skill directory named ``template``.
     """
     variants = {pattern}
     if pattern.startswith("**/"):
@@ -79,9 +73,7 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
 
     Patterns use :mod:`fnmatch` syntax where ``*`` crosses ``/``, extended
     with one gitignore-style rule via :func:`_pattern_variants`: a leading
-    ``**/`` also matches at the start of the relative path, so
-    ``**/templates/**`` excludes both a top-level ``templates/`` and a
-    nested ``a/templates/``.
+    ``**/`` also matches at the start of the relative path.
 
     The single exclusion predicate shared by the context, the lint tree, and
     the linter's per-rule excludes. *root* must be resolved; paths outside
@@ -92,11 +84,9 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
     try:
         rel = str(path.resolve().relative_to(root))
     except (ValueError, OSError, RuntimeError):
-        # OSError/RuntimeError: a symlink loop under *path* (version-
-        # dependent which one). Violation filtering runs this on every
-        # reported path, so raising here aborts the lint that was about
-        # to report the loop's own diagnostic. Unresolvable paths simply
-        # never match an exclude.
+        # OSError/RuntimeError: a symlink loop under *path*. Raising here
+        # would abort the lint that was about to report the loop's own
+        # diagnostic — unresolvable paths simply never match an exclude.
         return False
     return any(
         fnmatch.fnmatch(rel, variant) for pat in patterns for variant in _pattern_variants(pat)
@@ -120,14 +110,9 @@ class RepositoryType(Enum):
 
 # Repository types whose lint tree can hold Agent Skills. One shared set so a
 # newly supported host cannot be wired into some skill rules and forgotten in
-# the rest. Defined here rather than in a rule package because independent
-# rule packages (agentskills, openclaw, codex) all need it, and none should
-# import another's private helpers. CODEX_PLUGIN belongs here because a Codex
-# plugin ships ``skills/<name>/SKILL.md`` in the same format — most visibly
-# for a plugin installed under ``.codex/plugins/``, which no other repository
-# type covers. CODEX_MARKETPLACE for the same reason MARKETPLACE is here: a
-# catalog repository holds the plugins, and their skills are discovered
-# whether or not the CODEX_PLUGIN type was also inferred.
+# the rest. The Codex types belong here because Codex plugins ship
+# ``skills/<name>/SKILL.md`` in the same format, and a catalog repository's
+# plugin skills are discovered whether or not CODEX_PLUGIN was also inferred.
 SKILL_REPO_TYPES = {
     RepositoryType.AGENTSKILLS,
     RepositoryType.SINGLE_PLUGIN,
@@ -161,11 +146,9 @@ ALL_INSTRUCTION_FORMATS = frozenset(
 def _is_marketplace_filename(name: str) -> bool:
     """Whether *name* is a Codex catalog by name alone.
 
-    A bare ``endswith`` also claims ``notamarketplace.json``, which then
-    skips the duck-typing fallback and gets linted as a catalog on the
-    strength of its spelling. ``openai/plugins`` splits its listing into
-    ``api_marketplace.json``, so the qualifier is a real pattern — it just
-    has to end at a separator.
+    Qualified names (``openai/plugins`` ships ``api_marketplace.json``) must
+    end at a separator — a bare ``endswith`` would also claim
+    ``notamarketplace.json`` and lint it as a catalog on spelling alone.
     """
     lowered = name.lower()
     if lowered == "marketplace.json":
@@ -176,8 +159,8 @@ def _is_marketplace_filename(name: str) -> bool:
 def _looks_like_codex_catalog(data: Any) -> bool:
     """Positive catalog evidence: a ``plugins`` list with a sourced entry.
 
-    The key shape alone also matches a version-pin sibling like
-    ``plugin-versions.json`` ({name, version} entries, no sources) — a file
+    The key shape alone also matches version-pin siblings like
+    ``plugin-versions.json`` ({name, version} entries, no sources), which
     Codex never reads. One predicate shared by discovery and
     ``codex_catalog_exists`` so the Claude stand-down can never trigger on
     a sibling discovery itself refuses to lint.
@@ -192,9 +175,8 @@ def _looks_like_codex_catalog(data: Any) -> bool:
 def _read_json_or_none(path: Path) -> Any:
     """Parsed JSON at *path*, or ``None`` when absent or unparseable.
 
-    Goes through the shared cached reader so a UTF-8 BOM is stripped and
-    repeated reads of the same manifest cost nothing — discovery, the
-    validity rule, and the registration rule all read these files.
+    Uses the shared cached reader: strips a UTF-8 BOM, and repeated reads
+    of the same manifest cost nothing.
     """
     data, error = read_json(path)
     return None if error else data
@@ -205,22 +187,21 @@ class PluginProvenance:
     """Who claims a plugin directory, decided once and read everywhere.
 
     The single source of truth for every ecosystem-provenance question:
-    which ecosystems declared the directory (``claude``, ``codex``), on
-    what evidence, and whether it is vendor-installed content. Rules and
-    the lint tree consult this record — never a fresh filesystem probe —
-    so two call sites cannot disagree about ownership, and a directory
-    can never fall between per-ecosystem attach paths.
+    which ecosystems declared the directory (``claude``, ``codex``), and
+    whether it is vendor-installed content. Rules and the lint tree consult
+    this record — never a fresh filesystem probe — so two call sites cannot
+    disagree about ownership and a directory can never fall between
+    per-ecosystem attach paths.
 
     Evidence is filesystem-first (markers, contained manifests, catalog
-    listings), deliberately independent of ``--type`` overrides: an
-    override changes what discovery walks, not what the author declared.
+    listings) and independent of ``--type`` overrides: an override changes
+    what discovery walks, not what the author declared.
 
     Adding an ecosystem means adding its evidence probe to
-    ``RepositoryContext.provenance`` — the declarative format gates
-    (``Rule.provenance_scope`` via ``in_format_scope``) read
-    ``ecosystems`` and need no per-rule visits. See the "Ecosystem
-    provenance" section of the development rules
-    (.apm/instructions/development.instructions.md).
+    ``RepositoryContext.provenance``; the declarative format gates
+    (``Rule.provenance_scope`` via ``in_format_scope``) read ``ecosystems``
+    and need no per-rule visits. See "Ecosystem provenance" in the
+    development rules.
     """
 
     ecosystems: FrozenSet[str]
@@ -305,20 +286,16 @@ class RepositoryContext:
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
-        # An explicit --type override is a statement about what the caller
-        # wants linted, not just which rules fire. Probing for Codex anyway
-        # would attach its manifests, hooks, MCP files and skills to the
-        # tree, where the generic rules would lint content the override was
-        # meant to exclude. Detection, by contrast, has to probe first —
-        # the Codex types are derived from what discovery finds.
+        # An explicit --type override states what the caller wants linted:
+        # probing for Codex anyway would attach manifests, hooks, MCP files
+        # and skills the override was meant to exclude.
         self._codex_discovery_enabled = (
             bool(_CODEX_TYPES & set(repo_types)) if repo_types is not None else True
         )
-        # An explicit type is also the caller's statement that the format
-        # *is* Codex, so the entrypoint is seeded even when the marker file
-        # is missing. Otherwise ``--type codex-plugin`` on a repository
+        # A forced Codex type seeds the entrypoint even when the marker file
+        # is missing — otherwise ``--type codex-plugin`` on a repository
         # without ``.codex-plugin/`` would discover no plugin, create no
-        # node, and report nothing — the requested check would never run.
+        # node, and never run the requested check.
         self._codex_plugin_forced = repo_types is not None and (
             RepositoryType.CODEX_PLUGIN in repo_types
         )
@@ -342,10 +319,7 @@ class RepositoryContext:
         self.instruction_files: List[Path] = self._discover_instruction_files()
         self.detected_formats: Set[str] = set()
         # Plugin-contributed extension state, registered by the Linter after
-        # plugin loading (see Linter._register_plugin_extensions):
-        # detected custom repository type names, lint tree contributors as
-        # (plugin name, callable) pairs, and errors raised by contributors
-        # during tree construction (surfaced as violations by the Linter).
+        # plugin loading (see Linter._register_plugin_extensions).
         self.plugin_repo_types: Set[str] = set()
         # Content globs contributed by detected plugin repo types. Kept
         # separate from ``content_paths`` (user config), which the Linter
@@ -358,10 +332,9 @@ class RepositoryContext:
         # shared context (e.g. two Linters over one context) are no-ops.
         self._plugin_extensions_registered = False
         self._lint_tree: Optional["LintTarget"] = None
-        # Filters discovery results and computes detected_formats — excludes
-        # must be applied before format detection so excluded files (e.g.
-        # *.instructions.md under an excluded directory) don't flip format
-        # flags like HAS_COPILOT.
+        # Excludes must be applied before format detection so excluded files
+        # (e.g. *.instructions.md under an excluded directory) don't flip
+        # format flags like HAS_COPILOT.
         self.apply_excludes()
 
     @property
@@ -435,12 +408,9 @@ class RepositoryContext:
     def apply_excludes(self) -> None:
         """Filter discovery results by exclude_patterns and refresh derived state.
 
-        Filters plugins, skills, and instruction_files, then recomputes
-        ``detected_formats`` and drops any cached lint tree so state derived
-        from the (now filtered) lists cannot go stale. Called by the
-        constructor; legacy callers that mutate ``exclude_patterns`` after
-        construction must call it again. Filtering only narrows — previously
-        excluded paths are not rediscovered.
+        Called by the constructor; callers that mutate ``exclude_patterns``
+        after construction must call it again. Filtering only narrows —
+        previously excluded paths are not rediscovered.
         """
         if self.exclude_patterns:
             codex_before = list(self.codex_plugins)
@@ -455,10 +425,9 @@ class RepositoryContext:
             codex_paths_changed = self.codex_plugins != codex_before
             codex_catalog_changed = any(self.is_path_excluded(path) for path in marketplaces_before)
             codex_set_changed = codex_paths_changed or codex_catalog_changed
-            # Most excludes do not affect Codex discovery, so avoid probing
-            # every plugin directory again. A newly excluded catalog is the
-            # exception: it may be the only source for a plugin whose own path
-            # does not match the exclusion.
+            # Re-probe only when needed: a newly excluded catalog may be the
+            # only source for a plugin whose own path does not match the
+            # exclusion.
             if codex_catalog_changed:
                 self._codex_marketplace_paths = None
             if self._codex_discovery_enabled and codex_set_changed:
@@ -469,14 +438,11 @@ class RepositoryContext:
             roots_after = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r}
             dropped = roots_before - roots_after
             if dropped:
-                # Skills were discovered from the old plugin set. A skill
-                # under a plugin that just left it would otherwise stay in
-                # ``skills`` and be attached as a standalone node, so the
-                # generic skill and content rules would keep linting exactly
-                # the vendor content the exclusion removed.
-                # A dual-host plugin may leave the Codex set while remaining
-                # an active Claude plugin. Its skills still have a surviving
-                # owner and must not be pruned with Codex-only content.
+                # Prune skills owned by plugins that just left the Codex set;
+                # otherwise they attach as standalone nodes and keep linting
+                # the very content the exclusion removed. Skills of a
+                # dual-host plugin that remains an active Claude plugin still
+                # have a surviving owner and must not be pruned.
                 claude_roots = {r for r in (safe_resolve(p) for p in self.plugins) if r}
                 self.skills = [
                     sk
@@ -647,10 +613,8 @@ class RepositoryContext:
 
         A bare ``plugins/`` directory has always inferred MARKETPLACE. A
         Codex catalog explains the children it claims, so only a child it
-        does not claim (or a dual-marker child, which still needs the
-        Claude marketplace that would publish it) keeps that inference.
-        A repository with no Codex evidence keeps its historical type
-        exactly.
+        does not claim (or a dual-marker child) keeps that inference. A
+        repository with no Codex evidence keeps its historical type exactly.
         """
         plugins_dir = self.root_path / "plugins"
         if not safe_is_dir(plugins_dir):
@@ -664,8 +628,8 @@ class RepositoryContext:
         except OSError:
             return False
         if not children:
-            # Empty keeps its historical meaning unless a Codex catalog is
-            # the reason the directory exists at all.
+            # An empty plugins/ keeps its historical meaning unless a Codex
+            # catalog is the reason the directory exists at all.
             return not self.codex_catalog_exists()
         return any(not self.is_codex_only_plugin(item) for item in children)
 
@@ -742,8 +706,7 @@ class RepositoryContext:
     # would report contradictory violations.
     CODEX_MARKETPLACE_DIR = (".agents", "plugins")
     CODEX_MARKETPLACE_FILENAME = "marketplace.json"
-    # The definition lives in formats.codex with the manifest readers;
-    # this alias gives context-holding callers one import site.
+    # Alias for the formats.codex definition, one import site for callers.
     CODEX_PLUGIN_MANIFEST = _CODEX_PLUGIN_MANIFEST
     # Where Codex installs plugins a developer added to their own checkout,
     # as opposed to plugins the repository authors.
@@ -762,9 +725,7 @@ class RepositoryContext:
         return bool(self._discover_codex_marketplaces())
 
     def _discover_codex_marketplaces(self) -> List[Path]:
-        """Codex marketplace manifests in ``.agents/plugins/``, for discovery.
-
-        The discovery-side view of the one catalog enumerator: honors the
+        """Discovery-side view of the one catalog enumerator: honors the
         ``--type`` gate, caches per context, and seeds the primary
         entrypoint when the type was forced.
         """
@@ -774,36 +735,29 @@ class RepositoryContext:
         """Codex catalog files present in the checkout, asked of the
         filesystem.
 
-        Deliberately independent of ``_codex_discovery_enabled``: the
+        Independent of ``_codex_discovery_enabled`` by design: the
         provenance claim set and ``codex_catalog_exists()`` read author
         *declarations*, which a ``--type`` override does not change —
         reading them from discovery would make ``--type marketplace``
-        restore the false positives the stand-downs exist to remove. The
-        lint tree's node discovery uses ``_discover_codex_marketplaces()``,
-        which honors the override.
+        restore the false positives the stand-downs exist to remove.
         """
         return self._enumerate_codex_catalogs(honor_discovery_gate=False)
 
     def _enumerate_codex_catalogs(self, *, honor_discovery_gate: bool) -> List[Path]:
         """The one enumeration of Codex catalog files, parameterized by gating.
 
-        ``marketplace.json`` is the documented path and is always taken on
-        existence alone, so broken JSON still reaches the rules. A sibling
-        *named* like a catalog — openai/plugins ships a second one as
-        ``api_marketplace.json`` — is taken on existence for the same
-        reason: dropping it because its JSON is broken, or because
-        ``plugins`` is not an array, hides exactly the defect
-        codex-marketplace-json-valid exists to report. Any other ``*.json``
-        still has to duck-type as a marketplace, because the directory is
-        not reserved and unrelated JSON must not be linted as a catalog.
-        Every catalog counts, not just the primary — a repository whose
-        only catalog is a sibling is no less a Codex marketplace.
+        ``marketplace.json`` and marketplace-named siblings (openai/plugins
+        ships ``api_marketplace.json``) are taken on existence alone, so
+        broken JSON still reaches codex-marketplace-json-valid instead of
+        hiding the very defect it reports. Any other ``*.json`` must
+        duck-type as a marketplace — the directory is not reserved, and
+        unrelated JSON must not be linted as a catalog. Every catalog
+        counts, not just the primary.
 
         With ``honor_discovery_gate`` the result is the *discovery* answer:
-        gated on the ``--type`` override, cached in
-        ``_codex_marketplace_paths``, and seeded with the primary
-        entrypoint when the marketplace type was forced. Without it the
-        result is the *declaration* answer the provenance path needs —
+        gated on the ``--type`` override, cached, and seeded with the
+        primary entrypoint when the marketplace type was forced. Without it
+        the result is the *declaration* answer the provenance path needs —
         filesystem-first and ``--type``-invariant, never cached through the
         discovery slot.
         """
@@ -821,28 +775,24 @@ class RepositoryContext:
             root = resolved_root
 
         def _inside(path: Path) -> bool:
-            # A catalog that resolves outside the checkout is not this
+            # A catalog resolving outside the checkout is not this
             # repository's to read — and codex-marketplace-registration
-            # writes the catalog back when it registers a plugin, so
-            # following a symlink out would overwrite an external file.
+            # writes the catalog back, so following a symlink out would
+            # overwrite an external file.
             return contained_resolve(path, root) is not None
 
         def _keep(path: Path) -> bool:
-            # Exclusions are applied here rather than at each reader: the
-            # lint tree filters them, but ``skillsaw docs`` reads this list
-            # directly, so an excluded catalog would otherwise still supply
-            # published pages and the generated title.
+            # Exclusions applied here, not at each reader: ``skillsaw docs``
+            # reads this list directly, so an excluded catalog would
+            # otherwise still supply published pages and the generated title.
             return _inside(path) and not self.is_path_excluded(path)
 
         found: List[Path] = []
         primary = self.codex_marketplace_path()
-        # Existence, not is_file(): a directory in place of the reserved
-        # entrypoint is unusable, and it has to stay discovered for
-        # codex-marketplace-json-valid to say so.
-        # ``is_symlink()`` as well as ``exists()``: a dangling in-repository
-        # symlink is an unusable catalog, and dropping it would declassify
-        # the repository rather than let the rule report it — the same
-        # reasoning plugin discovery applies to a missing manifest.
+        # Existence or a (possibly dangling) symlink, not is_file(): a
+        # directory or dangling link at the reserved entrypoint is an
+        # unusable catalog, and dropping it would declassify the repository
+        # instead of letting codex-marketplace-json-valid report it.
         if (safe_exists(primary) or safe_is_symlink(primary)) and _keep(primary):
             found.append(primary)
 
@@ -854,10 +804,9 @@ class RepositoryContext:
             except OSError:
                 siblings = []
             for candidate in siblings:
-                # Resolved comparison, not ``candidate == primary``: on a
-                # case-insensitive filesystem ``MARKETPLACE.JSON`` is the
-                # primary under a different spelling, and a path-equality
-                # test would list the same file twice.
+                # Resolved comparison: on a case-insensitive filesystem
+                # ``MARKETPLACE.JSON`` is the primary under a different
+                # spelling, and path equality would list the file twice.
                 candidate_resolved = safe_resolve(candidate)
                 if candidate_resolved is not None and candidate_resolved == primary_resolved:
                     continue
@@ -871,13 +820,10 @@ class RepositoryContext:
 
         if honor_discovery_gate:
             if not found and self._codex_marketplace_forced and _keep(primary):
-                # ``_keep``, not a bare exclusion check: it also enforces
-                # containment. The registration rule writes this file back
-                # when it registers a plugin, so seeding an unchecked path
-                # would let ``fix --suggest`` rewrite a file outside the
-                # checkout through a symlinked catalog. An explicit --type
-                # says what format the repository is, not that its
-                # entrypoint may be anywhere.
+                # ``_keep`` also enforces containment: the registration rule
+                # writes this file back, so seeding an unchecked path would
+                # let ``fix --suggest`` rewrite a file outside the checkout
+                # through a symlinked catalog.
                 found.append(primary)
             self._codex_marketplace_paths = found
         return found
@@ -889,10 +835,8 @@ class RepositoryContext:
     def codex_plugin_roots(self) -> List[Path]:
         """Resolved Codex plugin roots, computed once per context.
 
-        ``codex_plugin_owning`` runs per skill inside agentskill-evals and
-        agentskill-rename-refs, so resolving every root on each call costs
-        roughly ``2 x skills x plugins`` filesystem round-trips on a large
-        catalog.
+        ``codex_plugin_owning`` runs per skill, so resolving every root on
+        each call would cost ~``skills x plugins`` filesystem round-trips.
         """
         if self._codex_roots is None:
             self._codex_roots = [
@@ -903,9 +847,9 @@ class RepositoryContext:
     def distinct_plugin_dirs(self) -> List[Path]:
         """Every discovered plugin directory, Claude and Codex, deduplicated.
 
-        A dual-ecosystem directory appears once. The scan statistics count
-        this rather than ``self.plugins``, which holds only Claude-style
-        directories and reports zero for a manifest-only Codex catalog.
+        The scan statistics count this rather than ``self.plugins``, which
+        holds only Claude-style directories and reports zero for a
+        manifest-only Codex catalog.
         """
         return merge_plugin_dirs(self.plugins, self.codex_plugins)
 
@@ -916,19 +860,16 @@ class RepositoryContext:
     def _discover_codex_plugins(self) -> List[Path]:
         """Discover directories holding a ``.codex-plugin/plugin.json`` manifest.
 
-        Probes the documented layouts rather than walking the repository:
-        the repo root (single-plugin repos), ``plugins/*`` (the layout the
-        Codex docs prescribe for repo marketplaces), ``.codex/plugins/*``
-        (the documented personal-install pattern), and every local source
-        declared by the Codex marketplace. Explicit probes keep discovery
-        O(entries) instead of adding a second whole-repo walk.
+        Probes the documented layouts rather than walking the repository —
+        the repo root, ``plugins/*``, ``.codex/plugins/*``, and every local
+        source declared by the Codex marketplace — keeping discovery
+        O(entries) instead of a second whole-repo walk.
 
         The reserved ``.codex-plugin/`` directory is the evidence, not the
-        manifest inside it. A directory whose ``plugin.json`` was deleted,
-        misspelled, or replaced by a directory is still a Codex plugin with
-        a broken entrypoint; dropping it here would take the repository's
-        ``CODEX_PLUGIN`` type with it and leave the defect unreported.
-        ``codex-plugin-json-valid`` reports the missing manifest.
+        manifest inside it: a directory whose ``plugin.json`` is missing or
+        broken is still a Codex plugin, and dropping it here would take the
+        ``CODEX_PLUGIN`` type with it and leave the defect unreported
+        (``codex-plugin-json-valid`` reports the missing manifest).
         """
         found: List[Path] = []
         seen: Set[Path] = set()
@@ -942,30 +883,23 @@ class RepositoryContext:
             return resolved if resolved == root or resolved.is_relative_to(root) else None
 
         def _add(directory: Path) -> None:
-            # Both halves are checked, because either can be the symlink.
-            # ``plugins/foo`` pointing out of the repository is the obvious
-            # one; ``plugins/foo/.codex-plugin`` pointing out while ``foo``
-            # itself is a real directory is the subtler one, and ``is_dir()``
-            # follows it just the same. Either way skillsaw would read an
-            # out-of-tree manifest — and codex-plugin-structure would list
-            # the external directory's filenames under an in-repo path.
+            # Either half can be the symlink out of the repository:
+            # ``plugins/foo`` itself, or ``plugins/foo/.codex-plugin`` under
+            # a real directory. Both would make skillsaw read an out-of-tree
+            # manifest, so both are containment-checked.
             resolved = _contained(directory)
             if resolved is None or resolved in seen:
                 return
-            # Contained within *this plugin*, not merely within the
+            # The marker must resolve within *this plugin*, not merely the
             # repository: `plugins/a/.codex-plugin -> plugins/b/.codex-plugin`
-            # stays in the checkout, so a repo-wide check accepts it and
-            # plugin A is then discovered and documented using B's manifest.
+            # stays in the checkout, and a repo-wide check would let plugin A
+            # be discovered and documented using B's manifest.
             #
-            # ``is_dir()`` is the wrong question for the first half: it is
-            # false for a regular file named ``.codex-plugin`` and for a
-            # dangling symlink, and both of those occupy the reserved name
-            # just as surely as a directory does. Discarding them silently
-            # un-types the repository, so a plugin whose manifest directory
-            # was clobbered reports nothing at all. Existence — or a symlink
-            # entry, which ``exists()`` denies when it dangles — keeps the
-            # plugin; codex-plugin-json-valid then reports the unreadable
-            # manifest.
+            # Existence-or-symlink, not ``is_dir()``: a regular file or
+            # dangling symlink occupies the reserved name just as surely as
+            # a directory, and discarding it would silently un-type the
+            # repository; keeping it lets codex-plugin-json-valid report the
+            # unreadable manifest.
             manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
             if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
                 return
@@ -1002,11 +936,10 @@ class RepositoryContext:
             _add(source)
 
         if not found and self._codex_plugin_forced:
-            # Only when the root has no marker at all. Discovery rejects a
-            # ``.codex-plugin`` that resolves outside the checkout, and
-            # seeding the root unconditionally would hand that rejected
-            # marker straight back, and every rule would then read the
-            # external manifest the containment gate exists to refuse.
+            # Seed only when the root has no marker at all: discovery
+            # rejects a ``.codex-plugin`` that resolves outside the
+            # checkout, and unconditional seeding would hand that rejected
+            # marker straight back past the containment gate.
             marker = self.root_path / self.CODEX_PLUGIN_MANIFEST[0]
             if not (safe_exists(marker) or safe_is_symlink(marker)) and _contained(self.root_path):
                 found.append(self.root_path)
@@ -1023,8 +956,7 @@ class RepositoryContext:
         """
         resolved: List[Path] = []
         # Filesystem-enumerated, not discovery-gated: these feed the
-        # provenance claim set, which must answer identically under any
-        # ``--type`` override.
+        # provenance claim set, which must be ``--type``-invariant.
         for marketplace_file in self._codex_catalog_files():
             data = _read_json_or_none(marketplace_file)
             if not isinstance(data, dict):
@@ -1049,9 +981,8 @@ class RepositoryContext:
         """Every resolved directory Codex claims, computed once per context.
 
         The union of discovered plugin roots and the catalogs' local
-        sources. Provenance checks consult this once per ``plugins/``
-        child, and rebuilding the claim list on each call would make
-        repository detection quadratic in the catalog size.
+        sources. Rebuilding it on each call would make repository detection
+        quadratic in the catalog size.
         """
         if self._codex_claims is None:
             claims = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
@@ -1109,13 +1040,10 @@ class RepositoryContext:
     def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
         """Codex-claimed with no ``.claude-plugin`` marker.
 
-        The provenance line the Claude-format rules gate on: a
-        ``.claude-plugin`` marker or a ``.claude-plugin/marketplace.json``
-        listing is the author declaring Claude, so such a directory keeps
-        every Claude check. A Codex-only one is exempt from Claude
-        manifest, frontmatter, and naming requirements — the
-        ecosystem-neutral content and security rules still read its prose
-        either way.
+        The provenance line the Claude-format rules gate on: a Codex-only
+        directory is exempt from Claude manifest, frontmatter, and naming
+        requirements, while the ecosystem-neutral content and security
+        rules still read its prose either way.
         """
         return self.provenance(plugin_dir).codex_only
 
@@ -1124,13 +1052,11 @@ class RepositoryContext:
 
         The one gate behind ``Rule.provenance_scope``, read through
         ``Rule.scoped_find``: a node whose ``provenance_dir()`` is claimed
-        exclusively by other ecosystems is out of scope, so a Codex-only
-        plugin is exempt from Claude manifest, frontmatter, and naming
-        requirements. Unclaimed content (no ecosystem declared it) stays
-        in every scope, and a dual-manifest directory stays in scope for
-        each of its ecosystems — dual plugins keep their established
-        Claude results. Ownership itself comes from :meth:`provenance`,
-        per the doctrine: no fresh filesystem probes here.
+        exclusively by other ecosystems is out of scope. Unclaimed content
+        stays in every scope, and a dual-manifest directory stays in scope
+        for each of its ecosystems — dual plugins keep their established
+        Claude results. Ownership comes from :meth:`provenance`; no fresh
+        filesystem probes here.
         """
         owner_dir = node.provenance_dir()
         if owner_dir is None:
@@ -1141,12 +1067,10 @@ class RepositoryContext:
     def in_codex_only_plugin(self, path: Path) -> bool:
         """Whether *path* sits inside a Codex-ONLY plugin, nearest owner first.
 
-        The conditional-strictness gate shared by the ecosystem-tightened
+        The conditional-strictness gate for the ecosystem-tightened
         hooks/MCP shape checks: they apply only where the owning Codex
         plugin is Codex-exclusive, so a dual-manifest plugin keeps its
-        established Claude results — ``since`` gates rules rather than
-        checks, and a new hard error inside an old rule would break
-        previously green dual repositories.
+        established Claude results.
         """
         owner = self.codex_plugin_owning(path)
         return owner is not None and self.provenance(owner).codex_only
@@ -1161,9 +1085,8 @@ class RepositoryContext:
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        # Ancestor walk against a set — this runs per skill inside
-        # agentskill-evals and agentskill-rename-refs, where a scan over
-        # every root is O(skills x plugins) on a large catalog. Walking
+        # Ancestor walk against a set: runs per skill, where scanning every
+        # root would be O(skills x plugins) on a large catalog. Walking
         # upward finds the nearest root by construction.
         roots = set(self.codex_plugin_roots())
         for candidate in (resolved, *resolved.parents):
@@ -1174,10 +1097,10 @@ class RepositoryContext:
     def _codex_claim_boundary(self, parent: Path) -> Optional[Path]:
         """Resolved root of the Codex-only plugin owning *parent*, if any.
 
-        A lexical ancestor walk, nearest first, deliberately *not*
-        resolution-based like ``codex_plugin_owning`` — resolving first
-        would follow the very symlinks the boundary exists to reject.
-        Ownership itself comes from :meth:`provenance`, per the doctrine.
+        A lexical ancestor walk, nearest first — NOT resolution-based like
+        ``codex_plugin_owning``, because resolving first would follow the
+        very symlinks the boundary exists to reject. Ownership comes from
+        :meth:`provenance`.
         """
         for candidate in (parent, *parent.parents):
             if self.provenance(candidate).codex_only:
@@ -1195,20 +1118,19 @@ class RepositoryContext:
         business listing it, so registration checks must skip it.
         """
         if self._codex_install_root is _UNSET:
-            # Resolved once. This runs per SkillNode inside agentskill-name,
-            # so re-resolving it per call is a filesystem round-trip for
-            # every skill in the repository.
+            # Resolved once — this runs per SkillNode, so re-resolving per
+            # call costs a filesystem round-trip for every skill.
             self._codex_install_root = safe_resolve(
                 self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
             )
         install_root = self._codex_install_root
         if install_root is None:
             return False
-        # Lexical first: ``.codex/plugins/foo`` symlinked to a plugin
-        # elsewhere in the checkout resolves *out* of the install root, so a
-        # resolved-only test would call it authored, then publish it and
-        # let autofixes rewrite it. How it was reached is what makes it an
-        # install, not where the bytes happen to live.
+        # Lexical first: ``.codex/plugins/foo`` symlinked elsewhere in the
+        # checkout resolves *out* of the install root, and a resolved-only
+        # test would call it authored, publish it, and let autofixes rewrite
+        # it. How it was reached makes it an install, not where the bytes
+        # live.
         lexical = self.root_path.joinpath(*self.CODEX_INSTALL_DIR)
         try:
             if plugin_dir != lexical and plugin_dir.is_relative_to(lexical):
@@ -1274,15 +1196,12 @@ class RepositoryContext:
             candidate = (self.root_path / source).resolve()
             plugin_root = self.marketplace_plugin_root()
             if plugin_root and not Path(source).is_absolute():
-                # metadata.pluginRoot is prepended to relative sources (both
-                # bare names and ./-prefixed paths). Real-world marketplaces
-                # (e.g. jeremylongshore/claude-code-plugins-plus-skills) set
-                # pluginRoot while their sources already include that prefix,
-                # so prefer the spec composition but fall back to the
-                # root-relative path when only the latter exists. The
-                # containment check below still rejects any candidate that
-                # escapes the repository, so a traversing pluginRoot cannot
-                # smuggle a source outside the root.
+                # metadata.pluginRoot is prepended to relative sources, but
+                # real-world marketplaces set pluginRoot while their sources
+                # already include that prefix — prefer the spec composition,
+                # fall back to the root-relative path when only it exists.
+                # The containment check below still rejects any candidate
+                # that escapes the repository.
                 composed = (self.root_path / plugin_root / source).resolve()
                 if safe_exists(composed) or not safe_exists(candidate):
                     candidate = composed
@@ -1396,12 +1315,10 @@ class RepositoryContext:
             or RepositoryType.CODEX_MARKETPLACE in self.repo_types
             or RepositoryType.CODEX_PLUGIN in self.repo_types
         ):
-            # Codex types too: a Codex-only catalog carries no
-            # MARKETPLACE type, and a Codex-claimed directory that ships
+            # Codex types too: a Codex-claimed directory that ships
             # commands/ needs its PluginNode so every content and security
             # rule reads its prose — Claude-format rules exempt Codex-only
             # directories themselves.
-            # Discover from plugins/ directory (backward compatibility)
             self._discover_from_plugins_dir(plugins, discovered_paths)
 
             # Discover from marketplace.json plugin entries
@@ -1419,11 +1336,10 @@ class RepositoryContext:
             if not item.is_dir() or item.name.startswith("."):
                 continue
 
-            # Marker semantics, Codex-claimed or not: a Codex plugin
-            # that ships commands/ gets a PluginNode so its prose reaches
-            # every content and security rule (secret scanning included) —
-            # the Claude-format rules exempt Codex-only directories
-            # themselves, via is_codex_only_plugin().
+            # Codex-claimed or not: a Codex plugin that ships commands/
+            # gets a PluginNode so its prose reaches every content and
+            # security rule; Claude-format rules exempt Codex-only
+            # directories themselves.
             if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
                 continue
 
@@ -1489,9 +1405,8 @@ class RepositoryContext:
         """
         resolved_path = plugin_path.resolve()
 
-        # Try plugin.json. Non-string names (invalid, flagged by validation
-        # rules) fall through to the directory-name fallback rather than
-        # propagating a TypeError into rules that expect a string.
+        # Non-string names (flagged by validation rules) fall through to
+        # the directory-name fallback rather than propagating a TypeError.
         plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
         if plugin_json.exists():
             try:
@@ -1606,10 +1521,9 @@ class RepositoryContext:
                     continue
                 self._discover_skills_in_dir(skills_path, skills, discovered)
 
-        # For plugin repos, also discover embedded skills. Codex plugins are
+        # For plugin repos, also discover embedded skills. Codex plugins
         # included: an installed plugin under .codex/plugins/ lives in a
-        # hidden directory the repository-wide scan never walks, so its
-        # skills would otherwise never enter the lint tree.
+        # hidden directory the repository-wide scan never walks.
         for plugin_path in self.plugins:
             skills_dir = plugin_path / "skills"
             if skills_dir.is_dir():
@@ -1619,9 +1533,8 @@ class RepositoryContext:
             plugin_root = safe_resolve(plugin_path)
             if plugin_root is None:
                 continue
-            # ``skills/`` is only the default. A manifest may point the field
-            # somewhere else entirely, and for a hidden install that path is
-            # the sole route into the tree.
+            # ``skills/`` is only the default — a manifest may point the
+            # field somewhere else entirely.
             for skills_dir in (
                 plugin_path / "skills",
                 *codex_declared_skill_dirs(plugin_path),
@@ -1630,7 +1543,7 @@ class RepositoryContext:
                     continue
                 if (skills_dir / "SKILL.md").exists():
                     # A manifest may name one skill directly rather than a
-                    # collection; descending would step straight past it.
+                    # collection — descending would step straight past it.
                     resolved = contained_resolve(skills_dir, plugin_root)
                     if resolved is None:
                         continue
@@ -1656,26 +1569,23 @@ class RepositoryContext:
     ) -> None:
         """Discover skill directories within a parent directory, recursively.
 
-        *contain_within* rejects children that resolve outside it. Passed
-        for Codex plugins, where ``skills/external`` can be a symlink out
-        of the repository and the SKILL.md behind it would otherwise be
-        read as if the plugin shipped it. ``None`` means no caller-imposed
-        boundary — the walk still derives one from provenance below, so
-        every route into a Codex-only directory (the AGENTSKILLS root
-        walk, the legacy plugin loop, a claimed repository root) honors
-        the same containment without each call site knowing to ask.
+        *contain_within* rejects children that resolve outside it — for
+        Codex plugins, ``skills/external`` can be a symlink out of the
+        repository, and the SKILL.md behind it would otherwise be read as
+        if the plugin shipped it. ``None`` means no caller-imposed boundary;
+        the walk still derives one from provenance below, so every route
+        into a Codex-only directory honors the same containment.
         """
         # ``discovered`` only records directories that held a SKILL.md, so
         # it cannot stop a cycle: ``skills/a/loop -> ../..`` stays inside
-        # the plugin, passes containment, and recurses until Python raises
-        # RecursionError during context construction. ``visited`` records
-        # every directory descended into, whether or not it held a skill.
+        # the plugin, passes containment, and recurses to RecursionError.
+        # ``visited`` records every directory descended into.
         if visited is None:
             visited = set()
             if contain_within is None:
-                # Top-level call: the scan may *start* inside a claimed
-                # directory (``plugin/skills``), where the descent check
-                # below never sees the claimed ancestor.
+                # The scan may *start* inside a claimed directory
+                # (``plugin/skills``), where the descent check below never
+                # sees the claimed ancestor.
                 contain_within = self._codex_claim_boundary(parent)
         try:
             for item in parent.iterdir():
@@ -1688,8 +1598,8 @@ class RepositoryContext:
                     continue
                 entrypoint = safe_resolve(item / "SKILL.md")
                 if entrypoint is not None and (item / "SKILL.md").exists():
-                    # The directory being contained is not enough: SKILL.md
-                    # can itself be a symlink out, and the tree follows it.
+                    # A contained directory is not enough: SKILL.md can
+                    # itself be a symlink out, and the tree follows it.
                     if contain_within is not None and not entrypoint.is_relative_to(contain_within):
                         continue
                     skills.append(item)
@@ -1698,9 +1608,8 @@ class RepositoryContext:
                     visited.add(resolved)
                     child_bound = contain_within
                     if child_bound is None and self.provenance(item).codex_only:
-                        # An unbounded walk is entering a Codex-only
-                        # directory: from here down, everything must
-                        # resolve inside it.
+                        # Entering a Codex-only directory: from here down,
+                        # everything must resolve inside it.
                         child_bound = resolved
                     self._discover_skills_in_dir(item, skills, discovered, child_bound, visited)
         except OSError:
