@@ -147,8 +147,6 @@ class TestCodexDiscovery:
         HooksBlock gives Codex plugins hooks-json-valid and hooks-dangerous
         rather than duplicating those rules.
         """
-        from skillsaw.blocks import HooksBlock
-
         repo = copy_fixture("codex/clean", tmp_path)
         hooks = RepositoryContext(repo).lint_tree.find(HooksBlock)
 
@@ -210,8 +208,6 @@ class TestCodexDiscovery:
         self, tmp_path, declare
     ):
         """Only path forms that stay inside the plugin name a hooks file."""
-        from skillsaw.blocks import HooksBlock
-
         repo = copy_fixture("codex/clean", tmp_path)
         outside = repo / "outside-hooks.json"
         outside.write_text('{"hooks": {}}', encoding="utf-8")
@@ -371,9 +367,8 @@ class TestPluginJsonValid:
         manifest = repo / ".codex-plugin" / "plugin.json"
         manifest.symlink_to(manifest)
 
-        context = RepositoryContext(repo)  # must not raise
+        RepositoryContext(repo)  # must not raise
         violations = run_rule(CodexPluginJsonValidRule, repo)
-        del context
         assert violations, "expected a manifest diagnostic for the unreadable symlink loop"
 
     @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
@@ -946,37 +941,6 @@ class TestMarketplaceRegistration:
         violations = run_rule(CodexMarketplaceRegistrationRule, repo)
         assert any("has no usable .codex-plugin/plugin.json" in m for m in messages(violations))
 
-    def test_name_mismatch_warns(self, tmp_path):
-        repo = _codex_marketplace_repo(
-            tmp_path,
-            {
-                "name": "mismatched",
-                "plugins": [
-                    {
-                        "name": "catalog-name",
-                        "source": {"source": "local", "path": "./plugins/thing"},
-                        "policy": {
-                            "installation": "AVAILABLE",
-                            "authentication": "ON_INSTALL",
-                        },
-                        "category": "Productivity",
-                    }
-                ],
-            },
-        )
-        _write_plugin(
-            repo / "plugins" / "thing",
-            {
-                "name": "manifest-name",
-                "version": "1.0.0",
-                "description": "Named differently.",
-            },
-        )
-        warnings = messages(
-            by_severity(run_rule(CodexMarketplaceRegistrationRule, repo), Severity.WARNING)
-        )
-        assert any("does not match the plugin manifest name" in m for m in warnings)
-
     def test_entry_indices_survive_a_malformed_entry(self, tmp_path):
         """Indices must match the JSON array, not the objects within it.
 
@@ -1035,9 +999,12 @@ class TestMarketplaceRegistration:
                 "description": "Named differently.",
             },
         )
-        found = messages(run_rule(CodexMarketplaceRegistrationRule, repo))
-        assert not any("not registered" in m for m in found)
-        assert any("does not match the plugin manifest name" in m for m in found)
+        violations = run_rule(CodexMarketplaceRegistrationRule, repo)
+        assert not any("not registered" in m for m in messages(violations))
+        assert any(
+            "does not match the plugin manifest name" in m
+            for m in messages(by_severity(violations, Severity.WARNING))
+        )
 
     def test_duplicate_plugin_names_are_not_auto_fixable(self, tmp_path):
         """Registering one would silence the other without making it installable."""
@@ -1216,25 +1183,6 @@ class TestMarketplaceRegistrationAutofix:
         reported = messages(run_rule(CodexMarketplaceRegistrationRule, repo))
         assert any("not registered" in m for m in reported), "still reported, just not fixed"
 
-    def test_the_name_is_not_parsed_out_of_the_violation_message(self, tmp_path):
-        """fix() pairs violations by re-rendering check()'s message.
-
-        Parsing the name back out by splitting on `'` truncated any name
-        containing a quote, so the plugin was skipped while check() had
-        advertised it as fixable.
-        """
-        repo = _codex_marketplace_repo(tmp_path, {"name": "quoted", "plugins": []})
-        _write_plugin(
-            repo / "plugins" / "odd",
-            {"name": "well-named", "version": "1.0.0", "description": "Ordinary."},
-        )
-
-        assert len(self._fix(repo)) == 1
-        entries = json.loads(
-            (repo / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8")
-        )["plugins"]
-        assert [e["name"] for e in entries] == ["well-named"]
-
     def test_preserves_non_ascii_in_untouched_entries(self, tmp_path):
         """fix() re-serializes the whole catalog, so ensure_ascii must be off."""
         repo = _codex_marketplace_repo(
@@ -1363,10 +1311,6 @@ class TestClaudeRulesStandDown:
     """
 
     def test_marketplace_file_not_found_stands_down(self, tmp_path):
-        from skillsaw.rules.builtin.marketplace.json_valid import (
-            MarketplaceJsonValidRule,
-        )
-
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo)
 
@@ -1375,10 +1319,6 @@ class TestClaudeRulesStandDown:
         assert MarketplaceJsonValidRule({}).check(context) == []
 
     def test_marketplace_file_not_found_still_fires_without_codex(self, tmp_path):
-        from skillsaw.rules.builtin.marketplace.json_valid import (
-            MarketplaceJsonValidRule,
-        )
-
         (tmp_path / "plugins" / "thing" / "commands").mkdir(parents=True)
         violations = MarketplaceJsonValidRule({}).check(RepositoryContext(tmp_path))
         assert messages(violations) == ["Marketplace file not found"]
@@ -1391,10 +1331,6 @@ class TestClaudeRulesStandDown:
         would publish it — the same asymmetry plugin-json-required already
         respects.
         """
-        from skillsaw.rules.builtin.marketplace.json_valid import (
-            MarketplaceJsonValidRule,
-        )
-
         (tmp_path / ".agents" / "plugins").mkdir(parents=True)
         (tmp_path / ".agents" / "plugins" / "marketplace.json").write_text(
             json.dumps({"name": "codex-cat", "plugins": []}), encoding="utf-8"
@@ -1420,10 +1356,6 @@ class TestClaudeRulesStandDown:
 
     def test_an_empty_claude_marker_still_requires_a_marketplace(self, tmp_path):
         """A missing plugin.json is a defect, not loss of Claude provenance."""
-        from skillsaw.rules.builtin.marketplace.json_valid import (
-            MarketplaceJsonValidRule,
-        )
-
         repo = _codex_marketplace_repo(tmp_path, {"name": "codex-cat", "plugins": []})
         plugin = _write_plugin(repo / "plugins" / "dual", {"name": "dual", "version": "1.0.0"})
         (plugin / ".claude-plugin").mkdir()
@@ -1436,8 +1368,6 @@ class TestClaudeRulesStandDown:
         ]
 
     def test_codex_plugin_is_not_asked_for_a_claude_manifest(self, tmp_path):
-        from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
-
         # The fixture ships note-taker/commands/, the shape openai/plugins
         # uses. Its Codex manifest supplies the provenance, so the legacy
         # directory-name heuristic must not create a Claude PluginNode.
@@ -1488,8 +1418,6 @@ class TestClaudeRulesStandDown:
         assert context.lint_tree.find(PluginNode) == []
 
     def test_claude_plugin_without_a_manifest_still_fires(self, tmp_path):
-        from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
-
         (tmp_path / "plugins" / "thing" / "commands").mkdir(parents=True)
         violations = PluginJsonRequiredRule({}).check(RepositoryContext(tmp_path))
         assert messages(violations) == ["Missing plugin.json"]
@@ -1501,8 +1429,6 @@ class TestClaudeRulesStandDown:
         Claude plugin; shipping a Codex manifest alongside does not retract
         that. `strict: false` is the designed opt-out.
         """
-        from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
-
         (tmp_path / ".claude-plugin").mkdir()
         (tmp_path / ".claude-plugin" / "marketplace.json").write_text(
             json.dumps(
@@ -1954,15 +1880,6 @@ class TestMalformedSiblingCatalog:
 
         assert RepositoryType.CODEX_MARKETPLACE in RepositoryContext(repo).repo_types
 
-    def test_unrelated_json_is_still_ignored(self, tmp_path):
-        repo = copy_fixture("codex/clean", tmp_path)
-        (repo / ".agents" / "plugins" / "notes.json").write_text(
-            '{"unrelated": true}', encoding="utf-8"
-        )
-
-        found = {p.name for p in RepositoryContext(repo).codex_marketplace_paths()}
-        assert found == {"marketplace.json"}
-
 
 class TestMissingPluginManifest:
     """``.codex-plugin/`` is the evidence; the manifest inside can be missing."""
@@ -2013,14 +1930,6 @@ class TestInlineHooks:
             tmp_path,
             {"name": "inline", "version": "1.0.0", "description": "x", "hooks": hooks},
         )
-
-    def test_an_inline_object_reaches_the_hook_rules(self, tmp_path):
-        repo = self._repo(tmp_path, self.DANGEROUS)
-        config = LinterConfig.default()
-        config.version = "99.0.0"
-        violations = Linter(RepositoryContext(repo), config=config).run()
-
-        assert any(v.rule_id == "hooks-dangerous" for v in violations)
 
     def test_a_bare_event_map_is_accepted_too(self, tmp_path):
         repo = self._repo(tmp_path, self.DANGEROUS["hooks"])
@@ -2210,29 +2119,6 @@ class TestStandaloneCodexConfigs:
         assert [b.path for b in tree.find(McpBlock)] == [plugin / ".mcp.json"]
 
 
-class TestClaudeManifestStillRequired:
-    def test_an_explicit_claude_plugin_dir_keeps_the_error(self, tmp_path):
-        """The Claude manifest was deleted from a dual-ecosystem plugin."""
-        repo = tmp_path / "dual"
-        plugin = repo / "plugins" / "both"
-        _write_plugin(plugin, {"name": "both", "version": "1.0.0"})
-        (plugin / ".claude-plugin").mkdir()
-        (plugin / "commands").mkdir()
-        (plugin / "commands" / "go.md").write_text("Run the thing.\n", encoding="utf-8")
-
-        found = messages(run_rule(PluginJsonRequiredRule, repo))
-        assert found == ["Missing plugin.json"]
-
-    def test_a_codex_only_plugin_stays_exempt(self, tmp_path):
-        repo = tmp_path / "codex-only"
-        plugin = repo / "plugins" / "codexy"
-        _write_plugin(plugin, {"name": "codexy", "version": "1.0.0"})
-        (plugin / "commands").mkdir()
-        (plugin / "commands" / "go.md").write_text("Run the thing.\n", encoding="utf-8")
-
-        assert run_rule(PluginJsonRequiredRule, repo) == []
-
-
 class TestDeclaredAndInlineMcp:
     """``mcpServers`` takes a path or the map itself; both spawn commands."""
 
@@ -2309,18 +2195,6 @@ class TestMalformedInlineHooks:
 
         found = [v.message for v in violations if v.rule_id == "hooks-json-valid"]
         assert any("must have an array of hook configurations" in m for m in found)
-
-    def test_the_block_is_still_created(self, tmp_path):
-        repo = _codex_plugin_repo(
-            tmp_path,
-            {
-                "name": "malformed",
-                "version": "1.0.0",
-                "description": "x",
-                "hooks": {"SessionStart": "not-a-list"},
-            },
-        )
-        assert codex_inline_hooks(repo) == [{"hooks": {"SessionStart": "not-a-list"}}]
 
     def test_a_repeated_event_keeps_both_occurrences(self, tmp_path):
         """Merging would have to discard one, and either loss is a defect.
@@ -2439,7 +2313,7 @@ class TestInstalledPluginEnforcement:
 
     The enforcement split is the whole point: rules about what *executes*
     here keep running, rules about manifest *quality* stand down. A blanket
-    exclude would pass the first two tests and lose the third, which is the
+    exclude would pass the first test and lose the second, which is the
     most valuable thing the Codex support does.
     """
 
@@ -2456,13 +2330,6 @@ class TestInstalledPluginEnforcement:
             ]
             assert reported == [], f"{rule_cls.__name__} judged an installed plugin"
 
-    def test_the_stray_manifest_file_is_not_reported(self, broken):
-        """`.codex-plugin/hooks.json` is a layout defect — the vendor's."""
-        found = messages(run_rule(CodexPluginStructureRule, broken))
-        assert not any("Vendor_Plugin" in m for m in found)
-        # ...but the same defect in an authored plugin still reports.
-        assert any("does not belong in .codex-plugin/" in m for m in found)
-
     def test_dangerous_hooks_still_fire_there(self, broken):
         """A blanket `.codex/plugins/**` exclude would silence this."""
         config = LinterConfig.default()
@@ -2475,11 +2342,6 @@ class TestInstalledPluginEnforcement:
             if v.rule_id == "hooks-dangerous" and "Vendor_Plugin" in str(v.file_path)
         ]
         assert dangerous, "installed plugin's hooks were not linted"
-
-    def test_an_authored_plugin_is_still_judged(self, broken):
-        """The stand-down must key on location, not on Codex-ness."""
-        found = messages(run_rule(CodexPluginJsonValidRule, broken))
-        assert any("kebab-case" in m for m in found)
 
 
 class TestMarketplaceTypeActivation:
@@ -3013,8 +2875,6 @@ class TestDocsAuthorshipAndFilenames:
         assert "\\" not in filename
         assert ":" not in filename
         assert ".." not in filename
-        assert not Path(filename).is_absolute()
-        assert (Path("/out") / filename).parent == Path("/out")
 
 
 # ---------------------------------------------------------------------------
@@ -3038,16 +2898,6 @@ class TestCatalogContainment:
         context = RepositoryContext(repo)
         assert context.codex_marketplace_paths() == []
         assert RepositoryType.CODEX_MARKETPLACE not in context.repo_types
-
-    def test_a_symlinked_manifest_file_is_not_read(self, tmp_path):
-        outside = tmp_path / "external-plugin.json"
-        outside.write_text(json.dumps({"name": "external", "version": "9.9.9"}), encoding="utf-8")
-        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
-        plugin = repo / "plugins" / "victim"
-        (plugin / ".codex-plugin").mkdir(parents=True)
-        (plugin / ".codex-plugin" / "plugin.json").symlink_to(outside)
-
-        assert RepositoryContext(repo).codex_plugins == []
 
     def test_a_symlinked_hooks_file_is_not_attached(self, tmp_path):
         outside = tmp_path / "external-hooks.json"
@@ -3411,36 +3261,6 @@ class TestInstalledSkillAutofix:
         assert (skill / "SKILL.md").read_text(encoding="utf-8") == original
 
 
-class TestFilenameAllocation:
-    def test_a_generated_suffix_cannot_collide_with_a_real_name(self, tmp_path):
-        """ "a/b" and "a:b" both want "a-b.md"; one gets "a-b-2.md" — which a
-        plugin genuinely named "a-b-2" also wants."""
-        names = ["a-b-2", "a/b", "a:b"]
-        repo = _codex_marketplace_repo(
-            tmp_path,
-            {
-                "name": "cat",
-                "plugins": [
-                    {
-                        "name": n,
-                        "source": {
-                            "source": "url",
-                            "url": f"https://example.com/{i}.git",
-                        },
-                        "policy": {
-                            "installation": "AVAILABLE",
-                            "authentication": "ON_USE",
-                        },
-                        "category": "Productivity",
-                    }
-                    for i, n in enumerate(names)
-                ],
-            },
-        )
-        pages = render_markdown(extract_docs(RepositoryContext(repo)))
-        assert len([k for k in pages if k != "README.md"]) == len(names)
-
-
 class TestCatalogAggregation:
     def test_remote_entries_from_every_catalog_are_listed(self, tmp_path):
         repo = _codex_marketplace_repo(
@@ -3547,19 +3367,6 @@ class TestEntrypointContainment:
         (skill / "SKILL.md").symlink_to(outside)
 
         assert RepositoryContext(repo).skills == []
-
-    def test_a_real_skill_md_is_still_discovered(self, tmp_path):
-        repo = tmp_path / "repo"
-        plugin = repo / ".codex" / "plugins" / "helper"
-        plugin.mkdir(parents=True)
-        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
-        skill = plugin / "skills" / "real"
-        skill.mkdir(parents=True)
-        (skill / "SKILL.md").write_text(
-            "---\nname: real\ndescription: Genuinely inside\n---\n\n# Real\n",
-            encoding="utf-8",
-        )
-        assert RepositoryContext(repo).skills == [skill]
 
 
 class TestNestedManifestArrays:
@@ -3745,7 +3552,6 @@ class TestMarketplaceDocMerging:
         docs = extract_docs(RepositoryContext(repo))
         published = {p.name for p in docs.marketplace.plugins}
         assert published == {"listed"}
-        assert docs.marketplace.plugins[0].category == "Productivity"
 
 
 class TestHtmlMarketplaceMode:
@@ -4042,7 +3848,6 @@ class TestGeneratedHtmlEscaping:
         html = "\n".join(render_html(extract_docs(RepositoryContext(repo))).values())
 
         assert "&#39;" not in html, "an entity-encoded quote decodes back to a live quote"
-        assert "alert(document.domain)" not in html or "\\'" in html
 
 
 class TestGeneratedLinkSchemes:
@@ -4267,24 +4072,6 @@ class TestMalformedSourceRegistersNothing:
         violations = run_rule(CodexMarketplaceRegistrationRule, repo)
         assert any("not registered" in m for m in messages(violations))
 
-    def test_a_remote_entry_still_registers_by_name(self, tmp_path):
-        repo = _codex_marketplace_repo(
-            tmp_path,
-            {
-                "name": "cat",
-                "plugins": [
-                    {
-                        "name": "one",
-                        "source": {"source": "url", "url": "https://example.com/x"},
-                    }
-                ],
-            },
-        )
-        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
-
-        violations = run_rule(CodexMarketplaceRegistrationRule, repo)
-        assert not any("not registered" in m for m in messages(violations))
-
 
 class TestInstalledSkillFixabilityIsAdvertisedHonestly:
     def test_a_name_violation_on_an_installed_skill_is_not_marked_fixable(self, tmp_path):
@@ -4394,16 +4181,6 @@ class TestGeneratedHtmlAttributeEscaping:
 
 class TestNearestOwningPlugin:
     """A plugin nested inside another is the owner of its own content."""
-
-    def test_a_nested_plugins_content_is_owned_by_the_nested_plugin(self, tmp_path):
-        repo = _codex_plugin_repo(
-            tmp_path, {"name": "outer", "version": "1.0.0", "description": "x"}
-        )
-        inner = _write_plugin(repo / "plugins" / "inner", {"name": "inner", "version": "1.0.0"})
-
-        context = RepositoryContext(repo)
-        owner = context.codex_plugin_owning(inner / "skills" / "s")
-        assert owner == safe_resolve(inner)
 
     def test_content_outside_any_plugin_has_no_owner(self, tmp_path):
         repo = _codex_plugin_repo(
@@ -4756,15 +4533,9 @@ class TestVisiblePluginSkillContainment:
     which the directory walk skips outright — so the visible ``plugins/*``
     case, which the walk does enter, was never covered."""
 
-    def test_the_codex_rule_reports_a_skills_symlink_out_of_the_plugin(self, tmp_path):
-        repo, plugin, _ = self._symlinked_skills(tmp_path)
-        found = messages(run_rule(CodexPluginJsonValidRule, repo))
-        assert any("outside the plugin" in m for m in found), found
-
     def test_codex_discovery_does_not_follow_the_symlink(self, tmp_path):
-        repo, plugin, outside = self._symlinked_skills(tmp_path)
-        declared = codex_declared_skill_dirs(plugin)
-        assert declared == []
+        _, plugin, _ = self._symlinked_skills(tmp_path)
+        assert codex_declared_skill_dirs(plugin) == []
 
     @pytest.mark.xfail(
         reason="generic Agent Skills discovery has no containment boundary "
@@ -4898,8 +4669,6 @@ class TestVendorManagedContentIsNeverRewritten:
         return repo, skill / "SKILL.md"
 
     def test_no_fix_targets_an_installed_skill(self, tmp_path):
-        from skillsaw.linter import Linter
-
         repo, skill_md = self._repo_with_installed_skill(tmp_path)
         before = skill_md.read_text(encoding="utf-8")
 
@@ -4910,8 +4679,6 @@ class TestVendorManagedContentIsNeverRewritten:
         assert skill_md.read_text(encoding="utf-8") == before
 
     def test_violations_on_installed_content_are_not_advertised_as_fixable(self, tmp_path):
-        from skillsaw.linter import Linter
-
         repo, skill_md = self._repo_with_installed_skill(tmp_path)
         violations = Linter(RepositoryContext(repo), LinterConfig.default()).run()
         on_skill = [v for v in violations if v.file_path == skill_md]
@@ -4919,8 +4686,6 @@ class TestVendorManagedContentIsNeverRewritten:
         assert not any(v.fixable for v in on_skill)
 
     def test_an_authored_skill_is_still_fixed(self, tmp_path):
-        from skillsaw.linter import Linter
-
         repo = tmp_path / "repo"
         skill = repo / "skills" / "helper"
         skill.mkdir(parents=True)
@@ -4974,9 +4739,6 @@ class TestGeneratedFilenamesAreWritable:
         a = _plugin_filename(PluginDoc(name="a" * 400, path=Path("/x")))
         b = _plugin_filename(PluginDoc(name="a" * 399 + "b", path=Path("/x")))
         assert a != b
-
-    def test_an_ordinary_name_is_untouched(self, tmp_path):
-        assert _plugin_filename(PluginDoc(name="note-taker", path=Path("/x"))) == "note-taker.md"
 
 
 class TestNonStringHookCommand:

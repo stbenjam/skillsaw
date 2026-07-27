@@ -77,22 +77,6 @@ class MarketplaceJsonValidRule(Rule):
                 return True
         return False
 
-    @staticmethod
-    def _has_codex_catalog(context: RepositoryContext) -> bool:
-        """Whether the repository ships a Codex catalog at all.
-
-        Every discovered catalog counts, not just the primary
-        ``marketplace.json``: a repository whose only catalog is a sibling
-        such as ``api_marketplace.json`` is no less a Codex marketplace,
-        and asking about the primary filename alone reported "Marketplace
-        file not found" on exactly the layout this exemption exists for.
-
-        Existence, not validity: a broken catalog is still the author
-        saying this is a Codex marketplace, and codex-marketplace-json-valid
-        is the rule that reports what is wrong with it.
-        """
-        return context.codex_catalog_exists()
-
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
@@ -107,7 +91,10 @@ class MarketplaceJsonValidRule(Rule):
             # and an exemption read from repo_types would go with it —
             # resurrecting this very false positive on a repository the
             # default invocation calls clean.
-            if self._has_codex_catalog(context) and not self._has_claude_plugin(context):
+            # codex_catalog_exists() checks existence, not validity: a broken
+            # catalog is still the author saying this is a Codex marketplace,
+            # and codex-marketplace-json-valid reports what is wrong with it.
+            if context.codex_catalog_exists() and not self._has_claude_plugin(context):
                 # MARKETPLACE was inferred from a bare plugins/ directory, and
                 # a Codex marketplace already explains that directory — the
                 # Codex docs prescribe storing plugins under

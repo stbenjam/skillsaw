@@ -65,8 +65,6 @@ def is_installed_plugin_skill(context: "RepositoryContext", path: Path) -> bool:
     run — a hostile skill is still worth reporting — only the fix stands
     down.
     """
-    if path is None:
-        return False
     return context.is_codex_installed_plugin(path)
 
 

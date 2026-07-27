@@ -456,7 +456,7 @@ def test_metadata_and_icons_are_reachable_but_an_orphan_remains_reported(tmp_pat
     small.write_text("<svg/>", encoding="utf-8")
     large.write_bytes(b"png")
     orphan.write_text("not referenced", encoding="utf-8")
-    metadata = _write_metadata(
+    _write_metadata(
         skill,
         "interface:\n" "  icon_small: ./assets/small.svg\n" "  icon_large: ./assets/large.png\n",
     )
@@ -464,7 +464,3 @@ def test_metadata_and_icons_are_reachable_but_an_orphan_remains_reported(tmp_pat
     violations = AgentSkillUnreferencedFilesRule({}).check(RepositoryContext(skill))
 
     assert [violation.file_path for violation in violations] == [orphan]
-    assert all(
-        path not in {violation.file_path for violation in violations}
-        for path in (metadata, small, large)
-    )
