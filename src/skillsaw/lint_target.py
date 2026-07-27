@@ -136,6 +136,7 @@ class LintTarget:
             "MarketplaceConfigNode": "#fff3cd",
             "MarketplaceNode": "#f8d7da",
             "PluginNode": "#d4edda",
+            "CodexPluginNode": "#d4edda",
             "SkillNode": "#cce5ff",
             "ApmConfigNode": "#fff3cd",
             "ApmNode": "#e2d9f3",
@@ -214,6 +215,19 @@ class PluginNode(LintTarget):
 
 
 @dataclass(eq=False)
+class CodexPluginNode(LintTarget):
+    """A Codex-only plugin directory.
+
+    This is deliberately not a ``PluginNode`` subclass: Claude plugin rules
+    select ``PluginNode`` targets, while a Codex-only directory needs a
+    hierarchy container without acquiring Claude semantics.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [codex plugin]"
+
+
+@dataclass(eq=False)
 class SkillNode(LintTarget):
     """A skill directory."""
 
@@ -234,7 +248,7 @@ class CodexMarketplaceConfigNode(LintTarget):
     """
 
     def tree_label(self) -> str:
-        return "marketplace.json [codex]"
+        return f"{self.path.name} [codex]"
 
 
 @dataclass(eq=False)
@@ -243,7 +257,8 @@ class CodexPluginConfigNode(LintTarget):
 
     The node addresses the manifest rather than the plugin directory so a
     directory that is both a Claude and a Codex plugin keeps a single
-    ``PluginNode`` subtree; ``plugin_dir`` recovers the owning directory.
+    ``PluginNode`` subtree. Codex-only manifests live under a
+    ``CodexPluginNode``; ``plugin_dir`` recovers the owning directory.
     """
 
     @property

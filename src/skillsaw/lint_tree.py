@@ -53,6 +53,7 @@ from .lint_target import (
     ApmNode,
     CodexMarketplaceConfigNode,
     CodexPluginConfigNode,
+    CodexPluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -237,9 +238,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
+    codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
-    if context.has_marketplace() and marketplace_dir.is_dir():
+    if (context.has_marketplace() or context.has_codex_marketplace()) and marketplace_dir.is_dir():
         marketplace_node = MarketplaceNode(path=marketplace_dir)
         root.children.append(marketplace_node)
 
@@ -278,9 +280,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             root.children.append(plugin_node)
 
     # --- Codex plugin manifests ---
-    # Addressed as manifest files, not directories, so a plugin that ships
-    # both .claude-plugin/ and .codex-plugin/ keeps one PluginNode subtree
-    # and the Codex manifest simply hangs off it.
+    # A dual-host directory keeps one PluginNode subtree and the Codex
+    # manifest hangs off it. Codex-only directories get a distinct container
+    # type so their owned config and skills have a useful hierarchy without
+    # becoming targets of Claude-only PluginNode rules.
     for codex_plugin_path in context.codex_plugins:
         manifest = codex_plugin_path.joinpath(*context.CODEX_PLUGIN_MANIFEST)
         # Not gated on the manifest existing: discovery keys off the reserved
@@ -332,8 +335,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             _add_parser_block(node, declared_mcp, McpBlock)
         for inline_mcp in codex_inline_mcp_servers(codex_plugin_path):
             node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
-        parent = plugin_nodes.get(codex_plugin_path.resolve())
-        (parent or root).children.append(node)
+        resolved_plugin = codex_plugin_path.resolve()
+        parent = plugin_nodes.get(resolved_plugin)
+        if parent is not None:
+            parent.children.append(node)
+        elif resolved_plugin == root.resolved_path:
+            root.children.append(node)
+        else:
+            container = CodexPluginNode(path=codex_plugin_path)
+            container.children.append(node)
+            codex_plugin_nodes[resolved_plugin] = container
+            if marketplace_node is not None and resolved_plugin.is_relative_to(
+                marketplace_dir.resolve()
+            ):
+                marketplace_node.children.append(container)
+            else:
+                root.children.append(container)
 
     # --- Skills (nest inside parent plugin when applicable; skip .apm/) ---
     for skill_path in context.skills:
@@ -369,10 +386,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Nearest plugin ancestor via dict lookups — iterating all plugins
         # with is_relative_to() is O(skills x plugins) and dominated tree
         # construction on large marketplaces (3.6k skills x 445 plugins).
-        parent_plugin = None
+        parent_plugin: LintTarget | None = None
         resolved_skill = skill_path.resolve()
         for candidate in (resolved_skill, *resolved_skill.parents):
-            node = plugin_nodes.get(candidate)
+            node = plugin_nodes.get(candidate) or codex_plugin_nodes.get(candidate)
             if node is not None:
                 parent_plugin = node
                 break

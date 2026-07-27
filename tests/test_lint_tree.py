@@ -9,6 +9,8 @@ from skillsaw.lint_target import (
     ApmConfigNode,
     ApmNode,
     CodeRabbitNode,
+    CodexMarketplaceConfigNode,
+    CodexPluginNode,
     MarketplaceConfigNode,
     MarketplaceNode,
     PluginNode,
@@ -139,6 +141,11 @@ def test_tree_labels():
     assert MarketplaceConfigNode(path=Path("/m.json")).tree_label() == "marketplace.json"
     assert MarketplaceNode(path=Path("/plugins")).tree_label() == "plugins/ [marketplace]"
     assert PluginNode(path=Path("/my-plugin")).tree_label() == "my-plugin/ [plugin]"
+    assert CodexPluginNode(path=Path("/my-plugin")).tree_label() == "my-plugin/ [codex plugin]"
+    assert (
+        CodexMarketplaceConfigNode(path=Path("/api_marketplace.json")).tree_label()
+        == "api_marketplace.json [codex]"
+    )
     assert SkillNode(path=Path("/my-skill")).tree_label() == "my-skill/ [skill]"
     assert ApmConfigNode(path=Path("/apm.yml")).tree_label() == "apm.yml"
     assert ApmNode(path=Path("/.apm")).tree_label() == ".apm/"

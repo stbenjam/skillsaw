@@ -20,9 +20,11 @@ from skillsaw.docs.html_renderer import render_html
 from skillsaw.docs.markdown_renderer import _plugin_filename, render_markdown
 from skillsaw.context import RepositoryContext, RepositoryType, codex_local_source_path
 from skillsaw.blocks import (
+    AgentBlock,
     CodexInlineHooksBlock,
     HooksBlock,
     McpBlock,
+    OpenAIMetadataBlock,
     SkillRefBlock,
 )
 from skillsaw.formatters.json_fmt import format_json
@@ -30,7 +32,10 @@ from skillsaw.formatters.sarif import format_sarif
 from skillsaw.lint_target import (
     CodexMarketplaceConfigNode,
     CodexPluginConfigNode,
+    CodexPluginNode,
+    MarketplaceNode,
     PluginNode,
+    SkillNode,
 )
 from skillsaw.linter import Linter
 from skillsaw.rule import AutofixConfidence, Severity
@@ -1510,6 +1515,99 @@ def _codex_marketplace_repo(tmp_path: Path, marketplace: dict) -> Path:
         json.dumps(marketplace, indent=2), encoding="utf-8"
     )
     return repo
+
+
+class TestCodexPluginTreeHierarchy:
+    def test_nested_codex_only_plugin_owns_manifest_config_and_skill(self, tmp_path):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        plugin = _write_plugin(
+            repo / "plugins" / "nested",
+            {
+                "name": "nested",
+                "version": "1.0.0",
+                "description": "x",
+                "skills": "./skills",
+            },
+        )
+        (plugin / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"srv": {"command": "node"}}}),
+            encoding="utf-8",
+        )
+        (plugin / "agents").mkdir()
+        (plugin / "agents" / "openai.yaml").write_text(
+            "interface:\n  display_name: Nested\n", encoding="utf-8"
+        )
+        # Codex agent markdown is deliberately not attached as AgentBlock:
+        # the hierarchy container must not reactivate Claude frontmatter rules.
+        (plugin / "agents" / "reviewer.md").write_text("# Reviewer\n", encoding="utf-8")
+        skill = plugin / "skills" / "work"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: work\ndescription: Do work\n---\n", encoding="utf-8"
+        )
+
+        context = RepositoryContext(repo)
+        tree = context.lint_tree
+        container = tree.find(CodexPluginNode)[0]
+        config = tree.find(CodexPluginConfigNode)[0]
+        skill_node = tree.find(SkillNode)[0]
+        metadata = tree.find(OpenAIMetadataBlock)[0]
+        mcp = next(block for block in tree.find(McpBlock) if block.path == plugin / ".mcp.json")
+
+        assert tree.find(PluginNode) == []
+        assert container.path == plugin
+        assert isinstance(container.parent, MarketplaceNode)
+        assert config.parent is container
+        assert skill_node.parent is container
+        assert metadata.parent is config
+        assert mcp.parent is config
+        assert tree.find(AgentBlock) == []
+        assert PluginJsonRequiredRule({}).check(context) == []
+
+    def test_root_codex_plugin_uses_the_tree_root_as_its_container(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "root", "version": "1.0.0", "description": "x", "skills": "./skills"},
+        )
+        (repo / ".mcp.json").write_text(
+            json.dumps({"mcpServers": {"srv": {"command": "node"}}}),
+            encoding="utf-8",
+        )
+        skill = repo / "skills" / "work"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: work\ndescription: Do work\n---\n", encoding="utf-8"
+        )
+
+        tree = RepositoryContext(repo).lint_tree
+
+        assert tree.find(CodexPluginNode) == []
+        assert tree.find(CodexPluginConfigNode)[0].parent is tree
+        assert tree.find(SkillNode)[0].parent is tree
+        assert tree.find(McpBlock)[0].parent is tree
+
+    def test_dual_host_plugin_keeps_the_claude_plugin_container(self, tmp_path):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "dual", "version": "1.0.0", "description": "x", "skills": "./skills"},
+        )
+        (repo / ".claude-plugin").mkdir()
+        (repo / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "dual", "version": "1.0.0", "description": "x"}),
+            encoding="utf-8",
+        )
+        skill = repo / "skills" / "work"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: work\ndescription: Do work\n---\n", encoding="utf-8"
+        )
+
+        tree = RepositoryContext(repo).lint_tree
+        plugin_node = tree.find(PluginNode)[0]
+
+        assert tree.find(CodexPluginNode) == []
+        assert tree.find(CodexPluginConfigNode)[0].parent is plugin_node
+        assert tree.find(SkillNode)[0].parent is plugin_node
 
 
 # ---------------------------------------------------------------------------
