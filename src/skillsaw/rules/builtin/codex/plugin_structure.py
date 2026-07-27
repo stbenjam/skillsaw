@@ -8,7 +8,9 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import CodexPluginConfigNode
 
-from ._helpers import safe_display, CODEX_PLUGIN_REPO_TYPES
+from skillsaw.diagnostics import safe_display
+
+from ._helpers import CODEX_PLUGIN_REPO_TYPES
 
 
 class CodexPluginStructureRule(Rule):

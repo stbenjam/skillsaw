@@ -5,10 +5,9 @@ Rule: marketplace-json-valid
 import re
 from typing import List
 
-from skillsaw.paths import has_parent_traversal, is_absolute_path
+from skillsaw.paths import has_parent_traversal, is_absolute_path, safe_is_dir, safe_resolve
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
-from skillsaw.formats.codex import safe_is_dir, safe_resolve
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.utils import read_json
 

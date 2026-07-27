@@ -6,7 +6,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.rules.builtin.codex._helpers import safe_display
+from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.content_analysis import HooksBlock
 
 # Valid hook event types

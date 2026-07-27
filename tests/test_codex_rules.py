@@ -44,13 +44,15 @@ from skillsaw.formats.codex import (
     codex_declared_hook_files,
     codex_declared_skill_dirs,
     codex_inline_hooks,
+)
+from skillsaw.paths import (
+    escapes_root,
     safe_exists,
     safe_is_dir,
     safe_is_file,
     safe_is_symlink,
     safe_resolve,
 )
-from skillsaw.rules.builtin.codex._helpers import escapes_root
 from skillsaw.rules.builtin.codex import (
     CodexMarketplaceJsonValidRule,
     CodexMarketplaceRegistrationRule,
@@ -2231,7 +2233,7 @@ class TestCrossedRegistration:
         # A pasted JWT is far longer than any redaction cap — the bound
         # itself was the escape hatch.
         long_secret = "eyJ" + "b" * 400  # notsecret
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         assert long_secret not in safe_display(f"https://u:{long_secret}@h/p")
 
@@ -6003,7 +6005,7 @@ class TestSafeDisplay:
         """
         import time
 
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         def cost(n: int) -> float:
             best = float("inf")
@@ -6025,7 +6027,7 @@ class TestSafeDisplay:
     def test_truncation_does_not_leak_a_severed_credential(self):
         """A credential whose ``@`` falls beyond the display cap must not
         surface its head — the cut edge is treated like an ``@``."""
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         value = "x" * 490 + "user:" + "S" * 600 + "@host.example/path"
         out = safe_display(value)
@@ -6035,7 +6037,7 @@ class TestSafeDisplay:
     def test_a_long_delimiterless_credential_is_fully_redacted(self):
         """A >512-char userinfo must not have its head emitted when the
         backward search window is clipped."""
-        from skillsaw.rules.builtin.codex._helpers import _redact_userinfo
+        from skillsaw.diagnostics import _redact_userinfo
 
         out = _redact_userinfo("u:" + "T" * 600 + "@h.example")
         assert "TTTT" not in out

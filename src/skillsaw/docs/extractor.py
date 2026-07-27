@@ -12,8 +12,8 @@ from skillsaw.formats.codex import (
     codex_local_source_path,
     codex_plugin_name,
     is_remote_source,
-    safe_resolve,
 )
+from skillsaw.paths import contained_resolve, safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -489,8 +489,8 @@ def _scoped_prose(
         return []
     scoped = []
     for block in container.find(block_cls):
-        resolved = safe_resolve(block.path)
-        if resolved is None or not resolved.is_relative_to(plugin_resolved):
+        resolved = contained_resolve(block.path, plugin_resolved)
+        if resolved is None:
             continue
         owner = next(
             (c for c in resolved.parents if c in prose_roots),

@@ -22,12 +22,9 @@ from .formats.codex import (
     codex_declared_skill_dirs,
     codex_local_source_path,
     codex_manifest_is_contained,
-    safe_exists,
-    safe_is_dir,
-    safe_is_symlink,
-    safe_resolve,
 )
 from .formats.promptfoo import is_promptfoo_config
+from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_symlink, safe_resolve
 from .utils import read_json
 
 if TYPE_CHECKING:
@@ -869,8 +866,7 @@ class RepositoryContext:
             return []
 
         def _usable(path: Path) -> bool:
-            resolved = safe_resolve(path)
-            if resolved is None or not resolved.is_relative_to(root):
+            if contained_resolve(path, root) is None:
                 return False
             if self.is_path_excluded(path):
                 return False
@@ -987,8 +983,7 @@ class RepositoryContext:
             manifest_dir = directory / self.CODEX_PLUGIN_MANIFEST[0]
             if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
                 return
-            manifest_dir_resolved = safe_resolve(manifest_dir)
-            if manifest_dir_resolved is None or not manifest_dir_resolved.is_relative_to(resolved):
+            if contained_resolve(manifest_dir, resolved) is None:
                 return
             # A missing manifest is still a plugin — codex-plugin-json-valid
             # reports it. One that resolves elsewhere is not.
@@ -1414,8 +1409,8 @@ class RepositoryContext:
             if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
                 continue
 
-            resolved_path = safe_resolve(item)
-            if resolved_path is None or not resolved_path.is_relative_to(self.root_path):
+            resolved_path = contained_resolve(item, self.root_path)
+            if resolved_path is None:
                 continue
             if resolved_path not in discovered_paths:
                 plugins.append(item)
@@ -1618,11 +1613,10 @@ class RepositoryContext:
                 if (skills_dir / "SKILL.md").exists():
                     # A manifest may name one skill directly rather than a
                     # collection; descending would step straight past it.
-                    resolved = safe_resolve(skills_dir)
-                    entrypoint = safe_resolve(skills_dir / "SKILL.md")
-                    if resolved is None or not resolved.is_relative_to(plugin_root):
+                    resolved = contained_resolve(skills_dir, plugin_root)
+                    if resolved is None:
                         continue
-                    if entrypoint is None or not entrypoint.is_relative_to(plugin_root):
+                    if contained_resolve(skills_dir / "SKILL.md", plugin_root) is None:
                         continue
                     if resolved not in discovered:
                         skills.append(skills_dir)
