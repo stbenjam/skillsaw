@@ -3,6 +3,7 @@ Rule: codex-marketplace-registration
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -405,6 +406,16 @@ class CodexMarketplaceRegistrationRule(Rule):
         if not config_nodes:
             return results
         marketplace_file = config_nodes[0].path
+
+        # Never write through a symlink: a catalog entry symlinked at an
+        # unrelated file — inside or outside the checkout — would receive
+        # this rule's appended JSON at whatever the link points to. The
+        # lexical path is what the repository ships; if resolution moves
+        # it, the write is declined and the violation stays manual.
+        lexical = Path(os.path.abspath(marketplace_file))
+        resolved_target = safe_resolve(marketplace_file)
+        if resolved_target is None or resolved_target != lexical:
+            return results
 
         original = _read_text(marketplace_file)
         data = _mutable_marketplace_data(original)

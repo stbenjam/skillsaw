@@ -539,9 +539,9 @@ def _extract_codex_skills(
     caller for why.
     """
     docs = []
-    # Ancestor walk against a set, not a scan of every root per skill —
-    # the linear form was O(skills x plugins) and dominated ``skillsaw
-    # docs`` on large catalogs.
+    # Ancestor walk against a set — a scan of every root per skill is
+    # O(skills x plugins) and dominates ``skillsaw docs`` on large
+    # catalogs.
     root_set = set(all_plugin_roots)
     for skill_resolved, skill_node in resolved_skills:
         if not skill_resolved.is_relative_to(plugin_resolved):
@@ -591,8 +591,8 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
         category=str(meta.get("category", "")) or "",
         tags=tags,
         keywords=keywords,
-        homepage=str(meta.get("homepage", "")) or "",
-        repository=str(meta.get("repository", "")) or "",
+        homepage=_safe_url(meta.get("homepage")),
+        repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "")) or "",
         commands=_extract_commands(plugin_node),
         skills=_extract_skills(plugin_node),

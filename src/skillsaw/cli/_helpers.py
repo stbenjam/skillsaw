@@ -75,8 +75,15 @@ def _resolve_lint_paths(paths):
             # Resolved comparison: a symlinked $HOME (routine on macOS and
             # NFS) otherwise slips past the bound and the walk covers the
             # entire home directory.
-            if widened not in (Path.home().resolve(), Path(widened.anchor)):
-                resolved = widened
+            if widened is not resolved:
+                try:
+                    bounds = (Path.home().resolve(), Path(widened.anchor))
+                except (RuntimeError, OSError):
+                    # No resolvable home directory (unset HOME, looped
+                    # symlink): keep the unwidened root — the safe side.
+                    bounds = (widened,)
+                if widened not in bounds:
+                    resolved = widened
         normalized.append(resolved)
 
     seen = set()

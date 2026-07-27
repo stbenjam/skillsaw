@@ -341,7 +341,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if source_type not in _SOURCE_REQUIRED_FIELDS:
             return [
                 self.violation(
-                    f"plugins[{idx}].source: unknown source type '{source_type}' "
+                    f"plugins[{idx}].source: unknown source type '{safe_display(source_type)}' "
                     f"(known types: {', '.join(sorted(_SOURCE_REQUIRED_FIELDS))})",
                     file_path=marketplace_file,
                     severity=Severity.WARNING,

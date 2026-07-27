@@ -65,7 +65,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     filenames = _unique_filenames(sorted_plugins)
 
     # Index
-    lines: List[str] = [f"# {mp.name or docs.title}", ""]
+    lines: List[str] = [f"# {_table_cell(mp.name or docs.title)}", ""]
     if mp.owner and mp.owner.get("name"):
         lines.append(f"**Owner:** {mp.owner['name']}")
         lines.append("")
@@ -101,7 +101,7 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
         # block-level Markdown into the page.
         heading = _table_cell(plugin.display_name or plugin.name)
         plines: List[str] = [f"# {heading}", ""]
-        plines.append(f"[&larr; Back to {mp.name or 'index'}](README.md)")
+        plines.append(f"[&larr; Back to {_table_cell(mp.name or 'index')}](README.md)")
         plines.append("")
         _append_plugin_meta(plines, plugin)
         _append_plugin_sections(plines, plugin)

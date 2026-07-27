@@ -15,6 +15,12 @@ Validate skill openai.yaml and catalog-compatible plugin metadata
 
 ## Why
 
+The `codex-` prefix names the convention's origin, not a repository
+type: `agents/openai.yaml` is OpenAI's skill-metadata file, and this
+rule validates it wherever it appears — including skills in Claude or
+plain Agent Skills repositories that also publish to the OpenAI
+catalog.
+
 OpenAI documents `agents/openai.yaml` as optional skill metadata for UI labels,
 icons, invocation policy, and tool dependencies. The OpenAI plugin catalog also
 contains plugin-root files in this form, which skillsaw supports as an observed

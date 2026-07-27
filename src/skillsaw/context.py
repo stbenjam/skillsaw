@@ -220,8 +220,9 @@ class PluginProvenance:
 
     Adding an ecosystem means adding its evidence probe to
     ``RepositoryContext._compute_provenance`` and its format-rule family
-    to the gates that read ``ecosystems`` — see DEVELOPMENT.md,
-    "Ecosystem provenance".
+    to the gates that read ``ecosystems`` — see the "Ecosystem
+    provenance" section of the development rules
+    (.apm/instructions/development.instructions.md).
     """
 
     ecosystems: FrozenSet[str]
@@ -743,8 +744,8 @@ class RepositoryContext:
     # would report contradictory violations.
     CODEX_MARKETPLACE_DIR = (".agents", "plugins")
     CODEX_MARKETPLACE_FILENAME = "marketplace.json"
-    # Re-exported from formats.codex so existing ``context.CODEX_PLUGIN_MANIFEST``
-    # readers keep working; the definition lives with the readers that use it.
+    # The definition lives in formats.codex with the manifest readers;
+    # this alias gives context-holding callers one import site.
     CODEX_PLUGIN_MANIFEST = _CODEX_PLUGIN_MANIFEST
     # Where Codex installs plugins a developer added to their own checkout,
     # as opposed to plugins the repository authors.
@@ -1147,10 +1148,10 @@ class RepositoryContext:
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        # Ancestor walk against a set, not a scan over every root: this
-        # runs per skill inside agentskill-evals and agentskill-rename-refs,
-        # and the linear scan was O(skills x plugins) on a large catalog.
-        # Walking upward finds the nearest root by construction.
+        # Ancestor walk against a set — this runs per skill inside
+        # agentskill-evals and agentskill-rename-refs, where a scan over
+        # every root is O(skills x plugins) on a large catalog. Walking
+        # upward finds the nearest root by construction.
         roots = set(self.codex_plugin_roots())
         for candidate in (resolved, *resolved.parents):
             if candidate in roots:

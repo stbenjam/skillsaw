@@ -8,7 +8,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import CodexPluginConfigNode
 
-from ._helpers import CODEX_PLUGIN_REPO_TYPES
+from ._helpers import safe_display, CODEX_PLUGIN_REPO_TYPES
 
 
 class CodexPluginStructureRule(Rule):
@@ -48,7 +48,7 @@ class CodexPluginStructureRule(Rule):
                     continue
                 violations.append(
                     self.violation(
-                        f"'{entry.name}' does not belong in .codex-plugin/ — keep "
+                        f"'{safe_display(entry.name)}' does not belong in .codex-plugin/ — keep "
                         "skills/, hooks/, assets/, .mcp.json and .app.json at the "
                         "plugin root",
                         file_path=entry,

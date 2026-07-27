@@ -6,7 +6,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.utils import commented_root_line, read_json, read_yaml_commented
 
 from ._helpers import SKILL_REPO_TYPES, contained_eval_file
 
@@ -63,6 +63,11 @@ class AgentSkillEvalsRule(Rule):
                 # whose file parses fine (openai/plugins ships top-level
                 # arrays from other eval harnesses). Projects using a
                 # different eval format can disable this rule.
+                # JSON is valid YAML, so the commented reader recovers a
+                # real root line for the container — baselines then
+                # fingerprint on line content instead of the message, and
+                # a message rewording cannot un-suppress old baselines.
+                shaped, _, _ = read_yaml_commented(evals_json)
                 violations.append(
                     self.violation(
                         "evals.json is valid JSON but not the Agent Skills "
@@ -70,6 +75,7 @@ class AgentSkillEvalsRule(Rule):
                         "array, got a "
                         f"{'JSON array' if isinstance(data, list) else 'JSON scalar'}",
                         file_path=evals_json,
+                        line=commented_root_line(shaped),
                     )
                 )
                 continue

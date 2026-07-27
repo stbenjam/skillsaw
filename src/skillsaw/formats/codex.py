@@ -4,9 +4,9 @@ Functions over Codex manifest and marketplace values that need no
 repository state — only a plugin directory. ``context`` uses them while
 building the lint tree; rules and the docs extractor import them directly.
 
-Kept out of ``context.py`` deliberately. Held as methods there they were
-feature envy against a ``plugin_dir``, and every rule that wanted one had
-to reach through ``RepositoryContext`` to get it.
+Kept out of ``context.py`` deliberately: these are state-free readers
+of a ``plugin_dir``, and rules use them without holding a
+``RepositoryContext``.
 """
 
 from __future__ import annotations

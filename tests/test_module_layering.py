@@ -140,7 +140,9 @@ def test_core_module_does_not_import_rules_package(rel_path):
     offenders = []
     # Module-level includes imports nested in top-level `try:`/`if` blocks —
     # those still execute at load time — but not function/class bodies.
-    scopes = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    # Class bodies execute at import time, so only function scopes are
+    # deliberate lazy-import territory.
+    scopes = (ast.FunctionDef, ast.AsyncFunctionDef)
     stack = list(tree.body)
     while stack:
         node = stack.pop()

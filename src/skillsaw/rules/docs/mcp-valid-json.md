@@ -33,8 +33,9 @@ Fix the JSON syntax error or restructure the file to use the
 Each stdio server needs a `command` field and each remote server a
 `url` field matching its declared `type`.
 
-Inside an OpenAI Codex-only plugin (a `.codex-plugin/plugin.json`
-manifest with no Claude manifest alongside it), `command` and `url`
+Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a
+`.claude-plugin` marker nor a Claude marketplace listing — either one
+counts as a Claude declaration), `command` and `url`
 must also be **non-empty strings** — Codex resolves servers through the
 manifest, and an empty value produces a server that silently never
 starts. Plugins that ship both manifests are checked to the Claude

@@ -2936,8 +2936,8 @@ class TestDiscoveryRobustness:
     def test_an_unresolvable_source_path_does_not_abort_the_lint(self, tmp_path):
         """Discovery runs during construction, before any rule can report.
 
-        `Path.resolve()` raises ValueError on an embedded NUL, so this used
-        to take down the whole command instead of yielding a violation.
+        `Path.resolve()` raises ValueError on an embedded NUL — unguarded,
+        that aborts the whole command instead of yielding a violation.
         """
         repo = _codex_marketplace_repo(
             tmp_path,
@@ -4698,8 +4698,8 @@ class TestInstalledSkillRenameFix:
 
 
 class TestStatIsGuardedOnManifestPaths:
-    """``safe_resolve`` guards the resolve; the ``stat()`` two lines later
-    was not guarded, and it is the one that raises.
+    """Both the resolve and the ``stat()`` beside it must be guarded —
+    the stat is the call that raises on an over-long path.
 
     Python 3.13+ swallows ``ENAMETOOLONG`` inside ``Path.is_dir()``, so a
     real over-long path cannot express this regression on every supported
@@ -5009,9 +5009,9 @@ class TestMalformedManifestShapes:
 
 
 class TestVisiblePluginSkillContainment:
-    """Every other containment test hides the plugin under ``.codex/``,
-    which the directory walk skips outright — so the visible ``plugins/*``
-    case, which the walk does enter, was never covered."""
+    """Containment through the visible ``plugins/*`` walk — a distinct
+    code path from the ``.codex/`` install location, which the directory
+    walk skips outright."""
 
     def test_codex_discovery_does_not_follow_the_symlink(self, tmp_path):
         _, plugin, _ = self._symlinked_skills(tmp_path)
@@ -5914,3 +5914,138 @@ class TestRegistrationSurvivesUnparseableCatalogs:
         monkeypatch.setattr(mod.json, "loads", explode)
         assert mod._mutable_marketplace_data('{"plugins": []}') is None
         monkeypatch.setattr(mod.json, "loads", real)
+
+
+class TestPanelFourRegressions:
+    def test_wrong_shape_evals_baseline_survives_message_rewording(self, tmp_path):
+        """The violation fingerprints on the file's root-line content, so a
+        baseline written against an older message keeps suppressing."""
+        from skillsaw.baseline import build_baseline, filter_baselined_violations
+
+        skill = tmp_path / "array-evals"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: array-evals\ndescription: Array evals\n---\n", encoding="utf-8"
+        )
+        (skill / "evals").mkdir()
+        (skill / "evals" / "evals.json").write_text('[{"id": "c1"}]', encoding="utf-8")
+
+        from skillsaw.rules.builtin.agentskills import AgentSkillEvalsRule
+
+        context = RepositoryContext(skill)
+        found = AgentSkillEvalsRule({}).check(context)
+        assert found and found[0].line == 1
+        baseline = build_baseline(found, skill, "0.18.0")
+        # A reworded message must not un-suppress: fingerprints key on the
+        # source line, which is unchanged.
+        for v in found:
+            v.message = "a differently worded diagnostic"
+        remaining, _ = filter_baselined_violations(found, baseline, skill)
+        assert remaining == []
+
+    def test_fix_declines_a_symlinked_catalog(self, tmp_path):
+        """The registration autofix must never write through a symlink —
+        the link target, in or out of the repo, is not the catalog."""
+        target = tmp_path / "unrelated.json"
+        target.write_text(json.dumps({"name": "cat", "plugins": []}), encoding="utf-8")
+        repo = tmp_path / "marketplace-repo"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").symlink_to(target)
+        _write_plugin(
+            repo / "plugins" / "new",
+            {"name": "new", "version": "1.0.0", "description": "Fresh."},
+        )
+
+        context = RepositoryContext(repo)
+        rule = CodexMarketplaceRegistrationRule({})
+        violations = rule.check(context)
+        before = target.read_bytes()
+        rule.fix(context, violations)
+        assert target.read_bytes() == before, "wrote through a symlinked catalog"
+
+    def test_a_user_level_catalog_is_not_widened_to_home(self, tmp_path, monkeypatch):
+        """lint ~/.agents/plugins/marketplace.json roots at the catalog
+        directory, never at $HOME."""
+        from skillsaw.cli._helpers import _resolve_lint_paths
+
+        fake_home = tmp_path / "home"
+        (fake_home / ".agents" / "plugins").mkdir(parents=True)
+        catalog = fake_home / ".agents" / "plugins" / "marketplace.json"
+        catalog.write_text(json.dumps({"name": "cat", "plugins": []}), encoding="utf-8")
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        (roots := _resolve_lint_paths([catalog]))
+        assert roots == [fake_home / ".agents" / "plugins"]
+
+    def test_redaction_is_linear_on_adversarial_values(self):
+        """A 60 KB value with no dots or colons must redact (or pass) in
+        linear time — the regex it replaces was quadratic."""
+        import time
+
+        from skillsaw.rules.builtin.codex._helpers import safe_display
+
+        for adversarial in ("a" * 60000, "a@" * 30000, "@" * 60000, "u:p@h.c/" * 7000):
+            start = time.perf_counter()
+            out = safe_display(adversarial)
+            assert time.perf_counter() - start < 1.0
+            assert len(out) <= 501  # bounded output
+
+    def test_unsafe_urls_are_neutralized_on_both_extraction_paths(self, tmp_path):
+        """javascript: and paren-bearing URLs from either a Claude or a
+        Codex manifest must not reach generated Markdown or HTML."""
+        from skillsaw.docs.html_renderer import render_html
+
+        repo = tmp_path / "mixed"
+        claude = repo / "plugins" / "claude-plug" / ".claude-plugin"
+        claude.mkdir(parents=True)
+        (claude / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "name": "claude-plug",
+                    "version": "1.0.0",
+                    "description": "Claude plugin.",
+                    "homepage": "javascript:alert(1)",
+                    "repository": "https://safe.example/)![x](https://evil/p",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / "plugins" / "claude-plug" / "commands").mkdir()
+        codex = repo / "plugins" / "codex-plug"
+        _write_plugin(
+            codex,
+            {
+                "name": "codex-plug",
+                "version": "1.0.0",
+                "description": "Codex plugin.",
+                "homepage": "javascript:alert(2)",
+            },
+        )
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "cat",
+                    "plugins": [
+                        {
+                            "name": "codex-plug",
+                            "source": {"source": "local", "path": "./plugins/codex-plug"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        docs = extract_docs(RepositoryContext(repo))
+        md_pages = render_markdown(docs)
+        html_pages = render_html(docs)
+        for content in (*md_pages.values(), *html_pages.values()):
+            assert "javascript:alert" not in content
+            assert "https://evil/p" not in content
