@@ -362,6 +362,52 @@ class TestPluginJsonValid:
         assert "Missing recommended field 'version'" in warnings
         assert "Missing recommended field 'description'" in warnings
 
+    def test_a_self_symlinked_manifest_does_not_abort_the_lint(self, tmp_path):
+        """A plugin.json symlinked to itself must yield a diagnostic, not a
+        RuntimeError from Path.resolve() inside the file-read cache that
+        aborts RepositoryContext construction entirely."""
+        repo = tmp_path / "plugin-repo"
+        (repo / ".codex-plugin").mkdir(parents=True)
+        manifest = repo / ".codex-plugin" / "plugin.json"
+        manifest.symlink_to(manifest)
+
+        context = RepositoryContext(repo)  # must not raise
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        del context
+        assert violations, "expected a manifest diagnostic for the unreadable symlink loop"
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_non_finite_manifest_constants_are_invalid_json(self, tmp_path, literal):
+        """Codex's strict parser rejects the whole manifest; so must we."""
+        repo = tmp_path / "plugin-repo"
+        (repo / ".codex-plugin").mkdir(parents=True)
+        (repo / ".codex-plugin" / "plugin.json").write_text(
+            '{"name":"demo","version":"1.0.0","description":"x",'
+            '"interface":{"score":' + literal + "}}\n",
+            encoding="utf-8",
+        )
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        assert messages(violations) == [f"Invalid JSON: non-finite JSON number: {literal}"]
+
+    def test_inline_mcp_object_inside_an_array_is_conformant(self, tmp_path):
+        """``mcpServers: ["./servers.json", {...}]`` is a supported mixed
+        declaration — the inline object must not draw a path-string warning."""
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "demo",
+                "version": "1.0.0",
+                "description": "A mixed MCP declaration.",
+                "mcpServers": [
+                    "./servers.json",
+                    {"inline-one": {"command": "node", "args": ["server.js"]}},
+                ],
+            },
+        )
+        (repo / "servers.json").write_text('{"mcpServers": {}}', encoding="utf-8")
+        violations = run_rule(CodexPluginJsonValidRule, repo)
+        assert not any("mcpServers[1]" in m for m in messages(violations)), messages(violations)
+
     def test_missing_path_target_warns(self, broken):
         violations = run_rule(CodexPluginJsonValidRule, broken)
         warnings = messages(by_severity(violations, Severity.WARNING))
@@ -4721,11 +4767,10 @@ class TestVisiblePluginSkillContainment:
         assert declared == []
 
     @pytest.mark.xfail(
-        reason="pre-existing: the agentskills walk takes contain_within=None, "
-        "so a symlinked directory anywhere in the repo is followed out of the "
-        "checkout. Reproduces at the merge base with no Codex manifest present; "
-        "narrowing it changes behaviour for non-Codex repositories and belongs "
-        "in its own change.",
+        reason="generic Agent Skills discovery has no containment boundary "
+        "(contain_within=None), so a symlinked directory anywhere in the repo "
+        "is followed out of the checkout; only Codex plugin discovery passes "
+        "a boundary.",
         strict=True,
     )
     def test_the_agentskills_walk_does_not_follow_the_symlink(self, tmp_path):

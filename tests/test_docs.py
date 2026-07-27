@@ -755,6 +755,80 @@ class TestMarkdownRenderer:
         pos_two = md.index("plugin-two")
         assert pos_one < pos_two
 
+    def test_url_parens_cannot_break_out_of_markdown_links(self):
+        """A manifest URL containing ')' would close [Homepage](...) early
+        and inject arbitrary Markdown — e.g. a remote tracking image."""
+        from skillsaw.docs.extractor import _safe_url
+
+        url = "https://safe.example/)![x](https://tracker.example/pixel"
+        safe = _safe_url(url)
+        assert ")" not in safe and "(" not in safe
+        assert safe.startswith("https://safe.example/%29")
+        # Ordinary URLs come through unchanged.
+        assert _safe_url("https://example.com/docs") == "https://example.com/docs"
+
+    def test_control_characters_are_stripped_from_page_names(self):
+        """A NUL in a catalog name must not reach Path.write_text(), which
+        raises and aborts docs generation for the whole catalog."""
+        from skillsaw.docs.markdown_renderer import _plugin_filename
+        from skillsaw.docs.models import PluginDoc
+
+        doc = PluginDoc(name="bad\x00name\x1b", path=Path("plugins/bad"))
+        filename = _plugin_filename(doc)
+        assert not any(ord(c) < 0x20 or ord(c) == 0x7F for c in filename)
+        assert filename.endswith(".md")
+
+    def test_claude_only_sources_are_not_published_in_codex_docs(self, temp_dir):
+        """A Codex catalog listing a directory with only a Claude manifest
+        advertises a plugin Codex cannot install — the registration rule
+        reports the unusable source, and docs must agree with it."""
+        (temp_dir / ".agents" / "plugins").mkdir(parents=True)
+        (temp_dir / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "mixed-cat",
+                    "plugins": [
+                        {
+                            "name": "claude-only",
+                            "source": {"source": "local", "path": "./plugins/claude-only"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        },
+                        {
+                            "name": "codex-plug",
+                            "source": {"source": "local", "path": "./plugins/codex-plug"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        claude_dir = temp_dir / "plugins" / "claude-only" / ".claude-plugin"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "claude-only", "version": "1.0.0", "description": "Claude."})
+        )
+        codex_dir = temp_dir / "plugins" / "codex-plug" / ".codex-plugin"
+        codex_dir.mkdir(parents=True)
+        (codex_dir / "plugin.json").write_text(
+            json.dumps({"name": "codex-plug", "version": "1.0.0", "description": "Codex."})
+        )
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        assert docs.marketplace is not None
+        listed = {str(p.name) for p in docs.marketplace.plugins}
+        assert "codex-plug" in listed
+        assert "claude-only" not in listed
+
     def test_mcp_table_escapes_pipes_and_newlines(self):
         """A valid command may contain '|' or a newline; neither may corrupt
         the table — the pipe adds a column, the newline ends the row."""

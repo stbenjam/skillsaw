@@ -59,6 +59,15 @@ def _resolve_lint_paths(paths):
         resolved = p.resolve()
         if resolved.is_file():
             resolved = resolved.parent
+            # A manifest given directly must root the context where
+            # discovery expects it: parenting ``.codex-plugin/plugin.json``
+            # at ``.codex-plugin/`` makes discovery probe for a *nested*
+            # ``.codex-plugin/`` and find nothing, so the documented
+            # file-path input form silently ran no manifest rules at all.
+            if resolved.name in (".codex-plugin", ".claude-plugin"):
+                resolved = resolved.parent
+            elif resolved.name == "plugins" and resolved.parent.name == ".agents":
+                resolved = resolved.parent.parent
         normalized.append(resolved)
 
     seen = set()

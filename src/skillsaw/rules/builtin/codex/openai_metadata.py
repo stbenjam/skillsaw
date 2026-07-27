@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List
 
@@ -15,6 +16,10 @@ from skillsaw.rules.builtin.utils import (
     commented_key_line,
     commented_root_line,
 )
+
+# The format OpenAI's bundled plugin validator enforces: six hex digits, no
+# shorthand, no CSS keywords.
+_BRAND_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 _INTERFACE_STRINGS = (
     "display_name",
@@ -95,6 +100,18 @@ class CodexOpenAIMetadataRule(Rule):
                         line=commented_key_line(interface, key),
                     )
                 )
+        brand_color = interface.get("brand_color")
+        if isinstance(brand_color, str) and not _BRAND_COLOR.fullmatch(brand_color):
+            # OpenAI's bundled plugin validator rejects anything but #RRGGBB,
+            # so accepting a CSS keyword here would call metadata clean that
+            # the platform refuses to load.
+            violations.append(
+                self.violation(
+                    f"'interface.brand_color' must be a #RRGGBB hex color, got {brand_color!r}",
+                    file_path=block.path,
+                    line=commented_key_line(interface, "brand_color"),
+                )
+            )
         for key in ("icon_small", "icon_large"):
             value = interface.get(key)
             if isinstance(value, str):

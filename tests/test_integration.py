@@ -537,6 +537,39 @@ class TestFilePathArgument:
 
 
 @pytest.mark.integration
+class TestDirectManifestInputs:
+    """A manifest path given directly must lint like its owning directory.
+
+    Parenting ``.codex-plugin/plugin.json`` at ``.codex-plugin/`` made
+    discovery probe for a nested marker and find nothing, so the documented
+    file-path input form reported A+ on a manifest whose directory form
+    reported errors."""
+
+    def test_codex_manifest_file_input_roots_at_the_plugin(self, tmp_path):
+        repo = tmp_path / "plug"
+        (repo / ".codex-plugin").mkdir(parents=True)
+        (repo / ".codex-plugin" / "plugin.json").write_text(
+            '{"name": "demo", "version": "1.0.0"', encoding="utf-8"
+        )
+        r = run_lint(repo / ".codex-plugin" / "plugin.json")
+        assert "codex-plugin-json-valid" in {v["rule_id"] for v in violations(r)}
+
+    def test_codex_catalog_file_input_roots_at_the_repository(self, tmp_path):
+        repo = tmp_path / "cat"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        catalog = repo / ".agents" / "plugins" / "marketplace.json"
+        catalog.write_text('{"name": "cat", "plugins": [', encoding="utf-8")
+        r = run_lint(catalog)
+        assert "codex-marketplace-json-valid" in {v["rule_id"] for v in violations(r)}
+
+    def test_claude_manifest_file_input_roots_at_the_plugin(self, tmp_path):
+        repo = tmp_path / "clplug"
+        (repo / ".claude-plugin").mkdir(parents=True)
+        (repo / ".claude-plugin" / "plugin.json").write_text('{"name": "demo"', encoding="utf-8")
+        r = run_lint(repo / ".claude-plugin" / "plugin.json")
+        assert "plugin-json-valid" in {v["rule_id"] for v in violations(r)}
+
+
 class TestMultiplePaths:
 
     def test_lint_two_directories(self, tmp_path):

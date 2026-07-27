@@ -129,6 +129,29 @@ def test_interface_fields_must_be_strings_with_line_attribution(tmp_path, field,
     assert violations[0].message == f"'interface.{field}' must be a string"
 
 
+@pytest.mark.parametrize("value", ["red", "#FFF", "#12345G", "FF584A", "#ff584a55"])
+def test_brand_color_must_be_rrggbb_hex(tmp_path, value):
+    """OpenAI's bundled validator rejects anything but #RRGGBB — clean
+    metadata here that the platform refuses to load is a false negative."""
+    skill = _write_skill(tmp_path)
+    metadata = _write_metadata(skill, f'interface:\n  brand_color: "{value}"\n')
+
+    violations = _check(skill)
+
+    assert len(violations) == 1
+    assert violations[0].file_path == metadata
+    assert violations[0].line == 2
+    assert "must be a #RRGGBB hex color" in violations[0].message
+
+
+@pytest.mark.parametrize("value", ["#FF584A", "#ff584a", "#0F6cbd"])
+def test_valid_brand_colors_pass(tmp_path, value):
+    skill = _write_skill(tmp_path)
+    _write_metadata(skill, f'interface:\n  brand_color: "{value}"\n')
+
+    assert _check(skill) == []
+
+
 @pytest.mark.parametrize(
     "body, message, line",
     [

@@ -38,7 +38,16 @@ class FileCache:
         def wrapper(*args, **kwargs):
             # The first positional arg is always the file path.
             file_path = args[0] if args else None
-            resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            try:
+                resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            except (OSError, RuntimeError, ValueError):
+                # A symlink loop (OSError on 3.13+, RuntimeError before),
+                # an embedded NUL. The wrapped reader has its own error
+                # handling and returns a diagnostic for unreadable input —
+                # raising here instead aborts the whole lint from a cache
+                # key lookup. Key on the unresolved path; correctness only
+                # loses alias deduplication for a path that cannot resolve.
+                resolved = file_path
             sub_key = (args[1:], tuple(sorted(kwargs.items())))
             with self._lock:
                 bucket = store.get(resolved)

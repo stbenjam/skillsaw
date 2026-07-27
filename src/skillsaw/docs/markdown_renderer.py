@@ -285,7 +285,12 @@ _WINDOWS_RESERVED_NAMES = {"con", "prn", "aux", "nul"} | {
     f"{stem}{n}" for stem in ("com", "lpt") for n in range(1, 10)
 }
 
-_UNSAFE_FILENAME_CHARS = str.maketrans({c: "-" for c in '/\\:<>"|?*'})
+# Separators and reserved punctuation, plus ASCII control characters: name
+# validation only warns, and an embedded NUL reaching Path.write_text()
+# raises and aborts documentation generation for the whole catalog.
+_UNSAFE_FILENAME_CHARS = str.maketrans(
+    {**{ord(c): "-" for c in '/\\:<>"|?*'}, **{c: "-" for c in range(0x20)}, 0x7F: "-"}
+)
 
 
 def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:

@@ -11,7 +11,12 @@ from skillsaw.formats.codex import safe_exists, safe_is_dir, safe_is_file
 from skillsaw.lint_target import CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json
 
-from ._helpers import CODEX_PLUGIN_REPO_TYPES, KEBAB_CASE, path_problem
+from ._helpers import (
+    CODEX_PLUGIN_REPO_TYPES,
+    KEBAB_CASE,
+    nonfinite_constant_error,
+    path_problem,
+)
 
 # Manifest fields that point at bundled components or assets. Every one of
 # them is documented as "relative to the plugin root", starting with "./".
@@ -100,6 +105,12 @@ class CodexPluginJsonValidRule(Rule):
             if error:
                 violations.append(self.violation(f"Invalid JSON: {error}", file_path=manifest))
                 continue
+            strict_error = nonfinite_constant_error(manifest)
+            if strict_error:
+                violations.append(
+                    self.violation(f"Invalid JSON: {strict_error}", file_path=manifest)
+                )
+                continue
             if not isinstance(data, dict):
                 violations.append(
                     self.violation("Expected JSON object in plugin.json", file_path=manifest)
@@ -187,8 +198,10 @@ class CodexPluginJsonValidRule(Rule):
                 # worked inline example, so an object there is conformant
                 # and warning on it is the false-positive class this rule
                 # set exists to remove. The block is already routed to the
-                # MCP rules either way.
-                if field == "mcpServers" and isinstance(value, dict):
+                # MCP rules either way. Base name, not exact label: an array
+                # element arrives as ``mcpServers[1]``, and a mixed
+                # ``["./servers.json", {...}]`` declaration is supported.
+                if field.split("[", 1)[0] == "mcpServers" and isinstance(value, dict):
                     continue
                 # Everything else: a warning, not an error. ``skills`` is
                 # typed as a string alone, but real plugins ship arrays and

@@ -11,13 +11,13 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, codex_local_source_path
 from skillsaw.formats.codex import safe_exists
 from skillsaw.lint_target import CodexMarketplaceConfigNode
-from skillsaw.rules.builtin.utils import read_json, read_text
+from skillsaw.rules.builtin.utils import read_json
 
 from ._helpers import (
     CODEX_MARKETPLACE_REPO_TYPES,
     KEBAB_CASE,
+    nonfinite_constant_error,
     path_problem,
-    reject_nonfinite_json_number,
 )
 
 # Required fields per documented source type. Unknown types warn rather than
@@ -121,7 +121,7 @@ class CodexMarketplaceJsonValidRule(Rule):
                 )
                 violations.append(self.violation(message, file_path=marketplace_file))
                 continue
-            strict_error = self._nonfinite_constant(marketplace_file)
+            strict_error = nonfinite_constant_error(marketplace_file)
             if strict_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {strict_error}", file_path=marketplace_file)
@@ -156,25 +156,6 @@ class CodexMarketplaceJsonValidRule(Rule):
             )
 
         return violations
-
-    @staticmethod
-    def _nonfinite_constant(marketplace_file: Path) -> str:
-        """The strict-JSON defect the lenient shared reader accepted, or ``""``.
-
-        ``read_json()`` inherits Python's ``NaN``/``Infinity``/``-Infinity``
-        extensions, but Codex's strict parser rejects them — and so does the
-        registration fixer, so without this a catalog could pass validity yet
-        refuse every fix. The substring test only gates the reparse; a quoted
-        ``"NaN"`` inside a string value still parses cleanly here.
-        """
-        content = read_text(marketplace_file)
-        if content is None or ("NaN" not in content and "Infinity" not in content):
-            return ""
-        try:
-            json.loads(content, parse_constant=reject_nonfinite_json_number)
-        except ValueError as e:
-            return str(e)
-        return ""
 
     def _check_plugins(
         self,

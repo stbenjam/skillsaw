@@ -189,6 +189,7 @@ def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> 
     remote entries, which have no manifest to consult, showed theirs.
     """
     by_path = {r: p for p in plugins if (r := safe_resolve(p.path)) is not None}
+    codex_roots = _codex_roots(context)
     listed: List[PluginDoc] = []
     seen: Set[int] = set()
     for path in context.codex_marketplace_paths():
@@ -205,7 +206,15 @@ def _codex_listed_docs(context: RepositoryContext, plugins: List[PluginDoc]) -> 
             if source is None:
                 continue  # remote or malformed — _codex_remote_docs decides
             resolved = safe_resolve(context.root_path / source)
-            doc = by_path.get(resolved) if resolved is not None else None
+            if resolved is None or resolved not in codex_roots:
+                # A listed directory without a usable Codex manifest — a
+                # Claude-only plugin, say. Codex cannot install it, and
+                # codex-marketplace-registration reports the unusable
+                # source; publishing it in the Codex index would advertise
+                # what the catalog cannot deliver. Dual-host plugins are
+                # Codex roots and stay listed.
+                continue
+            doc = by_path.get(resolved)
             if doc is None or id(doc) in seen:
                 continue
             seen.add(id(doc))
@@ -481,6 +490,12 @@ def _safe_url(value: Any) -> str:
     candidate = value.strip()
     if _URL_FORBIDDEN & set(candidate):
         return ""
+    # Parentheses survive the character filter but delimit the Markdown
+    # sink: ``https://safe.example/)![x](https://evil/pixel`` closes the
+    # ``[Homepage](...)`` link early and injects a remote image into the
+    # generated page. Percent-encode them — equivalent per RFC 3986, inert
+    # in Markdown, and already-escaped attribute context is unaffected.
+    candidate = candidate.replace("(", "%28").replace(")", "%29")
     scheme, sep, _ = candidate.partition(":")
     if not sep:
         return candidate  # relative or bare host — no scheme to abuse
