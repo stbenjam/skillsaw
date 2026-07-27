@@ -6139,7 +6139,6 @@ class TestRendererHardening:
         once shipped an unparseable script and a blank page. Pin the
         emitted (post-halving) escJsAttr line, and parse every script
         block with node when it is available."""
-        import re
         import shutil
         import subprocess
 
@@ -6156,7 +6155,12 @@ class TestRendererHardening:
         from skillsaw.docs.html_renderer import render_html
 
         for content in render_html(docs).values():
-            for i, script in enumerate(re.findall(r"<script>(.*?)</script>", content, re.S)):
+            # Plain splitting, not a tag regex: the input is our own
+            # renderer's output, where the tag is always lowercase — and
+            # this is block extraction for a parser check, not sanitizing.
+            blocks = [chunk.split("</script>")[0] for chunk in content.split("<script>")[1:]]
+            assert blocks, "no script blocks found in rendered page"
+            for i, script in enumerate(blocks):
                 js = tmp_path / f"block{i}.js"
                 js.write_text(script, encoding="utf-8")
                 proc = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
