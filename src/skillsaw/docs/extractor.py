@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.codex import (
@@ -37,7 +37,7 @@ from skillsaw.blocks import (
     ReadmeBlock,
     SkillBlock,
 )
-from skillsaw.lint_target import CodexPluginConfigNode, LintTarget, PluginNode, SkillNode
+from skillsaw.lint_target import CodexPluginConfigNode, PluginNode, SkillNode
 
 
 def extract_docs(
@@ -303,27 +303,11 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
         if not _is_codex_only(context, pn.path, codex_roots)
     }
     docs: List[PluginDoc] = []
-    # Resolved once for the whole catalog rather than once per plugin:
-    # matching skills by path is O(plugins x skills) stat calls otherwise,
-    # and a large catalog has hundreds of each.
-    skill_nodes = [(safe_resolve(n.path), n) for n in context.lint_tree.find(SkillNode)]
-    resolved_skills = [(r, n) for r, n in skill_nodes if r is not None]
-
-    # One pass, like the skill map above: scanning every legacy node per
-    # Codex plugin is O(codex x legacy) filesystem resolutions, and a large
-    # catalog has hundreds of each. A list, not the membership set bound
-    # above: _extract_codex_skills scans it in order for nearest-root
-    # matching.
-    plugin_roots = context.codex_plugin_roots()
-
-    legacy_by_path: Dict[Path, List[PluginNode]] = {}
-    for pn in context.lint_tree.find(PluginNode):
-        resolved_pn = safe_resolve(pn.path)
-        if resolved_pn is not None:
-            legacy_by_path.setdefault(resolved_pn, []).append(pn)
-
     for node in context.lint_tree.find(CodexPluginConfigNode):
-        plugin_resolved = safe_resolve(node.plugin_dir)
+        # The build tagged the manifest node with its owning plugin root
+        # when it attached the Codex cluster — the tree's ownership
+        # decision, read back rather than re-derived from the path.
+        plugin_resolved = node.plugin_owner
         if not node.path.is_file() or plugin_resolved is None or plugin_resolved in claude_dirs:
             continue
         if context.is_codex_installed_plugin(node.plugin_dir):
@@ -332,94 +316,39 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
             # else's plugin — the same authorship line the registration and
             # manifest-quality rules already draw.
             continue
-        legacy = legacy_by_path.get(plugin_resolved, [])
-        docs.append(
-            _extract_codex_plugin(
-                context,
-                node,
-                plugin_resolved,
-                resolved_skills,
-                legacy,
-                plugin_roots,
-                # Every plugin root, Claude and Codex: a root-level plugin's
-                # container is the tree root, and prose scoping must stop at
-                # the nearest owning plugin of either ecosystem or a nested
-                # plugin's files are republished under the root plugin.
-                set(plugin_roots) | set(legacy_by_path),
-            )
-        )
+        docs.append(_extract_codex_plugin(context, node, plugin_resolved))
     return docs
 
 
-class _OwnBlocks:
-    """A bare holder so a loose block can join ``_BlockSources``."""
+def _owned_blocks(
+    context: RepositoryContext,
+    node: CodexPluginConfigNode,
+    block_cls: type,
+    plugin_resolved: Path,
+) -> list:
+    """Blocks the tree assigned to this plugin, the manifest subtree first.
 
-    def __init__(self, blocks):
-        self._blocks = blocks
-
-    def find(self, block_cls):
-        return [b for b in self._blocks if isinstance(b, block_cls)]
-
-
-def _root_claimed_blocks(context: RepositoryContext, plugin_dir: Path) -> List["_OwnBlocks"]:
-    """Conventional files the tree root claimed before the plugin could.
-
-    A Codex plugin *at the repository root* shares ``.mcp.json`` with the
-    repository itself, and the generic root attachment runs first — so the
-    block lands on the tree root, the lint tree's ``seen`` set keeps it off
-    the Codex node, and the rules find it while ``skillsaw docs`` does not.
-    Matching by path rather than adding the whole root as a source, which
-    would pull in every other plugin's blocks as well.
+    Prose attaches to the plugin's container and config to the manifest
+    node, and a repo-root plugin's conventional ``.mcp.json`` was claimed
+    by the generic root attach before the plugin pass ran — all of them
+    carry the ``plugin_owner`` tag the build recorded, so one owner scan
+    finds every placement. The manifest subtree is listed first (and
+    deduplicated by identity) to keep the established document order.
     """
-    root = safe_resolve(plugin_dir)
-    if root is None or root != safe_resolve(context.root_path):
-        return []
-    wanted = {
-        safe_resolve(plugin_dir / ".mcp.json"),
-        safe_resolve(plugin_dir / "hooks" / "hooks.json"),
-    }
-    wanted.discard(None)
-    if not wanted:
-        return []
-    loose = [
+    blocks = node.find(block_cls)
+    have = {id(b) for b in blocks}
+    blocks.extend(
         b
-        for b in context.lint_tree.find(McpBlock) + context.lint_tree.find(HooksBlock)
-        if safe_resolve(b.path) in wanted
-    ]
-    return [_OwnBlocks(loose)] if loose else []
-
-
-class _BlockSources:
-    """Several tree nodes searched as one for `find()`.
-
-    Deduplicated by node identity: a legacy ``PluginNode`` has the Codex
-    node as a descendant, so ``find()`` on both returns the Codex node's own
-    blocks twice and the docs would list those hooks and servers twice.
-    """
-
-    def __init__(self, nodes):
-        self._nodes = nodes
-
-    def find(self, block_cls):
-        out = []
-        seen = set()
-        for node in self._nodes:
-            for block in node.find(block_cls):
-                if id(block) in seen:
-                    continue
-                seen.add(id(block))
-                out.append(block)
-        return out
+        for b in context.lint_tree.find(block_cls)
+        if id(b) not in have and b.plugin_owner == plugin_resolved
+    )
+    return blocks
 
 
 def _extract_codex_plugin(
     context: RepositoryContext,
     node: CodexPluginConfigNode,
     plugin_resolved: Path,
-    resolved_skills: List[Tuple[Path, SkillNode]],
-    legacy_nodes: List[PluginNode],
-    codex_roots: List[Path],
-    prose_roots: Optional[Set[Path]] = None,
 ) -> PluginDoc:
     """Build a PluginDoc from a Codex manifest and its subtree.
 
@@ -429,15 +358,8 @@ def _extract_codex_plugin(
     directory conventions, and dropping them would publish empty pages
     for plugins whose prose the lint tree already holds.
     """
-    if prose_roots is None:
-        prose_roots = set(codex_roots)
     plugin_dir = node.plugin_dir
     meta = _read_json_dict(node)
-    # When legacy discovery also built a PluginNode for this directory — it
-    # does for any plugin shipping commands/ — that node claimed hooks.json
-    # and .mcp.json first, and the lint tree's ``seen`` set kept them off
-    # the Codex node. Both are searched so neither placement loses them.
-    sources = _BlockSources([node, *legacy_nodes, *_root_claimed_blocks(context, plugin_dir)])
 
     author_val = meta.get("author")
     if isinstance(author_val, str):
@@ -456,49 +378,19 @@ def _extract_codex_plugin(
         homepage=_safe_url(meta.get("homepage")),
         repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "") or ""),
-        commands=_command_docs(_scoped_prose(node, CommandBlock, plugin_resolved, prose_roots)),
-        skills=_extract_codex_skills(plugin_resolved, resolved_skills, codex_roots),
-        agents=_agent_docs(_scoped_prose(node, AgentBlock, plugin_resolved, prose_roots)),
-        hooks=_extract_hooks(sources),
+        commands=_command_docs(_owned_blocks(context, node, CommandBlock, plugin_resolved)),
+        skills=_extract_codex_skills(context, plugin_resolved),
+        agents=_agent_docs(_owned_blocks(context, node, AgentBlock, plugin_resolved)),
+        hooks=_extract_hooks(_owned_blocks(context, node, HooksBlock, plugin_resolved)),
         # meta is passed empty: the manifest's own ``mcpServers`` map is
         # already in the tree as a CodexInlineMcpBlock, and feeding it here
         # too would list every inline server twice.
-        mcp_servers=_extract_mcp_servers(sources, {}),
-        rules=_rule_docs(_scoped_prose(node, PluginRuleBlock, plugin_resolved, prose_roots)),
+        mcp_servers=_extract_mcp_servers(
+            _owned_blocks(context, node, McpBlock, plugin_resolved), {}
+        ),
+        rules=_rule_docs(_owned_blocks(context, node, PluginRuleBlock, plugin_resolved)),
         has_readme=(plugin_dir / "README.md").is_file(),
     )
-
-
-def _scoped_prose(
-    node: CodexPluginConfigNode,
-    block_cls: type,
-    plugin_resolved: Path,
-    prose_roots: Set[Path],
-):
-    """Prose blocks attached to *node*'s container, owned by this plugin.
-
-    The single tree pass attaches a Codex-only plugin's prose to its
-    container (a CodexPluginNode, or the tree root for a root-level
-    plugin). The root case can hold other plugins' blocks too, and for a
-    repo-root plugin bare containment is vacuously true for all of them —
-    so ownership uses the nearest plugin root, exactly as
-    ``_extract_codex_skills`` matches skills.
-    """
-    container = node.parent
-    if container is None:
-        return []
-    scoped = []
-    for block in container.find(block_cls):
-        resolved = safe_resolve(block.path)
-        if resolved is None or not resolved.is_relative_to(plugin_resolved):
-            continue
-        owner = next(
-            (c for c in resolved.parents if c in prose_roots),
-            plugin_resolved,
-        )
-        if owner == plugin_resolved:
-            scoped.append(block)
-    return scoped
 
 
 def _read_json_dict(node: CodexPluginConfigNode) -> dict:
@@ -567,35 +459,17 @@ def _string_list(value) -> List[str]:
     return [str(v) for v in value if v]
 
 
-def _extract_codex_skills(
-    plugin_resolved: Path,
-    resolved_skills: List[Tuple[Path, SkillNode]],
-    all_plugin_roots: List[Path],
-) -> List[SkillDoc]:
-    """Skills living under the plugin directory.
+def _extract_codex_skills(context: RepositoryContext, plugin_resolved: Path) -> List[SkillDoc]:
+    """Skills the tree assigned to this plugin.
 
-    A Codex-only plugin has no ``PluginNode`` for its skills to nest
-    inside, so they hang off the tree root and have to be matched back by
-    path rather than by subtree. Both sides arrive pre-resolved — see the
-    caller for why.
+    A nested plugin's skills nest under its container, while a repo-root
+    plugin's hang off the tree root; either way the build tagged each
+    ``SkillNode`` with its owning plugin root, so membership is a read,
+    not a path match.
     """
     docs = []
-    # Ancestor walk against a set — a scan of every root per skill is
-    # O(skills x plugins) and dominates ``skillsaw docs`` on large
-    # catalogs.
-    root_set = set(all_plugin_roots)
-    for skill_resolved, skill_node in resolved_skills:
-        if not skill_resolved.is_relative_to(plugin_resolved):
-            continue
-        # A repo root that is itself a plugin contains the nested plugins
-        # under plugins/, so their skills are relative to both roots.
-        # Nearest root wins, or the root plugin's page would duplicate and
-        # misattribute every nested plugin's skills.
-        owner = next(
-            (c for c in (skill_resolved, *skill_resolved.parents) if c in root_set),
-            plugin_resolved,
-        )
-        if owner != plugin_resolved:
+    for skill_node in context.lint_tree.find(SkillNode):
+        if skill_node.plugin_owner != plugin_resolved:
             continue
         doc = _extract_skill(skill_node)
         if doc:
@@ -638,8 +512,8 @@ def _extract_plugin(context: RepositoryContext, plugin_node: PluginNode) -> Plug
         commands=_extract_commands(plugin_node),
         skills=_extract_skills(plugin_node),
         agents=_extract_agents(plugin_node),
-        hooks=_extract_hooks(plugin_node),
-        mcp_servers=_extract_mcp_servers(plugin_node, meta),
+        hooks=_extract_hooks(plugin_node.find(HooksBlock)),
+        mcp_servers=_extract_mcp_servers(plugin_node.find(McpBlock), meta),
         rules=_extract_rules(plugin_node),
         has_readme=bool(plugin_node.find(ReadmeBlock)),
     )
@@ -744,9 +618,9 @@ def _agent_docs(blocks) -> List[AgentDoc]:
 # -- Hooks --
 
 
-def _extract_hooks(plugin_node: LintTarget) -> List[HookDoc]:
+def _extract_hooks(blocks: List[HooksBlock]) -> List[HookDoc]:
     docs = []
-    for block in plugin_node.find(HooksBlock):
+    for block in blocks:
         for event_type in sorted(block.events):
             configs = block.events[event_type]
             entries = [
@@ -768,11 +642,11 @@ def _extract_hooks(plugin_node: LintTarget) -> List[HookDoc]:
 # -- MCP Servers --
 
 
-def _extract_mcp_servers(plugin_node: LintTarget, plugin_meta: dict) -> List[McpServerDoc]:
+def _extract_mcp_servers(blocks: List[McpBlock], plugin_meta: dict) -> List[McpServerDoc]:
     servers: List[McpServerDoc] = []
     seen: set = set()
 
-    for block in plugin_node.find(McpBlock):
+    for block in blocks:
         # Not hard-coded: a Codex manifest can point ``mcpServers`` at
         # another file, or hold the map itself — in which case the block
         # borrows the manifest's path and the source really is plugin.json.

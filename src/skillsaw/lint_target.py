@@ -18,6 +18,12 @@ class LintTarget:
     path: Path
     children: List["LintTarget"] = field(default_factory=list)
     parent: Optional["LintTarget"] = field(default=None, repr=False)
+    # Resolved root of the plugin directory that owns this node, recorded by
+    # ``build_lint_tree`` while it attaches plugin content — ownership is
+    # decided once at build time and read back by consumers such as
+    # ``skillsaw docs``, never re-derived by path matching. ``None`` for
+    # nodes no plugin owns.
+    plugin_owner: Optional[Path] = field(default=None, repr=False)
 
     @property
     def resolved_path(self) -> Path:
