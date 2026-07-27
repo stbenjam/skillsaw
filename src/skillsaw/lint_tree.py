@@ -96,18 +96,22 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         parent: LintTarget,
         p: Path,
         block_cls: type,
+        owner: Path | None = None,
     ) -> None:
         resolved = p.resolve()
         if resolved in seen or not p.exists() or _is_excluded(p):
             return
         seen.add(resolved)
         seen_roles.add((resolved, block_cls))
-        parent.children.append(block_cls(path=p))
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        parent.children.append(block)
 
     def _add_parser_block(
         parent: LintTarget,
         p: Path,
         block_cls: type,
+        owner: Path | None = None,
     ) -> None:
         """Attach a structured document once for each parser role.
 
@@ -127,12 +131,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # file; poisoning ``seen`` with that path would silently drop the
         # file from every content and prose rule that attaches later.
         seen_roles.add(role)
-        parent.children.append(block_cls(path=p))
+        block = block_cls(path=p)
+        block.plugin_owner = owner
+        parent.children.append(block)
 
     # Nearest-root ownership, with the roots resolved once per context.
     _codex_owner = context.codex_plugin_owning
 
-    def _add_codex_block(parent: CodexPluginConfigNode, p: Path, block_cls: type) -> None:
+    def _add_codex_block(
+        parent: CodexPluginConfigNode,
+        p: Path,
+        block_cls: type,
+        owner: Path | None = None,
+    ) -> None:
         """Role-aware block attachment for a path that must stay inside its plugin.
 
         The conventional Codex files (``hooks/hooks.json``, ``.mcp.json``)
@@ -144,9 +155,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p)
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
-        _add_parser_block(parent, p, block_cls)
+        _add_parser_block(parent, p, block_cls, owner=owner)
 
-    def _add_plugin_prose(parent: LintTarget, plugin_dir: Path) -> None:
+    def _add_plugin_prose(parent: LintTarget, plugin_dir: Path, owner: Path) -> None:
         """The one prose attach for every plugin container.
 
         ``commands/``, ``agents/``, ``rules/`` and README follow the same
@@ -161,8 +172,26 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return
 
         def _contained(p: Path) -> bool:
+            """Inside this plugin, and not inside a nested claimed plugin.
+
+            The recursive ``rules/`` scan of a repo-root plugin would
+            otherwise claim a catalog-sourced nested plugin's files —
+            tagging them with the outer owner and poisoning ``seen`` before
+            the nested plugin's own pass could attach them. Provenance owns
+            that boundary: any claimed plugin directory strictly between the
+            file and this plugin's root means the file is the nested
+            plugin's to attach. ``seen_plugin_dirs`` is fully populated
+            before the plugin loop makes the first call here.
+            """
             resolved = safe_resolve(p)
-            return resolved is not None and resolved.is_relative_to(plugin_resolved)
+            if resolved is None:
+                return False
+            for ancestor in resolved.parents:
+                if ancestor == plugin_resolved:
+                    return True
+                if ancestor in seen_plugin_dirs:
+                    return False
+            return False
 
         for dirname, block_cls, pattern in (
             ("commands", CommandBlock, "*.md"),
@@ -178,10 +207,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 continue
             for md in files:
                 if _contained(md):
-                    _add_block(parent, md, block_cls)
+                    _add_block(parent, md, block_cls, owner=owner)
         readme = plugin_dir / "README.md"
         if _contained(readme):
-            _add_block(parent, readme, ReadmeBlock)
+            _add_block(parent, readme, ReadmeBlock, owner=owner)
 
     def _add_openai_metadata(
         parent: LintTarget,
@@ -300,6 +329,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_plugin_dirs.add(resolved_candidate)
         plugin_dirs.append(candidate)
 
+    root_plugin_owner: Path | None = None
     for plugin_path in plugin_dirs:
         prov = context.provenance(plugin_path)
         # Compiled-output filtering is a Claude/APM concept; a Codex claim
@@ -323,12 +353,32 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             container = CodexPluginNode(path=plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
 
+        if container is not root:
+            container.plugin_owner = resolved_plugin
+        else:
+            # A repo-root Codex plugin shares conventional config paths
+            # with the repository itself, and the generic root attach ran
+            # first — so those blocks live on the tree root while the
+            # ownership is still this plugin's. Decided here, once, so
+            # readers like ``skillsaw docs`` never re-match the paths.
+            root_plugin_owner = resolved_plugin
+            claimed = {
+                safe_resolve(plugin_path / ".mcp.json"),
+                safe_resolve(plugin_path / "hooks" / "hooks.json"),
+            } - {None}
+            for child in root.children:
+                if (
+                    isinstance(child, (McpBlock, HooksBlock))
+                    and safe_resolve(child.path) in claimed
+                ):
+                    child.plugin_owner = resolved_plugin
+
         # Prose: the conventions are identical in both ecosystems, so one
         # attach covers commands/, agents/, rules/ and README — with
         # containment, because a symlinked command file is an external
         # file under an in-repo name whichever ecosystem claims the
         # directory.
-        _add_plugin_prose(container, plugin_path)
+        _add_plugin_prose(container, plugin_path, resolved_plugin)
 
         # Conventional configs. Codex-claimed directories get hooks and
         # MCP exclusively through the Codex cluster below — it attaches
@@ -337,15 +387,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # file's commands into CI diagnostics. Pure-Claude plugins keep
         # their established attach.
         if not prov.codex:
-            _add_block(container, plugin_path / "hooks" / "hooks.json", HooksBlock)
-            _add_block(container, plugin_path / ".mcp.json", McpBlock)
+            _add_block(
+                container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+            )
+            _add_block(container, plugin_path / ".mcp.json", McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, which
         # also keeps _add_block's bare resolve() away from content a
         # hostile Codex-only checkout controls.
         if prov.claude or not prov.codex:
-            _add_block(container, plugin_path / "settings.json", SettingsBlock)
-            _add_block(container, plugin_path / "settings.local.json", SettingsBlock)
+            _add_block(
+                container, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
+            )
+            _add_block(
+                container, plugin_path / "settings.local.json", SettingsBlock, owner=resolved_plugin
+            )
 
         # Codex manifest cluster, for any directory Codex claims (dual
         # directories hang it off their PluginNode).
@@ -360,6 +416,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # checks, and executable commands; the linter filters
             # violations filed against the excluded manifest itself.
             node = CodexPluginConfigNode(path=manifest)
+            node.plugin_owner = resolved_plugin
             _add_openai_metadata(
                 node,
                 plugin_path / "agents" / "openai.yaml",
@@ -372,25 +429,31 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # deduplication keeps the dual-ecosystem attach above from
             # doubling findings; containment keeps a symlinked hooks.json
             # from pulling an external file's commands into this plugin.
-            _add_codex_block(node, plugin_path / "hooks" / "hooks.json", HooksBlock)
+            _add_codex_block(
+                node, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
+            )
             # A manifest may point ``hooks`` at other files, or write them
             # inline; both carry the same executable commands. Inline
             # payloads have no file of their own, so they borrow the
             # manifest path, which is already claimed — appended directly.
             for declared_hooks in codex_declared_hook_files(plugin_path):
-                _add_parser_block(node, declared_hooks, HooksBlock)
+                _add_parser_block(node, declared_hooks, HooksBlock, owner=resolved_plugin)
             for inline_hooks in codex_inline_hooks(plugin_path):
-                node.children.append(CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks))
+                inline_block = CodexInlineHooksBlock(path=manifest, inline_data=inline_hooks)
+                inline_block.plugin_owner = resolved_plugin
+                node.children.append(inline_block)
             # Same treatment for MCP: the conventional .mcp.json, declared
             # files, and inline maps are all commands the host will spawn.
             # One document can legitimately be declared as both ``hooks``
             # and ``mcpServers``; one attach per parser role lets both
             # rule families see it without doubling either.
-            _add_codex_block(node, plugin_path / ".mcp.json", McpBlock)
+            _add_codex_block(node, plugin_path / ".mcp.json", McpBlock, owner=resolved_plugin)
             for declared_mcp in codex_declared_mcp_files(plugin_path):
-                _add_parser_block(node, declared_mcp, McpBlock)
+                _add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
             for inline_mcp in codex_inline_mcp_servers(plugin_path):
-                node.children.append(CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp))
+                inline_block = CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp)
+                inline_block.plugin_owner = resolved_plugin
+                node.children.append(inline_block)
             container.children.append(node)
 
         if container is not root:
@@ -441,10 +504,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             node = plugin_nodes.get(candidate) or codex_plugin_nodes.get(candidate)
             if node is not None:
                 parent_plugin = node
+                skill_node.plugin_owner = candidate
                 break
         if parent_plugin is not None:
             parent_plugin.children.append(skill_node)
         else:
+            # A repo-root Codex plugin has no container of its own, so its
+            # skills hang off the tree root; the ownership tag keeps them
+            # attributable to the plugin all the same.
+            skill_node.plugin_owner = root_plugin_owner
             root.children.append(skill_node)
 
     # --- .coderabbit.yaml ---

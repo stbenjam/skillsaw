@@ -761,7 +761,30 @@ class RepositoryContext:
         return bool(self._discover_codex_marketplaces())
 
     def _discover_codex_marketplaces(self) -> List[Path]:
-        """Codex marketplace manifests in ``.agents/plugins/``.
+        """Codex marketplace manifests in ``.agents/plugins/``, for discovery.
+
+        The discovery-side view of the one catalog enumerator: honors the
+        ``--type`` gate, caches per context, and seeds the primary
+        entrypoint when the type was forced.
+        """
+        return self._enumerate_codex_catalogs(honor_discovery_gate=True)
+
+    def _codex_catalog_files(self) -> List[Path]:
+        """Codex catalog files present in the checkout, asked of the
+        filesystem.
+
+        Deliberately independent of ``_codex_discovery_enabled``: the
+        provenance claim set and ``codex_catalog_exists()`` read author
+        *declarations*, which a ``--type`` override does not change —
+        reading them from discovery would make ``--type marketplace``
+        restore the false positives the stand-downs exist to remove. The
+        lint tree's node discovery uses ``_discover_codex_marketplaces()``,
+        which honors the override.
+        """
+        return self._enumerate_codex_catalogs(honor_discovery_gate=False)
+
+    def _enumerate_codex_catalogs(self, *, honor_discovery_gate: bool) -> List[Path]:
+        """The one enumeration of Codex catalog files, parameterized by gating.
 
         ``marketplace.json`` is the documented path and is always taken on
         existence alone, so broken JSON still reaches the rules. A sibling
@@ -769,27 +792,39 @@ class RepositoryContext:
         ``api_marketplace.json`` — is taken on existence for the same
         reason: dropping it because its JSON is broken, or because
         ``plugins`` is not an array, hides exactly the defect
-        codex-marketplace-json-valid exists to report, and where there is
-        no primary ``marketplace.json`` it disables Codex marketplace
-        detection outright. Any other ``*.json`` still has to duck-type as
-        a marketplace, because the directory is not reserved and unrelated
-        JSON must not be linted as a catalog.
-        """
-        if self._codex_marketplace_paths is not None:
-            return self._codex_marketplace_paths
-        if not self._codex_discovery_enabled:
-            self._codex_marketplace_paths = []
-            return self._codex_marketplace_paths
+        codex-marketplace-json-valid exists to report. Any other ``*.json``
+        still has to duck-type as a marketplace, because the directory is
+        not reserved and unrelated JSON must not be linted as a catalog.
+        Every catalog counts, not just the primary — a repository whose
+        only catalog is a sibling is no less a Codex marketplace.
 
-        root = safe_resolve(self.root_path) or self.root_path
+        With ``honor_discovery_gate`` the result is the *discovery* answer:
+        gated on the ``--type`` override, cached in
+        ``_codex_marketplace_paths``, and seeded with the primary
+        entrypoint when the marketplace type was forced. Without it the
+        result is the *declaration* answer the provenance path needs —
+        filesystem-first and ``--type``-invariant, never cached through the
+        discovery slot.
+        """
+        if honor_discovery_gate:
+            if self._codex_marketplace_paths is not None:
+                return self._codex_marketplace_paths
+            if not self._codex_discovery_enabled:
+                self._codex_marketplace_paths = []
+                return self._codex_marketplace_paths
+            root = safe_resolve(self.root_path) or self.root_path
+        else:
+            resolved_root = safe_resolve(self.root_path)
+            if resolved_root is None:
+                return []
+            root = resolved_root
 
         def _inside(path: Path) -> bool:
             # A catalog that resolves outside the checkout is not this
             # repository's to read — and codex-marketplace-registration
             # writes the catalog back when it registers a plugin, so
             # following a symlink out would overwrite an external file.
-            resolved = safe_resolve(path)
-            return resolved is not None and resolved.is_relative_to(root)
+            return contained_resolve(path, root) is not None
 
         def _keep(path: Path) -> bool:
             # Exclusions are applied here rather than at each reader: the
@@ -833,67 +868,17 @@ class RepositoryContext:
                 if _looks_like_codex_catalog(_read_json_or_none(candidate)):
                     found.append(candidate)
 
-        if not found and self._codex_marketplace_forced and _keep(primary):
-            # ``_keep``, not a bare exclusion check: it also enforces
-            # containment. The registration rule writes this file back when
-            # it registers a plugin, so seeding an unchecked path would let
-            # ``fix --suggest`` rewrite a file outside the checkout through
-            # a symlinked catalog. An explicit --type says what format the
-            # repository is, not that its entrypoint may be anywhere.
-            found.append(primary)
-
-        self._codex_marketplace_paths = found
-        return found
-
-    def _codex_catalog_files(self) -> List[Path]:
-        """Codex catalog files present in the checkout, asked of the
-        filesystem.
-
-        Deliberately independent of ``_codex_discovery_enabled``: the
-        provenance claim set and ``codex_catalog_exists()`` read author
-        *declarations*, which a ``--type`` override does not change —
-        reading them from discovery would make ``--type marketplace``
-        restore the false positives the stand-downs exist to remove. The
-        lint tree's node discovery uses ``_discover_codex_marketplaces()``,
-        which honors the override.
-
-        Every catalog counts, not just the primary ``marketplace.json`` —
-        a repository whose only catalog is a sibling such as
-        ``api_marketplace.json`` is no less a Codex marketplace.
-        """
-        root = safe_resolve(self.root_path)
-        if root is None:
-            return []
-
-        def _usable(path: Path) -> bool:
-            if contained_resolve(path, root) is None:
-                return False
-            if self.is_path_excluded(path):
-                return False
-            return safe_exists(path) or safe_is_symlink(path)
-
-        found: List[Path] = []
-        primary = self.codex_marketplace_path()
-        primary_resolved = safe_resolve(primary)
-        if _usable(primary):
-            found.append(primary)
-        marketplace_dir = self.root_path.joinpath(*self.CODEX_MARKETPLACE_DIR)
-        if not safe_is_dir(marketplace_dir):
-            return found
-        try:
-            siblings = sorted(marketplace_dir.glob("*.json"))
-        except OSError:
-            return found
-        for candidate in siblings:
-            candidate_resolved = safe_resolve(candidate)
-            if candidate_resolved is not None and candidate_resolved == primary_resolved:
-                continue
-            if not _usable(candidate):
-                continue
-            if _is_marketplace_filename(candidate.name) or _looks_like_codex_catalog(
-                _read_json_or_none(candidate)
-            ):
-                found.append(candidate)
+        if honor_discovery_gate:
+            if not found and self._codex_marketplace_forced and _keep(primary):
+                # ``_keep``, not a bare exclusion check: it also enforces
+                # containment. The registration rule writes this file back
+                # when it registers a plugin, so seeding an unchecked path
+                # would let ``fix --suggest`` rewrite a file outside the
+                # checkout through a symlinked catalog. An explicit --type
+                # says what format the repository is, not that its
+                # entrypoint may be anywhere.
+                found.append(primary)
+            self._codex_marketplace_paths = found
         return found
 
     def codex_catalog_exists(self) -> bool:
