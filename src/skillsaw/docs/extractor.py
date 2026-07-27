@@ -12,8 +12,8 @@ from skillsaw.formats.codex import (
     codex_local_source_path,
     codex_plugin_name,
     is_remote_source,
-    safe_resolve,
 )
+from skillsaw.paths import safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,

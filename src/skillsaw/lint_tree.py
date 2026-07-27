@@ -40,10 +40,8 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
     codex_manifest_is_contained,
-    safe_is_dir,
-    safe_is_file,
-    safe_resolve,
 )
+from .paths import safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,

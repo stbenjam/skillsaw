@@ -8,8 +8,8 @@ import pytest
 from skillsaw.docs.extractor import extract_docs
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.blocks import HooksBlock, SkillRefBlock
-from skillsaw.formats.codex import codex_declared_skill_dirs, safe_resolve
-from skillsaw.rules.builtin.codex._helpers import escapes_root
+from skillsaw.formats.codex import codex_declared_skill_dirs
+from skillsaw.paths import escapes_root, safe_resolve
 from skillsaw.rules.builtin.codex import CodexMarketplaceJsonValidRule, CodexPluginJsonValidRule
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 

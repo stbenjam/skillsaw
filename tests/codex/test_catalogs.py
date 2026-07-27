@@ -143,7 +143,7 @@ class TestCrossedRegistration:
         # A pasted JWT is far longer than any redaction cap — the bound
         # itself was the escape hatch.
         long_secret = "eyJ" + "b" * 400  # notsecret
-        from skillsaw.rules.builtin.codex._helpers import safe_display
+        from skillsaw.diagnostics import safe_display
 
         assert long_secret not in safe_display(f"https://u:{long_secret}@h/p")
 

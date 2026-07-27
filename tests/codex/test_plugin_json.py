@@ -7,8 +7,8 @@ import pytest
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
-from skillsaw.formats.codex import (
-    codex_declared_hook_files,
+from skillsaw.formats.codex import codex_declared_hook_files
+from skillsaw.paths import (
     safe_exists,
     safe_is_dir,
     safe_is_file,

@@ -7,8 +7,9 @@ from typing import Any, List, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
-from skillsaw.formats.codex import safe_exists, safe_is_dir, safe_is_file
+from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import CodexPluginConfigNode
+from skillsaw.paths import safe_exists, safe_is_dir, safe_is_file
 from skillsaw.rules.builtin.utils import read_json
 
 from ._helpers import (
@@ -16,7 +17,6 @@ from ._helpers import (
     KEBAB_CASE,
     nonfinite_constant_error,
     path_problem,
-    safe_display,
 )
 
 # Manifest fields that point at bundled components or assets. Every one of
