@@ -5,6 +5,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import PluginNode
 
 
 class CommandNamingRule(Rule):
@@ -31,6 +32,12 @@ class CommandNamingRule(Rule):
         violations = []
 
         for cmd_block in context.lint_tree.find(CommandBlock):
+            owner = context.lint_tree.find_parent(cmd_block, PluginNode)
+            if owner is not None and context.is_codex_only_plugin(owner.path):
+                # Codex-only provenance: Claude command naming conventions do not
+                # apply to a plugin Claude never loads. Content and
+                # security rules still read the file.
+                continue
             cmd_file = cmd_block.path
             cmd_name = cmd_file.stem
             if not self._is_kebab_case(cmd_name):

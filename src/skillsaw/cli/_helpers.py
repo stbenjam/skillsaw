@@ -7,7 +7,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from ..context import RepositoryContext, RepositoryType
+from ..context import RepositoryContext, RepositoryType, merge_plugin_dirs
 
 # ---------------------------------------------------------------------------
 # Progress indicator
@@ -59,15 +59,21 @@ def _resolve_lint_paths(paths):
         resolved = p.resolve()
         if resolved.is_file():
             resolved = resolved.parent
-            # A manifest given directly must root the context where
-            # discovery expects it: parenting ``.codex-plugin/plugin.json``
-            # at ``.codex-plugin/`` makes discovery probe for a *nested*
-            # ``.codex-plugin/`` and find nothing, so the documented
-            # file-path input form silently ran no manifest rules at all.
+            # A manifest given directly roots the context where discovery
+            # expects it — parenting ``.codex-plugin/plugin.json`` at
+            # ``.codex-plugin/`` makes discovery probe for a *nested*
+            # marker and find nothing, so no manifest rule would run.
+            widened = resolved
             if resolved.name in (".codex-plugin", ".claude-plugin"):
-                resolved = resolved.parent
+                widened = resolved.parent
             elif resolved.name == "plugins" and resolved.parent.name == ".agents":
-                resolved = resolved.parent.parent
+                widened = resolved.parent.parent
+            # Bounded: Codex documents a *user-level* catalog at
+            # ``~/.agents/plugins/marketplace.json``, and widening that
+            # walks all of $HOME — printing findings (and secrets) from
+            # unrelated private projects. Same for the filesystem root.
+            if widened not in (Path.home(), Path(widened.anchor)):
+                resolved = widened
         normalized.append(resolved)
 
     seen = set()
@@ -110,9 +116,9 @@ class _MergedContext:
         self.plugin_repo_types = set(plugin_repo_types)
         self.codex_plugins = list(codex_plugins)
 
-    # Same contract as RepositoryContext.distinct_plugin_dirs — formatters
-    # call it on whichever context they receive.
-    distinct_plugin_dirs = RepositoryContext.distinct_plugin_dirs
+    def distinct_plugin_dirs(self):
+        """Same contract as :meth:`RepositoryContext.distinct_plugin_dirs`."""
+        return merge_plugin_dirs(self.plugins, self.codex_plugins)
 
     @property
     def repo_type(self):

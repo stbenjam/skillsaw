@@ -169,6 +169,39 @@ def test_documented_sections_must_be_mappings(tmp_path, body, message, line):
     assert [(v.message, v.line) for v in violations] == [(message, line)]
 
 
+@pytest.mark.parametrize("body", ["", "# nothing yet\n", "---\n"])
+def test_an_empty_document_is_not_an_error(tmp_path, body):
+    """An empty openai.yaml declares nothing — there is no metadata to
+    validate and nothing Codex would reject."""
+    skill = _write_skill(tmp_path)
+    _write_metadata(skill, body)
+
+    assert _check(skill) == []
+
+
+def test_installed_plugin_metadata_stands_down(tmp_path):
+    """Vendor content under .codex/plugins/ is diagnostic-only for every
+    authored-manifest rule; this one follows the same line."""
+    plugin = tmp_path / ".codex" / "plugins" / "vendor"
+    (plugin / ".codex-plugin").mkdir(parents=True)
+    (plugin / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "vendor", "version": "1.0.0", "description": "Vendor."}),
+        encoding="utf-8",
+    )
+    _write_metadata(plugin, "interface:\n  brand_color: red\n  display_name: [Bad]\n")
+
+    assert CodexOpenAIMetadataRule({}).check(RepositoryContext(tmp_path)) == []
+
+
+def test_authored_plugin_metadata_still_fires(tmp_path):
+    """The stand-down is provenance-scoped, not a blanket exemption."""
+    plugin = _write_codex_plugin(tmp_path)
+    _write_metadata(plugin, "interface:\n  brand_color: red\n")
+
+    violations = CodexOpenAIMetadataRule({}).check(RepositoryContext(plugin))
+    assert any("brand_color" in v.message for v in violations)
+
+
 @pytest.mark.parametrize(
     ("body", "line"),
     [

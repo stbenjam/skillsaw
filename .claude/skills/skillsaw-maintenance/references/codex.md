@@ -5,8 +5,9 @@
 
 Codex plugins mirror Claude Code plugins conceptually but use a different manifest
 directory and a different schema, so they get their own rules. OpenAI publishes **no
-JSON Schema**, and several documented value sets are explicitly open-ended, so
-skillsaw's rules hedge where the docs hedge (see Sync notes).
+JSON Schema** — parts of the surface are documented only in prose, and others only in
+a validator script bundled inside a skill — so skillsaw's rules hedge where the docs
+hedge (see Sync notes).
 
 ## Upstream source(s)
 - Spec: https://developers.openai.com/plugins/build/plugins — the `.md` twin at
@@ -19,9 +20,18 @@ skillsaw's rules hedge where the docs hedge (see Sync notes).
   it enumerates `policy.authentication` as `ON_INSTALL` / `ON_USE`, documents `logoDark`,
   and requires strict semver for `version`. Check it on every sync; the two can drift
   apart from each other.
-- Reference corpus: https://github.com/openai/plugins — the official catalog (180
-  plugins across `marketplace.json` and `api_marketplace.json`). It is the de-facto
-  conformance suite: skillsaw must stay silent on it.
+- Skill metadata spec: https://learn.chatgpt.com/docs/build-skills#optional-metadata —
+  the prose documentation for `agents/openai.yaml`. Field-level sources live in
+  https://github.com/openai/codex, again inside bundled skills rather than on the docs
+  site: `codex-rs/skills/src/assets/samples/skill-creator/references/openai_yaml.md`
+  gives the field-by-field descriptions, and
+  `codex-rs/skills/src/assets/samples/plugin-creator/scripts/validate_plugin.py` is the
+  executable validator — the actual origin of constraints the prose never states, such
+  as the `#RRGGBB` brand-color format (`HEX_COLOR_RE` at `validate_plugin.py:25`,
+  applied at `:522-527`). Check all three; each documents things the others omit.
+- Reference corpus: https://github.com/openai/plugins — the official catalog (roughly
+  180 plugins across `marketplace.json` and `api_marketplace.json`; the count moves).
+  It is the de-facto conformance suite: skillsaw must stay silent on it.
 - Third-party schema (unofficial, one author's reading — useful for cross-checking,
   not authoritative): https://github.com/typeforged/codex-plugin-marketplace
 
@@ -38,11 +48,15 @@ skillsaw's rules hedge where the docs hedge (see Sync notes).
 - **marketplace.json**: source types and their required fields; the `policy` and
   `category` requirements; `npm` `registry` constraints.
 - **Enum drift**: `policy.installation` and `policy.authentication` values.
+- **`agents/openai.yaml`**: the `interface`, `policy`, and `dependencies` schema for
+  skill metadata (and the observed plugin-root form). Re-check `_INTERFACE_STRINGS`,
+  the `dependencies.tools` entry keys, and `_BRAND_COLOR` against `openai_yaml.md`
+  and `validate_plugin.py` — see the Sync notes.
 
 ## skillsaw rules that map
 - `src/skillsaw/rules/builtin/codex/`: `codex-plugin-json-valid`,
   `codex-plugin-structure`, `codex-marketplace-json-valid`,
-  `codex-marketplace-registration`.
+  `codex-marketplace-registration`, `codex-openai-metadata`.
 - Detection and discovery — `src/skillsaw/context.py`
   (`RepositoryType.CODEX_PLUGIN`, `RepositoryType.CODEX_MARKETPLACE`,
   `_discover_codex_plugins`, `_discover_codex_marketplaces`).
@@ -58,8 +72,10 @@ Hand-copied value sets that drift — re-check each against upstream:
   than error, so a type added upstream produces one warning instead of failing the
   lint until skillsaw catches up.
 - `DEFAULT_INSTALLATION_VALUES` = `AVAILABLE`, `INSTALLED_BY_DEFAULT`, `NOT_AVAILABLE`.
-  The docs say "values such as", so this is open-ended by design — unrecognized values
-  warn, and the list is configurable.
+  `plugins.md` publishes exactly these three as a closed enum. skillsaw still only
+  warns on unrecognized values, and the list is configurable, so an upstream addition
+  degrades to one warning per entry rather than failing the lint until skillsaw
+  catches up.
 - `DEFAULT_AUTHENTICATION_VALUES` = `ON_INSTALL`, `ON_USE`. `plugin-json-spec.md`
   publishes exactly this pair as an enum; the prose spec only describes the field and
   uses `ON_INSTALL` in its examples. Two upstream documents of differing strictness,
@@ -67,6 +83,17 @@ Hand-copied value sets that drift — re-check each against upstream:
 - `_PATH_FIELDS` / `_INTERFACE_PATH_FIELDS` in `codex/plugin_json_valid.py`.
   `plugin-json-spec.md` documents `logoDark` and requires every asset path to point at
   a real file inside the plugin. Watch for fields being added to that list.
+- `_INTERFACE_STRINGS` in `codex/openai_metadata.py` = `display_name`,
+  `short_description`, `icon_small`, `icon_large`, `brand_color`, `default_prompt`.
+  Must match `openai_yaml.md`'s field list and `validate_plugin.py`'s interface
+  allow-list — both change without a schema publication.
+- `dependencies.tools` entry keys in `codex/openai_metadata.py` = `type`, `value`,
+  `description`, `transport`, `url` (each checked as a string). Hand-copied from
+  `openai_yaml.md`.
+- `_BRAND_COLOR` in `codex/openai_metadata.py`: `#RRGGBB`, six hex digits, no
+  shorthand, no CSS keywords. Transcribed from `validate_plugin.py:25`
+  (`HEX_COLOR_RE`), applied at `:522-527` — the validator publishes no schema, so
+  this regex is the only statement of the rule and can drift silently.
 
 Deliberate non-checks — do not "fix" these without a spec change. Each records what
 upstream requires and why skillsaw does not enforce it.
@@ -81,6 +108,21 @@ upstream requires and why skillsaw does not enforce it.
   skillsaw accepts both and routes the object through `CodexInlineMcpBlock`.
 - For compatibility with the loader and the official corpus, an array-valued `skills`
   is flattened and every element is checked as a path.
+- Unknown keys in `agents/openai.yaml` are accepted, though `validate_plugin.py`
+  rejects them at every level. A field added upstream must not break users' lints
+  before skillsaw learns it; the validator is the strict gate, skillsaw is not.
+- `short_description` length is not enforced, though `openai_yaml.md` requires
+  25–64 characters. UI copy length is presentation guidance, not a load-bearing
+  constraint.
+- `dependencies.tools[].type` is checked as a string only, though upstream documents
+  `mcp` as the sole value. A one-value enum is the most likely to grow; string-typing
+  it keeps skillsaw silent when it does.
+- `default_prompt` is not required to mention `$skill-name`, though `openai_yaml.md`
+  asks for it. A phrasing convention for the picker UI, not a correctness rule.
+- The plugin-root `agents/openai.yaml` form appears in the official catalog but in no
+  spec — `validate_plugin.py:454` reads only the skill-root path. skillsaw supports it
+  as observed catalog compatibility; do not tighten it to skill-root semantics without
+  upstream documenting it.
 
 ## Regression check
 Clone https://github.com/openai/plugins and run skillsaw's `codex-*` rules against it.

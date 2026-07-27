@@ -33,6 +33,10 @@ class PluginNamingRule(Rule):
 
         for plugin_node in context.lint_tree.find(PluginNode):
             plugin_path = plugin_node.path
+            if context.is_codex_only_plugin(plugin_path):
+                # codex-plugin-json-valid already checks the manifest name;
+                # a second, Claude-directory-name report would double up.
+                continue
             plugin_name = context.get_plugin_name(plugin_path)
 
             if not self._is_kebab_case(plugin_name):

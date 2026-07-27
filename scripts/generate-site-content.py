@@ -561,6 +561,20 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     return "\n".join(lines) + "\n"
 
 
+CLI_PATH_SECTION = """\
+### Path arguments
+
+`lint` and `fix` accept files as well as directories. A file resolves
+to the directory that owns it, and naming a plugin manifest directly —
+`.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`, or a catalog
+under `.agents/plugins/` — lints the owning plugin or repository root,
+so the manifest rules that discover from that root actually run. The
+widening is bounded: it climbs only from the manifest's marker
+directory to the root that owns it, and never continues toward `$HOME`
+or the filesystem root. Duplicate paths and paths nested inside another
+named path are dropped.
+"""
+
 CLI_COLOR_SECTION = """\
 ## Color and hyperlinks
 
@@ -607,6 +621,9 @@ def generate_cli_reference(commands):
                     desc += f" (choices: {arg['choices']})"
                 lines.append(f"| {arg['flags']} | {desc} | {default} |")
             lines.append("")
+
+        if cmd["name"] == "lint":
+            lines.append(CLI_PATH_SECTION)
 
     lines.append(CLI_COLOR_SECTION)
     return "\n".join(lines) + "\n"

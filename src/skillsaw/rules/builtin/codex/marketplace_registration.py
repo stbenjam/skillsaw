@@ -23,7 +23,12 @@ from skillsaw.formats.codex import (
 from skillsaw.lint_target import CodexMarketplaceConfigNode, CodexPluginConfigNode
 from skillsaw.rules.builtin.utils import read_json, read_text
 
-from ._helpers import CODEX_MARKETPLACE_REPO_TYPES, KEBAB_CASE, reject_nonfinite_json_number
+from ._helpers import (
+    CODEX_MARKETPLACE_REPO_TYPES,
+    KEBAB_CASE,
+    reject_nonfinite_json_number,
+    safe_display,
+)
 
 # What ``fix()`` writes for a newly registered plugin. Every entry in the
 # openai/plugins catalog carries these four keys, and the spec asks for
@@ -97,7 +102,7 @@ class CodexMarketplaceRegistrationRule(Rule):
             return []
 
         violations: List[RuleViolation] = []
-        registered_names, registered_dirs = self._registered(context)
+        registered_names, registered_dirs, local_names = self._registered(context)
 
         for node in config_nodes:
             violations.extend(self._check_entries(context, node.path))
@@ -107,8 +112,28 @@ class CodexMarketplaceRegistrationRule(Rule):
         if not unregistered:
             return violations
 
-        registerable = self._registerable(context, unregistered, primary)
+        truly_unregistered = [(d, n) for d, n in unregistered if n not in local_names]
+        registerable = self._registerable(context, truly_unregistered, primary)
         for plugin_dir, name in unregistered:
+            if name in local_names:
+                # The catalog lists the name but its local source path does
+                # not resolve to this directory. "Not registered" would be
+                # factually wrong — the name is right there — and fix()
+                # skips this by design (appending a second entry for a
+                # listed name would create a duplicate), so per the
+                # invariant it must not be a hard ERROR either.
+                violations.append(
+                    self.violation(
+                        f"Plugin '{name}' is listed in {primary.name} but the "
+                        "entry's source path does not resolve to this "
+                        "directory — fix the entry's path rather than "
+                        "adding a second one",
+                        file_path=primary,
+                        severity=Severity.WARNING,
+                        fixable=False,
+                    )
+                )
+                continue
             violations.append(
                 self.violation(
                     self._unregistered_message(name, primary),
@@ -245,7 +270,7 @@ class CodexMarketplaceRegistrationRule(Rule):
             found.append((plugin_dir, name))
         return found
 
-    def _registered(self, context: RepositoryContext) -> Tuple[Set[str], Set[Path]]:
+    def _registered(self, context: RepositoryContext) -> Tuple[Set[str], Set[Path], Set[str]]:
         """Names and plugin directories the repository's catalogs already cover.
 
         A plugin counts as registered when *any* catalog names it — openai/
@@ -271,6 +296,7 @@ class CodexMarketplaceRegistrationRule(Rule):
         """
         names: Set[str] = set()
         dirs: Set[Path] = set()
+        local_names: Set[str] = set()
         for node in context.lint_tree.find(CodexMarketplaceConfigNode):
             for _, entry in _entries(node.path):
                 source = codex_local_source_path(entry.get("source"))
@@ -278,13 +304,22 @@ class CodexMarketplaceRegistrationRule(Rule):
                     resolved = safe_resolve(context.root_path / source)
                     if resolved is not None:
                         dirs.add(resolved)
+                    # The name is deliberately NOT credit — see above — but
+                    # it is remembered: a directory whose name the catalog
+                    # lists under a non-matching path is a different defect
+                    # from one the catalog never mentions, and reporting
+                    # the second message for the first sends the author
+                    # grepping a catalog that already contains the name.
+                    name = entry.get("name")
+                    if isinstance(name, str):
+                        local_names.add(name)
                     continue
                 if not is_remote_source(entry.get("source")):
                     continue
                 name = entry.get("name")
                 if isinstance(name, str):
                     names.add(name)
-        return names, dirs
+        return names, dirs, local_names
 
     def _check_entries(
         self, context: RepositoryContext, marketplace_file: Path
@@ -316,7 +351,7 @@ class CodexMarketplaceRegistrationRule(Rule):
             if not safe_is_dir(plugin_dir):
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}] source '{source}' does not exist",
+                        f"plugins[{idx}] source '{safe_display(source)}' does not exist",
                         file_path=marketplace_file,
                         fixable=False,
                     )
@@ -334,7 +369,7 @@ class CodexMarketplaceRegistrationRule(Rule):
                 # into a violation message.
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}] source '{source}' has no usable "
+                        f"plugins[{idx}] source '{safe_display(source)}' has no usable "
                         ".codex-plugin/plugin.json — Codex skips entries it "
                         "cannot resolve",
                         file_path=marketplace_file,
@@ -382,8 +417,15 @@ class CodexMarketplaceRegistrationRule(Rule):
         # Re-derived rather than trusted from the violations: ``fixable`` is
         # a display flag, and the linter passes every visible violation here
         # regardless of it, so this is where the guards actually bite.
-        registered_names, registered_dirs = self._registered(context)
-        unregistered = self._unregistered(context, registered_names, registered_dirs)
+        registered_names, registered_dirs, local_names = self._registered(context)
+        unregistered = [
+            (d, n)
+            for d, n in self._unregistered(context, registered_names, registered_dirs)
+            # Name-listed entries get the WARNING path in check(), never a
+            # catalog write — appending a second entry for a listed name
+            # would create the duplicate the validity rule rejects.
+            if n not in local_names
+        ]
         registerable = self._registerable(context, unregistered, marketplace_file)
 
         # Violations are paired by rendering the message check() would have

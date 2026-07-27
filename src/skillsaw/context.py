@@ -34,6 +34,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def merge_plugin_dirs(plugins: List[Path], codex_plugins: List[Path]) -> List[Path]:
+    """Claude and Codex plugin directories, deduplicated by resolved path.
+
+    Module-level so the CLI's merged multi-path context can share it with
+    :meth:`RepositoryContext.distinct_plugin_dirs` without borrowing a
+    method across duck types.
+    """
+    seen: Dict[Path, Path] = {}
+    for p in (*plugins, *codex_plugins):
+        key = safe_resolve(p) or p
+        if key not in seen:
+            seen[key] = p
+    return list(seen.values())
+
+
 @functools.lru_cache(maxsize=None)
 def _pattern_variants(pattern: str) -> Tuple[str, ...]:
     """Expand *pattern* into the fnmatch patterns it is tried as.
@@ -44,18 +59,19 @@ def _pattern_variants(pattern: str) -> Tuple[str, ...]:
     at the start of a relative path: ``**/templates/**`` misses a top-level
     ``templates/``. To honor gitignore-style semantics where ``**/`` also
     matches zero leading directories, a variant with the ``**/`` prefix
-    stripped is tried as well. A trailing ``/**`` also needs a variant
-    without the suffix: fnmatch matches the directory's contents, but not
-    the directory entry itself. Discovery often tests that entry before it
-    reaches the contents. The original pattern is always kept, making the
-    expansion a strict superset of plain fnmatch.
+    stripped is tried as well. The original pattern is always kept, making
+    the expansion a strict superset of plain fnmatch.
+
+    Deliberately NOT expanded: a trailing ``/**`` matches strictly inside
+    the directory, never the directory entry itself. Widening it silently
+    suppressed violations *addressed to* a directory — the built-in
+    ``**/template/**`` content exclude swallowed a ``Missing SKILL.md``
+    error for any skill directory named ``template``, with no user
+    configuration involved.
     """
     variants = {pattern}
     if pattern.startswith("**/"):
         variants.add(pattern[3:])
-    for variant in tuple(variants):
-        if variant.endswith("/**"):
-            variants.add(variant[:-3])
     return tuple(sorted(variants))
 
 
@@ -233,6 +249,7 @@ class RepositoryContext:
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
+        self._codex_claims: Optional[Set[Path]] = None
         # An explicit --type override is a statement about what the caller
         # wants linted, not just which rules fire. Probing for Codex anyway
         # would attach its manifests, hooks, MCP files and skills to the
@@ -413,6 +430,9 @@ class RepositoryContext:
                 ]
             if codex_set_changed:
                 self._codex_roots = None
+        # The claim set folds in both plugin roots and catalog sources, and
+        # excludes can drop either — always recompute on the next consult.
+        self._codex_claims = None
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -509,7 +529,7 @@ class RepositoryContext:
             types.add(RepositoryType.MARKETPLACE)
         elif (self.root_path / ".claude-plugin").exists():
             types.add(RepositoryType.SINGLE_PLUGIN)
-        elif self._has_legacy_claude_plugins_dir():
+        elif self._plugins_dir_suggests_claude_marketplace():
             types.add(RepositoryType.MARKETPLACE)
 
         # Agentskills
@@ -565,36 +585,33 @@ class RepositoryContext:
         # Recurse into non-dot subdirectories looking for SKILL.md
         return self._has_skill_md_recursive(self.root_path)
 
-    def _is_legacy_claude_plugin_candidate(self, item: Path) -> bool:
-        """Whether a ``plugins/`` child carries Claude provenance.
+    def _plugins_dir_suggests_claude_marketplace(self) -> bool:
+        """Whether ``plugins/`` is marketplace evidence once Codex claims
+        are subtracted.
 
-        ``commands/`` is a legacy Claude marker, but it is not evidence of
-        Claude when Codex explicitly claims that directory. An explicit
-        ``.claude-plugin`` marker still makes a dual-host plugin.
+        A bare ``plugins/`` directory has always inferred MARKETPLACE. A
+        Codex catalog explains the children it claims, so only a child it
+        does not claim (or a dual-marker child, which still needs the
+        Claude marketplace that would publish it) keeps that inference.
+        A repository with no Codex evidence keeps its historical type
+        exactly.
         """
-        resolved = safe_resolve(item)
-        if resolved is None or not resolved.is_relative_to(self.root_path):
-            return False
-        if (item / ".claude-plugin").exists():
-            return True
-        if not (item / "commands").exists():
-            return False
-        claims = [*self.codex_plugins, *self._codex_local_sources()]
-        return all(safe_resolve(claim) != resolved for claim in claims)
-
-    def _has_legacy_claude_plugins_dir(self) -> bool:
         plugins_dir = self.root_path / "plugins"
-        if not plugins_dir.is_dir():
+        if not safe_is_dir(plugins_dir):
             return False
         try:
-            return any(
-                item.is_dir()
-                and not item.name.startswith(".")
-                and self._is_legacy_claude_plugin_candidate(item)
+            children = [
+                item
                 for item in plugins_dir.iterdir()
-            )
+                if item.is_dir() and not item.name.startswith(".")
+            ]
         except OSError:
             return False
+        if not children:
+            # Empty keeps its historical meaning unless a Codex catalog is
+            # the reason the directory exists at all.
+            return not self.codex_catalog_exists()
+        return any(not self.is_codex_only_plugin(item) for item in children)
 
     def _is_dot_claude(self) -> bool:
         """Check if this is a .claude/ directory or a repo containing one.
@@ -759,7 +776,19 @@ class RepositoryContext:
                     found.append(candidate)
                     continue
                 data = _read_json_or_none(candidate)
-                if isinstance(data, dict) and isinstance(data.get("plugins"), list):
+                if (
+                    isinstance(data, dict)
+                    and isinstance(data.get("plugins"), list)
+                    and any(
+                        isinstance(entry, dict) and "source" in entry for entry in data["plugins"]
+                    )
+                ):
+                    # Positive catalog evidence, not just the key shape: a
+                    # sibling like plugin-versions.json (a version-pin file
+                    # with name/version entries and no sources) also carries
+                    # a list-valued ``plugins`` key, and claiming it filed
+                    # hard errors against a file Codex never reads. At
+                    # least one entry must say where a plugin comes from.
                     found.append(candidate)
 
         if not found and self._codex_marketplace_forced and _keep(primary):
@@ -840,16 +869,11 @@ class RepositoryContext:
     def distinct_plugin_dirs(self) -> List[Path]:
         """Every discovered plugin directory, Claude and Codex, deduplicated.
 
-        A dual-ecosystem directory appears once. This is what the scan
-        statistics report — counting only ``self.plugins`` told a Codex-only
-        catalog it held zero plugins.
+        A dual-ecosystem directory appears once. The scan statistics count
+        this rather than ``self.plugins``, which holds only Claude-style
+        directories and reports zero for a manifest-only Codex catalog.
         """
-        seen: Dict[Path, Path] = {}
-        for p in (*self.plugins, *self.codex_plugins):
-            key = safe_resolve(p) or p
-            if key not in seen:
-                seen[key] = p
-        return list(seen.values())
+        return merge_plugin_dirs(self.plugins, self.codex_plugins)
 
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
@@ -956,24 +980,16 @@ class RepositoryContext:
 
         return found
 
-    def _codex_local_sources(self, marketplace_paths: Optional[List[Path]] = None) -> List[Path]:
+    def _codex_local_sources(self) -> List[Path]:
         """Local plugin directories declared by the Codex marketplace.
 
         Codex resolves ``source.path`` against the *marketplace root* — the
         repository root — not against ``.agents/plugins/``. Sources that
         escape the root are dropped here; ``codex-marketplace-json-valid``
         reports them.
-
-        ``marketplace_paths`` lets exclusion filtering compare the old and
-        retained catalogs without rerunning whole-plugin discovery.
         """
         resolved: List[Path] = []
-        catalogs = (
-            marketplace_paths
-            if marketplace_paths is not None
-            else self._discover_codex_marketplaces()
-        )
-        for marketplace_file in catalogs:
+        for marketplace_file in self._discover_codex_marketplaces():
             data = _read_json_or_none(marketplace_file)
             if not isinstance(data, dict):
                 continue
@@ -992,6 +1008,36 @@ class RepositoryContext:
                 if candidate == self.root_path or candidate.is_relative_to(self.root_path):
                     resolved.append(candidate)
         return resolved
+
+    def _codex_claim_set(self) -> Set[Path]:
+        """Every resolved directory Codex claims, computed once per context.
+
+        The union of discovered plugin roots and the catalogs' local
+        sources. Provenance checks consult this once per ``plugins/``
+        child, and rebuilding the claim list on each call made repository
+        detection quadratic in the catalog size.
+        """
+        if self._codex_claims is None:
+            claims = {r for r in (safe_resolve(p) for p in self.codex_plugins) if r is not None}
+            claims.update(self._codex_local_sources())
+            self._codex_claims = claims
+        return self._codex_claims
+
+    def is_codex_claimed(self, path: Path) -> bool:
+        """Whether Codex discovery or a local catalog source claims *path*."""
+        resolved = safe_resolve(path)
+        return resolved is not None and resolved in self._codex_claim_set()
+
+    def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
+        """Codex-claimed with no ``.claude-plugin`` marker.
+
+        The provenance line the Claude-format rules gate on: a dual-marker
+        directory keeps every Claude check, while a Codex-only one is
+        exempt from Claude manifest, frontmatter, and naming requirements —
+        the ecosystem-neutral content and security rules still read its
+        prose either way.
+        """
+        return not safe_exists(plugin_dir / ".claude-plugin") and self.is_codex_claimed(plugin_dir)
 
     def codex_plugin_owning(self, path: Path) -> Optional[Path]:
         """The Codex plugin *path* sits in, nearest first, or ``None``.
@@ -1213,7 +1259,16 @@ class RepositoryContext:
                 plugins.append(claude_dir)
                 discovered_paths.add(claude_dir.resolve())
 
-        if RepositoryType.MARKETPLACE in self.repo_types:
+        if (
+            RepositoryType.MARKETPLACE in self.repo_types
+            or RepositoryType.CODEX_MARKETPLACE in self.repo_types
+            or RepositoryType.CODEX_PLUGIN in self.repo_types
+        ):
+            # Codex types too: a Codex-claimed directory that ships
+            # commands/ needs its PluginNode so every content and security
+            # rule reads its prose — Claude-format rules exempt Codex-only
+            # directories themselves. Without this, a Codex-only catalog
+            # carried no MARKETPLACE type and the walk never ran.
             # Discover from plugins/ directory (backward compatibility)
             self._discover_from_plugins_dir(plugins, discovered_paths)
 
@@ -1232,10 +1287,18 @@ class RepositoryContext:
             if not item.is_dir() or item.name.startswith("."):
                 continue
 
-            if not self._is_legacy_claude_plugin_candidate(item):
+            # Marker semantics, Codex-claimed or not: a Codex plugin that
+            # ships commands/ still gets a PluginNode so its prose reaches
+            # every content and security rule — the Claude-format rules
+            # exempt Codex-only directories themselves, via
+            # is_codex_only_plugin(). Dropping the directory here silenced
+            # secret scanning on it entirely.
+            if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
                 continue
 
-            resolved_path = item.resolve()
+            resolved_path = safe_resolve(item)
+            if resolved_path is None or not resolved_path.is_relative_to(self.root_path):
+                continue
             if resolved_path not in discovered_paths:
                 plugins.append(item)
                 discovered_paths.add(resolved_path)

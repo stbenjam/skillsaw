@@ -310,9 +310,9 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
 
     # One pass, like the skill map above: scanning every legacy node per
     # Codex plugin is O(codex x legacy) filesystem resolutions, and a large
-    # catalog has hundreds of each. A distinct name from the set consumed by
-    # _is_codex_only above — rebinding it would silently change what that
-    # check sees on any future reordering.
+    # catalog has hundreds of each. A list, not the membership set bound
+    # above: _extract_codex_skills scans it in order for nearest-root
+    # matching.
     plugin_roots = context.codex_plugin_roots()
 
     legacy_by_path: Dict[Path, List[PluginNode]] = {}

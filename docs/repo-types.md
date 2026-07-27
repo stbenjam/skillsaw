@@ -14,6 +14,8 @@ my-skill/
 ├── assets/               # Optional: templates, resources
 ├── evals/                # Optional convention from the evaluation guide
 │   └── evals.json
+├── agents/
+│   └── openai.yaml       # Optional: OpenAI skill metadata (interface, policy, dependencies)
 └── <any-dir>/            # Arbitrary directories allowed per spec
 ```
 
@@ -88,7 +90,11 @@ my-plugin/
 │   └── plugin.json       # Required — only this file belongs here
 ├── skills/
 │   └── my-skill/
-│       └── SKILL.md
+│       ├── SKILL.md
+│       └── agents/
+│           └── openai.yaml   # Optional: OpenAI skill metadata
+├── agents/
+│   └── openai.yaml       # Observed plugin-root metadata form (catalog compatibility)
 ├── hooks/
 │   └── hooks.json        # Optional
 ├── .mcp.json             # Optional: bundled MCP servers
@@ -106,6 +112,7 @@ skillsaw probes the repository root, `plugins/*`, `.codex/plugins/*`, and every 
 | `mcp-valid-json`, `mcp-prohibited` | **Runs (no autofix)** | Same — the host spawns these commands here. |
 | `agentskill-*` | **Runs (no autofix)** | These skills enter the agent's context window here. |
 | `codex-plugin-json-valid`, `codex-plugin-structure` | **Stands down** | A kebab-case name, a missing `description` or a dangling asset path is a defect in a file the developer cannot edit. |
+| `codex-openai-metadata` | **Stands down** | Same — a vendor plugin's `agents/openai.yaml` is presentation metadata the developer cannot edit, and it configures nothing that executes here. |
 | `codex-marketplace-registration` | **Stands down** | The repository did not author the plugin; its published catalog has no business listing it. |
 
 The line is authorship, not discovery: skillsaw does not walk `.claude/plugins/*` at all, so a broken vendor manifest there is likewise not the repository's problem.

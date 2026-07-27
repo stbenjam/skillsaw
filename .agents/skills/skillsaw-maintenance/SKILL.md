@@ -35,7 +35,7 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 |---|---|---|
 | Agent Skills (agentskills.io) | [references/agentskills.md](references/agentskills.md) | `agentskills/` |
 | Claude Code (plugins, marketplace, .claude, hooks, mcp, skills, agents) | [references/claude.md](references/claude.md) | `plugins/`, `commands/`, `marketplace/`, `hooks/`, `mcp/`, `skills/`, `agents/` |
-| OpenAI Codex (plugins, marketplaces) | [references/codex.md](references/codex.md) | `codex/` |
+| OpenAI Codex (plugins, marketplaces, `agents/openai.yaml` skill metadata) | [references/codex.md](references/codex.md) | `codex/` |
 | OpenClaw | [references/openclaw.md](references/openclaw.md) | `openclaw/` |
 | Model Context Protocol | [references/mcp.md](references/mcp.md) | `mcp/` |
 | CodeRabbit (`.coderabbit.yaml`) | [references/coderabbit.md](references/coderabbit.md) | `coderabbit/` |

@@ -16,6 +16,7 @@ from ._helpers import (
     KEBAB_CASE,
     nonfinite_constant_error,
     path_problem,
+    safe_display,
 )
 
 # Manifest fields that point at bundled components or assets. Every one of
@@ -228,7 +229,7 @@ class CodexPluginJsonValidRule(Rule):
             if not value.startswith("./"):
                 violations.append(
                     self.violation(
-                        f"'{field}': path '{value}' should start with './'",
+                        f"'{field}': path '{safe_display(value)}' should start with './'",
                         file_path=manifest,
                         severity=Severity.INFO,
                     )
@@ -238,7 +239,7 @@ class CodexPluginJsonValidRule(Rule):
             if check_exists and not exists:
                 violations.append(
                     self.violation(
-                        f"'{field}': '{value}' does not exist in the plugin",
+                        f"'{field}': '{safe_display(value)}' does not exist in the plugin",
                         file_path=manifest,
                         severity=Severity.WARNING,
                     )
@@ -254,7 +255,7 @@ class CodexPluginJsonValidRule(Rule):
             if wanted == "file" and not safe_is_file(target):
                 violations.append(
                     self.violation(
-                        f"'{field}': '{value}' is a directory — this field names a file",
+                        f"'{field}': '{safe_display(value)}' is a directory — this field names a file",
                         file_path=manifest,
                         severity=Severity.WARNING,
                     )
@@ -262,7 +263,7 @@ class CodexPluginJsonValidRule(Rule):
             elif wanted == "dir" and not safe_is_dir(target):
                 violations.append(
                     self.violation(
-                        f"'{field}': '{value}' is a file — this field names a directory",
+                        f"'{field}': '{safe_display(value)}' is a file — this field names a directory",
                         file_path=manifest,
                         severity=Severity.WARNING,
                     )

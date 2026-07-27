@@ -28,6 +28,27 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 
 
+# Userinfo in a URL-shaped value: everything between "://" and an "@" that
+# precedes the first path separator. Matched anywhere in the string — the
+# object form ("./https://u:pw@host/x" as a *path*) leaks the same way the
+# bare form does.
+_URL_USERINFO = re.compile(r"(?<=://)[^/@\s]{1,256}@")
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def safe_display(value: object) -> str:
+    """A manifest value made safe to echo into a violation message.
+
+    Reports are uploaded as CI artifacts and ingested as SARIF, so an
+    author's pasted ``user:token@host`` URL must not ride along — the
+    userinfo is redacted, keeping the locator. Control characters are
+    replaced so a crafted value cannot smuggle terminal escapes through
+    the text formatter.
+    """
+    text = _CONTROL_CHARS.sub("�", str(value))
+    return _URL_USERINFO.sub("[redacted]@", text)
+
+
 def reject_nonfinite_json_number(value: str) -> None:
     """Reject JavaScript number extensions that strict JSON does not allow.
 

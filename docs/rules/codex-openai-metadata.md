@@ -52,6 +52,8 @@ Resolve skill metadata paths from the skill root. For the observed plugin-root
 compatibility form, resolve them from the plugin root. Bundle referenced icons
 inside the owning skill or plugin. Use mappings for `interface`, `policy`, and
 `dependencies`; `policy.allow_implicit_invocation` must be a boolean.
+`interface.brand_color` must be a six-hex-digit `#RRGGBB` color — no shorthand,
+no CSS keywords — the format OpenAI's bundled plugin validator enforces.
 
 See OpenAI's [optional skill metadata documentation](https://learn.chatgpt.com/docs/build-skills#optional-metadata).
 For the documented plugin metadata surface, see OpenAI's [plugin structure](https://developers.openai.com/plugins/build/plugins#plugin-structure).

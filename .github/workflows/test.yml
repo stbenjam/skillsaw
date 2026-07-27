@@ -275,7 +275,10 @@ jobs:
 
       - name: Test openai/plugins (Codex rules gate)
         run: |
-          git clone --depth 1 https://github.com/openai/plugins.git /tmp/openai-plugins
+          # Pinned: an unrelated upstream commit must not turn main red
+          # with a message blaming a rule change. Bump deliberately.
+          git clone --filter=blob:none https://github.com/openai/plugins.git /tmp/openai-plugins
+          git -C /tmp/openai-plugins checkout --quiet 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
 
           # The flagship Codex catalog (~180 plugins, ~580 skills). The five
           # codex-* rules are clean on it and must stay that way — a finding
@@ -296,6 +299,23 @@ jobs:
           assert r['stats']['rules_run'] == 5, f\"expected the 5 codex rules, ran {r['stats']['rules_run']}\"
           assert r['violations'] == [], f\"codex rules regressed: {[(v['rule_id'], v['message']) for v in r['violations'][:5]]}\"
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills — codex rules clean\")
+          "
+
+          # Full-run canary, not scoped to codex rules: Codex plugin prose
+          # (commands/, agents/) must stay visible to the content and
+          # security rules, and the gated Claude-format rules must stay
+          # silent on Codex-only plugins. A --rule-scoped gate is blind to
+          # both classes.
+          skillsaw --format json --no-custom-rules /tmp/openai-plugins | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          vs = r['violations']
+          prose = [v for v in vs if '/commands/' in v['file_path'] or '/agents/' in v['file_path']]
+          assert prose, 'no findings under plugin commands/ or agents/ — Codex plugin prose has vanished from the lint tree'
+          gated = ('command-frontmatter', 'command-naming', 'command-name-format', 'agent-frontmatter', 'plugin-json-required', 'plugin-naming')
+          leaked = [v for v in vs if v['rule_id'] in gated]
+          assert not leaked, f'Claude-format rules fired on Codex-only plugins: {[(v[\"rule_id\"], v[\"file_path\"]) for v in leaked[:5]]}'
+          print(f'Full-run canary: {len(prose)} findings in plugin prose, 0 Claude-format leaks')
           "
 
       - name: Test jeremylongshore/claude-code-plugins-plus-skills (huge marketplace)

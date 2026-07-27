@@ -40,10 +40,12 @@ def test_skillsaw_hook_contract(skillsaw_hook):
     assert skillsaw_hook["language"] == "python"
     # Repo-level linter: must not receive staged filenames as arguments
     assert skillsaw_hook["pass_filenames"] is False
-    # Codex manifests may declare components at arbitrary paths, so any
-    # filename filter could skip a component change or asset deletion.
-    assert "files" not in skillsaw_hook
-    assert skillsaw_hook["always_run"] is True
+    # Codex manifests may declare components at arbitrary paths, so no
+    # narrow filename filter is safe — but `files: .` (any staged file)
+    # still lets pre-commit skip commits that stage nothing, where
+    # always_run would lint the whole repository anyway.
+    assert skillsaw_hook["files"] == "."
+    assert "always_run" not in skillsaw_hook
     # The entry must invoke a console script declared in pyproject.toml
     entry_cmd = skillsaw_hook["entry"].split()[0]
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")

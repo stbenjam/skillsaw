@@ -12,12 +12,14 @@
 # skillsaw is a repo-level linter (repo-type detection, marketplace
 # registration, cross-file rules), so the hook lints the whole repository
 # rather than individual staged files (pass_filenames: false). Codex manifests
-# may declare components at arbitrary paths, so there is no safe filename
-# filter: every commit with staged files runs the hook.
+# may declare components at arbitrary paths, so there is no safe narrow
+# filename filter — but `files: .` (any staged file) still lets pre-commit
+# skip the hook entirely on commits that stage nothing, where always_run
+# would lint the repository anyway.
 - id: skillsaw
   name: skillsaw
   description: Lint agentic contextual building blocks (CLAUDE.md, skills, plugins, hooks, ...)
   entry: skillsaw lint
   language: python
   pass_filenames: false
-  always_run: true
+  files: .

@@ -178,7 +178,10 @@ Patterns match against the file path relative to the lint root using
 Python `fnmatch` syntax, where `*` also crosses `/`. A leading `**/`
 additionally matches at the root of the repository, so `**/templates/**`
 excludes both a top-level `templates/` directory and any nested
-`a/templates/`.
+`a/templates/`. A trailing `/**` matches strictly inside the named
+directory: `vendor/**` excludes `vendor/a.md` and everything deeper, but
+not the `vendor` entry itself — a violation addressed to the directory,
+such as a missing required file, is still reported.
 
 By default, skillsaw excludes `**/template/**`, `**/templates/**`, and
 `**/_template/**` directories. These defaults are replaced when you specify

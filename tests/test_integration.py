@@ -570,6 +570,22 @@ class TestDirectManifestInputs:
         assert "plugin-json-valid" in {v["rule_id"] for v in violations(r)}
 
 
+class TestMergedContextCodexCounts:
+    def test_merged_context_counts_codex_plugins_across_paths(self, tmp_path):
+        """Multi-path lint of two Codex plugin directories must not report
+        zero plugins — the merged context carries codex_plugins too."""
+        for name in ("one", "two"):
+            plugin = tmp_path / name
+            (plugin / ".codex-plugin").mkdir(parents=True)
+            (plugin / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": "1.0.0", "description": "x"}),
+                encoding="utf-8",
+            )
+        r = run_lint(tmp_path / "one", str(tmp_path / "two"))
+        # Verbose stats list the paths; either way the count must be 2.
+        assert len(r["out"]["stats"]["plugins"]) == 2
+
+
 class TestMultiplePaths:
 
     def test_lint_two_directories(self, tmp_path):

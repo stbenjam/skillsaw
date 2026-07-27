@@ -48,7 +48,15 @@ class PluginJsonRequiredRule(Rule):
                 if (
                     resolved_path not in getattr(context, "marketplace_entries", {})
                     and not (plugin_path / ".claude-plugin").is_dir()
-                    and codex_manifest_is_contained(plugin_path)
+                    # The filesystem probe survives a ``--type`` override
+                    # that switches Codex discovery off; the claim check
+                    # additionally covers a directory a catalog lists but
+                    # that ships no manifest yet — codex-plugin-json-valid
+                    # owns that defect, one report per ecosystem.
+                    and (
+                        codex_manifest_is_contained(plugin_path)
+                        or context.is_codex_claimed(plugin_path)
+                    )
                 ):
                     # A Codex plugin, swept up here only because it also ships
                     # a commands/ or skills/ directory. It has no reason to

@@ -99,6 +99,10 @@ class MarketplaceRegistrationRule(Rule):
 
         unregistered = []
         for plugin_node in context.lint_tree.find(PluginNode):
+            if context.is_codex_only_plugin(plugin_node.path):
+                # Published through the Codex catalog, not the Claude
+                # marketplace — codex-marketplace-registration owns it.
+                continue
             plugin_name = context.get_plugin_name(plugin_node.path)
 
             if not context.is_registered_in_marketplace(plugin_name):

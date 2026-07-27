@@ -54,12 +54,18 @@ plugin identifier and component namespace. `version` and `description`
 are reported as recommended; adjust `recommended-fields` to change that
 set.
 
-Manifest paths (`skills`, `mcpServers`, `apps`, `hooks`, and the
-`interface` asset fields) must resolve inside the plugin root and should
-start with `./`. An absolute path or one containing `..` is an error; a
-missing `./` prefix is informational. Paths that point at something not
-in the repository are reported as warnings — set `check-paths-exist:
-false` to skip that check when assets are generated at build time.
+Manifest paths (`skills`, `apps`, `hooks`, `mcpServers` when
+path-valued, and the `interface` asset fields) must resolve inside the
+plugin root and should start with `./`. An absolute path or one
+containing `..` is an error; a missing `./` prefix is informational.
+Paths that point at something not in the repository are reported as
+warnings — set `check-paths-exist: false` to skip that check when
+assets are generated at build time.
+
+`mcpServers` is not purely a path field: it accepts a path string, an
+inline server object, or an array mixing both. Only its path-valued
+entries get the path checks; inline objects are linted as MCP server
+configuration.
 
 `version` is deliberately not checked against semver. The public prose
 specification does not constrain the format, while the field-level spec

@@ -138,3 +138,16 @@ def test_severity_enum_matches():
     # default_severity() must return a Severity for every rule
     for cls in BUILTIN_RULES:
         assert isinstance(cls().default_severity(), Severity)
+
+
+def test_every_rule_since_is_not_in_the_future():
+    """A rule whose ``since`` postdates the shipped version is silently dead
+    for every version-pinning user — unit tests call check() directly and
+    bypass config gating, so nothing else catches this class."""
+    from skillsaw import __version__
+    from skillsaw.config import _parse_version
+    from skillsaw.rules.builtin import BUILTIN_RULES
+
+    current = _parse_version(__version__)
+    future = [cls().rule_id for cls in BUILTIN_RULES if _parse_version(cls.since) > current]
+    assert not future, f"rules gated behind a future version: {future}"

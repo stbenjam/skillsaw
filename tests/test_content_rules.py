@@ -631,7 +631,9 @@ class TestContentEmbeddedSecretsRule:
         assert rule.default_severity() == Severity.ERROR
 
     def test_detects_openai_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Set API key: sk-abcdefghijklmnopqrstuvwxyz1234\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Set API key: sk-abcdefghijklmnopqrstuvwxyz1234\n"
+        )  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -646,7 +648,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) >= 1
 
     def test_detects_aws_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -670,7 +672,7 @@ class TestContentEmbeddedSecretsRule:
     @pytest.mark.parametrize(
         "secret,expected_desc",
         [
-            ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),
+            ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),  # notsecret
             ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),  # notsecret
             ("ASIAIOSFODNN7EXAMPLE", "AWS temporary access key"),
             ("xoxa-123456789012-abcdefghij", "Slack app token"),
@@ -855,7 +857,7 @@ class TestContentEmbeddedSecretsRule:
 
     def test_structured_tokens_not_entropy_gated(self, temp_dir):
         """High-confidence token formats fire even for low-entropy bodies."""
-        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")
+        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1

@@ -4,6 +4,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.utils import insert_frontmatter_fields, read_text
 
 
@@ -31,6 +32,12 @@ class CommandFrontmatterRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(CommandBlock):
+            owner = context.lint_tree.find_parent(block, PluginNode)
+            if owner is not None and context.is_codex_only_plugin(owner.path):
+                # Codex-only provenance: Claude command frontmatter conventions do not
+                # apply to a plugin Claude never loads. Content and
+                # security rules still read the file.
+                continue
             if block.frontmatter_error:
                 # fix() only adds missing frontmatter/fields — malformed YAML
                 # needs a human.

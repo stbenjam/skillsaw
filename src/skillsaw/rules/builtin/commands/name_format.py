@@ -35,6 +35,10 @@ class CommandNameFormatRule(Rule):
             parent_plugin = context.lint_tree.find_parent(cmd_block, PluginNode)
             if parent_plugin is None:
                 continue
+            if context.is_codex_only_plugin(parent_plugin.path):
+                # Codex-only provenance: the Claude name-format convention
+                # does not apply to a plugin Claude never loads.
+                continue
             plugin_name = context.get_plugin_name(parent_plugin.path)
             cmd_name = cmd_file.stem
             expected_name = f"{plugin_name}:{cmd_name}"

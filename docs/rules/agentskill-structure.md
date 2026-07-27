@@ -45,8 +45,7 @@ my-skill/
 ## How to fix
 
 Move files into one of the configured directories, add the intentional
-directory to `allowed_dirs`, or disable this opt-in rule. This policy is not a
-requirement of the formal Agent Skills specification.
+directory to `allowed_dirs`, or disable this opt-in rule.
 
 ## Configuration
 

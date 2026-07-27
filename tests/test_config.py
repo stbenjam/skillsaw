@@ -12,7 +12,6 @@ from skillsaw.context import (
     RepositoryContext,
     RepositoryType,
     HAS_CURSOR,
-    HAS_CLAUDE_MD,
     ALL_INSTRUCTION_FORMATS,
 )
 

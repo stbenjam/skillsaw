@@ -39,6 +39,7 @@ from skillsaw.lint_target import (
 )
 from skillsaw.linter import Linter
 from skillsaw.rule import AutofixConfidence, Severity
+from skillsaw.rules.builtin.content_analysis import ContentBlock
 from skillsaw.formats.codex import (
     codex_declared_hook_files,
     codex_declared_skill_dirs,
@@ -1397,14 +1398,63 @@ class TestClaudeRulesStandDown:
 
     def test_codex_plugin_is_not_asked_for_a_claude_manifest(self, tmp_path):
         # The fixture ships note-taker/commands/, the shape openai/plugins
-        # uses. Its Codex manifest supplies the provenance, so the legacy
-        # directory-name heuristic must not create a Claude PluginNode.
+        # uses. Its Codex manifest supplies the provenance: the directory
+        # still gets a PluginNode — its prose must reach every content and
+        # security rule — but the Claude manifest requirement stands down.
         repo = copy_fixture("codex/clean", tmp_path)
         context = RepositoryContext(repo)
 
-        assert context.plugins == []
-        assert context.lint_tree.find(PluginNode) == []
+        assert context.lint_tree.find(PluginNode) != []
         assert PluginJsonRequiredRule({}).check(context) == []
+
+    def test_codex_only_plugin_prose_is_still_linted(self, tmp_path):
+        """Dropping the PluginNode silenced secret scanning on a Codex
+        plugin's commands/, agents/, rules/ and README — every content and
+        security rule must still read that prose."""
+        repo = copy_fixture("codex/clean", tmp_path)
+        context = RepositoryContext(repo)
+
+        paths = {b.path.name for b in context.lint_tree.find(ContentBlock)}
+        assert "capture.md" in paths
+        # README.md is deliberately not a ContentBlock (it is not agent
+        # context) — it re-attaches as its own block type.
+        from skillsaw.blocks import ReadmeBlock
+
+        assert any(context.lint_tree.find(ReadmeBlock))
+
+    def test_a_secret_in_codex_plugin_commands_is_reported(self, tmp_path):
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "foo",
+                        "source": {"source": "local", "path": "./plugins/foo"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        plugin = _write_plugin(
+            repo / "plugins" / "foo",
+            {"name": "foo", "version": "1.0.0", "description": "x"},
+        )
+        (plugin / "commands").mkdir()
+        (plugin / "commands" / "deploy.md").write_text(
+            "---\ndescription: Deploy\n---\n# Deploy\n"
+            "Use token ghp_1234567890abcdefghij1234567890abcdef to auth.\n",  # notsecret
+            encoding="utf-8",
+        )
+
+        from skillsaw.rules.builtin.content.embedded_secrets import (
+            ContentEmbeddedSecretsRule,
+        )
+
+        context = RepositoryContext(repo)
+        found = ContentEmbeddedSecretsRule({}).check(context)
+        assert any("deploy.md" in str(v.file_path) for v in found)
 
     def test_catalog_claim_prevents_legacy_claude_inference_before_manifest_validation(
         self, tmp_path
@@ -1429,7 +1479,11 @@ class TestClaudeRulesStandDown:
 
         context = RepositoryContext(tmp_path)
         assert RepositoryType.MARKETPLACE not in context.repo_types
-        assert context.plugins == []
+        # The claimed directory is still discovered — its prose must reach
+        # the content and security rules — but the Claude manifest
+        # requirement stands down on the Codex claim.
+        assert [p.name for p in context.plugins] == ["claimed"]
+        assert PluginJsonRequiredRule({}).check(context) == []
 
     def test_legacy_plugin_symlink_outside_repository_is_not_discovered(self, tmp_path):
         outside = tmp_path / "outside"
@@ -1441,7 +1495,10 @@ class TestClaudeRulesStandDown:
 
         context = RepositoryContext(repo)
 
-        assert RepositoryType.MARKETPLACE not in context.repo_types
+        # Containment holds: the escaping directory is never discovered or
+        # given a node. The bare plugins/ directory keeps its historical
+        # MARKETPLACE inference — there is no Codex claim to subtract.
+        assert RepositoryType.MARKETPLACE in context.repo_types
         assert context.plugins == []
         assert context.lint_tree.find(PluginNode) == []
 
@@ -1853,8 +1910,133 @@ class TestCrossedRegistration:
         _write_plugin(repo / "plugins" / "b", {"name": "b", "version": "1.0.0"})
 
         found = messages(run_rule(CodexMarketplaceRegistrationRule, repo))
-        assert "Plugin 'b' not registered in marketplace.json" in found
+        # b is not silent — but "not registered" would be factually wrong
+        # (the name is right there in the catalog), so the accurate
+        # listed-but-unresolved diagnostic fires instead.
+        assert any("Plugin 'b' is listed" in m and "does not resolve" in m for m in found), found
         assert any("does not match the plugin manifest name" in m for m in found)
+
+    def test_manifest_credentials_are_redacted_from_every_echo_site(self, tmp_path):
+        """A user:token@host URL pasted into any path-valued field must not
+        reach JSON or SARIF output — reports are uploaded as CI artifacts."""
+        secret = "ghp_BARELEAK123456"  # notsecret
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "leaky",
+                "plugins": [
+                    {
+                        "name": "bare",
+                        "source": {
+                            "source": "local",
+                            "path": f"./https://ci-bot:{secret}@registry.example.com/z",
+                        },
+                        "policy": {
+                            "installation": "AVAILABLE",
+                            "authentication": "ON_INSTALL",
+                        },
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        plugin = _write_plugin(
+            repo / "plugins" / "plug",
+            {
+                "name": "plug",
+                "version": "1.0.0",
+                "description": "x",
+                "skills": f"./https://u:{secret}@example.com/skills",
+            },
+        )
+        skill = plugin / "skills" / "leaky-skill"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\nname: leaky-skill\ndescription: A skill that leaks\n---\n",
+            encoding="utf-8",
+        )
+        (skill / "agents").mkdir()
+        (skill / "agents" / "openai.yaml").write_text(
+            f"interface:\n  icon_small: ./https://u:{secret}@example.com/i.png\n",
+            encoding="utf-8",
+        )
+
+        context = RepositoryContext(repo)
+        rules = [
+            CodexMarketplaceRegistrationRule({}),
+            CodexPluginJsonValidRule({}),
+            CodexOpenAIMetadataRule({}),
+        ]
+        violations = [v for rule in rules for v in rule.check(context)]
+        assert violations, "expected echo-site violations to exercise redaction"
+        assert secret not in format_json(violations, context, rules, "0.18.0")
+        assert secret not in format_sarif(violations, context, rules, "0.18.0")
+        # The locator survives redaction — only the userinfo is stripped.
+        assert any("[redacted]@" in v.message for v in violations)
+
+    def test_dual_distribution_by_remote_entry_is_not_an_error(self, tmp_path):
+        """The standard dual-distribution layout: the catalog lists the
+        plugin by name with a REMOTE source while the same plugin ships
+        locally. 'Not registered' was factually wrong — measured at 40% of
+        this rule's hard errors on a random ecosystem sample."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "my-tool",
+                        "source": {"source": "url", "url": "https://example.com/my-tool.git"},
+                        "policy": {
+                            "installation": "AVAILABLE",
+                            "authentication": "ON_INSTALL",
+                        },
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        _write_plugin(
+            repo / "plugins" / "my-tool",
+            {"name": "my-tool", "version": "1.0.0", "description": "A tool."},
+        )
+        # Remote entries register by name, so the local copy is covered.
+        assert run_rule(CodexMarketplaceRegistrationRule, repo) == []
+
+    def test_dual_distribution_by_symlink_is_silent(self, tmp_path):
+        """The other observed dual-distribution shape: plugins/<name> is a
+        symlink back to the repository root, which is itself the plugin."""
+        repo = tmp_path / "marketplace-repo"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        (repo / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "cat",
+                    "plugins": [
+                        {
+                            "name": "self-tool",
+                            "source": {"source": "local", "path": "./plugins/self-tool"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / ".codex-plugin").mkdir()
+        (repo / ".codex-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "self-tool", "version": "1.0.0", "description": "Self."}),
+            encoding="utf-8",
+        )
+        (repo / "plugins").mkdir()
+        (repo / "plugins" / "self-tool").symlink_to(repo, target_is_directory=True)
+
+        found = run_rule(CodexMarketplaceRegistrationRule, repo)
+        assert not any("not registered" in v.message for v in found), messages(found)
 
     def test_a_remote_entry_still_registers_by_name(self, tmp_path):
         """Remote sources name no directory here, so the name is all there is."""
@@ -3636,13 +3818,17 @@ class TestNoOpFixIsNotAdvertised:
         _write_plugin(repo / "plugins" / "a", {"name": "same", "version": "1.0.0"})
         _write_plugin(repo / "plugins" / "b", {"name": "same", "version": "1.0.0"})
 
-        unregistered = [
+        listed = [
             v
             for v in run_rule(CodexMarketplaceRegistrationRule, repo)
-            if "not registered" in v.message
+            if "is listed" in v.message and "does not resolve" in v.message
         ]
-        assert unregistered, "the second directory is still reported"
-        assert all(v.fixable is False for v in unregistered)
+        assert listed, "the second directory is still reported"
+        # fix() skips a listed name by design (a second entry would be the
+        # duplicate the validity rule rejects), so per the invariant the
+        # report is a non-fixable WARNING, not a hard ERROR.
+        assert all(v.fixable is False for v in listed)
+        assert all(v.severity is Severity.WARNING for v in listed)
 
 
 class TestCodexOnlyPluginConfigDocs:

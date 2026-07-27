@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import quote, unquote
 
-# RFC 3986 scheme, but two-plus characters so ``C:/path`` stays a file path.
-_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
-
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.markdown_doc import file_span, splice
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
+
+# RFC 3986 scheme, but two-plus characters so ``C:/path`` stays a file path.
+_URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
 
 
 class ContentBrokenInternalReferenceRule(Rule):

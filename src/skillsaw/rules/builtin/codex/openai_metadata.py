@@ -11,6 +11,7 @@ from skillsaw.context import RepositoryContext, SKILL_REPO_TYPES
 from skillsaw.formats.codex import safe_is_file, safe_resolve
 from skillsaw.paths import is_absolute_path
 from skillsaw.rule import Rule, RuleViolation, Severity
+from skillsaw.rules.builtin.codex._helpers import safe_display
 from skillsaw.rules.builtin.utils import (
     commented_item_line,
     commented_key_line,
@@ -51,6 +52,12 @@ class CodexOpenAIMetadataRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
         for block in context.lint_tree.find(OpenAIMetadataBlock):
+            if context.is_codex_installed_plugin(block.metadata_root):
+                # Vendor-installed under .codex/plugins/: authored-manifest
+                # quality is the vendor's to fix, the same stand-down every
+                # other manifest-quality rule applies there. Executable
+                # hooks/MCP checks are unaffected — this rule has none.
+                continue
             if block.parse_error:
                 violations.append(
                     self.violation(
@@ -61,6 +68,11 @@ class CodexOpenAIMetadataRule(Rule):
                 )
                 continue
             data = block.raw_data
+            if data is None:
+                # An empty document ("", a lone comment, a bare "---")
+                # declares nothing — there is no metadata to validate and
+                # nothing Codex would reject, so it is not an error.
+                continue
             if not isinstance(data, dict):
                 violations.append(
                     self.violation(
@@ -152,7 +164,7 @@ class CodexOpenAIMetadataRule(Rule):
         if resolved is None or containment is None or not resolved.is_relative_to(containment):
             violations.append(
                 self.violation(
-                    f"'interface.{key}' path escapes the owning plugin or skill: {value!r}",
+                    f"'interface.{key}' path escapes the owning plugin or skill: '{safe_display(value)}'",
                     file_path=block.path,
                     line=line,
                 )
@@ -160,7 +172,7 @@ class CodexOpenAIMetadataRule(Rule):
         elif not safe_is_file(resolved):
             violations.append(
                 self.violation(
-                    f"'interface.{key}' does not point to a bundled file: {value!r}",
+                    f"'interface.{key}' does not point to a bundled file: '{safe_display(value)}'",
                     file_path=block.path,
                     line=line,
                     severity=Severity.WARNING,

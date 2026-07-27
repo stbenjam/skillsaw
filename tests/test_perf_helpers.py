@@ -52,7 +52,7 @@ class TestRequiredLiteral:
         "pattern,flags,text",
         [
             (r"\btry to\b", re.IGNORECASE, "Please TRY TO do this"),
-            (r"\bsk-[a-zA-Z0-9]{20,}", 0, "key sk-" + "a" * 24),
+            (r"\bsk-[a-zA-Z0-9]{20,}", 0, "key sk-" + "a" * 24),  # notsecret
             (r"(?i)\bpassword\s*[=:]\s*['\"][^'\"]{8,}['\"]", 0, 'password = "hunter2hunter2"'),
             (r"\bconsider\s+(?:using|adding)\b", re.IGNORECASE, "Consider using X"),
         ],
@@ -197,7 +197,7 @@ class TestFrontmatterSuppressionWithFastPath:
         "---\n"
         "name: demo-skill\n"
         "{directive}"
-        "description: Use token ghp_" + "a" * 40 + " when calling the demo API\n"
+        "description: Use token ghp_" + "a" * 40 + " when calling the demo API\n"  # notsecret
         "---\n\n# Demo Skill\n\nA demo skill body.\n"
     )
 
