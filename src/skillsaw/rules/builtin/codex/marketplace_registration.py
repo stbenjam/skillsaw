@@ -124,7 +124,7 @@ class CodexMarketplaceRegistrationRule(Rule):
                 # invariant it must not be a hard ERROR either.
                 violations.append(
                     self.violation(
-                        f"Plugin '{name}' is listed in {primary.name} but the "
+                        f"Plugin '{safe_display(name)}' is listed in {primary.name} but the "
                         "entry's source path does not resolve to this "
                         "directory — fix the entry's path rather than "
                         "adding a second one",
@@ -208,7 +208,7 @@ class CodexMarketplaceRegistrationRule(Rule):
         ``fix()`` re-renders it to pair a plugin with its violation, so the
         two must not drift.
         """
-        return f"Plugin '{name}' not registered in {marketplace_file.name}"
+        return f"Plugin '{safe_display(name)}' not registered in {marketplace_file.name}"
 
     @staticmethod
     def _has_declared_name(context: RepositoryContext, plugin_dir: Path) -> bool:
@@ -383,8 +383,8 @@ class CodexMarketplaceRegistrationRule(Rule):
             if isinstance(entry_name, str) and entry_name != manifest_name:
                 violations.append(
                     self.violation(
-                        f"plugins[{idx}] name '{entry_name}' does not match the "
-                        f"plugin manifest name '{manifest_name}'",
+                        f"plugins[{idx}] name '{safe_display(entry_name)}' does not match "
+                        f"the plugin manifest name '{safe_display(manifest_name)}'",
                         file_path=marketplace_file,
                         severity=Severity.WARNING,
                         fixable=False,

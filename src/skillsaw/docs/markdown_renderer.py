@@ -96,7 +96,10 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     # Per-plugin pages
     for plugin in sorted_plugins:
         fname = filenames[id(plugin)]
-        heading = plugin.display_name or plugin.name
+        # Same folding as every other metadata sink: a newline in
+        # interface.displayName would end the heading and inject
+        # block-level Markdown into the page.
+        heading = _table_cell(plugin.display_name or plugin.name)
         plines: List[str] = [f"# {heading}", ""]
         plines.append(f"[&larr; Back to {mp.name or 'index'}](README.md)")
         plines.append("")
@@ -111,8 +114,17 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
 
 
 def _table_cell(value: object) -> str:
-    """Make catalog metadata safe for a Markdown table cell."""
-    return " ".join(str(value).splitlines()).replace("|", r"\|")
+    """Make catalog metadata safe for interpolation into Markdown.
+
+    Newlines fold (a row must stay one line), pipes stop being column
+    separators, and link delimiters are escaped — a plugin in a shared
+    catalog controls its own metadata, and ``](`` in a display name would
+    otherwise rewrite the index row's link target.
+    """
+    folded = " ".join(str(value).splitlines())
+    for ch in ("\\", "|", "[", "]", "(", ")"):
+        folded = folded.replace(ch, "\\" + ch)
+    return folded
 
 
 # -- Plugin content --

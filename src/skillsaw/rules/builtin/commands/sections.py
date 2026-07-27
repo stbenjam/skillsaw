@@ -33,10 +33,10 @@ class CommandSectionsRule(Rule):
         required_sections = ["Name", "Synopsis", "Description", "Implementation"]
 
         for cmd_block in context.lint_tree.find(CommandBlock):
-            owner = context.lint_tree.find_parent(cmd_block, PluginNode)
-            if owner is not None and context.is_codex_only_plugin(owner.path):
+            if context.is_codex_only_plugin(cmd_block.path.parent.parent):
                 # Codex-only provenance: Claude command section conventions do not
-                # apply to a plugin Claude never loads. Content and
+                # apply to a plugin Claude never loads — wherever the block
+                # is attached (PluginNode or Codex container). Content and
                 # security rules still read the file.
                 continue
             cmd_file = cmd_block.path

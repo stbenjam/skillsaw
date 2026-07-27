@@ -122,9 +122,9 @@ class HooksJsonValidRule(Rule):
 
         for block in context.lint_tree.find(HooksBlock):
             # Codex-ONLY plugins: a dual-manifest plugin keeps its
-            # established Claude results — since gates rules, not
-            # checks, so a new hard error inside an old rule would
-            # break previously green dual repositories.
+            # established Claude results, because ``since`` gates rules
+            # rather than checks and a new hard error inside an old rule
+            # would break previously green dual repositories.
             owner = context.codex_plugin_owning(block.path)
             validate_codex_shapes = owner is not None and context.is_codex_only_plugin(owner)
             if block.parse_error:

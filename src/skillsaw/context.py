@@ -20,6 +20,7 @@ from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_declared_skill_dirs,
     codex_local_source_path,
+    codex_manifest_is_contained,
     safe_exists,
     safe_is_dir,
     safe_is_symlink,
@@ -172,6 +173,22 @@ def _is_marketplace_filename(name: str) -> bool:
     if lowered == "marketplace.json":
         return True
     return lowered.endswith("marketplace.json") and lowered[-17] in "-_."
+
+
+def _looks_like_codex_catalog(data: Any) -> bool:
+    """Positive catalog evidence: a ``plugins`` list with a sourced entry.
+
+    The key shape alone also matches a version-pin sibling like
+    ``plugin-versions.json`` ({name, version} entries, no sources) — a file
+    Codex never reads. One predicate shared by discovery and
+    ``codex_catalog_exists`` so the Claude stand-down can never trigger on
+    a sibling discovery itself refuses to lint.
+    """
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("plugins"), list)
+        and any(isinstance(entry, dict) and "source" in entry for entry in data["plugins"])
+    )
 
 
 def _read_json_or_none(path: Path) -> Any:
@@ -775,20 +792,7 @@ class RepositoryContext:
                 if _is_marketplace_filename(candidate.name):
                     found.append(candidate)
                     continue
-                data = _read_json_or_none(candidate)
-                if (
-                    isinstance(data, dict)
-                    and isinstance(data.get("plugins"), list)
-                    and any(
-                        isinstance(entry, dict) and "source" in entry for entry in data["plugins"]
-                    )
-                ):
-                    # Positive catalog evidence, not just the key shape: a
-                    # sibling like plugin-versions.json (a version-pin file
-                    # with name/version entries and no sources) also carries
-                    # a list-valued ``plugins`` key, and claiming it filed
-                    # hard errors against a file Codex never reads. At
-                    # least one entry must say where a plugin comes from.
+                if _looks_like_codex_catalog(_read_json_or_none(candidate)):
                     found.append(candidate)
 
         if not found and self._codex_marketplace_forced and _keep(primary):
@@ -844,11 +848,10 @@ class RepositoryContext:
             if _is_marketplace_filename(candidate.name):
                 return True
             # The same duck-typing discovery applies to an arbitrarily named
-            # sibling. Recognising fewer catalogs here than discovery does
-            # leaves the Claude rule demanding a manifest for a repository
-            # skillsaw has already classified as a Codex marketplace.
-            data = _read_json_or_none(candidate)
-            if isinstance(data, dict) and isinstance(data.get("plugins"), list):
+            # sibling — the shared predicate keeps the two in lockstep, so
+            # the Claude stand-down can neither miss a catalog discovery
+            # lints nor trigger on a sibling discovery refuses to claim.
+            if _looks_like_codex_catalog(_read_json_or_none(candidate)):
                 return True
         return False
 
@@ -1024,7 +1027,17 @@ class RepositoryContext:
         return self._codex_claims
 
     def is_codex_claimed(self, path: Path) -> bool:
-        """Whether Codex discovery or a local catalog source claims *path*."""
+        """Whether a Codex manifest or a local catalog source claims *path*.
+
+        Asked of the filesystem first, deliberately independent of
+        ``--type``: a contained ``.codex-plugin/plugin.json`` declares the
+        directory Codex whatever discovery was told to look for — the same
+        reasoning as ``codex_catalog_exists()``. Otherwise an explicit
+        ``--type marketplace`` would resurrect every Claude-format false
+        positive this predicate exists to remove.
+        """
+        if codex_manifest_is_contained(path):
+            return True
         resolved = safe_resolve(path)
         return resolved is not None and resolved in self._codex_claim_set()
 
@@ -1049,10 +1062,15 @@ class RepositoryContext:
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        owners = [
-            r for r in self.codex_plugin_roots() if resolved == r or resolved.is_relative_to(r)
-        ]
-        return max(owners, key=lambda r: len(r.parts)) if owners else None
+        # Ancestor walk against a set, not a scan over every root: this
+        # runs per skill inside agentskill-evals and agentskill-rename-refs,
+        # and the linear scan was O(skills x plugins) on a large catalog.
+        # Walking upward finds the nearest root by construction.
+        roots = set(self.codex_plugin_roots())
+        for candidate in (resolved, *resolved.parents):
+            if candidate in roots:
+                return candidate
+        return None
 
     def is_codex_installed_plugin(self, plugin_dir: Path) -> bool:
         """Whether *plugin_dir* is an installed plugin rather than an authored one.
@@ -1264,11 +1282,11 @@ class RepositoryContext:
             or RepositoryType.CODEX_MARKETPLACE in self.repo_types
             or RepositoryType.CODEX_PLUGIN in self.repo_types
         ):
-            # Codex types too: a Codex-claimed directory that ships
+            # Codex types too: a Codex-only catalog carries no
+            # MARKETPLACE type, and a Codex-claimed directory that ships
             # commands/ needs its PluginNode so every content and security
             # rule reads its prose — Claude-format rules exempt Codex-only
-            # directories themselves. Without this, a Codex-only catalog
-            # carried no MARKETPLACE type and the walk never ran.
+            # directories themselves.
             # Discover from plugins/ directory (backward compatibility)
             self._discover_from_plugins_dir(plugins, discovered_paths)
 
@@ -1287,12 +1305,11 @@ class RepositoryContext:
             if not item.is_dir() or item.name.startswith("."):
                 continue
 
-            # Marker semantics, Codex-claimed or not: a Codex plugin that
-            # ships commands/ still gets a PluginNode so its prose reaches
-            # every content and security rule — the Claude-format rules
-            # exempt Codex-only directories themselves, via
-            # is_codex_only_plugin(). Dropping the directory here silenced
-            # secret scanning on it entirely.
+            # Marker semantics, Codex-claimed or not: a Codex plugin
+            # that ships commands/ gets a PluginNode so its prose reaches
+            # every content and security rule (secret scanning included) —
+            # the Claude-format rules exempt Codex-only directories
+            # themselves, via is_codex_only_plugin().
             if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
                 continue
 

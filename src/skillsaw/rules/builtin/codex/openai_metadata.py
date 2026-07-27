@@ -119,7 +119,7 @@ class CodexOpenAIMetadataRule(Rule):
             # the platform refuses to load.
             violations.append(
                 self.violation(
-                    f"'interface.brand_color' must be a #RRGGBB hex color, got {brand_color!r}",
+                    f"'interface.brand_color' must be a #RRGGBB hex color, got '{safe_display(brand_color)}'",
                     file_path=block.path,
                     line=commented_key_line(interface, "brand_color"),
                 )

@@ -31,9 +31,13 @@ KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
 # Userinfo in a URL-shaped value: everything between "://" and an "@" that
 # precedes the first path separator. Matched anywhere in the string — the
 # object form ("./https://u:pw@host/x" as a *path*) leaks the same way the
-# bare form does.
-_URL_USERINFO = re.compile(r"(?<=://)[^/@\s]{1,256}@")
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+# bare form does. Unbounded on purpose: a pasted JWT is far longer than any
+# sane cap, and a cap turns exactly those into the values that escape
+# redaction. The single character class cannot backtrack.
+_URL_USERINFO = re.compile(r"(?<=://)[^/@\s]+@")
+# C0, DEL, C1, and the Unicode bidi overrides — any of them can reorder
+# or hide message text in a terminal or a rendered SARIF viewer.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 
 
 def safe_display(value: object) -> str:
@@ -95,11 +99,15 @@ def path_problem(value: str, root_label: str, root: Optional[Path] = None) -> Op
     is resolved against it and rejected unless it stays beneath it.
     """
     if is_absolute_path(value):
-        return f"absolute path '{value}' — paths must be relative to the {root_label}"
+        return f"absolute path '{safe_display(value)}' — paths must be relative to the {root_label}"
     if has_parent_traversal(value):
-        return f"path '{value}' contains '..' — paths must stay inside the {root_label}"
+        return (
+            f"path '{safe_display(value)}' contains '..' — paths must stay inside the {root_label}"
+        )
     if root is not None and escapes_root(value, root):
-        return f"path '{value}' resolves outside the {root_label} — check for a symlink"
+        return (
+            f"path '{safe_display(value)}' resolves outside the {root_label} — check for a symlink"
+        )
     return None
 
 

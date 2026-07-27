@@ -36,10 +36,10 @@ class AgentFrontmatterRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(AgentBlock):
-            owner = context.lint_tree.find_parent(block, PluginNode)
-            if owner is not None and context.is_codex_only_plugin(owner.path):
+            if context.is_codex_only_plugin(block.path.parent.parent):
                 # Codex-only provenance: Claude agent frontmatter conventions do not
-                # apply to a plugin Claude never loads. Content and
+                # apply to a plugin Claude never loads — wherever the block
+                # is attached (PluginNode or Codex container). Content and
                 # security rules still read the file.
                 continue
             if block.frontmatter_error:

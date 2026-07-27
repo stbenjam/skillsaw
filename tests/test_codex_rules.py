@@ -1422,6 +1422,71 @@ class TestClaudeRulesStandDown:
 
         assert any(context.lint_tree.find(ReadmeBlock))
 
+    def test_codex_only_predicate_is_type_override_invariant(self, tmp_path):
+        """The provenance answer must not depend on --type: an override
+        switches discovery off, and a discovery-derived exemption would
+        resurrect the Claude-format false positives under
+        --type marketplace while dropping the Codex-only checks under
+        --type codex-plugin."""
+        repo = _codex_marketplace_repo(
+            tmp_path,
+            {
+                "name": "cat",
+                "plugins": [
+                    {
+                        "name": "foo",
+                        "source": {"source": "local", "path": "./plugins/foo"},
+                        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                        "category": "Productivity",
+                    }
+                ],
+            },
+        )
+        plugin = _write_plugin(
+            repo / "plugins" / "foo", {"name": "foo", "version": "1.0.0", "description": "x"}
+        )
+        (plugin / "commands").mkdir()
+
+        default_ctx = RepositoryContext(repo)
+        forced = RepositoryContext(repo, repo_types={RepositoryType.MARKETPLACE})
+        assert default_ctx.is_codex_only_plugin(plugin) is True
+        assert forced.is_codex_only_plugin(plugin) is True
+
+    def test_root_level_codex_plugin_prose_is_still_linted(self, tmp_path):
+        """A Codex plugin at the repository root lives outside plugins/*,
+        so the traditional directory walk never finds it — its commands/
+        prose must still reach the content and security rules."""
+        repo = _codex_plugin_repo(
+            tmp_path, {"name": "rooted", "version": "1.0.0", "description": "x"}
+        )
+        (repo / "commands").mkdir()
+        (repo / "commands" / "deploy.md").write_text(
+            "---\ndescription: Deploy\n---\n# Deploy\n"
+            "Use token ghp_1234567890abcdefghij1234567890abcdef to auth.\n",  # notsecret
+            encoding="utf-8",
+        )
+
+        from skillsaw.rules.builtin.content.embedded_secrets import (
+            ContentEmbeddedSecretsRule,
+        )
+
+        context = RepositoryContext(repo)
+        found = ContentEmbeddedSecretsRule({}).check(context)
+        assert any("deploy.md" in str(v.file_path) for v in found)
+
+    def test_a_sourceless_sibling_does_not_suppress_the_claude_manifest_rule(self, tmp_path):
+        """codex_catalog_exists() and discovery share one duck-type: a
+        version-pin sibling with no sourced entries is not a catalog, so it
+        must not stand the Claude missing-manifest diagnostic down either."""
+        (tmp_path / ".agents" / "plugins").mkdir(parents=True)
+        (tmp_path / ".agents" / "plugins" / "plugin-versions.json").write_text(
+            json.dumps({"plugins": [{"name": "x", "version": "1"}]}), encoding="utf-8"
+        )
+        (tmp_path / "plugins" / "thing" / "commands").mkdir(parents=True)
+
+        violations = MarketplaceJsonValidRule({}).check(RepositoryContext(tmp_path))
+        assert messages(violations) == ["Marketplace file not found"]
+
     def test_a_secret_in_codex_plugin_commands_is_reported(self, tmp_path):
         repo = _codex_marketplace_repo(
             tmp_path,
@@ -1623,8 +1688,9 @@ class TestCodexPluginTreeHierarchy:
         (plugin / "agents" / "openai.yaml").write_text(
             "interface:\n  display_name: Nested\n", encoding="utf-8"
         )
-        # Codex agent markdown is deliberately not attached as AgentBlock:
-        # the hierarchy container must not reactivate Claude frontmatter rules.
+        # Codex agent markdown IS attached — content and security rules
+        # must read it — while the Claude frontmatter rules exempt
+        # Codex-only directories themselves.
         (plugin / "agents" / "reviewer.md").write_text("# Reviewer\n", encoding="utf-8")
         skill = plugin / "skills" / "work"
         skill.mkdir(parents=True)
@@ -1647,7 +1713,12 @@ class TestCodexPluginTreeHierarchy:
         assert skill_node.parent is container
         assert metadata.parent is config
         assert mcp.parent is config
-        assert tree.find(AgentBlock) == []
+        agent_blocks = tree.find(AgentBlock)
+        assert [b.path.name for b in agent_blocks] == ["reviewer.md"]
+        assert agent_blocks[0].parent is container
+        from skillsaw.rules.builtin.agents import AgentFrontmatterRule
+
+        assert AgentFrontmatterRule({}).check(context) == []
         assert PluginJsonRequiredRule({}).check(context) == []
 
     def test_root_codex_plugin_uses_the_tree_root_as_its_container(self, tmp_path):
@@ -1969,6 +2040,13 @@ class TestCrossedRegistration:
         ]
         violations = [v for rule in rules for v in rule.check(context)]
         assert violations, "expected echo-site violations to exercise redaction"
+        # A pasted JWT is far longer than any redaction cap — the bound
+        # itself was the escape hatch.
+        long_secret = "eyJ" + "b" * 400  # notsecret
+        from skillsaw.rules.builtin.codex._helpers import safe_display
+
+        assert long_secret not in safe_display(f"https://u:{long_secret}@h/p")
+
         assert secret not in format_json(violations, context, rules, "0.18.0")
         assert secret not in format_sarif(violations, context, rules, "0.18.0")
         # The locator survives redaction — only the userinfo is stripped.

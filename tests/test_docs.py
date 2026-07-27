@@ -845,7 +845,10 @@ class TestMarkdownRenderer:
         _append_plugin_meta(lines, doc)
         assert not any(line.startswith("![") for line in lines)
         meta_line = next(line for line in lines if "**Version:**" in line)
-        assert "![track]" in meta_line  # folded onto the meta line, no block breakout
+        # Folded onto the meta line AND link syntax escaped — the image
+        # markup arrives inert.
+        assert "![track](" not in meta_line
+        assert r"!\[track\]" in meta_line
         assert "**License:** MIT" in meta_line
 
     def test_mcp_table_escapes_pipes_and_newlines(self):

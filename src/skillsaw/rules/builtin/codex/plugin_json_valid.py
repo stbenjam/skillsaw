@@ -168,7 +168,9 @@ class CodexPluginJsonValidRule(Rule):
         name = data["name"]
         if not isinstance(name, str):
             return [
-                self.violation(f"Plugin name must be a string, got {name!r}", file_path=manifest)
+                self.violation(
+                    f"Plugin name must be a string, got '{safe_display(name)}'", file_path=manifest
+                )
             ]
         if not name:
             # An empty string is no more usable as the plugin identifier than
@@ -179,7 +181,7 @@ class CodexPluginJsonValidRule(Rule):
         if not KEBAB_CASE.match(name):
             return [
                 self.violation(
-                    f"Plugin name '{name}' should use kebab-case — plugin hosts "
+                    f"Plugin name '{safe_display(name)}' should use kebab-case — plugin hosts "
                     "use it as the plugin identifier and component namespace",
                     file_path=manifest,
                     severity=Severity.WARNING,

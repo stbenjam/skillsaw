@@ -140,14 +140,14 @@ def _is_codex_only(context: RepositoryContext, plugin_path: Path, codex_roots: S
     mark the directory Codex-only — filtering out the legacy node with no
     Codex node to replace it, and dropping the plugin from the docs.
     """
-    if (plugin_path / ".claude-plugin" / "plugin.json").is_file():
-        return False
     resolved = safe_resolve(plugin_path)
     if resolved is None:
         return False
     if resolved in getattr(context, "marketplace_entries", {}):
         return False
-    return resolved in codex_roots
+    # Claude identity is the shared predicate's question; the codex_roots
+    # membership keeps the docstring's discovery-accepted requirement.
+    return resolved in codex_roots and context.is_codex_only_plugin(plugin_path)
 
 
 def _codex_marketplace_doc(
@@ -521,6 +521,10 @@ def _extract_codex_skills(
     caller for why.
     """
     docs = []
+    # Ancestor walk against a set, not a scan of every root per skill —
+    # the linear form was O(skills x plugins) and dominated ``skillsaw
+    # docs`` on large catalogs.
+    root_set = set(all_plugin_roots)
     for skill_resolved, skill_node in resolved_skills:
         if not skill_resolved.is_relative_to(plugin_resolved):
             continue
@@ -528,10 +532,9 @@ def _extract_codex_skills(
         # under plugins/, so their skills are relative to both roots.
         # Nearest root wins, or the root plugin's page would duplicate and
         # misattribute every nested plugin's skills.
-        owner = max(
-            (r for r in all_plugin_roots if skill_resolved.is_relative_to(r)),
-            key=lambda r: len(r.parts),
-            default=plugin_resolved,
+        owner = next(
+            (c for c in (skill_resolved, *skill_resolved.parents) if c in root_set),
+            plugin_resolved,
         )
         if owner != plugin_resolved:
             continue

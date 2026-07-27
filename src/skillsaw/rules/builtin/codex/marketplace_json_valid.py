@@ -18,6 +18,7 @@ from ._helpers import (
     KEBAB_CASE,
     nonfinite_constant_error,
     path_problem,
+    safe_display,
 )
 
 # Required fields per documented source type. Unknown types warn rather than
@@ -226,7 +227,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if not isinstance(category, str) or not category:
             return [
                 self.violation(
-                    f"plugins[{idx}] 'category' must be a non-empty string, got {category!r}",
+                    f"plugins[{idx}] 'category' must be a non-empty string, got '{safe_display(category)}'",
                     file_path=marketplace_file,
                     severity=Severity.WARNING,
                 )
@@ -251,7 +252,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if not isinstance(name, str):
             return [
                 self.violation(
-                    f"plugins[{idx}] plugin name must be a string, got {name!r}",
+                    f"plugins[{idx}] plugin name must be a string, got '{safe_display(name)}'",
                     file_path=marketplace_file,
                 )
             ]
@@ -287,7 +288,8 @@ class CodexMarketplaceJsonValidRule(Rule):
             )
             violations.append(
                 self.violation(
-                    f"plugins[{idx}] duplicate plugin name '{name}' " f"(first defined at {where})",
+                    f"plugins[{idx}] duplicate plugin name '{safe_display(name)}' "
+                    f"(first defined at {where})",
                     file_path=marketplace_file,
                 )
             )
@@ -296,7 +298,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if not KEBAB_CASE.match(name):
             violations.append(
                 self.violation(
-                    f"plugins[{idx}] plugin name '{name}' should use kebab-case",
+                    f"plugins[{idx}] plugin name '{safe_display(name)}' should use kebab-case",
                     file_path=marketplace_file,
                     severity=Severity.WARNING,
                 )
@@ -392,7 +394,7 @@ class CodexMarketplaceJsonValidRule(Rule):
         if not value.startswith("./"):
             return [
                 self.violation(
-                    f"{label}: relative path '{value}' should start with './'",
+                    f"{label}: relative path '{safe_display(value)}' should start with './'",
                     file_path=marketplace_file,
                     severity=Severity.INFO,
                 )
@@ -504,7 +506,7 @@ class CodexMarketplaceJsonValidRule(Rule):
                         # str(): the config schema declares a list without an
                         # element type, so a user's non-string value must not
                         # crash the rule inside its own error message.
-                        f"{value!r} (known values: {', '.join(str(v) for v in known)})",
+                        f"'{safe_display(value)}' (known values: {', '.join(str(v) for v in known)})",
                         file_path=marketplace_file,
                         severity=Severity.WARNING,
                     )

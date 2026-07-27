@@ -72,7 +72,10 @@ def _resolve_lint_paths(paths):
             # ``~/.agents/plugins/marketplace.json``, and widening that
             # walks all of $HOME — printing findings (and secrets) from
             # unrelated private projects. Same for the filesystem root.
-            if widened not in (Path.home(), Path(widened.anchor)):
+            # Resolved comparison: a symlinked $HOME (routine on macOS and
+            # NFS) otherwise slips past the bound and the walk covers the
+            # entire home directory.
+            if widened not in (Path.home().resolve(), Path(widened.anchor)):
                 resolved = widened
         normalized.append(resolved)
 

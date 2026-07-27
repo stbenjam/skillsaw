@@ -39,6 +39,7 @@ from .formats.codex import (
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
+    safe_is_dir,
     safe_is_file,
     safe_resolve,
 )
@@ -122,7 +123,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         role = (resolved, block_cls)
         if role in seen_roles or not safe_is_file(p) or _is_excluded(p):
             return
-        seen.add(resolved)
+        # seen_roles only — never the path-only ``seen`` set. A manifest
+        # can declare ``hooks``/``mcpServers`` at any in-plugin markdown
+        # file; poisoning ``seen`` with that path would silently drop the
+        # file from every content and prose rule that attaches later.
         seen_roles.add(role)
         parent.children.append(block_cls(path=p))
 
@@ -142,6 +146,43 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if root is None or resolved is None or not resolved.is_relative_to(root):
             return
         _add_parser_block(parent, p, block_cls)
+
+    def _add_codex_prose(parent: LintTarget, plugin_dir: Path) -> None:
+        """Prose blocks for a Codex plugin no PluginNode covers.
+
+        A plugin at the repository root, or reached through a catalog
+        source outside ``plugins/*``, ships the same ``commands/``,
+        ``agents/`` and ``rules/`` prose — the content and security rules
+        must read it. Containment mirrors ``_add_codex_block``: these
+        paths are found by convention, so a symlink would pull an external
+        file under an in-repo name.
+        """
+        plugin_resolved = safe_resolve(plugin_dir)
+        if plugin_resolved is None:
+            return
+
+        def _contained(p: Path) -> bool:
+            resolved = safe_resolve(p)
+            return resolved is not None and resolved.is_relative_to(plugin_resolved)
+
+        for dirname, block_cls, pattern in (
+            ("commands", CommandBlock, "*.md"),
+            ("agents", AgentBlock, "*.md"),
+            ("rules", PluginRuleBlock, "**/*.md"),
+        ):
+            content_dir = plugin_dir / dirname
+            if not safe_is_dir(content_dir):
+                continue
+            try:
+                files = sorted(content_dir.glob(pattern))
+            except OSError:
+                continue
+            for md in files:
+                if _contained(md):
+                    _add_block(parent, md, block_cls)
+        readme = plugin_dir / "README.md"
+        if _contained(readme):
+            _add_block(parent, readme, ReadmeBlock)
 
     def _add_openai_metadata(
         parent: LintTarget,
@@ -253,10 +294,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             for rule_file in sorted(rules_dir.rglob("*.md")):
                 _add_block(plugin_node, rule_file, PluginRuleBlock)
 
-        _add_block(plugin_node, plugin_path / "hooks" / "hooks.json", HooksBlock)
-        _add_block(plugin_node, plugin_path / "settings.json", SettingsBlock)
-        _add_block(plugin_node, plugin_path / "settings.local.json", SettingsBlock)
-        _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
+        if not context.is_codex_only_plugin(plugin_path):
+            _add_block(plugin_node, plugin_path / "hooks" / "hooks.json", HooksBlock)
+            _add_block(plugin_node, plugin_path / "settings.json", SettingsBlock)
+            _add_block(plugin_node, plugin_path / "settings.local.json", SettingsBlock)
+            _add_block(plugin_node, plugin_path / ".mcp.json", McpBlock)
+        # Codex-only: the manifest loop below attaches hooks and MCP with a
+        # containment check — a symlinked hooks.json must not pull an
+        # external file's commands under an in-repo name. Prose stays here.
         _add_block(plugin_node, plugin_path / "README.md", ReadmeBlock)
 
         plugin_nodes[plugin_path.resolve()] = plugin_node
@@ -326,12 +371,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved_plugin = codex_plugin_path.resolve()
         parent = plugin_nodes.get(resolved_plugin)
         if parent is not None:
+            # A PluginNode already attached this directory's prose.
             parent.children.append(node)
         elif resolved_plugin == root.resolved_path:
             root.children.append(node)
+            _add_codex_prose(root, codex_plugin_path)
         else:
             container = CodexPluginNode(path=codex_plugin_path)
             container.children.append(node)
+            _add_codex_prose(container, codex_plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
             if marketplace_node is not None and resolved_plugin.is_relative_to(
                 marketplace_dir.resolve()

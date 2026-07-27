@@ -5,7 +5,6 @@ Rule: plugin-json-required
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.formats.codex import codex_manifest_is_contained
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
 
@@ -38,26 +37,15 @@ class PluginJsonRequiredRule(Rule):
                 # Check if plugin has strict: false in marketplace metadata
                 resolved_path = plugin_path.resolve()
 
-                # Asked of the filesystem, not of discovery: an explicit
-                # ``--type`` override switches Codex discovery off, and an
-                # exemption read from it would vanish under
-                # ``--type marketplace`` — same repository, contradictory
-                # answers. ``codex_manifest_is_contained`` applies the same
-                # containment discovery does, so a manifest symlinked out of
-                # the plugin still exempts nothing.
-                if (
-                    resolved_path not in getattr(context, "marketplace_entries", {})
-                    and not (plugin_path / ".claude-plugin").is_dir()
-                    # The filesystem probe survives a ``--type`` override
-                    # that switches Codex discovery off; the claim check
-                    # additionally covers a directory a catalog lists but
-                    # that ships no manifest yet — codex-plugin-json-valid
-                    # owns that defect, one report per ecosystem.
-                    and (
-                        codex_manifest_is_contained(plugin_path)
-                        or context.is_codex_claimed(plugin_path)
-                    )
-                ):
+                # is_codex_only_plugin() is filesystem-first, so the
+                # exemption survives a ``--type`` override that switches
+                # Codex discovery off; the claim half additionally covers a
+                # directory a catalog lists but that ships no manifest yet —
+                # codex-plugin-json-valid owns that defect, one report per
+                # ecosystem.
+                if resolved_path not in getattr(
+                    context, "marketplace_entries", {}
+                ) and context.is_codex_only_plugin(plugin_path):
                     # A Codex plugin, swept up here only because it also ships
                     # a commands/ or skills/ directory. It has no reason to
                     # carry a Claude manifest, and codex-plugin-json-valid

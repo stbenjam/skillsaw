@@ -39,12 +39,16 @@ type, validates marketplace registration, and runs cross-file rules, none of
 which map to per-file invocation. The hook therefore declares
 `pass_filenames: false` and lints the whole repository.
 
-The published hook deliberately has no `files` filter. Codex plugin manifests
-can declare skills, hooks, MCP configs, and assets at arbitrary paths, so no
-static filename pattern can cover every lint input. A deleted custom asset can
-also invalidate a manifest without leaving a staged file at the asset's old
-path. `always_run: true` covers that deletion-only case. Running on every
-commit keeps cross-file validation complete.
+The published hook declares `files: .` — any staged file triggers a full
+repository lint. Codex plugin manifests can declare skills, hooks, MCP
+configs, and assets at arbitrary paths, so no narrower filename pattern can
+cover every lint input; matching everything keeps cross-file validation
+complete while still letting pre-commit skip commits that stage nothing
+(an `--allow-empty` commit, a message-only amend). One known gap: pre-commit
+does not count deleted files toward `files` matching, so a commit that
+*only* deletes files skips the hook — a deletion that leaves a manifest
+path dangling surfaces on the next non-deletion commit, or immediately via
+`pre-commit run skillsaw --all-files`.
 
 Because the whole repository is linted, a pre-existing violation in a file you
 didn't touch can block your commit. If you're adopting skillsaw on a repo with
@@ -85,19 +89,18 @@ To pass extra CLI flags, override `args` in your config:
 
 ## Troubleshooting
 
-**Can I run the hook only for selected paths?** You can add a `files` filter
+**Can I run the hook only for selected paths?** Override the `files` filter
 in your own config:
 
 ```yaml
     hooks:
       - id: skillsaw
-        always_run: false
         files: ^(CLAUDE\.md|\.claude/|\.claude-plugin/)
 ```
 
-Disabling `always_run` is necessary for the filter to take effect. This trades
-completeness for speed: a Codex component declared at a custom path, or a
-change that leaves a manifest path dangling, may no longer trigger the hook.
+This trades completeness for speed: a Codex component declared at a custom
+path, or a change that leaves a manifest path dangling, may no longer
+trigger the hook.
 
 **The hook fails on files I didn't change.** That's the repo-level lint
 working as intended — see the baseline note above.
