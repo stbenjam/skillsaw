@@ -565,13 +565,16 @@ CLI_PATH_SECTION = """\
 ### Path arguments
 
 `lint` and `fix` accept files as well as directories. A file resolves
-to the directory that owns it, and naming a plugin manifest directly —
-`.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`, or a catalog
-under `.agents/plugins/` — lints the owning plugin or repository root,
+to the directory that owns it, and naming a Codex plugin manifest
+directly — `.codex-plugin/plugin.json`, or a catalog under
+`.agents/plugins/` — widens to the owning plugin or repository root,
 so the manifest rules that discover from that root actually run. The
 widening is bounded: it climbs only from the manifest's marker
 directory to the root that owns it, and never continues toward `$HOME`
-or the filesystem root. Duplicate paths and paths nested inside another
+or the filesystem root. A `.claude-plugin/plugin.json` path is not
+widened — that would expand what `fix` writes beyond the path the
+caller named — so no manifest rule runs; name the plugin's root
+directory instead. Duplicate paths and paths nested inside another
 named path are dropped.
 """
 
