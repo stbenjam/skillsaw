@@ -402,6 +402,63 @@ class TestSkillDiscoveryRobustness:
 
         assert RepositoryContext(repo).skills == []
 
+    def test_a_symlinked_skill_entrypoint_is_not_followed(self, tmp_path):
+        """A contained skill directory is not enough — SKILL.md can itself
+        be the symlink out, and the tree reads whatever it points at."""
+        outside = tmp_path / "outside-skill"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: leaked\ndescription: Outside the plugin\n---\n\n# Leaked\n",
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        plugin = repo / ".codex" / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        skill = plugin / "skills" / "borrowed"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").symlink_to(outside / "SKILL.md")
+
+        assert RepositoryContext(repo).skills == []
+
+    def _escaping_skill_in_a_skill_repo(self, tmp_path):
+        """A skill repo whose repository-wide walk passes through a
+        Codex-only plugin holding an escaping entrypoint."""
+        outside = tmp_path / "outside-skill"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: leaked\ndescription: Outside the plugin\n---\n\n# Leaked\n",
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        local = repo / "skills" / "local"
+        local.mkdir(parents=True)
+        (local / "SKILL.md").write_text(
+            "---\nname: local\ndescription: A skill this repository ships\n---\n\n# Local\n",
+            encoding="utf-8",
+        )
+        plugin = repo / "plugins" / "helper"
+        plugin.mkdir(parents=True)
+        _write_plugin(plugin, {"name": "helper", "version": "1.0.0", "description": "x"})
+        borrowed = plugin / "skills" / "borrowed"
+        borrowed.mkdir(parents=True)
+        (borrowed / "SKILL.md").symlink_to(outside / "SKILL.md")
+        return repo
+
+    def test_the_repository_wide_walk_honors_the_codex_boundary(self, tmp_path):
+        repo = self._escaping_skill_in_a_skill_repo(tmp_path)
+        skills = RepositoryContext(repo).skills
+        assert [str(s.relative_to(repo)) for s in skills] == ["skills/local"]
+
+    def test_the_boundary_survives_a_type_override(self, tmp_path):
+        """A ``--type`` override switches Codex *discovery* off, never the
+        author's declaration: the walk must still derive the boundary from
+        the contained manifest, or the override becomes a way to read
+        content the containment check exists to keep out."""
+        repo = self._escaping_skill_in_a_skill_repo(tmp_path)
+        context = RepositoryContext(repo, repo_types={RepositoryType.AGENTSKILLS})
+        assert [str(s.relative_to(repo)) for s in context.skills] == ["skills/local"]
+
     def test_a_directory_cycle_does_not_recurse_forever(self, tmp_path):
         """`skills/a/loop -> ../..` stays inside the plugin and passes
         containment, so only visit-tracking stops it."""

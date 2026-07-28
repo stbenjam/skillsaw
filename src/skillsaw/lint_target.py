@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, List, Optional, Type, TypeVar
+from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
 
 T = TypeVar("T", bound="LintTarget")
 
@@ -61,6 +61,29 @@ class LintTarget:
         if found is None:
             found = [n for n in self.walk() if isinstance(n, target_type)]
             cache[target_type] = found
+        return list(found)
+
+    def find_filtered(
+        self,
+        target_type: Type[T],
+        cache_key: Hashable,
+        predicate: Callable[[T], bool],
+    ) -> List[T]:
+        """``find(target_type)`` narrowed by *predicate*, memoized too.
+
+        Kept in the same cache as ``find()`` under ``(target_type,
+        cache_key)``, so every path that drops the ``find()`` memo drops
+        these with it. A filter re-run per rule around a memoized lookup
+        hands back exactly the cost the memo exists to remove; *cache_key*
+        identifies the filter, and callers must make it name everything the
+        predicate depends on.
+        """
+        cache = self.__dict__.setdefault("_find_cache", {})
+        key = (target_type, cache_key)
+        found = cache.get(key)
+        if found is None:
+            found = [n for n in self.find(target_type) if predicate(n)]
+            cache[key] = found
         return list(found)
 
     def invalidate_find_cache(self) -> None:

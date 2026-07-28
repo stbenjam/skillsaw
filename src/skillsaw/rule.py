@@ -205,11 +205,20 @@ class Rule(ABC):
         guard in the rule body. The ownership question itself is answered
         by ``RepositoryContext.in_format_scope``, a view over the cached
         :class:`PluginProvenance` record.
+
+        Memoized like ``find()`` itself: the scope depends only on the
+        ecosystem and the static tree, so every rule declaring the same
+        scope shares one filtered list rather than re-running the filter
+        per rule, per node.
         """
-        nodes = context.lint_tree.find(node_type)
         if self.provenance_scope is None:
-            return nodes
-        return [n for n in nodes if context.in_format_scope(n, self.provenance_scope)]
+            return context.lint_tree.find(node_type)
+        ecosystem = self.provenance_scope
+        return context.lint_tree.find_filtered(
+            node_type,
+            ("provenance_scope", ecosystem),
+            lambda node: context.in_format_scope(node, ecosystem),
+        )
 
     def fix(
         self,

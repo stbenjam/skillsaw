@@ -236,7 +236,12 @@ class RepositoryContext:
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
+        self._codex_evidence: Optional[bool] = None
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
+        # Views over _provenance_cache, invalidated with it: keeping them
+        # beside it is what makes their lifetimes match the records they
+        # summarise.
+        self._format_scope_cache: Dict[Tuple[Path, str], bool] = {}
         # An explicit --type override gates *discovery* (which catalogs are
         # walked, which Codex rules activate), not *declaration*: the
         # provenance claim set stays --type-invariant, so a catalog-claimed
@@ -412,7 +417,9 @@ class RepositoryContext:
         # exists, and this end-of-init clear is what discards those early
         # records. Never scope it under ``if self.exclude_patterns:``.
         self._codex_claims = None
+        self._codex_evidence = None
         self._provenance_cache.clear()
+        self._format_scope_cache.clear()
         self.detected_formats = self._detect_formats()
         self._lint_tree = None
 
@@ -765,6 +772,25 @@ class RepositoryContext:
         # provenance claim set, which must be ``--type``-invariant.
         return codex_discovery.codex_local_sources(self.root_path, self._codex_catalog_files())
 
+    def _codex_claims_possible(self) -> bool:
+        """Whether any directory in this checkout could carry a Codex claim.
+
+        Computed once per context. With no Codex evidence anywhere, a
+        per-directory provenance consult can only ever answer "not Codex" —
+        and the skill walk runs one for every directory it descends into,
+        at ~6 syscalls each, on repositories that have no Codex content.
+
+        Conservative when a ``--type`` override switched discovery off:
+        provenance stays override-invariant, so a contained
+        ``.codex-plugin`` still declares Codex even though nothing walked
+        for it, and the per-directory consult has to run.
+        """
+        if self._codex_evidence is None:
+            self._codex_evidence = not self._codex_discovery_enabled or bool(
+                self._codex_claim_set()
+            )
+        return self._codex_evidence
+
     def _codex_claim_set(self) -> Set[Path]:
         """Every resolved directory Codex claims, computed once per context.
 
@@ -781,6 +807,12 @@ class RepositoryContext:
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
 
+        Cached under the path as given *and* under its resolved form, so a
+        repeat consult for a path already seen costs a dict lookup and no
+        syscall: every format-scoped rule re-asks this question for every
+        node it iterates, and a ``realpath`` on each of those was the whole
+        cost of the scope filter.
+
         The one place ecosystem-ownership evidence is gathered; every
         predicate below is a view over this record. Evidence, in
         declaration strength order:
@@ -793,10 +825,14 @@ class RepositoryContext:
         Filesystem-first and independent of ``--type``: an override
         changes what discovery walks, not what the author declared.
         """
+        cached = self._provenance_cache.get(plugin_dir)
+        if cached is not None:
+            return cached
         resolved = safe_resolve(plugin_dir)
         key = resolved if resolved is not None else plugin_dir
         cached = self._provenance_cache.get(key)
         if cached is not None:
+            self._provenance_cache[plugin_dir] = cached
             return cached
 
         ecosystems = set()
@@ -828,6 +864,7 @@ class RepositoryContext:
             installed=self.is_codex_installed_plugin(plugin_dir),
         )
         self._provenance_cache[key] = record
+        self._provenance_cache[plugin_dir] = record
         return record
 
     def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
@@ -850,12 +887,22 @@ class RepositoryContext:
         for each of its ecosystems — dual plugins keep their established
         Claude results. Ownership comes from :meth:`provenance`; no fresh
         filesystem probes here.
+
+        Memoized per ``(owner_dir, ecosystem)``: ``find()`` is memoized
+        because the tree is static while rules run, and every scoped rule
+        re-consults this for every node it iterates — an unmemoized filter
+        wrapped around a memoized lookup gives the cost back.
         """
         owner_dir = node.provenance_dir()
         if owner_dir is None:
             return True
-        ecosystems = self.provenance(owner_dir).ecosystems
-        return not ecosystems or ecosystem in ecosystems
+        key = (owner_dir, ecosystem)
+        cached = self._format_scope_cache.get(key)
+        if cached is None:
+            ecosystems = self.provenance(owner_dir).ecosystems
+            cached = not ecosystems or ecosystem in ecosystems
+            self._format_scope_cache[key] = cached
+        return cached
 
     def in_codex_only_plugin(self, path: Path) -> bool:
         """Whether *path* sits inside a Codex-ONLY plugin, nearest owner first.
@@ -875,13 +922,17 @@ class RepositoryContext:
         contains the nested ones, so an outer match would let content escape
         the plugin that actually ships it.
         """
+        # Ancestor walk against a set: runs per skill, where scanning every
+        # root would be O(skills x plugins) on a large catalog. Walking
+        # upward finds the nearest root by construction. The root set is
+        # cached and tested before resolving, so a repository with no Codex
+        # plugins pays no realpath per skill.
+        roots = set(self.codex_plugin_roots())
+        if not roots:
+            return None
         resolved = safe_resolve(path)
         if resolved is None:
             return None
-        # Ancestor walk against a set: runs per skill, where scanning every
-        # root would be O(skills x plugins) on a large catalog. Walking
-        # upward finds the nearest root by construction.
-        roots = set(self.codex_plugin_roots())
         for candidate in (resolved, *resolved.parents):
             if candidate in roots:
                 return candidate
@@ -895,6 +946,10 @@ class RepositoryContext:
         very symlinks the boundary exists to reject. Ownership comes from
         :meth:`provenance`.
         """
+        if not self._codex_claims_possible():
+            # No Codex evidence in the checkout: the ancestor walk can only
+            # answer "no boundary", and it runs once per skills directory.
+            return None
         for candidate in (parent, *parent.parents):
             if self.provenance(candidate).codex_only:
                 return safe_resolve(candidate)
@@ -1372,18 +1427,27 @@ class RepositoryContext:
                     continue
                 if contain_within is not None and not resolved.is_relative_to(contain_within):
                     continue
-                entrypoint = safe_resolve(item / "SKILL.md")
-                if entrypoint is not None and (item / "SKILL.md").exists():
-                    # A contained directory is not enough: SKILL.md can
-                    # itself be a symlink out, and the tree follows it.
-                    if contain_within is not None and not entrypoint.is_relative_to(contain_within):
-                        continue
+                if (item / "SKILL.md").exists():
+                    if contain_within is not None:
+                        # A contained directory is not enough: SKILL.md can
+                        # itself be a symlink out, and the tree follows it.
+                        # Resolved only where there is a boundary to test it
+                        # against — the walk sees every directory in the
+                        # repository, and a realpath on each is its dominant
+                        # cost.
+                        entrypoint = safe_resolve(item / "SKILL.md")
+                        if entrypoint is None or not entrypoint.is_relative_to(contain_within):
+                            continue
                     skills.append(item)
                     discovered.add(resolved)
                 else:
                     visited.add(resolved)
                     child_bound = contain_within
-                    if child_bound is None and self.provenance(item).codex_only:
+                    if (
+                        child_bound is None
+                        and self._codex_claims_possible()
+                        and self.provenance(item).codex_only
+                    ):
                         # Entering a Codex-only directory: from here down,
                         # everything must resolve inside it.
                         child_bound = resolved

@@ -217,6 +217,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         containment_root: Path,
     ) -> None:
         """Attach structured OpenAI metadata."""
+        # Existence first: this runs once per SkillNode, and `agents/
+        # openai.yaml` is absent in the overwhelming majority of them — the
+        # three resolves below cost a realpath each and answer nothing when
+        # there is no file to attach.
+        if not safe_is_file(path) or _is_excluded(path):
+            return
         resolved = safe_resolve(path)
         root = safe_resolve(containment_root)
         owner = safe_resolve(metadata_root)
@@ -225,8 +231,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             or root is None
             or owner is None
             or (resolved, owner) in openai_seen
-            or not safe_is_file(path)
-            or _is_excluded(path)
             or not resolved.is_relative_to(root)
         ):
             return
