@@ -242,12 +242,19 @@ class CodexMarketplaceRegistrationRule(Rule):
         found: List[Tuple[Path, str]] = []
         for plugin_node in context.lint_tree.find(CodexPluginConfigNode):
             plugin_dir = plugin_node.plugin_dir
-            if not plugin_node.path.is_file():
+            if not safe_is_file(plugin_node.path):
                 # No manifest: nothing installable to register, and
                 # codex-plugin-json-valid already reports the missing
                 # entrypoint.
                 continue
-            if plugin_dir.resolve() in registered_dirs:
+            resolved_dir = safe_resolve(plugin_dir)
+            if resolved_dir is None:
+                # Unresolvable (symlink loop, unreadable parent): the
+                # directory cannot be matched against what the catalogs
+                # register, and raising here would discard every finding
+                # this rule has for the whole catalog.
+                continue
+            if resolved_dir in registered_dirs:
                 continue
             if context.is_codex_installed_plugin(plugin_dir):
                 continue

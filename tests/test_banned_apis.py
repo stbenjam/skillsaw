@@ -41,7 +41,6 @@ GRANDFATHERED_BARE_RESOLVE = frozenset(
         "marketplace/add.py",
         "marketplace/init.py",
         "rules/builtin/agentskills/unreferenced_files.py",
-        "rules/builtin/codex/marketplace_registration.py",
         "rules/builtin/commands/naming.py",
         "rules/builtin/content/broken_internal_reference.py",
         "rules/builtin/content/instruction_drift.py",

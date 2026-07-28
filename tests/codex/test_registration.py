@@ -524,6 +524,33 @@ class TestRegistrationSurvivesUnparseableCatalogs:
         monkeypatch.setattr(mod.json, "loads", real)
 
 
+class TestRegistrationSurvivesUnresolvablePlugins:
+    """``Path.resolve()`` raises on symlink loops and unreadable parents,
+    and the raising branch differs by interpreter version — so it is
+    injected rather than built from real symlinks, which would exercise
+    only whichever branch this runtime takes.
+
+    The blast radius is the whole rule: one raise inside the discovered-
+    plugin scan turns every finding the rule had for the catalog into a
+    single ``rule-execution-error``.
+    """
+
+    @pytest.mark.parametrize("exc", [RuntimeError, OSError, ValueError])
+    def test_an_unresolvable_plugin_dir_does_not_abort_the_rule(self, tmp_path, monkeypatch, exc):
+        repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})
+        _write_plugin(repo / "plugins" / "one", {"name": "one", "version": "1.0.0"})
+        context = RepositoryContext(repo)
+        # Build the tree before injecting: the failure under test is in the
+        # rule's own scan, not in discovery.
+        context.lint_tree
+
+        def boom(self, *a, **kw):
+            raise exc("nope")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert CodexMarketplaceRegistrationRule({}).check(context) == []
+
+
 class TestManifestExclusionKeepsExecutableConfigs:
     def test_excluding_the_manifest_leaves_hooks_lintable(self, tmp_path):
         from skillsaw.rules.builtin.hooks.dangerous import HooksDangerousRule
