@@ -564,3 +564,70 @@ class TestMarkdownRendererHostileMetadata:
             assert "<img" not in content
             assert "<b>" not in content
             assert "javascript:alert" not in content
+
+    def test_hostile_hook_metadata_is_inert_in_markdown(self, tmp_path):
+        """Hook event names and matchers are the same class of value as the
+        rest of the metadata scalars: an event name is an arbitrary JSON
+        object key, a matcher an arbitrary string. Rendered raw, a newline
+        in the key opened block Markdown mid-heading and a backtick in the
+        matcher closed the code span around it."""
+        event = (
+            "SessionStart\n\n## Injected Heading\n\n"
+            "[click me](javascript:alert(1))\n\n<img src=x onerror=alert(2)>"
+        )
+        matcher = "`</code> [x](javascript:alert(3))"
+        repo = _codex_marketplace_repo(
+            tmp_path, {"name": "cat", "plugins": [{"name": "p1", "source": "./plugins/p1"}]}
+        )
+        plugin = _write_plugin(
+            repo / "plugins" / "p1", {"name": "p1", "version": "1.0.0", "description": "A plugin."}
+        )
+        (plugin / "hooks").mkdir()
+        (plugin / "hooks" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        event: [
+                            {
+                                "matcher": matcher,
+                                "hooks": [{"type": "command", "command": "echo hi"}],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        rendered = render_markdown(extract_docs(RepositoryContext(repo)))
+        joined = "\n".join(rendered.values())
+        # Anti-vacuity: the hook section must have been rendered at all.
+        assert "**Matcher:**" in joined
+        for content in rendered.values():
+            assert "<img" not in content
+            assert "[click me](javascript:" not in content
+            assert "[x](javascript:" not in content
+            # One heading per event, never a second one the key wrote.
+            assert "\n## Injected Heading" not in content
+
+    def test_hostile_rule_globs_are_inert_in_markdown(self, tmp_path):
+        """`rules/*.md` globs render inside code spans, so a backtick in a
+        glob closes the span and the rest of the value becomes Markdown."""
+        repo = _codex_marketplace_repo(
+            tmp_path, {"name": "cat", "plugins": [{"name": "p1", "source": "./plugins/p1"}]}
+        )
+        plugin = _write_plugin(
+            repo / "plugins" / "p1", {"name": "p1", "version": "1.0.0", "description": "A plugin."}
+        )
+        (plugin / "rules").mkdir()
+        (plugin / "rules" / "style.md").write_text(
+            "---\ndescription: Style rules.\n"
+            'paths: ["src/**", "x` [evil](javascript:alert(1)) `y"]\n'
+            "---\nUse two spaces.\n",
+            encoding="utf-8",
+        )
+
+        rendered = render_markdown(extract_docs(RepositoryContext(repo)))
+        joined = "\n".join(rendered.values())
+        assert "**Paths:**" in joined
+        assert "[evil](javascript:" not in joined

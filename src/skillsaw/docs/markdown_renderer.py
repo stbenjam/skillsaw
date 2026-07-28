@@ -274,10 +274,15 @@ def _append_agent(lines: List[str], agent: AgentDoc) -> None:
 
 
 def _append_hook(lines: List[str], hook: HookDoc) -> None:
-    lines.append(f"### {hook.event_type}")
+    # An event name is an arbitrary JSON object key and a matcher an
+    # arbitrary string — neither is author prose, and both fold through
+    # _table_cell like every other metadata scalar. Raw, a newline in an
+    # event key opened block Markdown mid-heading and a backtick in a
+    # matcher closed the code span around it.
+    lines.append(f"### {_table_cell(hook.event_type)}")
     lines.append("")
     for entry in hook.entries:
-        lines.append(f"**Matcher:** `{entry.matcher}`")
+        lines.append(f"**Matcher:** `{_table_cell(entry.matcher)}`")
         lines.append("")
         lines.append("```json")
         lines.append(json.dumps(entry.hooks, indent=2))
@@ -299,14 +304,17 @@ def _append_mcp_table(lines: List[str], servers: List[McpServerDoc]) -> None:
 
 
 def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
-    lines.append(f"### {rule.name}")
+    # A rule name is a filename stem, and a filesystem accepts every
+    # Markdown control character in a name.
+    lines.append(f"### {_table_cell(rule.name)}")
     lines.append("")
     desc = rule.description or (rule.body[:200] if rule.body else "")
     if desc:
         lines.append(desc)
         lines.append("")
     if rule.globs:
-        lines.append(f"**Paths:** {', '.join(f'`{g}`' for g in rule.globs)}")
+        globs = ", ".join(f"`{_table_cell(g)}`" for g in rule.globs)
+        lines.append(f"**Paths:** {globs}")
         lines.append("")
 
 
