@@ -19,7 +19,7 @@ SCALES: Dict[str, Dict[str, int]] = {
     "large": dict(plugins=60, commands=12, agents=6, skills=200, refs=3),
     # An openai/plugins-shaped catalog: every plugin Codex-claimed with a
     # local source, so repository detection consults the claim set once per
-    # child — the shape whose discovery cost was once quadratic.
+    # child — the shape that stresses claim-set memoization.
     "codex-marketplace": dict(plugins=120, commands=4, agents=2, skills=120, refs=2, codex=1),
 }
 
