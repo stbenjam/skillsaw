@@ -415,6 +415,31 @@ class TestInlineMcpCommandIsUsable:
         )
         assert McpValidJsonRule({}).check(RepositoryContext(repo)) == []
 
+    def test_a_credential_in_the_server_name_is_redacted(self, tmp_path):
+        """The server name is a manifest-controlled key echoed into the
+        message, and CI uploads these reports as JSON/SARIF artifacts
+        (T14)."""
+        from skillsaw.rules.builtin.mcp.valid_json import McpValidJsonRule
+
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {
+                "name": "mcpy",
+                "version": "1.0.0",
+                "description": "x",
+                "mcpServers": {
+                    "https://user:hunter2@registry.example/mcp": {
+                        "type": "stdio",
+                        "command": "",
+                    }
+                },
+            },
+        )
+        found = messages(McpValidJsonRule({}).check(RepositoryContext(repo)))
+        reported = [m for m in found if "non-empty string" in m]
+        assert reported, found
+        assert not any("hunter2" in m for m in reported)
+
 
 class TestUnhashableHookType:
     @pytest.mark.parametrize("bad", [[], {}, ["command"], 42])

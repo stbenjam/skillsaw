@@ -7,6 +7,7 @@ from pathlib import Path
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.utils import read_json
@@ -204,7 +205,8 @@ class McpValidJsonRule(Rule):
                 ):
                     violations.append(
                         self.violation(
-                            f"MCP server '{server_name}' '{required_field}' must be a non-empty string",
+                            f"MCP server '{safe_display(server_name)}' '{required_field}' "
+                            "must be a non-empty string",
                             file_path=file_path,
                         )
                     )
