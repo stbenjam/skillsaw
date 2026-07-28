@@ -508,6 +508,41 @@ class TestResolveFailureModes:
         monkeypatch.setattr(Path, "resolve", boom)
         assert escapes_root("./loop", tmp_path) is True
 
+    @pytest.mark.parametrize("exc", [RuntimeError, OSError, ValueError])
+    def test_path_matches_patterns_never_raises(self, monkeypatch, tmp_path, exc):
+        """Violation filtering runs this on every reported path, so a raise
+        here aborts the lint that was about to report the loop's own
+        diagnostic."""
+        from skillsaw.context import path_matches_patterns
+
+        root = tmp_path.resolve()
+
+        def boom(self, *a, **kw):
+            raise exc("nope")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert path_matches_patterns(root / "x", root, ["**/x"]) is False
+
+    @pytest.mark.parametrize("exc", [RuntimeError, OSError, ValueError])
+    def test_the_file_read_cache_keys_on_the_unresolved_path(self, monkeypatch, tmp_path, exc):
+        """The cache key is computed before the read, so a raise there
+        aborts the whole lint from a lookup — while the reader itself
+        already diagnoses unreadable input."""
+        from skillsaw.utils import read_text
+        from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+        target = tmp_path / "note.md"
+        target.write_text("body\n", encoding="utf-8")
+        invalidate_read_caches()
+
+        def boom(self, *a, **kw):
+            raise exc("nope")
+
+        monkeypatch.setattr(Path, "resolve", boom)
+        assert read_text(target) == "body\n"
+        # Second call takes the hit path under the same unresolved key.
+        assert read_text(target) == "body\n"
+
     def test_a_real_symlink_loop_does_not_abort_discovery(self, tmp_path):
         """Whichever branch this interpreter takes, the lint must survive."""
         repo = _codex_marketplace_repo(
