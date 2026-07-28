@@ -1,0 +1,5 @@
+{
+  "name": "OUTSIDE_THE_CHECKOUT",
+  "description": "A manifest in a directory the linted repository does not contain.",
+  "version": "9.9.9"
+}

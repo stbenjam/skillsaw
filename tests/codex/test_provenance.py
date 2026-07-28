@@ -452,6 +452,92 @@ class TestClaudeRulesStandDown:
         assert messages(violations) == ["Missing plugin.json"]
 
 
+class TestCatalogClaimContainment:
+    """A catalog claim declares a directory; it never licenses reading
+    through it.
+
+    ``discovery`` containment-checks the ``.codex-plugin`` marker, so a
+    marker symlinked out of the checkout keeps a directory undiscovered.
+    The claim set is a second route to ``codex=True``, and it must apply
+    the same check — otherwise the catalog names a directory, provenance
+    adopts its external marker, and every Codex rule downstream reads and
+    reports files the repository does not contain.
+    """
+
+    def _repo(self, tmp_path):
+        return copy_fixture("codex/claim-escape", tmp_path) / "repo"
+
+    def test_an_escaping_marker_is_not_codex_provenance(self, tmp_path):
+        repo = self._repo(tmp_path)
+        context = RepositoryContext(repo)
+        claimed = repo / "plugins" / "note-taker"
+
+        # Precondition: the claim itself is intact, so the assertion below
+        # tests the containment check rather than a failed catalog read.
+        assert claimed.resolve() in context._codex_claim_set()
+        assert context.provenance(claimed).codex is False
+        assert context.is_codex_only_plugin(claimed) is False
+
+    def test_no_codex_node_is_built_over_an_escaping_marker(self, tmp_path):
+        repo = self._repo(tmp_path)
+        tree = RepositoryContext(repo).lint_tree
+
+        assert tree.find(CodexPluginConfigNode) == []
+        assert tree.find(CodexPluginNode) == []
+        # The directory keeps a container: its own prose is the
+        # repository's and must still be linted.
+        assert [n.path.name for n in tree.find(PluginNode)] == ["note-taker"]
+
+    def test_no_file_outside_the_checkout_is_named_in_any_violation(self, tmp_path):
+        """The disclosure itself: `.codex-plugin/` is `iterdir`ed by
+        codex-plugin-structure and read by codex-plugin-json-valid, so an
+        escaping marker turned a lint report into a directory listing of an
+        external path."""
+        from skillsaw.linter import Linter
+
+        repo = self._repo(tmp_path)
+        violations = Linter(RepositoryContext(repo)).run()
+        rendered = "\n".join(f"{v.rule_id} {v.file_path} {v.message}" for v in violations)
+
+        assert "OUTSIDE_THE_CHECKOUT" not in rendered
+        assert "deploy_key_outside" not in rendered
+        assert "outside-the-checkout" not in rendered
+
+    def test_a_contained_marker_under_the_same_claim_still_reports(self, tmp_path):
+        """Anti-vacuity: the fixture's own layout, with the symlink replaced
+        by a real marker directory, still produces Codex findings — so the
+        assertions above are the containment check, not a dead fixture."""
+        repo = self._repo(tmp_path)
+        marker = repo / "plugins" / "note-taker" / ".codex-plugin"
+        marker.unlink()
+        _write_plugin(
+            repo / "plugins" / "note-taker",
+            {"name": "Note_Taker", "description": "Capture notes."},
+        )
+        (marker / "deploy_key_inside").write_text("stray\n", encoding="utf-8")
+
+        context = RepositoryContext(repo)
+        assert context.provenance(repo / "plugins" / "note-taker").codex is True
+        from skillsaw.rules.builtin.codex import CodexPluginStructureRule
+
+        found = messages(CodexPluginStructureRule({}).check(context))
+        assert any("deploy_key_inside" in m for m in found)
+
+    def test_a_markerless_claim_still_reports_its_missing_manifest(self, tmp_path):
+        """The exemption the fix must preserve: no marker at all is not an
+        escape, so the claim stands and codex-plugin-json-valid reports the
+        manifest the catalog promised."""
+        repo = self._repo(tmp_path)
+        (repo / "plugins" / "note-taker" / ".codex-plugin").unlink()
+
+        context = RepositoryContext(repo)
+        assert context.provenance(repo / "plugins" / "note-taker").codex is True
+        from skillsaw.rules.builtin.codex import CodexPluginJsonValidRule
+
+        found = messages(CodexPluginJsonValidRule({}).check(context))
+        assert any("Missing .codex-plugin/plugin.json" in m for m in found)
+
+
 class TestCodexPluginTreeHierarchy:
     def test_nested_codex_only_plugin_owns_manifest_config_and_skill(self, tmp_path):
         repo = _codex_marketplace_repo(tmp_path, {"name": "cat", "plugins": []})

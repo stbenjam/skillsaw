@@ -11,7 +11,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
+from skillsaw.paths import (
+    contained_resolve,
+    safe_exists,
+    safe_is_dir,
+    safe_is_file,
+    safe_is_symlink,
+    safe_resolve,
+)
 from skillsaw.utils import read_json
 
 
@@ -221,3 +228,26 @@ def codex_manifest_is_contained(plugin_dir: Path) -> bool:
     if contained_resolve(manifest, root) is None:
         return False
     return safe_is_file(manifest)
+
+
+def codex_marker_escapes(plugin_dir: Path) -> bool:
+    """Whether *plugin_dir*'s ``.codex-plugin`` marker points out of the plugin.
+
+    The containment half of :func:`codex_manifest_is_contained`, asked
+    without requiring the manifest to exist: a directory carrying no marker
+    at all does not escape, so a claim over it still stands and
+    ``codex-plugin-json-valid`` still reports the missing manifest. A marker
+    (or a ``plugin.json`` inside it) that resolves elsewhere is another
+    plugin's — or another tree's — and no claim may adopt it.
+    """
+    root = safe_resolve(plugin_dir)
+    if root is None:
+        # Containment cannot be proven, so fail closed.
+        return True
+    manifest_dir = plugin_dir / CODEX_PLUGIN_MANIFEST[0]
+    if not (safe_exists(manifest_dir) or safe_is_symlink(manifest_dir)):
+        return False
+    if contained_resolve(manifest_dir, root) is None:
+        return True
+    manifest = plugin_dir.joinpath(*CODEX_PLUGIN_MANIFEST)
+    return safe_exists(manifest) and contained_resolve(manifest, root) is None

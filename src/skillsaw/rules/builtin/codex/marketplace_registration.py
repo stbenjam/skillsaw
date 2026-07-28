@@ -17,6 +17,7 @@ from skillsaw.rule import (
 from skillsaw.context import RepositoryContext, codex_local_source_path
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.codex import (
+    codex_manifest_is_contained,
     codex_plugin_name,
     is_remote_source,
 )
@@ -341,15 +342,11 @@ class CodexMarketplaceRegistrationRule(Rule):
                 )
                 continue
 
-            manifest = plugin_dir.joinpath(*context.CODEX_PLUGIN_MANIFEST)
-            manifest_resolved = safe_resolve(manifest)
-            if not safe_is_file(manifest) or (
-                manifest_resolved is not None and not manifest_resolved.is_relative_to(plugin_dir)
-            ):
-                # This rule reads the manifest itself, so it needs its own
-                # containment check — discovery's does not cover this path,
-                # and a symlinked manifest would put an external file's name
-                # into a violation message.
+            if not codex_manifest_is_contained(plugin_dir):
+                # Installability is asked of the entry, not of the tree: the
+                # catalog may name a directory no node was built over. The
+                # shared format reader answers it, so "usable manifest" means
+                # the same thing here as it does to discovery and provenance.
                 violations.append(
                     self.violation(
                         f"plugins[{idx}] source '{safe_display(source)}' has no usable "

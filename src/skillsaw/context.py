@@ -25,6 +25,7 @@ from .formats.codex import (
     codex_declared_skill_dirs,
     codex_local_source_path,
     codex_manifest_is_contained,
+    codex_marker_escapes,
 )
 from .formats.promptfoo import is_promptfoo_config
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
@@ -810,7 +811,16 @@ class RepositoryContext:
             # and switch its Claude-format checks off.
             ecosystems.add("claude")
         if codex_manifest_is_contained(plugin_dir) or (
-            resolved is not None and resolved in self._codex_claim_set()
+            resolved is not None
+            and resolved in self._codex_claim_set()
+            # A catalog claim is a declaration about a directory, never a
+            # licence to read through it: the marker gets the same
+            # containment check discovery applies, so a claimed directory
+            # whose ``.codex-plugin`` symlinks out of the tree is not Codex
+            # and no Codex node is built over it. A directory with no marker
+            # at all still passes — codex-plugin-json-valid reports the
+            # missing manifest.
+            and not codex_marker_escapes(plugin_dir)
         ):
             ecosystems.add("codex")
         record = PluginProvenance(

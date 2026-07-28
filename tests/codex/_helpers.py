@@ -34,7 +34,11 @@ CODEX_RULES = [
 def copy_fixture(name, tmp_path):
     src = FIXTURES / name
     dst = tmp_path / name.replace("/", "_")
-    shutil.copytree(src, dst)
+    # symlinks=True: a fixture that ships an escaping symlink is copied as
+    # the symlink, not as the contents behind it — copying the contents
+    # would rebuild the layout as an ordinary directory and quietly turn a
+    # containment test into a no-op.
+    shutil.copytree(src, dst, symlinks=True)
     return dst
 
 
