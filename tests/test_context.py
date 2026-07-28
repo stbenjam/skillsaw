@@ -854,9 +854,8 @@ class TestPathMatchesPatterns:
         assert not self._match(temp_dir, "other/x/SKILL.md", ["**/templates/**"])
 
     def test_trailing_star_star_matches_contents_at_any_depth(self, temp_dir):
-        # Strictly inside, never the directory entry itself: matching the
-        # entry made the built-in template exclude swallow a Missing
-        # SKILL.md error addressed to a skill directory named "templates".
+        # Strictly inside, never the directory entry itself — a violation
+        # addressed to an excluded directory stays reportable.
         assert not self._match(temp_dir, "templates", ["**/templates/**"])
         assert self._match(temp_dir, "templates/SKILL.md", ["**/templates/**"])
         assert self._match(temp_dir, "templates/deep/nested/file.md", ["**/templates/**"])

@@ -47,10 +47,10 @@ def _pattern_variants(pattern: str) -> Tuple[str, ...]:
     well; the original pattern is always kept, so the expansion is a strict
     superset of plain fnmatch.
 
-    A trailing ``/**`` must NOT be widened to match the directory entry
-    itself: doing so suppressed violations addressed to the directory — the
-    built-in ``**/template/**`` content exclude swallowed ``Missing
-    SKILL.md`` for any skill directory named ``template``.
+    A trailing ``/**`` is not expanded: it matches strictly inside the
+    named directory, never the directory entry itself, so a violation
+    addressed to an excluded directory — a missing required file, say —
+    is still reported.
     """
     variants = {pattern}
     if pattern.startswith("**/"):
