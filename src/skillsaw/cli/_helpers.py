@@ -49,44 +49,19 @@ class _RuleProgress:
 def _resolve_lint_paths(paths):
     """Normalize CLI paths into a unique list of directories to lint.
 
-    Files resolve to their parent directory, then exact duplicates and
-    paths nested inside another entry are dropped (a parent's
-    RepositoryContext already discovers everything beneath it).
-    First-seen order is preserved.
+    Files resolve to their parent directory — never further out.  Widening
+    a named manifest to an owning plugin or repository root would expand
+    what ``lint`` reads, and what ``fix`` writes, beyond the path the
+    caller named; callers who want manifest rules name the plugin's root
+    directory instead.  Exact duplicates and paths nested inside another
+    entry are then dropped (a parent's RepositoryContext already discovers
+    everything beneath it).  First-seen order is preserved.
     """
     normalized = []
     for p in paths:
         resolved = p.resolve()
         if resolved.is_file():
             resolved = resolved.parent
-            # A manifest given directly roots the context where discovery
-            # expects it — parenting ``.codex-plugin/plugin.json`` at
-            # ``.codex-plugin/`` makes discovery probe for a *nested*
-            # marker and find nothing, so no manifest rule would run.
-            # Codex surfaces only: widening ``.claude-plugin`` too would
-            # silently expand what an existing ``skillsaw lint <repo>/
-            # .claude-plugin/plugin.json`` invocation reads — and what
-            # ``skillsaw fix`` writes — beyond the path the caller named.
-            widened = resolved
-            if resolved.name == ".codex-plugin":
-                widened = resolved.parent
-            elif resolved.name == "plugins" and resolved.parent.name == ".agents":
-                widened = resolved.parent.parent
-            # Bounded: Codex documents a user-level catalog at
-            # ``~/.agents/plugins/marketplace.json``, and widening that
-            # walks all of $HOME — printing findings (and secrets) from
-            # unrelated private projects. Same for the filesystem root.
-            # Resolved comparison, or a symlinked $HOME slips past the
-            # bound.
-            if widened is not resolved:
-                try:
-                    bounds = (Path.home().resolve(), Path(widened.anchor))
-                except (RuntimeError, OSError):
-                    # No resolvable home directory (unset HOME, looped
-                    # symlink): keep the unwidened root — the safe side.
-                    bounds = (widened,)
-                if widened not in bounds:
-                    resolved = widened
         normalized.append(resolved)
 
     seen = set()

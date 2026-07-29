@@ -538,34 +538,47 @@ class TestFilePathArgument:
 
 @pytest.mark.integration
 class TestDirectManifestInputs:
-    """A manifest path given directly lints like its owning directory.
+    """A manifest path given directly resolves to the directory that owns
+    it — never outward to a plugin or repository root.
 
-    Discovery keys on marker directories under the root, so the file-path
-    input form must root the context at the plugin (or repository) that
-    owns the manifest — bounded so it never widens to $HOME or the
-    filesystem root."""
+    Widening a named manifest would expand what ``lint`` reads, and what
+    ``fix`` writes, beyond the path the caller named (an earlier revision
+    widened Codex manifests and ``fix`` rewrote files two directories
+    away). Callers who want manifest rules name the plugin's root
+    directory instead."""
 
-    def test_codex_manifest_file_input_roots_at_the_plugin(self, tmp_path):
-        repo = tmp_path / "plug"
-        (repo / ".codex-plugin").mkdir(parents=True)
-        (repo / ".codex-plugin" / "plugin.json").write_text(
-            '{"name": "demo", "version": "1.0.0"', encoding="utf-8"
-        )
-        r = run_lint(repo / ".codex-plugin" / "plugin.json")
-        assert "codex-plugin-json-valid" in {v["rule_id"] for v in violations(r)}
-
-    def test_codex_catalog_file_input_roots_at_the_repository(self, tmp_path):
-        repo = tmp_path / "cat"
-        (repo / ".agents" / "plugins").mkdir(parents=True)
+    def test_codex_catalog_file_input_does_not_reach_sibling_projects(self, tmp_path):
+        """Naming ``.agents/plugins/marketplace.json`` must not lint (or
+        let ``fix`` rewrite) files outside the directory that owns it."""
+        repo = copy_fixture("codex/manifest-path-scope", tmp_path)
         catalog = repo / ".agents" / "plugins" / "marketplace.json"
-        catalog.write_text('{"name": "cat", "plugins": [', encoding="utf-8")
+        skill = repo / "private-project" / "skills" / "helper" / "SKILL.md"
+        before = skill.read_bytes()
+
         r = run_lint(catalog)
-        assert "codex-marketplace-json-valid" in {v["rule_id"] for v in violations(r)}
+        assert r["out"]["stats"]["skills"] == [], r["out"]["stats"]
+        offending = [v for v in violations(r) if ".agents" not in str(v.get("file_path", ""))]
+        assert offending == [], offending
+
+        _run_fix(catalog, "--suggest")
+        assert skill.read_bytes() == before, "fix wrote outside the named path"
+
+    def test_codex_manifest_file_input_stays_in_its_marker_directory(self, tmp_path):
+        repo = copy_fixture("codex/manifest-path-scope", tmp_path)
+        manifest = repo / "plugins" / "note-taker" / ".codex-plugin" / "plugin.json"
+        command = repo / "plugins" / "note-taker" / "commands" / "capture.md"
+        before = command.read_bytes()
+
+        r = run_lint(manifest)
+        assert all(
+            not str(v.get("file_path", "")).endswith("capture.md") for v in violations(r)
+        ), violations(r)
+        _run_fix(manifest, "--suggest")
+        assert command.read_bytes() == before, "fix wrote outside the named path"
 
     def test_claude_manifest_file_input_is_not_widened(self, tmp_path):
-        """Widening is Codex-only. A Claude manifest path keeps its
-        established scope: lint reads what the caller named, and ``fix``
-        cannot reach files outside it."""
+        """A Claude manifest path keeps its established scope: lint reads
+        what the caller named, and ``fix`` cannot reach files outside it."""
         repo = tmp_path / "clplug"
         (repo / ".claude-plugin").mkdir(parents=True)
         (repo / ".claude-plugin" / "plugin.json").write_text('{"name": "demo"', encoding="utf-8")

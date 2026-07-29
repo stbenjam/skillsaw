@@ -1,0 +1,20 @@
+{
+  "name": "workspace-codex-plugins",
+  "interface": {
+    "displayName": "Workspace Codex Plugins"
+  },
+  "plugins": [
+    {
+      "name": "note-taker",
+      "source": {
+        "source": "local",
+        "path": "./plugins/note-taker"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

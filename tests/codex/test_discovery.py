@@ -674,23 +674,6 @@ class TestCodexRootsAreResolvedOnce:
         assert calls["n"] == 20
 
 
-class TestLintPathWidening:
-    def test_a_user_level_catalog_is_not_widened_to_home(self, tmp_path, monkeypatch):
-        """lint ~/.agents/plugins/marketplace.json roots at the catalog
-        directory, never at $HOME."""
-        from skillsaw.cli._helpers import _resolve_lint_paths
-
-        fake_home = tmp_path / "home"
-        (fake_home / ".agents" / "plugins").mkdir(parents=True)
-        catalog = fake_home / ".agents" / "plugins" / "marketplace.json"
-        catalog.write_text(json.dumps({"name": "cat", "plugins": []}), encoding="utf-8")
-        monkeypatch.setenv("HOME", str(fake_home))
-        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
-
-        (roots := _resolve_lint_paths([catalog]))
-        assert roots == [fake_home / ".agents" / "plugins"]
-
-
 class TestSymlinkedInstallIsStillAnInstall:
     def test_a_symlinked_install_entry_is_classified_as_installed(self, tmp_path):
         repo = tmp_path / "repo"

@@ -31,17 +31,11 @@ Lint agent skills, plugins, and AI coding assistant context
 ### Path arguments
 
 `lint` and `fix` accept files as well as directories. A file resolves
-to the directory that owns it, and naming a Codex plugin manifest
-directly — `.codex-plugin/plugin.json`, or a catalog under
-`.agents/plugins/` — widens to the owning plugin or repository root,
-so the manifest rules that discover from that root actually run. The
-widening is bounded: it climbs only from the manifest's marker
-directory to the root that owns it, and never continues toward `$HOME`
-or the filesystem root. A `.claude-plugin/plugin.json` path is not
-widened — that would expand what `fix` writes beyond the path the
-caller named — so no manifest rule runs; name the plugin's root
-directory instead. Duplicate paths and paths nested inside another
-named path are dropped.
+to the directory that owns it — never further out, so `lint` reads and
+`fix` writes only under the path you named. Manifest rules discover
+from a plugin's root, so to run them name the plugin's root directory
+rather than a manifest file inside it. Duplicate paths and paths
+nested inside another named path are dropped.
 
 ## `skillsaw fix`
 
