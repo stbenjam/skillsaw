@@ -230,6 +230,28 @@ def test_backward_compatibility_with_plugins_dir(marketplace_repo):
     assert "plugin-two" in names
 
 
+def test_escaping_plugins_dir_child_is_dropped_with_a_warning(tmp_path, caplog):
+    """A symlinked plugins/* child resolving outside the repository root is
+    dropped from discovery, logged like an escaping marketplace source, and
+    recorded on the context so marketplace-json-valid can report it."""
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    outside = tmp_path / "outside" / "foo"
+    (outside / ".claude-plugin").mkdir(parents=True)
+    (outside / ".claude-plugin" / "plugin.json").write_text('{"name": "foo"}')
+    repo = tmp_path / "repo"
+    (repo / "plugins").mkdir(parents=True)
+    (repo / "plugins" / "foo").symlink_to(outside)
+
+    context = RepositoryContext(repo)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert len(context.plugins) == 0
+    assert context.escaped_plugin_dirs == [repo / "plugins" / "foo"]
+    assert any("escapes repository root" in record.message for record in caplog.records)
+
+
 def test_disallow_parent_traversal(temp_dir, caplog):
     """Do not allow marketplace sources to escape repo root with .."""
     import logging

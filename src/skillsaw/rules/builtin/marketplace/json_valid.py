@@ -83,6 +83,26 @@ class MarketplaceJsonValidRule(Rule):
         if RepositoryType.MARKETPLACE not in context.repo_types:
             return violations
 
+        # plugins/* children dropped by discovery because they resolve
+        # outside the repository root (an escaping symlink). The
+        # containment is deliberate — autofix must never write outside
+        # the checkout — but the drop must be visible in JSON/SARIF
+        # output, not just the log: an entire plugin losing rule
+        # coverage while the grade improves is a silent break. WARNING,
+        # not the rule's ERROR default: the plugin's content is skipped,
+        # not known to be defective.
+        for item in getattr(context, "escaped_plugin_dirs", ()):
+            violations.append(
+                self.violation(
+                    f"Plugin directory './plugins/{item.name}' resolves outside "
+                    "the repository root and was skipped — its content is not "
+                    "linted. Move the plugin inside the repository (or vendor "
+                    "it) to restore coverage.",
+                    file_path=item,
+                    severity=Severity.WARNING,
+                )
+            )
+
         config_nodes = context.lint_tree.find(MarketplaceConfigNode)
         if not config_nodes:
             # Asked of the filesystem, not of repo_types: an explicit

@@ -273,6 +273,12 @@ class RepositoryContext:
         self.marketplace_data = self._load_marketplace() if self.has_marketplace() else None
         self.plugin_metadata: Dict[Path, Dict[str, Any]] = {}
         self.marketplace_entries: Dict[Path, Dict[str, Any]] = {}
+        # plugins/* children whose resolved location escapes the repository
+        # root. Containment drops them from discovery (autofix must never
+        # write outside the checkout), but the drop must stay visible:
+        # marketplace-json-valid reads this list and files a violation for
+        # each entry so an entire plugin cannot lose rule coverage silently.
+        self.escaped_plugin_dirs: List[Path] = []
         self.plugins = self._discover_plugins()
         self.skills: List[Path] = self._discover_skills()
         self.instruction_files: List[Path] = self._discover_instruction_files()
@@ -1176,6 +1182,17 @@ class RepositoryContext:
 
             resolved_path = contained_resolve(item, self.root_path)
             if resolved_path is None:
+                # Same diagnostic contract as _resolve_plugin_source: the
+                # containment stands (autofix must not write outside the
+                # checkout), but the drop is logged and recorded so
+                # marketplace-json-valid can surface it as a violation —
+                # a plugin must never lose all rule coverage silently.
+                logger.warning(
+                    "Plugin '%s' source '%s' escapes repository root. Skipping.",
+                    item.name,
+                    f"./plugins/{item.name}",
+                )
+                self.escaped_plugin_dirs.append(item)
                 continue
             if resolved_path not in discovered_paths:
                 plugins.append(item)

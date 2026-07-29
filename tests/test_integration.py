@@ -82,7 +82,11 @@ def summary(r):
 def copy_fixture(name, tmp_path):
     src = FIXTURES / name
     dst = tmp_path / name.replace("/", "_")
-    shutil.copytree(src, dst)
+    # symlinks=True: a fixture that ships an escaping symlink is copied as
+    # the symlink, not as the contents behind it — copying the contents
+    # would rebuild the layout as an ordinary directory and quietly turn a
+    # containment test into a no-op.
+    shutil.copytree(src, dst, symlinks=True)
     return dst
 
 
@@ -326,6 +330,45 @@ class TestMarketplace:
         stats = r["out"]["stats"]
         assert "marketplace" in stats["repo_types"]
         assert len(stats["plugins"]) == 3
+
+    def test_escaping_plugins_dir_child_is_dropped_visibly(self, tmp_path):
+        """A plugins/* child that resolves outside the repository root is
+        dropped from discovery (containment: autofix must never write
+        outside the checkout), but the drop must be visible — a warning
+        violation in machine output plus a log line, never a silent
+        coverage loss (fourth panel, required action 1)."""
+        fixture = copy_fixture("marketplace/escaping-plugin-dir", tmp_path)
+        repo = fixture / "repo"
+        link = repo / "plugins" / "shared-tools"
+        # copytree(symlinks=True) must have preserved the escaping link;
+        # a rebuilt plain directory would turn this test into a no-op.
+        assert link.is_symlink(), "fixture symlink was not preserved"
+
+        r = run_lint(repo)
+        # The escaped plugin is not discovered and none of its content is
+        # linted; the registered in-repo plugin still is.
+        assert len(r["out"]["stats"]["plugins"]) == 1
+        assert all(
+            "cleanup.md" not in str(v.get("file_path", "")) for v in violations(r)
+        ), violations(r)
+
+        # The drop is visible: a warning violation in JSON output ...
+        drops = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "marketplace-json-valid"
+            and "resolves outside the repository root" in v["message"]
+        ]
+        assert len(drops) == 1, violations(r)
+        assert drops[0]["severity"] == "warning"
+        assert str(drops[0]["file_path"]).endswith("plugins/shared-tools")
+        # ... and the same log line the marketplace-source path emits.
+        assert "escapes repository root" in r["stderr"]
+
+        # A warning, not an error: the plugin's content is skipped, not
+        # known to be defective, so a previously-clean repo keeps exit 0.
+        assert summary(r)["errors"] == 0
+        assert r["rc"] == 0
 
     def test_marketplace_plugin_root_resolves_local_sources(self, tmp_path):
         """metadata.pluginRoot is prepended to relative plugin sources (issue #343)."""

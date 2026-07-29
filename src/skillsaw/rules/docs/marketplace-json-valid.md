@@ -43,6 +43,15 @@ and, like sources, must not be an absolute path (values like
 `/tmp/plugins` are invalid) and must not escape the repository with
 `..`.
 
+## Escaping plugin directories
+
+A `plugins/*` child whose resolved location falls outside the
+repository root — a symlink pointing at a sibling checkout, for
+example — is dropped from discovery, because autofix must never write
+outside the checkout. This rule reports the drop as a warning so the
+plugin cannot lose all rule coverage silently: move the plugin inside
+the repository (or vendor a copy) to restore coverage.
+
 ## Codex marketplaces
 
 A Codex catalog at `.agents/plugins/marketplace.json` is validated by
