@@ -221,52 +221,57 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if apm_yml.exists() and not _is_excluded(apm_yml):
             root.children.append(ApmConfigNode(path=apm_yml))
 
+        # `.apm/` holds a package's authored primitives. A consumer-only
+        # manifest — `apm.yml` with `dependencies:`/`targets:` and no
+        # authored content — has no `.apm/` directory, so don't invent an
+        # ApmNode for a path that doesn't exist (issue #472).
         apm_dir = context.root_path / ".apm"
-        apm_node = ApmNode(path=apm_dir)
+        if apm_dir.is_dir():
+            apm_node = ApmNode(path=apm_dir)
 
-        apm_instructions = apm_dir / "instructions"
-        if apm_instructions.is_dir():
-            for md in sorted(apm_instructions.glob("*.instructions.md")):
-                _add_block(apm_node, md, InstructionBlock)
+            apm_instructions = apm_dir / "instructions"
+            if apm_instructions.is_dir():
+                for md in sorted(apm_instructions.glob("*.instructions.md")):
+                    _add_block(apm_node, md, InstructionBlock)
 
-        apm_agents = apm_dir / "agents"
-        if apm_agents.is_dir():
-            for md in sorted(apm_agents.glob("*.agent.md")):
-                _add_block(apm_node, md, AgentBlock)
+            apm_agents = apm_dir / "agents"
+            if apm_agents.is_dir():
+                for md in sorted(apm_agents.glob("*.agent.md")):
+                    _add_block(apm_node, md, AgentBlock)
 
-        apm_prompts = apm_dir / "prompts"
-        if apm_prompts.is_dir():
-            for md in sorted(apm_prompts.glob("*.md")):
-                _add_block(apm_node, md, PromptBlock)
+            apm_prompts = apm_dir / "prompts"
+            if apm_prompts.is_dir():
+                for md in sorted(apm_prompts.glob("*.md")):
+                    _add_block(apm_node, md, PromptBlock)
 
-        apm_chatmodes = apm_dir / "chatmodes"
-        if apm_chatmodes.is_dir():
-            for md in sorted(apm_chatmodes.glob("*.md")):
-                _add_block(apm_node, md, ChatmodeBlock)
+            apm_chatmodes = apm_dir / "chatmodes"
+            if apm_chatmodes.is_dir():
+                for md in sorted(apm_chatmodes.glob("*.md")):
+                    _add_block(apm_node, md, ChatmodeBlock)
 
-        apm_context = apm_dir / "context"
-        if apm_context.is_dir():
-            for md in sorted(apm_context.glob("*.md")):
-                _add_block(apm_node, md, ContextFileBlock)
+            apm_context = apm_dir / "context"
+            if apm_context.is_dir():
+                for md in sorted(apm_context.glob("*.md")):
+                    _add_block(apm_node, md, ContextFileBlock)
 
-        # Hooks and settings inside .apm/ (supply-chain attack surface)
-        _add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
-        _add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
-        _add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
+            # Hooks and settings inside .apm/ (supply-chain attack surface)
+            _add_block(apm_node, apm_dir / "hooks" / "hooks.json", HooksBlock)
+            _add_block(apm_node, apm_dir / "settings.json", SettingsBlock)
+            _add_block(apm_node, apm_dir / "settings.local.json", SettingsBlock)
 
-        apm_skills = apm_dir / "skills"
-        if apm_skills.is_dir():
-            for skill_path in context.skills:
-                if skill_path.resolve().is_relative_to(apm_skills.resolve()):
-                    skill_node = SkillNode(path=skill_path)
-                    _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
-                    refs_dir = skill_path / "references"
-                    if refs_dir.is_dir():
-                        for ref_file in sorted(refs_dir.glob("*.md")):
-                            _add_block(skill_node, ref_file, SkillRefBlock)
-                    apm_node.children.append(skill_node)
+            apm_skills = apm_dir / "skills"
+            if apm_skills.is_dir():
+                for skill_path in context.skills:
+                    if skill_path.resolve().is_relative_to(apm_skills.resolve()):
+                        skill_node = SkillNode(path=skill_path)
+                        _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
+                        refs_dir = skill_path / "references"
+                        if refs_dir.is_dir():
+                            for ref_file in sorted(refs_dir.glob("*.md")):
+                                _add_block(skill_node, ref_file, SkillRefBlock)
+                        apm_node.children.append(skill_node)
 
-        root.children.append(apm_node)
+            root.children.append(apm_node)
 
     # --- Extra content paths from config ---
     # User-configured content paths plus globs contributed by detected
