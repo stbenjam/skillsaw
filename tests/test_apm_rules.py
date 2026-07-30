@@ -424,6 +424,40 @@ def test_apm_structure_skill_missing_skill_md_warns(temp_dir):
     assert any("missing SKILL.md" in v.message for v in violations)
 
 
+def test_apm_structure_consumer_manifest_passes(temp_dir):
+    """A consumer-only apm.yml (dependencies, no .apm/ dir) should not warn"""
+    repo = temp_dir / "consumer-repo"
+    repo.mkdir()
+    (repo / "apm.yml").write_text(
+        "name: consumer\n"
+        "version: 1.0.0\n"
+        "description: Installs shared packages\n"
+        "targets:\n"
+        "  - claude\n"
+        "dependencies:\n"
+        "  apm:\n"
+        "    - openshift-eng/ai-helpers/plugins/ci\n"
+    )
+
+    context = RepositoryContext(repo)
+    assert context.has_apm
+    violations = ApmStructureValidRule().check(context)
+    assert violations == []
+
+
+def test_apm_consumer_manifest_produces_no_apm_node(temp_dir):
+    """No .apm/ directory means no ApmNode in the tree"""
+    from skillsaw.lint_target import ApmConfigNode, ApmNode
+
+    repo = temp_dir / "consumer-repo"
+    repo.mkdir()
+    (repo / "apm.yml").write_text("name: consumer\nversion: 1.0.0\ndependencies:\n  apm: []\n")
+
+    tree = RepositoryContext(repo).lint_tree
+    assert len(tree.find(ApmConfigNode)) == 1
+    assert tree.find(ApmNode) == []
+
+
 def test_apm_structure_skipped_without_apm(temp_dir):
     """Rule should produce no violations when .apm/ is absent"""
     repo = temp_dir / "normal-repo"
