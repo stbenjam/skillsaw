@@ -50,6 +50,11 @@ class ApmStructureValidRule(Rule):
         if not context.has_apm:
             return []
 
+        # No ApmNode means there is no `.apm/` source directory to validate.
+        # A root `apm.yml` alone is a consumer manifest: it declares
+        # dependencies to install into the configured targets and authors no
+        # package content of its own, so requiring a primitive subdirectory
+        # there was a false positive (issue #472).
         apm_nodes = context.lint_tree.find(ApmNode)
         if not apm_nodes:
             return []

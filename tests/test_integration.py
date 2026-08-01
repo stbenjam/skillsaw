@@ -1181,6 +1181,15 @@ class TestApm:
         apm_violations = by_rule(r)["apm-yaml-valid"]
         assert any("version" in v["message"].lower() for v in apm_violations)
 
+    def test_consumer_manifest_passes(self, tmp_path):
+        """A consumer-only apm.yml has no .apm/ dir to validate (issue #472)"""
+        repo = copy_fixture("apm/consumer-manifest", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "apm-structure-valid" not in rule_ids(r)
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+
     def test_apm_clean_hooks_pass(self, tmp_path):
         repo = copy_fixture("apm/hooks-clean", tmp_path)
         r = run_lint(repo)

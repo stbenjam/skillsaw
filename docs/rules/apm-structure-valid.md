@@ -21,6 +21,11 @@ or more recognized primitive subdirectories (`skills/`,
 Deviations from this structure mean the package manager cannot discover
 or install the repository's contents.
 
+This rule only inspects an `.apm/` directory that exists. A
+consumer-only manifest — a root `apm.yml` that just declares
+`dependencies:` and `targets:` to install, authoring no package content
+— has no `.apm/` directory and is never flagged.
+
 ## Examples
 
 **Bad:**

@@ -1,0 +1,14 @@
+name: platform-consumer
+version: 2.3.0
+description: Installs the shared platform agent packages — authors none of its own
+author: platform-engineering
+targets:
+  - claude
+  - agent-skills
+dependencies:
+  apm:
+    - openshift-eng/ai-helpers/plugins/ci
+    - openshift-eng/ai-helpers/plugins/jira
+  mcp: []
+includes: auto
+scripts: {}
