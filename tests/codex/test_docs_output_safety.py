@@ -168,6 +168,25 @@ class TestGeneratedLinkSchemes:
         doc = extract_docs(RepositoryContext(repo)).plugins[0]
         assert getattr(doc, field) == ""
 
+    @pytest.mark.parametrize("field", ["homepage", "repository"])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://user:token@example.com/repo",
+            "https://long-token@example.com/repo",
+            "//long-token@example.com/repo",
+            "https:///user:token@example.com/repo",
+            r"https:\\user:token@example.com/repo",
+        ],
+    )
+    def test_url_userinfo_is_dropped(self, tmp_path, field, url):
+        repo = _codex_plugin_repo(
+            tmp_path,
+            {"name": "linky", "version": "1.0.0", "description": "x", field: url},
+        )
+        doc = extract_docs(RepositoryContext(repo)).plugins[0]
+        assert getattr(doc, field) == ""
+
     @pytest.mark.parametrize(
         "url",
         [

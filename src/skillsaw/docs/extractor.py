@@ -6,6 +6,7 @@ import html
 
 from pathlib import Path
 from typing import Any, List, Optional, Set
+from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.formats.codex import (
@@ -416,13 +417,25 @@ def _safe_url(value: Any) -> str:
         return ""
     if _URL_FORBIDDEN & set(candidate):
         return ""
+    scheme, sep, _ = candidate.partition(":")
+    try:
+        authority = urlsplit(candidate).netloc
+    except ValueError:
+        return ""
+    if "@" in authority:
+        return ""
+    if (
+        sep
+        and scheme.lower() in {"http", "https"}
+        and (not candidate[len(scheme) + 1 :].startswith("//") or not authority)
+    ):
+        return ""
     # Parentheses survive the character filter but delimit the Markdown
     # sink: ``https://safe.example/)![x](https://evil/pixel`` closes the
     # ``[Homepage](...)`` link early and injects a remote image into the
     # generated page. Percent-encode them — equivalent per RFC 3986, inert
     # in Markdown, and already-escaped attribute context is unaffected.
     candidate = candidate.replace("(", "%28").replace(")", "%29")
-    scheme, sep, _ = candidate.partition(":")
     if not sep:
         return candidate  # relative or bare host — no scheme to abuse
     return candidate if scheme.lower() in _SAFE_URL_SCHEMES else ""

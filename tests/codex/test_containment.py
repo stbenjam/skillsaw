@@ -220,12 +220,13 @@ class TestEvalContainment:
         (skill / "evals" / "evals.json").symlink_to(outside)
         return repo, skill
 
-    def test_an_escaping_evals_file_is_not_read(self, tmp_path):
+    def test_an_escaping_evals_file_is_reported_missing_without_reading(self, tmp_path):
         from skillsaw.rules.builtin.agentskills.evals import AgentSkillEvalsRule
 
         repo, _ = self._skill_with_escaping_evals(tmp_path)
         context = RepositoryContext(repo)
-        assert AgentSkillEvalsRule({}).check(context) == []
+        found = AgentSkillEvalsRule({}).check(context)
+        assert messages(found) == ["evals/ directory exists but evals.json is missing"]
 
     def test_a_contained_evals_file_is_still_validated(self, tmp_path):
         from skillsaw.rules.builtin.agentskills.evals import AgentSkillEvalsRule

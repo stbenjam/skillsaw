@@ -39,9 +39,6 @@ class AgentSkillEvalsRule(Rule):
 
             evals_json = contained_eval_file(context, skill_path)
             if evals_json is None:
-                if (evals_dir / "evals.json").exists():
-                    # Present, but resolving outside the owning Codex plugin.
-                    continue
                 violations.append(
                     self.violation(
                         "evals/ directory exists but evals.json is missing",
