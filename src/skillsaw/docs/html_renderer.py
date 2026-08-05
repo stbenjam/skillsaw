@@ -394,7 +394,10 @@ def render_html(docs: DocsOutput, theme: Optional[str] = None) -> Dict[str, str]
 
 
 def _render_page(docs: DocsOutput, theme: Optional[str] = None) -> str:
-    is_marketplace = docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace is not None
+    # Gated on the model alone, matching the Markdown renderer. A Codex
+    # catalog in a repo whose primary type is APM or dot-claude still needs
+    # the grid, navigation, category filter and search.
+    is_marketplace = docs.marketplace is not None
 
     data = _build_data(docs)
     # Escape </ sequences to prevent </script> from breaking out of the script tag
@@ -420,10 +423,15 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
     """Build the data structure for embedding as JSON."""
     plugins_data: List[Dict[str, Any]] = []
 
+    # The catalog's own membership when there is one, matching the Markdown
+    # renderer. ``docs.plugins`` holds only what was extracted from a local
+    # directory, so a remote-only catalog has no entries there at all.
+    source = docs.marketplace.plugins if docs.marketplace else docs.plugins
+
     # ``p.name`` is manifest-derived and may be a non-string (e.g. a numeric
     # ``"name": 123`` in plugin.json); coerce before ``.lower()`` so ``docs``
     # doesn't crash on inputs ``lint`` tolerates.
-    sorted_plugins = sorted(docs.plugins, key=lambda p: name_str(p.name).lower())
+    sorted_plugins = sorted(source, key=lambda p: name_str(p.name).lower())
 
     for plugin in sorted_plugins:
         p: Dict[str, Any] = {
@@ -452,18 +460,10 @@ def _build_data(docs: DocsOutput) -> Dict[str, Any]:
             p["repository"] = plugin.repository
         if plugin.license:
             p["license"] = plugin.license
-        has_marketplace_meta = any(
-            [
-                plugin.display_name,
-                plugin.category,
-                plugin.tags,
-                plugin.keywords,
-                plugin.homepage,
-                plugin.repository,
-                plugin.license,
-            ]
-        )
-        if has_marketplace_meta and plugin.author:
+        # The author stands on its own. Gating it on some *other* metadata
+        # field would drop it for a Codex manifest that declares an author
+        # and nothing else.
+        if plugin.author:
             p["author"] = plugin.author
 
         for cmd in plugin.commands:
@@ -754,7 +754,7 @@ def _get_js() -> str:
     if (type === 'plugins' && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">'+label+' ('+allPlugins.length+')</div>';
       allPlugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">';
         html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+esc(pName(p))+'</div>';
         html += '<div class="search-result-subtitle">'+esc(p.description)+'</div></div></div>';
@@ -773,7 +773,7 @@ def _get_js() -> str:
       if (items.length) {
         html += '<div class="search-results-heading">'+label+' ('+items.length+')</div>';
         items.forEach(function(r) {
-          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+          var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
           html += '<div class="search-result-item"'+onclick+'>';
           html += '<div class="search-result-icon '+esc(r.icon)+'">'+esc(r.iconChar)+'</div>';
           html += '<div class="search-result-content"><div class="search-result-title">'+esc(r.name)+'</div>';
@@ -801,10 +801,10 @@ def _get_js() -> str:
     el.innerHTML = filterHtml + '<div class="plugins-grid" id="plugins-grid">' + plugins.map(function(p) {
       var counts = buildCountBadges(p);
       var ver = p.version ? '<span class="plugin-version">v'+esc(p.version)+'</span>' : '';
-      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
+      var cat = p.category ? '<span class="plugin-category" onclick="event.stopPropagation();navigateTo(\\'category='+escJsAttr(p.category)+'\\')">'+esc(p.category)+'</span>' : '';
       var allTags = (p.tags||[]).concat(p.keywords||[]);
-      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
-      return '<div class="plugin-card" data-category="'+(esc(p.category)||'')+'" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">' +
+      var tagsHtml = allTags.length ? '<div class="plugin-tags">'+allTags.map(function(t){return '<span class="plugin-tag" onclick="event.stopPropagation();navigateTo(\\'q='+escJsAttr(t)+'\\')">'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<div class="plugin-card" data-category="'+(escAttr(p.category)||'')+'" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">' +
         '<div class="plugin-header"><div><div class="plugin-name">'+esc(pName(p))+'</div>'+ver+'</div>'+cat+'</div>' +
         '<div class="plugin-description">'+(p.description_html || esc(p.description) || '<em>No description</em>')+'</div>' +
         tagsHtml +
@@ -821,7 +821,7 @@ def _get_js() -> str:
   function renderCategoryFilter(cats) {
     var btns = '<button class="category-btn'+(activeCategory?'':' active')+'" onclick="navigateTo(\\'\\')">All</button>';
     cats.forEach(function(c) {
-      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escAttr(c)+'\\')">'+esc(c)+'</a>';
+      btns += '<a href="#category='+encodeURIComponent(c)+'" class="category-btn'+(activeCategory===c?' active':'')+'" onclick="event.preventDefault();navigateTo(\\'category='+escJsAttr(c)+'\\')">'+esc(c)+'</a>';
     });
     return '<div class="category-filter" id="category-filter">' + btns + '</div>';
   }
@@ -882,7 +882,7 @@ def _get_js() -> str:
   function renderPluginSections(p, forModal) {
     var h = '';
     var wrap = forModal ? function(cls, inner) { return '<div class="modal-section-items" data-filtered="false">' + inner + '</div>'; } : function(cls, inner) { return inner; };
-    var dataAttr = forModal ? function(text) { return ' data-search="'+esc(text.toLowerCase())+'"'; } : function() { return ''; };
+    var dataAttr = forModal ? function(text) { return ' data-search="'+escAttr(text.toLowerCase())+'"'; } : function() { return ''; };
     if (p.commands.length) {
       h += '<div class="section-title">Commands</div>';
       var cmds = '';
@@ -1032,7 +1032,7 @@ def _get_js() -> str:
     if (results.plugins.length && IS_MARKETPLACE) {
       html += '<div class="search-results-heading">Plugins (' + results.plugins.length + ')</div>';
       results.plugins.forEach(function(p) {
-        html += '<div class="search-result-item" onclick="navigateTo(\\''+escAttr(p.name)+'\\')">';
+        html += '<div class="search-result-item" onclick="navigateTo(\\''+escJsAttr(p.name)+'\\')">';
         html += '<div class="search-result-icon plugin">'+esc(pName(p).charAt(0).toUpperCase())+'</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(pName(p),q)+'</div>';
         html += '<div class="search-result-subtitle">'+hi(p.description,q)+'</div></div></div>';
@@ -1042,7 +1042,7 @@ def _get_js() -> str:
     if (results.commands.length) {
       html += '<div class="search-results-heading">Commands (' + results.commands.length + ')</div>';
       results.commands.forEach(function(r) {
-        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon cmd">$</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.full_name || r.item.name, q)+'</div>';
@@ -1055,7 +1055,7 @@ def _get_js() -> str:
     if (results.skills.length) {
       html += '<div class="search-results-heading">Skills (' + results.skills.length + ')</div>';
       results.skills.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon skill">S</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1068,7 +1068,7 @@ def _get_js() -> str:
     if (results.agents.length) {
       html += '<div class="search-results-heading">Agents (' + results.agents.length + ')</div>';
       results.agents.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon agent">A</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1081,7 +1081,7 @@ def _get_js() -> str:
     if (results.hooks.length) {
       html += '<div class="search-results-heading">Hooks (' + results.hooks.length + ')</div>';
       results.hooks.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon hook">H</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.event_type,q)+'</div>';
@@ -1094,7 +1094,7 @@ def _get_js() -> str:
     if (results.rules.length) {
       html += '<div class="search-results-heading">Rules (' + results.rules.length + ')</div>';
       results.rules.forEach(function(r) {
-        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escAttr(r.plugin)+'\\')"' : '';
+        var onclick = IS_MARKETPLACE && r.plugin ? ' onclick="navigateTo(\\''+escJsAttr(r.plugin)+'\\')"' : '';
         html += '<div class="search-result-item"'+onclick+'>';
         html += '<div class="search-result-icon rule">R</div>';
         html += '<div class="search-result-content"><div class="search-result-title">'+hi(r.item.name,q)+'</div>';
@@ -1127,8 +1127,8 @@ def _get_js() -> str:
     html += '</div></div>';
 
     var metaLinks = [];
-    if (p.homepage) metaLinks.push('<a href="'+esc(p.homepage)+'">Homepage</a>');
-    if (p.repository) metaLinks.push('<a href="'+esc(p.repository)+'">Repository</a>');
+    if (p.homepage) metaLinks.push('<a href="'+escAttr(p.homepage)+'">Homepage</a>');
+    if (p.repository) metaLinks.push('<a href="'+escAttr(p.repository)+'">Repository</a>');
     if (p.author) {
       var authorText = typeof p.author === 'object' ? (p.author.name||'') : p.author;
       if (authorText) metaLinks.push('Author: '+esc(authorText));
@@ -1190,7 +1190,24 @@ def _get_js() -> str:
   }
 
   function escAttr(str) {
-    return esc(str).replace(/'/g, '&#39;');
+    // HTML attribute context. esc() serialises a text node, which leaves the
+    // double quote alone — fine for element text, not for an attribute
+    // value, where it closes the attribute and a second handler can follow.
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function escJsAttr(str) {
+    // A JS string literal nested inside an HTML attribute — two contexts, so
+    // two escapes in that order. innerHTML decodes the entities before the
+    // handler compiles, so the JS escapes must survive that decode: \' stays
+    // \', while " arrives as a plain quote which cannot close a
+    // single-quoted JS string.
+    return escAttr(String(str).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
   }
 
   init();
@@ -1205,6 +1222,34 @@ def _esc(text: str) -> str:
     return html.escape(str(text))
 
 
+# Mirrors extractor._SAFE_URL_SCHEMES; kept local so the renderer has no
+# import-time dependency on the extractor.
+_MD_SAFE_SCHEMES = {"http", "https", "mailto"}
+
+
+def _md_link(match: "re.Match") -> str:
+    """Render a markdown link, dropping the anchor for an unsafe scheme.
+
+    ``html.escape`` above stops the target breaking out of the attribute;
+    it says nothing about what the target *is*. A skill description
+    containing ``[click](javascript:...)`` would produce a live anchor in
+    the generated page, which is inserted through ``innerHTML`` — one click
+    would run it in the documentation's origin. The manifest URL fields are
+    filtered at extraction; this function applies the same policy to links
+    parsed from markdown descriptions.
+
+    The link text is kept: dropping the whole thing would silently delete
+    content the author wrote.
+    """
+    text, target = match.group(1), match.group(2).strip()
+    scheme, sep, _rest = target.partition(":")
+    # An unescaped ":" cannot appear here — html.escape leaves it alone —
+    # so a bare "#anchor" or "./relative" has no scheme to abuse.
+    if sep and scheme.lower() not in _MD_SAFE_SCHEMES:
+        return text
+    return f'<a href="{target}">{text}</a>'
+
+
 def _md(text: str) -> str:
     """Convert inline markdown to HTML with XSS protection."""
     if not text:
@@ -1213,11 +1258,7 @@ def _md(text: str) -> str:
     safe = re.sub(r"`([^`]+)`", r"<code>\1</code>", safe)
     safe = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", safe)
     safe = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", safe)
-    safe = re.sub(
-        r"\[([^\]]+)\]\(([^)]+)\)",
-        r'<a href="\2">\1</a>',
-        safe,
-    )
+    safe = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _md_link, safe)
     paragraphs = re.split(r"\n{2,}", safe.strip())
     if len(paragraphs) <= 1:
         return safe.strip().replace("\n", "<br>")

@@ -3,7 +3,7 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import (
@@ -12,7 +12,13 @@ from skillsaw.rules.builtin.utils import (
     replace_frontmatter_field,
 )
 
-from ._helpers import NAME_MAX_LENGTH, DESCRIPTION_MAX_LENGTH, COMPATIBILITY_MAX_LENGTH, _to_kebab
+from ._helpers import (
+    is_installed_plugin_skill,
+    COMPATIBILITY_MAX_LENGTH,
+    NAME_MAX_LENGTH,
+    SKILL_REPO_TYPES,
+    _to_kebab,
+)
 
 
 class AgentSkillValidRule(Rule):
@@ -20,12 +26,7 @@ class AgentSkillValidRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     BUILTIN_REQUIRED = {"name", "description"}
 
@@ -59,6 +60,8 @@ class AgentSkillValidRule(Rule):
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             if "Missing required 'name'" not in v.message:
                 continue

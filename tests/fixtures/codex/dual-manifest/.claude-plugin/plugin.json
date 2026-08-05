@@ -1,0 +1,6 @@
+{
+  "name": "dual-tool",
+  "version": "1.2.0",
+  "description": "Release helper published for both Claude Code and Codex.",
+  "author": {"name": "Example Maintainers"}
+}

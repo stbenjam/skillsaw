@@ -18,6 +18,8 @@ class AgentFrontmatterRule(Rule):
 
     default_enabled = True
 
+    provenance_scope = "claude"
+
     autofix_confidence = AutofixConfidence.SAFE
 
     @property
@@ -34,7 +36,7 @@ class AgentFrontmatterRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(AgentBlock):
+        for block in self.scoped_find(context, AgentBlock):
             if block.frontmatter_error:
                 # fix() only adds missing frontmatter/fields — malformed YAML
                 # needs a human.

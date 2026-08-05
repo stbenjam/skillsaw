@@ -6,7 +6,7 @@ import difflib
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext, SKILL_REPO_TYPES
 from skillsaw.rules.builtin.content_analysis import FrontmatterField, SkillBlock
 from skillsaw.utils import yaml_path_line_lookup
 
@@ -47,12 +47,7 @@ REQUIRED_INSTALL_FIELDS = {
 class OpenclawMetadataRule(Rule):
     """Validate metadata.openclaw in SKILL.md frontmatter against the OpenClaw spec"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     @property
     def rule_id(self) -> str:

@@ -1,0 +1,93 @@
+## Why
+
+Codex installs only what the catalog lists, and it skips catalog entries
+it cannot resolve rather than reporting an error. Both halves of that
+failure are silent: a plugin directory missing from
+`.agents/plugins/marketplace.json` is never installable, and an entry
+pointing at a directory that does not exist — or that has no
+`.codex-plugin/plugin.json` — quietly disappears from the marketplace.
+
+## Examples
+
+**Bad:**
+
+```json
+{
+  "name": "example-codex-plugins",
+  "plugins": [
+    {"name": "note-taker", "source": {"source": "local", "path": "./plugins/gone"}}
+  ]
+}
+```
+
+with `plugins/note-taker/.codex-plugin/plugin.json` on disk and no
+`plugins/gone` directory.
+
+**Good:**
+
+```json
+{
+  "name": "example-codex-plugins",
+  "plugins": [
+    {
+      "name": "note-taker",
+      "source": {"source": "local", "path": "./plugins/note-taker"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Productivity"
+    }
+  ]
+}
+```
+
+## How to fix
+
+Register the plugin, or repair the entry that does not resolve.
+
+Every catalog in `.agents/plugins/` counts, which is how a repository
+can split its plugins across `marketplace.json` and a second catalog.
+Within a catalog, what registers a plugin depends on the entry's source.
+A `local` entry registers the directory its `path` resolves to — never
+its `name`. Remote entries (`url`, `git-subdir`, `npm`) register by
+`name`, because they name no directory in this repository to resolve.
+Crediting a local entry's name independently of its path would let a
+crossed pair — one plugin's name over another plugin's path — silently
+cover both while one of them is not installable at all.
+
+So this violation can fire even when the catalog spells the plugin's
+name: it means no entry's `path` actually reaches the plugin's
+directory. Fix the entry's `path` rather than adding a second entry —
+the companion dangling-entry check reports the entry whose path does
+not resolve. Entry names that disagree with the plugin manifest's own
+`name` are reported as warnings — Codex keys installs off the catalog
+name, so the mismatch is confusing rather than fatal.
+
+`skillsaw fix --suggest` adds a complete entry — `name`, a `local`
+source, `policy`, and `category` — for each unregistered plugin. It
+declines whenever appending an entry cannot fix the problem:
+
+- The catalog cannot be rewritten safely — unparseable JSON, a
+  duplicate object key, a non-object root, or a non-list `plugins` key.
+  `codex-marketplace-json-valid` reports those shapes; repair them by
+  hand first.
+- Some catalog entry already spells the plugin's name. Appending a
+  duplicate would be a no-op that leaves the violation standing; the
+  existing entry's `path` is what needs correcting.
+- Two discovered directories declare the same name. Registering one
+  would silence the other without making it installable.
+- The plugin's manifest declares no kebab-case `name` of its own. The
+  fallback is the directory name — machine-dependent for a root-level
+  plugin — and publishing a non-kebab name would trade this violation
+  for a `codex-marketplace-json-valid` one.
+- The plugin lies outside the marketplace root, where a `local` source
+  cannot reach it — `..` is not allowed in a source path.
+
+Entries whose source is missing or lacks a manifest are likewise never
+auto-fixed: only you know whether the path or the directory is the
+mistake. Plugins matching an `exclude` pattern are not reported at all,
+which also keeps the fixer from publishing an excluded plugin.
+
+Plugins under `.codex/plugins/` are never reported. That is where Codex
+installs plugins into a developer's checkout, so they are not the
+repository's to publish — their skills and hooks are still linted, but
+demanding the repository's catalog list them would fail the lint of
+anyone who installed one.

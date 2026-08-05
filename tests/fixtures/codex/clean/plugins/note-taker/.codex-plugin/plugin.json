@@ -1,0 +1,28 @@
+{
+  "name": "note-taker",
+  "version": "1.2.0",
+  "description": "Capture meeting notes and turn them into structured follow-ups.",
+  "author": {
+    "name": "Example Team",
+    "email": "team@example.com",
+    "url": "https://example.com"
+  },
+  "homepage": "https://example.com/plugins/note-taker",
+  "repository": "https://github.com/example/codex-plugins",
+  "license": "MIT",
+  "keywords": ["notes", "meetings"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Note Taker",
+    "shortDescription": "Capture meeting notes",
+    "longDescription": "Capture meeting notes and turn them into structured follow-ups.",
+    "developerName": "Example Team",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://example.com",
+    "brandColor": "#10A37F",
+    "defaultPrompt": ["Summarize today's meeting notes into action items"],
+    "logo": "./assets/logo.png",
+    "screenshots": []
+  }
+}

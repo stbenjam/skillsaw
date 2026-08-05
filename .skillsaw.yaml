@@ -9,7 +9,9 @@ exclude:
   - ".claude/*"
   - ".cursor/*"
   - ".opencode/*"
-  - ".agents/*"
+  # Only .agents/skills/ is APM-compiled — .agents/plugins/marketplace.json is
+  # our hand-authored Codex marketplace and must stay linted.
+  - ".agents/skills/*"
   - ".github/instructions/*"
   - ".github/copilot-instructions.md"
   # Templates

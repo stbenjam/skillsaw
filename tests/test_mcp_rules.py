@@ -6,6 +6,7 @@ import pytest
 import json
 from pathlib import Path
 
+from skillsaw.blocks import McpBlock
 from skillsaw.rules.builtin.mcp import McpValidJsonRule, McpProhibitedRule
 from skillsaw.context import RepositoryContext
 
@@ -304,6 +305,21 @@ def test_valid_mcp_json_flat_format_stdio(temp_dir):
     rule = McpValidJsonRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+def test_empty_command_check_is_codex_scoped(temp_dir):
+    """The Codex tightening must not change established Claude results."""
+    plugin_dir = _create_plugin_with_mcp(
+        temp_dir,
+        {"mcpServers": {"legacy": {"type": "stdio", "command": ""}}},
+    )
+    context = RepositoryContext(plugin_dir)
+    # Guard against the test passing vacuously: the absence assertion below
+    # means nothing unless the .mcp.json was actually parsed into the tree.
+    mcp_blocks = [b for b in context.lint_tree.find(McpBlock) if b.path.name == ".mcp.json"]
+    assert mcp_blocks, ".mcp.json was not attached to the lint tree"
+    violations = McpValidJsonRule().check(context)
+    assert not any("non-empty string" in v.message for v in violations)
 
 
 def test_valid_mcp_in_plugin_json(plugin_with_mcp_in_plugin_json):

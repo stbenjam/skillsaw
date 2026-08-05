@@ -1,0 +1,63 @@
+{
+  "interface": {
+    "displayName": "Broken Codex Plugins"
+  },
+  "plugins": [
+    {
+      "name": "escaping_paths",
+      "source": {
+        "source": "local",
+        "path": "./plugins/escaping_paths"
+      },
+      "policy": {
+        "installation": "MAYBE",
+        "authentication": "ON_FIRST_USE"
+      }
+    },
+    {
+      "name": "stray-manifest-dir",
+      "source": "plugins/stray-manifest-dir",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "stray-manifest-dir",
+      "source": {
+        "source": "local",
+        "path": "./plugins/gone"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "inline-hooks",
+      "source": {
+        "source": "local",
+        "path": "./plugins/inline-hooks"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": ""
+    },
+    {
+      "name": "from-registry",
+      "source": {
+        "source": "npm",
+        "registry": "http://user:pw@registry.example.com/root?token=abc"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

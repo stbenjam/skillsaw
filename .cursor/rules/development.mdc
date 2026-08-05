@@ -111,6 +111,11 @@ from the markdown-it-py AST — read it via `block.markdown` (a
   hooks, MCP JSON) subclass `JsonConfigBlock` instead; dedicated rules find
   them with `find(SettingsBlock)`. Never add a config file type under
   `ContentBlock` — content rules would then lint its JSON as instruction text.
+- **Structured YAML config gets a direct `LintTarget` subclass, never
+  `ContentBlock`** — `OpenAIMetadataBlock` is the pattern. It is deliberately
+  neither `ContentBlock` (content rules would lint its YAML as instruction
+  text) nor `JsonConfigBlock` (that hierarchy is JSON-specific and file-level;
+  YAML keeps line numbers via `read_yaml_commented()`).
 
 Never require line numbers for JSON files — the `json` module does not
 preserve them. Keep JSON rules at file-level reporting.
@@ -129,3 +134,68 @@ preserve them. Keep JSON rules at file-level reporting.
   duplicate key on every run and never converges (issue #321).
 - **Add new SAFE-autofix edge cases** to the `tests/fixtures/autofix/safe-idempotency`
   fixture so `TestSafeAutofixIdempotency` guards them; update `EXPECTED_SAFE_VIOLATIONS` when the fixture grows.
+- **Autofix stands down entirely for plugins installed under `.codex/plugins/`**
+  — vendor-managed content is diagnostic-only, so every rule's `fix()` silently
+  no-ops there, by design. A new rule's fix needs no guard of its own for that
+  case, and a "fix didn't apply" report from such a path is expected behavior,
+  not a bug.
+
+## Ecosystem provenance
+
+"Which ecosystem owns this plugin directory" is decided in exactly one
+place: `RepositoryContext.provenance()`, which returns a cached
+`PluginProvenance` record per directory. Never answer an ownership
+question with a fresh filesystem probe in a rule or in the tree builder —
+two call sites probing independently is how a directory falls between
+per-ecosystem attach paths and loses its content silently.
+
+- **Discovery is state-free and lives in `src/skillsaw/discovery/`**
+  (`discovery/codex.py`): functions take a root path and callbacks and
+  return data, holding no caches and importing nothing from `context`.
+  `RepositoryContext` is the stateful orchestrator — its methods wrap
+  the discovery functions with the per-context caches and render the
+  provenance verdicts over the evidence they gather.
+- **Evidence is filesystem-first and `--type`-invariant.** An override
+  changes what discovery walks, not what the author declared, so
+  provenance reads markers, contained manifests, and catalog files
+  directly (`_codex_catalog_files()`), never discovery output.
+- **The lint tree builds plugins in ONE pass** over the union of claimed
+  directories. Each directory gets one container; prose (`commands/`,
+  `agents/`, `rules/`, README) attaches once with containment; config
+  files attach per claiming ecosystem through the contained helpers.
+  Never add a second per-ecosystem plugin loop.
+- **Format rules gate on provenance declaratively, never with inline
+  guards.** A rule that enforces one ecosystem's conventions declares
+  `provenance_scope = "claude"` on its class and iterates targets
+  through `self.scoped_find(context, NodeType)`; the filtering happens
+  in exactly one place (`RepositoryContext.in_format_scope`, reading
+  each node's `provenance_dir()`), so a Codex-only directory is exempt
+  while dual-manifest and unclaimed directories keep every check.
+  `TestProvenanceScopeMechanism` pins which rules declare the scope.
+  The mechanism fails open by node type: `provenance_dir()` is
+  overridden only on `PluginNode`, `CommandBlock`, and `AgentBlock` —
+  a scope-declaring rule iterating any other node type silently gets
+  no filtering, so add the override for that type first.
+- **Conditional strictness is not a skip.** The ecosystem-tightened
+  checks (hooks/MCP shapes) stay `provenance_scope = None` and gate the
+  tightened checks alone on `context.in_codex_only_plugin(path)` — the
+  one spelling of "does a Codex-exclusive plugin own this file" — so
+  dual-manifest plugins keep their established Claude results
+  (`TestDualManifestBackwardCompat` pins this).
+
+**Adding an ecosystem** (the next Codex): put its discovery leg — the
+state-free plugin/manifest walks, catalog enumeration, local-source
+resolution, and install-location helpers — in a new
+`src/skillsaw/discovery/<ecosystem>.py` beside `discovery/codex.py`;
+add its evidence probe to `RepositoryContext.provenance()` and its
+context wrappers (caching, `--type` gating) beside
+`_codex_catalog_files()`; add its config-file cluster to the single
+plugin pass in `build_lint_tree` (attached through a contained helper);
+teach `RepositoryContext.in_format_scope` nothing — it already reads the
+provenance claim set, so every `provenance_scope`-declaring rule honors
+the new claim the moment the evidence probe lands; give the new ecosystem's
+own format rules `provenance_scope = "<ecosystem>"` when they arrive;
+extend the union in `merge_plugin_dirs` callers if it discovers plugin
+directories of its own. Prose needs no work — every claimed directory
+already gets it — and existing rule files need no visits: scope is
+declared per rule class, not guarded per call site.

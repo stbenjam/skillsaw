@@ -12,6 +12,8 @@ class CommandNamingRule(Rule):
 
     default_enabled = True
 
+    provenance_scope = "claude"
+
     autofix_confidence = AutofixConfidence.SUGGEST
 
     @property
@@ -30,7 +32,7 @@ class CommandNamingRule(Rule):
 
         violations = []
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             cmd_name = cmd_file.stem
             if not self._is_kebab_case(cmd_name):

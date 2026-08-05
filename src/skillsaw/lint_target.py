@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, List, Optional, Type, TypeVar
+from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
 
 T = TypeVar("T", bound="LintTarget")
 
@@ -18,6 +18,12 @@ class LintTarget:
     path: Path
     children: List["LintTarget"] = field(default_factory=list)
     parent: Optional["LintTarget"] = field(default=None, repr=False)
+    # Resolved root of the plugin directory that owns this node, recorded by
+    # ``build_lint_tree`` while it attaches plugin content — ownership is
+    # decided once at build time and read back by consumers such as
+    # ``skillsaw docs``, never re-derived by path matching. ``None`` for
+    # nodes no plugin owns.
+    plugin_owner: Optional[Path] = field(default=None, repr=False)
 
     @property
     def resolved_path(self) -> Path:
@@ -57,6 +63,29 @@ class LintTarget:
             cache[target_type] = found
         return list(found)
 
+    def find_filtered(
+        self,
+        target_type: Type[T],
+        cache_key: Hashable,
+        predicate: Callable[[T], bool],
+    ) -> List[T]:
+        """``find(target_type)`` narrowed by *predicate*, memoized too.
+
+        Kept in the same cache as ``find()`` under ``(target_type,
+        cache_key)``, so every path that drops the ``find()`` memo drops
+        these with it. A filter re-run per rule around a memoized lookup
+        hands back exactly the cost the memo exists to remove; *cache_key*
+        identifies the filter, and callers must make it name everything the
+        predicate depends on.
+        """
+        cache = self.__dict__.setdefault("_find_cache", {})
+        key = (target_type, cache_key)
+        found = cache.get(key)
+        if found is None:
+            found = [n for n in self.find(target_type) if predicate(n)]
+            cache[key] = found
+        return list(found)
+
     def invalidate_find_cache(self) -> None:
         """Drop memoized ``find()`` results on this node and all ancestors."""
         node: Optional["LintTarget"] = self
@@ -79,6 +108,18 @@ class LintTarget:
         for child in self.children:
             child.parent = self
             child.set_parents()
+
+    def provenance_dir(self) -> Optional[Path]:
+        """Directory whose :class:`PluginProvenance` governs this node's format.
+
+        ``None`` means the node is not plugin-scoped content, so every
+        ecosystem's format conventions stay in scope (repo-level
+        instruction files, ``.apm/`` content, and so on). Overridden by
+        the node types the format-scoped rules iterate — consumed only
+        through ``RepositoryContext.in_format_scope``, which reads the
+        cached provenance record for this directory.
+        """
+        return None
 
     def content_blocks(self) -> list:
         """Prose blocks for content-quality rules.
@@ -136,6 +177,7 @@ class LintTarget:
             "MarketplaceConfigNode": "#fff3cd",
             "MarketplaceNode": "#f8d7da",
             "PluginNode": "#d4edda",
+            "CodexPluginNode": "#d4edda",
             "SkillNode": "#cce5ff",
             "ApmConfigNode": "#fff3cd",
             "ApmNode": "#e2d9f3",
@@ -209,8 +251,24 @@ class MarketplaceNode(LintTarget):
 class PluginNode(LintTarget):
     """A plugin directory."""
 
+    def provenance_dir(self) -> Optional[Path]:
+        return self.path
+
     def tree_label(self) -> str:
         return f"{self.path.name}/ [plugin]"
+
+
+@dataclass(eq=False)
+class CodexPluginNode(LintTarget):
+    """A Codex-only plugin directory.
+
+    This is deliberately not a ``PluginNode`` subclass: Claude plugin rules
+    select ``PluginNode`` targets, while a Codex-only directory needs a
+    hierarchy container without acquiring Claude semantics.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [codex plugin]"
 
 
 @dataclass(eq=False)
@@ -219,6 +277,41 @@ class SkillNode(LintTarget):
 
     def tree_label(self) -> str:
         return f"{self.path.name}/ [skill]"
+
+
+@dataclass(eq=False)
+class CodexMarketplaceConfigNode(LintTarget):
+    """The .agents/plugins/marketplace.json manifest file (OpenAI Codex).
+
+    Codex reads its marketplace catalog from ``.agents/plugins/marketplace.json``.
+    It also accepts ``.claude-plugin/marketplace.json`` for Claude
+    compatibility, but that path stays owned by ``MarketplaceConfigNode`` —
+    the two schemas differ (Codex has no ``owner``, and adds ``policy``,
+    ``category`` and ``interface``), so linting one file against both would
+    contradict itself.
+    """
+
+    def tree_label(self) -> str:
+        return f"{self.path.name} [codex]"
+
+
+@dataclass(eq=False)
+class CodexPluginConfigNode(LintTarget):
+    """A .codex-plugin/plugin.json manifest file (OpenAI Codex).
+
+    The node addresses the manifest rather than the plugin directory so a
+    directory that is both a Claude and a Codex plugin keeps a single
+    ``PluginNode`` subtree. Codex-only manifests live under a
+    ``CodexPluginNode``; ``plugin_dir`` recovers the owning directory.
+    """
+
+    @property
+    def plugin_dir(self) -> Path:
+        """The plugin directory that owns this manifest."""
+        return self.path.parent.parent
+
+    def tree_label(self) -> str:
+        return "plugin.json [codex]"
 
 
 @dataclass(eq=False)

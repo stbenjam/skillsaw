@@ -44,7 +44,16 @@ on them will silently fail.
 
 Fix the JSON syntax error or restructure the file to use the
 `mcpServers` top-level key with properly configured server entries.
-Each server needs at minimum a `command` field.
+Each stdio server needs a `command` field and each remote server a
+`url` field matching its declared `type`.
+
+Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a
+`.claude-plugin` marker nor a Claude marketplace listing — either one
+counts as a Claude declaration), `command` and `url`
+must also be **non-empty strings** — Codex resolves servers through the
+manifest, and an empty value produces a server that silently never
+starts. Plugins that ship both manifests are checked to the Claude
+requirements, where presence alone satisfies the rule.
 
 Avoid naming a server after one of Claude Code's built-in servers
 (`workspace`, `claude-in-chrome`, `computer-use`, `Claude Preview`,

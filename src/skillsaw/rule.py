@@ -6,11 +6,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Callable, List, Optional, Dict, Any, TYPE_CHECKING
+from typing import Callable, List, Optional, Dict, Any, Type, TypeVar, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
     from .blocks import ContentBlock
+    from .lint_target import LintTarget
+
+TargetT = TypeVar("TargetT", bound="LintTarget")
 
 
 class Severity(Enum):
@@ -113,6 +116,17 @@ class Rule(ABC):
     # from this, so the class is the single source of truth. Per project
     # policy new rules must use "auto" or False — never True.
     default_enabled: Any = "auto"
+    # Which ecosystem's format conventions this rule enforces. None (the
+    # default) means ecosystem-neutral — content and security rules read
+    # every block whoever owns it. "claude" makes scoped_find() drop
+    # nodes whose provenance_dir() is claimed exclusively by other
+    # ecosystems, so a Codex-only plugin is exempt from Claude manifest,
+    # frontmatter, and naming requirements. Dual-manifest and unclaimed
+    # directories stay in scope. Conditional-strictness rules (the
+    # ecosystem-tightened hooks/MCP shape checks) stay None and consult
+    # RepositoryContext.in_codex_only_plugin() instead — tightening is
+    # their semantic, not a skip.
+    provenance_scope: Optional[str] = None
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"
@@ -180,6 +194,31 @@ class Rule(ABC):
             List of violations found
         """
         pass
+
+    def scoped_find(self, context: "RepositoryContext", node_type: Type[TargetT]) -> List[TargetT]:
+        """``context.lint_tree.find(node_type)``, filtered to this rule's
+        :attr:`provenance_scope`.
+
+        The one place format-scope filtering happens: a format rule
+        declares which ecosystem's conventions it enforces and iterates
+        its targets through this helper — never with an inline ownership
+        guard in the rule body. The ownership question itself is answered
+        by ``RepositoryContext.in_format_scope``, a view over the cached
+        :class:`PluginProvenance` record.
+
+        Memoized like ``find()`` itself: the scope depends only on the
+        ecosystem and the static tree, so every rule declaring the same
+        scope shares one filtered list rather than re-running the filter
+        per rule, per node.
+        """
+        if self.provenance_scope is None:
+            return context.lint_tree.find(node_type)
+        ecosystem = self.provenance_scope
+        return context.lint_tree.find_filtered(
+            node_type,
+            ("provenance_scope", ecosystem),
+            lambda node: context.in_format_scope(node, ecosystem),
+        )
 
     def fix(
         self,

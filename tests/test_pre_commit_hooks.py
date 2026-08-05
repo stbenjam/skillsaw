@@ -1,9 +1,10 @@
 """Tests for the .pre-commit-hooks.yaml manifest.
 
 Validates the hook definition offline: structure, consistency with the
-console scripts declared in pyproject.toml, and the trigger regex. Running
-pre-commit itself requires network access (it builds an isolated venv), so
-end-to-end verification is done with `pre-commit try-repo .` manually or in CI.
+console scripts declared in pyproject.toml, and the repo-level invocation
+contract. Running pre-commit itself requires network access (it builds an
+isolated venv), so end-to-end verification is done with `pre-commit try-repo .`
+manually or in CI.
 """
 
 import re
@@ -39,82 +40,15 @@ def test_skillsaw_hook_contract(skillsaw_hook):
     assert skillsaw_hook["language"] == "python"
     # Repo-level linter: must not receive staged filenames as arguments
     assert skillsaw_hook["pass_filenames"] is False
+    # Codex manifests may declare components at arbitrary paths, so no
+    # narrow filename filter is safe — but `files: .` (any staged file)
+    # still lets pre-commit skip commits that stage nothing, where
+    # always_run would lint the whole repository anyway.
+    assert skillsaw_hook["files"] == "."
+    assert "always_run" not in skillsaw_hook
     # The entry must invoke a console script declared in pyproject.toml
     entry_cmd = skillsaw_hook["entry"].split()[0]
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert re.search(
         rf"^{re.escape(entry_cmd)}\s*=", pyproject, re.MULTILINE
     ), f"entry {entry_cmd!r} is not a [project.scripts] console script"
-
-
-def test_files_regex_compiles(skillsaw_hook):
-    re.compile(skillsaw_hook["files"])
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "CLAUDE.md",
-        "docs/CLAUDE.md",
-        "AGENTS.md",
-        "GEMINI.md",
-        "SKILL.md",
-        "skills/deploy-service/SKILL.md",
-        "coding.instructions.md",
-        ".github/instructions/api.instructions.md",
-        ".claude-plugin/plugin.json",
-        ".claude-plugin/marketplace.json",
-        "plugins/my-plugin/.claude-plugin/plugin.json",
-        ".claude/commands/deploy.md",
-        ".claude/rules/python.md",
-        "plugins/my-plugin/commands/hello.md",
-        "commands/hello.md",
-        "agents/helper.md",
-        "hooks/hooks.json",
-        "plugins/my-plugin/hooks/hooks.json",
-        ".mcp.json",
-        ".claude/settings.json",
-        ".claude/settings.local.json",
-        "settings.json",
-        "settings.local.json",
-        "plugins/my-plugin/settings.json",
-        ".apm/settings.json",
-        ".cursor/rules/style.mdc",
-        ".cursorrules",
-        ".github/copilot-instructions.md",
-        ".kiro/steering/product.md",
-        ".apm/instructions/dev.md",
-        "apm.yml",
-        ".skillsaw.yaml",
-        ".skillsaw.yml",
-        ".claudelint.yaml",
-        ".skillsaw-baseline.json",
-        ".coderabbit.yaml",
-        "promptfooconfig.yaml",
-        "evals/promptfooconfig.smoke.yml",
-        "evals/regression.yaml",
-    ],
-)
-def test_files_regex_matches_lintable_paths(skillsaw_hook, path):
-    pattern = re.compile(skillsaw_hook["files"])
-    assert pattern.match(path), f"expected hook to trigger on {path!r}"
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "README.md",
-        "src/skillsaw/linter.py",
-        "pyproject.toml",
-        "docs/architecture.md",
-        "Makefile",
-        "tests/test_linter.py",
-        "package.json",
-        ".github/workflows/ci.yml",
-        ".vscode/settings.json",
-        "frontend/config/settings.json",
-    ],
-)
-def test_files_regex_ignores_unrelated_paths(skillsaw_hook, path):
-    pattern = re.compile(skillsaw_hook["files"])
-    assert not pattern.match(path), f"hook should not trigger on {path!r}"

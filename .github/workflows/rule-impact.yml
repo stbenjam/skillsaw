@@ -78,10 +78,15 @@ jobs:
           mkdir -p /tmp/repos /tmp/out/base /tmp/out/head /tmp/out/sha
           for r in openshift-eng/ai-helpers auth0/agent-skills \
                    opendatahub-io/agent-eval-harness kubernetes-sigs/maintainer-tools \
-                   RedHatProductSecurity/prodsec-skills; do
+                   RedHatProductSecurity/prodsec-skills openai/plugins; do
             name=$(basename "$r")
             slug=${r//\//__}  # encode org/repo into the filename for the report
-            git clone --quiet --depth 1 "https://github.com/$r.git" "/tmp/repos/$name"
+            git clone --quiet --filter=blob:none "https://github.com/$r.git" "/tmp/repos/$name"
+            if [ "$r" = "openai/plugins" ]; then
+              # Same pin as test.yml: upstream churn must not read as a
+              # rule-change delta in the impact report.
+              git -C "/tmp/repos/$name" checkout --quiet 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
+            fi
             # Record the commit being linted so the report can permalink
             # findings to the exact file@line on GitHub.
             git -C "/tmp/repos/$name" rev-parse HEAD > "/tmp/out/sha/$slug.sha"

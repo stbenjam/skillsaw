@@ -6,6 +6,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.content_analysis import HooksBlock
 
 # Valid hook event types
@@ -121,6 +122,10 @@ class HooksJsonValidRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(HooksBlock):
+            # Conditional strictness, not a skip: Codex-tightened shape
+            # checks apply only inside Codex-ONLY plugins, so dual-manifest
+            # plugins keep their established Claude results.
+            validate_codex_shapes = context.in_codex_only_plugin(block.path)
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)
@@ -175,6 +180,21 @@ class HooksJsonValidRule(Rule):
                         )
                         continue
 
+                    if (
+                        validate_codex_shapes
+                        and "matcher" in hook_config
+                        and not isinstance(hook_config["matcher"], str)
+                    ):
+                        # The block boundary coerces a non-string matcher so
+                        # nothing crashes; reporting here keeps the coercion
+                        # from hiding the defect.
+                        violations.append(
+                            self.violation(
+                                f"Event '{event_type}[{idx}].matcher' must be a string",
+                                file_path=block.path,
+                            )
+                        )
+
                     if "hooks" not in hook_config:
                         violations.append(
                             self.violation(
@@ -216,10 +236,18 @@ class HooksJsonValidRule(Rule):
                         hook_type = hook["type"]
                         hook_path = f"{event_type}[{idx}].hooks[{hook_idx}]"
 
-                        if hook_type not in _VALID_HOOK_TYPES:
+                        # An unhashable ``type`` (list/dict) would raise
+                        # TypeError in the set membership test — a rule
+                        # crash that silences hook validation for every
+                        # remaining block.
+                        if not isinstance(hook_type, str) or hook_type not in _VALID_HOOK_TYPES:
+                            # A dict value can carry a credentialed URL into
+                            # text/JSON/SARIF output — redact like every
+                            # manifest value.
                             violations.append(
                                 self.violation(
-                                    f"Event '{hook_path}' has invalid type '{hook_type}'. "
+                                    f"Event '{hook_path}' has invalid type "
+                                    f"'{safe_display(hook_type)}'. "
                                     f"Valid types: {', '.join(sorted(_VALID_HOOK_TYPES))}",
                                     file_path=block.path,
                                 )

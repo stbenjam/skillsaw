@@ -151,3 +151,5 @@ uv.lock
 apm_modules/
 apm.lock.yaml
 *.local.json
+.worktrees/
+.claude/worktrees/

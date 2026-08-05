@@ -28,3 +28,13 @@ my-plugin/
 
 Create a `README.md` file in the plugin's root directory explaining
 what the plugin does, how to install it, and how to use its commands.
+
+## Codex plugins
+
+This is a Claude-format convention. A directory claimed only by OpenAI
+Codex — a `.codex-plugin/plugin.json`, or a local-source listing in a
+Codex catalog, with no `.claude-plugin` marker or Claude marketplace
+listing — is exempt: its README conventions belong to its own
+ecosystem, not to Claude's marketplace display. A dual-manifest
+directory keeps this check, and the ecosystem-neutral content and
+security rules read every plugin's files regardless of provenance.

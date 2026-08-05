@@ -61,6 +61,16 @@ Run `make deploy-staging`.
 Add the missing section heading(s) listed in the violation message.
 Each section is a `##` heading with the exact name shown.
 
+## Codex plugins
+
+This is a Claude-format convention. A directory claimed only by OpenAI
+Codex — a `.codex-plugin/plugin.json`, or a local-source listing in a
+Codex catalog, with no `.claude-plugin` marker or Claude marketplace
+listing — is exempt: Claude never loads it, so Claude command section
+conventions do not apply to its commands/. A dual-manifest
+directory keeps this check, and the ecosystem-neutral content and
+security rules read every plugin's files regardless of provenance.
+
 ## Configuration
 
 ```yaml

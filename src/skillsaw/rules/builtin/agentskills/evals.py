@@ -3,21 +3,18 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import read_json
+from skillsaw.rules.builtin.utils import commented_root_line, read_json, read_yaml_commented
+
+from ._helpers import SKILL_REPO_TYPES, contained_eval_file
 
 
 class AgentSkillEvalsRule(Rule):
     """Validate evals/evals.json structure"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     @property
     def rule_id(self) -> str:
@@ -36,12 +33,12 @@ class AgentSkillEvalsRule(Rule):
         for skill_node in context.lint_tree.find(SkillNode):
             skill_path = skill_node.path
             evals_dir = skill_path / "evals"
-            evals_json = evals_dir / "evals.json"
 
             if not evals_dir.is_dir():
                 continue
 
-            if not evals_json.exists():
+            evals_json = contained_eval_file(context, skill_path)
+            if evals_json is None:
                 violations.append(
                     self.violation(
                         "evals/ directory exists but evals.json is missing",
@@ -58,8 +55,25 @@ class AgentSkillEvalsRule(Rule):
                 continue
 
             if not isinstance(data, dict):
+                # Valid JSON, wrong shape. Say so precisely — "must be a
+                # JSON object" reads as a syntax complaint to an author
+                # whose file parses fine (openai/plugins ships top-level
+                # arrays from other eval harnesses). Projects using a
+                # different eval format can disable this rule.
+                # JSON is valid YAML, so the commented reader recovers a
+                # real root line for the container — baselines then
+                # fingerprint on line content instead of the message, and
+                # a message rewording cannot un-suppress old baselines.
+                shaped, _, _ = read_yaml_commented(evals_json)
                 violations.append(
-                    self.violation("evals.json must be a JSON object", file_path=evals_json)
+                    self.violation(
+                        "evals.json is valid JSON but not the Agent Skills "
+                        "evals format — expected an object with an 'evals' "
+                        "array, got a "
+                        f"{'JSON array' if isinstance(data, list) else 'JSON scalar'}",
+                        file_path=evals_json,
+                        line=commented_root_line(shaped),
+                    )
                 )
                 continue
 

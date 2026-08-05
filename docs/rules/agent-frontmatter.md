@@ -50,6 +50,16 @@ and `description` (imperative, stating what the agent does and when to
 invoke it). `skillsaw fix` can add missing frontmatter fields
 automatically.
 
+## Codex plugins
+
+This is a Claude-format convention. A directory claimed only by OpenAI
+Codex — a `.codex-plugin/plugin.json`, or a local-source listing in a
+Codex catalog, with no `.claude-plugin` marker or Claude marketplace
+listing — is exempt: Claude never loads it, so Claude agent
+frontmatter requirements do not apply to its agents/. A dual-manifest
+directory keeps this check, and the ecosystem-neutral content and
+security rules read every plugin's files regardless of provenance.
+
 ## Configuration
 
 ```yaml

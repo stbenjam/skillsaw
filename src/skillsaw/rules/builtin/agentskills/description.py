@@ -3,11 +3,11 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 
-from ._helpers import DESCRIPTION_MAX_LENGTH
+from ._helpers import DESCRIPTION_MAX_LENGTH, SKILL_REPO_TYPES
 
 
 class AgentSkillDescriptionRule(Rule):
@@ -23,12 +23,7 @@ class AgentSkillDescriptionRule(Rule):
     validated by the ecosystem at publish time.
     """
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     config_schema = {
         "max_length": {

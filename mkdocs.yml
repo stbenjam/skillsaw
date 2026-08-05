@@ -129,6 +129,7 @@ nav:
     - Plugin Structure: rules/plugin-structure.md
     - Command Format: rules/command-format.md
     - Marketplace: rules/marketplace.md
+    - OpenAI Codex: rules/codex.md
     - Skills, Agents, Hooks: rules/skills-agents-hooks.md
     - Hidden-Content Validation: rules/hidden-content.md
     - MCP: rules/mcp.md

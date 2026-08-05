@@ -27,3 +27,8 @@ repository — verify it is correct and apply it. The autofix is
 suggest-confidence: a plain `skillsaw fix` skips it, so run
 `skillsaw fix --suggest` to apply the suggested corrections, and review
 the result before committing.
+
+Only repository-relative targets are checked. Anchors (`#...`) and any
+target carrying an RFC 3986 URI scheme — not just `http(s):` and
+`mailto:`, but also application links like `app://` or `vscode://` —
+are treated as external and never reported.

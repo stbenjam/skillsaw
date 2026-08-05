@@ -13,6 +13,8 @@ class CommandSectionsRule(Rule):
 
     default_enabled = False
 
+    provenance_scope = "claude"
+
     @property
     def rule_id(self) -> str:
         return "command-sections"
@@ -31,7 +33,7 @@ class CommandSectionsRule(Rule):
 
         required_sections = ["Name", "Synopsis", "Description", "Implementation"]
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             content = read_text(cmd_file)
             if content is None:

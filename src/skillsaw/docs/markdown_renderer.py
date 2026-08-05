@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Dict, List
 
-from skillsaw.context import RepositoryType
 from skillsaw.docs.models import (
     AgentDoc,
     CommandDoc,
@@ -25,7 +25,10 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
     Returns a dict of {filename: markdown_content}.
     Marketplaces get an index + per-plugin files; others get a single index.
     """
-    if docs.repo_type == RepositoryType.MARKETPLACE and docs.marketplace:
+    # Gated on the model, not the primary type. A Codex catalog in a repo
+    # that is also APM or dot-claude loses the primary-type slot to those,
+    # and the single-page renderer shows only plugins[0].
+    if docs.marketplace:
         return _render_marketplace(docs)
     return {"README.md": _render_single_page(docs)}
 
@@ -33,7 +36,9 @@ def render_markdown(docs: DocsOutput) -> Dict[str, str]:
 def _render_single_page(docs: DocsOutput) -> str:
     lines: List[str] = []
     if docs.title:
-        lines += [f"# {docs.title}", ""]
+        # The title can fall back to plugins[0].name — third-party data on
+        # a marketplace page, so it folds like every other metadata scalar.
+        lines += [f"# {_table_cell(docs.title)}", ""]
     plugin = docs.plugins[0] if docs.plugins else None
 
     if plugin:
@@ -55,11 +60,16 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     pages: Dict[str, str] = {}
 
     sorted_plugins = sorted(mp.plugins, key=lambda p: name_str(p.name).lower())
+    # Sanitising is lossy — "a/b", "a\\b" and "a:b" all reduce to "a-b" —
+    # and pages are keyed by filename, so without this a later plugin
+    # silently replaces an earlier one's page while both index rows link
+    # to the survivor. Names are only warned about, never rejected.
+    filenames = _unique_filenames(sorted_plugins)
 
     # Index
-    lines: List[str] = [f"# {mp.name or docs.title}", ""]
+    lines: List[str] = [f"# {_table_cell(mp.name or docs.title)}", ""]
     if mp.owner and mp.owner.get("name"):
-        lines.append(f"**Owner:** {mp.owner['name']}")
+        lines.append(f"**Owner:** {_table_cell(mp.owner['name'])}")
         lines.append("")
 
     total_cmds = sum(len(p.commands) for p in sorted_plugins)
@@ -74,10 +84,10 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     lines.append("| Plugin | Description | Version |")
     lines.append("|--------|-------------|---------|")
     for plugin in sorted_plugins:
-        fname = _plugin_filename(plugin)
-        label = plugin.display_name or plugin.name
-        desc = plugin.description or "-"
-        ver = plugin.version or "-"
+        fname = filenames[id(plugin)]
+        label = _table_cell(plugin.display_name or plugin.name)
+        desc = _table_cell(plugin.description or "-")
+        ver = _table_cell(plugin.version or "-")
         lines.append(f"| [{label}]({fname}) | {desc} | {ver} |")
     lines.append("")
 
@@ -87,10 +97,13 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
 
     # Per-plugin pages
     for plugin in sorted_plugins:
-        fname = _plugin_filename(plugin)
-        heading = plugin.display_name or plugin.name
+        fname = filenames[id(plugin)]
+        # Same folding as every other metadata sink: a newline in
+        # interface.displayName would end the heading and inject
+        # block-level Markdown into the page.
+        heading = _table_cell(plugin.display_name or plugin.name)
         plines: List[str] = [f"# {heading}", ""]
-        plines.append(f"[&larr; Back to {mp.name or 'index'}](README.md)")
+        plines.append(f"[&larr; Back to {_table_cell(mp.name or 'index')}](README.md)")
         plines.append("")
         _append_plugin_meta(plines, plugin)
         _append_plugin_sections(plines, plugin)
@@ -102,6 +115,40 @@ def _render_marketplace(docs: DocsOutput) -> Dict[str, str]:
     return pages
 
 
+def _table_cell(value: object) -> str:
+    """Make catalog metadata safe for interpolation into Markdown.
+
+    Newlines fold (a row must stay one line), pipes stop being column
+    separators, and link delimiters are escaped — a plugin in a shared
+    catalog controls its own metadata, and ``](`` in a display name would
+    otherwise rewrite the index row's link target.
+    """
+    folded = " ".join(str(value).splitlines())
+    # Backticks are replaced, not escaped: several sinks wrap this value
+    # in a code span, where a backslash escape does not work and any
+    # literal backtick terminates the span — the breakout this exists to
+    # prevent.
+    folded = folded.replace("`", "'")
+    for ch in ("\\", "|", "[", "]", "(", ")"):
+        folded = folded.replace(ch, "\\" + ch)
+    # Markdown passes raw HTML through, so an angle bracket in a metadata
+    # scalar is an element, not text. Entity-encode rather than
+    # backslash-escape: a backslash does not disarm a tag.
+    return folded.replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _link_dest(url: str) -> str:
+    """An extractor-validated URL made inert in a link destination.
+
+    CommonMark decodes character references inside destinations, so a
+    literal ``&`` must be re-encoded to survive the render round-trip —
+    and any entity-shaped text that slips past ``_safe_url`` decodes to
+    its literal self instead of reassembling a scheme. The sink guards
+    itself rather than trusting the extractor to be the only control.
+    """
+    return url.replace("&", "&amp;")
+
+
 # -- Plugin content --
 
 
@@ -109,29 +156,34 @@ def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
     if plugin.description:
         lines.append(f"> {plugin.description}")
         lines.append("")
+    # Structured scalar fields fold through _table_cell: a remote catalog
+    # entry controls these strings, and a newline in ``version`` would end
+    # the meta line and inject block-level Markdown into the page.
+    # ``description`` stays raw — it is prose, rendered as Markdown by
+    # design.
     meta = []
     if plugin.version:
-        meta.append(f"**Version:** {plugin.version}")
+        meta.append(f"**Version:** {_table_cell(plugin.version)}")
     if plugin.author and plugin.author.get("name"):
-        meta.append(f"**Author:** {plugin.author['name']}")
+        meta.append(f"**Author:** {_table_cell(plugin.author['name'])}")
     if plugin.license:
-        meta.append(f"**License:** {plugin.license}")
+        meta.append(f"**License:** {_table_cell(plugin.license)}")
     if plugin.category:
-        meta.append(f"**Category:** {plugin.category}")
+        meta.append(f"**Category:** {_table_cell(plugin.category)}")
     if meta:
         lines.append(" | ".join(meta))
         lines.append("")
     link_parts = []
     if plugin.homepage:
-        link_parts.append(f"[Homepage]({plugin.homepage})")
+        link_parts.append(f"[Homepage]({_link_dest(plugin.homepage)})")
     if plugin.repository:
-        link_parts.append(f"[Repository]({plugin.repository})")
+        link_parts.append(f"[Repository]({_link_dest(plugin.repository)})")
     if link_parts:
         lines.append(" | ".join(link_parts))
         lines.append("")
     all_tags = (plugin.tags or []) + (plugin.keywords or [])
     if all_tags:
-        lines.append("**Tags:** " + ", ".join(f"`{t}`" for t in all_tags))
+        lines.append("**Tags:** " + ", ".join(f"`{_table_cell(t)}`" for t in all_tags))
         lines.append("")
 
 
@@ -173,9 +225,9 @@ def _append_plugin_sections(lines: List[str], plugin: PluginDoc) -> None:
 
 
 def _append_command(lines: List[str], cmd: CommandDoc) -> None:
-    title = f"### {cmd.name}"
+    title = f"### {_table_cell(cmd.name)}"
     if cmd.full_name:
-        title += f" (`{cmd.full_name}`)"
+        title += f" (`{_table_cell(cmd.full_name)}`)"
     lines.append(title)
     lines.append("")
     if cmd.description:
@@ -195,25 +247,26 @@ def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
     lines.append("## Skills")
     lines.append("")
     for skill in sorted(skills, key=lambda s: name_str(s.name).lower()):
-        lines.append(f"### {skill.name}")
+        lines.append(f"### {_table_cell(skill.name)}")
         lines.append("")
         if skill.description:
             lines.append(skill.description)
             lines.append("")
         meta = []
         if skill.license:
-            meta.append(f"**License:** {skill.license}")
+            meta.append(f"**License:** {_table_cell(skill.license)}")
         if skill.compatibility:
-            meta.append(f"**Compatibility:** {skill.compatibility}")
+            meta.append(f"**Compatibility:** {_table_cell(skill.compatibility)}")
         if skill.allowed_tools:
-            meta.append(f"**Allowed tools:** {', '.join(skill.allowed_tools)}")
+            tools = ", ".join(_table_cell(t) for t in skill.allowed_tools)
+            meta.append(f"**Allowed tools:** {tools}")
         if meta:
             lines.append(" | ".join(meta))
             lines.append("")
 
 
 def _append_agent(lines: List[str], agent: AgentDoc) -> None:
-    lines.append(f"### {agent.name}")
+    lines.append(f"### {_table_cell(agent.name)}")
     lines.append("")
     if agent.description:
         lines.append(agent.description)
@@ -221,10 +274,15 @@ def _append_agent(lines: List[str], agent: AgentDoc) -> None:
 
 
 def _append_hook(lines: List[str], hook: HookDoc) -> None:
-    lines.append(f"### {hook.event_type}")
+    # An event name is an arbitrary JSON object key and a matcher an
+    # arbitrary string — neither is author prose, and both fold through
+    # _table_cell like every other metadata scalar. Raw, a newline in an
+    # event key opened block Markdown mid-heading and a backtick in a
+    # matcher closed the code span around it.
+    lines.append(f"### {_table_cell(hook.event_type)}")
     lines.append("")
     for entry in hook.entries:
-        lines.append(f"**Matcher:** `{entry.matcher}`")
+        lines.append(f"**Matcher:** `{_table_cell(entry.matcher)}`")
         lines.append("")
         lines.append("```json")
         lines.append(json.dumps(entry.hooks, indent=2))
@@ -237,28 +295,100 @@ def _append_mcp_table(lines: List[str], servers: List[McpServerDoc]) -> None:
     lines.append("|------|------|----------|--------|")
     for srv in servers:
         endpoint = srv.config.get("command", srv.config.get("url", ""))
-        lines.append(f"| {srv.name} | `{srv.server_type}` | `{endpoint}` | {srv.source_file} |")
+        name = _table_cell(srv.name)
+        server_type = _table_cell(srv.server_type)
+        endpoint_cell = _table_cell(endpoint)
+        source = _table_cell(srv.source_file)
+        lines.append(f"| {name} | `{server_type}` | `{endpoint_cell}` | {source} |")
     lines.append("")
 
 
 def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
-    lines.append(f"### {rule.name}")
+    # A rule name is a filename stem, and a filesystem accepts every
+    # Markdown control character in a name.
+    lines.append(f"### {_table_cell(rule.name)}")
     lines.append("")
     desc = rule.description or (rule.body[:200] if rule.body else "")
     if desc:
         lines.append(desc)
         lines.append("")
     if rule.globs:
-        lines.append(f"**Paths:** {', '.join(f'`{g}`' for g in rule.globs)}")
+        globs = ", ".join(f"`{_table_cell(g)}`" for g in rule.globs)
+        lines.append(f"**Paths:** {globs}")
         lines.append("")
 
 
 # -- Utilities --
 
 
+# Anything that could steer a filename out of the output directory on any
+# platform: both separators, the drive-letter colon, and the parent link.
+# A kebab-case violation is only a warning, so `docs` must not rely on
+# `lint` having rejected the name first.
+# 255 bytes is the near-universal component limit (ext4, APFS, NTFS).
+# The ".md" suffix and any "-2" the allocator appends have to fit too.
+_MAX_STEM_BYTES = 240
+
+_WINDOWS_RESERVED_NAMES = {"con", "prn", "aux", "nul"} | {
+    f"{stem}{n}" for stem in ("com", "lpt") for n in range(1, 10)
+}
+
+# Separators and reserved punctuation, plus ASCII control characters: name
+# validation only warns, and an embedded NUL reaching Path.write_text()
+# raises and aborts documentation generation for the whole catalog.
+_UNSAFE_FILENAME_CHARS = str.maketrans(
+    {**{ord(c): "-" for c in '/\\:<>"|?*'}, **{c: "-" for c in range(0x20)}, 0x7F: "-"}
+)
+
+
+def _unique_filenames(plugins: List[PluginDoc]) -> Dict[int, str]:
+    """One distinct page filename per plugin, keyed by object identity."""
+    # Reserved case-folded: "Foo.md" and "foo.md" are one file on default
+    # macOS and Windows installs, so an exact-case set would hand out both
+    # and the second page would overwrite the first. The chosen spelling is
+    # still what gets written.
+    # Seeded with the index page: a plugin named "readme" otherwise takes
+    # "README.md" and the index overwrites it, losing that plugin's page
+    # and every link to it.
+    used: set = {"readme.md"}
+    out: Dict[int, str] = {}
+    for plugin in plugins:
+        candidate = _plugin_filename(plugin)
+        if candidate.casefold() in used:
+            # Probing rather than counting: a generated "a-b-2.md" can
+            # collide with a plugin genuinely named "a-b-2", so every name
+            # handed out has to be reserved and the next one re-checked.
+            stem = candidate[:-3] if candidate.endswith(".md") else candidate
+            n = 2
+            while f"{stem}-{n}.md".casefold() in used:
+                n += 1
+            candidate = f"{stem}-{n}.md"
+        used.add(candidate.casefold())
+        out[id(plugin)] = candidate
+    return out
+
+
 def _plugin_filename(plugin: PluginDoc) -> str:
     # ``plugin.name`` is manifest-derived and may be a non-string (e.g. a
     # numeric ``"name": 123`` in marketplace.json); coerce before calling
     # string methods so ``docs`` doesn't crash on inputs ``lint`` tolerates.
-    safe = name_str(plugin.name).replace("/", "-").replace(" ", "-")
+    # It is also untrusted: a plugin named ``..\..\evil`` or ``C:\temp``
+    # would otherwise resolve outside the requested output directory when
+    # the caller joins it, and on Windows ``\`` is a real separator.
+    safe = name_str(plugin.name).translate(_UNSAFE_FILENAME_CHARS).replace(" ", "-")
+    safe = safe.replace("..", "-").strip(".-") or "plugin"
+    if len(safe.encode("utf-8")) > _MAX_STEM_BYTES:
+        # A kebab-case name longer than the filesystem's component limit is
+        # valid to codex-plugin-json-valid but unwritable: write_text()
+        # raises ENAMETOOLONG and documentation generation dies for the
+        # whole catalog. The digest keeps distinct long names distinct; the
+        # allocator's own probing still resolves any collision it creates.
+        digest = hashlib.sha256(safe.encode("utf-8")).hexdigest()[:12]
+        head = safe.encode("utf-8")[: _MAX_STEM_BYTES - len(digest) - 1].decode("utf-8", "ignore")
+        safe = f"{head}-{digest}"
+    if safe.casefold() in _WINDOWS_RESERVED_NAMES:
+        # `con`, `nul`, `com1` and friends stay reserved even with an
+        # extension, so `con.md` cannot be created on Windows at all and
+        # documentation generation fails for the whole catalog.
+        safe = f"{safe}-plugin"
     return f"{safe}.md"

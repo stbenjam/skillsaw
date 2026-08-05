@@ -82,7 +82,11 @@ def summary(r):
 def copy_fixture(name, tmp_path):
     src = FIXTURES / name
     dst = tmp_path / name.replace("/", "_")
-    shutil.copytree(src, dst)
+    # symlinks=True: a fixture that ships an escaping symlink is copied as
+    # the symlink, not as the contents behind it — copying the contents
+    # would rebuild the layout as an ordinary directory and quietly turn a
+    # containment test into a no-op.
+    shutil.copytree(src, dst, symlinks=True)
     return dst
 
 
@@ -327,6 +331,45 @@ class TestMarketplace:
         assert "marketplace" in stats["repo_types"]
         assert len(stats["plugins"]) == 3
 
+    def test_escaping_plugins_dir_child_is_dropped_visibly(self, tmp_path):
+        """A plugins/* child that resolves outside the repository root is
+        dropped from discovery (containment: autofix must never write
+        outside the checkout), but the drop must be visible — a warning
+        violation in machine output plus a log line, never a silent
+        coverage loss (fourth panel, required action 1)."""
+        fixture = copy_fixture("marketplace/escaping-plugin-dir", tmp_path)
+        repo = fixture / "repo"
+        link = repo / "plugins" / "shared-tools"
+        # copytree(symlinks=True) must have preserved the escaping link;
+        # a rebuilt plain directory would turn this test into a no-op.
+        assert link.is_symlink(), "fixture symlink was not preserved"
+
+        r = run_lint(repo)
+        # The escaped plugin is not discovered and none of its content is
+        # linted; the registered in-repo plugin still is.
+        assert len(r["out"]["stats"]["plugins"]) == 1
+        assert all(
+            "cleanup.md" not in str(v.get("file_path", "")) for v in violations(r)
+        ), violations(r)
+
+        # The drop is visible: a warning violation in JSON output ...
+        drops = [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "marketplace-json-valid"
+            and "resolves outside the repository root" in v["message"]
+        ]
+        assert len(drops) == 1, violations(r)
+        assert drops[0]["severity"] == "warning"
+        assert str(drops[0]["file_path"]).endswith("plugins/shared-tools")
+        # ... and the same log line the marketplace-source path emits.
+        assert "escapes repository root" in r["stderr"]
+
+        # A warning, not an error: the plugin's content is skipped, not
+        # known to be defective, so a previously-clean repo keeps exit 0.
+        assert summary(r)["errors"] == 0
+        assert r["rc"] == 0
+
     def test_marketplace_plugin_root_resolves_local_sources(self, tmp_path):
         """metadata.pluginRoot is prepended to relative plugin sources (issue #343)."""
         repo = copy_fixture("marketplace/plugin-root", tmp_path)
@@ -537,6 +580,80 @@ class TestFilePathArgument:
 
 
 @pytest.mark.integration
+class TestDirectManifestInputs:
+    """A manifest path given directly resolves to the directory that owns
+    it — never outward to a plugin or repository root.
+
+    Widening a named manifest would expand what ``lint`` reads, and what
+    ``fix`` writes, beyond the path the caller named (an earlier revision
+    widened Codex manifests and ``fix`` rewrote files two directories
+    away). Callers who want manifest rules name the plugin's root
+    directory instead."""
+
+    def test_codex_catalog_file_input_does_not_reach_sibling_projects(self, tmp_path):
+        """Naming ``.agents/plugins/marketplace.json`` must not lint (or
+        let ``fix`` rewrite) files outside the directory that owns it."""
+        repo = copy_fixture("codex/manifest-path-scope", tmp_path)
+        catalog = repo / ".agents" / "plugins" / "marketplace.json"
+        skill = repo / "private-project" / "skills" / "helper" / "SKILL.md"
+        before = skill.read_bytes()
+
+        r = run_lint(catalog)
+        assert r["out"]["stats"]["skills"] == [], r["out"]["stats"]
+        offending = [v for v in violations(r) if ".agents" not in str(v.get("file_path", ""))]
+        assert offending == [], offending
+
+        _run_fix(catalog, "--suggest")
+        assert skill.read_bytes() == before, "fix wrote outside the named path"
+
+    def test_codex_manifest_file_input_stays_in_its_marker_directory(self, tmp_path):
+        repo = copy_fixture("codex/manifest-path-scope", tmp_path)
+        manifest = repo / "plugins" / "note-taker" / ".codex-plugin" / "plugin.json"
+        command = repo / "plugins" / "note-taker" / "commands" / "capture.md"
+        before = command.read_bytes()
+
+        r = run_lint(manifest)
+        assert all(
+            not str(v.get("file_path", "")).endswith("capture.md") for v in violations(r)
+        ), violations(r)
+        _run_fix(manifest, "--suggest")
+        assert command.read_bytes() == before, "fix wrote outside the named path"
+
+    def test_claude_manifest_file_input_is_not_widened(self, tmp_path):
+        """A Claude manifest path keeps its established scope: lint reads
+        what the caller named, and ``fix`` cannot reach files outside it."""
+        repo = tmp_path / "clplug"
+        (repo / ".claude-plugin").mkdir(parents=True)
+        (repo / ".claude-plugin" / "plugin.json").write_text('{"name": "demo"', encoding="utf-8")
+        (repo / "commands").mkdir()
+        command = repo / "commands" / "deploy.md"
+        command.write_text("---\ndescription: Deploy it.\n---\nBody.\n", encoding="utf-8")
+        before = command.read_bytes()
+
+        r = run_lint(repo / ".claude-plugin" / "plugin.json")
+        assert all(
+            not str(v.get("file_path", "")).endswith("deploy.md") for v in violations(r)
+        ), violations(r)
+        _run_fix(repo / ".claude-plugin" / "plugin.json")
+        assert command.read_bytes() == before, "fix wrote outside the named path"
+
+
+class TestMergedContextCodexCounts:
+    def test_merged_context_counts_codex_plugins_across_paths(self, tmp_path):
+        """Multi-path lint of two Codex plugin directories must not report
+        zero plugins — the merged context carries codex_plugins too."""
+        for name in ("one", "two"):
+            plugin = tmp_path / name
+            (plugin / ".codex-plugin").mkdir(parents=True)
+            (plugin / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": "1.0.0", "description": "x"}),
+                encoding="utf-8",
+            )
+        r = run_lint(tmp_path / "one", str(tmp_path / "two"))
+        # Verbose stats list the paths; either way the count must be 2.
+        assert len(r["out"]["stats"]["plugins"]) == 2
+
+
 class TestMultiplePaths:
 
     def test_lint_two_directories(self, tmp_path):
@@ -1533,6 +1650,7 @@ BROKEN_FIXTURES = [
     "content/repeated-directive",
     "content/emphasis-density",
     "security/malicious-skill",
+    "codex/broken",
 ]
 
 CLEAN_FIXTURES = [
@@ -1549,6 +1667,7 @@ CLEAN_FIXTURES = [
     "apm/hooks-clean",
     "supply-chain-hooks/clean",
     "root-mcp/clean",
+    "codex/clean",
 ]
 
 OPT_IN_RULES = {
@@ -3610,3 +3729,88 @@ class TestNameAutofixMultilineScalar:
         assert any("folded-name" in f for f in remaining)
         assert any("next-line" in f for f in remaining)
         assert any("dup-keys" in f for f in remaining)
+
+
+# ── Codex marketplace registration autofix (CLI level) ───────────
+
+
+@pytest.mark.integration
+class TestCodexRegistrationAutofixCli:
+    """The unit harness applies fixes by hand. This exercises the path a
+    user actually runs: ``Linter.fix_and_apply`` multi-pass, per-file
+    conflict resolution, and ``write_text_preserving``'s BOM/CRLF restore.
+    """
+
+    def _catalog(self, repo: Path) -> Path:
+        return repo / ".agents" / "plugins" / "marketplace.json"
+
+    def _build(self, tmp_path, *, indent=2, bom=False, crlf=False) -> Path:
+        repo = tmp_path / "codex-reg"
+        (repo / ".agents" / "plugins").mkdir(parents=True)
+        catalog = {
+            "name": "cat",
+            "plugins": [
+                {
+                    "name": "listed",
+                    "source": {"source": "local", "path": "./plugins/listed"},
+                    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                    "category": "Productivity",
+                }
+            ],
+        }
+        text = json.dumps(catalog, indent=indent) + "\n"
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        data = text.encode("utf-8")
+        if bom:
+            data = b"\xef\xbb\xbf" + data
+        self._catalog(repo).write_bytes(data)
+        for name in ("listed", "missing"):
+            manifest_dir = repo / "plugins" / name / ".codex-plugin"
+            manifest_dir.mkdir(parents=True)
+            (manifest_dir / "plugin.json").write_text(
+                json.dumps({"name": name, "version": "1.0.0", "description": "x"}, indent=2),
+                encoding="utf-8",
+            )
+        return repo
+
+    def test_fix_without_suggest_leaves_the_catalog_alone(self, tmp_path):
+        repo = self._build(tmp_path)
+        before = self._catalog(repo).read_bytes()
+        _run_fix(repo)
+        assert self._catalog(repo).read_bytes() == before
+
+    def test_fix_with_suggest_registers_and_is_idempotent(self, tmp_path):
+        repo = self._build(tmp_path)
+        _run_fix(repo, "--suggest")
+        after_once = self._catalog(repo).read_bytes()
+        names = [p["name"] for p in json.loads(after_once.decode("utf-8"))["plugins"]]
+        assert names == ["listed", "missing"]
+
+        _run_fix(repo, "--suggest")
+        assert self._catalog(repo).read_bytes() == after_once
+
+    def test_the_registration_violation_is_gone_after_the_fix(self, tmp_path):
+        repo = self._build(tmp_path)
+        _run_fix(repo, "--suggest")
+        r = run_lint(repo)
+        ids = {v["rule_id"] for v in r["out"]["violations"]}
+        assert "codex-marketplace-registration" not in ids
+
+    def test_a_bom_and_crlf_catalog_survives_the_fix(self, tmp_path):
+        repo = self._build(tmp_path, bom=True, crlf=True)
+        _run_fix(repo, "--suggest")
+        raw = self._catalog(repo).read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), "the BOM was dropped"
+        assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), "line endings changed"
+
+    def test_a_four_space_catalog_is_reserialised_at_two(self, tmp_path):
+        """Pinning current behaviour, not endorsing it: ``fix()`` rewrites
+        the whole document with ``json.dumps(indent=2)``, so adding one
+        entry to a 4-space catalog reformats every line of it.
+        """
+        repo = self._build(tmp_path, indent=4)
+        _run_fix(repo, "--suggest")
+        text = self._catalog(repo).read_text(encoding="utf-8")
+        assert '\n  "name": "cat"' in text
+        assert '\n    "name": "cat"' not in text

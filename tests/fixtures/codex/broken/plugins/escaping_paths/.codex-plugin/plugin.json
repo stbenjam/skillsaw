@@ -1,0 +1,9 @@
+{
+  "name": "escaping_paths",
+  "skills": "../shared-skills/",
+  "mcpServers": "mcp.json",
+  "interface": {
+    "displayName": "Escaping Paths",
+    "logo": "./assets/logo.png"
+  }
+}

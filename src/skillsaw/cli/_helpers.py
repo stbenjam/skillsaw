@@ -7,7 +7,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from ..context import RepositoryContext, RepositoryType
+from ..context import RepositoryContext, RepositoryType, merge_plugin_dirs
 
 # ---------------------------------------------------------------------------
 # Progress indicator
@@ -49,10 +49,13 @@ class _RuleProgress:
 def _resolve_lint_paths(paths):
     """Normalize CLI paths into a unique list of directories to lint.
 
-    Files resolve to their parent directory, then exact duplicates and
-    paths nested inside another entry are dropped (a parent's
-    RepositoryContext already discovers everything beneath it).
-    First-seen order is preserved.
+    Files resolve to their parent directory — never further out.  Widening
+    a named manifest to an owning plugin or repository root would expand
+    what ``lint`` reads, and what ``fix`` writes, beyond the path the
+    caller named; callers who want manifest rules name the plugin's root
+    directory instead.  Exact duplicates and paths nested inside another
+    entry are then dropped (a parent's RepositoryContext already discovers
+    everything beneath it).  First-seen order is preserved.
     """
     normalized = []
     for p in paths:
@@ -85,12 +88,25 @@ def _is_subpath(child, parent):
 class _MergedContext:
     """Duck-typed context for formatters when linting multiple paths."""
 
-    def __init__(self, root_path, repo_types, plugins, skills, plugin_repo_types=frozenset()):
+    def __init__(
+        self,
+        root_path,
+        repo_types,
+        plugins,
+        skills,
+        plugin_repo_types=frozenset(),
+        codex_plugins=(),
+    ):
         self.root_path = root_path
         self.repo_types = repo_types
         self.plugins = plugins
         self.skills = skills
         self.plugin_repo_types = set(plugin_repo_types)
+        self.codex_plugins = list(codex_plugins)
+
+    def distinct_plugin_dirs(self):
+        """Same contract as :meth:`RepositoryContext.distinct_plugin_dirs`."""
+        return merge_plugin_dirs(self.plugins, self.codex_plugins)
 
     @property
     def repo_type(self):
@@ -120,12 +136,14 @@ def _build_merged_context(contexts):
     plugin_repo_types = set()
     plugins = []
     skills = []
+    codex_plugins = []
     for ctx in contexts:
         repo_types |= ctx.repo_types
         plugin_repo_types |= ctx.plugin_repo_types
         plugins.extend(ctx.plugins)
         skills.extend(ctx.skills)
-    return _MergedContext(root_path, repo_types, plugins, skills, plugin_repo_types)
+        codex_plugins.extend(ctx.codex_plugins)
+    return _MergedContext(root_path, repo_types, plugins, skills, plugin_repo_types, codex_plugins)
 
 
 def _dedup_rules(rules):
