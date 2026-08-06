@@ -118,7 +118,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
+          handle_comment_failure() {
+            echo "$1" >&2
+            if [ "$IS_FORK" = "true" ]; then
+              echo "::warning::Fork PR token cannot write the rule-impact comment; report remains in the job log."
+              return 0
+            fi
+            return 1
+          }
+
           marker='<!-- rule-impact-report -->'
           existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
             --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)
@@ -128,13 +138,7 @@ jobs:
             if ! comment_error=$(gh api --silent -X PATCH \
               "repos/${REPO}/issues/comments/${existing}" \
               -F body=@/tmp/report.md 2>&1); then
-              if echo "$comment_error" | grep -q \
-                "Resource not accessible by integration (HTTP 403)"; then
-                echo "::warning::Fork PR token cannot update the rule-impact comment; report remains in the job log."
-              else
-                echo "$comment_error" >&2
-                exit 1
-              fi
+              handle_comment_failure "$comment_error" || exit 1
             fi
           elif grep -q "No rule-impact differences" /tmp/report.md; then
             echo "No impact and no prior report comment — nothing to post."
@@ -143,12 +147,6 @@ jobs:
             if ! comment_error=$(gh api --silent -X POST \
               "repos/${REPO}/issues/${PR}/comments" \
               -F body=@/tmp/report.md 2>&1); then
-              if echo "$comment_error" | grep -q \
-                "Resource not accessible by integration (HTTP 403)"; then
-                echo "::warning::Fork PR token cannot post the rule-impact comment; report remains in the job log."
-              else
-                echo "$comment_error" >&2
-                exit 1
-              fi
+              handle_comment_failure "$comment_error" || exit 1
             fi
           fi
