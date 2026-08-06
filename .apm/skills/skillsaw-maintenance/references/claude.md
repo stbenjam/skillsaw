@@ -34,8 +34,9 @@ layout. Each format below maps to its own skillsaw rules.
   `command_format.py`.)
 - Marketplace — `src/skillsaw/rules/builtin/marketplace/`: `marketplace-json-valid`,
   `marketplace-registration`.
-- `.claude/` detection — `src/skillsaw/context.py` (`RepositoryType.DOT_CLAUDE`,
-  `DOT_CLAUDE` discovery).
+- `.claude/` detection — `src/skillsaw/discovery/detect.py` (`is_dot_claude`,
+  the `dot-claude` marker returned by `marker_types`); `src/skillsaw/context.py`
+  maps that marker to `RepositoryType.DOT_CLAUDE`.
 - Hooks — `src/skillsaw/rules/builtin/hooks/`: `hooks-json-valid`, `hooks-dangerous`,
   `hooks-prohibited`.
 - MCP — `src/skillsaw/rules/builtin/mcp/`: `mcp-valid-json`, `mcp-prohibited`.
@@ -46,5 +47,5 @@ layout. Each format below maps to its own skillsaw rules.
 - `plugin_structure.py` and `command_format.py` are backward-compat import shims — the
   real rules live in the `plugins/` and `commands/` packages. Do not re-add rules to the
   shims.
-- `.claude/` is detected in `context.py`, not a rule package; format changes there affect
-  which repo types get detected.
+- `.claude/` is detected in `discovery/detect.py`, not a rule package; format changes
+  there affect which repo types `context.py` exposes.
