@@ -212,8 +212,9 @@ def test_advisory_ids_are_unbaselinable():
 
 
 def test_baked_advisory_baseline_entry_does_not_suppress(tmp_path):
-    """A baseline written before the fix may contain an advisory entry; it
-    must not suppress the notice on later runs."""
+    """An existing baseline may already contain an advisory entry; matching
+    one must not suppress the notice, or the removal warning stays hidden
+    until the baseline is regenerated."""
     notice = RuleViolation(
         rule_id="deprecated-rule",
         severity=Severity.WARNING,
@@ -267,7 +268,41 @@ def test_custom_rule_cannot_claim_legacy_alias(plugin_repo):
     assert not any(v.message == "squatted" for v in results)
     warnings = [v for v in results if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
+    assert warnings[0].severity == Severity.WARNING
     assert "legacy alias" in warnings[0].message
+
+
+def test_custom_rule_cannot_claim_advisory_id(plugin_repo):
+    """The advisory half of the custom-rule reservation: findings reported
+    under an advisory ID are exempt from the exit code, so a custom rule
+    claiming one would report failures that never fail CI."""
+    rule_file = plugin_repo / "lint_rule.py"
+    rule_file.write_text(
+        "from skillsaw.rule import Rule, Severity\n\n\n"
+        "class SquatterRule(Rule):\n"
+        "    @property\n"
+        "    def rule_id(self):\n"
+        '        return "deprecated-rule"\n\n'
+        "    @property\n"
+        "    def description(self):\n"
+        '        return "claims an advisory ID"\n\n'
+        "    def default_severity(self):\n"
+        "        return Severity.ERROR\n\n"
+        "    def check(self, context):\n"
+        '        return [self.violation("squatted")]\n'
+    )
+    config = LinterConfig.default()
+    config.custom_rules = ["lint_rule.py"]
+    config.config_dir = plugin_repo
+    context = RepositoryContext(plugin_repo)
+    linter = Linter(context, config=config, no_plugins=True)
+    results = linter.run()
+    assert "deprecated-rule" not in {r.rule_id for r in linter.rules}
+    assert not any(v.message == "squatted" for v in results)
+    warnings = [v for v in results if v.rule_id == "plugin-load-error"]
+    assert len(warnings) == 1
+    assert warnings[0].severity == Severity.WARNING
+    assert "reserved" in warnings[0].message
 
 
 # ── Deprecation ─────────────────────────────────────────────────
