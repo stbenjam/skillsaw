@@ -1,6 +1,6 @@
 ---
 name: {{AGENT_NAME}}
-description: "Handles a specialized task. Use when the user needs focused analysis and execution."
+description: "Handles {{AGENT_ID}} tasks. Use when the user needs {{AGENT_ID}} support; customize this description with concrete triggers and outcomes."
 subagent_type: {{AGENT_ID}}
 ---
 

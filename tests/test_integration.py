@@ -2141,6 +2141,7 @@ class TestDescriptionRouting:
         assert any("header-builder" in v["file_path"] for v in vs)
         assert any("generic-command" in v["file_path"] for v in vs)
         assert not any("aws-region" in v["file_path"] for v in vs)
+        assert not any("me-region" in v["file_path"] for v in vs)
         assert not any("explicit-use-this" in v["file_path"] for v in vs)
         assert not any("incident-investigator" in v["file_path"] for v in vs)
         assert not any("type-one-analyzer" in v["file_path"] for v in vs)

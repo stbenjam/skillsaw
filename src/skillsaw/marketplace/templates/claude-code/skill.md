@@ -1,6 +1,6 @@
 ---
 name: "{{SKILL_ID}}"
-description: "Guides a repeatable task workflow. Use when the user needs structured, step-by-step execution."
+description: "Guides the {{SKILL_ID}} workflow. Use when the user needs {{SKILL_ID}} task support; customize this description with concrete triggers and outcomes."
 ---
 
 # {{SKILL_NAME}}

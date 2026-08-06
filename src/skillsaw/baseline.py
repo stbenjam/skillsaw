@@ -91,6 +91,9 @@ def fingerprint_violation(
             raw = f"{rule_id}\0{rel_path}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
+    discriminator_suffix = (
+        f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""
+    )
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
         if not file_path.is_absolute():
@@ -98,13 +101,13 @@ def fingerprint_violation(
         lines = _read_file_lines(file_path, _file_cache)
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
-            raw = f"{rule_id}\0{rel_path}\0{line_content}"
+            raw = f"{rule_id}\0{rel_path}\0{line_content}{discriminator_suffix}"
             return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     if rel_path is not None:
-        raw = f"{rule_id}\0{rel_path}\0{violation.message}"
+        raw = f"{rule_id}\0{rel_path}\0{violation.message}{discriminator_suffix}"
     else:
-        raw = f"{rule_id}\0{violation.message}"
+        raw = f"{rule_id}\0{violation.message}{discriminator_suffix}"
 
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

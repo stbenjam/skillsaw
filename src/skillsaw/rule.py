@@ -53,9 +53,9 @@ class RuleViolation:
     # Confidence of the fix when ``fixable``: SAFE fixes apply with plain
     # ``skillsaw fix``, SUGGEST fixes require ``--suggest``.
     fix_confidence: Optional["AutofixConfidence"] = None
-    # Stable suffix for formatter identities when a rule emits sibling
-    # findings at the same path and line. Rules should set this from their
-    # first release so existing external fingerprints never churn.
+    # Stable suffix for external and baseline identities when a rule emits
+    # sibling findings at the same path and line. Rules should set this from
+    # their first release so existing external fingerprints never churn.
     fingerprint_discriminator: Optional[str] = None
 
     def __post_init__(self):
@@ -254,8 +254,8 @@ class Rule(ABC):
         Pass ``block`` for content-based violations.  ``file_path`` is
         accepted for backward compatibility and auto-wraps into a block.
         ``metric`` disambiguates multiple ratchet violations per file.
-        ``fingerprint_discriminator`` disambiguates sibling formatter findings
-        at the same path and line without changing identities for other rules.
+        ``fingerprint_discriminator`` disambiguates sibling findings at the
+        same path and line without changing identities for other rules.
 
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules

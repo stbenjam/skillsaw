@@ -12,8 +12,8 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 _FIRST_PERSON_RE = re.compile(
     r"(?:^|[.!?,;:]\s+|\n[ \t]*|\b(?:and|but|or|so|yet)\s+)"
     r"I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
-    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s(?!-[A-Za-z0-9])|"
-    r"[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
+    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s|[Mm]e|[Mm]y|[Mm]ine|"
+    r"[Mm]yself)(?!-[A-Za-z0-9])\b"
 )
 _USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
 _FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?]\s+)for (?:requests|tasks)\b")
