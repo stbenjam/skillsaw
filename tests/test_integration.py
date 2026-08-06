@@ -305,6 +305,104 @@ class TestRootLevelMcp:
         assert "mcp-valid-json" not in rule_ids(r)
 
 
+# ── Agent Plugins v1 ─────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestAgentPlugins:
+    def test_clean_agent_plugin_passes_end_to_end(self, tmp_path):
+        repo = copy_fixture("agent-plugins/clean", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "agent-plugin" in r["out"]["stats"]["repo_types"]
+        assert len(r["out"]["stats"]["plugins"]) == 1
+        assert "agent-plugin-json-valid" not in rule_ids(r)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
+    def test_broken_manifest_reports_errors_and_spec_warnings(self, tmp_path):
+        repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        found = by_rule(r)["agent-plugin-json-valid"]
+        assert any(v["severity"] == "error" for v in found)
+        assert any(v["severity"] == "warning" for v in found)
+
+    def test_broken_mcp_uses_agent_plugin_validator_only(self, tmp_path):
+        repo = copy_fixture("agent-plugins/broken-mcp", tmp_path)
+        r = run_lint(
+            repo,
+            "--rule",
+            "agent-plugin-mcp-valid",
+            "--rule",
+            "mcp-valid-json",
+            "--rule",
+            "mcp-prohibited",
+        )
+
+        assert r["rc"] == 1
+        assert "agent-plugin-mcp-valid" in rule_ids(r)
+        assert "mcp-prohibited" in rule_ids(r)
+        assert "mcp-valid-json" not in rule_ids(r)
+
+    def test_explicit_type_reports_a_missing_manifest(self, tmp_path):
+        repo = copy_fixture("agent-plugins/missing", tmp_path)
+        r = run_lint(
+            repo,
+            "--type",
+            "agent-plugin",
+            "--rule",
+            "agent-plugin-json-valid",
+        )
+
+        assert r["rc"] == 1
+        assert "agent-plugin-json-valid" in rule_ids(r)
+        assert any("plugin.json" in v["message"] for v in violations(r))
+
+    def test_legacy_root_manifest_does_not_auto_enable_agent_plugin_rules(self, tmp_path):
+        repo = copy_fixture("agent-plugins/legacy-root", tmp_path)
+        r = run_lint(repo)
+
+        assert "agent-plugin" not in r["out"]["stats"]["repo_types"]
+        assert "agent-plugin-json-valid" not in rule_ids(r)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
+    def test_collection_counts_only_canonical_agent_plugins(self, tmp_path):
+        repo = copy_fixture("agent-plugins/collection", tmp_path)
+        r = run_lint(repo)
+
+        assert "agent-plugin" in r["out"]["stats"]["repo_types"]
+        assert len(r["out"]["stats"]["plugins"]) == 1
+
+    def test_forced_codex_type_still_validates_dual_package_mcp(self, tmp_path):
+        """A forced non-agent --type must not lose mcp.json validation.
+
+        The dual-format package symlinks .mcp.json at the portable mcp.json,
+        so the tree carries the document only as the Agent Plugins parser
+        role. With agent-plugin-mcp-valid filtered out by --type codex-plugin,
+        the generic mcp-valid-json rule must pick the file up instead.
+        """
+        repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
+        assert (repo / ".mcp.json").is_symlink()
+        r = run_lint(repo, "--type", "codex-plugin")
+
+        assert r["rc"] == 1
+        found = by_rule(r)["mcp-valid-json"]
+        assert any("Invalid JSON" in v["message"] for v in found)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
+    def test_auto_detected_dual_package_reports_broken_mcp_once(self, tmp_path):
+        repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        invalid_json = [v for v in violations(r) if "Invalid JSON" in v["message"]]
+        assert len(invalid_json) == 1
+        assert invalid_json[0]["rule_id"] == "agent-plugin-mcp-valid"
+        assert "mcp-valid-json" not in rule_ids(r)
+
+
 # ── Marketplace ──────────────────────────────────────────────────
 
 
@@ -1657,6 +1755,8 @@ BROKEN_FIXTURES = [
     "supply-chain-hooks/malicious",
     "apm/hooks-dangerous",
     "root-mcp/invalid-json",
+    "agent-plugins/broken-manifest",
+    "agent-plugins/broken-mcp",
     "content-unclosed-fence/skill-hides-violations",
     "content/instruction-drift",
     "content/repeated-directive",
@@ -1679,6 +1779,7 @@ CLEAN_FIXTURES = [
     "apm/hooks-clean",
     "supply-chain-hooks/clean",
     "root-mcp/clean",
+    "agent-plugins/clean",
     "codex/clean",
 ]
 

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import re
 
-# C0, DEL, C1, and the Unicode bidi overrides — any of them can reorder
-# or hide message text in a terminal or a rendered SARIF viewer.
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
+# C0, DEL, C1, lone UTF-16 surrogate code points, and the Unicode bidi
+# overrides — any of them can reorder or hide message text in a terminal or
+# a rendered SARIF viewer. Surrogates also cannot be encoded as UTF-8, so a
+# JSON key containing an escaped lone surrogate must never reach a formatter.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\ud800-\udfff\u202a-\u202e\u2066-\u2069]")
 
 # Everything a message needs to locate the defect fits comfortably here;
 # an adversarial multi-kilobyte value must not become a multi-kilobyte
@@ -78,9 +80,10 @@ def safe_display(value: object) -> str:
 
     Reports are uploaded as CI artifacts and ingested as SARIF, so an
     author's pasted ``user:token@host`` URL must not ride along — the
-    userinfo is redacted, keeping the locator. Control characters are
-    replaced so a crafted value cannot smuggle terminal escapes through
-    the text formatter, and the result is length-bounded.
+    userinfo is redacted, keeping the locator. Control characters and
+    unencodable lone surrogates are replaced so a crafted value cannot
+    smuggle terminal escapes through or crash a formatter, and the result is
+    length-bounded.
     """
     raw = str(value)
     truncated = len(raw) > _MAX_DISPLAY

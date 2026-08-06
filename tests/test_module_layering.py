@@ -116,6 +116,14 @@ def test_utils_shim_reexports_core_utils():
         assert getattr(shim, name) is getattr(core, name), name
 
 
+def test_context_reexports_canonical_plugin_provenance():
+    """The pre-extraction context import path remains compatible."""
+    from skillsaw.context import PluginProvenance as legacy
+    from skillsaw.repository_provenance import PluginProvenance
+
+    assert legacy is PluginProvenance
+
+
 # ---------------------------------------------------------------------------
 # Architectural invariant: core blocks/formats must not depend on the rules pkg
 # ---------------------------------------------------------------------------

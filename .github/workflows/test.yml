@@ -221,6 +221,29 @@ jobs:
           print(f\"Scanned {r['stats']['plugins']} plugins, {r['stats']['skills']} skills, {r['stats']['rules_run']} rules\")
           "
 
+      - name: Test official Agent Plugins v1 example
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pinned: upstream example changes should not make an unrelated
+          # Skillsaw change fail. Bump deliberately after reviewing the diff.
+          gh repo clone agentplugins/agent-plugins-example /tmp/agent-plugins-example -- --filter=blob:none
+          git -C /tmp/agent-plugins-example checkout --quiet 5f3f5084a821aefa792e79500dd8f0462ab83473
+
+          skillsaw lint --format json --no-custom-rules \
+            --rule agent-plugin-json-valid \
+            --rule agent-plugin-mcp-valid \
+            /tmp/agent-plugins-example | python3 -c "
+          import sys, json
+          r = json.load(sys.stdin)
+          assert 'agent-plugin' in r['stats']['repo_types'], f\"not detected as an Agent Plugin: {r['stats']['repo_types']}\"
+          assert r['stats']['plugins'] == 1, f\"expected one plugin, scanned {r['stats']['plugins']}\"
+          assert r['stats']['skills'] == 1, f\"expected one skill, scanned {r['stats']['skills']}\"
+          assert r['stats']['rules_run'] == 2, f\"expected the 2 Agent Plugin rules, ran {r['stats']['rules_run']}\"
+          assert r['violations'] == [], f\"Agent Plugin rules regressed: {[(v['rule_id'], v['message']) for v in r['violations'][:5]]}\"
+          print('Official Agent Plugins v1 example: detected, one skill discovered, both rules clean')
+          "
+
       - name: Test auth0/agent-skills
         run: |
           git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills

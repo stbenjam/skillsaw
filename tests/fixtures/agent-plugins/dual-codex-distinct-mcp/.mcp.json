@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "codex-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["codex-server"]
+    }
+  }
+}

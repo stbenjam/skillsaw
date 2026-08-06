@@ -1,0 +1,59 @@
+An Agent Plugin is a self-contained package rooted at a directory with a
+canonical `plugin.json`. This rule validates the portable manifest and the
+fixed component locations defined by the
+[Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification).
+
+## What is checked
+
+- `plugin.json` is a JSON object with the exact 1.0.0 `$schema` identifier and
+  a valid `name`.
+- The optional metadata fields have the types defined by the specification.
+  Semantic Versioning, SPDX, email, and URL syntax are recommendations rather
+  than manifest validity requirements.
+- `name` is 1–64 characters, uses lowercase ASCII letters, digits, hyphens,
+  and periods, starts and ends with an alphanumeric character, and contains
+  neither `--` nor `..`.
+- `author` contains only string-valued `name`, `email`, and `url` fields;
+  `keywords` is an array of strings.
+- `extensions` is an object whose namespace values are objects. Skillsaw
+  implements no client extension namespace, so the contents of those objects
+  remain opaque and are not validated.
+- The fixed `skills/` location is a directory when present, and every
+  discovered component remains inside the filesystem-resolved plugin root.
+- Only immediate `skills/*/SKILL.md` entrypoints are Agent Plugin components.
+  Each one is then checked by the existing Agent Skills rules. Deeper
+  `SKILL.md` files are not discovered through this format.
+
+Unknown top-level manifest fields and a non-object `extensions` field are
+reported as warnings and ignored, as required by the normative prose. Other
+manifest schema violations are errors. A missing optional component location
+is valid.
+
+## Detection and explicit linting
+
+Automatic detection requires positive schema evidence: the root
+`plugin.json`, or an immediate `plugins/*/plugin.json`, must declare a
+canonical Agent Plugins manifest schema identifier. An unsupported canonical
+version remains useful intent evidence so this rule can report the version
+error. A historical or unrelated `plugin.json`, and `mcp.json` by itself, do
+not opt the repository into this format.
+
+Use `--type agent-plugin` when validating an intended package whose manifest
+is missing or too malformed to provide detection evidence. The explicit type
+causes this rule to report that defect instead of silently treating the
+directory as another repository type.
+
+## How to fix
+
+Start with the minimal portable manifest:
+
+```json
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "my-plugin"
+}
+```
+
+Keep portable skills under `skills/<skill-name>/SKILL.md`. Do not replace the
+fixed locations with manifest path fields. Resolve symlinks and other package
+paths so that everything a client discovers remains inside the plugin root.

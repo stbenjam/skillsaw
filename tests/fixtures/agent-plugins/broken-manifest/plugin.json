@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "Bad--Plugin",
+  "version": 18,
+  "description": false,
+  "author": {
+    "name": "Example Team",
+    "email": 42,
+    "handle": "example"
+  },
+  "keywords": "release",
+  "extensions": "ignored-but-reported",
+  "components": {
+    "skills": "./somewhere-else"
+  }
+}

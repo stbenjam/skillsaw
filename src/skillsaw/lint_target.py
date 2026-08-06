@@ -273,6 +273,17 @@ class CodexPluginNode(LintTarget):
 
 
 @dataclass(eq=False)
+class AgentPluginNode(LintTarget):
+    """A portable Agent Plugins package nested below the lint root."""
+
+    def provenance_dir(self) -> Optional[Path]:
+        return self.path
+
+    def tree_label(self) -> str:
+        return f"{self.path.name}/ [agent plugin]"
+
+
+@dataclass(eq=False)
 class SkillNode(LintTarget):
     """A skill directory."""
 
@@ -313,6 +324,21 @@ class CodexPluginConfigNode(LintTarget):
 
     def tree_label(self) -> str:
         return "plugin.json [codex]"
+
+
+@dataclass(eq=False)
+class AgentPluginConfigNode(LintTarget):
+    """The root ``plugin.json`` manifest for a portable Agent Plugin."""
+
+    @property
+    def plugin_dir(self) -> Path:
+        return self.path.parent
+
+    def provenance_dir(self) -> Optional[Path]:
+        return self.plugin_dir
+
+    def tree_label(self) -> str:
+        return "plugin.json [agent plugin]"
 
 
 @dataclass(eq=False)

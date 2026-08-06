@@ -1,0 +1,5 @@
+{
+  "name": "codex-only",
+  "version": "1.0.0",
+  "description": "A Codex-only package used to exercise forced Agent Plugin linting."
+}

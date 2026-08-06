@@ -61,8 +61,22 @@ RULE_GROUPS = [
             "agentskill-unreferenced-files",
         ],
         "These rules validate skills against the [agentskills.io specification]"
-        "(https://agentskills.io/specification). They auto-enable for agentskills "
-        "repos, single plugins, and marketplaces whenever skills are detected.",
+        "(https://agentskills.io/specification). They auto-enable wherever skills "
+        "are detected — agentskills repos, single plugins, marketplaces, "
+        "`.claude/` directories, Codex plugins and marketplaces, and Agent "
+        "Plugin packages.",
+    ),
+    (
+        "Agent Plugins",
+        "agent-plugins",
+        ["agent-plugin-json-valid", "agent-plugin-mcp-valid"],
+        "Validates portable plugin packages against the "
+        "[Agent Plugins v1 specification]"
+        "(https://agent-plugins.org/specification). The manifest rule checks "
+        "the required root `plugin.json`; the MCP rule checks optional root "
+        "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
+        "manifest declares a canonical Agent Plugins schema; use "
+        "`--type agent-plugin` to force validation.",
     ),
     (
         "Plugin Structure",
@@ -438,9 +452,7 @@ def _rule_table(rule_ids, rules_data):
     for rule_id in rule_ids:
         r = rules_data[rule_id]
         link = f"[`{rule_id}`]({rule_id}.md)"
-        lines.append(
-            f"| {link} | {_table_cell(r['description'])} | {r['severity']} | {r['fix']} |"
-        )
+        lines.append(f"| {link} | {_table_cell(r['description'])} | {r['severity']} | {r['fix']} |")
     return "\n".join(lines)
 
 

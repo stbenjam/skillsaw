@@ -31,6 +31,44 @@ skills-repo/
 
 Standard discovery paths (`.claude/skills/`, `.github/skills/`, `.agents/skills/`) are checked automatically.
 
+## Agent Plugins
+
+Portable plugin packages following the [Agent Plugins v1
+specification](https://agent-plugins.org/specification):
+
+```text
+my-plugin/
+├── plugin.json           # Required: exactly at the plugin root
+├── skills/               # Optional
+│   └── my-skill/         # Immediate child directory
+│       └── SKILL.md      # Agent Skills specification
+└── mcp.json              # Optional: portable MCP server configuration
+```
+
+Each skill must be an immediate child of `skills/`; deeper descendants are not
+discovered as additional skills. `plugin.json` and, when present, `mcp.json`
+must use the canonical Agent Plugins v1 schema identifiers. The
+`agent-plugin-json-valid` and `agent-plugin-mcp-valid` rules validate those
+files, while the `agentskill-*` rules validate discovered `SKILL.md` files.
+
+Automatic detection is deliberately strict. A `plugin.json` at the lint root,
+or at an immediate `plugins/*` child, must declare a canonical Agent Plugins
+manifest schema identifier. This both supports multi-package collections and
+avoids claiming unrelated repositories that happen to contain `plugin.json`.
+An `mcp.json` alone is not detection evidence. Supported v1 manifests are
+validated locally; a canonical identifier for an unsupported version is still
+detected so the version error can be reported.
+
+Use `skillsaw lint --type agent-plugin` to force Agent Plugin validation when
+the manifest is missing, malformed, incomplete, or declares the wrong schema;
+the defect is then reported instead of preventing detection.
+
+Agent Plugins can coexist with Claude and Codex plugin formats. A repository
+may contain root `plugin.json`, `.claude-plugin/plugin.json`, and
+`.codex-plugin/plugin.json` markers at the same time; skillsaw detects each
+matching repository type and applies its rule family independently. One
+format's manifest does not substitute for another's.
+
 ## Single Plugin
 
 ```

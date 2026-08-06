@@ -14,7 +14,7 @@ from skillsaw.formats.codex import (
     codex_plugin_name,
     is_remote_source,
 )
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_is_file, safe_resolve
 from skillsaw.utils import read_json
 from skillsaw.docs.models import (
     AgentDoc,
@@ -38,7 +38,13 @@ from skillsaw.blocks import (
     ReadmeBlock,
     SkillBlock,
 )
-from skillsaw.lint_target import CodexPluginConfigNode, PluginNode, SkillNode
+from skillsaw.lint_target import (
+    AgentPluginConfigNode,
+    CodexPluginConfigNode,
+    LintTarget,
+    PluginNode,
+    SkillNode,
+)
 
 
 def extract_docs(
@@ -57,6 +63,14 @@ def extract_docs(
     ]
     codex_plugins = _extract_codex_plugins(context)
     plugins = claude_plugins + codex_plugins
+    # A portable Agent Plugins package that another ecosystem also claims is
+    # already documented above: its AgentPluginConfigNode hangs off the same
+    # container, so the portable mcp.json, skills and prose are in that doc.
+    # Only a package no other ecosystem claims needs its own extraction —
+    # without it the package is absent entirely and its skills surface as
+    # standalone repository content.
+    documented = {r for p in plugins if (r := safe_resolve(p.path)) is not None}
+    plugins = plugins + _extract_agent_plugins(context, documented)
 
     marketplace = None
     if RepositoryType.MARKETPLACE in context.repo_types and context.marketplace_data:
@@ -303,7 +317,7 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
 
 def _owned_blocks(
     context: RepositoryContext,
-    node: CodexPluginConfigNode,
+    node: LintTarget,
     block_cls: type,
     plugin_resolved: Path,
 ) -> list:
@@ -356,22 +370,99 @@ def _extract_codex_plugin(
         homepage=_safe_url(meta.get("homepage")),
         repository=_safe_url(meta.get("repository")),
         license=str(meta.get("license", "") or ""),
-        commands=_command_docs(_owned_blocks(context, node, CommandBlock, plugin_resolved)),
-        skills=_extract_codex_skills(context, plugin_resolved),
-        agents=_agent_docs(_owned_blocks(context, node, AgentBlock, plugin_resolved)),
-        hooks=_extract_hooks(_owned_blocks(context, node, HooksBlock, plugin_resolved)),
-        # meta is passed empty: the manifest's ``mcpServers`` map is
-        # already in the tree as a CodexInlineMcpBlock — feeding it here
-        # too would list every inline server twice.
-        mcp_servers=_extract_mcp_servers(
-            _owned_blocks(context, node, McpBlock, plugin_resolved), {}
-        ),
-        rules=_rule_docs(_owned_blocks(context, node, PluginRuleBlock, plugin_resolved)),
+        **_owned_components(context, node, plugin_resolved),
         has_readme=(plugin_dir / "README.md").is_file(),
     )
 
 
-def _read_json_dict(node: CodexPluginConfigNode) -> dict:
+def _owned_components(
+    context: RepositoryContext,
+    node: LintTarget,
+    plugin_resolved: Path,
+) -> dict:
+    """The component docs the tree assigned to a manifest-rooted plugin.
+
+    Every manifest ecosystem places its content the same way — prose on the
+    container, config under the manifest node — and tags all of it with the
+    owning root, so one owner scan serves Codex and Agent Plugins alike.
+    """
+    return dict(
+        commands=_command_docs(_owned_blocks(context, node, CommandBlock, plugin_resolved)),
+        skills=_extract_owned_skills(context, plugin_resolved),
+        agents=_agent_docs(_owned_blocks(context, node, AgentBlock, plugin_resolved)),
+        hooks=_extract_hooks(_owned_blocks(context, node, HooksBlock, plugin_resolved)),
+        # meta is passed empty: a manifest's own ``mcpServers`` map is
+        # already in the tree as an inline block — feeding it here too
+        # would list every inline server twice.
+        mcp_servers=_extract_mcp_servers(
+            _owned_blocks(context, node, McpBlock, plugin_resolved), {}
+        ),
+        rules=_rule_docs(_owned_blocks(context, node, PluginRuleBlock, plugin_resolved)),
+    )
+
+
+def _extract_agent_plugins(
+    context: RepositoryContext,
+    documented: Set[Path],
+) -> List[PluginDoc]:
+    """Plugin docs for portable packages no other ecosystem documents.
+
+    Both package layouts land here: a repo-root package, whose container is
+    the tree root, and a ``plugins/*`` collection member under an
+    ``AgentPluginNode``. Neither has a ``PluginNode`` or Codex manifest of
+    its own, so the ``AgentPluginConfigNode`` is the only thing that names
+    the package.
+    """
+    docs: List[PluginDoc] = []
+    for node in context.lint_tree.find(AgentPluginConfigNode):
+        # The tree's ownership decision, read back rather than re-derived.
+        plugin_resolved = node.plugin_owner or safe_resolve(node.plugin_dir)
+        if plugin_resolved is None or plugin_resolved in documented:
+            continue
+        documented.add(plugin_resolved)
+        docs.append(_extract_agent_plugin(context, node, plugin_resolved))
+    return docs
+
+
+def _extract_agent_plugin(
+    context: RepositoryContext,
+    node: AgentPluginConfigNode,
+    plugin_resolved: Path,
+) -> PluginDoc:
+    """Build a PluginDoc from an Agent Plugins manifest and its subtree.
+
+    The manifest is read defensively: ``--type agent-plugin`` seeds this
+    node even when plugin.json is missing or unparseable, and
+    agent-plugin-json-valid is what reports that — documentation stays
+    total and falls back to the directory name.
+    """
+    plugin_dir = node.plugin_dir
+    meta = _read_json_dict(node)
+
+    author_val = meta.get("author")
+    if isinstance(author_val, str):
+        author_val = {"name": author_val}
+
+    name = meta.get("name")
+    return PluginDoc(
+        # Agent Plugins 1.0.0 declares no displayName, category or tags —
+        # the fields stay empty rather than being invented from extensions,
+        # whose namespace contents carry no defined semantics.
+        name=name if isinstance(name, str) and name else plugin_dir.name,
+        path=plugin_dir,
+        description=str(meta.get("description", "") or ""),
+        version=str(v) if (v := meta.get("version")) is not None else "",
+        author=author_val if isinstance(author_val, dict) else None,
+        keywords=_string_list(meta.get("keywords")),
+        homepage=_safe_url(meta.get("homepage")),
+        repository=_safe_url(meta.get("repository")),
+        license=str(meta.get("license", "") or ""),
+        **_owned_components(context, node, plugin_resolved),
+        has_readme=safe_is_file(plugin_dir / "README.md"),
+    )
+
+
+def _read_json_dict(node: LintTarget) -> dict:
     data, error = read_json(node.path)
     return data if not error and isinstance(data, dict) else {}
 
@@ -449,7 +540,7 @@ def _string_list(value) -> List[str]:
     return [str(v) for v in value if v]
 
 
-def _extract_codex_skills(context: RepositoryContext, plugin_resolved: Path) -> List[SkillDoc]:
+def _extract_owned_skills(context: RepositoryContext, plugin_resolved: Path) -> List[SkillDoc]:
     """Skills the tree assigned to this plugin.
 
     The build tagged each ``SkillNode`` with its owning plugin root, so

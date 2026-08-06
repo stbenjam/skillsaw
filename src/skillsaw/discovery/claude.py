@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
+from skillsaw.discovery import agent_plugins as agent_plugins_discovery
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
@@ -206,15 +207,29 @@ def discover_skills(
     agentskills: bool,
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
+    agent_plugins: Iterable[Path],
+    recursive_agent_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
     should_skip: Callable[[Path], bool],
     claim_boundary: Callable[[Path], Optional[Path]],
-    codex_claims_possible: Callable[[], bool],
-    is_codex_only: Callable[[Path], bool],
+    containment_claims_possible: Callable[[], bool],
+    is_containment_plugin: Callable[[Path], bool],
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
     discovered: Set[Path] = set()
+    agent_plugin_packages = list(agent_plugins)
+    agent_plugin_roots = {
+        resolved
+        for plugin in agent_plugin_packages
+        if (resolved := safe_resolve(plugin)) is not None
+    }
+    recursive_agent_plugin_roots = {
+        resolved
+        for plugin in recursive_agent_plugins
+        if (resolved := safe_resolve(plugin)) is not None
+    }
+    agent_plugin_immediate_only = agent_plugin_roots - recursive_agent_plugin_roots
 
     def walk(
         parent: Path,
@@ -222,6 +237,24 @@ def discover_skills(
         visited: Optional[Set[Path]] = None,
     ) -> None:
         """Walk one skill collection without crossing its claim boundary."""
+        resolved_parent = safe_resolve(parent)
+        skip_subtrees: Set[Path] = set()
+        if resolved_parent is not None and resolved_parent in agent_plugin_immediate_only:
+            if visited is not None:
+                # Mid-walk descent into a portable package: Agent Plugins has
+                # a fixed, one-level skill scan below; the generic recursive
+                # walk must not pull extension-private or otherwise nested
+                # SKILL.md files into the portable package.
+                return
+            # The walk *starts* at a portable package root — the package is
+            # the repository (or collection) root itself. Suppressing the
+            # whole walk would silently drop every SKILL.md outside the
+            # package's skills/ component, so only that component keeps the
+            # fixed one-level semantics (the dedicated scan below owns it)
+            # while the rest of the tree keeps recursive discovery.
+            skills_component = safe_resolve(parent / "skills")
+            if skills_component is not None:
+                skip_subtrees.add(skills_component)
         if visited is None:
             visited = set()
             if boundary is None:
@@ -232,6 +265,8 @@ def discover_skills(
                     continue
                 resolved = safe_resolve(item)
                 if resolved is None or resolved in discovered or resolved in visited:
+                    continue
+                if resolved in agent_plugin_immediate_only or resolved in skip_subtrees:
                     continue
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue
@@ -245,7 +280,11 @@ def discover_skills(
                 else:
                     visited.add(resolved)
                     child_boundary = boundary
-                    if child_boundary is None and codex_claims_possible() and is_codex_only(item):
+                    if (
+                        child_boundary is None
+                        and containment_claims_possible()
+                        and is_containment_plugin(item)
+                    ):
                         child_boundary = resolved
                     walk(item, child_boundary, visited)
         except OSError:
@@ -283,4 +322,10 @@ def discover_skills(
                     discovered.add(resolved)
             else:
                 walk(path, plugin_root)
+    for plugin in agent_plugin_packages:
+        for skill in agent_plugins_discovery.discover_agent_plugin_skills(plugin):
+            resolved = safe_resolve(skill)
+            if resolved is not None and resolved not in discovered:
+                skills.append(skill)
+                discovered.add(resolved)
     return skills

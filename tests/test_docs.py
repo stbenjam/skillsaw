@@ -375,6 +375,204 @@ class TestExtractor:
 
 
 # ---------------------------------------------------------------------------
+# Agent Plugins extractor tests
+# ---------------------------------------------------------------------------
+
+
+AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+AGENT_PLUGIN_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+
+
+def write_agent_plugin(root, name, *, manifest_text=None, skill="demo"):
+    """Write a portable Agent Plugins package at *root*."""
+    root.mkdir(parents=True, exist_ok=True)
+    if manifest_text is None:
+        manifest_text = json.dumps(
+            {
+                "$schema": AGENT_PLUGIN_SCHEMA,
+                "name": name,
+                "version": "1.4.0",
+                "description": "Review release evidence.",
+                "author": {"name": "Acme Release Engineering"},
+                "homepage": "https://example.com/plugins/release-tools",
+                "repository": "https://example.com/source/release-tools",
+                "license": "Apache-2.0",
+                "keywords": ["release", "audit"],
+            }
+        )
+    (root / "plugin.json").write_text(manifest_text)
+
+    (root / "mcp.json").write_text(
+        json.dumps(
+            {
+                "$schema": AGENT_PLUGIN_MCP_SCHEMA,
+                "mcpServers": {
+                    "release-auditor": {
+                        "type": "stdio",
+                        "command": "uvx",
+                        "args": ["release-auditor"],
+                    }
+                },
+            }
+        )
+    )
+
+    skill_dir = root / "skills" / skill
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {skill}\ndescription: Audits release evidence before a ship decision.\n"
+        f"---\n\n# {skill}\n\nCollect the evidence.\n"
+    )
+
+    commands_dir = root / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "audit.md").write_text(
+        "---\ndescription: Audit a release\n---\n\n"
+        "## Name\naudit\n\n## Description\nAudits a release.\n"
+    )
+    (root / "README.md").write_text(f"# {name}\n\nPortable package.\n")
+    return root
+
+
+class TestAgentPluginExtractor:
+    def test_extract_root_package(self, temp_dir):
+        """A repo-root Agent Plugin becomes a PluginDoc with its own content."""
+        write_agent_plugin(temp_dir, "acme.release-tools")
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+
+        assert docs.repo_type == RepositoryType.AGENT_PLUGIN
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert plugin.name == "acme.release-tools"
+        assert plugin.version == "1.4.0"
+        assert plugin.description == "Review release evidence."
+        assert plugin.author == {"name": "Acme Release Engineering"}
+        assert plugin.homepage == "https://example.com/plugins/release-tools"
+        assert plugin.repository == "https://example.com/source/release-tools"
+        assert plugin.license == "Apache-2.0"
+        assert plugin.keywords == ["release", "audit"]
+        assert plugin.has_readme is True
+
+        assert [s.name for s in plugin.skills] == ["demo"]
+        assert [c.name for c in plugin.commands] == ["audit"]
+        # The package's skills belong to it, not to the repository at large.
+        assert docs.skills == []
+
+    def test_root_package_mcp_servers(self, temp_dir):
+        """The portable mcp.json is published like any other MCP config."""
+        write_agent_plugin(temp_dir, "acme.release-tools")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+        servers = docs.plugins[0].mcp_servers
+        assert [s.name for s in servers] == ["release-auditor"]
+        assert servers[0].server_type == "stdio"
+        assert servers[0].source_file == "mcp.json"
+        assert servers[0].config["command"] == "uvx"
+
+    def test_extract_plugins_collection(self, temp_dir):
+        """Every plugins/* package is documented under its own package."""
+        write_agent_plugin(temp_dir / "plugins" / "alpha", "acme.alpha", skill="alpha-skill")
+        write_agent_plugin(temp_dir / "plugins" / "beta", "acme.beta", skill="beta-skill")
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        by_name = {p.name: p for p in docs.plugins}
+        assert set(by_name) == {"acme.alpha", "acme.beta"}
+        assert [s.name for s in by_name["acme.alpha"].skills] == ["alpha-skill"]
+        assert [s.name for s in by_name["acme.beta"].skills] == ["beta-skill"]
+        assert [s.name for s in by_name["acme.beta"].mcp_servers] == ["release-auditor"]
+        assert docs.skills == []
+
+    def test_malformed_manifest_falls_back_to_directory_name(self, temp_dir):
+        """An unparseable manifest still publishes the package it names."""
+        package = temp_dir / "plugins" / "release-tools"
+        write_agent_plugin(
+            package,
+            "acme.release-tools",
+            # Trailing comma: discovery recognizes the schema from the raw
+            # text, but json.loads never yields metadata.
+            manifest_text='{\n  "$schema": "%s",\n  "name": "acme.release-tools",\n}\n'
+            % AGENT_PLUGIN_SCHEMA,
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert len(docs.plugins) == 1
+        plugin = docs.plugins[0]
+        assert plugin.name == "release-tools"
+        assert plugin.version == ""
+        assert plugin.description == ""
+        assert plugin.author is None
+        assert plugin.keywords == []
+        # The package still owns its content — a bad manifest must not
+        # scatter the skills back into the repository's standalone list.
+        assert [s.name for s in plugin.skills] == ["demo"]
+        assert [s.name for s in plugin.mcp_servers] == ["release-auditor"]
+        assert docs.skills == []
+
+    def test_non_string_manifest_fields_do_not_crash(self, temp_dir):
+        """Wrong-typed manifest values degrade to defaults, never to a crash."""
+        write_agent_plugin(
+            temp_dir,
+            "acme.release-tools",
+            manifest_text=json.dumps(
+                {
+                    "$schema": AGENT_PLUGIN_SCHEMA,
+                    "name": 42,
+                    "version": 18,
+                    "description": False,
+                    "author": "Acme Release Engineering",
+                    "keywords": "release",
+                    "homepage": "javascript:alert(1)",
+                }
+            ),
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+        plugin = docs.plugins[0]
+        assert plugin.name == temp_dir.name
+        assert plugin.version == "18"
+        assert plugin.description == ""
+        assert plugin.author == {"name": "Acme Release Engineering"}
+        assert plugin.keywords == []
+        assert plugin.homepage == ""
+        assert render_markdown(docs)["README.md"]
+
+    def test_dual_ecosystem_package_documented_once(self, temp_dir):
+        """A Claude plugin that also ships a portable manifest is not doubled."""
+        write_agent_plugin(temp_dir, "acme.release-tools")
+        claude_dir = temp_dir / ".claude-plugin"
+        claude_dir.mkdir()
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "release-tools", "version": "2.0.0"})
+        )
+
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        assert len(docs.plugins) == 1
+        assert docs.plugins[0].name == "release-tools"
+        # The Claude doc still carries the portable components.
+        assert [s.name for s in docs.plugins[0].skills] == ["demo"]
+        assert [s.name for s in docs.plugins[0].mcp_servers] == ["release-auditor"]
+
+    def test_root_package_renders(self, temp_dir):
+        """Both renderers publish the package rather than an empty page."""
+        write_agent_plugin(temp_dir, "acme.release-tools")
+        docs = extract_docs(RepositoryContext(temp_dir))
+
+        markdown = render_markdown(docs)["README.md"]
+        assert "acme.release-tools" in markdown
+        assert "demo" in markdown
+        assert "release-auditor" in markdown
+
+        html = render_html(docs)["index.html"]
+        assert "acme.release-tools" in html
+        assert "release-auditor" in html
+
+
+# ---------------------------------------------------------------------------
 # HTML renderer tests
 # ---------------------------------------------------------------------------
 

@@ -178,8 +178,8 @@ def _run_lint(args):
                 file=sys.stderr,
             )
             print(
-                "Expected: .claude-plugin/plugin.json, plugins/ directory,"
-                " or SKILL.md (agentskills.io)\n",
+                "Expected: an Agent Plugins plugin.json, .claude-plugin/plugin.json, "
+                "plugins/ directory, or SKILL.md (agentskills.io)\n",
                 file=sys.stderr,
             )
 

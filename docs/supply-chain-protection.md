@@ -51,8 +51,11 @@ added to a project — even if it doesn't match a known dangerous pattern.
 ### mcp-prohibited
 
 Opt-in policy rule. When enabled, **all** MCP servers are prohibited
-unless their name appears in the allowlist. Scans both plugin-level and
-root-level `.mcp.json` files.
+unless their name appears in the allowlist. Scans every MCP configuration
+skillsaw discovers — root-level and plugin-level `.mcp.json`, Agent Plugin
+`mcp.json`, Codex `mcpServers` declared inline in
+`.codex-plugin/plugin.json`, and `mcpServers` embedded in a Claude
+plugin's `plugin.json`.
 
 ### settings-dangerous
 
@@ -155,6 +158,7 @@ be defined:
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
+| Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
 

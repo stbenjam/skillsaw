@@ -11,6 +11,7 @@ from typing import Set, TYPE_CHECKING, Tuple
 
 from .blocks import (
     AgentBlock,
+    AgentPluginMcpBlock,
     AgentsMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
@@ -39,7 +40,6 @@ from .formats.codex import (
     codex_declared_mcp_files,
     codex_inline_hooks,
     codex_inline_mcp_servers,
-    codex_manifest_is_contained,
 )
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
@@ -48,6 +48,8 @@ from .formats.promptfoo import (
     resolve_file_ref,
 )
 from .lint_target import (
+    AgentPluginConfigNode,
+    AgentPluginNode,
     LintTarget,
     ApmConfigNode,
     ApmNode,
@@ -155,21 +157,31 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block.plugin_owner = owner
         parent.children.append(block)
 
-    # Nearest-root ownership, with the roots resolved once per context.
-    _codex_owner = context.codex_plugin_owning
+    # Nearest package ownership, with the roots resolved once per context.
+    _contained_plugin_owner = context.contained_plugin_owning
+    agent_plugin_roots = set(context.agent_plugin_roots())
 
-    def _add_codex_block(
-        parent: CodexPluginConfigNode,
+    def _shadowed_by_agent_plugin_mcp(path: Path, agent_plugin_mcp: Path | None) -> bool:
+        """Whether *path* is the portable ``mcp.json`` under another name.
+
+        A dual-format package may symlink ``.mcp.json`` (or declare a Codex
+        MCP file) at the portable ``mcp.json``. That document is already
+        attached once as the Agent Plugins parser role, so a second parser
+        role here would duplicate every policy and security finding.
+        """
+        return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
+
+    def _add_contained_plugin_block(
+        parent: CodexPluginConfigNode | AgentPluginConfigNode,
         p: Path,
         block_cls: type,
         owner: Path | None = None,
     ) -> None:
         """Role-aware block attachment for a path that must stay inside its plugin.
 
-        The conventional Codex files (``hooks/hooks.json``, ``.mcp.json``)
-        are found by convention rather than declared, so nothing has
-        checked where they resolve to. A symlink would otherwise read an
-        external file under an in-repo path.
+        Conventional package files can be found without a manifest path
+        declaration, so nothing else has checked where they resolve to. A
+        symlink would otherwise read an external file under an in-repo path.
         """
         root = safe_resolve(parent.plugin_dir)
         resolved = safe_resolve(p)
@@ -181,9 +193,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """The one prose attach for every plugin container.
 
         ``commands/``, ``agents/``, ``rules/`` and README follow the same
-        conventions in both ecosystems, so every claimed directory gets
+        conventions across plugin ecosystems, so every claimed directory gets
         them here — the content and security rules must read this prose
-        whoever owns it. Containment as in ``_add_codex_block``: a symlink
+        whoever owns it. Containment as in ``_add_contained_plugin_block``: a symlink
         would pull an external file under an in-repo name.
         """
         plugin_resolved = safe_resolve(plugin_dir)
@@ -277,7 +289,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _add_block(root, context.root_path / ".claude" / "settings.local.json", SettingsBlock)
 
     # --- Root-level .mcp.json (MCP server configuration) ---
-    _add_block(root, context.root_path / ".mcp.json", McpBlock)
+    # A dual-format package may symlink both conventional paths to one file.
+    # Prefer the portable parser role so ecosystem-neutral policy rules see
+    # the executable surface once rather than reporting duplicate findings.
+    root_agent_plugin_mcp = (
+        safe_resolve(context.root_path / "mcp.json") if repo_root in agent_plugin_roots else None
+    )
+    root_native_mcp = context.root_path / ".mcp.json"
+    if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
+        _add_block(root, root_native_mcp, McpBlock)
 
     _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
     _add_block(root, context.root_path / ".cursorrules", InstructionBlock)
@@ -317,6 +337,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # --- Plugins (build first so skills can nest inside them) ---
     plugin_nodes: dict[Path, PluginNode] = {}
     codex_plugin_nodes: dict[Path, CodexPluginNode] = {}
+    agent_plugin_nodes: dict[Path, AgentPluginNode] = {}
     marketplace_dir = context.root_path / "plugins"
     marketplace_node: MarketplaceNode | None = None
     if (context.has_marketplace() or context.has_codex_marketplace()) and marketplace_dir.is_dir():
@@ -337,7 +358,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for candidate in (
         *context.plugins,
         *context.codex_plugins,
+        *context.agent_plugins,
         *sorted(p for p in context._codex_claim_set() if not context.is_path_excluded(p)),
+        *sorted(p for p in context._agent_plugin_claim_set() if not context.is_path_excluded(p)),
     ):
         resolved_candidate = safe_resolve(candidate)
         if resolved_candidate is None:
@@ -365,27 +388,37 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if resolved_plugin is None:
             continue
 
-        # Container type: a Claude identity (or no ecosystem claim at all)
-        # keeps the PluginNode and its Claude-only rules; a Codex-only
-        # directory gets the Codex container; a Codex-only plugin that IS
-        # the repository root hangs directly off the tree root.
+        is_agent_plugin = resolved_plugin in agent_plugin_roots
+        agent_plugin_mcp = safe_resolve(plugin_path / "mcp.json") if is_agent_plugin else None
+
+        # Container type: Claude identity keeps PluginNode and its Claude
+        # rules. Otherwise Codex wins the neutral hierarchy choice when a
+        # package declares both non-Claude formats; each format still gets
+        # its own config node below the one shared container. Root packages
+        # hang directly off the tree root.
         container: LintTarget
-        if prov.claude or not prov.codex:
+        if prov.claude:
             container = PluginNode(path=plugin_path)
             plugin_nodes[resolved_plugin] = container
-        elif resolved_plugin == root.resolved_path:
+        elif resolved_plugin == root.resolved_path and (prov.codex or is_agent_plugin):
             container = root
-        else:
+        elif prov.codex:
             container = CodexPluginNode(path=plugin_path)
             codex_plugin_nodes[resolved_plugin] = container
+        elif is_agent_plugin:
+            container = AgentPluginNode(path=plugin_path)
+            agent_plugin_nodes[resolved_plugin] = container
+        else:
+            # Legacy unclaimed directories discovered by the Claude layout
+            # retain their established container and validation behavior.
+            container = PluginNode(path=plugin_path)
+            plugin_nodes[resolved_plugin] = container
 
         if container is not root:
             container.plugin_owner = resolved_plugin
         else:
-            # A repo-root Codex plugin shares conventional config paths with
-            # the repository, and the generic root attach ran first — so
-            # those blocks live on the tree root but the ownership is this
-            # plugin's, decided here once.
+            # A repo-root package shares conventional config paths with the
+            # repository, so ownership is decided here once.
             root_plugin_owner = resolved_plugin
             # Only ``.mcp.json`` needs re-tagging: the generic root attach
             # never adds a HooksBlock (hooks/hooks.json attaches under the
@@ -397,21 +430,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
         _add_plugin_prose(container, plugin_path, resolved_plugin)
 
-        # Conventional configs. Codex-claimed directories get hooks and MCP
-        # exclusively through the Codex cluster below, whose containment
-        # check keeps a symlinked hooks.json from parsing an external
-        # file's commands into diagnostics. Pure-Claude plugins keep their
-        # established attach.
-        if not prov.codex:
+        # Conventional Claude configs belong only to Claude or legacy
+        # unclaimed packages. Portable-only packages must not accidentally
+        # inherit Claude's hooks, .mcp.json, or settings semantics.
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             _add_block(
                 container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
-            _add_block(container, plugin_path / ".mcp.json", McpBlock, owner=resolved_plugin)
+            native_mcp = plugin_path / ".mcp.json"
+            if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
+                _add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
         # _add_block's bare resolve() away from content a hostile
         # Codex-only checkout controls.
-        if prov.claude or not prov.codex:
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             _add_block(
                 container, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
             )
@@ -440,7 +473,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Codex "checks that default file automatically", so a plugin
             # can ship executable hooks without declaring them — the same
             # supply-chain surface as a Claude plugin's hooks.
-            _add_codex_block(
+            _add_contained_plugin_block(
                 node, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
             # A manifest may point ``hooks`` at other files, or write them
@@ -455,13 +488,33 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 node.children.append(inline_block)
             # Same treatment for MCP: the conventional .mcp.json, declared
             # files, and inline maps are all commands the host will spawn.
-            _add_codex_block(node, plugin_path / ".mcp.json", McpBlock, owner=resolved_plugin)
+            native_mcp = plugin_path / ".mcp.json"
+            if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
+                _add_contained_plugin_block(node, native_mcp, McpBlock, owner=resolved_plugin)
             for declared_mcp in codex_declared_mcp_files(plugin_path):
+                if _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):
+                    continue
                 _add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
             for inline_mcp in codex_inline_mcp_servers(plugin_path):
                 inline_block = CodexInlineMcpBlock(path=manifest, inline_data=inline_mcp)
                 inline_block.plugin_owner = resolved_plugin
                 node.children.append(inline_block)
+            container.children.append(node)
+
+        # Agent Plugins manifest cluster. A forced ``--type agent-plugin``
+        # seeds this even when plugin.json is absent, so the validity rule can
+        # report the missing entrypoint. The optional mcp.json is attached
+        # only when it is a contained regular file; malformed path/kind cases
+        # remain visible to the config rule through the manifest node.
+        if is_agent_plugin:
+            node = AgentPluginConfigNode(path=plugin_path / "plugin.json")
+            node.plugin_owner = resolved_plugin
+            _add_contained_plugin_block(
+                node,
+                plugin_path / "mcp.json",
+                AgentPluginMcpBlock,
+                owner=resolved_plugin,
+            )
             container.children.append(node)
 
         if container is not root:
@@ -478,10 +531,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             continue
         skill_node = SkillNode(path=skill_path)
         _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
-        # Contained against the owning Codex plugin: rules both read and
+        # Contained against the owning package: rules both read and
         # rewrite these files, so a symlink here is a read *and* a write
         # outside the checkout.
-        ref_root = _codex_owner(skill_path)
+        ref_root = _contained_plugin_owner(skill_path)
 
         _add_openai_metadata(
             skill_node,
@@ -508,7 +561,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         parent_plugin: LintTarget | None = None
         resolved_skill = safe_resolve(skill_path) or skill_path
         for candidate in (resolved_skill, *resolved_skill.parents):
-            node = plugin_nodes.get(candidate) or codex_plugin_nodes.get(candidate)
+            node = (
+                plugin_nodes.get(candidate)
+                or codex_plugin_nodes.get(candidate)
+                or agent_plugin_nodes.get(candidate)
+            )
             if node is not None:
                 parent_plugin = node
                 skill_node.plugin_owner = candidate
@@ -516,7 +573,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if parent_plugin is not None:
             parent_plugin.children.append(skill_node)
         else:
-            # A repo-root Codex plugin has no container of its own, so its
+            # A repo-root package has no container of its own, so its
             # skills hang off the tree root; the ownership tag keeps them
             # attributable to the plugin all the same.
             skill_node.plugin_owner = root_plugin_owner

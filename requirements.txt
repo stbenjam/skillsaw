@@ -2,3 +2,4 @@
 PyYAML>=6.0
 ruamel.yaml>=0.18
 markdown-it-py>=3,<5
+jsonschema>=4.18,<5
