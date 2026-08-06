@@ -704,16 +704,16 @@ class TestCodexRootsAreResolvedOnce:
         context = RepositoryContext(repo)
         context.codex_plugin_roots()  # warm the memo
 
-        import skillsaw.context as ctx_mod
+        import skillsaw.repository_provenance as provenance_module
 
         calls = {"n": 0}
-        real = ctx_mod.safe_resolve
+        real = provenance_module.safe_resolve
 
         def counting(path):
             calls["n"] += 1
             return real(path)
 
-        monkeypatch.setattr(ctx_mod, "safe_resolve", counting)
+        monkeypatch.setattr(provenance_module, "safe_resolve", counting)
         for _ in range(20):
             context.codex_plugin_owning(repo / "skills" / "s")
 

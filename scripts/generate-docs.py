@@ -34,6 +34,17 @@ RULE_GROUPS = [
         "repos, single plugins, and marketplaces whenever skills are detected.",
     ),
     (
+        "Agent Plugins",
+        ["agent-plugin-manifest-valid", "agent-plugin-mcp-valid"],
+        "Validates portable plugin packages against the "
+        "[Agent Plugins v1 specification]"
+        "(https://agent-plugins.org/specification). The manifest rule checks "
+        "the required root `plugin.json`; the MCP rule checks optional root "
+        "`mcp.json`. Auto-enabled when a root or immediate `plugins/*` "
+        "manifest declares a canonical Agent Plugins schema; use "
+        "`--type agent-plugin` to force validation.",
+    ),
+    (
         "Plugin Structure",
         ["plugin-json-required", "plugin-json-valid", "plugin-naming", "plugin-readme"],
         None,

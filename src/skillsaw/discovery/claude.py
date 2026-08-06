@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
+from skillsaw.discovery import agent_plugins as portable_discovery
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
@@ -206,15 +207,27 @@ def discover_skills(
     agentskills: bool,
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
+    agent_plugins: Iterable[Path],
+    portable_recursive_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
     should_skip: Callable[[Path], bool],
     claim_boundary: Callable[[Path], Optional[Path]],
-    codex_claims_possible: Callable[[], bool],
-    is_codex_only: Callable[[Path], bool],
+    containment_claims_possible: Callable[[], bool],
+    is_containment_plugin: Callable[[Path], bool],
 ) -> List[Path]:
     """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
     discovered: Set[Path] = set()
+    portable_plugins = list(agent_plugins)
+    portable_roots = {
+        resolved for plugin in portable_plugins if (resolved := safe_resolve(plugin)) is not None
+    }
+    portable_recursive_roots = {
+        resolved
+        for plugin in portable_recursive_plugins
+        if (resolved := safe_resolve(plugin)) is not None
+    }
+    portable_immediate_only = portable_roots - portable_recursive_roots
 
     def walk(
         parent: Path,
@@ -222,6 +235,12 @@ def discover_skills(
         visited: Optional[Set[Path]] = None,
     ) -> None:
         """Walk one skill collection without crossing its claim boundary."""
+        resolved_parent = safe_resolve(parent)
+        if resolved_parent is not None and resolved_parent in portable_immediate_only:
+            # Agent Plugins has a fixed, one-level skill scan below; the
+            # generic recursive walk must not pull extension-private or
+            # otherwise nested SKILL.md files into the portable package.
+            return
         if visited is None:
             visited = set()
             if boundary is None:
@@ -232,6 +251,8 @@ def discover_skills(
                     continue
                 resolved = safe_resolve(item)
                 if resolved is None or resolved in discovered or resolved in visited:
+                    continue
+                if resolved in portable_immediate_only:
                     continue
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue
@@ -245,7 +266,11 @@ def discover_skills(
                 else:
                     visited.add(resolved)
                     child_boundary = boundary
-                    if child_boundary is None and codex_claims_possible() and is_codex_only(item):
+                    if (
+                        child_boundary is None
+                        and containment_claims_possible()
+                        and is_containment_plugin(item)
+                    ):
                         child_boundary = resolved
                     walk(item, child_boundary, visited)
         except OSError:
@@ -283,4 +308,10 @@ def discover_skills(
                     discovered.add(resolved)
             else:
                 walk(path, plugin_root)
+    for plugin in portable_plugins:
+        for skill in portable_discovery.discover_agent_plugin_skills(plugin):
+            resolved = safe_resolve(skill)
+            if resolved is not None and resolved not in discovered:
+                skills.append(skill)
+                discovered.add(resolved)
     return skills

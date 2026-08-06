@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "metadata-is-type-only",
+  "version": "definitely-not-semver",
+  "homepage": "not a URL",
+  "repository": "also not a URL",
+  "license": "not-an-spdx-identifier",
+  "author": {
+    "email": "not an email",
+    "url": "not a URL either"
+  }
+}

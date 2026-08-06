@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "portable-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["portable-server"]
+    }
+  }
+}

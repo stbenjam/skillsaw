@@ -106,6 +106,38 @@ def test_dual_ecosystem_plugin_keeps_claude_primary_type(temp_dir):
     assert context.repo_type == RepositoryType.SINGLE_PLUGIN
 
 
+def test_agent_plugin_schema_detection_and_primary_type(temp_dir):
+    """A canonical root manifest claims the portable Agent Plugins format."""
+    (temp_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "portable-plugin",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENT_PLUGIN in context.repo_types
+    assert context.repo_type is RepositoryType.AGENT_PLUGIN
+    assert context.agent_plugins == [temp_dir]
+
+
+def test_legacy_root_plugin_json_does_not_claim_agent_plugins(temp_dir):
+    """A generic historical root manifest is not enough detection evidence."""
+    (temp_dir / "plugin.json").write_text(
+        json.dumps({"name": "legacy", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENT_PLUGIN not in context.repo_types
+    assert context.agent_plugins == []
+
+
 def test_flat_structure_discovery(flat_structure_marketplace):
     """Test discovery of flat structure plugins (source: './')"""
     context = RepositoryContext(flat_structure_marketplace)

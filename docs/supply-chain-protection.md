@@ -155,6 +155,7 @@ be defined:
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
 | Codex manifest-declared or inline `hooks` | hooks-dangerous, hooks-prohibited |
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
+| Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | `.apm/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
 

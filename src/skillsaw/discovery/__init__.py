@@ -9,20 +9,21 @@ import from ``skillsaw.context`` — the context imports them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, Iterable, List
 
 from skillsaw.paths import safe_resolve
 
 
-def merge_plugin_dirs(plugins: List[Path], codex_plugins: List[Path]) -> List[Path]:
-    """Claude and Codex plugin directories, deduplicated by resolved path.
+def merge_plugin_dirs(*plugin_groups: Iterable[Path]) -> List[Path]:
+    """Plugin directories from every ecosystem, deduplicated by resolved path.
 
     Shared by the CLI's merged multi-path context and
     :meth:`RepositoryContext.distinct_plugin_dirs`.
     """
     seen: Dict[Path, Path] = {}
-    for p in (*plugins, *codex_plugins):
-        key = safe_resolve(p) or p
-        if key not in seen:
-            seen[key] = p
+    for group in plugin_groups:
+        for path in group:
+            key = safe_resolve(path) or path
+            if key not in seen:
+                seen[key] = path
     return list(seen.values())

@@ -1,0 +1,89 @@
+"""Shared helpers for Agent Plugins 1.0.0 validation."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+from pathlib import Path
+from typing import Any, Optional, Tuple
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+
+from skillsaw.context import RepositoryType
+from skillsaw.diagnostics import safe_display
+from skillsaw.formats.agent_plugins import load_agent_plugin_schema
+from skillsaw.rules.builtin.utils import read_text
+
+AGENT_PLUGIN_REPO_TYPES = {RepositoryType.AGENT_PLUGIN}
+
+PLUGIN_SCHEMA = load_agent_plugin_schema("plugin.schema.json")
+MCP_SCHEMA = load_agent_plugin_schema("mcp.schema.json")
+PLUGIN_VALIDATOR = Draft202012Validator(PLUGIN_SCHEMA)
+MCP_VALIDATOR = Draft202012Validator(MCP_SCHEMA)
+
+
+def _reject_nonfinite(value: str) -> None:
+    """Reject Python's non-standard NaN and Infinity JSON extensions."""
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def strict_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
+    """Parse a UTF-8 document as strict JSON without network access."""
+    content = read_text(path)
+    if content is None:
+        return None, "could not read file"
+    try:
+        return json.loads(content, parse_constant=_reject_nonfinite), None
+    except json.JSONDecodeError as error:
+        return None, f"{error.msg} at line {error.lineno}, column {error.colno}"
+    except ValueError as error:
+        return None, str(error)
+    except RecursionError:
+        return None, "JSON nesting is too deep"
+
+
+def format_schema_error(error: ValidationError) -> str:
+    """Render a compact schema failure without echoing the invalid value."""
+    path = "$"
+    for part in error.absolute_path:
+        path += f"[{part}]" if isinstance(part, int) else f".{safe_display(part)}"
+    if error.validator == "type":
+        detail = f"must be of type {safe_display(error.validator_value)}"
+    elif error.validator == "const":
+        detail = f"must equal {safe_display(error.validator_value)!r}"
+    elif error.validator == "pattern":
+        detail = "does not match the required pattern"
+    elif error.validator == "minLength":
+        detail = f"must contain at least {error.validator_value} character(s)"
+    elif error.validator == "maxLength":
+        detail = f"must contain at most {error.validator_value} character(s)"
+    elif error.validator == "oneOf":
+        detail = "must match exactly one permitted schema variant"
+    elif error.validator == "not":
+        # propertyNames applies the schema to the key itself. Keys are useful
+        # locators, unlike values (which may contain credentials).
+        detail = f"prohibited name {safe_display(error.instance)!r}"
+    elif error.validator in {"required", "additionalProperties"}:
+        # These jsonschema messages contain property names, never values.
+        detail = safe_display(error.message)
+    else:
+        detail = f"violates the {safe_display(error.validator)!r} constraint"
+    return f"{path}: {detail}"
+
+
+def stable_key(value: object) -> str:
+    """Short stable identifier for an untrusted diagnostic discriminator."""
+    return hashlib.sha256(str(value).encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def schema_error_summary(errors: list[ValidationError], *, limit: int = 4) -> str:
+    """Summarize schema errors without flooding one malformed document."""
+    ordered = sorted(
+        errors, key=lambda error: (tuple(map(str, error.absolute_path)), error.message)
+    )
+    rendered = [format_schema_error(error) for error in ordered[:limit]]
+    remaining = len(ordered) - len(rendered)
+    if remaining:
+        rendered.append(f"and {remaining} more schema error{'s' if remaining != 1 else ''}")
+    return "; ".join(rendered)

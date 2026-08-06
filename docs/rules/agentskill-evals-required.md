@@ -10,7 +10,7 @@ Require evals/evals.json for each skill (opt-in)
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Repo Types** | agentskills, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agent-plugin, agentskills, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why

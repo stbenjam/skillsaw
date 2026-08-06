@@ -10,6 +10,16 @@ rules:
     enabled: true
     severity: error
 
+  # Agent Plugins plugin.json and skills location must conform to 1.0.0
+  agent-plugin-manifest-valid:
+    enabled: auto
+    severity: error
+
+  # Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics
+  agent-plugin-mcp-valid:
+    enabled: auto
+    severity: error
+
   # Skill description should be meaningful and within length limits
   agentskill-description:
     enabled: auto

@@ -324,6 +324,14 @@ class McpBlock(JsonConfigBlock):
 
 
 @dataclass(eq=False)
+class AgentPluginMcpBlock(McpBlock):
+    """Portable Agent Plugins ``mcp.json`` configuration."""
+
+    def tree_label(self) -> str:
+        return "mcp.json (agent plugin MCP)"
+
+
+@dataclass(eq=False)
 class CodexInlineMcpBlock(_InlineJsonPayload, McpBlock):
     """MCP servers written inline in a Codex ``.codex-plugin/plugin.json``."""
 

@@ -10,6 +10,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.content_analysis import McpBlock
+from skillsaw.blocks import AgentPluginMcpBlock
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -58,6 +59,13 @@ class McpValidJsonRule(Rule):
         violations = []
 
         for block in context.lint_tree.find(McpBlock):
+            # Agent Plugins uses a closed, versioned schema with different
+            # defaults and failure boundaries. Its dedicated rule validates
+            # this block; running the permissive Claude/Codex shape check too
+            # would duplicate findings and accept fields the portable format
+            # rejects. Policy rules still see the McpBlock subclass.
+            if isinstance(block, AgentPluginMcpBlock):
+                continue
             if block.parse_error:
                 violations.append(
                     self.violation(f"Invalid JSON: {block.parse_error}", file_path=block.path)

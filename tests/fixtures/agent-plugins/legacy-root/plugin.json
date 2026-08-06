@@ -1,0 +1,5 @@
+{
+  "name": "legacy-root-plugin",
+  "version": "1.0.0",
+  "description": "A historical root manifest without Agent Plugins schema evidence."
+}

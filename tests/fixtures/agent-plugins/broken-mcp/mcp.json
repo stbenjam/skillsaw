@@ -1,0 +1,108 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "valid-sibling": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["example-mcp"]
+    },
+    "missing-command": {
+      "type": "stdio"
+    },
+    "invalid-args": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": "example-mcp"
+    },
+    "invalid-env": {
+      "type": "stdio",
+      "command": "uvx",
+      "env": {
+        "RETRIES": 3
+      }
+    },
+    "absolute-command": {
+      "type": "stdio",
+      "command": "/usr/bin/example"
+    },
+    "unprefixed-package-command": {
+      "type": "stdio",
+      "command": "bin/example"
+    },
+    "escaping-command": {
+      "type": "stdio",
+      "command": "./../outside/example"
+    },
+    "bad-working-directory": {
+      "type": "stdio",
+      "command": "uvx",
+      "cwd": "work"
+    },
+    "escaping-plugin-directory": {
+      "type": "stdio",
+      "command": "uvx",
+      "cwd": "${PLUGIN_ROOT}/../outside"
+    },
+    "escaping-data-directory": {
+      "type": "stdio",
+      "command": "uvx",
+      "cwd": "${PLUGIN_DATA}/../outside"
+    },
+    "reserved-environment": {
+      "type": "stdio",
+      "command": "uvx",
+      "env": {
+        "PLUGIN_ROOT": "/tmp/forged-root",
+        "PLUGIN_DATA": "/tmp/forged-data"
+      }
+    },
+    "insecure-remote": {
+      "type": "streamable-http",
+      "url": "http://mcp.example.com/service"
+    },
+    "missing-url": {
+      "type": "streamable-http"
+    },
+    "invalid-headers": {
+      "type": "sse",
+      "url": "https://mcp.example.com/events",
+      "headers": ["X-Tenant: one"]
+    },
+    "userinfo-remote": {
+      "type": "streamable-http",
+      "url": "https://user:password@mcp.example.com/service"
+    },
+    "fragment-remote": {
+      "type": "sse",
+      "url": "https://mcp.example.com/events#stream"
+    },
+    "duplicate-headers": {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/service",
+      "headers": {
+        "X-Tenant": "one",
+        "x-tenant": "two"
+      }
+    },
+    "invalid-header": {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/service",
+      "headers": {
+        "Bad Header": "contains a control\u0001character"
+      }
+    },
+    "mixed-variant": {
+      "type": "stdio",
+      "command": "uvx",
+      "url": "https://mcp.example.com/service"
+    },
+    "unsupported-variant": {
+      "type": "websocket",
+      "url": "wss://mcp.example.com/service"
+    },
+    "unhashable-type": {
+      "type": ["stdio"],
+      "command": "uvx"
+    }
+  }
+}

@@ -32,15 +32,15 @@ def contained_skill_file(
 
     Rules that read one of a skill's own documents — and in one case
     rewrite it — need the document to actually belong to the skill. A
-    symlink pointing out of the owning Codex plugin makes the read, and any
-    write, land outside the checkout, and lets an external file decide what
-    the rule reports about files that are inside it. Skills belonging to no
-    Codex plugin are unaffected.
+    symlink pointing out of the owning Codex or portable Agent Plugin makes
+    the read, and any write, land outside the checkout, and lets an external
+    file decide what the rule reports about files that are inside it. Skills
+    belonging to no containment-governed package are unaffected.
     """
     candidate = skill_dir.joinpath(*parts)
     if not safe_exists(candidate):
         return None
-    root = context.codex_plugin_owning(skill_dir)
+    root = context.contained_plugin_owning(skill_dir)
     if root is None:
         return candidate
     if contained_resolve(candidate, root) is None:

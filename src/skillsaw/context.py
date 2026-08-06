@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Iterator, Optional, List, Dict, Any, FrozenSet, Set, Tuple, TYPE_CHECKING
+from typing import Iterator, Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
 import logging
 import os
 
@@ -18,17 +17,16 @@ import os
 from .discovery import merge_plugin_dirs
 from .discovery import codex as codex_discovery
 from .discovery import claude as claude_discovery
+from .discovery import agent_plugins as agent_plugins_discovery
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
-    codex_declared_skill_dirs,
-    codex_local_source_path,
-    codex_manifest_is_contained,
-    codex_marker_escapes,
+    codex_local_source_path,  # noqa: F401 - compatibility re-export
 )
 from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
-from .paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
+from .paths import safe_is_dir, safe_resolve
+from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
@@ -48,6 +46,7 @@ class RepositoryType(Enum):
     PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
     CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
     CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
+    AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
     UNKNOWN = "unknown"  # Not a recognized repo type
 
 
@@ -63,6 +62,7 @@ SKILL_REPO_TYPES = {
     RepositoryType.DOT_CLAUDE,
     RepositoryType.CODEX_PLUGIN,
     RepositoryType.CODEX_MARKETPLACE,
+    RepositoryType.AGENT_PLUGIN,
 }
 
 
@@ -86,44 +86,6 @@ ALL_INSTRUCTION_FORMATS = frozenset(
 )
 
 
-@dataclass(frozen=True)
-class PluginProvenance:
-    """Who claims a plugin directory, decided once and read everywhere.
-
-    The single source of truth for every ecosystem-provenance question:
-    which ecosystems declared the directory (``claude``, ``codex``), and
-    whether it is vendor-installed content. Rules and the lint tree consult
-    this record — never a fresh filesystem probe — so two call sites cannot
-    disagree about ownership and a directory can never fall between
-    per-ecosystem attach paths.
-
-    Evidence is filesystem-first (markers, contained manifests, catalog
-    listings) and independent of ``--type`` overrides: an override changes
-    what discovery walks, not what the author declared.
-
-    Adding an ecosystem means adding its evidence probe to
-    ``RepositoryContext.provenance``; the declarative format gates
-    (``Rule.provenance_scope`` via ``in_format_scope``) read ``ecosystems``
-    and need no per-rule visits. See "Ecosystem provenance" in the
-    development rules.
-    """
-
-    ecosystems: FrozenSet[str]
-    installed: bool = False
-
-    @property
-    def codex_only(self) -> bool:
-        return self.ecosystems == frozenset({"codex"})
-
-    @property
-    def claude(self) -> bool:
-        return "claude" in self.ecosystems
-
-    @property
-    def codex(self) -> bool:
-        return "codex" in self.ecosystems
-
-
 _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 
 # Distinguishes "not computed yet" from a computed ``None`` (the install
@@ -131,7 +93,7 @@ _CODEX_TYPES = {RepositoryType.CODEX_PLUGIN, RepositoryType.CODEX_MARKETPLACE}
 _UNSET = object()
 
 
-class RepositoryContext:
+class RepositoryContext(RepositoryProvenanceMixin):
     """
     Context information about the repository being linted
 
@@ -151,6 +113,7 @@ class RepositoryContext:
         # convention is a Codex plugin first, not an agentskills.io repo.
         RepositoryType.CODEX_MARKETPLACE,
         RepositoryType.CODEX_PLUGIN,
+        RepositoryType.AGENT_PLUGIN,
         RepositoryType.AGENTSKILLS,
         RepositoryType.CODERABBIT,
         RepositoryType.PROMPTFOO,
@@ -191,6 +154,9 @@ class RepositoryContext:
         self._codex_roots: Optional[List[Path]] = None
         self._codex_claims: Optional[Set[Path]] = None
         self._codex_evidence: Optional[bool] = None
+        self._agent_plugin_roots: Optional[Set[Path]] = None
+        self._contained_plugin_roots: Optional[Set[Path]] = None
+        self._agent_plugin_claims: Optional[Set[Path]] = None
         self._provenance_cache: Dict[Path, PluginProvenance] = {}
         # Views over _provenance_cache, invalidated with it: keeping them
         # beside it is what makes their lifetimes match the records they
@@ -215,8 +181,17 @@ class RepositoryContext:
         self._codex_marketplace_forced = repo_types is not None and (
             RepositoryType.CODEX_MARKETPLACE in repo_types
         )
+        self._agent_plugin_discovery_enabled = (
+            RepositoryType.AGENT_PLUGIN in set(repo_types) if repo_types is not None else True
+        )
+        self._agent_plugin_forced = repo_types is not None and (
+            RepositoryType.AGENT_PLUGIN in repo_types
+        )
         self.codex_plugins: List[Path] = (
             self._discover_codex_plugins() if self._codex_discovery_enabled else []
+        )
+        self.agent_plugins: List[Path] = (
+            self._discover_agent_plugins() if self._agent_plugin_discovery_enabled else []
         )
         self.repo_types: Set[RepositoryType] = (
             set(repo_types) if repo_types is not None else self._detect_types()
@@ -348,10 +323,12 @@ class RepositoryContext:
         """
         if self.exclude_patterns:
             codex_before = list(self.codex_plugins)
+            agent_plugins_before = list(self.agent_plugins)
             roots_before = {r for r in (safe_resolve(p) for p in codex_before) if r}
             marketplaces_before = tuple(self._codex_marketplace_paths or ())
             self.plugins = [p for p in self.plugins if not self.is_path_excluded(p)]
             self.codex_plugins = [p for p in self.codex_plugins if not self.is_path_excluded(p)]
+            self.agent_plugins = [p for p in self.agent_plugins if not self.is_path_excluded(p)]
             self.skills = [p for p in self.skills if not self.is_path_excluded(p)]
             self.instruction_files = [
                 p for p in self.instruction_files if not self.is_path_excluded(p)
@@ -385,6 +362,18 @@ class RepositoryContext:
                 ]
             if codex_set_changed:
                 self._codex_roots = None
+            if self.agent_plugins != agent_plugins_before:
+                active_roots = {
+                    root for p in self.agent_plugins if (root := safe_resolve(p)) is not None
+                }
+                dropped_roots = {
+                    root
+                    for p in agent_plugins_before
+                    if (root := safe_resolve(p)) is not None and root not in active_roots
+                }
+                self.skills = [
+                    skill for skill in self.skills if not self._under_any(skill, dropped_roots)
+                ]
         # The claim set folds in both plugin roots and catalog sources, and
         # excludes can drop either — always recompute on the next consult.
         # The unconditional clear is also load-bearing for __init__ ordering:
@@ -393,6 +382,9 @@ class RepositoryContext:
         # records. Never scope it under ``if self.exclude_patterns:``.
         self._codex_claims = None
         self._codex_evidence = None
+        self._agent_plugin_claims = None
+        self._agent_plugin_roots = None
+        self._contained_plugin_roots = None
         self._provenance_cache.clear()
         self._format_scope_cache.clear()
         self.detected_formats = self._detect_formats()
@@ -464,6 +456,8 @@ class RepositoryContext:
             types.add(RepositoryType.CODEX_MARKETPLACE)
         if self.codex_plugins:
             types.add(RepositoryType.CODEX_PLUGIN)
+        if self.agent_plugins:
+            types.add(RepositoryType.AGENT_PLUGIN)
 
         if not types:
             types.add(RepositoryType.UNKNOWN)
@@ -471,7 +465,7 @@ class RepositoryContext:
         return types
 
     def _plugins_dir_suggests_claude_marketplace(self) -> bool:
-        """Whether ``plugins/`` is marketplace evidence once Codex claims
+        """Whether ``plugins/`` is marketplace evidence once non-Claude claims
         are subtracted.
 
         A bare ``plugins/`` directory has always inferred MARKETPLACE. A
@@ -491,10 +485,13 @@ class RepositoryContext:
         except OSError:
             return False
         if not children:
-            # An empty plugins/ keeps its historical meaning unless a Codex
-            # catalog is the reason the directory exists at all.
-            return not self.codex_catalog_exists()
-        return any(not self.is_codex_only_plugin(item) for item in children)
+            # An empty plugins/ keeps its historical meaning unless another
+            # ecosystem has positive evidence explaining the directory.
+            return not self.codex_catalog_exists() and not self._agent_plugin_claim_set()
+        return any(
+            not (provenance := self.provenance(item)).ecosystems or provenance.claude
+            for item in children
+        )
 
     def _walk_files(self, root: Path) -> Iterator[Path]:
         """Yield all files under *root*, pruning ``_WALK_SKIP_DIRS`` directories."""
@@ -592,14 +589,35 @@ class RepositoryContext:
             self._codex_roots = sorted(roots)
         return self._codex_roots
 
+    def agent_plugin_roots(self) -> List[Path]:
+        """Resolved portable package roots, independent of ``--type``.
+
+        Discovery overrides decide which format rules run, not whether a
+        package declaration remains a containment boundary for files a
+        generic skill walk might otherwise follow.
+        """
+        return sorted(self._agent_plugin_root_set())
+
+    def _agent_plugin_root_set(self) -> Set[Path]:
+        """Cached set backing containment's per-skill ancestor lookups."""
+        if self._agent_plugin_roots is None:
+            roots = {
+                resolved
+                for path in self.agent_plugins
+                if (resolved := safe_resolve(path)) is not None
+            }
+            roots.update(self._agent_plugin_claim_set())
+            self._agent_plugin_roots = roots
+        return self._agent_plugin_roots
+
     def distinct_plugin_dirs(self) -> List[Path]:
-        """Every discovered plugin directory, Claude and Codex, deduplicated.
+        """Every discovered plugin directory, deduplicated across ecosystems.
 
         The scan statistics count this rather than ``self.plugins``, which
         holds only Claude-style directories and reports zero for a
-        manifest-only Codex catalog.
+        manifest-only Codex catalog or a portable Agent Plugins collection.
         """
-        return merge_plugin_dirs(self.plugins, self.codex_plugins)
+        return merge_plugin_dirs(self.plugins, self.codex_plugins, self.agent_plugins)
 
     def codex_marketplace_paths(self) -> List[Path]:
         """Every discovered Codex marketplace manifest."""
@@ -614,6 +632,27 @@ class RepositoryContext:
             self._codex_local_sources(),
             forced=self._codex_plugin_forced,
         )
+
+    def _discover_agent_plugins(self) -> List[Path]:
+        """Portable packages declared at the root or under ``plugins/*``."""
+        return [
+            path
+            for path in agent_plugins_discovery.discover_agent_plugins(
+                self.root_path,
+                forced=self._agent_plugin_forced,
+            )
+            if not self.is_path_excluded(path)
+        ]
+
+    def _agent_plugin_claim_set(self) -> Set[Path]:
+        """Filesystem-declared portable plugin roots, independent of ``--type``."""
+        if self._agent_plugin_claims is None:
+            self._agent_plugin_claims = {
+                resolved
+                for path in agent_plugins_discovery.discover_agent_plugins(self.root_path)
+                if not self.is_path_excluded(path) and (resolved := safe_resolve(path)) is not None
+            }
+        return self._agent_plugin_claims
 
     def _codex_local_sources(self) -> List[Path]:
         """Local plugin directories declared by the Codex marketplace."""
@@ -652,159 +691,6 @@ class RepositoryContext:
             claims.update(self._codex_local_sources())
             self._codex_claims = claims
         return self._codex_claims
-
-    def provenance(self, plugin_dir: Path) -> PluginProvenance:
-        """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
-
-        Cached under the path as given *and* under its resolved form, so a
-        repeat consult for a path already seen costs a dict lookup and no
-        syscall: every format-scoped rule re-asks this question for every
-        node it iterates, and a ``realpath`` on each of those was the whole
-        cost of the scope filter.
-
-        The one place ecosystem-ownership evidence is gathered; every
-        predicate below is a view over this record. Evidence, in
-        declaration strength order:
-
-        * ``claude`` — a ``.claude-plugin`` marker, or a listing in the
-          Claude marketplace (``marketplace_entries``).
-        * ``codex`` — a contained ``.codex-plugin/plugin.json``, or a
-          local-source listing in any Codex catalog.
-
-        Filesystem-first and independent of ``--type``: an override
-        changes what discovery walks, not what the author declared.
-        """
-        cached = self._provenance_cache.get(plugin_dir)
-        if cached is not None:
-            return cached
-        resolved = safe_resolve(plugin_dir)
-        key = resolved if resolved is not None else plugin_dir
-        cached = self._provenance_cache.get(key)
-        if cached is not None:
-            self._provenance_cache[plugin_dir] = cached
-            return cached
-
-        ecosystems = set()
-        if safe_exists(plugin_dir / ".claude-plugin") or (
-            resolved is not None and resolved in getattr(self, "marketplace_entries", {})
-        ):
-            ecosystems.add("claude")
-        elif resolved is not None and resolved == safe_resolve(self.root_path / ".claude"):
-            # The .claude/ directory is Claude by definition — a Codex
-            # catalog listing "./.claude" as a local source must not turn
-            # the repository's own command and agent content Codex-only
-            # and switch its Claude-format checks off.
-            ecosystems.add("claude")
-        if codex_manifest_is_contained(plugin_dir) or (
-            resolved is not None
-            and resolved in self._codex_claim_set()
-            # A catalog claim is a declaration about a directory, never a
-            # licence to read through it: the marker gets the same
-            # containment check discovery applies, so a claimed directory
-            # whose ``.codex-plugin`` symlinks out of the tree is not Codex
-            # and no Codex node is built over it. A directory with no marker
-            # at all still passes — codex-plugin-json-valid reports the
-            # missing manifest.
-            and not codex_marker_escapes(plugin_dir)
-        ):
-            ecosystems.add("codex")
-        record = PluginProvenance(
-            ecosystems=frozenset(ecosystems),
-            installed=self.is_codex_installed_plugin(plugin_dir),
-        )
-        self._provenance_cache[key] = record
-        self._provenance_cache[plugin_dir] = record
-        return record
-
-    def is_codex_only_plugin(self, plugin_dir: Path) -> bool:
-        """Codex-claimed with no ``.claude-plugin`` marker.
-
-        The provenance line the Claude-format rules gate on: a Codex-only
-        directory is exempt from Claude manifest, frontmatter, and naming
-        requirements, while the ecosystem-neutral content and security
-        rules still read its prose either way.
-        """
-        return self.provenance(plugin_dir).codex_only
-
-    def in_format_scope(self, node: "LintTarget", ecosystem: str) -> bool:
-        """Whether *ecosystem*'s format conventions govern *node*.
-
-        The one gate behind ``Rule.provenance_scope``, read through
-        ``Rule.scoped_find``: a node whose ``provenance_dir()`` is claimed
-        exclusively by other ecosystems is out of scope. Unclaimed content
-        stays in every scope, and a dual-manifest directory stays in scope
-        for each of its ecosystems — dual plugins keep their established
-        Claude results. Ownership comes from :meth:`provenance`; no fresh
-        filesystem probes here.
-
-        Memoized per ``(owner_dir, ecosystem)``: ``find()`` is memoized
-        because the tree is static while rules run, and every scoped rule
-        re-consults this for every node it iterates — an unmemoized filter
-        wrapped around a memoized lookup gives the cost back.
-        """
-        owner_dir = node.provenance_dir()
-        if owner_dir is None:
-            return True
-        key = (owner_dir, ecosystem)
-        cached = self._format_scope_cache.get(key)
-        if cached is None:
-            ecosystems = self.provenance(owner_dir).ecosystems
-            cached = not ecosystems or ecosystem in ecosystems
-            self._format_scope_cache[key] = cached
-        return cached
-
-    def in_codex_only_plugin(self, path: Path) -> bool:
-        """Whether *path* sits inside a Codex-ONLY plugin, nearest owner first.
-
-        The conditional-strictness gate for the ecosystem-tightened
-        hooks/MCP shape checks: they apply only where the owning Codex
-        plugin is Codex-exclusive, so a dual-manifest plugin keeps its
-        established Claude results.
-        """
-        owner = self.codex_plugin_owning(path)
-        return owner is not None and self.provenance(owner).codex_only
-
-    def codex_plugin_owning(self, path: Path) -> Optional[Path]:
-        """The Codex plugin *path* sits in, nearest first, or ``None``.
-
-        Nearest rather than first: a repository root that is itself a plugin
-        contains the nested ones, so an outer match would let content escape
-        the plugin that actually ships it.
-        """
-        # Ancestor walk against a set: runs per skill, where scanning every
-        # root would be O(skills x plugins) on a large catalog. Walking
-        # upward finds the nearest root by construction. The root set is
-        # cached and tested before resolving, so a repository with no Codex
-        # plugins pays no realpath per skill.
-        roots = set(self.codex_plugin_roots())
-        if not roots:
-            return None
-        resolved = safe_resolve(path)
-        if resolved is None:
-            return None
-        for candidate in (resolved, *resolved.parents):
-            if candidate in roots:
-                return candidate
-        return None
-
-    def _codex_claim_boundary(self, parent: Path) -> Optional[Path]:
-        """Resolved root of the Codex-only plugin owning *parent*, if any.
-
-        A lexical ancestor walk, nearest first — NOT resolution-based like
-        ``codex_plugin_owning``, because resolving first would follow the
-        very symlinks the boundary exists to reject. Ownership comes from
-        :meth:`provenance`.
-        """
-        if not self._codex_claims_possible():
-            # No Codex evidence in the checkout: the ancestor walk can only
-            # answer "no boundary", and it runs once per skills directory.
-            return None
-        for candidate in (parent, *parent.parents):
-            if self.provenance(candidate).codex_only:
-                return safe_resolve(candidate)
-            if candidate == self.root_path or candidate.parent == candidate:
-                break
-        return None
 
     def is_codex_installed_plugin(self, plugin_dir: Path) -> bool:
         """Whether *plugin_dir* is an installed plugin rather than an authored one.
@@ -881,18 +767,38 @@ class RepositoryContext:
 
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
+        portable_recursive = [
+            plugin
+            for plugin in self.agent_plugin_roots()
+            if (provenance := self.provenance(plugin)).claude or provenance.codex
+        ]
         return claude_discovery.discover_skills(
             self.root_path,
             agentskills=RepositoryType.AGENTSKILLS in self.repo_types,
-            plugins=self.plugins,
+            # A plugins/* layout can cause legacy Claude discovery to list an
+            # Agent-only sibling. Only an actual Claude declaration permits
+            # recursive Claude skill discovery for a portable package.
+            plugins=[
+                plugin
+                for plugin in self.plugins
+                if not self.provenance(plugin).agent_plugin or self.provenance(plugin).claude
+            ],
             codex_plugins=self.codex_plugins,
+            # Declaration-invariant roots keep portable skills visible under
+            # an unrelated ``--type`` override while still enforcing their
+            # fixed immediate-child discovery semantics.
+            agent_plugins=self.agent_plugin_roots(),
+            portable_recursive_plugins=portable_recursive,
             in_apm_compiled_dir=self.in_apm_compiled_dir,
             should_skip=self._should_skip_dir,
-            claim_boundary=self._codex_claim_boundary,
-            codex_claims_possible=self._codex_claims_possible,
-            is_codex_only=self.is_codex_only_plugin,
+            claim_boundary=self._contained_plugin_claim_boundary,
+            containment_claims_possible=self._contained_plugin_claims_possible,
+            is_containment_plugin=self._is_containment_plugin,
         )
 
     def __str__(self):
         """String representation of context"""
-        return f"RepositoryContext(type={self.repo_type.value}, plugins={len(self.plugins)}, skills={len(self.skills)})"
+        return (
+            f"RepositoryContext(type={self.repo_type.value}, "
+            f"plugins={len(self.distinct_plugin_dirs())}, skills={len(self.skills)})"
+        )

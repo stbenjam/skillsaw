@@ -1,0 +1,49 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "local-auditor": {
+      "type": "stdio",
+      "command": "./bin/../bin/release-auditor",
+      "args": ["--cache", "${PLUGIN_DATA}/audit", "../opaque-argument"],
+      "env": {
+        "CONFIG_PATH": "${PLUGIN_ROOT}/config/audit.json",
+        "OPAQUE_VALUE": "../not-a-package-path"
+      },
+      "cwd": "${PLUGIN_ROOT}/work"
+    },
+    "data-worker": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["example-worker"],
+      "cwd": "${PLUGIN_DATA}/cache"
+    },
+    "relative-worker": {
+      "type": "stdio",
+      "command": "uvx",
+      "cwd": "./work/../work"
+    },
+    "release-api": {
+      "type": "streamable-http",
+      "url": "https://release.example.com/mcp",
+      "headers": {
+        "X-Tenant": "public-release"
+      }
+    },
+    "legacy-events": {
+      "type": "sse",
+      "url": "https://events.example.com/sse"
+    },
+    "local-development": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8080/mcp"
+    },
+    "localhost-development": {
+      "type": "streamable-http",
+      "url": "http://localhost:8081/mcp"
+    },
+    "ipv6-development": {
+      "type": "streamable-http",
+      "url": "http://[::1]:8082/mcp"
+    }
+  }
+}

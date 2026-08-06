@@ -3,9 +3,10 @@
 
 # Rules Reference
 
-skillsaw includes **69** built-in rules organized into the following categories:
+skillsaw includes **71** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
+- [Agent Plugins](agent-plugins.md) (2 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
@@ -35,6 +36,8 @@ skillsaw includes **69** built-in rules organized into the following categories:
 | [`agentskill-evals`](agentskill-evals.md) | Validate evals/evals.json format when present | warning (auto) | - | agentskills.io |
 | [`agentskill-evals-required`](agentskill-evals-required.md) | Require evals/evals.json for each skill (opt-in) | warning (disabled) | - | agentskills.io |
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - | agentskills.io |
+| [`agent-plugin-manifest-valid`](agent-plugin-manifest-valid.md) | Agent Plugins plugin.json and skills location must conform to 1.0.0 | error (auto) | - | Agent Plugins |
+| [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics | error (auto) | - | Agent Plugins |
 | [`plugin-json-required`](plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Plugin Structure |
 | [`plugin-json-valid`](plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Plugin Structure |
 | [`plugin-naming`](plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Plugin Structure |

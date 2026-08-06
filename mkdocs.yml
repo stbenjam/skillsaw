@@ -126,6 +126,7 @@ nav:
   - Rules:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
+    - Agent Plugins: rules/agent-plugins.md
     - Plugin Structure: rules/plugin-structure.md
     - Command Format: rules/command-format.md
     - Marketplace: rules/marketplace.md
