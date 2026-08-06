@@ -83,6 +83,18 @@ class DeprecatedPluginRule(AlwaysFiresRule):
         return "plugin-deprecated-test"
 
 
+class ShadowsAliasRule(AlwaysFiresRule):
+    @property
+    def rule_id(self) -> str:
+        return "plugin-readme"  # legacy alias of claude-plugin-readme
+
+
+class ShadowsAdvisoryRule(AlwaysFiresRule):
+    @property
+    def rule_id(self) -> str:
+        return "deprecated-rule"  # reserved for skillsaw's advisory notices
+
+
 @pytest.fixture(autouse=True)
 def _clear_dist_fallback_cache():
     plugins_mod._dist_by_entry_point.cache_clear()
@@ -379,6 +391,30 @@ def test_rule_id_collision_with_builtin_is_skipped(fake_plugin, repo):
     warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
     assert warnings[0].severity == Severity.WARNING
+
+
+def test_rule_id_collision_with_legacy_alias_is_skipped(fake_plugin, repo):
+    """A plugin rule claiming a legacy alias is skipped — config keys and
+    flags resolve the alias to the builtin, so the plugin's rule could
+    never be addressed under its own name."""
+    fake_plugin("fake_alias_shadow", module_attrs={"SKILLSAW_RULES": [ShadowsAliasRule]})
+    linter, violations = _lint(repo)
+    assert "plugin-readme" not in {r.rule_id for r in linter.rules}
+    warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert len(warnings) == 1
+    assert "legacy alias" in warnings[0].message
+    assert "claude-plugin-readme" in warnings[0].message
+
+
+def test_rule_id_collision_with_advisory_id_is_skipped(fake_plugin, repo):
+    """A plugin rule claiming an advisory ID is skipped — its violations
+    would otherwise never affect the exit code."""
+    fake_plugin("fake_advisory_shadow", module_attrs={"SKILLSAW_RULES": [ShadowsAdvisoryRule]})
+    linter, violations = _lint(repo)
+    assert "deprecated-rule" not in {r.rule_id for r in linter.rules}
+    warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert len(warnings) == 1
+    assert "reserved" in warnings[0].message
 
 
 def test_deprecated_plugin_rule_inert_config_entry_warns(fake_plugin, repo):
