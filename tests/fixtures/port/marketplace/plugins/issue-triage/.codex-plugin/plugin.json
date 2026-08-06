@@ -1,0 +1,5 @@
+{
+  "name": "issue-triage",
+  "version": "0.9.0",
+  "description": "Triage incoming issues against the support runbook"
+}

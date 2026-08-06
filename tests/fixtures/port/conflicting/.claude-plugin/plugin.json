@@ -1,0 +1,5 @@
+{
+  "name": "conflicting",
+  "version": "2.0.0",
+  "description": "A plugin whose root plugin.json belongs to some other tool"
+}

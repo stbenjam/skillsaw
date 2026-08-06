@@ -1,0 +1,11 @@
+{
+  "name": "release-notes",
+  "version": "1.4.0",
+  "description": "Draft release notes from merged pull requests",
+  "author": {
+    "name": "Example Team",
+    "email": "team@example.com"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["release", "changelog"]
+}

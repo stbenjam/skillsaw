@@ -18,6 +18,7 @@ _SUBCOMMANDS = {
     "explain",
     "badge",
     "plugins",
+    "port",
 }
 
 
@@ -85,6 +86,10 @@ def main():
         from ._badge import _run_badge
 
         _run_badge(args)
+    elif args.command == "port":
+        from ._port import _run_port
+
+        _run_port(args)
     elif args.command == "tree":
         from ._tree import _run_tree
 

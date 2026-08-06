@@ -1,0 +1,8 @@
+{
+  "name": "deploy-helpers",
+  "version": "2.1.0",
+  "description": "Deployment helpers for the platform team",
+  "author": {
+    "name": "Platform Team"
+  }
+}

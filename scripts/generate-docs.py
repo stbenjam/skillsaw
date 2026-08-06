@@ -37,7 +37,7 @@ RULE_GROUPS = [
     ),
     (
         "Agent Plugins",
-        ["agent-plugin-json-valid", "agent-plugin-mcp-valid"],
+        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
         "Validates portable plugin packages against the "
         "[Agent Plugins v1 specification]"
         "(https://agent-plugins.org/specification). The manifest rule checks "

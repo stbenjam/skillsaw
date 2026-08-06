@@ -112,6 +112,7 @@ nav:
   - Getting Started: getting-started.md
   - Guides:
     - Autofixing: autofixing.md
+    - Porting to Agent Plugins: porting.md
     - Baseline: baseline.md
     - Configuration: configuration.md
     - Repository Types: repo-types.md

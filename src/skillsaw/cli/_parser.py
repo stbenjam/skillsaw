@@ -322,6 +322,46 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         "ocean-blue, sunset-orange, royal-purple, crimson-red.",
     )
 
+    # --- port ---
+    port_parser = subparsers.add_parser(
+        "port",
+        help="Port Claude Code and Codex plugins to Agent Plugins v1 packages",
+    )
+    port_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Plugin, marketplace, or repository to port (default: current directory)",
+    )
+    port_parser.add_argument(
+        "--to",
+        dest="target",
+        default="agent-plugin",
+        metavar="FORMAT",
+        help="Target format (default and currently only: agent-plugin)",
+    )
+    port_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file (default: auto-discover from the path)",
+    )
+    port_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Show the files that would be written without writing them",
+    )
+    port_parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        dest="no_progress",
+        help="Disable the interactive conversion progress indicator "
+        "(auto-disabled when stderr is not a terminal)",
+    )
+    _add_color_flag(port_parser)
+
     # --- tree ---
     tree_parser = subparsers.add_parser(
         "tree",
