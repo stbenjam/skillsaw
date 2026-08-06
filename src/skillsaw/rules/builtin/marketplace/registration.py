@@ -10,6 +10,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixC
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
 from skillsaw.rules.builtin.marketplace.json_valid import is_valid_plugin_root
+from skillsaw.paths import safe_resolve
 
 
 def _mutable_marketplace_data(original: str) -> Optional[dict]:
@@ -48,7 +49,9 @@ def _source_base(context: RepositoryContext, data: dict) -> Path:
     if isinstance(metadata, dict) and isinstance(metadata.get("pluginRoot"), str):
         plugin_root = metadata["pluginRoot"]
         if is_valid_plugin_root(plugin_root):
-            return (context.root_path / plugin_root).resolve()
+            return safe_resolve((context.root_path / plugin_root)) or (
+                context.root_path / plugin_root
+            )
     return context.root_path
 
 

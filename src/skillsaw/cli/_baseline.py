@@ -8,9 +8,11 @@ from ..context import RepositoryContext
 from ..linter import Linter
 from ..rule import Severity
 from ._config import _get_version, load_config
+from skillsaw.paths import safe_resolve
 
 
 def _run_baseline(args):
+    """Create a baseline for the repository selected by CLI arguments."""
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)
@@ -40,7 +42,9 @@ def _run_baseline(args):
     else:
         output_path = args.path / BASELINE_FILENAME
 
-    baseline = build_baseline(violations, output_path.resolve().parent, cli_version, baseline_modes)
+    baseline = build_baseline(
+        violations, (safe_resolve(output_path) or output_path).parent, cli_version, baseline_modes
+    )
 
     save_baseline(output_path, baseline)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")

@@ -9,6 +9,7 @@ from ..context import RepositoryContext
 from ..linter import Linter
 from ._config import load_config
 from ._helpers import _RuleProgress, _ansi_colors, color_enabled
+from skillsaw.paths import safe_resolve
 
 _BADGE_FILENAME = ".skillsaw-badge.json"
 _CARD_FILENAME = ".skillsaw-card.svg"
@@ -43,7 +44,7 @@ def _repo_display_name(root_path: Path) -> str:
             name = name[: -len(".git")]
         if name:
             return name
-    return root_path.resolve().name
+    return (safe_resolve(root_path) or root_path).name
 
 
 def _github_raw_url(root_path: Path, badge_path: Path):
@@ -68,7 +69,9 @@ def _github_raw_url(root_path: Path, badge_path: Path):
         branch = _git(root_path, "rev-parse", "--abbrev-ref", "HEAD") or "main"
 
     try:
-        rel = badge_path.resolve().relative_to(root_path.resolve())
+        rel = (safe_resolve(badge_path) or badge_path).relative_to(
+            (safe_resolve(root_path) or root_path)
+        )
     except ValueError:
         rel = Path(badge_path.name)
     return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{rel.as_posix()}"

@@ -8,6 +8,7 @@ from typing import List, Optional
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
 from . import get_counts, relative_path, should_show_info
+from skillsaw.paths import safe_resolve
 
 
 def format_duration(seconds: float) -> str:
@@ -30,7 +31,7 @@ def _file_uri(file_path) -> Optional[str]:
     try:
         path = Path(file_path)
         if not path.is_absolute():
-            path = path.resolve()
+            path = safe_resolve(path) or path
         return path.as_uri()
     except (OSError, ValueError):
         return None

@@ -798,6 +798,30 @@ def test_tree_contributor_with_broken_path_surfaces_violation(fake_plugin, acme_
     assert errors and "tree contributor failed" in errors[0].message
 
 
+def test_tree_contributor_outside_repo_surfaces_violation(fake_plugin, acme_repo, tmp_path):
+    """A contributed external symlink must be rejected and reported."""
+    # ``acme_repo`` and ``tmp_path`` share this test's directory, so place
+    # the target in its parent to exercise a genuine repository escape.
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("external content\n", encoding="utf-8")
+    linked = acme_repo / "linked.txt"
+    linked.symlink_to(outside)
+
+    def contribute(context, root):
+        """Return a node whose repository-relative name escapes by symlink."""
+        return [FileContentBlock(path=linked, category="external")]
+
+    fake_plugin(
+        "fake_contrib_external",
+        module_attrs={"SKILLSAW_RULES": [], "SKILLSAW_TREE_CONTRIBUTORS": [contribute]},
+    )
+    linter, violations = _lint(acme_repo)
+
+    errors = [v for v in violations if v.rule_id == "plugin-load-error"]
+    assert errors and "outside repository" in errors[0].message
+    assert linked not in {node.path for node in linter.context.lint_tree.walk()}
+
+
 def test_register_extensions_is_idempotent(fake_plugin, acme_repo):
     """Two Linters sharing one context must not duplicate registrations."""
 

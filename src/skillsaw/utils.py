@@ -10,6 +10,7 @@ import yaml
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
+from skillsaw.paths import safe_resolve
 
 
 class FileCache:
@@ -39,7 +40,9 @@ class FileCache:
             # The first positional arg is always the file path.
             file_path = args[0] if args else None
             try:
-                resolved = file_path.resolve() if isinstance(file_path, Path) else None
+                resolved = (
+                    (safe_resolve(file_path) or file_path) if isinstance(file_path, Path) else None
+                )
             except (OSError, RuntimeError, ValueError):
                 # Symlink loop or embedded NUL: raising here aborts the
                 # whole lint from a cache key lookup, while the wrapped
@@ -106,7 +109,7 @@ class FileCache:
                     store.clear()
                 self._total_entries = 0
             else:
-                resolved = file_path.resolve()
+                resolved = safe_resolve(file_path) or file_path
                 for store in self._stores:
                     bucket = store.pop(resolved, None)
                     if bucket is not None:

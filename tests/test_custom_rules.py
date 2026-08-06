@@ -69,6 +69,37 @@ def test_load_custom_rule_missing_file(valid_plugin):
         Linter(context, config)
 
 
+def test_load_custom_rule_unresolvable_path(valid_plugin, monkeypatch):
+    """An unsafe custom-rule path must fail cleanly before filesystem access."""
+    config = LinterConfig(custom_rules=["unresolvable_rule.py"])
+    context = RepositoryContext(valid_plugin)
+    monkeypatch.setattr("skillsaw.linter.safe_resolve", lambda path: None)
+
+    with pytest.raises(ValueError, match="Custom rule path could not be resolved"):
+        Linter(context, config)
+
+
+def test_load_custom_rule_stat_error_preserves_cause(valid_plugin, monkeypatch):
+    """Stat/access failures must stay distinct from an absent custom rule."""
+    config = LinterConfig(custom_rules=["unreadable_rule.py"])
+    context = RepositoryContext(valid_plugin)
+    real_stat = Path.stat
+
+    def unreadable_stat(path, *args, **kwargs):
+        """Raise an access failure for the targeted custom-rule path."""
+        if path.name == "unreadable_rule.py":
+            raise PermissionError("permission denied")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", unreadable_stat)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Custom rule path cannot be accessed: .*unreadable_rule\.py: permission denied",
+    ):
+        Linter(context, config)
+
+
 def test_load_custom_rule_import_error(valid_plugin, temp_dir):
     """Test that linter fails when custom rule has import errors"""
     # Create a custom rule file with import error
