@@ -12,6 +12,7 @@ from skillsaw.paths import safe_resolve
 
 
 def _run_explain(args):
+    """Render detailed documentation for one configured rule."""
     from ..rules.builtin import BUILTIN_RULES
     from ..rule_docs import load_rule_docs, rule_doc_url
 

@@ -12,6 +12,7 @@ from skillsaw.paths import safe_resolve
 
 
 def _run_baseline(args):
+    """Create a baseline for the repository selected by CLI arguments."""
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)

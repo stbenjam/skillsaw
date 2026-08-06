@@ -23,6 +23,7 @@ from skillsaw.paths import safe_resolve
 
 
 def _run_lint(args):
+    """Lint the CLI-selected paths and emit the requested reports."""
     if args.verbose:
         logging.basicConfig(
             level=logging.INFO,

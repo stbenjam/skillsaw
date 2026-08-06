@@ -47,6 +47,7 @@ class BaselineFile:
 
 
 def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Optional[List[str]]:
+    """Read and cache UTF-8 lines, returning ``None`` for unreadable files."""
     try:
         resolved = safe_resolve(path) or path
     except OSError:
@@ -116,6 +117,7 @@ def build_baseline(
     version_string: str,
     baseline_modes: Optional[Dict[str, str]] = None,
 ) -> BaselineFile:
+    """Build a baseline snapshot from the supplied rule violations."""
     file_cache: Dict[Path, Optional[List[str]]] = {}
     modes = baseline_modes or {}
     entries: List[BaselineEntry] = []
@@ -158,6 +160,7 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
 
 
 def load_baseline(path: Path) -> BaselineFile:
+    """Load and validate a baseline file from *path*."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:

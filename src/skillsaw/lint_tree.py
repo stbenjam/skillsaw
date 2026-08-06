@@ -98,6 +98,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     )
 
     def _is_in_apm_source(p: Path) -> bool:
+        """Return whether *p* belongs to the active APM source tree."""
         if apm_source_root is None:
             return False
         resolved = safe_resolve(p) or p
@@ -109,6 +110,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block_cls: type,
         owner: Path | None = None,
     ) -> None:
+        """Add one safely resolved block unless its role is already present."""
         resolved = _resolve_repo_path(p)
         if resolved is None or resolved in seen or not safe_exists(resolved) or _is_excluded(p):
             return
@@ -687,6 +689,7 @@ def _build_promptfoo_nodes(
     repo_root = safe_resolve(context.root_path)
 
     def _try_add_config(yaml_file: Path, parent: LintTarget, *, require_keys: bool = True) -> None:
+        """Add a contained Promptfoo config that satisfies discovery rules."""
         resolved = contained_resolve(yaml_file, repo_root) if repo_root is not None else None
         if (
             resolved is None
