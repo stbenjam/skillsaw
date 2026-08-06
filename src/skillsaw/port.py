@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .formats.agent_plugins import is_agent_plugin_schema
+from .paths import safe_resolve
 from .utils import read_json
 
 PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -266,6 +267,87 @@ def _port_server(name: str, config: Dict[str, Any], notes: List[str]) -> Optiona
 
 def _port_placeholders(value: str) -> str:
     return value.replace(_CLAUDE_ROOT_VAR, "${PLUGIN_ROOT}")
+
+
+# ── Codex catalog ───────────────────────────────────────────────
+
+CODEX_CATALOG = Path(".agents/plugins/marketplace.json")
+
+# Spec-recommended per-entry defaults for generated catalogs; both are the
+# most permissive recognized values.
+_CATALOG_POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
+
+
+def plan_codex_catalog(root: Path, plans: List[PortPlan]) -> Tuple[Optional[str], List[str]]:
+    """Render a Codex ``.agents/plugins/marketplace.json`` for ported plans.
+
+    Agent Plugins v1 defines a package, not a marketplace, so clients that
+    discover plugins through a catalog need one alongside the ported
+    packages. Codex's catalog fills that role today. Returns
+    ``(content, notes)``; content is ``None`` when there is nothing to
+    write.
+    """
+    notes: List[str] = []
+    if (root / CODEX_CATALOG).exists():
+        notes.append(
+            f"{CODEX_CATALOG} already exists — left untouched "
+            "(codex-marketplace-registration's fix can append missing entries)"
+        )
+        return None, notes
+
+    categories = _claude_marketplace_categories(root)
+    entries = []
+    for plan in plans:
+        resolved_root = safe_resolve(root) or root
+        resolved_plugin = safe_resolve(plan.root) or plan.root
+        try:
+            rel = resolved_plugin.relative_to(resolved_root)
+        except ValueError:
+            continue
+        if rel == Path("."):
+            # A single package at the root is discovered directly; a
+            # one-entry catalog pointing at "./" adds nothing.
+            continue
+        name = None
+        manifest_json = plan.writes.get("plugin.json")
+        if manifest_json:
+            manifest = json.loads(manifest_json)
+            if isinstance(manifest.get("name"), str):
+                name = manifest["name"]
+        entry: Dict[str, Any] = {
+            "name": name or normalize_name(plan.root.name) or plan.root.name,
+            "source": {"source": "local", "path": f"./{rel.as_posix()}"},
+            "policy": dict(_CATALOG_POLICY),
+        }
+        category = categories.get(rel.as_posix())
+        if category:
+            entry["category"] = category
+        entries.append(entry)
+
+    if not entries:
+        return None, notes
+
+    catalog = {
+        "name": normalize_name(root.name) or "plugins",
+        "plugins": entries,
+    }
+    return json.dumps(catalog, indent=2) + "\n", notes
+
+
+def _claude_marketplace_categories(root: Path) -> Dict[str, str]:
+    """Map plugin-relative paths to categories from the Claude marketplace."""
+    data = read_json(root / ".claude-plugin" / "marketplace.json")[0]
+    if not isinstance(data, dict) or not isinstance(data.get("plugins"), list):
+        return {}
+    categories: Dict[str, str] = {}
+    for entry in data["plugins"]:
+        if not isinstance(entry, dict):
+            continue
+        source = entry.get("source")
+        category = entry.get("category")
+        if isinstance(source, str) and isinstance(category, str) and category:
+            categories[source.lstrip("./")] = category
+    return categories
 
 
 # ── Notes about what stays behind ───────────────────────────────

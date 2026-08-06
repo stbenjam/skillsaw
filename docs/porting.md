@@ -52,6 +52,19 @@ output; the command fails if its own output doesn't validate. Use
 over an already-ported tree is a no-op, and a root `plugin.json` that
 belongs to something else is never overwritten.
 
+## Marketplace catalogs
+
+Agent Plugins v1 defines a package, not a marketplace — clients that
+discover plugins through a catalog need one alongside the ported
+packages. By default a multi-plugin port also writes Codex's
+`.agents/plugins/marketplace.json`, listing every ported plugin as a
+`local` source with the spec-recommended policy fields (and the
+category carried over from a Claude marketplace entry when one exists).
+An existing catalog is left untouched —
+`codex-marketplace-registration`'s fix can append missing entries.
+Control it with `--marketplaces` (default `codex`, `none` to skip);
+more catalog formats can be added as marketplaces evolve.
+
 ## Keeping it true: `agent-plugin-required`
 
 The opt-in [`agent-plugin-required`](rules/agent-plugin-required.md)

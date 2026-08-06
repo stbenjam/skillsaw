@@ -348,6 +348,14 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Path to .skillsaw.yaml config file (default: auto-discover from the path)",
     )
     port_parser.add_argument(
+        "--marketplaces",
+        default="codex",
+        metavar="FORMATS",
+        help="Comma-separated marketplace catalogs to generate for the ported "
+        "plugins so catalog-driven clients can discover them "
+        "(default: codex; use 'none' to skip)",
+    )
+    port_parser.add_argument(
         "--dry-run",
         action="store_true",
         dest="dry_run",

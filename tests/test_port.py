@@ -191,6 +191,54 @@ def test_ported_marketplace_lints_clean(tmp_path):
         assert findings == [], plugin
 
 
+def test_port_writes_codex_catalog(tmp_path):
+    """A multi-plugin port also emits the Codex marketplace catalog so
+    catalog-driven clients can discover the ported packages."""
+    repo = copy_fixture("marketplace", tmp_path)
+    result = run_port(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "catalog → .agents/plugins/marketplace.json (2 entries)" in result.stdout
+
+    catalog = json.loads((repo / ".agents" / "plugins" / "marketplace.json").read_text())
+    assert catalog["name"] == "marketplace"
+    by_name = {e["name"]: e for e in catalog["plugins"]}
+    assert by_name["release-notes"]["source"] == {
+        "source": "local",
+        "path": "./plugins/release-notes",
+    }
+    assert by_name["release-notes"]["policy"] == {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL",
+    }
+    assert by_name["issue-triage"]["source"]["path"] == "./plugins/issue-triage"
+
+
+def test_port_leaves_existing_codex_catalog_alone(tmp_path):
+    repo = copy_fixture("marketplace", tmp_path)
+    catalog_path = repo / ".agents" / "plugins" / "marketplace.json"
+    catalog_path.parent.mkdir(parents=True)
+    original = '{"name": "hand-made", "plugins": []}\n'
+    catalog_path.write_text(original)
+    result = run_port(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "left untouched" in result.stdout
+    assert catalog_path.read_text() == original
+
+
+def test_port_marketplaces_none_skips_catalog(tmp_path):
+    repo = copy_fixture("marketplace", tmp_path)
+    result = run_port("--marketplaces", "none", repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (repo / ".agents").exists()
+
+
+def test_port_rejects_unknown_marketplace(tmp_path):
+    repo = copy_fixture("marketplace", tmp_path)
+    result = run_port("--marketplaces", "gemini", repo)
+    assert result.returncode == 1
+    assert "unknown --marketplaces" in result.stderr
+
+
 # ── agent-plugin-required rule ──────────────────────────────────
 
 

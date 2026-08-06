@@ -9,7 +9,7 @@ from ..config import LinterConfig
 from ..context import RepositoryContext
 from ..linter import Linter
 from ..paths import safe_resolve
-from ..port import apply_plan, plan_port
+from ..port import CODEX_CATALOG, apply_plan, plan_codex_catalog, plan_port
 from ._config import _get_version, load_config
 from ._helpers import _ansi_colors, color_enabled
 
@@ -54,6 +54,16 @@ def _run_port(args):
         sys.exit(1)
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    marketplaces = {m.strip() for m in args.marketplaces.split(",") if m.strip()}
+    unknown_marketplaces = marketplaces - {"codex", "none"}
+    if unknown_marketplaces:
+        print(
+            f"Error: unknown --marketplaces value(s): {', '.join(sorted(unknown_marketplaces))} "
+            "(available: codex, none)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     config, _config_path = load_config(args, args.path)
@@ -140,10 +150,58 @@ def _run_port(args):
         already = any("already an Agent Plugins package" in p.skipped for p in skipped)
         sys.exit(0 if already and not conflicts else 1)
 
+    # Agent Plugins defines a package, not a marketplace; catalog-driven
+    # clients need one alongside the ported packages to discover them.
+    catalog_content, catalog_notes = (None, [])
+    if "codex" in marketplaces:
+        catalog_content, catalog_notes = plan_codex_catalog(base, ported)
+    catalog_entries = 0
+    for note in catalog_notes:
+        note_count += 1
+        print(f"      {c['yellow']}note:{c['reset']} {note}")
+    if catalog_content is not None:
+        import json as _json
+
+        catalog_entries = len(_json.loads(catalog_content)["plugins"])
+        print(
+            f"  {c['green']}✓{c['reset']} {c['bold']}[.]{c['reset']} "
+            f"catalog → {CODEX_CATALOG} ({catalog_entries} entries)"
+        )
+        if args.dry_run:
+            print(f"{c['dim']}--- {CODEX_CATALOG} ---{c['reset']}")
+            print(catalog_content, end="")
+        else:
+            catalog_path = base / CODEX_CATALOG
+            catalog_path.parent.mkdir(parents=True, exist_ok=True)
+            catalog_path.write_text(catalog_content, encoding="utf-8")
+            context = RepositoryContext(base, exclude_patterns=config.exclude_patterns)
+            linter = Linter(
+                context,
+                config,
+                rule_ids={"codex-marketplace-json-valid"},
+                no_plugins=True,
+                no_custom_rules=True,
+            )
+            from ..rule import Severity
+
+            for violation in linter.run():
+                if violation.rule_id != "codex-marketplace-json-valid":
+                    continue
+                # Recommended-field warnings (e.g. no category to carry
+                # over) don't fail the port; broken catalog shape does.
+                if violation.severity is Severity.ERROR:
+                    verify_failures.append(violation)
+                    print(f"  {violation}")
+                else:
+                    note_count += 1
+                    print(f"      {c['yellow']}note:{c['reset']} {violation.message}")
+
     counts = ", ".join(f"{n} {name}" for name, n in file_counts.items() if n)
     plugin_word = "plugin" if len(ported) == 1 else "plugins"
     print("\nSummary:")
     print(f"  Ported:     {len(ported)} {plugin_word} ({counts})")
+    if catalog_entries:
+        print(f"  Catalog:    {CODEX_CATALOG} ({catalog_entries} entries)")
     if skipped:
         print(f"  Skipped:    {len(skipped)}")
     if note_count:
