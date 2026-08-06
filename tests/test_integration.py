@@ -375,6 +375,33 @@ class TestAgentPlugins:
         assert "agent-plugin" in r["out"]["stats"]["repo_types"]
         assert len(r["out"]["stats"]["plugins"]) == 1
 
+    def test_forced_codex_type_still_validates_dual_package_mcp(self, tmp_path):
+        """A forced non-agent --type must not lose mcp.json validation.
+
+        The dual-format package symlinks .mcp.json at the portable mcp.json,
+        so the tree carries the document only as the Agent Plugins parser
+        role. With agent-plugin-mcp-valid filtered out by --type codex-plugin,
+        the generic mcp-valid-json rule must pick the file up instead.
+        """
+        repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
+        assert (repo / ".mcp.json").is_symlink()
+        r = run_lint(repo, "--type", "codex-plugin")
+
+        assert r["rc"] == 1
+        found = by_rule(r)["mcp-valid-json"]
+        assert any("Invalid JSON" in v["message"] for v in found)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
+    def test_auto_detected_dual_package_reports_broken_mcp_once(self, tmp_path):
+        repo = copy_fixture("agent-plugins/dual-codex-broken-mcp", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        invalid_json = [v for v in violations(r) if "Invalid JSON" in v["message"]]
+        assert len(invalid_json) == 1
+        assert invalid_json[0]["rule_id"] == "agent-plugin-mcp-valid"
+        assert "mcp-valid-json" not in rule_ids(r)
+
 
 # ── Marketplace ──────────────────────────────────────────────────
 

@@ -161,8 +161,18 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _contained_plugin_owner = context.contained_plugin_owning
     agent_plugin_roots = set(context.agent_plugin_roots())
 
+    def _shadowed_by_portable_mcp(path: Path, portable_mcp: Path | None) -> bool:
+        """Whether *path* is the portable ``mcp.json`` under another name.
+
+        A dual-format package may symlink ``.mcp.json`` (or declare a Codex
+        MCP file) at the portable ``mcp.json``. That document is already
+        attached once as the Agent Plugins parser role, so a second parser
+        role here would duplicate every policy and security finding.
+        """
+        return portable_mcp is not None and safe_resolve(path) == portable_mcp
+
     def _add_contained_plugin_block(
-        parent: LintTarget,
+        parent: CodexPluginConfigNode | AgentPluginConfigNode,
         p: Path,
         block_cls: type,
         owner: Path | None = None,
@@ -286,7 +296,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         safe_resolve(context.root_path / "mcp.json") if repo_root in agent_plugin_roots else None
     )
     root_native_mcp = context.root_path / ".mcp.json"
-    if root_portable_mcp is None or safe_resolve(root_native_mcp) != root_portable_mcp:
+    if not _shadowed_by_portable_mcp(root_native_mcp, root_portable_mcp):
         _add_block(root, root_native_mcp, McpBlock)
 
     _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
@@ -428,7 +438,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
             native_mcp = plugin_path / ".mcp.json"
-            if portable_mcp is None or safe_resolve(native_mcp) != portable_mcp:
+            if not _shadowed_by_portable_mcp(native_mcp, portable_mcp):
                 _add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
@@ -479,13 +489,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Same treatment for MCP: the conventional .mcp.json, declared
             # files, and inline maps are all commands the host will spawn.
             native_mcp = plugin_path / ".mcp.json"
-            if portable_mcp is None or safe_resolve(native_mcp) != portable_mcp:
+            if not _shadowed_by_portable_mcp(native_mcp, portable_mcp):
                 _add_contained_plugin_block(node, native_mcp, McpBlock, owner=resolved_plugin)
             for declared_mcp in codex_declared_mcp_files(plugin_path):
-                # In a dual-format package the portable component already
-                # supplies the generic MCP/security view of this document.
-                # A second parser role would duplicate every security finding.
-                if portable_mcp is not None and safe_resolve(declared_mcp) == portable_mcp:
+                if _shadowed_by_portable_mcp(declared_mcp, portable_mcp):
                     continue
                 _add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
             for inline_mcp in codex_inline_mcp_servers(plugin_path):

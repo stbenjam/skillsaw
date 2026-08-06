@@ -5,12 +5,12 @@ Rule: mcp-valid-json
 from typing import List, Dict, Any
 from pathlib import Path
 
-from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext
+from skillsaw.blocks import AgentPluginMcpBlock
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import PluginNode
+from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import McpBlock
-from skillsaw.blocks import AgentPluginMcpBlock
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -64,7 +64,16 @@ class McpValidJsonRule(Rule):
             # this block; running the permissive Claude/Codex shape check too
             # would duplicate findings and accept fields the portable format
             # rejects. Policy rules still see the McpBlock subclass.
-            if isinstance(block, AgentPluginMcpBlock):
+            #
+            # Defer only when that dedicated rule can actually run: the tree
+            # role is deliberately --type-invariant, but agent-plugin-mcp-valid
+            # is gated on RepositoryType.AGENT_PLUGIN, so under a forced
+            # non-agent ``--type`` an unconditional skip would leave the file
+            # validated by no rule at all.
+            if (
+                isinstance(block, AgentPluginMcpBlock)
+                and RepositoryType.AGENT_PLUGIN in context.repo_types
+            ):
                 continue
             if block.parse_error:
                 violations.append(
