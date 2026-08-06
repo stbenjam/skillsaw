@@ -1,6 +1,6 @@
 ---
 name: capture-notes
-description: Turn raw meeting notes into a structured summary with owners and due dates.
+description: Turn raw meeting notes into a structured summary with owners and due dates. Use when documenting a meeting.
 ---
 
 # Capture Notes

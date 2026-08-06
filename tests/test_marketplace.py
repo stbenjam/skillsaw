@@ -388,6 +388,60 @@ class TestAddComponents:
         content = result.read_text()
         assert "subagent_type: helper" in content
 
+    def test_component_scaffolds_keep_name_specific_routing_descriptions(self, temp_dir):
+        """Different component names render distinct, routing-clean customization cues."""
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
+
+        root = self._init_with_plugin(temp_dir)
+        generated = (
+            (
+                (
+                    add_skill("deploy-staging", "my-plugin", path=root) / "SKILL.md",
+                    "deploy-staging",
+                ),
+                (
+                    add_skill("review-pull-request", "my-plugin", path=root) / "SKILL.md",
+                    "review-pull-request",
+                ),
+            ),
+            (
+                (add_agent("incident-triager", "my-plugin", path=root), "incident-triager"),
+                (
+                    add_agent("release-coordinator", "my-plugin", path=root),
+                    "release-coordinator",
+                ),
+            ),
+            (
+                (add_command("deploy", "my-plugin", path=root), "deploy"),
+                (add_command("review", "my-plugin", path=root), "review"),
+            ),
+        )
+
+        generated_paths = set()
+        for component_pair in generated:
+            descriptions = []
+            for component_path, rendered_name in component_pair:
+                generated_paths.add(component_path.resolve())
+                description_line = next(
+                    line
+                    for line in component_path.read_text(encoding="utf-8").splitlines()
+                    if line.startswith("description: ")
+                )
+                description = description_line.removeprefix("description: ").strip('"')
+                descriptions.append(description)
+                assert rendered_name in description
+                assert "customize this description" in description.lower()
+            assert descriptions[0] != descriptions[1]
+
+        violations = DescriptionRoutingRule().check(RepositoryContext(root))
+        generated_violations = [
+            violation
+            for violation in violations
+            if violation.file_path.resolve() in generated_paths
+        ]
+        assert generated_violations == []
+
     def test_add_hook(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
         result = add_hook("PreToolUse", "my-plugin", path=root)

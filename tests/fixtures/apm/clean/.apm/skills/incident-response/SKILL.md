@@ -1,6 +1,6 @@
 ---
 name: incident-response
-description: Triage and respond to production incidents
+description: Triage and respond to production incidents. Use when handling an outage.
 compatibility: Requires kubectl, aws cli, and PagerDuty access
 metadata:
   author: sre-team

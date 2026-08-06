@@ -2,6 +2,7 @@
 Tests for output formatters
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -899,6 +900,55 @@ def test_gitlab_fingerprints_unique(valid_plugin):
 
     fingerprints = [e["fingerprint"] for e in data]
     assert len(fingerprints) == len(set(fingerprints))
+
+
+def test_gitlab_discriminator_distinguishes_same_location(valid_plugin):
+    """Sibling subchecks at one source line retain distinct fingerprints."""
+    context = RepositoryContext(valid_plugin)
+    path = Path("plugins/foo/skills/deploy/SKILL.md")
+    violations = [
+        RuleViolation(
+            rule_id="description-routing",
+            severity=Severity.WARNING,
+            message="missing trigger",
+            file_path=path,
+            line=3,
+            fingerprint_discriminator="missing-trigger",
+        ),
+        RuleViolation(
+            rule_id="description-routing",
+            severity=Severity.WARNING,
+            message="name restatement",
+            file_path=path,
+            line=3,
+            fingerprint_discriminator="name-restatement",
+        ),
+    ]
+
+    output = format_code_climate(violations, context, [], "1.0.0")
+    fingerprints = [entry["fingerprint"] for entry in json.loads(output)]
+
+    assert len(fingerprints) == len(set(fingerprints)) == 2
+
+
+def test_gitlab_metric_keeps_legacy_fingerprint(valid_plugin):
+    """Existing metric-bearing rules retain their external issue identity."""
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="context-budget",
+        severity=Severity.WARNING,
+        message="description exceeds budget",
+        file_path=Path("plugins/foo/skills/deploy/SKILL.md"),
+        line=3,
+        value=100,
+        metric="skill-description",
+    )
+
+    output = format_code_climate([violation], context, [], "1.0.0")
+    fingerprint = json.loads(output)[0]["fingerprint"]
+    legacy_input = "context-budget:plugins/foo/skills/deploy/SKILL.md:3"
+
+    assert fingerprint == hashlib.sha256(legacy_input.encode()).hexdigest()
 
 
 def test_gitlab_fingerprint_is_sha256_hex(valid_plugin):

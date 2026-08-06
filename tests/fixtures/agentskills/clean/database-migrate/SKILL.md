@@ -1,6 +1,6 @@
 ---
 name: database-migrate
-description: Generate and apply database migration scripts
+description: Generate and apply database migration scripts. Use when changing a database schema.
 compatibility: Requires alembic, knex, or goose
 metadata:
   author: data-team

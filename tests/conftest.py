@@ -65,7 +65,7 @@ def valid_plugin(temp_dir):
     commands_dir.mkdir()
 
     command_content = """---
-description: A test command
+description: Runs a test workflow and reports the result
 ---
 
 ## Name
