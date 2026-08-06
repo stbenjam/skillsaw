@@ -510,6 +510,24 @@ class TestSkillFixBothFieldsMissing:
         assert "description: " in fixes[0].fixed_content
         assert "name: my-skill" in fixes[0].fixed_content
 
+    @pytest.mark.parametrize(
+        "misleading_field",
+        ["metadata:\n  name: nested", "displayname: example", 'note: "name: example"'],
+    )
+    def test_skill_fix_uses_top_level_keys(self, temp_dir, misleading_field):
+        plugin_dir = temp_dir / "test-plugin"
+        (plugin_dir / ".claude-plugin").mkdir(parents=True)
+        (plugin_dir / ".claude-plugin" / "plugin.json").write_text('{"name":"test"}')
+        skill_dir = plugin_dir / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(f"---\n{misleading_field}\ndescription: useful\n---\n")
+        context = RepositoryContext(plugin_dir)
+        rule = SkillFrontmatterRule()
+        fixes = rule.fix(context, rule.check(context))
+        assert len(fixes) == 1
+        assert "\nname: my-skill\n" in fixes[0].fixed_content
+
 
 class TestAgentFixBothFieldsMissing:
     """Regression: when both name and description are missing from agent

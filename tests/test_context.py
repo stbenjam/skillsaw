@@ -230,6 +230,18 @@ def test_backward_compatibility_with_plugins_dir(marketplace_repo):
     assert "plugin-two" in names
 
 
+def test_plugins_dir_discovers_hooks_only_plugin(tmp_path):
+    """All component markers accepted by _is_valid_plugin_dir are discoverable."""
+    repo = tmp_path / "repo"
+    hooks = repo / "plugins" / "hooks-only" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "hooks.json").write_text('{"hooks": {}}')
+
+    context = RepositoryContext(repo)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert context.plugins == [repo / "plugins" / "hooks-only"]
+
+
 def test_escaping_plugins_dir_child_is_dropped_with_a_warning(tmp_path, caplog):
     """A symlinked plugins/* child resolving outside the repository root is
     dropped from discovery, logged like an escaping marketplace source, and

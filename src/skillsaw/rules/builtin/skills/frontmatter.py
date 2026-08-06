@@ -11,7 +11,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixC
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
-from skillsaw.rules.builtin.utils import frontmatter_text, insert_frontmatter_fields, read_text
+from skillsaw.rules.builtin.utils import insert_frontmatter_fields, read_text
 
 
 class SkillFrontmatterRule(Rule):
@@ -149,24 +149,25 @@ class SkillFrontmatterRule(Rule):
             missing_name = any("Missing 'name'" in m for m in messages)
             missing_desc = any("Missing 'description'" in m for m in messages)
             if (missing_name or missing_desc) and original.startswith("---"):
-                fm_text = frontmatter_text(original)
-                if fm_text is not None:
-                    additions = []
-                    if missing_name and "name:" not in fm_text:
-                        additions.append(f"name: {file_path.parent.name}")
-                    if missing_desc and "description:" not in fm_text:
-                        additions.append("description: ")
-                    if additions:
-                        fixed = insert_frontmatter_fields(original, additions)
-                        results.append(
-                            AutofixResult(
-                                rule_id=self.rule_id,
-                                file_path=file_path,
-                                confidence=AutofixConfidence.SAFE,
-                                original_content=original,
-                                fixed_content=fixed,
-                                description="Added missing fields to SKILL.md frontmatter",
-                                violations_fixed=file_violations,
-                            )
+                # Missingness comes from the parsed top-level mapping. Raw
+                # ``"name:" in text`` checks false-match nested keys and
+                # scalar values, advertising a fix that never converges.
+                additions = []
+                if missing_name:
+                    additions.append(f"name: {file_path.parent.name}")
+                if missing_desc:
+                    additions.append("description: ")
+                if additions:
+                    fixed = insert_frontmatter_fields(original, additions)
+                    results.append(
+                        AutofixResult(
+                            rule_id=self.rule_id,
+                            file_path=file_path,
+                            confidence=AutofixConfidence.SAFE,
+                            original_content=original,
+                            fixed_content=fixed,
+                            description="Added missing fields to SKILL.md frontmatter",
+                            violations_fixed=file_violations,
                         )
+                    )
         return results

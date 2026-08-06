@@ -112,7 +112,18 @@ _CONCEALMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# (c) execution, two shapes:
+# (c) prompt-control/exfiltration language that does not need an explicit
+# "ignore previous" preamble. ``developer mode`` is itself a control-mode
+# override; prompt disclosure needs an imperative verb near the protected
+# prompt/context object to avoid flagging ordinary documentation.
+_PROMPT_CONTROL_RE = re.compile(
+    r"\bdeveloper\s+mode\b"
+    r"|\b(?:output|reveal|show|print|repeat|expose)\b.{0,40}"
+    r"\b(?:system|developer)\s+(?:prompt|message|instructions?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# (d) execution, two shapes:
 #
 # Bare tool words (curl/wget/eval/base64) fire only when the comment also
 # carries command-shaped context — a backtick, slash, tilde, dollar,
@@ -258,6 +269,8 @@ def _classify(text: str) -> Optional[str]:
         return "override"
     if _CONCEALMENT_RE.search(text):
         return "concealment"
+    if _PROMPT_CONTROL_RE.search(text):
+        return "prompt-control"
     if _execution_directive(text):
         return "execution"
     return None
@@ -387,13 +400,46 @@ class SecurityHiddenInstructionsRule(Rule):
             )
         return None
 
+    def _hidden_link_label_violations(self, cf, body: str) -> List[RuleViolation]:
+        """Scan CommonMark's invisible ``[//]: # (...)`` link-label idiom.
+
+        markdown-it intentionally omits link-reference definitions from the
+        rendered token stream, so this narrowly recognizes the conventional
+        hidden-comment spelling in raw source and excludes fenced examples.
+        """
+        violations = []
+        fences = cf.markdown.fences()
+        for line, source_line in enumerate(body.splitlines(), start=1):
+            if any(f.body_line_start <= line <= f.body_line_end for f in fences):
+                continue
+            match = re.fullmatch(r" {0,3}\[//\]:\s*#\s*\((.*)\)\s*", source_line)
+            if match is None:
+                continue
+            text = match.group(1).strip()
+            family = _classify(text)
+            if family is None:
+                continue
+            violations.append(
+                self.violation(
+                    f"Hidden {family} instruction in Markdown link label: "
+                    f'"{_snippet(text)}" — link-reference definitions are '
+                    "invisible in rendered markdown but agents read them",
+                    block=cf,
+                    line=line,
+                )
+            )
+        return violations
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         allowed = self._allowed_prefixes()
         violations = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=False)
-            # C-speed gate: skip the AST walk when no comment can exist.
-            if not body or "<!--" not in body:
+            if not body:
+                continue
+            violations.extend(self._hidden_link_label_violations(cf, body))
+            # C-speed gate: skip the HTML-comment AST walk when none exists.
+            if "<!--" not in body:
                 continue
             # The markdown AST only yields real comment tokens — an HTML
             # comment shown inside a fenced code block is fence content,

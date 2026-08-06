@@ -1177,7 +1177,7 @@ class RepositoryContext:
             # gets a PluginNode so its prose reaches every content and
             # security rule; Claude-format rules exempt Codex-only
             # directories themselves.
-            if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
+            if not self._is_valid_plugin_dir(item):
                 continue
 
             resolved_path = contained_resolve(item, self.root_path)

@@ -7,6 +7,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.rules.builtin.utils import (
+    parse_frontmatter,
     prepend_frontmatter_fields,
     read_text,
     replace_frontmatter_field,
@@ -78,6 +79,12 @@ class AgentSkillValidRule(Rule):
             if fixed is None:
                 fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
             if fixed is not None:
+                # SAFE fixes must never turn valid YAML into malformed YAML
+                # (for example by deleting an anchor from ``name: &anchor``
+                # while a later alias still references it).
+                new_fm, _new_body, new_error = parse_frontmatter(fixed)
+                if new_error or not new_fm or new_fm.get("name") != kebab_name:
+                    continue
                 results.append(
                     AutofixResult(
                         rule_id=self.rule_id,
