@@ -26,6 +26,7 @@ from skillsaw.utils import (
 
 from .base import ContentBlock
 from .json_config import HookEventConfig, parse_hooks_events
+from skillsaw.paths import safe_resolve
 
 
 def _parse_file_frontmatter(
@@ -68,12 +69,12 @@ class FrontmatterField(LintTarget):
             return NotImplemented
         return (
             type(self) is type(other)
-            and self.path.resolve() == other.path.resolve()
+            and (safe_resolve(self.path) or self.path) == (safe_resolve(other.path) or other.path)
             and self.name == other.name
         )
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve(), self.name))
+        return hash((type(self), (safe_resolve(self.path) or self.path), self.name))
 
     def tree_label(self) -> str:
         return f"frontmatter:{self.name}"

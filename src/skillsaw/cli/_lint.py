@@ -19,6 +19,7 @@ from ._helpers import (
     color_enabled,
     hyperlinks_enabled,
 )
+from skillsaw.paths import safe_resolve
 
 
 def _run_lint(args):
@@ -52,7 +53,7 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        resolved_path = Path(filepath).resolve()
+        resolved_path = safe_resolve(Path(filepath)) or Path(filepath)
         if resolved_path in output_formats and output_formats[resolved_path] != fmt:
             print(
                 f"Error: --output targets '{filepath}' with conflicting formats "

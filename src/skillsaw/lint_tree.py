@@ -84,12 +84,16 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
 
-    apm_source_root = (context.root_path / ".apm").resolve() if context.has_apm else None
+    apm_source_root = (
+        (safe_resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
+        if context.has_apm
+        else None
+    )
 
     def _is_in_apm_source(p: Path) -> bool:
         if apm_source_root is None:
             return False
-        resolved = p.resolve()
+        resolved = safe_resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
 
     def _add_block(
@@ -98,7 +102,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block_cls: type,
         owner: Path | None = None,
     ) -> None:
-        resolved = p.resolve()
+        resolved = safe_resolve(p) or p
         if resolved in seen or not p.exists() or _is_excluded(p):
             return
         seen.add(resolved)
@@ -446,7 +450,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
         if container is not root:
             if marketplace_node is not None and resolved_plugin.is_relative_to(
-                marketplace_dir.resolve()
+                (safe_resolve(marketplace_dir) or marketplace_dir)
             ):
                 marketplace_node.children.append(container)
             else:
@@ -486,7 +490,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # with is_relative_to() is O(skills x plugins) and dominated tree
         # construction on large marketplaces (3.6k skills x 445 plugins).
         parent_plugin: LintTarget | None = None
-        resolved_skill = skill_path.resolve()
+        resolved_skill = safe_resolve(skill_path) or skill_path
         for candidate in (resolved_skill, *resolved_skill.parents):
             node = plugin_nodes.get(candidate) or codex_plugin_nodes.get(candidate)
             if node is not None:
@@ -515,9 +519,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Promptfoo prompt content blocks ---
     for block in PromptfooPromptBlock.gather_from_tree(root):
-        block_resolved = block.path.resolve()
+        block_resolved = safe_resolve(block.path) or block.path
         for node in root.find(PromptfooConfigNode):
-            if node.path.resolve() == block_resolved:
+            if (safe_resolve(node.path) or node.path) == block_resolved:
                 node.children.append(block)
                 break
 
@@ -568,7 +572,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             apm_skills = apm_dir / "skills"
             if apm_skills.is_dir():
                 for skill_path in context.skills:
-                    if skill_path.resolve().is_relative_to(apm_skills.resolve()):
+                    if (safe_resolve(skill_path) or skill_path).is_relative_to(
+                        (safe_resolve(apm_skills) or apm_skills)
+                    ):
                         skill_node = SkillNode(path=skill_path)
                         _add_block(skill_node, skill_path / "SKILL.md", SkillBlock)
                         refs_dir = skill_path / "references"
@@ -622,7 +628,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         if not isinstance(block, LintTarget):
             raise TypeError(f"contributor returned {block!r}, which is not a lint tree node")
-        resolved = block.path.resolve()
+        resolved = safe_resolve(block.path) or block.path
         if resolved in seen or not block.path.exists() or _is_excluded(block.path):
             return False
         seen.add(resolved)
@@ -668,7 +674,7 @@ def _build_promptfoo_nodes(
     config_nodes: list[PromptfooConfigNode] = []
 
     def _try_add_config(yaml_file: Path, parent: LintTarget, *, require_keys: bool = True) -> None:
-        resolved = yaml_file.resolve()
+        resolved = safe_resolve(yaml_file) or yaml_file
         if resolved in seen or not yaml_file.exists() or _is_excluded(yaml_file):
             return
         if require_keys:

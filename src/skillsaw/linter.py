@@ -13,6 +13,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
+from skillsaw.paths import safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +318,7 @@ class Linter:
         if not path.is_absolute():
             base = self.config.config_dir or self.context.root_path
             path = base / path
-        path = path.resolve()
+        path = safe_resolve(path) or path
 
         if not path.exists():
             raise ValueError(f"Custom rule file not found: {path}")
@@ -447,7 +448,7 @@ class Linter:
 
     def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
         """Get or build a suppression map for a file, with caching."""
-        resolved = file_path.resolve()
+        resolved = safe_resolve(file_path) or file_path
         if not hasattr(self, "_suppression_cache"):
             self._suppression_cache: Dict[Path, Optional[SuppressionMap]] = {}
         if resolved not in self._suppression_cache:
@@ -688,9 +689,9 @@ class Linter:
         independent: List[AutofixResult] = []
         has_conflicts = False
         for fix in fixes:
-            targets = {fix.file_path.resolve()}
+            targets = {safe_resolve(fix.file_path) or fix.file_path}
             if fix.rename_from is not None:
-                targets.add(fix.rename_from.resolve())
+                targets.add((safe_resolve(fix.rename_from) or fix.rename_from))
             if any(t in seen for t in targets):
                 has_conflicts = True
             else:
@@ -811,7 +812,7 @@ class Linter:
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip
                     # a case-only rename via the ``dst.exists()`` guard.
-                    same_file = src.resolve() == dst.resolve()
+                    same_file = (safe_resolve(src) or src) == (safe_resolve(dst) or dst)
                     if dst.exists() and not same_file:
                         continue
                     dst.parent.mkdir(parents=True, exist_ok=True)

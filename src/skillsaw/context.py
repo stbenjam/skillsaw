@@ -71,8 +71,11 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
     """
     if not patterns:
         return False
+    resolved = safe_resolve(path)
+    if resolved is None:
+        return False
     try:
-        rel = str(path.resolve().relative_to(root))
+        rel = str(resolved.relative_to(root))
     except (ValueError, OSError, RuntimeError):
         # OSError/RuntimeError: a symlink loop under *path*. Raising here
         # would abort the lint that was about to report the loop's own
@@ -227,7 +230,7 @@ class RepositoryContext:
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
         """
-        self.root_path = root_path.resolve()
+        self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self.has_apm = self._detect_apm()
@@ -348,7 +351,9 @@ class RepositoryContext:
             roots: Set[Path] = set()
             if self.has_apm:
                 for compiled_dir_name in self.APM_COMPILED_DIRS:
-                    compiled_path = (self.root_path / compiled_dir_name).resolve()
+                    compiled_path = safe_resolve((self.root_path / compiled_dir_name)) or (
+                        self.root_path / compiled_dir_name
+                    )
                     if compiled_path.is_dir():
                         roots.add(compiled_path)
             self._apm_compiled_roots = roots
@@ -359,7 +364,7 @@ class RepositoryContext:
         roots = self.apm_compiled_roots()
         if not roots:
             return False
-        resolved = path.resolve()
+        resolved = safe_resolve(path) or path
         return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
     @staticmethod
@@ -1030,7 +1035,7 @@ class RepositoryContext:
 
         # Handle relative path strings
         if isinstance(source, str):
-            candidate = (self.root_path / source).resolve()
+            candidate = safe_resolve((self.root_path / source)) or (self.root_path / source)
             plugin_root = self.marketplace_plugin_root()
             if plugin_root and not Path(source).is_absolute():
                 # metadata.pluginRoot is prepended to relative sources, but
@@ -1039,7 +1044,9 @@ class RepositoryContext:
                 # fall back to the root-relative path when only it exists.
                 # The containment check below still rejects any candidate
                 # that escapes the repository.
-                composed = (self.root_path / plugin_root / source).resolve()
+                composed = safe_resolve((self.root_path / plugin_root / source)) or (
+                    self.root_path / plugin_root / source
+                )
                 if safe_exists(composed) or not safe_exists(candidate):
                     candidate = composed
 
@@ -1134,7 +1141,7 @@ class RepositoryContext:
 
         if RepositoryType.SINGLE_PLUGIN in self.repo_types:
             plugins.append(self.root_path)
-            discovered_paths.add(self.root_path.resolve())
+            discovered_paths.add((safe_resolve(self.root_path) or self.root_path))
 
         if (
             RepositoryType.DOT_CLAUDE in self.repo_types
@@ -1143,9 +1150,9 @@ class RepositoryContext:
             claude_dir = (
                 self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
             )
-            if claude_dir.resolve() not in discovered_paths:
+            if (safe_resolve(claude_dir) or claude_dir) not in discovered_paths:
                 plugins.append(claude_dir)
-                discovered_paths.add(claude_dir.resolve())
+                discovered_paths.add((safe_resolve(claude_dir) or claude_dir))
 
         if (
             RepositoryType.MARKETPLACE in self.repo_types
@@ -1219,7 +1226,7 @@ class RepositoryContext:
             if not plugin_path:
                 continue
 
-            resolved_path = plugin_path.resolve()
+            resolved_path = safe_resolve(plugin_path) or plugin_path
 
             # Always store marketplace entry data for metadata merging
             self.marketplace_entries[resolved_path] = plugin_entry
@@ -1251,7 +1258,7 @@ class RepositoryContext:
         Checks plugin.json first, falls back to marketplace metadata,
         then directory name.
         """
-        resolved_path = plugin_path.resolve()
+        resolved_path = safe_resolve(plugin_path) or plugin_path
 
         # Non-string names (flagged by validation rules) fall through to
         # the directory-name fallback rather than propagating a TypeError.
@@ -1303,7 +1310,7 @@ class RepositoryContext:
             Dictionary with plugin metadata, or None if no metadata found
         """
         metadata = {}
-        resolved_path = plugin_path.resolve()
+        resolved_path = safe_resolve(plugin_path) or plugin_path
 
         # Load from plugin.json if present
         plugin_json = plugin_path / ".claude-plugin" / "plugin.json"

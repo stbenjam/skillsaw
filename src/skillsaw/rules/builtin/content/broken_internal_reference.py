@@ -14,6 +14,7 @@ from skillsaw.markdown_doc import file_span, splice
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
+from skillsaw.paths import safe_resolve
 
 # RFC 3986 scheme, but two-plus characters so ``C:/path`` stays a file path.
 _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
@@ -49,7 +50,7 @@ class ContentBrokenInternalReferenceRule(Rule):
         return False
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        root = context.root_path.resolve()
+        root = safe_resolve(context.root_path) or context.root_path
         # Per-run caches: walking the repo and fuzzy-matching names once per
         # broken link is O(links x files) and made large template-generated
         # marketplaces effectively unlintable. Reset per check() so each run
@@ -89,7 +90,9 @@ class ContentBrokenInternalReferenceRule(Rule):
                     continue
                 # Resolve relative to the file containing the link
                 try:
-                    resolved = (cf.path.parent / fs_path).resolve()
+                    resolved = safe_resolve((cf.path.parent / fs_path)) or (
+                        cf.path.parent / fs_path
+                    )
                 except (ValueError, OSError, RuntimeError):
                     # Undecodable path (e.g. an embedded %00) cannot exist;
                     # resolve() raises RuntimeError on circular symlinks on
@@ -139,7 +142,7 @@ class ContentBrokenInternalReferenceRule(Rule):
     def _exists_in_repo(root: Path, link_dir: Path, rel_path: str) -> bool:
         """True when ``rel_path`` resolves inside ``root`` and exists."""
         try:
-            resolved = (link_dir / rel_path).resolve()
+            resolved = safe_resolve((link_dir / rel_path)) or (link_dir / rel_path)
             resolved.relative_to(root)
             return resolved.exists()
         except (ValueError, OSError, RuntimeError):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Optional
+from skillsaw.paths import safe_resolve
 
 # promptfoo eval configs are recognized by the presence of at least one of
 # these top-level keys.
@@ -63,12 +64,12 @@ def resolve_file_ref(ref: str, config_dir: Path, root: Optional[Path] = None) ->
     # permission problems, RuntimeError on symlink loops before 3.13);
     # a broken ref should be skipped, not crash the linter.
     try:
-        resolved = (config_dir / raw).resolve()
+        resolved = safe_resolve((config_dir / raw)) or (config_dir / raw)
 
         # Disallow escaping the repo root (mirrors
         # context._resolve_plugin_source).  root is re-resolved because this
         # helper is standalone and callers may pass an unresolved root.
-        if root is not None and not resolved.is_relative_to(root.resolve()):
+        if root is not None and not resolved.is_relative_to((safe_resolve(root) or root)):
             return None
     except (OSError, RuntimeError):
         return None

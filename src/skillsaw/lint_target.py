@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
+from skillsaw.paths import safe_resolve
 
 T = TypeVar("T", bound="LintTarget")
 
@@ -30,7 +31,7 @@ class LintTarget:
         """``path.resolve()``, cached — eq/hash are called in hot loops."""
         resolved = self.__dict__.get("_resolved_path")
         if resolved is None:
-            resolved = self.path.resolve()
+            resolved = safe_resolve(self.path) or self.path
             self.__dict__["_resolved_path"] = resolved
         return resolved
 

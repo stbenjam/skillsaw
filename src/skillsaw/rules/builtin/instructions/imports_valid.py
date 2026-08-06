@@ -17,6 +17,7 @@ from skillsaw.rules.builtin.content_analysis import (
 from skillsaw.rules.builtin.utils import read_text
 
 from ._helpers import _IMPORT_RE
+from skillsaw.paths import safe_resolve
 
 _MAX_IMPORT_HOPS = 4
 _LINE_START_IMPORT_PREFIX_RE = re.compile(r"^\s*(?:(?:>\s*)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*$")
@@ -57,7 +58,7 @@ class InstructionImportsValidRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        root_path = context.root_path.resolve()
+        root_path = safe_resolve(context.root_path) or context.root_path
         # Map each resolved file to the shallowest depth we have scanned it at.
         # Tracking depth (rather than a plain visited set) lets a file first
         # reached with an exhausted hop budget be re-entered when a shorter
@@ -95,7 +96,7 @@ class InstructionImportsValidRule(Rule):
         *,
         depth: int,
     ) -> None:
-        resolved_file = file_path.resolve()
+        resolved_file = safe_resolve(file_path) or file_path
         prev_depth = seen.get(resolved_file)
         if prev_depth is not None and prev_depth <= depth:
             # Already scanned with at least as much remaining hop budget, so
@@ -119,7 +120,9 @@ class InstructionImportsValidRule(Rule):
                 if import_path_str.startswith("~"):
                     continue
 
-                target = (resolved_file.parent / import_path_str).resolve()
+                target = safe_resolve((resolved_file.parent / import_path_str)) or (
+                    resolved_file.parent / import_path_str
+                )
 
                 try:
                     target.relative_to(root_path)

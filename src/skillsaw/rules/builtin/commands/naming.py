@@ -5,6 +5,7 @@ from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidence
 from skillsaw.context import RepositoryContext
+from skillsaw.paths import safe_resolve
 
 
 class CommandNamingRule(Rule):
@@ -75,7 +76,9 @@ class CommandNamingRule(Rule):
             new_path = old_path.with_name(f"{new_name}.md")
             # Skip if the target already exists (and isn't the same file
             # on a case-insensitive filesystem).
-            if new_path.exists() and new_path.resolve() != old_path.resolve():
+            if new_path.exists() and (safe_resolve(new_path) or new_path) != (
+                safe_resolve(old_path) or old_path
+            ):
                 continue
             try:
                 content = old_path.read_text(encoding="utf-8")
