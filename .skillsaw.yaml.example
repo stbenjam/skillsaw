@@ -312,7 +312,6 @@ rules:
     enabled: auto
     severity: warning
     # require-trigger-phrasing: true
-    # flag-first-person: true
     # flag-name-restatement: true
 
   # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests

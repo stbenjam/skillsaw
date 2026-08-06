@@ -112,8 +112,8 @@ RULE_GROUPS = [
             "hooks-prohibited",
         ],
         "Validates skill/agent frontmatter and hook configuration. The "
-        "`description-routing` rule checks when-to-use phrasing, first-person voice, "
-        "and name restatements; each check is independently configurable. The security "
+        "`description-routing` rule checks when-to-use phrasing and name restatements; "
+        "both checks are independently configurable. The security "
         "rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent "
         "frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "

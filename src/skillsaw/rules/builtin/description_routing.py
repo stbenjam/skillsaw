@@ -9,12 +9,6 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, SkillBlock
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-_FIRST_PERSON_RE = re.compile(
-    r"(?:^|[.!?,;:]\s+|\n[ \t]*|\b(?:and|but|or|so|yet)\s+)"
-    r"I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
-    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s|[Mm]e|[Mm]y|[Mm]ine|"
-    r"[Mm]yself)(?!-[A-Za-z0-9])\b"
-)
 _USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
 _FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?]\s+)for (?:requests|tasks)\b")
 _EXPLANATORY_USER_TRIGGER_RE = re.compile(
@@ -51,11 +45,6 @@ class DescriptionRoutingRule(Rule):
             "type": "bool",
             "default": True,
             "description": ("Require skill and agent descriptions to say when they should be used"),
-        },
-        "flag-first-person": {
-            "type": "bool",
-            "default": True,
-            "description": "Flag first-person voice in descriptions",
         },
         "flag-name-restatement": {
             "type": "bool",
@@ -134,16 +123,6 @@ class DescriptionRoutingRule(Rule):
                             block=block,
                             line=line,
                             fingerprint_discriminator="missing-trigger",
-                        )
-                    )
-
-                if self.config.get("flag-first-person", True) and _FIRST_PERSON_RE.search(text):
-                    violations.append(
-                        self.violation(
-                            "Description uses first-person voice; describe the routing signal directly",
-                            block=block,
-                            line=line,
-                            fingerprint_discriminator="first-person",
                         )
                     )
 
