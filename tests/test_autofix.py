@@ -27,6 +27,14 @@ from skillsaw.rules.builtin.utils import invalidate_read_caches
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def copy_fixture(name, tmp_path):
+    """Copy a static repository fixture while preserving symlink behavior."""
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst, symlinks=True)
+    return dst
+
+
 class NoFixRule(Rule):
     """Rule without autofix — backward-compat check."""
 
@@ -517,10 +525,9 @@ class TestSkillFixBothFieldsMissing:
         "fixture_name",
         ["skill-top-level-nested", "skill-top-level-displayname", "skill-top-level-note"],
     )
-    def test_skill_fix_uses_top_level_keys(self, temp_dir, fixture_name):
+    def test_skill_fix_uses_top_level_keys(self, tmp_path, fixture_name):
         """Nested keys must not satisfy required top-level skill fields."""
-        plugin_dir = temp_dir / "test-plugin"
-        shutil.copytree(FIXTURES / "autofix" / fixture_name, plugin_dir)
+        plugin_dir = copy_fixture(f"autofix/{fixture_name}", tmp_path)
         context = RepositoryContext(plugin_dir)
         rule = SkillFrontmatterRule()
         fixes = rule.fix(context, rule.check(context))

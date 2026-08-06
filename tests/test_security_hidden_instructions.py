@@ -110,7 +110,7 @@ class TestSecurityHiddenInstructionsRule:
         repo = copy_fixture("security/hidden-instructions-link-label", tmp_path)
         violations = _check(repo)
         assert len(violations) == 1
-        assert violations[0].line == 5
+        assert violations[0].line == 19
         assert "prompt-control" in violations[0].message
         assert "Markdown link label" in violations[0].message
 
@@ -119,7 +119,7 @@ class TestSecurityHiddenInstructionsRule:
         repo = copy_fixture("security/hidden-instructions-link-label-duplicate", tmp_path)
         violations = _check(repo)
         assert len(violations) == 1
-        assert violations[0].line == 4
+        assert violations[0].line == 20
         assert "prompt-control" in violations[0].message
 
     def test_empty_destination_hidden_link_label_fires(self, tmp_path):
@@ -127,7 +127,7 @@ class TestSecurityHiddenInstructionsRule:
         repo = copy_fixture("security/hidden-instructions-link-label-empty", tmp_path)
         violations = _check(repo)
         assert len(violations) == 1
-        assert violations[0].line == 3
+        assert violations[0].line == 19
         assert "prompt-control" in violations[0].message
 
     def test_hidden_link_label_inside_fence_is_example(self, tmp_path):
