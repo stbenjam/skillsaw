@@ -1,8 +1,8 @@
-Checks that skill, agent, and command descriptions work as routing signals rather than labels or documentation fragments.
+Checks that skill and agent descriptions work as routing signals, while command descriptions clearly explain their picker-visible purpose.
 
 ## What it checks
 
-- Descriptions are non-empty strings. This basic check is always on.
+- Descriptions are present, non-empty strings. This basic check is always on.
 - Skill and agent descriptions say when the model should use them. Commands are excluded because users select them directly.
 - Descriptions avoid first-person voice such as "I can help" or "I'll".
 - Descriptions do more than restate the building block name or category, such as a `deploy-staging` skill described only as "Deploy staging" or a command described only as "A command."
@@ -23,6 +23,6 @@ Descriptions are the text a model uses to decide which skill or agent should han
 
 ## How to fix
 
-State what the building block does and the situations or user phrases that should route to it. Use direct or third-person language. For example: "Deploys the current build to staging. Use when the user asks to test a change in the staging environment."
+State what the building block does. For a skill or agent, also name the situations or user phrases that should route to it. Commands need a clear purpose but no routing phrase because users select them directly. Use direct or third-person language. For example: "Deploys the current build to staging. Use when the user asks to test a change in the staging environment."
 
 This rule reports warnings and does not autofix prose.

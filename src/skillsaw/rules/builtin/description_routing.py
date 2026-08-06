@@ -1,4 +1,4 @@
-"""Description quality checks for model-routed building blocks."""
+"""Description quality checks for skills, agents, and commands."""
 
 import re
 from pathlib import Path
@@ -15,6 +15,9 @@ _FIRST_PERSON_RE = re.compile(
     r"[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
 )
 _USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
+_EXPLANATORY_USER_TRIGGER_RE = re.compile(
+    r"\b(?:what happens|what to expect) (?:when (?:the user|users)|if the user)\b"
+)
 _TRIGGER_MARKERS = (
     "use when",
     "when the user",
@@ -30,7 +33,7 @@ _RESTATEMENT_FILLER = {"a", "an", "the", "command", "agent", "skill"}
 
 
 class DescriptionRoutingRule(Rule):
-    """Check whether descriptions provide useful routing signals."""
+    """Check whether descriptions provide useful routing or purpose signals."""
 
     since = "0.18.0"
     repo_types = {
@@ -87,6 +90,13 @@ class DescriptionRoutingRule(Rule):
                     continue
                 description_field = block.field("description")
                 if description_field is None:
+                    violations.append(
+                        self.violation(
+                            f"Description is missing; explain what this {block.category} does",
+                            block=block,
+                            fingerprint_discriminator="missing-description",
+                        )
+                    )
                     continue
                 line = block.key_line("description")
                 description = description_field.value
@@ -145,8 +155,12 @@ class DescriptionRoutingRule(Rule):
     def _has_trigger_phrase(description: str) -> bool:
         """Return whether a description contains a recognized usage trigger."""
         normalized = " ".join(description.lower().split())
-        return any(marker in normalized for marker in _TRIGGER_MARKERS) or bool(
-            _USE_THIS_TRIGGER_RE.search(normalized)
+        # "Explains what happens when users ..." describes subject matter,
+        # not when the building block itself should be selected. Keep direct
+        # action clauses such as "Reviews PRs when users ask" valid.
+        without_explanatory_clauses = _EXPLANATORY_USER_TRIGGER_RE.sub("", normalized)
+        return any(marker in without_explanatory_clauses for marker in _TRIGGER_MARKERS) or bool(
+            _USE_THIS_TRIGGER_RE.search(without_explanatory_clauses)
         )
 
     @staticmethod

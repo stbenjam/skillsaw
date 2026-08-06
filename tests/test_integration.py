@@ -2130,13 +2130,14 @@ class TestDescriptionRouting:
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
 
-        assert len(vs) == 17
+        assert len(vs) == 18
         assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
-        assert sum("when to use" in v["message"] for v in vs) == 4
+        assert sum("when to use" in v["message"] for v in vs) == 5
         assert sum("first-person" in v["message"] for v in vs) == 8
         assert sum("restates the name" in v["message"] for v in vs) == 3
         assert sum("Description is empty" in v["message"] for v in vs) == 2
         assert any("sdk-guide" in v["file_path"] for v in vs)
+        assert any("user-event-explainer" in v["file_path"] for v in vs)
         assert any("generic-command" in v["file_path"] for v in vs)
         assert not any("aws-region" in v["file_path"] for v in vs)
         assert not any("explicit-use-this" in v["file_path"] for v in vs)
@@ -2148,12 +2149,28 @@ class TestDescriptionRouting:
         rerun = run_lint(repo, "--rule", "description-routing")
         assert self._routing_violations(rerun) == vs
 
+    def test_codex_only_command_without_description_is_reported(self, tmp_path):
+        """Keep the always-on presence check active without Claude provenance."""
+        repo = copy_fixture("codex/clean", tmp_path)
+        command = repo / "plugins/note-taker/commands/capture.md"
+        command.write_text("---\nname: capture\n---\n\n# Capture\n", encoding="utf-8")
+
+        result = run_lint(repo, "--rule", "description-routing")
+        command_violations = [
+            violation
+            for violation in self._routing_violations(result)
+            if violation["file_path"].endswith("commands/capture.md")
+        ]
+
+        assert len(command_violations) == 1
+        assert "Description is missing" in command_violations[0]["message"]
+
     @pytest.mark.parametrize(
         ("option", "message", "expected_count"),
         [
             ("require-trigger-phrasing", "when to use", 13),
-            ("flag-first-person", "first-person", 9),
-            ("flag-name-restatement", "restates the name", 14),
+            ("flag-first-person", "first-person", 10),
+            ("flag-name-restatement", "restates the name", 15),
         ],
     )
     def test_subchecks_can_be_disabled_independently(
