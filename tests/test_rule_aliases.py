@@ -8,6 +8,7 @@ when still referenced.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -191,6 +192,80 @@ def test_baseline_with_legacy_rule_id_still_suppresses(tmp_path):
     kept, stale = filter_baselined_violations([violation], baseline, tmp_path)
     assert kept == []
     assert stale == []
+
+
+def test_advisory_ids_are_unbaselinable():
+    """Baselining a deprecation notice would permanently hide the removal
+    warning; the literal in baseline.py must cover every advisory ID."""
+    from skillsaw.baseline import _UNBASELINABLE_RULE_IDS, build_baseline
+    from skillsaw.linter import ADVISORY_RULE_IDS
+
+    assert ADVISORY_RULE_IDS <= _UNBASELINABLE_RULE_IDS
+
+    notice = RuleViolation(
+        rule_id="deprecated-rule",
+        severity=Severity.WARNING,
+        message="Rule 'x' is deprecated since 0.18.0",
+    )
+    baseline = build_baseline([notice], Path("/tmp"), "0.18.0")
+    assert baseline.violations == []
+
+
+def test_baked_advisory_baseline_entry_does_not_suppress(tmp_path):
+    """A baseline written before the fix may contain an advisory entry; it
+    must not suppress the notice on later runs."""
+    notice = RuleViolation(
+        rule_id="deprecated-rule",
+        severity=Severity.WARNING,
+        message="Rule 'x' is deprecated since 0.18.0",
+    )
+    baked = BaselineFile(
+        version="1",
+        generated_by="skillsaw 0.18.0",
+        generated_at="2026-01-01T00:00:00+00:00",
+        violations=[
+            BaselineEntry(
+                fingerprint=fingerprint_violation(notice, tmp_path),
+                rule_id="deprecated-rule",
+                file_path=None,
+                line=None,
+                message=notice.message,
+                severity="warning",
+            )
+        ],
+        root_path=tmp_path,
+    )
+    kept, _stale = filter_baselined_violations([notice], baked, tmp_path)
+    assert kept == [notice]
+
+
+def test_custom_rule_cannot_claim_legacy_alias(plugin_repo):
+    rule_file = plugin_repo / "lint_rule.py"
+    rule_file.write_text(
+        "from skillsaw.rule import Rule, Severity\n\n\n"
+        "class SquatterRule(Rule):\n"
+        "    @property\n"
+        "    def rule_id(self):\n"
+        '        return "plugin-readme"\n\n'
+        "    @property\n"
+        "    def description(self):\n"
+        '        return "claims a legacy alias"\n\n'
+        "    def default_severity(self):\n"
+        "        return Severity.ERROR\n\n"
+        "    def check(self, context):\n"
+        '        return [self.violation("squatted")]\n'
+    )
+    config = LinterConfig.default()
+    config.custom_rules = ["lint_rule.py"]
+    config.config_dir = plugin_repo
+    context = RepositoryContext(plugin_repo)
+    linter = Linter(context, config=config, no_plugins=True)
+    results = linter.run()
+    # The squatter never runs; the builtin keeps its identity.
+    assert not any(v.message == "squatted" for v in results)
+    warnings = [v for v in results if v.rule_id == "plugin-load-error"]
+    assert len(warnings) == 1
+    assert "legacy alias" in warnings[0].message
 
 
 # ── Deprecation ─────────────────────────────────────────────────
