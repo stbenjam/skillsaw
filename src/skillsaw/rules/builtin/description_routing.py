@@ -9,7 +9,7 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, SkillBlock
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-_FIRST_PERSON_RE = re.compile(r"\bI(?:'m|'ll|'ve|\s+[A-Za-z]+)\b")
+_FIRST_PERSON_RE = re.compile(r"\bI(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b")
 _TRIGGER_MARKERS = (
     "when ",
     "use when",

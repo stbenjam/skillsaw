@@ -71,6 +71,10 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 - **Repository drift:** broken references, unreferenced files, inconsistent
   terminology, stale baselines, and context-budget regressions.
 
+The `description-routing` rule checks when-to-use phrasing, first-person voice,
+and descriptions that only repeat a skill, agent, or command name. Each check
+can be configured independently; see the [rule reference](https://skillsaw.org/rules/description-routing/).
+
 skillsaw detects the repository type automatically and can lint multiple types
 in the same project. See [supported repository
 types](https://skillsaw.org/repo-types/) and the [complete rule

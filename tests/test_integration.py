@@ -2128,10 +2128,10 @@ class TestDescriptionRouting:
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
 
-        assert len(vs) == 5
+        assert len(vs) == 7
         assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
         assert sum("when to use" in v["message"] for v in vs) == 2
-        assert sum("first-person" in v["message"] for v in vs) == 1
+        assert sum("first-person" in v["message"] for v in vs) == 3
         assert sum("restates the name" in v["message"] for v in vs) == 2
         assert not any("incident-investigator" in v["file_path"] for v in vs)
         assert not any("test-staging" in v["file_path"] for v in vs)
@@ -2141,14 +2141,16 @@ class TestDescriptionRouting:
         assert self._routing_violations(rerun) == vs
 
     @pytest.mark.parametrize(
-        ("option", "message"),
+        ("option", "message", "expected_count"),
         [
-            ("require-trigger-phrasing", "when to use"),
-            ("flag-first-person", "first-person"),
-            ("flag-name-restatement", "restates the name"),
+            ("require-trigger-phrasing", "when to use", 5),
+            ("flag-first-person", "first-person", 4),
+            ("flag-name-restatement", "restates the name", 5),
         ],
     )
-    def test_subchecks_can_be_disabled_independently(self, tmp_path, option, message):
+    def test_subchecks_can_be_disabled_independently(
+        self, tmp_path, option, message, expected_count
+    ):
         repo = copy_fixture(self.FIXTURE, tmp_path)
         config = repo / ".skillsaw.yaml"
         config.write_text(
@@ -2157,7 +2159,11 @@ class TestDescriptionRouting:
         )
 
         r = run_lint(repo, config=config)
-        assert not any(message in v["message"] for v in self._routing_violations(r))
+        assert r["rc"] == 0
+        assert isinstance(r["out"], dict)
+        routing_violations = self._routing_violations(r)
+        assert len(routing_violations) == expected_count
+        assert not any(message in v["message"] for v in routing_violations)
 
 
 class TestUnlinkedInternalReferenceAutofix:

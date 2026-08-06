@@ -1,5 +1,3 @@
-# description-routing
-
 Checks that skill, agent, and command descriptions work as routing signals rather than labels or documentation fragments.
 
 ## What it checks

@@ -13,8 +13,6 @@ Descriptions should tell the model when to route work to a skill, agent, or comm
 | **Repo Types** | agentskills, apm, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
 
-# description-routing
-
 Checks that skill, agent, and command descriptions work as routing signals rather than labels or documentation fragments.
 
 ## What it checks
