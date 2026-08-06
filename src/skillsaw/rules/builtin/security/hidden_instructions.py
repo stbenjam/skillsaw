@@ -9,6 +9,7 @@ injection smuggled into a shared skill, command, or CLAUDE.md.
 
 import re
 from typing import List, Optional, Tuple
+from urllib.parse import unquote
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -406,22 +407,34 @@ class SecurityHiddenInstructionsRule(Rule):
         return None
 
     def _hidden_link_label_violations(self, cf, allowed: Tuple[str, ...]) -> List[RuleViolation]:
-        """Scan CommonMark's invisible ``[//]: # (...)`` link-label idiom.
+        """Scan text stored in invisible CommonMark reference definitions.
 
         markdown-it omits link-reference definitions from the rendered token
-        stream but retains normalized labels and source lines in its parse
-        environment, including equivalent spellings and duplicate definitions.
+        stream but retains normalized labels, destinations, titles, and source
+        lines in its parse environment, including duplicate definitions.
         """
         violations = []
         for definition in cf.markdown.reference_definitions():
-            if definition.label != "//" or not definition.title:
+            parts = [definition.label, unquote(definition.href), definition.title or ""]
+            candidates = []
+            classified = None
+            for part in parts:
+                text = part.strip()
+                if not text or self._exempt(text, allowed):
+                    continue
+                candidates.append(text)
+                family = _classify(text)
+                if family is not None:
+                    classified = (family, text)
+                    break
+            if classified is None:
+                text = " ".join(candidates)
+                family = _classify(text)
+                if family is not None:
+                    classified = (family, text)
+            if classified is None:
                 continue
-            text = definition.title.strip()
-            if self._exempt(text, allowed):
-                continue
-            family = _classify(text)
-            if family is None:
-                continue
+            family, text = classified
             violations.append(
                 self.violation(
                     f"Hidden {family} instruction in Markdown link label: "
@@ -440,10 +453,10 @@ class SecurityHiddenInstructionsRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
-            # Cheap broad gate before Markdown parsing. CommonMark normalizes
-            # whitespace around reference labels, so exact ``[//]:`` spelling
-            # would miss equivalent forms such as ``[// ]:``.
-            if "[" in body and "//" in body and "]:" in body:
+            # Cheap broad gate before Markdown parsing. Every reference
+            # definition is invisible in rendered Markdown, regardless of its
+            # label or whether a directive is stored in its destination/title.
+            if "[" in body and "]:" in body:
                 violations.extend(self._hidden_link_label_violations(cf, allowed))
             # C-speed gate: skip the HTML-comment AST walk when none exists.
             if "<!--" not in body:

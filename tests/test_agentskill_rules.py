@@ -263,7 +263,9 @@ def test_fix_anchored_empty_name_does_not_orphan_alias(temp_dir):
     context = RepositoryContext(skill)
     rule = AgentSkillValidRule()
     violations = rule.check(context)
-    assert any("name" in violation.message for violation in violations)
+    name_violation = next(v for v in violations if "Missing required 'name'" in v.message)
+    assert name_violation.fixable is False
+    assert name_violation.fix_confidence is None
     assert rule.fix(context, violations) == []
     assert (skill / "SKILL.md").read_text() == original
 

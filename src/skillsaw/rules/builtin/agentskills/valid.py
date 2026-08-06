@@ -1,6 +1,7 @@
 """AgentSkill SKILL.md validation rule"""
 
-from typing import List
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
 from skillsaw.context import RepositoryContext
@@ -55,6 +56,28 @@ class AgentSkillValidRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
+    def _plan_missing_name_fix(self, file_path: Path) -> Optional[Tuple[str, str, str]]:
+        """Return a validated missing-name rewrite, or ``None`` if unsafe."""
+        # Read BOM-stripped so prepend_frontmatter_fields can match the
+        # opening ``---``; the BOM/line endings are restored on write.
+        original = read_text(file_path)
+        if original is None:
+            return None
+        kebab_name = _to_kebab(file_path.parent.name)
+        # An empty/null value still has a `name:` key line — replace it in
+        # place; prepending would produce a duplicate key on every run.
+        fixed = replace_frontmatter_field(original, "name", f"name: {kebab_name}")
+        if fixed is None:
+            fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
+        if fixed is None:
+            return None
+        # SAFE fixes must never turn valid YAML into malformed YAML (for
+        # example by deleting an anchor while a later alias still uses it).
+        new_fm, _new_body, new_error = parse_frontmatter(fixed)
+        if new_error or not new_fm or new_fm.get("name") != kebab_name:
+            return None
+        return original, fixed, kebab_name
+
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
     ) -> List[AutofixResult]:
@@ -66,36 +89,21 @@ class AgentSkillValidRule(Rule):
                 continue
             if "Missing required 'name'" not in v.message:
                 continue
-            # Read BOM-stripped so prepend_frontmatter_fields can match the
-            # opening ``---``; the BOM/line endings are restored on write.
-            original = read_text(v.file_path)
-            if original is None:
+            plan = self._plan_missing_name_fix(v.file_path)
+            if plan is None:
                 continue
-            dir_name = v.file_path.parent.name
-            kebab_name = _to_kebab(dir_name)
-            # An empty/null value still has a `name:` key line — replace it in
-            # place; prepending would produce a duplicate key on every run.
-            fixed = replace_frontmatter_field(original, "name", f"name: {kebab_name}")
-            if fixed is None:
-                fixed = prepend_frontmatter_fields(original, [f"name: {kebab_name}"])
-            if fixed is not None:
-                # SAFE fixes must never turn valid YAML into malformed YAML
-                # (for example by deleting an anchor from ``name: &anchor``
-                # while a later alias still references it).
-                new_fm, _new_body, new_error = parse_frontmatter(fixed)
-                if new_error or not new_fm or new_fm.get("name") != kebab_name:
-                    continue
-                results.append(
-                    AutofixResult(
-                        rule_id=self.rule_id,
-                        file_path=v.file_path,
-                        confidence=AutofixConfidence.SAFE,
-                        original_content=original,
-                        fixed_content=fixed,
-                        description=f"Set name '{kebab_name}' from directory name",
-                        violations_fixed=[v],
-                    )
+            original, fixed, kebab_name = plan
+            results.append(
+                AutofixResult(
+                    rule_id=self.rule_id,
+                    file_path=v.file_path,
+                    confidence=AutofixConfidence.SAFE,
+                    original_content=original,
+                    fixed_content=fixed,
+                    description=f"Set name '{kebab_name}' from directory name",
+                    violations_fixed=[v],
                 )
+            )
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
@@ -134,7 +142,13 @@ class AgentSkillValidRule(Rule):
 
             name = block.field_value("name")
             if not name:
-                violations.append(self.violation("Missing required 'name' field", block=block))
+                fixable = (
+                    not is_installed_plugin_skill(context, block.path)
+                    and self._plan_missing_name_fix(block.path) is not None
+                )
+                violations.append(
+                    self.violation("Missing required 'name' field", block=block, fixable=fixable)
+                )
             elif not isinstance(name, str):
                 violations.append(
                     self.violation(
