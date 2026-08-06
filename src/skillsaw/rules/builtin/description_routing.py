@@ -15,6 +15,7 @@ _FIRST_PERSON_RE = re.compile(
     r"[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
 )
 _USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
+_FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?]\s+)for (?:requests|tasks)\b")
 _EXPLANATORY_USER_TRIGGER_RE = re.compile(
     r"\b(?:what happens|what to expect) (?:when (?:the user|users)|if the user)\b"
 )
@@ -26,8 +27,6 @@ _TRIGGER_MARKERS = (
     "triggers on",
     "triggered by",
     "if the user",
-    "for requests",
-    "for tasks",
 )
 _RESTATEMENT_FILLER = {"a", "an", "the", "command", "agent", "skill"}
 
@@ -86,7 +85,17 @@ class DescriptionRoutingRule(Rule):
         violations: List[RuleViolation] = []
         for block_type in (SkillBlock, AgentBlock, CommandBlock):
             for block in context.lint_tree.find(block_type):
-                if block.frontmatter_error or not block.has_frontmatter:
+                if block.frontmatter_error:
+                    continue
+                if not block.has_frontmatter:
+                    violations.append(
+                        self.violation(
+                            f"Description is missing; add frontmatter describing this "
+                            f"{block.category}",
+                            block=block,
+                            fingerprint_discriminator="missing-description",
+                        )
+                    )
                     continue
                 description_field = block.field("description")
                 if description_field is None:
@@ -159,8 +168,10 @@ class DescriptionRoutingRule(Rule):
         # not when the building block itself should be selected. Keep direct
         # action clauses such as "Reviews PRs when users ask" valid.
         without_explanatory_clauses = _EXPLANATORY_USER_TRIGGER_RE.sub("", normalized)
-        return any(marker in without_explanatory_clauses for marker in _TRIGGER_MARKERS) or bool(
-            _USE_THIS_TRIGGER_RE.search(without_explanatory_clauses)
+        return (
+            any(marker in without_explanatory_clauses for marker in _TRIGGER_MARKERS)
+            or bool(_USE_THIS_TRIGGER_RE.search(without_explanatory_clauses))
+            or bool(_FOR_TRIGGER_RE.search(without_explanatory_clauses))
         )
 
     @staticmethod

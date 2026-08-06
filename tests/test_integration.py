@@ -2130,20 +2130,22 @@ class TestDescriptionRouting:
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
 
-        assert len(vs) == 18
+        assert len(vs) == 19
         assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
-        assert sum("when to use" in v["message"] for v in vs) == 5
+        assert sum("when to use" in v["message"] for v in vs) == 6
         assert sum("first-person" in v["message"] for v in vs) == 8
         assert sum("restates the name" in v["message"] for v in vs) == 3
         assert sum("Description is empty" in v["message"] for v in vs) == 2
         assert any("sdk-guide" in v["file_path"] for v in vs)
         assert any("user-event-explainer" in v["file_path"] for v in vs)
+        assert any("header-builder" in v["file_path"] for v in vs)
         assert any("generic-command" in v["file_path"] for v in vs)
         assert not any("aws-region" in v["file_path"] for v in vs)
         assert not any("explicit-use-this" in v["file_path"] for v in vs)
         assert not any("incident-investigator" in v["file_path"] for v in vs)
         assert not any("type-one-analyzer" in v["file_path"] for v in vs)
         assert not any("test-staging" in v["file_path"] for v in vs)
+        assert not any("request-router" in v["file_path"] for v in vs)
         assert not any("check-release" in v["file_path"] for v in vs)
 
         rerun = run_lint(repo, "--rule", "description-routing")
@@ -2165,12 +2167,28 @@ class TestDescriptionRouting:
         assert len(command_violations) == 1
         assert "Description is missing" in command_violations[0]["message"]
 
+    def test_codex_only_command_without_frontmatter_is_reported(self, tmp_path):
+        """Do not depend on Claude frontmatter rules for the presence check."""
+        repo = copy_fixture("codex/clean", tmp_path)
+        command = repo / "plugins/note-taker/commands/capture.md"
+        command.write_text("# Capture\n\nCapture the current note.\n", encoding="utf-8")
+
+        result = run_lint(repo, "--rule", "description-routing")
+        command_violations = [
+            violation
+            for violation in self._routing_violations(result)
+            if violation["file_path"].endswith("commands/capture.md")
+        ]
+
+        assert len(command_violations) == 1
+        assert "Description is missing" in command_violations[0]["message"]
+
     @pytest.mark.parametrize(
         ("option", "message", "expected_count"),
         [
             ("require-trigger-phrasing", "when to use", 13),
-            ("flag-first-person", "first-person", 10),
-            ("flag-name-restatement", "restates the name", 15),
+            ("flag-first-person", "first-person", 11),
+            ("flag-name-restatement", "restates the name", 16),
         ],
     )
     def test_subchecks_can_be_disabled_independently(
