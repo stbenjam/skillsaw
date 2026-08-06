@@ -226,7 +226,7 @@ def format_html(
     </article>
     <article class="stat-card">
       <div class="label">Plugins</div>
-      <div class="value">{len(context.plugins)}</div>
+      <div class="value">{len(context.distinct_plugin_dirs())}</div>
     </article>
     <article class="stat-card">
       <div class="label">Skills</div>

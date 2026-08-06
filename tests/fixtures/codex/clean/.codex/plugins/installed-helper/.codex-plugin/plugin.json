@@ -1,0 +1,11 @@
+{
+  "name": "installed-helper",
+  "version": "2.0.0",
+  "description": "A third-party plugin a developer installed into this checkout.",
+  "author": {
+    "name": "Someone Else"
+  },
+  "license": "MIT",
+  "skills": "./skills/",
+  "hooks": "./custom-hooks.json"
+}

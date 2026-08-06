@@ -3,10 +3,12 @@
 from typing import List
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 
-from ._helpers import DEFAULT_ALLOWED_DIRS
+from ._helpers import DEFAULT_ALLOWED_DIRS, SKILL_REPO_TYPES
+
+_HOST_METADATA_DIRS = {"agents"}
 
 
 class AgentSkillStructureRule(Rule):
@@ -14,12 +16,7 @@ class AgentSkillStructureRule(Rule):
 
     default_enabled = False
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
     config_schema = {
         "allowed_dirs": {
             "type": "list",
@@ -49,7 +46,11 @@ class AgentSkillStructureRule(Rule):
             skill_path = skill_node.path
             try:
                 for item in skill_path.iterdir():
-                    if not item.is_dir() or item.name.startswith("."):
+                    if (
+                        not item.is_dir()
+                        or item.name.startswith(".")
+                        or item.name in _HOST_METADATA_DIRS
+                    ):
                         continue
                     if item.name not in allowed:
                         violations.append(

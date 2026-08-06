@@ -83,6 +83,24 @@ RULE_GROUPS = [
         None,
     ),
     (
+        "OpenAI Codex",
+        "codex",
+        [
+            "codex-openai-metadata",
+            "codex-plugin-json-valid",
+            "codex-plugin-structure",
+            "codex-marketplace-json-valid",
+            "codex-marketplace-registration",
+        ],
+        "Validates OpenAI's optional "
+        "[skill metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata) "
+        "in `agents/openai.yaml`, plus Codex plugins and marketplaces against "
+        "the [Codex plugin specification]"
+        "(https://developers.openai.com/plugins/build/plugins). The metadata "
+        "rule auto-enables for Agent Skills; the plugin and marketplace rules "
+        "auto-enable only when their Codex manifests are present.",
+    ),
+    (
         "Skills, Agents, Hooks",
         "skills-agents-hooks",
         [
@@ -440,8 +458,10 @@ def _params_table(rule_id, schema):
 def generate_rules_index(rules_data):
     """Generate docs/rules/index.md — overview of all rules."""
     lines = [GENERATED_HEADER, "# Rules Reference\n"]
-    lines.append(f"skillsaw includes **{len(rules_data)}** built-in rules ")
-    lines.append("organized into the following categories:\n")
+    lines.append(
+        f"skillsaw includes **{len(rules_data)}** built-in rules "
+        "organized into the following categories:\n"
+    )
 
     for group_name, slug, rule_ids, description in RULE_GROUPS:
         count = len(rule_ids)
@@ -541,6 +561,17 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     return "\n".join(lines) + "\n"
 
 
+CLI_PATH_SECTION = """\
+### Path arguments
+
+`lint` and `fix` accept files as well as directories. A file resolves
+to the directory that owns it — never further out, so `lint` reads and
+`fix` writes only under the path you named. Manifest rules discover
+from a plugin's root, so to run them name the plugin's root directory
+rather than a manifest file inside it. Duplicate paths and paths
+nested inside another named path are dropped.
+"""
+
 CLI_COLOR_SECTION = """\
 ## Color and hyperlinks
 
@@ -587,6 +618,9 @@ def generate_cli_reference(commands):
                     desc += f" (choices: {arg['choices']})"
                 lines.append(f"| {arg['flags']} | {desc} | {default} |")
             lines.append("")
+
+        if cmd["name"] == "lint":
+            lines.append(CLI_PATH_SECTION)
 
     lines.append(CLI_COLOR_SECTION)
     return "\n".join(lines) + "\n"

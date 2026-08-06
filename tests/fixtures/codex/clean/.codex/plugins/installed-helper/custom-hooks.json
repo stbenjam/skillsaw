@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/scripts/announce_helper.py",
+            "statusMessage": "Loading installed helper"
+          }
+        ]
+      }
+    ]
+  }
+}

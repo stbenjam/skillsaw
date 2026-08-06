@@ -126,7 +126,7 @@ def format_text(
     output.append(f"\n{bold}Scanned:{reset}")
     repo_types_str = ", ".join(context.repo_type_names(include_unknown=False))
     output.append(f"  Repo type: {repo_types_str or 'unknown'}")
-    output.append(f"  Plugins:   {len(context.plugins)}")
+    output.append(f"  Plugins:   {len(context.distinct_plugin_dirs())}")
     output.append(f"  Skills:    {len(context.skills)}")
     output.append(f"  Rules run: {len(rules)}")
     if duration is not None:

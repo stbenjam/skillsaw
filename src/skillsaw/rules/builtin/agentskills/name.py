@@ -8,7 +8,7 @@ from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.rules.builtin.content_analysis import SkillBlock
 from skillsaw.utils import (
@@ -18,7 +18,14 @@ from skillsaw.utils import (
     replace_frontmatter_field,
 )
 
-from ._helpers import NAME_PATTERN, CONSECUTIVE_HYPHENS, _to_kebab, _add_rename
+from ._helpers import (
+    CONSECUTIVE_HYPHENS,
+    NAME_PATTERN,
+    SKILL_REPO_TYPES,
+    _add_rename,
+    _to_kebab,
+    is_installed_plugin_skill,
+)
 
 
 def _parse_name_line(name_line: str):
@@ -116,12 +123,7 @@ class AgentSkillNameRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     @property
     def rule_id(self) -> str:
@@ -164,8 +166,11 @@ class AgentSkillNameRule(Rule):
             # invalid), so fixability must be decided per violation by the
             # same routine fix() runs — otherwise lint output over-promises
             # `[*] fixable with skillsaw fix`.
+            # fix() also stands down on skills installed under
+            # `.codex/plugins/`, so that has to gate fixability here too.
             original = read_text(block.path)
-            kebab_fixable = _plan_name_fix(original) is not None
+            authored = not is_installed_plugin_skill(context, block.path)
+            kebab_fixable = authored and _plan_name_fix(original) is not None
 
             if bad_format:
                 violations.append(
@@ -204,7 +209,9 @@ class AgentSkillNameRule(Rule):
                         f"Name '{name}' does not match directory name '{skill_node.path.name}'",
                         block=block,
                         line=name_line,
-                        fixable=_plan_name_fix(original, skill_node.path.name) is not None,
+                        fixable=(
+                            authored and _plan_name_fix(original, skill_node.path.name) is not None
+                        ),
                     )
                 )
 
@@ -216,6 +223,8 @@ class AgentSkillNameRule(Rule):
         results: List[AutofixResult] = []
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             # utils.read_text strips a UTF-8 BOM (utf-8-sig); a raw
             # read_text(encoding="utf-8") would keep the stray U+FEFF, which

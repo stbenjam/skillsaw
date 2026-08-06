@@ -19,7 +19,7 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--fail-on` | Fail on violations at this severity or above (default: error; --strict is equivalent to --fail-on warning). Overrides the config file's strict/fail-on settings. (choices: error, warning, info) |  |
 | `--format` | Output format for stdout (default: text) (choices: text, json, sarif, html, code-climate, gitlab) | `text` |
 | `--output` | Write output to FILE. Format is inferred from extension (.htm, .html, .json, .sarif, .txt) or set explicitly with a FORMAT: prefix (e.g. gitlab:report.json). Use the prefix when an extension is ambiguous (e.g. .json could be json or gitlab/code-climate). Can be specified multiple times. |  |
-| `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo. |  |
+| `--type` | Override auto-detected repository type (repeatable). Values: single-plugin, marketplace, agentskills, dot-claude, coderabbit, apm, promptfoo, codex-plugin, codex-marketplace. |  |
 | `--rule` | Only run these rules (repeatable). Config still comes from .skillsaw.yaml. |  |
 | `--skip-rule` | Skip these rules (repeatable). Cannot be combined with --rule. |  |
 | `--no-baseline` | Ignore baseline file even if .skillsaw-baseline.json exists |  |
@@ -27,6 +27,15 @@ Lint agent skills, plugins, and AI coding assistant context
 | `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--no-progress` | Disable the interactive per-rule progress indicator (auto-disabled when stderr is not a terminal) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
+
+### Path arguments
+
+`lint` and `fix` accept files as well as directories. A file resolves
+to the directory that owns it — never further out, so `lint` reads and
+`fix` writes only under the path you named. Manifest rules discover
+from a plugin's root, so to run them name the plugin's root directory
+rather than a manifest file inside it. Duplicate paths and paths
+nested inside another named path are dropped.
 
 ## `skillsaw fix`
 
@@ -67,7 +76,7 @@ Show documentation and effective configuration for a rule
 
 ## `skillsaw docs`
 
-Generate documentation for a plugin, marketplace, or .claude repository
+Generate documentation for a Claude or Codex plugin, marketplace, or .claude repository
 
 | Flag | Description | Default |
 |------|-------------|---------|

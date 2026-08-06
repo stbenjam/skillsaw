@@ -446,6 +446,20 @@ class TestHtmlRenderer:
         assert "<script>alert" not in page
         assert "&lt;script&gt;" in page
 
+    def test_escattr_guards_missing_values(self, valid_plugin):
+        """escAttr(undefined) must render '', not the literal 'undefined'.
+
+        The card template calls escAttr(p.category) for every plugin, and
+        String(undefined) is the truthy string "undefined" — so without the
+        falsy guard an omitted category becomes data-category="undefined".
+        The JS runs client-side, so assert on the shipped helper source.
+        """
+        ctx = RepositoryContext(valid_plugin)
+        docs = extract_docs(ctx)
+        page = render_html(docs)["index.html"]
+        escattr = page.split("function escAttr(str) {", 1)[1].split("function", 1)[0]
+        assert "if (!str) return '';" in escattr
+
     def test_dot_claude_sections(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)
         docs = extract_docs(ctx)
@@ -740,6 +754,129 @@ class TestMarkdownRenderer:
         pos_one = md.index("plugin-one")
         pos_two = md.index("plugin-two")
         assert pos_one < pos_two
+
+    def test_url_parens_cannot_break_out_of_markdown_links(self):
+        """A manifest URL containing ')' would close [Homepage](...) early
+        and inject arbitrary Markdown — e.g. a remote tracking image."""
+        from skillsaw.docs.extractor import _safe_url
+
+        url = "https://safe.example/)![x](https://tracker.example/pixel"
+        safe = _safe_url(url)
+        assert ")" not in safe and "(" not in safe
+        assert safe.startswith("https://safe.example/%29")
+        # Ordinary URLs come through unchanged.
+        assert _safe_url("https://example.com/docs") == "https://example.com/docs"
+
+    def test_control_characters_are_stripped_from_page_names(self):
+        """A NUL in a catalog name must not reach Path.write_text(), which
+        raises and aborts docs generation for the whole catalog."""
+        from skillsaw.docs.markdown_renderer import _plugin_filename
+        from skillsaw.docs.models import PluginDoc
+
+        doc = PluginDoc(name="bad\x00name\x1b", path=Path("plugins/bad"))
+        filename = _plugin_filename(doc)
+        assert not any(ord(c) < 0x20 or ord(c) == 0x7F for c in filename)
+        assert filename.endswith(".md")
+
+    def test_claude_only_sources_are_not_published_in_codex_docs(self, temp_dir):
+        """A Codex catalog listing a directory with only a Claude manifest
+        advertises a plugin Codex cannot install — the registration rule
+        reports the unusable source, and docs must agree with it."""
+        (temp_dir / ".agents" / "plugins").mkdir(parents=True)
+        (temp_dir / ".agents" / "plugins" / "marketplace.json").write_text(
+            json.dumps(
+                {
+                    "name": "mixed-cat",
+                    "plugins": [
+                        {
+                            "name": "claude-only",
+                            "source": {"source": "local", "path": "./plugins/claude-only"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        },
+                        {
+                            "name": "codex-plug",
+                            "source": {"source": "local", "path": "./plugins/codex-plug"},
+                            "policy": {
+                                "installation": "AVAILABLE",
+                                "authentication": "ON_INSTALL",
+                            },
+                            "category": "Productivity",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        claude_dir = temp_dir / "plugins" / "claude-only" / ".claude-plugin"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "plugin.json").write_text(
+            json.dumps({"name": "claude-only", "version": "1.0.0", "description": "Claude."})
+        )
+        codex_dir = temp_dir / "plugins" / "codex-plug" / ".codex-plugin"
+        codex_dir.mkdir(parents=True)
+        (codex_dir / "plugin.json").write_text(
+            json.dumps({"name": "codex-plug", "version": "1.0.0", "description": "Codex."})
+        )
+
+        ctx = RepositoryContext(temp_dir)
+        docs = extract_docs(ctx)
+        assert docs.marketplace is not None
+        listed = {str(p.name) for p in docs.marketplace.plugins}
+        assert "codex-plug" in listed
+        assert "claude-only" not in listed
+
+    def test_remote_metadata_newlines_cannot_inject_markdown(self):
+        """A remote catalog entry controls version/license/category — a
+        newline in one would end the meta line and inject block Markdown."""
+        from skillsaw.docs.markdown_renderer import _append_plugin_meta
+        from skillsaw.docs.models import PluginDoc
+
+        doc = PluginDoc(
+            name="remote-plug",
+            path=Path("plugins/remote-plug"),
+            version="1.0\n\n![track](https://tracker.example/pixel)",
+            license="MIT",
+        )
+        lines: list = []
+        _append_plugin_meta(lines, doc)
+        assert not any(line.startswith("![") for line in lines)
+        meta_line = next(line for line in lines if "**Version:**" in line)
+        # Folded onto the meta line AND link syntax escaped — the image
+        # markup arrives inert.
+        assert "![track](" not in meta_line
+        assert r"!\[track\]" in meta_line
+        assert "**License:** MIT" in meta_line
+
+    def test_mcp_table_escapes_pipes_and_newlines(self):
+        """A valid command may contain '|' or a newline; neither may corrupt
+        the table — the pipe adds a column, the newline ends the row."""
+        from skillsaw.docs.markdown_renderer import _append_mcp_table
+        from skillsaw.docs.models import McpServerDoc
+
+        lines: list = []
+        _append_mcp_table(
+            lines,
+            [
+                McpServerDoc(
+                    name="log|ger",
+                    server_type="stdio",
+                    config={"command": "node server.js | tee log\nrm -rf /"},
+                    source_file=".mcp.json",
+                )
+            ],
+        )
+        rows = [line for line in lines if line.startswith("|")]
+        # Header, separator, and exactly one data row — the newline must not
+        # have split the entry into a second row.
+        assert len(rows) == 3
+        data_row = rows[2]
+        assert data_row.count(" | ") == 3
+        assert r"log\|ger" in data_row
+        assert "rm -rf /" in data_row  # folded onto the same line, not lost
 
     def test_skill_metadata_in_markdown(self, dot_claude_repo):
         ctx = RepositoryContext(dot_claude_repo)

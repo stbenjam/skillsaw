@@ -84,12 +84,12 @@ and anything under a ``testdata/`` directory at any depth (bundled
 scripts routinely ship self-tests and fixtures nothing documents —
 e.g. ai-helpers' ``scripts/test_validate.py`` + ``scripts/testdata/``),
 hidden files or directories, and symlinks (which are also never
-followed).  The ``exclude`` config option adds glob patterns on top of
+followed). The ``exclude`` config option adds glob patterns on top of
 (not replacing) these defaults.
 
-A skill-root README.md additionally counts as a reference root alongside
-SKILL.md: it is standard human-facing documentation, so a bundled file
-documented there is neither dead weight nor hidden from review.
+A skill-root README.md and OpenAI ``agents/openai.yaml`` additionally count
+as reference roots alongside SKILL.md: human-facing documentation and host
+metadata are both legitimate entrypoints into the package.
 """
 
 import ast
@@ -102,11 +102,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, RepositoryType, _pattern_variants
+from skillsaw.context import RepositoryContext, _pattern_variants
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
+
+from skillsaw.paths import safe_resolve
+
+from ._helpers import SKILL_REPO_TYPES, contained_skill_file
 
 # A path mention must not be embedded in a longer word/path-like token:
 # `scripts/run.py` must not match inside `myscripts/run.py` or
@@ -148,12 +152,7 @@ _PY_FENCE_INFOS = {"", "python", "py", "python3"}
 class AgentSkillUnreferencedFilesRule(Rule):
     """Detect bundled skill files that SKILL.md never references"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
     since = "0.15.0"
 
     config_schema = {
@@ -215,9 +214,16 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 continue
 
             roots = [skill_md]
-            readme = skill_path / "README.md"
-            if readme.is_file():
+            # Contained, like the eval file: this README is read, and what
+            # it references suppresses findings about the skill's own
+            # files. A symlink out of the owning Codex plugin would let an
+            # arbitrary external document decide what this rule reports.
+            readme = contained_skill_file(context, skill_path, "README.md")
+            if readme is not None:
                 roots.append(readme)
+            openai_metadata = contained_skill_file(context, skill_path, "agents", "openai.yaml")
+            if openai_metadata is not None and not context.is_path_excluded(openai_metadata):
+                roots.append(openai_metadata)
             referenced = self._reachable_files(
                 skill_node, skill_path, roots, all_files, directory_covers
             )
@@ -314,7 +320,10 @@ class AgentSkillUnreferencedFilesRule(Rule):
         all_dirs = self._candidate_dirs(rel_of.values())
         block_by_path = {block.path.resolve(): block for block in skill_node.find(ContentBlock)}
 
-        referenced: Set[Path] = set()
+        root_paths = {root.resolve() for root in roots}
+        referenced: Set[Path] = {
+            candidate for candidate in all_files if resolved_of[candidate] in root_paths
+        }
         covered_dirs: Set[str] = set()
         queue: deque = deque(roots)
         processed: Set[Path] = set()
@@ -422,9 +431,13 @@ class AgentSkillUnreferencedFilesRule(Rule):
             target = target.split("#")[0]
             if not target:
                 continue
-            try:
-                resolved = (base_dir / target).resolve()
-            except OSError:
+            # ``safe_resolve`` rather than a bare ``.resolve()``: a symlink
+            # loop raises RuntimeError before Python 3.13 and OSError from
+            # 3.13 on, and this project supports 3.9 through 3.14. An
+            # escaping RuntimeError turns the rule into a
+            # rule-execution-error and discards all its findings.
+            resolved = safe_resolve(base_dir / target)
+            if resolved is None:
                 continue
             if not resolved.is_relative_to(skill_resolved) or resolved == skill_resolved:
                 continue

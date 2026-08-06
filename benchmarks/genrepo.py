@@ -17,6 +17,10 @@ SCALES: Dict[str, Dict[str, int]] = {
     "small": dict(plugins=5, commands=5, agents=2, skills=10, refs=2),
     "medium": dict(plugins=20, commands=10, agents=4, skills=50, refs=3),
     "large": dict(plugins=60, commands=12, agents=6, skills=200, refs=3),
+    # An openai/plugins-shaped catalog: every plugin Codex-claimed with a
+    # local source, so repository detection consults the claim set once per
+    # child — the shape that stresses claim-set memoization.
+    "codex-marketplace": dict(plugins=120, commands=4, agents=2, skills=120, refs=2, codex=1),
 }
 
 _WORDS = (
@@ -144,29 +148,49 @@ def generate_repo(root: Path, scale: str = "medium") -> Dict[str, int]:
     root.mkdir(parents=True, exist_ok=True)
 
     plugin_names = [f"plugin-{i:03d}" for i in range(params["plugins"])]
+    codex = bool(params.get("codex"))
 
-    marketplace = {
-        "name": "bench-marketplace",
-        "owner": {"name": "Bench Owner", "email": "bench@example.com"},
-        "plugins": [
-            {
-                "name": name,
-                "source": f"./plugins/{name}",
-                "description": f"Benchmark plugin {name} for performance testing",
-            }
-            for name in plugin_names
-        ],
-    }
-    _write(
-        root / ".claude-plugin" / "marketplace.json",
-        json.dumps(marketplace, indent=2) + "\n",
-    )
+    if codex:
+        marketplace = {
+            "name": "bench-codex-marketplace",
+            "plugins": [
+                {
+                    "name": name,
+                    "source": {"source": "local", "path": f"./plugins/{name}"},
+                    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                    "category": "Productivity",
+                }
+                for name in plugin_names
+            ],
+        }
+        _write(
+            root / ".agents" / "plugins" / "marketplace.json",
+            json.dumps(marketplace, indent=2) + "\n",
+        )
+    else:
+        marketplace = {
+            "name": "bench-marketplace",
+            "owner": {"name": "Bench Owner", "email": "bench@example.com"},
+            "plugins": [
+                {
+                    "name": name,
+                    "source": f"./plugins/{name}",
+                    "description": f"Benchmark plugin {name} for performance testing",
+                }
+                for name in plugin_names
+            ],
+        }
+        _write(
+            root / ".claude-plugin" / "marketplace.json",
+            json.dumps(marketplace, indent=2) + "\n",
+        )
 
     files = 1
     for p_idx, name in enumerate(plugin_names):
         pdir = root / "plugins" / name
+        manifest_dir = ".codex-plugin" if codex else ".claude-plugin"
         _write(
-            pdir / ".claude-plugin" / "plugin.json",
+            pdir / manifest_dir / "plugin.json",
             json.dumps(
                 {
                     "name": name,

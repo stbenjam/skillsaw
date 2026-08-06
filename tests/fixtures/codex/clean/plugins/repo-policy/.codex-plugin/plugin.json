@@ -1,0 +1,10 @@
+{
+  "name": "repo-policy",
+  "version": "0.3.1",
+  "description": "Enforce repository policy at session start.",
+  "author": {
+    "name": "Example Team"
+  },
+  "license": "Apache-2.0",
+  "hooks": "./hooks/hooks.json"
+}

@@ -11,7 +11,7 @@ Add skillsaw to your repository's `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/stbenjam/skillsaw
-    rev: v0.17.0
+    rev: v0.18.0
     hooks:
       - id: skillsaw
 ```
@@ -22,11 +22,8 @@ Then install the git hook once per clone:
 pre-commit install
 ```
 
-From now on, any commit that touches a file skillsaw lints — `CLAUDE.md`,
-`SKILL.md`, plugin manifests, `hooks.json`, promptfoo configs, and the rest —
-runs the linter first. Violations at error severity (or warnings, with
-`strict: true` in `.skillsaw.yaml`) block the commit. Commits that touch
-nothing relevant skip the hook entirely.
+From now on, every commit runs the linter first. Violations at error severity
+(or warnings, with `strict: true` in `.skillsaw.yaml`) block the commit.
 
 You can also run it on demand across the whole repository:
 
@@ -42,13 +39,16 @@ type, validates marketplace registration, and runs cross-file rules, none of
 which map to per-file invocation. The hook therefore declares
 `pass_filenames: false` and lints the whole repository.
 
-The hook's `files` pattern only controls *when* it fires — at least one staged
-file must match it. The pattern covers everything skillsaw discovery looks at:
-instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `*.instructions.md`),
-skills (`SKILL.md`), plugin and marketplace manifests (`.claude-plugin/`),
-`.claude/` directories, hooks, MCP and settings JSON, Cursor/Copilot/Kiro/APM
-formats, CodeRabbit and promptfoo configs, and skillsaw's own config and
-baseline files.
+The published hook declares `files: .` — any staged file triggers a full
+repository lint. Codex plugin manifests can declare skills, hooks, MCP
+configs, and assets at arbitrary paths, so no narrower filename pattern can
+cover every lint input; matching everything keeps cross-file validation
+complete while still letting pre-commit skip commits that stage nothing
+(an `--allow-empty` commit, a message-only amend). One known gap: pre-commit
+does not count deleted files toward `files` matching, so a commit that
+*only* deletes files skips the hook — a deletion that leaves a manifest
+path dangling surfaces on the next non-deletion commit, or immediately via
+`pre-commit run skillsaw --all-files`.
 
 Because the whole repository is linted, a pre-existing violation in a file you
 didn't touch can block your commit. If you're adopting skillsaw on a repo with
@@ -89,17 +89,18 @@ To pass extra CLI flags, override `args` in your config:
 
 ## Troubleshooting
 
-**The hook runs on commits I didn't expect.** The `files` pattern is broad by
-design (it includes top-level `commands/`, `skills/`, `agents/`, `hooks/`, and
-`rules/` directories, which plugin-style repos use). If your repository uses
-one of those directory names for something unrelated, narrow the trigger in
-your own config:
+**Can I run the hook only for selected paths?** Override the `files` filter
+in your own config:
 
 ```yaml
     hooks:
       - id: skillsaw
         files: ^(CLAUDE\.md|\.claude/|\.claude-plugin/)
 ```
+
+This trades completeness for speed: a Codex component declared at a custom
+path, or a change that leaves a manifest path dangling, may no longer
+trigger the hook.
 
 **The hook fails on files I didn't change.** That's the repo-level lint
 working as intended — see the baseline note above.

@@ -7,9 +7,15 @@ from pathlib import Path
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.lint_target import PluginNode
 from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.utils import read_json
+
+
+def _is_usable(value: Any) -> bool:
+    """Whether a required connection field names something spawnable."""
+    return isinstance(value, str) and bool(value.strip())
 
 
 class McpValidJsonRule(Rule):
@@ -65,10 +71,22 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
+            # Conditional strictness, not a skip: the tightened
+            # non-empty-string checks apply only inside Codex-ONLY plugins,
+            # so dual-manifest plugins keep their established Claude results.
+            require_usable = context.in_codex_only_plugin(block.path)
             if "mcpServers" in data:
-                violations.extend(self._validate_mcp_structure(data, block.path))
+                violations.extend(
+                    self._validate_mcp_structure(data, block.path, require_usable=require_usable)
+                )
             else:
-                violations.extend(self._validate_mcp_structure({"mcpServers": data}, block.path))
+                violations.extend(
+                    self._validate_mcp_structure(
+                        {"mcpServers": data},
+                        block.path,
+                        require_usable=require_usable,
+                    )
+                )
 
         # Also check mcpServers embedded in plugin.json (not a separate file node)
         for plugin_node in context.lint_tree.find(PluginNode):
@@ -105,7 +123,13 @@ class McpValidJsonRule(Rule):
 
         return violations
 
-    def _validate_mcp_structure(self, data: Dict[str, Any], file_path: Path) -> List[RuleViolation]:
+    def _validate_mcp_structure(
+        self,
+        data: Dict[str, Any],
+        file_path: Path,
+        *,
+        require_usable: bool = False,
+    ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
 
@@ -166,6 +190,23 @@ class McpValidJsonRule(Rule):
                     violations.append(
                         self.violation(
                             f"MCP server '{server_name}' with type '{server_type}' must have a '{required_field}' field",
+                            file_path=file_path,
+                        )
+                    )
+                # Present is not the same as usable: ``"command": []`` and
+                # ``"command": ""`` satisfy a key-existence check while
+                # naming nothing the host can spawn. A non-string ``url``
+                # is left to the dedicated check below, so one defect
+                # still yields one violation.
+                elif (
+                    require_usable
+                    and not _is_usable(server_config[required_field])
+                    and not (required_field == "url" and not isinstance(server_config["url"], str))
+                ):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{safe_display(server_name)}' '{required_field}' "
+                            "must be a non-empty string",
                             file_path=file_path,
                         )
                     )

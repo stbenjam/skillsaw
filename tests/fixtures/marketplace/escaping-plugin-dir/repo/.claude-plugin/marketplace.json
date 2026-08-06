@@ -1,0 +1,7 @@
+{
+  "name": "team-tools",
+  "owner": {"name": "Example Team", "url": "https://team.example.com"},
+  "plugins": [
+    {"name": "reporter", "source": "./plugins/reporter", "description": "Generate weekly status reports"}
+  ]
+}

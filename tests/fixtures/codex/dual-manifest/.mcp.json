@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "legacy": {"type": "stdio", "command": ""}
+  }
+}

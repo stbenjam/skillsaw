@@ -1,0 +1,6 @@
+{
+  "name": "shared-tools",
+  "version": "2.1.0",
+  "description": "Shared helper commands maintained in a sibling checkout.",
+  "author": {"name": "Example Team"}
+}

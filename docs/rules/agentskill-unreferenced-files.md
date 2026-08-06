@@ -10,7 +10,7 @@ Every bundled skill file should be referenced from SKILL.md, directly or transit
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.15.0 |
-| **Repo Types** | agentskills, dot-claude, marketplace, single-plugin |
+| **Repo Types** | agentskills, codex-marketplace, codex-plugin, dot-claude, marketplace, single-plugin |
 | **Category** | [agentskills.io](agentskills.md) |
 
 ## Why
@@ -38,8 +38,10 @@ documents (SKILL.md → `check.py` → `allowed-repos.txt`) is covered,
 because the whole chain is reviewable. Non-markdown sources contribute
 plain-text mentions only (link syntax is resolved only in markdown);
 binary files and files over 1 MiB never become sources. A skill-root
-README.md also counts as a reference root — a file documented in the
-skill's README is neither dead weight nor hidden from review.
+README.md and the skill's `agents/openai.yaml` metadata file also
+count as reference roots — a file documented in the skill's README, or
+an icon the OpenAI metadata points at, is neither dead weight nor
+hidden from review.
 
 Mentions are detected in markdown links, inline code spans, fenced
 code blocks (`python scripts/run.py`), and plain prose:

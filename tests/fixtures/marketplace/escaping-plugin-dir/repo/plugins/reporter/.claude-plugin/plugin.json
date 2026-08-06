@@ -1,0 +1,6 @@
+{
+  "name": "reporter",
+  "version": "1.0.0",
+  "description": "Generate weekly status reports from the issue tracker.",
+  "author": {"name": "Example Team"}
+}

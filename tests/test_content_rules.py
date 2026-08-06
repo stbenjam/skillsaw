@@ -631,7 +631,9 @@ class TestContentEmbeddedSecretsRule:
         assert rule.default_severity() == Severity.ERROR
 
     def test_detects_openai_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("Set API key: sk-abcdefghijklmnopqrstuvwxyz1234\n")
+        (temp_dir / "CLAUDE.md").write_text(
+            "Set API key: sk-abcdefghijklmnopqrstuvwxyz1234\n"
+        )  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -646,7 +648,7 @@ class TestContentEmbeddedSecretsRule:
         assert len(violations) >= 1
 
     def test_detects_aws_key(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")
+        (temp_dir / "CLAUDE.md").write_text("AWS key: AKIAIOSFODNN7EXAMPLE\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -670,7 +672,7 @@ class TestContentEmbeddedSecretsRule:
     @pytest.mark.parametrize(
         "secret,expected_desc",
         [
-            ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),
+            ("sk-ant-api03-abcdefghijklmnopqrst", "Anthropic API key"),  # notsecret
             ("ghr_abcdefghijklmnopqrstuvwxyz123456789012", "GitHub refresh token"),  # notsecret
             ("ASIAIOSFODNN7EXAMPLE", "AWS temporary access key"),
             ("xoxa-123456789012-abcdefghij", "Slack app token"),
@@ -855,7 +857,7 @@ class TestContentEmbeddedSecretsRule:
 
     def test_structured_tokens_not_entropy_gated(self, temp_dir):
         """High-confidence token formats fire even for low-entropy bodies."""
-        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")
+        (temp_dir / "CLAUDE.md").write_text("Use token ghp_" + "a" * 40 + "\n")  # notsecret
         context = RepositoryContext(temp_dir)
         violations = ContentEmbeddedSecretsRule().check(context)
         assert len(violations) >= 1
@@ -1423,6 +1425,30 @@ class TestContentBrokenInternalReferenceRule:
         context = RepositoryContext(temp_dir)
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
+
+    def test_uri_scheme_links_skipped(self, temp_dir):
+        """Any URI scheme is external, not just http(s)/mailto.
+
+        Codex skills link connector apps as ``app://<id>`` (real-repo FP:
+        openai/plugins), and ``vscode://``/``ssh://`` links appear in
+        instruction files. None of them name a file in the repository."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "Linear requires the native [$linear](app://asdk_app_69a089a326dc8191) app.\n"
+            "Open [settings](vscode://settings/editor) or clone "
+            "[the repo](ssh://git@example.com/repo.git).\n"
+            "Protocol-relative [link](//example.com/docs) is a URL too.\n"
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert violations == []
+
+    def test_windows_drive_style_target_is_still_a_file_path(self, temp_dir):
+        """``C:/...`` must not be mistaken for a URI scheme — it stays a
+        file reference (and one that points outside the repository)."""
+        (temp_dir / "CLAUDE.md").write_text("See [notes](C:/notes.md) for details.\n")
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
 
     def test_template_dir_skipped(self, temp_dir):
         tmpl_dir = temp_dir / "templates"

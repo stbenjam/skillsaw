@@ -15,7 +15,7 @@ hide:
 <p class="hero-subtitle" markdown>
 skillsaw lints the files that steer your AI coding agents: skills, plugins,
 CLAUDE.md, and AGENTS.md. It catches weak language, contradictions, attention
-dead zones, and structural issues with more than 40 rules, then auto-fixes them.
+dead zones, and structural issues with more than 60 rules, then auto-fixes them.
 </p>
 
 <p class="hero-badges" markdown>

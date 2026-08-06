@@ -14,6 +14,8 @@ class CommandNameFormatRule(Rule):
 
     default_enabled = False
 
+    provenance_scope = "claude"
+
     @property
     def rule_id(self) -> str:
         return "command-name-format"
@@ -30,7 +32,7 @@ class CommandNameFormatRule(Rule):
 
         violations = []
 
-        for cmd_block in context.lint_tree.find(CommandBlock):
+        for cmd_block in self.scoped_find(context, CommandBlock):
             cmd_file = cmd_block.path
             parent_plugin = context.lint_tree.find_parent(cmd_block, PluginNode)
             if parent_plugin is None:

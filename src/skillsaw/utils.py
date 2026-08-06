@@ -38,7 +38,14 @@ class FileCache:
         def wrapper(*args, **kwargs):
             # The first positional arg is always the file path.
             file_path = args[0] if args else None
-            resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            try:
+                resolved = file_path.resolve() if isinstance(file_path, Path) else None
+            except (OSError, RuntimeError, ValueError):
+                # Symlink loop or embedded NUL: raising here aborts the
+                # whole lint from a cache key lookup, while the wrapped
+                # reader already diagnoses unreadable input. Key on the
+                # unresolved path — that only loses alias deduplication.
+                resolved = file_path
             sub_key = (args[1:], tuple(sorted(kwargs.items())))
             with self._lock:
                 bucket = store.get(resolved)
@@ -193,6 +200,11 @@ def write_text_preserving(file_path: Path, content: str) -> None:
     file_path.write_bytes(data)
 
 
+# Reported instead of the traceback when a document nests past the
+# interpreter's stack limit.
+_TOO_DEEP = "Nesting too deep to parse"
+
+
 @_file_cache.cached
 def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
     """Cached JSON file read. Returns (data, error)."""
@@ -201,8 +213,18 @@ def read_json(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return None, f"Failed to read {file_path.name}"
     try:
         return json.loads(content), None
-    except json.JSONDecodeError as e:
+    except ValueError as e:
+        # ValueError, not just its JSONDecodeError subclass: on 3.11+ an
+        # integer literal past the interpreter's digit limit raises bare
+        # ValueError, and discovery calls this while RepositoryContext is
+        # still being constructed — letting it escape aborts the CLI.
         return None, str(e)
+    except RecursionError:
+        # ``json`` parses nested containers recursively. Discovery reads
+        # manifests during RepositoryContext construction, outside the
+        # rule-execution-error guard, so letting this propagate aborts the
+        # whole lint with a traceback.
+        return None, _TOO_DEEP
 
 
 @_file_cache.cached
@@ -215,6 +237,9 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return yaml.safe_load(content), None
     except yaml.YAMLError as e:
         return None, str(e)
+    except RecursionError:
+        # Same hazard as read_json — see the note there.
+        return None, _TOO_DEEP
 
 
 @_file_cache.cached
@@ -240,12 +265,20 @@ def read_yaml_commented(
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             line = e.problem_mark.line + 1
         return None, str(e), line
+    except RecursionError:
+        return None, _TOO_DEEP, None
 
 
 def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
-        return node.lc.key(key)[0] + 1
+        try:
+            return node.lc.key(key)[0] + 1
+        except KeyError:
+            # A value inherited through a YAML merge key (``<<: *anchor``)
+            # is visible to ``in``/``get`` but has no local position —
+            # omit the line rather than crash the rule.
+            return None
     return None
 
 
@@ -253,6 +286,18 @@ def commented_item_line(node: Any, index: int) -> Optional[int]:
     """Get the 1-based line number of item *index* in a ruamel ``CommentedSeq``."""
     if isinstance(node, CommentedSeq) and index < len(node):
         return node.lc.item(index)[0] + 1
+    return None
+
+
+def commented_root_line(node: Any) -> Optional[int]:
+    """Get the 1-based line number of the document root, when ruamel kept one.
+
+    Plain scalars carry no position, so the line is ``None`` for them —
+    callers must omit the line rather than fabricate one.
+    """
+    lc = getattr(node, "lc", None)
+    if lc is not None and lc.line is not None:
+        return lc.line + 1
     return None
 
 

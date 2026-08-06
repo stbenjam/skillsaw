@@ -6,6 +6,7 @@ import pytest
 import json
 from pathlib import Path
 
+from skillsaw.blocks import HooksBlock
 from skillsaw.rules.builtin.hooks import HooksJsonValidRule, HooksDangerousRule, HooksProhibitedRule
 from skillsaw.rule import Severity
 from skillsaw.context import RepositoryContext
@@ -164,6 +165,38 @@ def test_valid_hooks_json(plugin_with_valid_hooks):
     rule = HooksJsonValidRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+def test_matcher_type_check_is_codex_scoped(temp_dir):
+    """The Codex tightening must not change established Claude results."""
+    plugin = temp_dir / "legacy-plugin"
+    (plugin / ".claude-plugin").mkdir(parents=True)
+    (plugin / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "legacy-plugin"}', encoding="utf-8"
+    )
+    (plugin / "hooks").mkdir()
+    (plugin / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "matcher": [],
+                            "hooks": [{"type": "command", "command": "echo hi"}],
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    context = RepositoryContext(plugin)
+    # Guard against the test passing vacuously: the absence assertion below
+    # means nothing unless the hooks file was actually parsed into the tree.
+    hooks_blocks = [b for b in context.lint_tree.find(HooksBlock) if b.path.name == "hooks.json"]
+    assert hooks_blocks, "hooks/hooks.json was not attached to the lint tree"
+    violations = HooksJsonValidRule().check(context)
+    assert not any("matcher' must be a string" in v.message for v in violations)
 
 
 def test_invalid_json(plugin_with_invalid_json):

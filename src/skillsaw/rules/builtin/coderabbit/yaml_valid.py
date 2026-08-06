@@ -59,6 +59,14 @@ class CoderabbitYamlValidRule(Rule):
 
         try:
             data = yaml.safe_load(raw)
+        except RecursionError:
+            violations.append(
+                self.violation(
+                    "Invalid YAML in .coderabbit.yaml: nesting too deep to parse",
+                    file_path=cr_path,
+                )
+            )
+            return violations
         except yaml.YAMLError as exc:
             line: Optional[int] = None
             if hasattr(exc, "problem_mark") and exc.problem_mark is not None:

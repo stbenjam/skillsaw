@@ -115,14 +115,16 @@ def _run_badge(args):
         from collections import Counter
 
         from ..card import render_card
-        from ..lint_target import PluginNode, SkillNode
+        from ..lint_target import SkillNode
 
         card_path = badge_path.parent / _CARD_FILENAME
         card_path.write_bytes(
             render_card(
                 grade,
                 repo_name=_repo_display_name(context.root_path),
-                plugin_count=len(context.lint_tree.find(PluginNode)),
+                # The deduplicated Claude∪Codex count every formatter
+                # reports; PluginNode covers only Claude-style directories.
+                plugin_count=len(context.distinct_plugin_dirs()),
                 skill_count=len(context.lint_tree.find(SkillNode)),
                 top_rules=Counter(v.rule_id for v in violations).most_common(3),
                 theme=getattr(args, "theme", "dark"),

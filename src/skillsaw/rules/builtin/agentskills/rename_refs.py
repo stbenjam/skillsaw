@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, AutofixResult, AutofixConfidence, Severity
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import splice
 from skillsaw.rules.builtin.content_analysis import (
@@ -15,9 +15,12 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 from ._helpers import (
+    SKILL_REPO_TYPES,
+    _RENAMES_LOCK,
     _read_renames_manifest,
     _write_renames_manifest,
-    _RENAMES_LOCK,
+    contained_eval_file,
+    is_installed_plugin_skill,
 )
 
 # Characters that can be part of a skill name reference. A match is only a
@@ -33,12 +36,7 @@ def _name_pattern(old_name: str) -> re.Pattern:
 class AgentSkillRenameRefsRule(Rule):
     """Update stale skill name references after a rename"""
 
-    repo_types = {
-        RepositoryType.AGENTSKILLS,
-        RepositoryType.SINGLE_PLUGIN,
-        RepositoryType.MARKETPLACE,
-        RepositoryType.DOT_CLAUDE,
-    }
+    repo_types = SKILL_REPO_TYPES
 
     config_schema = {
         "autofix-min-segments": {
@@ -112,8 +110,8 @@ class AgentSkillRenameRefsRule(Rule):
                     referenced_olds.add(old)
 
         for skill_node in context.lint_tree.find(SkillNode):
-            evals_json = skill_node.path / "evals" / "evals.json"
-            if not evals_json.exists():
+            evals_json = contained_eval_file(context, skill_node.path)
+            if evals_json is None:
                 continue
             try:
                 raw = evals_json.read_text(encoding="utf-8")
@@ -168,6 +166,8 @@ class AgentSkillRenameRefsRule(Rule):
         by_file: Dict[Path, List[RuleViolation]] = {}
         for v in violations:
             if not v.file_path or not v.file_path.exists():
+                continue
+            if is_installed_plugin_skill(context, v.file_path):
                 continue
             by_file.setdefault(v.file_path, []).append(v)
 

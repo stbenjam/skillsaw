@@ -1,0 +1,7 @@
+{
+  "name": "Vendor_Plugin",
+  "skills": "/opt/shared/skills",
+  "interface": {
+    "logo": "./assets/logo.png"
+  }
+}

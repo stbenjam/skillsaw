@@ -1,0 +1,32 @@
+{
+  "name": "example-codex-plugins",
+  "interface": {
+    "displayName": "Example Codex Plugins"
+  },
+  "plugins": [
+    {
+      "name": "note-taker",
+      "source": {
+        "source": "local",
+        "path": "./plugins/note-taker"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "repo-policy",
+      "source": {
+        "source": "local",
+        "path": "./plugins/repo-policy"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
