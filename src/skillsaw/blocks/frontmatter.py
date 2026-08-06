@@ -68,12 +68,12 @@ class FrontmatterField(LintTarget):
             return NotImplemented
         return (
             type(self) is type(other)
-            and self.path.resolve() == other.path.resolve()
+            and self.resolved_path == other.resolved_path
             and self.name == other.name
         )
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve(), self.name))
+        return hash((type(self), self.resolved_path, self.name))
 
     def tree_label(self) -> str:
         return f"frontmatter:{self.name}"

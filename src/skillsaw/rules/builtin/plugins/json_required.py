@@ -9,6 +9,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
 
 from ._helpers import PLUGIN_REPO_TYPES
+from skillsaw.paths import safe_resolve
 
 
 class PluginJsonRequiredRule(Rule):
@@ -45,7 +46,7 @@ class PluginJsonRequiredRule(Rule):
             plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
             if not plugin_json.exists():
                 # Check if plugin has strict: false in marketplace metadata
-                resolved_path = plugin_path.resolve()
+                resolved_path = safe_resolve(plugin_path) or plugin_path
 
                 if resolved_path in getattr(context, "plugin_metadata", {}):
                     marketplace_entry = context.plugin_metadata[resolved_path]

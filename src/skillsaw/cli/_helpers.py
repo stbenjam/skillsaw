@@ -8,6 +8,7 @@ import warnings
 from pathlib import Path
 
 from ..context import RepositoryContext, RepositoryType, merge_plugin_dirs
+from skillsaw.paths import safe_resolve
 
 # ---------------------------------------------------------------------------
 # Progress indicator
@@ -59,7 +60,7 @@ def _resolve_lint_paths(paths):
     """
     normalized = []
     for p in paths:
-        resolved = p.resolve()
+        resolved = safe_resolve(p) or p
         if resolved.is_file():
             resolved = resolved.parent
         normalized.append(resolved)

@@ -11,6 +11,7 @@ from skillsaw.blocks import ContentBlock
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
+from skillsaw.paths import safe_resolve
 
 # Categories of instruction files that get copied between assistants
 # (CLAUDE.md <-> AGENTS.md <-> copilot-instructions.md <-> rules files).
@@ -188,7 +189,9 @@ class ContentInstructionDriftRule(Rule):
     @staticmethod
     def _relative_path(cf: ContentBlock, context: RepositoryContext) -> str:
         try:
-            return cf.resolved_path.relative_to(context.root_path.resolve()).as_posix()
+            return cf.resolved_path.relative_to(
+                (safe_resolve(context.root_path) or context.root_path)
+            ).as_posix()
         except ValueError:
             return str(cf.path)
 

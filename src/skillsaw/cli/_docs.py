@@ -40,6 +40,10 @@ def _run_docs(args):
         sys.exit(1)
 
     docs_output = extract_docs(context, title=args.title)
+    if context.lint_tree_errors:
+        for message in context.lint_tree_errors:
+            print(f"Error: {message}", file=sys.stderr)
+        sys.exit(1)
 
     if args.fmt == "html":
         pages = render_html(docs_output, theme=theme)

@@ -155,6 +155,15 @@ def test_resolve_file_ref_symlink_loop_does_not_crash(tmp_path):
     assert result is None or result.is_relative_to(root)
 
 
+def test_resolve_file_ref_resolution_failure_returns_none(tmp_path, monkeypatch):
+    """A rejected ref must not be revived as the unresolved raw path."""
+    from skillsaw.formats import promptfoo as promptfoo_format
+
+    monkeypatch.setattr(promptfoo_format, "safe_resolve", lambda path: None)
+
+    assert _resolve_file_ref("file://hostile.yaml", tmp_path, root=tmp_path) is None
+
+
 def test_resolve_file_ref_inside_root_still_resolves(tmp_path):
     root = tmp_path / "repo"
     (root / "evals").mkdir(parents=True)
@@ -391,6 +400,19 @@ def test_fragment_symlink_escaping_repo_root_not_in_tree(temp_dir):
     context = RepositoryContext(repo)
     nodes = context.lint_tree.find(PromptfooConfigNode)
     assert [n for n in nodes if n.is_fragment] == []
+
+
+def test_config_symlink_escaping_repo_root_not_in_tree(tmp_path):
+    """A symlinked external Promptfoo config must not become a tree node."""
+    outside = tmp_path / "outside.yaml"
+    _write_yaml(outside, {"providers": [{"id": "external"}], "tests": []})
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "promptfooconfig.yaml").symlink_to(outside)
+
+    nodes = RepositoryContext(repo).lint_tree.find(PromptfooConfigNode)
+
+    assert nodes == []
 
 
 def test_non_promptfoo_yaml_not_in_tree(temp_dir):
@@ -1169,6 +1191,34 @@ def test_file_ref_not_found_reports_line(temp_dir):
     violations = PromptfooValidRule().check(context)
     assert len(violations) == 1
     assert violations[0].line == 4
+
+
+def test_file_ref_stat_failure_reports_missing(temp_dir, monkeypatch):
+    """A filesystem predicate failure must become a normal missing-ref finding."""
+    _write_raw_yaml(
+        temp_dir / "promptfooconfig.yaml",
+        """\
+        providers:
+          - openai:gpt-4
+        tests:
+          - file://hostile.yaml
+        """,
+    )
+    context = RepositoryContext(temp_dir)
+    _ = context.lint_tree
+    real_exists = Path.exists
+
+    def hostile_exists(path):
+        """Raise when the hostile ref reaches a raw filesystem probe."""
+        if path.name == "hostile.yaml":
+            raise OSError("cannot stat hostile ref")
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, "exists", hostile_exists)
+
+    violations = PromptfooValidRule().check(context)
+    assert len(violations) == 1
+    assert "hostile.yaml" in violations[0].message
 
 
 def test_assertions_missing_type_reports_line(temp_dir):

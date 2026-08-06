@@ -12,6 +12,7 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
 from skillsaw.utils import read_text
+from skillsaw.paths import safe_exists, safe_resolve
 
 _IMPORT_LINE_RE = re.compile(r"^\s*@\S")
 
@@ -123,19 +124,20 @@ class ContentUnlinkedInternalReferenceRule(Rule):
         return results
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        root = context.root_path.resolve()
+        root = safe_resolve(context.root_path) or context.root_path
         patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
         violations = []
         for cf in gather_all_content_blocks(context):
             doc = cf.markdown
             for body_line, _col, path_str, _span in self._candidates(doc, patterns):
-                resolved = (cf.path.parent / path_str).resolve()
+                resolved = safe_resolve(cf.path.parent / path_str)
                 file_exists = False
-                try:
-                    resolved.relative_to(root)
-                    file_exists = resolved.exists()
-                except ValueError:
-                    pass
+                if resolved is not None:
+                    try:
+                        resolved.relative_to(root)
+                        file_exists = safe_exists(resolved)
+                    except ValueError:
+                        pass
                 msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
                 if file_exists:
                     msg += " (file exists, autofixable)"

@@ -231,11 +231,11 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 skill_node, skill_path, roots, all_files, directory_covers
             )
 
-            skill_resolved = skill_path.resolve()
+            skill_resolved = safe_resolve(skill_path) or skill_path
             for file_path in all_files:
                 if file_path in referenced:
                     continue
-                rel = file_path.resolve().relative_to(skill_resolved).as_posix()
+                rel = (safe_resolve(file_path) or file_path).relative_to(skill_resolved).as_posix()
                 if self._is_excluded(rel, file_path.name, exclude_variants):
                     continue
                 violations.append(
@@ -316,14 +316,17 @@ class AgentSkillUnreferencedFilesRule(Rule):
         directory_covers: bool,
     ) -> Set[Path]:
         """Files referenced from the roots, following every referenced local file."""
-        skill_resolved = skill_path.resolve()
-        resolved_of = {f: f.resolve() for f in all_files}
+        skill_resolved = safe_resolve(skill_path) or skill_path
+        resolved_of = {f: (safe_resolve(f) or f) for f in all_files}
         resolved_files = set(resolved_of.values())
         rel_of = {f: resolved_of[f].relative_to(skill_resolved).as_posix() for f in all_files}
         all_dirs = self._candidate_dirs(rel_of.values())
-        block_by_path = {block.path.resolve(): block for block in skill_node.find(ContentBlock)}
+        block_by_path = {
+            (safe_resolve(block.path) or block.path): block
+            for block in skill_node.find(ContentBlock)
+        }
 
-        root_paths = {root.resolve() for root in roots}
+        root_paths = {(safe_resolve(root) or root) for root in roots}
         referenced: Set[Path] = {
             candidate for candidate in all_files if resolved_of[candidate] in root_paths
         }
@@ -333,7 +336,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
 
         while queue:
             source = queue.popleft()
-            resolved_source = source.resolve()
+            resolved_source = safe_resolve(source) or source
             if resolved_source in processed:
                 continue
             processed.add(resolved_source)

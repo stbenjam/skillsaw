@@ -48,19 +48,25 @@ def resolve_plugin_source(
     """Resolve a contained local Claude marketplace source, if any."""
     name = entry.get("name", "unknown")
     if isinstance(source, str):
-        candidate = safe_resolve(root / source)
-        if candidate is None:
+        resolved_root = safe_resolve(root)
+        if resolved_root is None:
+            logger.warning("Repository root cannot be resolved. Skipping plugin '%s'.", name)
             return None
+        candidate = contained_resolve(resolved_root / source, resolved_root)
         plugin_root = marketplace_plugin_root(data)
         if plugin_root and not Path(source).is_absolute():
-            composed = safe_resolve(root / plugin_root / source)
-            if composed is not None and (safe_exists(composed) or not safe_exists(candidate)):
+            composed = contained_resolve(resolved_root / plugin_root / source, resolved_root)
+            if composed is not None and (
+                safe_exists(composed) or candidate is None or not safe_exists(candidate)
+            ):
                 candidate = composed
-        try:
-            candidate.relative_to(root)
-        except ValueError:
+            elif composed is None and (candidate is None or not safe_exists(candidate)):
+                candidate = None
+        if candidate is None:
             logger.warning(
-                "Plugin '%s' source '%s' escapes repository root. Skipping.", name, source
+                "Plugin '%s' source '%s' is unresolved or escapes repository root. Skipping.",
+                name,
+                source,
             )
             return None
         if not safe_exists(candidate) or not safe_is_dir(candidate):

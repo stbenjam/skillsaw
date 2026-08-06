@@ -277,6 +277,18 @@ def test_disallow_parent_traversal(temp_dir, caplog):
     assert any("escapes repository root" in record.message for record in caplog.records)
 
 
+def test_marketplace_source_resolution_failure_is_dropped(temp_dir, monkeypatch):
+    """An unresolvable marketplace source must not fall back to its raw path."""
+    plugin = temp_dir / "plugins" / "demo"
+    plugin.mkdir(parents=True)
+    context = RepositoryContext(temp_dir, repo_types={RepositoryType.MARKETPLACE})
+    monkeypatch.setattr("skillsaw.discovery.claude.contained_resolve", lambda path, root: None)
+
+    resolved = context._resolve_plugin_source("./plugins/demo", {"name": "demo"})
+
+    assert resolved is None
+
+
 def test_plugin_root_prepended_to_relative_sources(temp_dir):
     """metadata.pluginRoot is prepended to bare and ./-prefixed relative sources"""
     claude = temp_dir / ".claude-plugin"

@@ -11,6 +11,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
+from skillsaw.paths import safe_resolve
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -276,7 +277,7 @@ class LinterConfig:
             fail_on=fail_on,
             plugins_enabled=plugins_enabled,
             disabled_plugins=disabled_plugins,
-            config_dir=config_path.resolve().parent,
+            config_dir=(safe_resolve(config_path) or config_path).parent,
             warnings=load_warnings,
         )
 
@@ -621,7 +622,7 @@ def find_config(start_path: Path) -> Optional[Path]:
     Checks for .skillsaw.yaml first, then falls back to .claudelint.yaml
     for backward compatibility.
     """
-    current = start_path.resolve()
+    current = safe_resolve(start_path) or start_path
 
     # Walk up to and *including* the filesystem root, so a config placed at
     # ``/`` (common in containers where the repo is mounted at the root) is

@@ -180,7 +180,7 @@ class RepositoryContext:
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
         """
-        self.root_path = root_path.resolve()
+        self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
@@ -247,6 +247,10 @@ class RepositoryContext:
         self.plugin_content_paths: List[str] = []
         self.plugin_tree_contributors: List[tuple] = []
         self.plugin_extension_errors: List[str] = []
+        # Fatal discovery problems that affect the repository itself rather
+        # than a plugin. Linter surfaces these as repository-path-error
+        # violations; direct tree/docs commands report them before output.
+        self.lint_tree_errors: List[str] = []
         # Set by skillsaw.plugins.register_extensions so repeated calls on a
         # shared context (e.g. two Linters over one context) are no-ops.
         self._plugin_extensions_registered = False
@@ -312,7 +316,8 @@ class RepositoryContext:
             roots: Set[Path] = set()
             if self.has_apm:
                 for compiled_dir_name in self.APM_COMPILED_DIRS:
-                    compiled_path = (self.root_path / compiled_dir_name).resolve()
+                    compiled_path = self.root_path / compiled_dir_name
+                    compiled_path = safe_resolve(compiled_path) or compiled_path
                     if compiled_path.is_dir():
                         roots.add(compiled_path)
             self._apm_compiled_roots = roots
@@ -323,7 +328,7 @@ class RepositoryContext:
         roots = self.apm_compiled_roots()
         if not roots:
             return False
-        resolved = path.resolve()
+        resolved = safe_resolve(path) or path
         return any(resolved == root or resolved.is_relative_to(root) for root in roots)
 
     @staticmethod
@@ -837,12 +842,6 @@ class RepositoryContext:
         return claude_discovery.resolve_plugin_source(
             self.root_path, self.marketplace_data, source, plugin_entry
         )
-
-    def _is_valid_plugin_dir(
-        self, path: Path, marketplace_entry: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """Delegate Claude plugin marker validation."""
-        return claude_discovery.is_valid_plugin_dir(path, marketplace_entry)
 
     def _discover_plugins(self) -> List[Path]:
         """Discover Claude-compatible plugin directories without moving state."""
