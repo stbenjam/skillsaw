@@ -1,6 +1,6 @@
 ---
 name: skillsaw-pr-followup
-description: Follow up on open PRs in skillsaw — fix failing CI, address reviewer feedback, push updates, and validate backward compatibility.
+description: Follow up on open PRs in skillsaw — fix failing CI, address reviewer feedback, push updates, and validate backward compatibility. Use when an open PR needs maintenance.
 compatibility: Requires git, gh CLI, and internet access
 license: Apache-2.0
 user-invocable: true

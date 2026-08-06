@@ -124,11 +124,31 @@ jobs:
             --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)
           if [ -n "$existing" ]; then
             # Keep an existing report current even when the delta drops to zero.
-            gh api --silent -X PATCH "repos/${REPO}/issues/comments/${existing}" \
-              -F body=@/tmp/report.md
+            comment_error=""
+            if ! comment_error=$(gh api --silent -X PATCH \
+              "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@/tmp/report.md 2>&1); then
+              if echo "$comment_error" | grep -q \
+                "Resource not accessible by integration (HTTP 403)"; then
+                echo "::warning::Fork PR token cannot update the rule-impact comment; report remains in the job log."
+              else
+                echo "$comment_error" >&2
+                exit 1
+              fi
+            fi
           elif grep -q "No rule-impact differences" /tmp/report.md; then
             echo "No impact and no prior report comment — nothing to post."
           else
-            gh api --silent -X POST "repos/${REPO}/issues/${PR}/comments" \
-              -F body=@/tmp/report.md
+            comment_error=""
+            if ! comment_error=$(gh api --silent -X POST \
+              "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@/tmp/report.md 2>&1); then
+              if echo "$comment_error" | grep -q \
+                "Resource not accessible by integration (HTTP 403)"; then
+                echo "::warning::Fork PR token cannot post the rule-impact comment; report remains in the job log."
+              else
+                echo "$comment_error" >&2
+                exit 1
+              fi
+            fi
           fi
