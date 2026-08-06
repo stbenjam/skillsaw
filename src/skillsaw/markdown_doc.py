@@ -44,6 +44,7 @@ __all__ = [
     "MarkdownCodeSpan",
     "MarkdownFence",
     "MarkdownHtmlComment",
+    "MarkdownReferenceDefinition",
     "MarkdownHeading",
     "MarkdownTextSegment",
     "splice",
@@ -74,7 +75,9 @@ def _parse_cached(body: str):
     Several consumers parse the same text (content blocks, suppression maps
     for the same file); tokens are treated as read-only so sharing is safe.
     """
-    return _PARSER.parse(body)
+    env: Dict = {}
+    tokens = _PARSER.parse(body, env)
+    return tokens, env.get("references", {}), env.get("duplicate_refs", [])
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +140,19 @@ class MarkdownHtmlComment:
     """An HTML comment (block or inline). ``text`` is the inner comment body."""
 
     text: str
+    body_line_start: int
+    body_line_end: int
+    file_line_start: int
+    file_line_end: int
+
+
+@dataclass
+class MarkdownReferenceDefinition:
+    """A CommonMark reference definition omitted from rendered output."""
+
+    label: str
+    href: str
+    title: Optional[str]
     body_line_start: int
     body_line_end: int
     file_line_start: int
@@ -730,7 +746,10 @@ class MarkdownDoc:
         self._line_offset = line_offset
         self._line_map = line_map
         self._lines: List[str] = body.split("\n")
-        self._tokens = _parse_cached(body) if body else []
+        if body:
+            self._tokens, self._references, self._duplicate_references = _parse_cached(body)
+        else:
+            self._tokens, self._references, self._duplicate_references = [], {}, []
         self._walked = False
         self._links: List[MarkdownLink] = []
         self._code_spans: List[MarkdownCodeSpan] = []
@@ -917,6 +936,28 @@ class MarkdownDoc:
                 )
         result.extend(self._inline_comments)
         result.sort(key=lambda c: c.body_line_start)
+        return result
+
+    def reference_definitions(self) -> List[MarkdownReferenceDefinition]:
+        """CommonMark reference definitions, including hidden-comment idioms."""
+        result = []
+        definitions = list(self._references.items()) + [
+            (data["label"], data) for data in self._duplicate_references
+        ]
+        definitions.sort(key=lambda item: item[1]["map"][0])
+        for label, data in definitions:
+            start, end = data["map"]
+            result.append(
+                MarkdownReferenceDefinition(
+                    label=label,
+                    href=data["href"],
+                    title=data.get("title"),
+                    body_line_start=start + 1,
+                    body_line_end=end,
+                    file_line_start=self.file_line(start + 1),
+                    file_line_end=self.file_line(end),
+                )
+            )
         return result
 
     def html_block_spans(self) -> List[Tuple[int, int]]:

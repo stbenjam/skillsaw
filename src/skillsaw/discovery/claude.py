@@ -82,7 +82,7 @@ def resolve_plugin_source(
 def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> bool:
     """Return whether a directory has plugin content or relaxed metadata."""
     markers = (
-        path / ".claude-plugin" / "plugin.json",
+        path / ".claude-plugin",
         path / "commands",
         path / "agents",
         path / "skills",
@@ -164,7 +164,7 @@ def discover_plugins(
                 for item in plugins_dir.iterdir():
                     if not item.is_dir() or item.name.startswith("."):
                         continue
-                    if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
+                    if not is_valid_plugin_dir(item):
                         continue
                     if contained_resolve(item, root) is None:
                         logger.warning(

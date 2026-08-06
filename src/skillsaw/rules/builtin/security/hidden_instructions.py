@@ -1,14 +1,15 @@
 """Security hidden instructions rule.
 
-HTML comments are stripped from rendered markdown — the view humans review
-on GitHub or in an editor preview — but agents read the raw file. A
-directive placed inside an HTML comment is therefore an instruction channel
-that is invisible to human review: the classic hiding spot for prompt
+HTML comments and Markdown link-label definitions are stripped from rendered
+markdown — the view humans review on GitHub or in an editor preview — but
+agents read the raw file. A directive placed inside either channel is
+therefore invisible to human review: the classic hiding spot for prompt
 injection smuggled into a shared skill, command, or CLAUDE.md.
 """
 
 import re
 from typing import List, Optional, Tuple
+from urllib.parse import unquote
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
@@ -16,9 +17,10 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 # ── Allowlisting ─────────────────────────────────────────────────────────
 #
-# Two exemption paths, both applied to the stripped comment text:
+# Two exemption paths, both applied to stripped HTML-comment or link-label
+# definition text:
 #
-# 1. Strict pragma grammars: a comment that FULLY matches a well-known
+# 1. Strict pragma grammars: hidden text that FULLY matches a well-known
 #    machine-readable directive (markdownlint-disable MD013, prettier-ignore,
 #    cspell:ignore words, "toc" alone, …) is exempt. Fullmatch means a
 #    payload appended after the pragma breaks the match — the old
@@ -28,7 +30,7 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 #    capture it as the "args" group, and the directive families are run on
 #    that group too, so a payload smuggled into an argument list still fires.
 #
-# 2. Prefix + benign remainder: a comment starting with an allowlisted
+# 2. Prefix + benign remainder: hidden text starting with an allowlisted
 #    prefix (built-in tools below, plus additional-allowed-prefixes from
 #    config) is exempt only when the remainder after the prefix does not
 #    itself match any directive family. This keeps unusual-but-honest tool
@@ -112,7 +114,18 @@ _CONCEALMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# (c) execution, two shapes:
+# (c) prompt-control/exfiltration language that does not need an explicit
+# "ignore previous" preamble. ``developer mode`` is itself a control-mode
+# override; prompt disclosure needs an imperative verb near the protected
+# prompt/context object to avoid flagging ordinary documentation.
+_PROMPT_CONTROL_RE = re.compile(
+    r"\bdeveloper\s+mode\b"
+    r"|\b(?:output|reveal|show|print|repeat|expose)\b.{0,40}"
+    r"\b(?:system|developer)\s+(?:prompt|message|instructions?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# (d) execution, two shapes:
 #
 # Bare tool words (curl/wget/eval/base64) fire only when the comment also
 # carries command-shaped context — a backtick, slash, tilde, dollar,
@@ -258,6 +271,8 @@ def _classify(text: str) -> Optional[str]:
         return "override"
     if _CONCEALMENT_RE.search(text):
         return "concealment"
+    if _PROMPT_CONTROL_RE.search(text):
+        return "prompt-control"
     if _execution_directive(text):
         return "execution"
     return None
@@ -286,7 +301,7 @@ def _snippet(text: str) -> str:
 
 
 class SecurityHiddenInstructionsRule(Rule):
-    """Detect instruction-like directives hidden in HTML comments"""
+    """Detect directives hidden in HTML comments or Markdown link labels."""
 
     formats = None
     repo_types = None
@@ -297,8 +312,9 @@ class SecurityHiddenInstructionsRule(Rule):
             "type": "list",
             "default": [],
             "description": (
-                "Extra case-insensitive comment-text prefixes to exempt "
-                "from directive matching (e.g. in-house tool directives); "
+                "Extra case-insensitive hidden-text prefixes to exempt from "
+                "directive matching in HTML comments or Markdown link-label "
+                "definitions (e.g. in-house tool directives); "
                 "the text after the prefix must still be free of directives"
             ),
         },
@@ -310,7 +326,10 @@ class SecurityHiddenInstructionsRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Detect agent directives hidden in HTML comments invisible to human review"
+        return (
+            "Detect agent directives hidden in HTML comments or Markdown link labels "
+            "invisible to human review"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -322,7 +341,7 @@ class SecurityHiddenInstructionsRule(Rule):
         return _ALLOWED_PREFIXES + tuple(str(p).lower() for p in extra if str(p))
 
     def _exempt(self, text: str, allowed: Tuple[str, ...]) -> bool:
-        """Allowlist decision for one comment's stripped inner text."""
+        """Allowlist one HTML comment or Markdown link-label definition."""
         if _pragma_exempt(text):
             return True
         lowered = text.lower()
@@ -387,13 +406,74 @@ class SecurityHiddenInstructionsRule(Rule):
             )
         return None
 
+    def _hidden_link_label_violations(self, cf, allowed: Tuple[str, ...]) -> List[RuleViolation]:
+        """Scan text stored in invisible CommonMark reference definitions.
+
+        markdown-it omits link-reference definitions from the rendered token
+        stream but retains normalized labels, destinations, titles, and source
+        lines in its parse environment, including duplicate definitions.
+        """
+        violations = []
+        for definition in cf.markdown.reference_definitions():
+            parts = [
+                part.strip()
+                for part in (
+                    definition.label,
+                    unquote(definition.href),
+                    definition.title or "",
+                )
+                if part.strip()
+            ]
+            text = " ".join(parts)
+            family = _classify(text)
+            if family is None:
+                continue
+
+            # A configured prefix may exempt a directive-bearing component,
+            # but it must not hide a directive split across components. Only
+            # exempt when every component that classifies is independently
+            # allowed and the remaining components are benign together.
+            part_results = [(part, _classify(part)) for part in parts]
+            classified_parts = [
+                (part, part_family, self._exempt(part, allowed))
+                for part, part_family in part_results
+                if part_family is not None
+            ]
+            if classified_parts and all(exempt for _part, _family, exempt in classified_parts):
+                residual = " ".join(
+                    part for part, part_family in part_results if part_family is None
+                )
+                if _classify(residual) is None:
+                    continue
+            text = next(
+                (part for part, _family, exempt in classified_parts if not exempt),
+                text,
+            )
+            violations.append(
+                self.violation(
+                    f"Hidden {family} instruction in Markdown link label: "
+                    f'"{_snippet(text)}" — link-reference definitions are '
+                    "invisible in rendered markdown but agents read them",
+                    block=cf,
+                    line=definition.body_line_start,
+                )
+            )
+        return violations
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         allowed = self._allowed_prefixes()
         violations = []
         for cf in gather_all_content_blocks(context):
             body = cf.read_body(strip_code_blocks=False)
-            # C-speed gate: skip the AST walk when no comment can exist.
-            if not body or "<!--" not in body:
+            if not body:
+                continue
+            # Cheap broad gate before Markdown parsing. Every reference
+            # definition is invisible in rendered Markdown, regardless of its
+            # label or whether a directive is stored in its destination/title.
+            if "[" in body and "]:" in body:
+                violations.extend(self._hidden_link_label_violations(cf, allowed))
+            # C-speed gate: skip the HTML-comment AST walk when none exists.
+            if "<!--" not in body:
                 continue
             # The markdown AST only yields real comment tokens — an HTML
             # comment shown inside a fenced code block is fence content,

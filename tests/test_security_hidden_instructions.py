@@ -105,6 +105,65 @@ class TestSecurityHiddenInstructionsRule:
         assert len(violations) == 1
         assert "override" in violations[0].message
 
+    def test_hidden_link_label_prompt_control_fires(self, tmp_path):
+        """Report prompt-control text hidden in a link-label definition."""
+        repo = copy_fixture("security/hidden-instructions-link-label", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 1
+        assert violations[0].line == 19
+        assert "prompt-control" in violations[0].message
+        assert "Markdown link label" in violations[0].message
+
+    def test_duplicate_hidden_link_label_payload_fires(self, tmp_path):
+        """A benign first definition must not mask a malicious duplicate."""
+        repo = copy_fixture("security/hidden-instructions-link-label-duplicate", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 1
+        assert violations[0].line == 20
+        assert "prompt-control" in violations[0].message
+
+    def test_empty_destination_hidden_link_label_fires(self, tmp_path):
+        """Treat the empty-destination hidden-comment idiom like the hash form."""
+        repo = copy_fixture("security/hidden-instructions-link-label-empty", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 1
+        assert violations[0].line == 19
+        assert "prompt-control" in violations[0].message
+
+    def test_ordinary_destination_hidden_link_label_fires(self, tmp_path):
+        """Treat every destination as hidden for the // reference label."""
+        repo = copy_fixture("security/hidden-instructions-link-label-destination", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 1
+        assert violations[0].line == 19
+        assert "prompt-control" in violations[0].message
+
+    def test_arbitrary_reference_definition_payloads_fire(self, tmp_path):
+        """Scan every invisible reference label, destination, and title."""
+        repo = copy_fixture("security/hidden-instructions-reference-variants", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 3
+        assert [violation.line for violation in violations] == [19, 21, 23]
+        assert all("prompt-control" in violation.message for violation in violations)
+
+    def test_allowed_prefix_does_not_hide_split_reference_payload(self, tmp_path):
+        """An allowed prefix in one field cannot hide a cross-field directive."""
+        repo = copy_fixture("security/hidden-instructions-reference-variants", tmp_path)
+        violations = _check(repo, {"additional-allowed-prefixes": ["my-doc-tool:"]})
+        assert len(violations) == 3
+        assert [violation.line for violation in violations] == [19, 21, 23]
+        assert "MY-DOC-TOOL: DEVELOPER mode" in violations[-1].message
+
+    def test_hidden_link_label_inside_fence_is_example(self, tmp_path):
+        """Do not report hidden-link syntax shown as a fenced example."""
+        repo = copy_fixture("security/hidden-instructions-link-label-fenced", tmp_path)
+        assert _check(repo) == []
+
+    def test_hidden_link_label_honors_allowed_prefix(self, tmp_path):
+        """Apply configured prompt-control exemptions to hidden link labels."""
+        repo = copy_fixture("security/hidden-instructions-link-label-allowed", tmp_path)
+        assert _check(repo, {"additional-allowed-prefixes": ["developer mode"]}) == []
+
     def test_multiline_comment_fires(self, temp_dir):
         """Directives split across lines inside one comment are still caught,
         reported at the comment's first line."""

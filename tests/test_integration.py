@@ -2675,10 +2675,10 @@ class TestSafeAutofixIdempotency:
     EXPECTED_SAFE_VIOLATIONS = {
         "agent-frontmatter": 3,
         "agentskill-name": 4,
-        "agentskill-valid": 6,
+        "agentskill-valid": 7,
         "command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
-        "skill-frontmatter": 3,
+        "skill-frontmatter": 4,
     }
 
     def test_fixture_violation_counts(self, tmp_path):
@@ -2745,6 +2745,7 @@ class TestSafeAutofixIdempotency:
             "no-desc-",
             "no-name-",
             "missing-name/",
+            "nested-name/",
             # Replacing a multi-line falsy ``name:`` value collapses the
             # continuation line; inserting a missing top-level name adds one.
             "multiline-name/",

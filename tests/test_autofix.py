@@ -3,6 +3,7 @@ Tests for the autofix framework infrastructure
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -22,6 +23,16 @@ from skillsaw.rules.builtin.skills import SkillFrontmatterRule
 from skillsaw.rules.builtin.agents import AgentFrontmatterRule
 from skillsaw.rules.builtin.command_format import CommandNamingRule, CommandFrontmatterRule
 from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def copy_fixture(name, tmp_path):
+    """Copy a static repository fixture while preserving symlink behavior."""
+    src = FIXTURES / name
+    dst = tmp_path / name.replace("/", "_")
+    shutil.copytree(src, dst, symlinks=True)
+    return dst
 
 
 class NoFixRule(Rule):
@@ -510,6 +521,19 @@ class TestSkillFixBothFieldsMissing:
         assert "description: " in fixes[0].fixed_content
         assert "name: my-skill" in fixes[0].fixed_content
 
+    @pytest.mark.parametrize(
+        "fixture_name",
+        ["skill-top-level-nested", "skill-top-level-displayname", "skill-top-level-note"],
+    )
+    def test_skill_fix_uses_top_level_keys(self, tmp_path, fixture_name):
+        """Nested keys must not satisfy required top-level skill fields."""
+        plugin_dir = copy_fixture(f"autofix/{fixture_name}", tmp_path)
+        context = RepositoryContext(plugin_dir)
+        rule = SkillFrontmatterRule()
+        fixes = rule.fix(context, rule.check(context))
+        assert len(fixes) == 1
+        assert "\nname: my-skill\n" in fixes[0].fixed_content
+
 
 class TestAgentFixBothFieldsMissing:
     """Regression: when both name and description are missing from agent
@@ -574,6 +598,19 @@ class TestAgentFixBothFieldsMissing:
         assert len(fixes) == 1
         assert "description: " in fixes[0].fixed_content
         assert "name: my-agent" in fixes[0].fixed_content
+
+    @pytest.mark.parametrize(
+        "fixture_name",
+        ["agent-top-level-nested", "agent-top-level-displayname", "agent-top-level-note"],
+    )
+    def test_agent_fix_uses_top_level_keys(self, tmp_path, fixture_name):
+        """Nested and lookalike keys must not satisfy an agent's top-level name."""
+        plugin_dir = copy_fixture(f"autofix/{fixture_name}", tmp_path)
+        context = RepositoryContext(plugin_dir)
+        rule = AgentFrontmatterRule()
+        fixes = rule.fix(context, rule.check(context))
+        assert len(fixes) == 1
+        assert "\nname: my-agent\n" in fixes[0].fixed_content
 
 
 def _make_plugin(tmp_path, plugin_name, command_files):

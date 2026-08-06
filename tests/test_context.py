@@ -19,6 +19,7 @@ from skillsaw.context import (
     HAS_CLAUDE_MD,
     HAS_CODERABBIT,
 )
+from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 
 
 def test_single_plugin_detection(valid_plugin):
@@ -228,6 +229,30 @@ def test_backward_compatibility_with_plugins_dir(marketplace_repo):
     names = [context.get_plugin_name(p) for p in context.plugins]
     assert "plugin-one" in names
     assert "plugin-two" in names
+
+
+def test_plugins_dir_discovers_hooks_only_plugin(tmp_path):
+    """All component markers accepted by _is_valid_plugin_dir are discoverable."""
+    repo = tmp_path / "repo"
+    hooks = repo / "plugins" / "hooks-only" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "hooks.json").write_text('{"hooks": {}}')
+
+    context = RepositoryContext(repo)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert context.plugins == [repo / "plugins" / "hooks-only"]
+
+
+def test_plugins_dir_discovers_marker_only_plugin(tmp_path):
+    """A missing manifest remains discoverable for plugin-json-required."""
+    repo = tmp_path / "repo"
+    marker = repo / "plugins" / "marker-only" / ".claude-plugin"
+    marker.mkdir(parents=True)
+
+    context = RepositoryContext(repo)
+    assert context.repo_type == RepositoryType.MARKETPLACE
+    assert context.plugins == [repo / "plugins" / "marker-only"]
+    assert [v.message for v in PluginJsonRequiredRule({}).check(context)] == ["Missing plugin.json"]
 
 
 def test_escaping_plugins_dir_child_is_dropped_with_a_warning(tmp_path, caplog):
