@@ -2142,12 +2142,13 @@ class TestDescriptionRouting:
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
 
-        assert len(vs) == 11
+        assert len(vs) == 12
         assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
-        assert sum("when to use" in v["message"] for v in vs) == 6
+        assert sum("when to use" in v["message"] for v in vs) == 7
         assert sum("restates the name" in v["message"] for v in vs) == 3
         assert sum("Description is empty" in v["message"] for v in vs) == 2
         assert any("sdk-guide" in v["file_path"] for v in vs)
+        assert any("oauth-explainer" in v["file_path"] for v in vs)
         assert any("user-event-explainer" in v["file_path"] for v in vs)
         assert any("header-builder" in v["file_path"] for v in vs)
         assert any("generic-command" in v["file_path"] for v in vs)
@@ -2159,6 +2160,32 @@ class TestDescriptionRouting:
 
         rerun = run_lint(repo, "--rule", "description-routing")
         assert self._routing_violations(rerun) == vs
+
+    def test_accepts_explicit_trigger_phrase_variants(self, tmp_path):
+        """Accept active, passive, and restrictive selection clauses."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = run_lint(repo, "--rule", "description-routing")
+        routing_violations = self._routing_violations(result)
+        expected_clean = {
+            "active-invoke-whenever",
+            "active-use-for",
+            "active-use-to",
+            "modal-after-em-dash",
+            "passive-must-whenever",
+            "passive-should-before",
+            "use-only-when",
+        }
+        discovered = {Path(path).name for path in result["out"]["stats"]["skills"]}
+        flagged = {
+            path.parent.name if path.name == "SKILL.md" else path.stem
+            for violation in routing_violations
+            for path in [Path(violation["file_path"])]
+        }
+
+        assert expected_clean <= discovered
+        assert expected_clean.isdisjoint(flagged)
+        # Subject-matter wording remains distinct from a selection clause.
+        assert {"explainer", "oauth-explainer", "sdk-guide", "user-event-explainer"} <= flagged
 
     def test_codex_only_command_without_description_is_reported(self, tmp_path):
         """Keep the always-on presence check active without Claude provenance."""
@@ -2196,7 +2223,7 @@ class TestDescriptionRouting:
         ("option", "message", "expected_count"),
         [
             ("require-trigger-phrasing", "when to use", 5),
-            ("flag-name-restatement", "restates the name", 8),
+            ("flag-name-restatement", "restates the name", 9),
         ],
     )
     def test_subchecks_can_be_disabled_independently(
@@ -2216,6 +2243,78 @@ class TestDescriptionRouting:
         routing_violations = self._routing_violations(r)
         assert len(routing_violations) == expected_count
         assert not any(message in v["message"] for v in routing_violations)
+
+    def test_user_only_skills_are_skipped_only_for_exact_boolean_true(self, tmp_path):
+        """Default skipping is limited to the actual YAML boolean true."""
+        repo = copy_fixture("description-routing-user-only", tmp_path)
+
+        result = run_lint(repo, "--rule", "description-routing")
+        routing_violations = self._routing_violations(result)
+        skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
+        checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
+
+        assert checked_skills == {
+            "field-absent",
+            "field-false",
+            "field-numeric-one",
+            "field-string-true",
+        }
+        assert all("when to use" in v["message"] for v in skill_violations)
+        assert any("agents/field-true.md" in v["file_path"] for v in routing_violations)
+        assert any("commands/field-true.md" in v["file_path"] for v in routing_violations)
+
+    def test_user_only_skills_can_be_checked_by_configuration(self, tmp_path):
+        """The opt-in checks a boolean-true user-only skill normally."""
+        repo = copy_fixture("description-routing-user-only", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  description-routing:\n    check-user-only-skills: true\n",
+            encoding="utf-8",
+        )
+
+        result = run_lint(repo, config=config)
+        routing_violations = self._routing_violations(result)
+        skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
+        checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
+
+        assert checked_skills == {
+            "field-absent",
+            "field-false",
+            "field-numeric-one",
+            "field-string-true",
+            "field-true",
+            "field-true-empty",
+        }
+        assert all(
+            "when to use" in v["message"]
+            for v in skill_violations
+            if "field-true-empty" not in v["file_path"]
+        )
+        assert any(
+            "field-true-empty" in v["file_path"] and "Description is empty" in v["message"]
+            for v in skill_violations
+        )
+
+    def test_quoted_false_config_does_not_check_user_only_skills(self, tmp_path):
+        """A truthy string does not accidentally enable the boolean opt-in."""
+        repo = copy_fixture("description-routing-user-only", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            'rules:\n  description-routing:\n    check-user-only-skills: "false"\n',
+            encoding="utf-8",
+        )
+
+        result = run_lint(repo, config=config)
+        routing_violations = self._routing_violations(result)
+        skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
+        checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
+
+        assert checked_skills == {
+            "field-absent",
+            "field-false",
+            "field-numeric-one",
+            "field-string-true",
+        }
 
 
 class TestUnlinkedInternalReferenceAutofix:
