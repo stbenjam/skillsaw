@@ -1,0 +1,5 @@
+{
+  "name": "prose-mention",
+  "version": "0.9.0",
+  "description": "Our manifest format is loosely based on https://agent-plugins.org/schemas/1.0.0/plugin.schema.json but predates it.",
+}

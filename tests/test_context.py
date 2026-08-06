@@ -138,6 +138,50 @@ def test_legacy_root_plugin_json_does_not_claim_agent_plugins(temp_dir):
     assert context.agent_plugins == []
 
 
+def test_root_agent_plugin_keeps_empty_plugins_marketplace_inference(temp_dir):
+    """A root Agent Plugins package does not explain an empty plugins/ dir.
+
+    The historical MARKETPLACE inference for a bare plugins/ directory is
+    suppressed only by claims that live under plugins/* itself.
+    """
+    (temp_dir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "portable-plugin",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (temp_dir / "plugins").mkdir()
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENT_PLUGIN in context.repo_types
+    assert RepositoryType.MARKETPLACE in context.repo_types
+
+
+def test_declaring_plugins_child_suppresses_marketplace_inference(temp_dir):
+    """A portable package under plugins/* explains the directory, so the
+    Claude MARKETPLACE inference stands down."""
+    member = temp_dir / "plugins" / "member"
+    member.mkdir(parents=True)
+    (member / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "collection-member",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENT_PLUGIN in context.repo_types
+    assert RepositoryType.MARKETPLACE not in context.repo_types
+
+
 def test_flat_structure_discovery(flat_structure_marketplace):
     """Test discovery of flat structure plugins (source: './')"""
     context = RepositoryContext(flat_structure_marketplace)

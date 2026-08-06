@@ -1,0 +1,9 @@
+{
+  "name": "legacy-tooling",
+  "version": "2.3.1",
+  "description": "Historical in-house plugin manifest that references the Agent Plugins schema in nested metadata only.",
+  "metadata": {
+    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    "notes": "Kept for compatibility with an older packaging pipeline."
+  }
+}

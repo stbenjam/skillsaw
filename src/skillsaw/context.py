@@ -486,8 +486,15 @@ class RepositoryContext(RepositoryProvenanceMixin):
             return False
         if not children:
             # An empty plugins/ keeps its historical meaning unless another
-            # ecosystem has positive evidence explaining the directory.
-            return not self.codex_catalog_exists() and not self._agent_plugin_claim_set()
+            # ecosystem has positive evidence explaining the directory. A
+            # portable Agent Plugins claim counts only when it lives under
+            # plugins/ itself — a package declared at the repository root
+            # says nothing about why plugins/ exists.
+            resolved_plugins = safe_resolve(plugins_dir)
+            portable_claims_plugins_dir = resolved_plugins is not None and any(
+                claim.is_relative_to(resolved_plugins) for claim in self._agent_plugin_claim_set()
+            )
+            return not self.codex_catalog_exists() and not portable_claims_plugins_dir
         return any(
             not (provenance := self.provenance(item)).ecosystems or provenance.claude
             for item in children

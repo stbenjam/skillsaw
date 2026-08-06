@@ -1,5 +1,7 @@
 """Agent Plugins v1 repository detection and lint-tree routing."""
 
+import json
+
 from skillsaw.blocks import (
     AgentPluginMcpBlock,
     HooksBlock,
@@ -93,6 +95,85 @@ class TestAgentPluginDetection:
         assert RepositoryType.AGENT_PLUGIN not in context.repo_types
         assert context.agent_plugins == []
 
+    def test_nested_schema_in_valid_json_is_not_detection_evidence(self, tmp_path):
+        """A parseable manifest is judged solely by its top-level $schema.
+
+        A schema URI nested under ``metadata`` must not claim the repository,
+        and the misclaim must not swallow repo-wide skill discovery.
+        """
+        repo = copy_fixture("agent-plugins/legacy-nested-schema", tmp_path)
+        context = RepositoryContext(repo)
+
+        assert RepositoryType.AGENT_PLUGIN not in context.repo_types
+        assert context.agent_plugins == []
+        assert context.lint_tree.find(AgentPluginConfigNode) == []
+        skill_paths = [block.path for block in context.lint_tree.find(SkillBlock)]
+        assert repo / "examples" / "demo" / "SKILL.md" in skill_paths
+
+    def test_malformed_manifest_prose_mention_is_not_detection_evidence(self, tmp_path):
+        """The raw-content fallback needs the property spelling, not a URI
+        merely mentioned in description text."""
+        repo = copy_fixture("agent-plugins/malformed-prose-schema", tmp_path)
+        context = RepositoryContext(repo)
+
+        assert RepositoryType.AGENT_PLUGIN not in context.repo_types
+        assert context.agent_plugins == []
+
+    def test_symlinked_plugins_dir_is_not_discovered(self, tmp_path):
+        """A plugins/ symlink escaping the lint root contributes no members."""
+        outside = tmp_path / "outside" / "member"
+        outside.mkdir(parents=True)
+        (outside / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                    "name": "external-member",
+                }
+            ),
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "README.md").write_text("# Plugin collection\n", encoding="utf-8")
+        (repo / "plugins").symlink_to(tmp_path / "outside", target_is_directory=True)
+
+        context = RepositoryContext(repo)
+
+        assert context.agent_plugins == []
+        assert RepositoryType.AGENT_PLUGIN not in context.repo_types
+
+    def test_symlinked_collection_child_is_skipped_beside_real_sibling(self, tmp_path):
+        """Per-child containment drops only the escaping member."""
+        outside = tmp_path / "outside-member"
+        outside.mkdir()
+        (outside / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                    "name": "external-member",
+                }
+            ),
+            encoding="utf-8",
+        )
+        repo = tmp_path / "repo"
+        real = repo / "plugins" / "real"
+        real.mkdir(parents=True)
+        (real / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                    "name": "real-member",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / "plugins" / "escaping").symlink_to(outside, target_is_directory=True)
+
+        context = RepositoryContext(repo)
+
+        assert context.agent_plugins == [real]
+        assert RepositoryType.AGENT_PLUGIN in context.repo_types
+
 
 class TestExplicitAgentPluginType:
     def test_forced_missing_manifest_does_not_attach_claude_configs(self, tmp_path):
@@ -158,6 +239,36 @@ class TestExplicitAgentPluginType:
         matching = [msg for msg in all_messages if "plugin.json" in msg]
         assert any(has_location(message) for message in matching)
 
+    def test_forced_type_validates_collection_members_without_root_error(self, tmp_path):
+        """``--type agent-plugin`` on a plugins/* collection scans the members.
+
+        Forcing the type on a repository whose packages live under plugins/*
+        must validate each member instead of fabricating a "missing
+        plugin.json" finding for the repository root.
+        """
+        repo = copy_fixture("agent-plugins/collection", tmp_path)
+        context = RepositoryContext(
+            repo,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        assert context.agent_plugins == [
+            repo / "plugins" / "canonical",
+            repo / "plugins" / "legacy",
+        ]
+
+        findings = lint_rules(
+            repo,
+            MANIFEST_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+        assert all(finding.file_path != repo / "plugin.json" for finding in findings)
+        # The member that could not self-identify is still validated.
+        legacy_manifest = repo / "plugins" / "legacy" / "plugin.json"
+        legacy_findings = [f for f in findings if f.file_path == legacy_manifest]
+        assert legacy_findings
+        assert any("schema" in message for message in messages_lower(legacy_findings))
+
     def test_forced_type_builds_node_for_codex_only_repo(self, tmp_path):
         repo = copy_fixture("agent-plugins/codex-only", tmp_path)
         context = RepositoryContext(
@@ -200,6 +311,26 @@ def test_declared_package_keeps_containment_under_override(tmp_path):
     assert [block.path for block in context.lint_tree.find(SkillRefBlock)] == [
         repo / "skills" / "valid" / "references" / "inside.md"
     ]
+
+
+def test_root_package_keeps_repo_wide_skill_discovery(tmp_path):
+    """A root Agent Plugins declaration must not swallow the repository walk.
+
+    Only the package's skills/ component keeps fixed one-level semantics;
+    SKILL.md directories elsewhere in the repository stay discovered, and
+    skills/* entries are not duplicated between the two discovery paths.
+    """
+    repo = copy_fixture("agent-plugins/root-package-agentskills", tmp_path)
+    context = RepositoryContext(repo)
+
+    assert RepositoryType.AGENT_PLUGIN in context.repo_types
+    assert RepositoryType.AGENTSKILLS in context.repo_types
+    skill_paths = [block.path for block in context.lint_tree.find(SkillBlock)]
+    assert repo / "examples" / "demo" / "SKILL.md" in skill_paths
+    assert repo / "skills" / "release-audit" / "SKILL.md" in skill_paths
+    assert repo / "skills" / "ignored" / "deeper" / "SKILL.md" not in skill_paths
+    assert len(skill_paths) == 2
+    assert len(context.skills) == len(set(context.skills)) == 2
 
 
 def test_dual_ecosystem_keeps_both_types_without_duplicate_skills(tmp_path):

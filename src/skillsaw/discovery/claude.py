@@ -236,11 +236,23 @@ def discover_skills(
     ) -> None:
         """Walk one skill collection without crossing its claim boundary."""
         resolved_parent = safe_resolve(parent)
+        skip_subtrees: Set[Path] = set()
         if resolved_parent is not None and resolved_parent in portable_immediate_only:
-            # Agent Plugins has a fixed, one-level skill scan below; the
-            # generic recursive walk must not pull extension-private or
-            # otherwise nested SKILL.md files into the portable package.
-            return
+            if visited is not None:
+                # Mid-walk descent into a portable package: Agent Plugins has
+                # a fixed, one-level skill scan below; the generic recursive
+                # walk must not pull extension-private or otherwise nested
+                # SKILL.md files into the portable package.
+                return
+            # The walk *starts* at a portable package root — the package is
+            # the repository (or collection) root itself. Suppressing the
+            # whole walk would silently drop every SKILL.md outside the
+            # package's skills/ component, so only that component keeps the
+            # fixed one-level semantics (the dedicated scan below owns it)
+            # while the rest of the tree keeps recursive discovery.
+            skills_component = safe_resolve(parent / "skills")
+            if skills_component is not None:
+                skip_subtrees.add(skills_component)
         if visited is None:
             visited = set()
             if boundary is None:
@@ -252,7 +264,7 @@ def discover_skills(
                 resolved = safe_resolve(item)
                 if resolved is None or resolved in discovered or resolved in visited:
                     continue
-                if resolved in portable_immediate_only:
+                if resolved in portable_immediate_only or resolved in skip_subtrees:
                     continue
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue

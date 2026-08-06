@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "acme.release-tools",
+  "version": "1.4.0",
+  "description": "Review release evidence and share worked examples of the review flow."
+}
