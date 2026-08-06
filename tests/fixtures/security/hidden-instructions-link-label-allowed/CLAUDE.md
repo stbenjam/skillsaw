@@ -1,0 +1,3 @@
+# Project instructions
+
+[//]: # (developer mode)

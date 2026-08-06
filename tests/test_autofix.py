@@ -3,6 +3,7 @@ Tests for the autofix framework infrastructure
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -22,6 +23,8 @@ from skillsaw.rules.builtin.skills import SkillFrontmatterRule
 from skillsaw.rules.builtin.agents import AgentFrontmatterRule
 from skillsaw.rules.builtin.command_format import CommandNamingRule, CommandFrontmatterRule
 from skillsaw.rules.builtin.utils import invalidate_read_caches
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class NoFixRule(Rule):
@@ -511,18 +514,13 @@ class TestSkillFixBothFieldsMissing:
         assert "name: my-skill" in fixes[0].fixed_content
 
     @pytest.mark.parametrize(
-        "misleading_field",
-        ["metadata:\n  name: nested", "displayname: example", 'note: "name: example"'],
+        "fixture_name",
+        ["skill-top-level-nested", "skill-top-level-displayname", "skill-top-level-note"],
     )
-    def test_skill_fix_uses_top_level_keys(self, temp_dir, misleading_field):
+    def test_skill_fix_uses_top_level_keys(self, temp_dir, fixture_name):
         """Nested keys must not satisfy required top-level skill fields."""
         plugin_dir = temp_dir / "test-plugin"
-        (plugin_dir / ".claude-plugin").mkdir(parents=True)
-        (plugin_dir / ".claude-plugin" / "plugin.json").write_text('{"name":"test"}')
-        skill_dir = plugin_dir / "skills" / "my-skill"
-        skill_dir.mkdir(parents=True)
-        skill_md = skill_dir / "SKILL.md"
-        skill_md.write_text(f"---\n{misleading_field}\ndescription: useful\n---\n")
+        shutil.copytree(FIXTURES / "autofix" / fixture_name, plugin_dir)
         context = RepositoryContext(plugin_dir)
         rule = SkillFrontmatterRule()
         fixes = rule.fix(context, rule.check(context))
