@@ -146,8 +146,9 @@ two call sites probing independently is how a directory falls between
 per-ecosystem attach paths and loses its content silently.
 
 - **Discovery is state-free and lives in `src/skillsaw/discovery/`**
-  (`discovery/codex.py`): functions take a root path and callbacks and
-  return data, holding no caches and importing nothing from `context`.
+  (`claude.py`, `codex.py`, `detect.py`, and `excludes.py`): functions take
+  a root path and callbacks and return data, holding no caches and importing
+  nothing from `context`.
   `RepositoryContext` is the stateful orchestrator — its methods wrap
   the discovery functions with the per-context caches and render the
   provenance verdicts over the evidence they gather.
@@ -182,7 +183,7 @@ per-ecosystem attach paths and loses its content silently.
 **Adding an ecosystem** (the next Codex): put its discovery leg — the
 state-free plugin/manifest walks, catalog enumeration, local-source
 resolution, and install-location helpers — in a new
-`src/skillsaw/discovery/<ecosystem>.py` beside `discovery/codex.py`;
+`src/skillsaw/discovery/<ecosystem>.py` beside the existing discovery modules;
 add its evidence probe to `RepositoryContext.provenance()` and its
 context wrappers (caching, `--type` gating) beside
 `_codex_catalog_files()`; add its config-file cluster to the single

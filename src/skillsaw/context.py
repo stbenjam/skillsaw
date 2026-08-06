@@ -183,6 +183,7 @@ class RepositoryContext:
         self.root_path = root_path.resolve()
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
+        self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
@@ -288,7 +289,17 @@ class RepositoryContext:
 
     def is_path_excluded(self, path: Path) -> bool:
         """Check if a path matches any exclude pattern."""
-        return path_matches_patterns(path, self.root_path, self.exclude_patterns)
+        return self.matches_patterns(path, self.exclude_patterns)
+
+    def pattern_variants(self, pattern: str) -> Tuple[str, ...]:
+        """Expand one pattern once for this repository context."""
+        if pattern not in self._pattern_variants_cache:
+            self._pattern_variants_cache[pattern] = _pattern_variants(pattern)
+        return self._pattern_variants_cache[pattern]
+
+    def matches_patterns(self, path: Path, patterns: List[str]) -> bool:
+        """Match a path with pattern variants cached by this context."""
+        return path_matches_patterns(path, self.root_path, patterns, self.pattern_variants)
 
     def apm_compiled_roots(self) -> Set[Path]:
         """Resolved compiled-output directories to skip when APM is present.

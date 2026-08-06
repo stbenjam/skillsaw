@@ -35,6 +35,7 @@ def instruction_formats(
     """Return instruction-format evidence labels from non-excluded markers."""
 
     def marker(*parts: str, is_dir: bool = False) -> bool:
+        """Test one non-excluded repository marker."""
         path = root.joinpath(*parts)
         if is_excluded(path):
             return False
@@ -59,10 +60,12 @@ def instruction_formats(
 
 
 def has_apm(root: Path) -> bool:
+    """Return whether the repository declares an APM project."""
     return (root / ".apm").is_dir() or (root / "apm.yml").is_file()
 
 
 def has_skill_md_recursive(root: Path, should_skip: Callable[[Path], bool]) -> bool:
+    """Return whether a recursive, guarded walk finds an Agent Skill."""
     try:
         for item in root.iterdir():
             if should_skip(item):
@@ -77,6 +80,7 @@ def has_skill_md_recursive(root: Path, should_skip: Callable[[Path], bool]) -> b
 
 
 def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool:
+    """Return whether the repository contains an Agent Skill entrypoint."""
     if (root / "SKILL.md").exists():
         return True
     for rel in (".apm/skills", ".claude/skills", ".github/skills", ".agents/skills"):
@@ -87,6 +91,7 @@ def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool
 
 
 def is_dot_claude(root: Path, apm: bool) -> bool:
+    """Return whether a source-owned ``.claude`` directory is present."""
     if apm:
         return False
     claude = root if root.name == ".claude" else root / ".claude"
@@ -96,6 +101,7 @@ def is_dot_claude(root: Path, apm: bool) -> bool:
 
 
 def is_promptfoo_repo(root: Path, walk_files: Callable[[Path], object]) -> bool:
+    """Return whether repository files include a Promptfoo configuration."""
     if any(
         path.name.startswith("promptfooconfig") and path.suffix in (".yaml", ".yml")
         for path in walk_files(root)

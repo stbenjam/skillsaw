@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 from skillsaw.paths import safe_resolve
 
@@ -17,8 +17,13 @@ def pattern_variants(pattern: str) -> Tuple[str, ...]:
     return tuple(sorted(variants))
 
 
-def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
-    """Return whether *path*, relative to resolved *root*, matches a pattern."""
+def path_matches_patterns(
+    path: Path,
+    root: Path,
+    patterns: List[str],
+    variants_for: Callable[[str], Tuple[str, ...]] = pattern_variants,
+) -> bool:
+    """Match *path* using a pure or caller-owned pattern expander."""
     if not patterns:
         return False
     try:
@@ -29,7 +34,5 @@ def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
     except ValueError:
         return False
     return any(
-        fnmatch.fnmatch(rel, variant)
-        for pattern in patterns
-        for variant in pattern_variants(pattern)
+        fnmatch.fnmatch(rel, variant) for pattern in patterns for variant in variants_for(pattern)
     )

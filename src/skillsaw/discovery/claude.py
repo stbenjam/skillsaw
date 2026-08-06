@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PluginDiscovery:
+    """Claude plugin paths plus metadata collected during discovery."""
+
     paths: List[Path] = field(default_factory=list)
     metadata: Dict[Path, Dict[str, Any]] = field(default_factory=dict)
     entries: Dict[Path, Dict[str, Any]] = field(default_factory=dict)
@@ -23,6 +25,7 @@ class PluginDiscovery:
 
 
 def load_marketplace(root: Path) -> Optional[Dict[str, Any]]:
+    """Load the root Claude marketplace mapping when it is readable."""
     path = root / ".claude-plugin" / "marketplace.json"
     try:
         with path.open() as stream:
@@ -33,6 +36,7 @@ def load_marketplace(root: Path) -> Optional[Dict[str, Any]]:
 
 
 def marketplace_plugin_root(data: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return a non-empty marketplace ``pluginRoot`` value, if present."""
     metadata = data.get("metadata") if data else None
     value = metadata.get("pluginRoot") if isinstance(metadata, dict) else None
     return value if isinstance(value, str) and value else None
@@ -41,6 +45,7 @@ def marketplace_plugin_root(data: Optional[Dict[str, Any]]) -> Optional[str]:
 def resolve_plugin_source(
     root: Path, data: Optional[Dict[str, Any]], source: Any, entry: Dict[str, Any]
 ) -> Optional[Path]:
+    """Resolve a contained local Claude marketplace source, if any."""
     name = entry.get("name", "unknown")
     if isinstance(source, str):
         candidate = safe_resolve(root / source)
@@ -69,6 +74,7 @@ def resolve_plugin_source(
 
 
 def is_valid_plugin_dir(path: Path, entry: Optional[Dict[str, Any]] = None) -> bool:
+    """Return whether a directory has plugin content or relaxed metadata."""
     markers = (
         path / ".claude-plugin" / "plugin.json",
         path / "commands",
@@ -130,10 +136,12 @@ def discover_plugins(
     codex_enabled: bool,
     marketplace_data: Optional[Dict[str, Any]],
 ) -> PluginDiscovery:
+    """Discover Claude-style plugin roots and marketplace metadata."""
     result = PluginDiscovery()
     seen: Set[Path] = set()
 
     def add(path: Path) -> None:
+        """Append a resolved plugin path once."""
         resolved = safe_resolve(path)
         if resolved is not None and resolved not in seen:
             result.paths.append(path)
@@ -147,23 +155,22 @@ def discover_plugins(
         plugins_dir = root / "plugins"
         if plugins_dir.is_dir():
             try:
-                children = plugins_dir.iterdir()
+                for item in plugins_dir.iterdir():
+                    if not item.is_dir() or item.name.startswith("."):
+                        continue
+                    if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
+                        continue
+                    if contained_resolve(item, root) is None:
+                        logger.warning(
+                            "Plugin '%s' source '%s' escapes repository root. Skipping.",
+                            item.name,
+                            f"./plugins/{item.name}",
+                        )
+                        result.escaped.append(item)
+                        continue
+                    add(item)
             except OSError:
-                children = ()
-            for item in children:
-                if not item.is_dir() or item.name.startswith("."):
-                    continue
-                if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
-                    continue
-                if contained_resolve(item, root) is None:
-                    logger.warning(
-                        "Plugin '%s' source '%s' escapes repository root. Skipping.",
-                        item.name,
-                        f"./plugins/{item.name}",
-                    )
-                    result.escaped.append(item)
-                    continue
-                add(item)
+                pass
 
         entries = marketplace_data.get("plugins") if marketplace_data else None
         if isinstance(entries, list):
@@ -199,6 +206,7 @@ def discover_skills(
     codex_claims_possible: Callable[[], bool],
     is_codex_only: Callable[[Path], bool],
 ) -> List[Path]:
+    """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
     discovered: Set[Path] = set()
 
@@ -207,6 +215,7 @@ def discover_skills(
         boundary: Optional[Path] = None,
         visited: Optional[Set[Path]] = None,
     ) -> None:
+        """Walk one skill collection without crossing its claim boundary."""
         if visited is None:
             visited = set()
             if boundary is None:
