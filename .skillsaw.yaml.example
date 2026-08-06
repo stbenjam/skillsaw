@@ -416,7 +416,7 @@ rules:
     # hex-entropy-threshold: 3.4
     # hex-ascii-ratio: 0.9
 
-  # Detect agent directives hidden in HTML comments invisible to human review
+  # Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review
   security-hidden-instructions:
     enabled: auto
     severity: warning

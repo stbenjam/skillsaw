@@ -299,7 +299,7 @@ def _snippet(text: str) -> str:
 
 
 class SecurityHiddenInstructionsRule(Rule):
-    """Detect instruction-like directives hidden in HTML comments"""
+    """Detect directives hidden in HTML comments or Markdown link labels."""
 
     formats = None
     repo_types = None
@@ -323,7 +323,10 @@ class SecurityHiddenInstructionsRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Detect agent directives hidden in HTML comments invisible to human review"
+        return (
+            "Detect agent directives hidden in HTML comments or Markdown link labels "
+            "invisible to human review"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -403,9 +406,9 @@ class SecurityHiddenInstructionsRule(Rule):
     def _hidden_link_label_violations(self, cf, allowed: Tuple[str, ...]) -> List[RuleViolation]:
         """Scan CommonMark's invisible ``[//]: # (...)`` link-label idiom.
 
-        markdown-it intentionally omits link-reference definitions from the
-        rendered token stream, so this narrowly recognizes the conventional
-        hidden-comment spelling in raw source and excludes fenced examples.
+        markdown-it omits link-reference definitions from the rendered token
+        stream but retains normalized labels and source lines in its parse
+        environment, including equivalent spellings and duplicate definitions.
         """
         violations = []
         for definition in cf.markdown.reference_definitions():
@@ -435,7 +438,10 @@ class SecurityHiddenInstructionsRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
-            if "[//]:" in body:
+            # Cheap broad gate before Markdown parsing. CommonMark normalizes
+            # whitespace around reference labels, so exact ``[//]:`` spelling
+            # would miss equivalent forms such as ``[// ]:``.
+            if "[" in body and "//" in body and "]:" in body:
                 violations.extend(self._hidden_link_label_violations(cf, allowed))
             # C-speed gate: skip the HTML-comment AST walk when none exists.
             if "<!--" not in body:

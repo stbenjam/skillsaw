@@ -599,6 +599,19 @@ class TestAgentFixBothFieldsMissing:
         assert "description: " in fixes[0].fixed_content
         assert "name: my-agent" in fixes[0].fixed_content
 
+    @pytest.mark.parametrize(
+        "fixture_name",
+        ["agent-top-level-nested", "agent-top-level-displayname", "agent-top-level-note"],
+    )
+    def test_agent_fix_uses_top_level_keys(self, tmp_path, fixture_name):
+        """Nested and lookalike keys must not satisfy an agent's top-level name."""
+        plugin_dir = copy_fixture(f"autofix/{fixture_name}", tmp_path)
+        context = RepositoryContext(plugin_dir)
+        rule = AgentFrontmatterRule()
+        fixes = rule.fix(context, rule.check(context))
+        assert len(fixes) == 1
+        assert "\nname: my-agent\n" in fixes[0].fixed_content
+
 
 def _make_plugin(tmp_path, plugin_name, command_files):
     """Helper: create a minimal plugin with the given command files."""

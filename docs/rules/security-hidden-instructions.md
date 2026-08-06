@@ -3,7 +3,7 @@
 
 # security-hidden-instructions
 
-Detect agent directives hidden in HTML comments invisible to human review
+Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review
 
 | | |
 |---|---|

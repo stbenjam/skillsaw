@@ -8,6 +8,6 @@ Content-validation rules that catch payloads and instructions invisible to human
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - |
-| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments invisible to human review | warning (auto) | - |
+| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - |
 | [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - |
 
