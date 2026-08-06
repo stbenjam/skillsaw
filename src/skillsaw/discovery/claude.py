@@ -212,30 +212,29 @@ def discover_skills(
             if boundary is None:
                 boundary = claim_boundary(parent)
         try:
-            items = parent.iterdir()
+            for item in parent.iterdir():
+                if should_skip(item):
+                    continue
+                resolved = safe_resolve(item)
+                if resolved is None or resolved in discovered or resolved in visited:
+                    continue
+                if boundary is not None and not resolved.is_relative_to(boundary):
+                    continue
+                if (item / "SKILL.md").exists():
+                    if boundary is not None:
+                        entrypoint = safe_resolve(item / "SKILL.md")
+                        if entrypoint is None or not entrypoint.is_relative_to(boundary):
+                            continue
+                    skills.append(item)
+                    discovered.add(resolved)
+                else:
+                    visited.add(resolved)
+                    child_boundary = boundary
+                    if child_boundary is None and codex_claims_possible() and is_codex_only(item):
+                        child_boundary = resolved
+                    walk(item, child_boundary, visited)
         except OSError:
             return
-        for item in items:
-            if should_skip(item):
-                continue
-            resolved = safe_resolve(item)
-            if resolved is None or resolved in discovered or resolved in visited:
-                continue
-            if boundary is not None and not resolved.is_relative_to(boundary):
-                continue
-            if (item / "SKILL.md").exists():
-                if boundary is not None:
-                    entrypoint = safe_resolve(item / "SKILL.md")
-                    if entrypoint is None or not entrypoint.is_relative_to(boundary):
-                        continue
-                skills.append(item)
-                discovered.add(resolved)
-            else:
-                visited.add(resolved)
-                child_boundary = boundary
-                if child_boundary is None and codex_claims_possible() and is_codex_only(item):
-                    child_boundary = resolved
-                walk(item, child_boundary, visited)
 
     if agentskills:
         if (root / "SKILL.md").exists():

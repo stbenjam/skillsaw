@@ -387,6 +387,27 @@ class TestDiscoveryRobustness:
 
 
 class TestSkillDiscoveryRobustness:
+    def test_an_iteration_error_skips_the_unreadable_collection(self, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        real_iterdir = Path.iterdir
+
+        def iterdir(path):
+            if path == repo:
+
+                def fail_during_iteration():
+                    yield from ()
+                    raise OSError("directory disappeared")
+
+                return fail_during_iteration()
+            return real_iterdir(path)
+
+        monkeypatch.setattr(Path, "iterdir", iterdir)
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.AGENTSKILLS})
+
+        assert context.skills == []
+
     def test_a_symlinked_default_skills_dir_is_not_followed(self, tmp_path):
         outside = tmp_path / "outside-skill"
         outside.mkdir()
