@@ -10,7 +10,7 @@ from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, Sk
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _FIRST_PERSON_RE = re.compile(
-    r"(?:^|[.!?]\s+)I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
+    r"(?:^|[.!?,;:]\s+|\n[ \t]*)I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
     r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
 )
 _TRIGGER_MARKERS = (
