@@ -10,14 +10,15 @@ from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, Sk
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _USE_THIS_TRIGGER_RE = re.compile(
-    r"\b(?:use|invoke) this(?: (?:skill|agent))?(?: proactively)? "
+    r"(?:^|[.!?—]\s+)(?:(?:you )?(?:must|should) )?"
+    r"(?:use|invoke) this(?: (?:skill|agent))?(?: proactively)? "
     r"(?:when(?:ever)?|if|before|for|to)\b"
 )
 _PASSIVE_USE_TRIGGER_RE = re.compile(
-    r"(?:^|[.!?]\s+)(?:this (?:skill|agent) )?(?:must|should) be used "
+    r"(?:^|[.!?—]\s+)(?:this (?:skill|agent) )?(?:must|should) be used "
     r"(?:when(?:ever)?|if|before)\b"
 )
-_FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?]\s+)for (?:requests|tasks)\b")
+_FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?—]\s+)for (?:requests|tasks)\b")
 _EXPLANATORY_USER_TRIGGER_RE = re.compile(
     r"\b(?:what happens|what to expect) (?:when (?:the user|users)|if the user)\b"
 )
@@ -92,7 +93,7 @@ class DescriptionRoutingRule(Rule):
                     continue
                 if (
                     block_type is SkillBlock
-                    and not self.config.get("check-user-only-skills", False)
+                    and self.config.get("check-user-only-skills", False) is not True
                     and block.field_value("disable-model-invocation") is True
                 ):
                     continue
