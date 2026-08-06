@@ -313,6 +313,7 @@ rules:
     severity: warning
     # require-trigger-phrasing: true
     # flag-name-restatement: true
+    # check-user-only-skills: false
 
   # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
   hooks-dangerous:

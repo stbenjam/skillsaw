@@ -2160,6 +2160,31 @@ class TestDescriptionRouting:
         rerun = run_lint(repo, "--rule", "description-routing")
         assert self._routing_violations(rerun) == vs
 
+    def test_accepts_explicit_trigger_phrase_variants(self, tmp_path):
+        """Accept active, passive, and restrictive selection clauses."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        result = run_lint(repo, "--rule", "description-routing")
+        routing_violations = self._routing_violations(result)
+        expected_clean = {
+            "active-invoke-whenever",
+            "active-use-for",
+            "active-use-to",
+            "passive-must-whenever",
+            "passive-should-before",
+            "use-only-when",
+        }
+        discovered = {Path(path).name for path in result["out"]["stats"]["skills"]}
+        flagged = {
+            path.parent.name if path.name == "SKILL.md" else path.stem
+            for violation in routing_violations
+            for path in [Path(violation["file_path"])]
+        }
+
+        assert expected_clean <= discovered
+        assert expected_clean.isdisjoint(flagged)
+        # Subject-matter wording remains distinct from a selection clause.
+        assert {"explainer", "sdk-guide", "user-event-explainer"} <= flagged
+
     def test_codex_only_command_without_description_is_reported(self, tmp_path):
         """Keep the always-on presence check active without Claude provenance."""
         repo = copy_fixture("codex/clean", tmp_path)
@@ -2216,6 +2241,57 @@ class TestDescriptionRouting:
         routing_violations = self._routing_violations(r)
         assert len(routing_violations) == expected_count
         assert not any(message in v["message"] for v in routing_violations)
+
+    def test_user_only_skills_are_skipped_only_for_exact_boolean_true(self, tmp_path):
+        """Default skipping is limited to the actual YAML boolean true."""
+        repo = copy_fixture("description-routing-user-only", tmp_path)
+
+        result = run_lint(repo, "--rule", "description-routing")
+        routing_violations = self._routing_violations(result)
+        skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
+        checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
+
+        assert checked_skills == {
+            "field-absent",
+            "field-false",
+            "field-numeric-one",
+            "field-string-true",
+        }
+        assert all("when to use" in v["message"] for v in skill_violations)
+        assert any("agents/field-true.md" in v["file_path"] for v in routing_violations)
+        assert any("commands/field-true.md" in v["file_path"] for v in routing_violations)
+
+    def test_user_only_skills_can_be_checked_by_configuration(self, tmp_path):
+        """The opt-in checks a boolean-true user-only skill normally."""
+        repo = copy_fixture("description-routing-user-only", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  description-routing:\n    check-user-only-skills: true\n",
+            encoding="utf-8",
+        )
+
+        result = run_lint(repo, config=config)
+        routing_violations = self._routing_violations(result)
+        skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
+        checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
+
+        assert checked_skills == {
+            "field-absent",
+            "field-false",
+            "field-numeric-one",
+            "field-string-true",
+            "field-true",
+            "field-true-empty",
+        }
+        assert all(
+            "when to use" in v["message"]
+            for v in skill_violations
+            if "field-true-empty" not in v["file_path"]
+        )
+        assert any(
+            "field-true-empty" in v["file_path"] and "Description is empty" in v["message"]
+            for v in skill_violations
+        )
 
 
 class TestUnlinkedInternalReferenceAutofix:

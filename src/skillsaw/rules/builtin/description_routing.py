@@ -9,13 +9,21 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, SkillBlock
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-_USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
+_USE_THIS_TRIGGER_RE = re.compile(
+    r"\b(?:use|invoke) this(?: (?:skill|agent))?(?: proactively)? "
+    r"(?:when(?:ever)?|if|before|for|to)\b"
+)
+_PASSIVE_USE_TRIGGER_RE = re.compile(
+    r"(?:^|[.!?]\s+)(?:this (?:skill|agent) )?(?:must|should) be used "
+    r"(?:when(?:ever)?|if|before)\b"
+)
 _FOR_TRIGGER_RE = re.compile(r"(?:^|[.!?]\s+)for (?:requests|tasks)\b")
 _EXPLANATORY_USER_TRIGGER_RE = re.compile(
     r"\b(?:what happens|what to expect) (?:when (?:the user|users)|if the user)\b"
 )
 _TRIGGER_MARKERS = (
     "use when",
+    "use only when",
     "when the user",
     "when users",
     "when you need",
@@ -51,6 +59,11 @@ class DescriptionRoutingRule(Rule):
             "default": True,
             "description": "Flag descriptions that only restate the name or generic category",
         },
+        "check-user-only-skills": {
+            "type": "bool",
+            "default": False,
+            "description": ("Check skills whose frontmatter sets disable-model-invocation to true"),
+        },
     }
 
     @property
@@ -76,6 +89,12 @@ class DescriptionRoutingRule(Rule):
         for block_type in (SkillBlock, AgentBlock, CommandBlock):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error:
+                    continue
+                if (
+                    block_type is SkillBlock
+                    and not self.config.get("check-user-only-skills", False)
+                    and block.field_value("disable-model-invocation") is True
+                ):
                     continue
                 if not block.has_frontmatter:
                     violations.append(
@@ -151,6 +170,7 @@ class DescriptionRoutingRule(Rule):
         return (
             any(marker in without_explanatory_clauses for marker in _TRIGGER_MARKERS)
             or bool(_USE_THIS_TRIGGER_RE.search(without_explanatory_clauses))
+            or bool(_PASSIVE_USE_TRIGGER_RE.search(without_explanatory_clauses))
             or bool(_FOR_TRIGGER_RE.search(without_explanatory_clauses))
         )
 

@@ -2,17 +2,27 @@ Checks that skill and agent descriptions work as routing signals, while command 
 
 ## What it checks
 
-- Descriptions are present, non-empty strings. This basic check is always on.
+- Descriptions are present, non-empty strings. This basic check stays on when the routing heuristics are disabled.
 - Skill and agent descriptions say when the model should use them. Commands are excluded because users select them directly.
 - Descriptions do more than restate the building block name or category, such as a `deploy-staging` skill described only as "Deploy staging" or a command described only as "A command."
 
-The two routing heuristics after the always-on empty check can be configured independently:
+Skills with `disable-model-invocation: true` are user-only: the model cannot route
+to them, so this rule skips them by default. Set `check-user-only-skills: true`
+to check their descriptions normally. Only the YAML boolean `true` opts a skill
+out; an absent field, `false`, strings, and numbers remain checked.
+
+Natural selection clauses count as trigger phrasing, including "Use this skill
+for ...", "Invoke this skill whenever ...", "This skill should be used before
+...", and "Use only when ...".
+
+The routing heuristics and user-only-skill behavior can be configured independently:
 
 ```yaml
 rules:
   description-routing:
     require-trigger-phrasing: true
     flag-name-restatement: true
+    check-user-only-skills: false
 ```
 
 ## Why this matters
