@@ -259,11 +259,13 @@ def test_unresolvable_repository_root_surfaces_lint_error(temp_dir, monkeypatch)
     context = RepositoryContext(temp_dir)
     monkeypatch.setattr("skillsaw.lint_tree.safe_resolve", lambda path: None)
 
-    violations = Linter(context, LinterConfig.default()).run()
+    linter = Linter(context, LinterConfig.default())
+    first_errors = [v for v in linter.run() if v.rule_id == "repository-path-error"]
+    second_errors = [v for v in linter.run() if v.rule_id == "repository-path-error"]
 
-    errors = [v for v in violations if v.rule_id == "repository-path-error"]
-    assert len(errors) == 1
-    assert str(temp_dir) in errors[0].message
+    assert len(first_errors) == 1
+    assert len(second_errors) == 1
+    assert str(temp_dir) in first_errors[0].message
     assert list(context.lint_tree.walk()) == [context.lint_tree]
 
 

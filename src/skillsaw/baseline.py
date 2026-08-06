@@ -23,6 +23,7 @@ from skillsaw.paths import safe_resolve
 
 BASELINE_FILENAME = ".skillsaw-baseline.json"
 _BASELINE_VERSION = "1"
+_UNBASELINABLE_RULE_IDS = frozenset({"repository-path-error"})
 
 
 @dataclass
@@ -261,6 +262,9 @@ def filter_baselined_violations(
     consumed_ratchet: set = set()
 
     for v in violations:
+        if v.rule_id in _UNBASELINABLE_RULE_IDS:
+            kept.append(v)
+            continue
         fp = fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)
 
         if fp in ratchet_entries:

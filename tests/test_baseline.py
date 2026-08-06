@@ -217,6 +217,28 @@ class TestFilterBaselinedViolations:
         assert len(kept) == 0
         assert len(stale) == 0
 
+    def test_repository_path_error_cannot_be_baselined(self, tmp_path):
+        """A fatal incomplete-scan error must survive a matching baseline."""
+        violation = _make_violation(
+            rule_id="repository-path-error",
+            message="Repository root could not be resolved",
+            severity=Severity.ERROR,
+        )
+        entry = BaselineEntry(
+            fingerprint=fingerprint_violation(violation, tmp_path),
+            rule_id=violation.rule_id,
+            file_path=None,
+            line=None,
+            message=violation.message,
+            severity="error",
+        )
+        baseline = self._baseline_with([entry])
+
+        kept, stale = filter_baselined_violations([violation], baseline, tmp_path)
+
+        assert kept == [violation]
+        assert stale == [entry]
+
     def test_keeps_new_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("try to do something\n")

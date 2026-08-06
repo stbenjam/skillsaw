@@ -308,9 +308,8 @@ class Linter:
         ]
 
     def _lint_tree_error_violations(self) -> List[RuleViolation]:
-        """Consume fatal repository discovery errors collected by tree build."""
-        errors = self.context.lint_tree_errors
-        self.context.lint_tree_errors = []
+        """Translate persistent repository discovery errors into violations."""
+        errors = dict.fromkeys(self.context.lint_tree_errors)
         return [
             RuleViolation(
                 rule_id="repository-path-error",
