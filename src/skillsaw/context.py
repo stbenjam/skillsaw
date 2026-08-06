@@ -1090,8 +1090,11 @@ class RepositoryContext:
         """
         Check if a directory is a valid plugin directory
 
-        A directory is valid if it has plugin.json, standard component directories
-        (commands, agents, skills, hooks), or if the marketplace entry has strict: false.
+        A directory is valid if it has a .claude-plugin marker, standard
+        component directories (commands, agents, skills, hooks), or if the
+        marketplace entry has strict: false.  The marker is sufficient even
+        without plugin.json so plugin-json-required can report the malformed
+        plugin instead of discovery silently dropping it.
 
         Args:
             path: Directory path to check
@@ -1100,9 +1103,9 @@ class RepositoryContext:
         Returns:
             True if directory appears to be a valid plugin
         """
-        # Check for plugin.json or standard component directories
+        # Check for a Claude marker or standard component directories.
         plugin_markers = [
-            path / ".claude-plugin" / "plugin.json",
+            path / ".claude-plugin",
             path / "commands",
             path / "agents",
             path / "skills",

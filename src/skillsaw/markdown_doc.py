@@ -77,7 +77,7 @@ def _parse_cached(body: str):
     """
     env: Dict = {}
     tokens = _PARSER.parse(body, env)
-    return tokens, env.get("references", {})
+    return tokens, env.get("references", {}), env.get("duplicate_refs", [])
 
 
 # ---------------------------------------------------------------------------
@@ -747,9 +747,9 @@ class MarkdownDoc:
         self._line_map = line_map
         self._lines: List[str] = body.split("\n")
         if body:
-            self._tokens, self._references = _parse_cached(body)
+            self._tokens, self._references, self._duplicate_references = _parse_cached(body)
         else:
-            self._tokens, self._references = [], {}
+            self._tokens, self._references, self._duplicate_references = [], {}, []
         self._walked = False
         self._links: List[MarkdownLink] = []
         self._code_spans: List[MarkdownCodeSpan] = []
@@ -941,7 +941,11 @@ class MarkdownDoc:
     def reference_definitions(self) -> List[MarkdownReferenceDefinition]:
         """CommonMark reference definitions, including hidden-comment idioms."""
         result = []
-        for label, data in self._references.items():
+        definitions = list(self._references.items()) + [
+            (data["label"], data) for data in self._duplicate_references
+        ]
+        definitions.sort(key=lambda item: item[1]["map"][0])
+        for label, data in definitions:
             start, end = data["map"]
             result.append(
                 MarkdownReferenceDefinition(
