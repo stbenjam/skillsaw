@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review pull request diffs for correctness, security, and style
+description: Review pull request diffs for correctness, security, and style. Use when assessing a code change.
 compatibility: Requires git and gh CLI
 metadata:
   author: dx-team

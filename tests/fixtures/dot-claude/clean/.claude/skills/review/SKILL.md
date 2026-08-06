@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review the current branch for merge readiness
+description: Review the current branch for merge readiness. Use when preparing to merge a change.
 ---
 
 # Review

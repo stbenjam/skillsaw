@@ -1,6 +1,6 @@
 ---
 name: deploy-service
-description: Deploy a service to Kubernetes using Helm charts
+description: Deploy a service to Kubernetes using Helm charts. Use when releasing a service.
 compatibility: Requires helm, kubectl, and cluster credentials
 metadata:
   author: platform-team

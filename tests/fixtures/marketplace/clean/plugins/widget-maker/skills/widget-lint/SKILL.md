@@ -1,6 +1,6 @@
 ---
 name: widget-lint
-description: Validate widget specification files against the ACME widget schema
+description: Validate widget specification files against the ACME widget schema. Use when checking a widget definition.
 ---
 
 # Widget Lint

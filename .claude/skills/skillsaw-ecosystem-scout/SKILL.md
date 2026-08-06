@@ -1,6 +1,6 @@
 ---
 name: skillsaw-ecosystem-scout
-description: Survey the AI coding assistant and agentic tool ecosystem, assess skillsaw's competitive position, identify emerging patterns and missing capabilities, and produce a prioritized strategic report as a GitHub issue.
+description: Survey the AI coding assistant and agentic tool ecosystem, assess skillsaw's competitive position, identify emerging patterns and missing capabilities, and produce a prioritized strategic report as a GitHub issue. Use when evaluating ecosystem trends and product gaps.
 compatibility: Requires git, gh CLI, and internet access (WebFetch, WebSearch)
 license: Apache-2.0
 user-invocable: true

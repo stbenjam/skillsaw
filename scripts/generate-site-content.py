@@ -106,11 +106,14 @@ RULE_GROUPS = [
         [
             "skill-frontmatter",
             "agent-frontmatter",
+            "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates skill/agent frontmatter and hook configuration. The security "
+        "Validates skill/agent frontmatter and hook configuration. The "
+        "`description-routing` rule checks when-to-use phrasing and name restatements; "
+        "both checks are independently configurable. The security "
         "rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent "
         "frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "

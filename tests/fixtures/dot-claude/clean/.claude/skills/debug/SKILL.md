@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Investigate and diagnose test failures or runtime errors
+description: Investigate and diagnose test failures or runtime errors. Use when debugging a failure.
 ---
 
 # Debug

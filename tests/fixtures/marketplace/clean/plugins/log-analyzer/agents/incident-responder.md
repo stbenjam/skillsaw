@@ -1,6 +1,6 @@
 ---
 name: incident-responder
-description: Triage production incidents by analyzing logs, metrics, and deployment history
+description: Triage production incidents by analyzing logs, metrics, and deployment history. Use when responding to an outage.
 subagent_type: researcher
 ---
 
