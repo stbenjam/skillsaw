@@ -129,7 +129,7 @@ class TestInstructionImportsValidRule:
 
         (temp_dir / "CLAUDE.md").write_text("# Instructions\n\n@hostile.md\n")
         context = RepositoryContext(temp_dir)
-        context.lint_tree
+        _ = context.lint_tree
         real_safe_resolve = rule_module.safe_resolve
         real_exists = Path.exists
 

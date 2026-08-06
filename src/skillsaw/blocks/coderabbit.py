@@ -27,7 +27,7 @@ from skillsaw.utils import (
 )
 
 from .base import ContentBlock
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import contained_resolve, safe_exists, safe_resolve
 
 if TYPE_CHECKING:
     from skillsaw.context import RepositoryContext
@@ -108,11 +108,19 @@ class CodeRabbitContentBlock(ContentBlock):
         is_excluded: Callable[[Path], bool],
     ) -> List["CodeRabbitContentBlock"]:
         cr_path = context.root_path / ".coderabbit.yaml"
-        cr_resolved = safe_resolve(cr_path) or cr_path
-        if cr_resolved in seen or not cr_path.exists() or is_excluded(cr_path):
+        root = safe_resolve(context.root_path)
+        if root is None:
+            return []
+        cr_resolved = contained_resolve(cr_path, root)
+        if (
+            cr_resolved is None
+            or cr_resolved in seen
+            or not safe_exists(cr_resolved)
+            or is_excluded(cr_path)
+        ):
             return []
         seen.add(cr_resolved)
-        cr_raw = read_text(cr_path)
+        cr_raw = read_text(cr_resolved)
         if not cr_raw:
             return []
         try:

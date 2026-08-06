@@ -41,7 +41,7 @@ from .formats.codex import (
     codex_inline_mcp_servers,
     codex_manifest_is_contained,
 )
-from .paths import safe_exists, safe_is_dir, safe_is_file, safe_resolve
+from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,
@@ -77,12 +77,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     }
 
     root = LintTarget(path=context.root_path)
+    repo_root = safe_resolve(context.root_path)
     seen: Set[Path] = set()
     seen_roles: Set[Tuple[Path, type]] = set()
     openai_seen: Set[Tuple[Path, Path]] = set()
 
     _is_excluded = context.is_path_excluded
     _is_in_compiled_dir = context.in_apm_compiled_dir
+
+    def _resolve_repo_path(path: Path) -> Path | None:
+        """Resolve *path* only when the repository root and containment are safe."""
+        if repo_root is None:
+            return None
+        return contained_resolve(path, repo_root)
 
     apm_source_root = (
         (safe_resolve((context.root_path / ".apm")) or (context.root_path / ".apm"))
@@ -102,8 +109,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         block_cls: type,
         owner: Path | None = None,
     ) -> None:
-        resolved = safe_resolve(p) or p
-        if resolved in seen or not p.exists() or _is_excluded(p):
+        resolved = _resolve_repo_path(p)
+        if resolved is None or resolved in seen or not safe_exists(resolved) or _is_excluded(p):
             return
         seen.add(resolved)
         seen_roles.add((resolved, block_cls))
@@ -124,11 +131,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         role-aware deduplication still prevents duplicate findings when two
         discovery paths select the same parser.
         """
-        resolved = safe_resolve(p)
+        resolved = _resolve_repo_path(p)
         if resolved is None:
             return
         role = (resolved, block_cls)
-        if role in seen_roles or not safe_is_file(p) or _is_excluded(p):
+        if role in seen_roles or not safe_is_file(resolved) or _is_excluded(p):
             return
         # seen_roles only — never the path-only ``seen`` set: a manifest can
         # declare ``hooks``/``mcpServers`` at any in-plugin markdown file,
@@ -508,7 +515,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- .coderabbit.yaml ---
     cr_path = context.root_path / ".coderabbit.yaml"
-    if cr_path.exists() and not _is_excluded(cr_path):
+    cr_resolved = _resolve_repo_path(cr_path)
+    if cr_resolved is not None and safe_exists(cr_resolved) and not _is_excluded(cr_path):
         cr_container = CodeRabbitNode(path=cr_path)
         cr_blocks = CodeRabbitContentBlock.gather(context, seen, _is_excluded)
         cr_container.children.extend(cr_blocks)
@@ -628,8 +636,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         if not isinstance(block, LintTarget):
             raise TypeError(f"contributor returned {block!r}, which is not a lint tree node")
-        resolved = safe_resolve(block.path) or block.path
-        if resolved in seen or not block.path.exists() or _is_excluded(block.path):
+        if not isinstance(block.path, Path):
+            raise TypeError(f"contributor returned a node with invalid path {block.path!r}")
+        resolved = _resolve_repo_path(block.path)
+        if resolved is None:
+            raise ValueError(f"contributor path is unresolved or outside repository: {block.path}")
+        if resolved in seen or not safe_exists(resolved) or _is_excluded(block.path):
             return False
         seen.add(resolved)
         block.children = [child for child in block.children if _admit_contributed_node(child)]
@@ -672,13 +684,19 @@ def _build_promptfoo_nodes(
     from .utils import read_yaml
 
     config_nodes: list[PromptfooConfigNode] = []
+    repo_root = safe_resolve(context.root_path)
 
     def _try_add_config(yaml_file: Path, parent: LintTarget, *, require_keys: bool = True) -> None:
-        resolved = safe_resolve(yaml_file) or yaml_file
-        if resolved in seen or not yaml_file.exists() or _is_excluded(yaml_file):
+        resolved = contained_resolve(yaml_file, repo_root) if repo_root is not None else None
+        if (
+            resolved is None
+            or resolved in seen
+            or not safe_is_file(resolved)
+            or _is_excluded(yaml_file)
+        ):
             return
         if require_keys:
-            data, error = read_yaml(yaml_file)
+            data, error = read_yaml(resolved)
             if error or not is_promptfoo_config(data):
                 return
         seen.add(resolved)

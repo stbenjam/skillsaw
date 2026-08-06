@@ -1613,7 +1613,7 @@ class TestContentBrokenInternalReferenceRule:
 
         (temp_dir / "CLAUDE.md").write_text("See [hostile](hostile.md).\n")
         context = RepositoryContext(temp_dir)
-        context.lint_tree
+        _ = context.lint_tree
         real_safe_resolve = rule_module.safe_resolve
         real_exists = Path.exists
 
@@ -1684,7 +1684,7 @@ class TestContentUnlinkedInternalReferenceRule:
 
         (temp_dir / "CLAUDE.md").write_text("See docs/hostile.md for details.\n")
         context = RepositoryContext(temp_dir)
-        context.lint_tree
+        _ = context.lint_tree
         real_safe_resolve = rule_module.safe_resolve
         real_exists = Path.exists
 

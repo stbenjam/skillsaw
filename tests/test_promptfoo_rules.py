@@ -402,6 +402,19 @@ def test_fragment_symlink_escaping_repo_root_not_in_tree(temp_dir):
     assert [n for n in nodes if n.is_fragment] == []
 
 
+def test_config_symlink_escaping_repo_root_not_in_tree(tmp_path):
+    """A symlinked external Promptfoo config must not become a tree node."""
+    outside = tmp_path / "outside.yaml"
+    _write_yaml(outside, {"providers": [{"id": "external"}], "tests": []})
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "promptfooconfig.yaml").symlink_to(outside)
+
+    nodes = RepositoryContext(repo).lint_tree.find(PromptfooConfigNode)
+
+    assert nodes == []
+
+
 def test_non_promptfoo_yaml_not_in_tree(temp_dir):
     plugin = _make_plugin(temp_dir)
     _write_yaml(
@@ -1192,7 +1205,7 @@ def test_file_ref_stat_failure_reports_missing(temp_dir, monkeypatch):
         """,
     )
     context = RepositoryContext(temp_dir)
-    context.lint_tree
+    _ = context.lint_tree
     real_exists = Path.exists
 
     def hostile_exists(path):

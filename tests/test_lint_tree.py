@@ -225,6 +225,33 @@ def test_tree_contains_coderabbit_node(temp_dir):
     assert len(tree.find(CodeRabbitNode)) == 1
 
 
+def test_tree_rejects_instruction_symlink_outside_repo(tmp_path):
+    """Generic block discovery must not attach a symlinked external file."""
+    outside = tmp_path / "outside.md"
+    outside.write_text("external instructions\n")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    linked = repo / ".cursorrules"
+    linked.symlink_to(outside)
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert all(node.path != linked for node in tree.walk())
+
+
+def test_tree_rejects_coderabbit_symlink_outside_repo(tmp_path):
+    """CodeRabbit discovery must not parse a symlinked external config."""
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("reviews:\n  instructions: external\n")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".coderabbit.yaml").symlink_to(outside)
+
+    tree = RepositoryContext(repo).lint_tree
+
+    assert tree.find(CodeRabbitNode) == []
+
+
 def test_content_blocks_returns_all_content(temp_dir):
     """content_blocks() should return all ContentBlock subclasses polymorphically."""
     (temp_dir / "CLAUDE.md").write_text("# Instructions\nBe helpful.\n")

@@ -1035,7 +1035,13 @@ class RepositoryContext:
 
         # Handle relative path strings
         if isinstance(source, str):
-            candidate = safe_resolve((self.root_path / source)) or (self.root_path / source)
+            root = safe_resolve(self.root_path)
+            if root is None:
+                logger.warning(
+                    "Repository root cannot be resolved. Skipping plugin '%s'.", plugin_name
+                )
+                return None
+            candidate = contained_resolve(root / source, root)
             plugin_root = self.marketplace_plugin_root()
             if plugin_root and not Path(source).is_absolute():
                 # metadata.pluginRoot is prepended to relative sources, but
@@ -1044,18 +1050,17 @@ class RepositoryContext:
                 # fall back to the root-relative path when only it exists.
                 # The containment check below still rejects any candidate
                 # that escapes the repository.
-                composed = safe_resolve((self.root_path / plugin_root / source)) or (
-                    self.root_path / plugin_root / source
-                )
-                if safe_exists(composed) or not safe_exists(candidate):
+                composed = contained_resolve(root / plugin_root / source, root)
+                if composed is not None and (
+                    safe_exists(composed) or candidate is None or not safe_exists(candidate)
+                ):
                     candidate = composed
+                elif composed is None and (candidate is None or not safe_exists(candidate)):
+                    candidate = None
 
-            # Disallow escaping the repo with .. paths
-            try:
-                candidate.relative_to(self.root_path)
-            except ValueError:
+            if candidate is None:
                 logger.warning(
-                    "Plugin '%s' source '%s' escapes repository root. Skipping.",
+                    "Plugin '%s' source '%s' is unresolved or escapes repository root. Skipping.",
                     plugin_name,
                     source,
                 )

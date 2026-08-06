@@ -17,7 +17,6 @@ from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_text, read_yaml_commented, commented_item_line
 
 from .base import ContentBlock
-from skillsaw.paths import safe_resolve
 
 
 @dataclass(eq=False)
@@ -59,12 +58,10 @@ class PromptfooPromptBlock(ContentBlock):
     def __eq__(self, other):
         if not isinstance(other, PromptfooPromptBlock):
             return NotImplemented
-        return (safe_resolve(self.path) or self.path) == (
-            safe_resolve(other.path) or other.path
-        ) and self.yaml_path == other.yaml_path
+        return self.resolved_path == other.resolved_path and self.yaml_path == other.yaml_path
 
     def __hash__(self):
-        return hash((type(self), (safe_resolve(self.path) or self.path), self.yaml_path))
+        return hash((type(self), self.resolved_path, self.yaml_path))
 
     _TEMPLATE_ONLY_RE = re.compile(r"^\s*\{\{.*\}\}\s*$")
 
