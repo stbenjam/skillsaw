@@ -396,6 +396,21 @@ class TestStdioCommandToken:
 
         assert lint_rules(tmp_path, MCP_RULE) == [], command
 
+    def test_a_command_naming_an_existing_directory_is_rejected(self, tmp_path):
+        (tmp_path / "bin").mkdir()
+        _write_plugin(tmp_path, _stdio("./bin"))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "command", "directory"), messages_lower(findings)
+
+    def test_a_command_naming_an_existing_file_is_accepted(self, tmp_path):
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "server").write_text("#!/bin/sh\n", encoding="utf-8")
+        _write_plugin(tmp_path, _stdio("./bin/server"))
+
+        assert lint_rules(tmp_path, MCP_RULE) == []
+
     def test_absolute_commands_keep_the_established_message(self, tmp_path):
         _write_plugin(tmp_path, _stdio("/usr/local/bin/server"))
 

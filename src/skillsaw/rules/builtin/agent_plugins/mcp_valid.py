@@ -16,6 +16,7 @@ from skillsaw.paths import (
     contained_resolve,
     is_absolute_path,
     safe_exists,
+    safe_is_dir,
     safe_is_file,
     safe_is_symlink,
     safe_resolve,
@@ -264,16 +265,19 @@ class AgentPluginMcpValidRule(Rule):
             return "'command' must not contain control characters"
         if command.startswith("./"):
             suffix = command[2:]
+            resolved = contained_resolve(plugin_dir / command, plugin_root)
             if (
                 is_absolute_path(suffix)
                 or AgentPluginMcpValidRule._relative_path_escapes(suffix)
-                or contained_resolve(plugin_dir / command, plugin_root) is None
+                or resolved is None
             ):
                 return "'command' resolves outside the plugin root"
             # './', './.' and './bin/..' all name the plugin root itself, which
-            # is a directory, not the executable the field must identify. This
-            # stays lexical on purpose — the binary may only exist post-install.
-            if not AgentPluginMcpValidRule._normalized_parts(suffix):
+            # is a directory, not the executable the field must identify. The
+            # lexical check catches those without requiring the binary to
+            # exist (it may only appear post-install); the filesystem check
+            # rejects a path that already exists as a directory.
+            if not AgentPluginMcpValidRule._normalized_parts(suffix) or safe_is_dir(resolved):
                 return "'command' must name an executable file, not a directory"
             return None
         if is_absolute_path(command) or "/" in command or "\\" in command:

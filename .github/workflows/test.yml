@@ -231,7 +231,7 @@ jobs:
           git -C /tmp/agent-plugins-example checkout --quiet 5f3f5084a821aefa792e79500dd8f0462ab83473
 
           skillsaw lint --format json --no-custom-rules \
-            --rule agent-plugin-manifest-valid \
+            --rule agent-plugin-json-valid \
             --rule agent-plugin-mcp-valid \
             /tmp/agent-plugins-example | python3 -c "
           import sys, json
