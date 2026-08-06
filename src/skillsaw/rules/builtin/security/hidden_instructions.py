@@ -400,7 +400,7 @@ class SecurityHiddenInstructionsRule(Rule):
             )
         return None
 
-    def _hidden_link_label_violations(self, cf, body: str) -> List[RuleViolation]:
+    def _hidden_link_label_violations(self, cf, allowed: Tuple[str, ...]) -> List[RuleViolation]:
         """Scan CommonMark's invisible ``[//]: # (...)`` link-label idiom.
 
         markdown-it intentionally omits link-reference definitions from the
@@ -408,14 +408,12 @@ class SecurityHiddenInstructionsRule(Rule):
         hidden-comment spelling in raw source and excludes fenced examples.
         """
         violations = []
-        fences = cf.markdown.fences()
-        for line, source_line in enumerate(body.splitlines(), start=1):
-            if any(f.body_line_start <= line <= f.body_line_end for f in fences):
+        for definition in cf.markdown.reference_definitions():
+            if definition.label != "//" or definition.href != "#" or not definition.title:
                 continue
-            match = re.fullmatch(r" {0,3}\[//\]:\s*#\s*\((.*)\)\s*", source_line)
-            if match is None:
+            text = definition.title.strip()
+            if self._exempt(text, allowed):
                 continue
-            text = match.group(1).strip()
             family = _classify(text)
             if family is None:
                 continue
@@ -425,7 +423,7 @@ class SecurityHiddenInstructionsRule(Rule):
                     f'"{_snippet(text)}" — link-reference definitions are '
                     "invisible in rendered markdown but agents read them",
                     block=cf,
-                    line=line,
+                    line=definition.body_line_start,
                 )
             )
         return violations
@@ -437,7 +435,8 @@ class SecurityHiddenInstructionsRule(Rule):
             body = cf.read_body(strip_code_blocks=False)
             if not body:
                 continue
-            violations.extend(self._hidden_link_label_violations(cf, body))
+            if "[//]:" in body:
+                violations.extend(self._hidden_link_label_violations(cf, allowed))
             # C-speed gate: skip the HTML-comment AST walk when none exists.
             if "<!--" not in body:
                 continue

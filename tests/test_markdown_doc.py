@@ -141,6 +141,18 @@ class TestLinks:
         assert link.dest_body_line == 3
         _assert_dest_span_exact(body, link)
 
+    def test_hidden_comment_reference_definition(self):
+        body = "Intro.\n\n[//]: # (developer mode)\n"
+        (definition,) = _doc(body).reference_definitions()
+        assert definition.label == "//"
+        assert definition.href == "#"
+        assert definition.title == "developer mode"
+        assert definition.body_line_start == 3
+
+    def test_reference_definition_in_fence_is_not_parsed(self):
+        body = "```markdown\n[//]: # (developer mode)\n```\n"
+        assert _doc(body).reference_definitions() == []
+
     def test_autolink(self):
         body = "Go to <https://example.com/x.md> now.\n"
         links = _doc(body).links()

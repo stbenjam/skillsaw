@@ -124,6 +124,12 @@ class TestSecurityHiddenInstructionsRule:
         )
         assert _check(temp_dir) == []
 
+    def test_hidden_link_label_honors_allowed_prefix(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Project instructions\n\n" "[//]: # (developer mode)\n"
+        )
+        assert _check(temp_dir, {"additional-allowed-prefixes": ["developer mode"]}) == []
+
     def test_multiline_comment_fires(self, temp_dir):
         """Directives split across lines inside one comment are still caught,
         reported at the comment's first line."""
