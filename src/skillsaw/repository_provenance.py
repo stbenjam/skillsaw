@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, FrozenSet, Optional
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from .formats.codex import codex_manifest_is_contained, codex_marker_escapes
 from .paths import safe_exists, safe_resolve
@@ -40,8 +40,21 @@ class PluginProvenance:
     def codex_only(self) -> bool:
         """Codex claims the directory and Claude does not.
 
-        A portable Agent Plugins declaration can coexist with Codex without
-        restoring Claude's looser MCP interpretation.
+        Deliberately ``codex and not claude`` rather than "Codex is the sole
+        ecosystem": the predicate asks whether Claude's looser reading of
+        hooks and MCP still governs the directory, and only a Claude
+        declaration answers yes. A dual ``codex`` + ``agent-plugin``
+        directory is therefore codex_only — a portable Agent Plugins
+        declaration is a second *contained* format, not a Claude one, so it
+        must not restore Claude's leniency. A dual ``claude`` + ``codex``
+        directory is not codex_only, which is what keeps
+        ``TestDualManifestBackwardCompat``'s established Claude results
+        intact.
+
+        Load-bearing: this drives ``is_codex_only_plugin``,
+        ``in_codex_only_plugin``, ``_is_containment_plugin``, and the
+        conditional-strictness gates in the hooks and MCP rules.
+        ``TestPluginProvenanceCodexOnlyTruthTable`` pins every combination.
         """
         return self.codex and not self.claude
 
@@ -65,7 +78,38 @@ class RepositoryProvenanceMixin:
     exclusion policy. Keeping these stateful views together preserves one
     provenance source without making the state-free discovery layer depend on
     ``RepositoryContext``.
+
+    **Host contract.** This mixin is not standalone: every member declared in
+    the ``TYPE_CHECKING`` block below must be supplied by the class it is
+    mixed into (today, :class:`skillsaw.context.RepositoryContext`). The
+    declarations exist so the coupling is readable here instead of being
+    reconstructed from attribute reads; they are annotations and stub bodies
+    only, so nothing is defined at runtime and the host's real
+    implementations are what execute.
     """
+
+    if TYPE_CHECKING:
+        # Required host state.
+        root_path: Path
+        _provenance_cache: Dict[Path, PluginProvenance]
+        _format_scope_cache: Dict[Tuple[Path, str], bool]
+        _contained_plugin_roots: Optional[Set[Path]]
+        # Populated late in ``RepositoryContext.__init__`` — read through
+        # ``getattr`` in :meth:`provenance`, see the note there.
+        marketplace_entries: Dict[Path, Dict[str, Any]]
+
+        # Required host behavior.
+        def _codex_claim_set(self) -> Set[Path]: ...
+
+        def _codex_claims_possible(self) -> bool: ...
+
+        def _agent_plugin_claim_set(self) -> Set[Path]: ...
+
+        def _agent_plugin_root_set(self) -> Set[Path]: ...
+
+        def codex_plugin_roots(self) -> List[Path]: ...
+
+        def is_codex_installed_plugin(self, plugin_dir: Path) -> bool: ...
 
     def provenance(self, plugin_dir: Path) -> PluginProvenance:
         """The :class:`PluginProvenance` for *plugin_dir*, cached per path.
@@ -101,6 +145,13 @@ class RepositoryProvenanceMixin:
             return cached
 
         ecosystems = set()
+        # ``getattr`` rather than a plain attribute read: this is genuinely
+        # reachable, not defensiveness. ``RepositoryContext.__init__`` runs
+        # type detection — which consults provenance — before it assigns
+        # ``marketplace_entries``, so the early consults land here with the
+        # attribute absent and must fall back to "no marketplace listing".
+        # Those early records are discarded by the unconditional cache clear
+        # at the end of ``apply_excludes``; see the ordering comment there.
         if safe_exists(plugin_dir / ".claude-plugin") or (
             resolved is not None and resolved in getattr(self, "marketplace_entries", {})
         ):

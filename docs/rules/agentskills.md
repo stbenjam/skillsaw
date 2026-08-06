@@ -3,7 +3,7 @@
 
 # agentskills.io
 
-These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable for agentskills repos, single plugins, and marketplaces whenever skills are detected.
+These rules validate skills against the [agentskills.io specification](https://agentskills.io/specification). They auto-enable wherever skills are detected — agentskills repos, single plugins, marketplaces, `.claude/` directories, Codex plugins and marketplaces, and Agent Plugin packages.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|

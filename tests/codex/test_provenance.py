@@ -1,11 +1,13 @@
 """Ecosystem provenance: which rules a Codex directory answers to."""
 
+import itertools
 import json
 import shutil
 
 import pytest
 
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.repository_provenance import PluginProvenance
 from skillsaw.blocks import AgentBlock, CommandBlock, McpBlock, OpenAIMetadataBlock
 from skillsaw.lint_target import (
     CodexPluginConfigNode,
@@ -907,3 +909,68 @@ class TestProvenanceScopeMechanism:
         )
         assert not context.in_codex_only_plugin(root / "plugins" / "dual" / "hooks" / "hooks.json")
         assert not context.in_codex_only_plugin(root / "README.md")
+
+
+class TestPluginProvenanceCodexOnlyTruthTable:
+    """``codex_only`` is ``codex and not claude``, pinned exhaustively.
+
+    The predicate drives ``is_codex_only_plugin``, ``in_codex_only_plugin``,
+    ``_is_containment_plugin``, and the hooks/MCP conditional-strictness
+    gates, so every ecosystem combination has an assertion of its own. The
+    load-bearing rows are the dual ones: ``{codex, agent-plugin}`` is
+    codex_only (a portable declaration is a second contained format, not a
+    Claude one, and must not restore Claude's looser MCP interpretation),
+    while ``{claude, codex}`` is not (that is what keeps dual-manifest
+    directories on their established Claude results).
+    """
+
+    # ecosystems -> expected codex_only
+    TRUTH_TABLE = [
+        (frozenset(), False),
+        (frozenset({"codex"}), True),
+        (frozenset({"claude"}), False),
+        (frozenset({"agent-plugin"}), False),
+        (frozenset({"codex", "claude"}), False),
+        (frozenset({"codex", "agent-plugin"}), True),
+        (frozenset({"claude", "agent-plugin"}), False),
+        (frozenset({"codex", "claude", "agent-plugin"}), False),
+    ]
+
+    @pytest.mark.parametrize("ecosystems,expected", TRUTH_TABLE)
+    def test_codex_only_truth_table(self, ecosystems, expected):
+        assert PluginProvenance(ecosystems=ecosystems).codex_only is expected
+
+    @pytest.mark.parametrize("ecosystems,expected", TRUTH_TABLE)
+    def test_codex_only_is_independent_of_installed(self, ecosystems, expected):
+        """Vendor-installed content is a separate axis: it never moves the
+        ownership verdict, only whether autofix stands down."""
+        assert PluginProvenance(ecosystems=ecosystems, installed=True).codex_only is expected
+
+    @pytest.mark.parametrize("ecosystems,expected", TRUTH_TABLE)
+    def test_codex_only_matches_its_definition(self, ecosystems, expected):
+        """The membership views and the predicate cannot drift apart."""
+        record = PluginProvenance(ecosystems=ecosystems)
+        assert record.claude is ("claude" in ecosystems)
+        assert record.codex is ("codex" in ecosystems)
+        assert record.agent_plugin is ("agent-plugin" in ecosystems)
+        assert record.codex_only is (record.codex and not record.claude)
+
+    def test_truth_table_covers_every_combination(self):
+        """A new ecosystem must extend the table, not slip past it."""
+        names = ("claude", "codex", "agent-plugin")
+        expected = {
+            frozenset(combo)
+            for size in range(len(names) + 1)
+            for combo in itertools.combinations(names, size)
+        }
+        assert {row[0] for row in self.TRUTH_TABLE} == expected
+
+    def test_agent_plugin_twin_stays_codex_only(self):
+        """The behavior change this class exists to pin: adding a portable
+        declaration to a Codex directory must not flip it out of
+        ``codex_only`` the way adding a Claude one does."""
+        codex = PluginProvenance(ecosystems=frozenset({"codex"}))
+        with_portable = PluginProvenance(ecosystems=frozenset({"codex", "agent-plugin"}))
+        with_claude = PluginProvenance(ecosystems=frozenset({"codex", "claude"}))
+        assert with_portable.codex_only is codex.codex_only is True
+        assert with_claude.codex_only is False
