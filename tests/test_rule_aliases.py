@@ -261,7 +261,9 @@ def test_custom_rule_cannot_claim_legacy_alias(plugin_repo):
     context = RepositoryContext(plugin_repo)
     linter = Linter(context, config=config, no_plugins=True)
     results = linter.run()
-    # The squatter never runs; the builtin keeps its identity.
+    # The custom rule is skipped, so its violation never appears — and
+    # "plugin-readme" still means the builtin claude-plugin-readme wherever
+    # the name is used.
     assert not any(v.message == "squatted" for v in results)
     warnings = [v for v in results if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1

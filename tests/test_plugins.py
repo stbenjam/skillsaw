@@ -402,6 +402,7 @@ def test_rule_id_collision_with_legacy_alias_is_skipped(fake_plugin, repo):
     assert "plugin-readme" not in {r.rule_id for r in linter.rules}
     warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
+    assert warnings[0].severity == Severity.WARNING
     assert "legacy alias" in warnings[0].message
     assert "claude-plugin-readme" in warnings[0].message
 
@@ -414,6 +415,7 @@ def test_rule_id_collision_with_advisory_id_is_skipped(fake_plugin, repo):
     assert "deprecated-rule" not in {r.rule_id for r in linter.rules}
     warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
+    assert warnings[0].severity == Severity.WARNING
     assert "reserved" in warnings[0].message
 
 
