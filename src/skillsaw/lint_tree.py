@@ -423,7 +423,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # Conventional Claude configs belong only to Claude or legacy
         # unclaimed packages. Portable-only packages must not accidentally
         # inherit Claude's hooks, .mcp.json, or settings semantics.
-        if prov.claude or not prov.ecosystems:
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             _add_block(
                 container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
@@ -434,7 +434,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # counterpart: attached only for Claude-style directories, keeping
         # _add_block's bare resolve() away from content a hostile
         # Codex-only checkout controls.
-        if prov.claude or not prov.ecosystems:
+        if prov.claude or (not prov.ecosystems and not is_agent_plugin):
             _add_block(
                 container, plugin_path / "settings.json", SettingsBlock, owner=resolved_plugin
             )

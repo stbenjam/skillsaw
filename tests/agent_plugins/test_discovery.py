@@ -2,7 +2,9 @@
 
 from skillsaw.blocks import (
     AgentPluginMcpBlock,
+    HooksBlock,
     McpBlock,
+    SettingsBlock,
     SkillBlock,
     SkillRefBlock,
 )
@@ -93,6 +95,23 @@ class TestAgentPluginDetection:
 
 
 class TestExplicitAgentPluginType:
+    def test_forced_missing_manifest_does_not_attach_claude_configs(self, tmp_path):
+        repo = copy_fixture("agent-plugins/missing", tmp_path)
+        hooks = repo / "hooks"
+        hooks.mkdir()
+        (hooks / "hooks.json").write_text('{"hooks": {}}', encoding="utf-8")
+        (repo / "settings.json").write_text("{}", encoding="utf-8")
+
+        context = RepositoryContext(
+            repo,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        nodes = context.lint_tree.find(AgentPluginConfigNode)
+        assert [node.path for node in nodes] == [repo / "plugin.json"]
+        assert context.lint_tree.find(HooksBlock) == []
+        assert context.lint_tree.find(SettingsBlock) == []
+
     def test_missing_manifest_is_reported_when_type_is_forced(self, tmp_path):
         repo = copy_fixture("agent-plugins/missing", tmp_path)
         findings = lint_rules(
