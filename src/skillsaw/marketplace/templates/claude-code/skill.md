@@ -1,6 +1,6 @@
 ---
 name: "{{SKILL_ID}}"
-description: "Step-by-step workflow for {{SKILL_NAME}} tasks. Update this description to say what the skill does and when the agent uses it."
+description: "Guides a repeatable task workflow. Use when the user needs structured, step-by-step execution."
 ---
 
 # {{SKILL_NAME}}

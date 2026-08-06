@@ -1,5 +1,5 @@
 ---
-description: "Runs the {{COMMAND_NAME}} workflow. Replace this description with what the command does."
+description: "Runs the configured workflow for the requested task."
 argument-hint: "[args]"
 ---
 
