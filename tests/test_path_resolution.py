@@ -9,6 +9,10 @@ _resolve_lint_paths normalizes CLI input in a single pass:
   - Order of first appearance is preserved
 """
 
+from types import SimpleNamespace
+
+import pytest
+
 from skillsaw.cli._helpers import _resolve_lint_paths
 
 # ── Pass 1: _resolve_lint_paths ────────────────────────────────
@@ -289,6 +293,25 @@ class TestEmptyAndSingleInput:
         f.touch()
         result = _resolve_lint_paths([f])
         assert result == [tmp_path]
+
+
+def test_unresolvable_output_path_is_rejected(monkeypatch, capsys):
+    """An unsafe report path must produce a controlled CLI error."""
+    from skillsaw.cli import _lint
+
+    monkeypatch.setattr(_lint, "safe_resolve", lambda path: None)
+    args = SimpleNamespace(
+        verbose=False,
+        strict=False,
+        fail_on=None,
+        outputs=["json:report.json"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        _lint._run_lint(args)
+
+    assert exc_info.value.code == 1
+    assert "--output path could not be resolved: report.json" in capsys.readouterr().err
 
 
 # ── _is_subpath ────────────────────────────────────────────────

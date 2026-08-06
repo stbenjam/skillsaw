@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PromptfooConfigNode
+from skillsaw.paths import safe_exists
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.utils import (
     commented_item_line,
@@ -218,7 +219,7 @@ class PromptfooValidRule(Rule):
         resolved = _resolve_file_ref(ref, config_path.parent)
         if resolved is None:
             return
-        if not resolved.exists():
+        if not safe_exists(resolved):
             violations.append(
                 self.violation(
                     f"File reference '{ref}' not found",

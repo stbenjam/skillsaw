@@ -13,6 +13,7 @@ from .branding import (
     load_template_config,
     read_template,
 )
+from skillsaw.paths import contained_resolve, safe_exists, safe_resolve
 
 _KEBAB_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
@@ -29,7 +30,7 @@ def _validate_kebab(name: str, label: str) -> None:
 
 def _find_marketplace_root(path: Path) -> Path:
     """Walk up from *path* to find the directory containing .claude-plugin/marketplace.json."""
-    current = path.resolve()
+    current = safe_resolve(path) or path
     while True:
         if (current / ".claude-plugin" / "marketplace.json").exists():
             return current
@@ -41,7 +42,7 @@ def _find_marketplace_root(path: Path) -> Path:
 
 def _find_single_plugin_root(path: Path) -> Optional[Path]:
     """Walk up to find a single-plugin repo (.claude-plugin/plugin.json without marketplace.json)."""
-    current = path.resolve()
+    current = safe_resolve(path) or path
     while True:
         has_plugin = (current / ".claude-plugin" / "plugin.json").exists()
         has_marketplace = (current / ".claude-plugin" / "marketplace.json").exists()
@@ -62,7 +63,7 @@ def _find_dot_claude_root(path: Path) -> Optional[Path]:
     Unlike marketplace/plugin detection, this does NOT walk up the tree.
     Walking up would match ~/.claude/ in home directories, causing false positives.
     """
-    resolved = path.resolve()
+    resolved = safe_resolve(path) or path
     dot_claude = resolved / ".claude"
     if dot_claude.is_dir():
         if any((dot_claude / m).is_dir() for m in _DOT_CLAUDE_MARKERS):
@@ -79,7 +80,7 @@ def _find_plugin_context(path: Path, plugin_name: Optional[str]) -> Tuple[Path, 
       3. .claude/ directory repo: use .claude/ as the target directory
       4. Ambiguous: error with guidance
     """
-    resolved = (path or Path.cwd()).resolve()
+    resolved = safe_resolve((path or Path.cwd())) or (path or Path.cwd())
 
     # Check for marketplace first
     try:
@@ -201,7 +202,8 @@ def _marketplace_plugin_root(root: Path) -> Optional[str]:
     plugin_root = metadata.get("pluginRoot")
     if not isinstance(plugin_root, str) or not plugin_root:
         return None
-    if not (root / plugin_root).resolve().is_relative_to(root.resolve()):
+    resolved_root = safe_resolve(root)
+    if resolved_root is None or contained_resolve(root / plugin_root, resolved_root) is None:
         return None
     return plugin_root
 
@@ -226,6 +228,9 @@ def _register_plugin(root: Path, name: str, source: str, description: str) -> No
 
 def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
     """Find the directory for an existing plugin."""
+    resolved_root = safe_resolve(root)
+    if resolved_root is None:
+        raise ValueError(f"Marketplace root cannot be resolved: {root}")
     mp_path = root / ".claude-plugin" / "marketplace.json"
     data = json.loads(mp_path.read_text(encoding="utf-8"))
     plugins = data.get("plugins", [])
@@ -248,13 +253,17 @@ def _resolve_plugin_dir(root: Path, plugin_name: str) -> Path:
             # path, but fall back to the root-relative one when only it
             # exists (real marketplaces set pluginRoot while their sources
             # already include that prefix).
-            resolved = (root / source).resolve()
+            resolved = safe_resolve(root / source)
             if plugin_root and not Path(source).is_absolute():
-                composed = (root / plugin_root / source).resolve()
-                if composed.exists() or not resolved.exists():
+                composed = safe_resolve(root / plugin_root / source)
+                if composed is not None and (
+                    safe_exists(composed) or resolved is None or not safe_exists(resolved)
+                ):
                     resolved = composed
-            if not resolved.is_relative_to(root.resolve()):
-                raise ValueError(f"Plugin source {source!r} resolves outside marketplace root")
+            if resolved is None or not resolved.is_relative_to(resolved_root):
+                raise ValueError(
+                    f"Plugin source {source!r} is unresolved or outside marketplace root"
+                )
             return resolved
     raise FileNotFoundError(f"Plugin {plugin_name!r} not found in marketplace.json")
 
@@ -330,7 +339,10 @@ def add_skill(
     except FileNotFoundError:
         if plugin_name:
             raise
-        base = (path or Path.cwd()).resolve()
+        unresolved_base = path or Path.cwd()
+        base = safe_resolve(unresolved_base)
+        if base is None:
+            raise ValueError(f"Skill base path cannot be resolved: {unresolved_base}")
         if (base / "skills").is_dir():
             base = base / "skills"
         mp_type = DEFAULT_MARKETPLACE_TYPE
