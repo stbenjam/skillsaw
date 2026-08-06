@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import fnmatch
-import functools
 from pathlib import Path
 from typing import List, Tuple
 
 from skillsaw.paths import safe_resolve
 
 
-@functools.lru_cache(maxsize=None)
 def pattern_variants(pattern: str) -> Tuple[str, ...]:
     """Expand a pattern with gitignore's zero-directory ``**/`` meaning."""
     variants = {pattern}

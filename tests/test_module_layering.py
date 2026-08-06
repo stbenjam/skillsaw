@@ -164,11 +164,14 @@ def test_discovery_modules_are_state_free(path):
     tree = ast.parse(path.read_text())
     imports = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            imports.append(node.module)
-        elif isinstance(node, ast.Import):
+        if isinstance(node, ast.Import):
             imports.extend(alias.name for alias in node.names)
-    assert not any(name == "skillsaw.context" or name.endswith(".context") for name in imports)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            imports.append(module)
+            imports.extend(f"{module}.{alias.name}" for alias in node.names)
+    offenders = [name for name in imports if "context" in name.split(".")]
+    assert not offenders, f"{path.relative_to(SRC)} imports context: {offenders}"
 
 
 def test_context_stays_below_repository_model_budget():
