@@ -3,7 +3,7 @@
 
 # description-routing
 
-Descriptions should tell the model when to route work to a skill, agent, or command
+Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose
 
 | | |
 |---|---|

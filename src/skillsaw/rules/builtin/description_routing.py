@@ -9,9 +9,11 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, SkillBlock
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-_FIRST_PERSON_RE = re.compile(r"\bI(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b")
+_FIRST_PERSON_RE = re.compile(
+    r"(?:^|[.!?]\s+)I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
+    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
+)
 _TRIGGER_MARKERS = (
-    "when ",
     "use when",
     "use this",
     "when the user",
@@ -64,7 +66,10 @@ class DescriptionRoutingRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Descriptions should tell the model when to route work to a skill, agent, or command"
+        return (
+            "Skill and agent descriptions should guide routing; command descriptions should "
+            "clearly explain their purpose"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -75,12 +80,22 @@ class DescriptionRoutingRule(Rule):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error or not block.has_frontmatter:
                     continue
-                description = block.field_value("description")
+                description_field = block.field("description")
+                if description_field is None:
+                    continue
+                line = block.key_line("description")
+                description = description_field.value
                 if not isinstance(description, str) or not description.strip():
+                    violations.append(
+                        self.violation(
+                            "Description is empty; explain what the building block does",
+                            block=block,
+                            line=line,
+                        )
+                    )
                     continue
 
                 text = description.strip()
-                line = block.key_line("description")
                 if (
                     block_type is not CommandBlock
                     and self.config.get("require-trigger-phrasing", True)

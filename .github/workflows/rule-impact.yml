@@ -130,9 +130,18 @@ jobs:
           }
 
           marker='<!-- rule-impact-report -->'
-          existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
-            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)
-          if [ -n "$existing" ]; then
+          lookup_error=""
+          if ! existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" 2>&1); then
+            handle_comment_failure "$existing" || exit 1
+            existing=""
+            lookup_error="true"
+          else
+            existing=$(printf '%s\n' "$existing" | head -1)
+          fi
+          if [ -n "$lookup_error" ]; then
+            echo "Skipping comment write because the existing-comment lookup failed."
+          elif [ -n "$existing" ]; then
             # Keep an existing report current even when the delta drops to zero.
             comment_error=""
             if ! comment_error=$(gh api --silent -X PATCH \
