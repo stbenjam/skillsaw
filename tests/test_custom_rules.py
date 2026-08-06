@@ -69,6 +69,16 @@ def test_load_custom_rule_missing_file(valid_plugin):
         Linter(context, config)
 
 
+def test_load_custom_rule_unresolvable_path(valid_plugin, monkeypatch):
+    """An unsafe custom-rule path must fail cleanly before filesystem access."""
+    config = LinterConfig(custom_rules=["unresolvable_rule.py"])
+    context = RepositoryContext(valid_plugin)
+    monkeypatch.setattr("skillsaw.linter.safe_resolve", lambda path: None)
+
+    with pytest.raises(ValueError, match="Custom rule path could not be resolved"):
+        Linter(context, config)
+
+
 def test_load_custom_rule_import_error(valid_plugin, temp_dir):
     """Test that linter fails when custom rule has import errors"""
     # Create a custom rule file with import error

@@ -1592,6 +1592,17 @@ class TestOutputFormats:
         assert "version" in native
         assert isinstance(gitlab, list)
 
+    def test_output_write_failure_returns_clean_error(self, tmp_path):
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        output_dir = tmp_path / "report.json"
+        output_dir.mkdir()
+
+        result = run_lint(repo, "--output", str(output_dir))
+
+        assert result["rc"] == 1
+        assert f"Failed to write report to '{output_dir}'" in result["stderr"]
+        assert "Traceback" not in result["stderr"]
+
 
 # ── Assert Directives (data-driven) ─────────────────────────────
 

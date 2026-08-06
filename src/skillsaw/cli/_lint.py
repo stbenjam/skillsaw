@@ -53,7 +53,13 @@ def _run_lint(args):
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        resolved_path = safe_resolve(Path(filepath)) or Path(filepath)
+        resolved_path = safe_resolve(Path(filepath))
+        if resolved_path is None:
+            print(
+                f"Error: --output path could not be resolved: {filepath}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if resolved_path in output_formats and output_formats[resolved_path] != fmt:
             print(
                 f"Error: --output targets '{filepath}' with conflicting formats "
@@ -244,8 +250,12 @@ def _run_lint(args):
                 fail_level=fail_level,
             )
         out_path = Path(output_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(report_cache[fmt], encoding="utf-8")
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(report_cache[fmt], encoding="utf-8")
+        except (OSError, ValueError) as e:
+            print(f"Error: Failed to write report to '{out_path}': {e}", file=sys.stderr)
+            sys.exit(1)
 
     errors, warnings_count, info = get_counts(all_violations)
 
