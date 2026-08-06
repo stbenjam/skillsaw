@@ -191,19 +191,27 @@ def _credential_name(name: str, *, header: bool) -> bool:
     return normalized in names or any(normalized.endswith(suffix) for suffix in suffixes)
 
 
-def mapped_secret_description(name: str, value: str, *, header: bool) -> Optional[str]:
+def mapped_secret_description(
+    name: str,
+    value: str,
+    *,
+    header: bool,
+    markers: Sequence[str] = DEFAULT_PLACEHOLDER_MARKERS,
+) -> Optional[str]:
     """Describe a secret embedded in an MCP env/header mapping entry.
 
     Structured tokens are always reportable, including in a value that also
     contains a placeholder. Otherwise placeholders are permitted, and values
     under deliberately narrow credential-bearing names are treated as
-    credentials even when they use an unknown token format. The return value
+    credentials even when they use an unknown token format. *markers* lets a
+    caller extend the placeholder allowlist with a project's own convention;
+    it never weakens the structured-token check above it. The return value
     never includes the candidate value.
     """
     structured = structured_secret_description(value)
     if structured is not None:
         return structured
-    if is_secret_placeholder(value):
+    if is_secret_placeholder(value, markers):
         return None
     if _credential_name(name, header=header):
         return (

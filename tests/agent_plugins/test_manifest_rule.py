@@ -4,10 +4,30 @@ import json
 
 import pytest
 
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 
 from ._helpers import MANIFEST_RULE, copy_fixture, lint_rules, messages_lower
+
+SCHEMA_BASE = "https://agent-plugins.org/schemas/1.0.0"
+
+SKILL_BODY = """---
+name: release-audit
+description: Audit a release branch before publishing it to the registry.
+---
+
+# Release audit
+
+Check the changelog, the version bump, and the signed tag.
+"""
+
+
+def _write_manifest(root, **fields):
+    """Write a plugin.json whose canonical fields can be overridden."""
+    manifest = {"$schema": f"{SCHEMA_BASE}/plugin.schema.json", "name": "fixture-plugin"}
+    manifest.update(fields)
+    (root / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return root
 
 
 def _finding_for(findings, needle: str):
@@ -177,6 +197,69 @@ class TestFixedLocationsAndContainment:
     def test_missing_optional_component_locations_are_clean(self, tmp_path):
         repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
         assert lint_rules(repo, MANIFEST_RULE) == []
+
+    def test_manifest_directory_is_not_a_manifest(self, tmp_path):
+        (tmp_path / "plugin.json").mkdir()
+
+        findings = lint_rules(
+            tmp_path,
+            MANIFEST_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        assert any(
+            "plugin.json" in message and "regular file" in message
+            for message in messages_lower(findings)
+        ), messages_lower(findings)
+
+    def test_escaping_skill_directory_does_not_hide_valid_siblings(self, tmp_path):
+        outside = tmp_path / "outside" / "borrowed"
+        (outside / "nested").mkdir(parents=True)
+        repo = tmp_path / "repo"
+        skills = repo / "skills"
+        (skills / "valid").mkdir(parents=True)
+        (skills / "valid" / "SKILL.md").write_text(SKILL_BODY, encoding="utf-8")
+        (skills / "escaping").symlink_to("../../outside/borrowed", target_is_directory=True)
+        _write_manifest(repo)
+
+        findings = lint_rules(repo, MANIFEST_RULE)
+        context = RepositoryContext(repo)
+
+        assert any(
+            "escaping" in message and "outside the plugin root" in message
+            for message in messages_lower(findings)
+        ), messages_lower(findings)
+        assert all("valid" not in message for message in messages_lower(findings))
+        assert [path.name for path in context.skills] == ["valid"]
+
+    def test_skill_entrypoint_directory_is_not_an_entrypoint(self, tmp_path):
+        repo = tmp_path / "repo"
+        skills = repo / "skills"
+        (skills / "shaped-like-a-skill" / "SKILL.md").mkdir(parents=True)
+        (skills / "valid").mkdir()
+        (skills / "valid" / "SKILL.md").write_text(SKILL_BODY, encoding="utf-8")
+        _write_manifest(repo)
+
+        findings = lint_rules(repo, MANIFEST_RULE)
+
+        assert any(
+            "shaped-like-a-skill/skill.md" in message and "regular file" in message
+            for message in messages_lower(findings)
+        ), messages_lower(findings)
+        assert all("valid/skill.md" not in message for message in messages_lower(findings))
+
+    def test_non_canonical_manifest_schema_identifier_is_reported(self, tmp_path):
+        _write_manifest(tmp_path, **{"$schema": "https://example.com/plugin.json"})
+
+        findings = lint_rules(
+            tmp_path,
+            MANIFEST_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        assert any("canonical" in message for message in messages_lower(findings)), messages_lower(
+            findings
+        )
 
 
 def test_manifest_rule_is_scoped_to_agent_plugin_repositories(tmp_path):

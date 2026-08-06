@@ -2,11 +2,15 @@
 
 import json
 
+import pytest
+
 from skillsaw.blocks import AgentPluginMcpBlock
-from skillsaw.context import RepositoryContext
+from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 
-from ._helpers import MCP_RULE, copy_fixture, lint_rules, messages_lower
+from ._helpers import MANIFEST_RULE, MCP_RULE, copy_fixture, lint_rules, messages_lower
+
+SCHEMA_BASE = "https://agent-plugins.org/schemas/1.0.0"
 
 
 def _contains(findings, *needles: str) -> bool:
@@ -15,6 +19,35 @@ def _contains(findings, *needles: str) -> bool:
         if all(needle in message for needle in needles):
             return True
     return False
+
+
+def _write_plugin(
+    root,
+    servers,
+    *,
+    name="fixture-plugin",
+    mcp_schema=f"{SCHEMA_BASE}/mcp.schema.json",
+    manifest=True,
+):
+    """Write a minimal Agent Plugin whose only interesting part is mcp.json."""
+    if manifest:
+        (root / "plugin.json").write_text(
+            json.dumps({"$schema": f"{SCHEMA_BASE}/plugin.schema.json", "name": name}),
+            encoding="utf-8",
+        )
+    document = {"mcpServers": servers}
+    if mcp_schema is not None:
+        document["$schema"] = mcp_schema
+    (root / "mcp.json").write_text(json.dumps(document), encoding="utf-8")
+    return root
+
+
+def _stdio(command, **extra):
+    return {"server": {"type": "stdio", "command": command, **extra}}
+
+
+def _remote(url, **extra):
+    return {"server": {"type": "streamable-http", "url": url, **extra}}
 
 
 class TestMcpDocument:
@@ -323,6 +356,192 @@ class TestMcpServerEntries:
 
         assert _contains(findings, "mixed-variant")
         assert _contains(findings, "unsupported-variant")
+
+
+class TestStdioCommandToken:
+    @pytest.mark.parametrize(
+        ("command", "needle"),
+        [
+            ("./", "directory"),
+            ("./.", "directory"),
+            ("./bin/..", "directory"),
+            ("node --eval 1", "args"),
+            ("sh -c", "args"),
+            # Non-breaking space: still whitespace, still two tokens.
+            ("npx server", "args"),
+        ],
+    )
+    def test_degenerate_and_multi_token_commands_are_rejected(self, tmp_path, command, needle):
+        _write_plugin(tmp_path, _stdio(command))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert findings, command
+        assert _contains(findings, "command", needle), messages_lower(findings)
+
+    @pytest.mark.parametrize("command", ["uv\x00x", "npx\tserver", "./bin/ser\x85ver"])
+    def test_control_characters_in_a_command_are_rejected(self, tmp_path, command):
+        _write_plugin(tmp_path, _stdio(command))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "command", "control character"), messages_lower(findings)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["uvx", "server.exe", "./bin/server", "./bin/../bin/server"],
+    )
+    def test_single_token_commands_are_accepted(self, tmp_path, command):
+        _write_plugin(tmp_path, _stdio(command))
+
+        assert lint_rules(tmp_path, MCP_RULE) == [], command
+
+    def test_absolute_commands_keep_the_established_message(self, tmp_path):
+        _write_plugin(tmp_path, _stdio("/usr/local/bin/server"))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "bare executable name"), messages_lower(findings)
+
+    def test_working_directory_may_still_name_the_plugin_root(self, tmp_path):
+        # './' is degenerate for an executable but valid for a directory.
+        _write_plugin(tmp_path, _stdio("uvx", cwd="./"))
+
+        assert lint_rules(tmp_path, MCP_RULE) == []
+
+
+class TestHeaderValueControlCharacters:
+    @pytest.mark.parametrize(
+        "value",
+        ["before\x85after", "before\x9bafter", "before\x7fafter", "before\x01after"],
+    )
+    def test_c0_c1_and_delete_are_rejected(self, tmp_path, value):
+        _write_plugin(
+            tmp_path,
+            _remote("https://example.com/mcp", headers={"X-Custom-Info": value}),
+        )
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "control character"), messages_lower(findings)
+        assert all(value not in finding.message for finding in findings)
+
+    def test_horizontal_tab_remains_permitted(self, tmp_path):
+        _write_plugin(
+            tmp_path,
+            _remote("https://example.com/mcp", headers={"X-Custom-Info": "tabbed\tvalue"}),
+        )
+
+        assert lint_rules(tmp_path, MCP_RULE) == []
+
+
+class TestRemoteUrlPolicy:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://h:99999999999999999999/x",
+            "https://exa mple.com/x",
+            "ftp://example.com/x",
+            "https:///x",
+        ],
+    )
+    def test_unusable_urls_report_the_absolute_url_requirement(self, tmp_path, url):
+        _write_plugin(tmp_path, _remote(url))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "absolute http or https url"), messages_lower(findings)
+
+    def test_private_http_host_is_not_loopback(self, tmp_path):
+        _write_plugin(tmp_path, _remote("http://192.168.1.1/x"))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "https"), messages_lower(findings)
+
+    def test_loopback_host_is_matched_case_insensitively(self, tmp_path):
+        _write_plugin(tmp_path, _remote("http://LOCALHOST/x"))
+
+        assert lint_rules(tmp_path, MCP_RULE) == []
+
+
+class TestPlaceholderConfiguration:
+    HEADERS = {"X-Api-Key": "corp-vault-9f2b41d7c6"}
+
+    def test_project_placeholder_convention_errors_by_default(self, tmp_path):
+        _write_plugin(tmp_path, _remote("https://example.com/mcp", headers=self.HEADERS))
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "x-api-key", "credential"), messages_lower(findings)
+
+    def test_additional_placeholders_suppresses_the_credential(self, tmp_path):
+        _write_plugin(tmp_path, _remote("https://example.com/mcp", headers=self.HEADERS))
+
+        findings = lint_rules(
+            tmp_path,
+            MCP_RULE,
+            rule_config={MCP_RULE: {"additional-placeholders": ["corp-vault-"]}},
+        )
+
+        assert findings == []
+
+    def test_structured_tokens_survive_a_placeholder_allowlist(self, tmp_path):
+        token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"
+        _write_plugin(
+            tmp_path,
+            _remote("https://example.com/mcp", headers={"X-Api-Key": f"corp-vault-{token}"}),
+        )
+
+        findings = lint_rules(
+            tmp_path,
+            MCP_RULE,
+            rule_config={MCP_RULE: {"additional-placeholders": ["corp-vault-"]}},
+        )
+
+        assert _contains(findings, "github"), messages_lower(findings)
+        assert all(token not in finding.message for finding in findings)
+
+
+class TestSchemaIdentifierAndMissingManifest:
+    def test_non_canonical_mcp_schema_identifier_is_reported(self, tmp_path):
+        _write_plugin(tmp_path, {}, mcp_schema="https://example.com/mcp.json")
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "canonical"), messages_lower(findings)
+
+    def test_servers_are_validated_when_the_manifest_is_absent(self, tmp_path):
+        _write_plugin(tmp_path, _stdio("uvx"), manifest=False)
+
+        assert (
+            lint_rules(
+                tmp_path,
+                MCP_RULE,
+                repo_types={RepositoryType.AGENT_PLUGIN},
+            )
+            == []
+        )
+
+    def test_invalid_server_is_reported_when_the_manifest_is_absent(self, tmp_path):
+        _write_plugin(tmp_path, _stdio("node --eval 1"), manifest=False)
+
+        mcp_findings = lint_rules(
+            tmp_path,
+            MCP_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+        manifest_findings = lint_rules(
+            tmp_path,
+            MANIFEST_RULE,
+            repo_types={RepositoryType.AGENT_PLUGIN},
+        )
+
+        assert _contains(mcp_findings, "command", "args"), messages_lower(mcp_findings)
+        assert any(
+            "plugin.json" in message and "missing" in message
+            for message in messages_lower(manifest_findings)
+        )
 
 
 def test_agent_mcp_routes_without_generic_duplicate_validation(tmp_path):

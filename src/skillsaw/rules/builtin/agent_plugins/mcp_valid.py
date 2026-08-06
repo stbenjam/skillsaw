@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext
@@ -21,7 +21,10 @@ from skillsaw.paths import (
     safe_resolve,
 )
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.secret_detection import mapped_secret_description
+from skillsaw.rules.builtin.secret_detection import (
+    DEFAULT_PLACEHOLDER_MARKERS,
+    mapped_secret_description,
+)
 
 from ._helpers import (
     AGENT_PLUGIN_REPO_TYPES,
@@ -44,11 +47,31 @@ _SERVER_VALIDATORS = {
 }
 
 
+def _is_control_character(char: str) -> bool:
+    """Whether *char* is a C0 control, DEL, or a C1 control (0x80-0x9F)."""
+    point = ord(char)
+    return point < 32 or 127 <= point <= 159
+
+
 class AgentPluginMcpValidRule(Rule):
     """Validate Agent Plugins mcp.json with component/server isolation."""
 
     repo_types = AGENT_PLUGIN_REPO_TYPES
     since = "0.18.0"
+
+    # Mirrors ``content-embedded-secrets``: a project that allowlisted its own
+    # placeholder convention for prose must not be told its mcp.json embeds a
+    # credential for the same value.
+    config_schema = {
+        "additional-placeholders": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Extra case-insensitive substrings that mark a generic "
+                "credential value as a placeholder (suppressing the violation)"
+            ),
+        },
+    }
 
     @property
     def rule_id(self) -> str:
@@ -191,17 +214,7 @@ class AgentPluginMcpValidRule(Rule):
             else:
                 schema_errors = list(validator.iter_errors(server))
                 schema_problem = schema_error_summary(schema_errors, limit=2)
-            if schema_errors:
-                violations.append(
-                    self.violation(
-                        f"MCP server '{safe_display(server_name)}' is invalid: "
-                        f"{schema_problem}",
-                        file_path=mcp_path,
-                        fingerprint_discriminator=(f"mcp:server:{stable_key(server_name)}:schema"),
-                    )
-                )
-                continue
-            if validator is None:
+            if validator is None or schema_errors:
                 violations.append(
                     self.violation(
                         f"MCP server '{safe_display(server_name)}' is invalid: "
@@ -244,6 +257,11 @@ class AgentPluginMcpValidRule(Rule):
 
     @staticmethod
     def _command_problem(command: str, plugin_dir: Path, plugin_root: Path) -> Optional[str]:
+        # A control character in an executable token is either a mis-encoded
+        # value or an attempt to smuggle one token past a naive reader; it is
+        # never part of a real program name, in either accepted form.
+        if any(_is_control_character(char) for char in command):
+            return "'command' must not contain control characters"
         if command.startswith("./"):
             suffix = command[2:]
             if (
@@ -252,9 +270,23 @@ class AgentPluginMcpValidRule(Rule):
                 or contained_resolve(plugin_dir / command, plugin_root) is None
             ):
                 return "'command' resolves outside the plugin root"
+            # './', './.' and './bin/..' all name the plugin root itself, which
+            # is a directory, not the executable the field must identify. This
+            # stays lexical on purpose — the binary may only exist post-install.
+            if not AgentPluginMcpValidRule._normalized_parts(suffix):
+                return "'command' must name an executable file, not a directory"
             return None
         if is_absolute_path(command) or "/" in command or "\\" in command:
             return "'command' must be a bare executable name or begin with './'"
+        # A bare name cannot be a path, so whitespace means the value packs
+        # arguments into the executable token ("node --eval …", "sh -c").
+        # Only whitespace is rejected: shell metacharacters are legal in file
+        # names, and rejecting them would fail valid single-token commands.
+        if any(char.isspace() for char in command):
+            return (
+                "'command' must be a single executable token; "
+                "arguments must be supplied via 'args'"
+            )
         return None
 
     @staticmethod
@@ -285,27 +317,39 @@ class AgentPluginMcpValidRule(Rule):
         return "'cwd' must begin with './', '${PLUGIN_ROOT}', or '${PLUGIN_DATA}'"
 
     @staticmethod
-    def _relative_path_escapes(value: str) -> bool:
-        """Whether a relative path crosses above its logical root.
+    def _normalized_parts(value: str) -> Optional[List[str]]:
+        """The path components *value* names, or ``None`` when it escapes.
 
         Safe internal normalization such as ``cache/../cache`` is valid under
         the spec's post-resolution containment rule. Treat both separators as
         portable input so a value checked on POSIX cannot escape on Windows.
+        An empty list means the value names its own logical root.
         """
-        depth = 0
+        parts: List[str] = []
         for part in value.replace("\\", "/").split("/"):
             if part in {"", "."}:
                 continue
             if part == "..":
-                if depth == 0:
-                    return True
-                depth -= 1
+                if not parts:
+                    return None
+                parts.pop()
             else:
-                depth += 1
-        return False
+                parts.append(part)
+        return parts
 
     @staticmethod
-    def _remote_problem(url: str, headers: Dict[str, str]) -> Optional[str]:
+    def _relative_path_escapes(value: str) -> bool:
+        """Whether a relative path crosses above its logical root."""
+        return AgentPluginMcpValidRule._normalized_parts(value) is None
+
+    def _placeholder_markers(self) -> Tuple[str, ...]:
+        """The placeholder allowlist, extended by this rule's configuration."""
+        extra = self.config.get("additional-placeholders", [])
+        if not isinstance(extra, list):
+            return DEFAULT_PLACEHOLDER_MARKERS
+        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+
+    def _remote_problem(self, url: str, headers: Dict[str, str]) -> Optional[str]:
         if any(ord(char) <= 32 or ord(char) == 127 for char in url):
             return "'url' must be an absolute HTTP or HTTPS URL"
         try:
@@ -332,18 +376,22 @@ class AgentPluginMcpValidRule(Rule):
             seen.add(folded)
             if not _HEADER_NAME.fullmatch(name):
                 return f"invalid HTTP header name '{safe_display(name)}'"
-            if any((ord(char) < 32 and char != "\t") or ord(char) == 127 for char in value):
+            # HTAB is the one control character RFC 9110 allows inside a field
+            # value; everything else in C0, DEL, and C1 (NEL, CSI, …) is
+            # rejected, since a header carrying one is either mis-encoded or a
+            # header-injection attempt.
+            if any(char != "\t" and _is_control_character(char) for char in value):
                 return f"HTTP header '{safe_display(name)}' contains a control character"
-        secret_problem = AgentPluginMcpValidRule._mapped_secret_problem(headers, header=True)
+        secret_problem = self._mapped_secret_problem(headers, header=True)
         if secret_problem:
             return secret_problem
         return None
 
-    @staticmethod
-    def _mapped_secret_problem(values: Dict[str, str], *, header: bool) -> Optional[str]:
+    def _mapped_secret_problem(self, values: Dict[str, str], *, header: bool) -> Optional[str]:
         """Report a credential in an env/header map without exposing its value."""
+        markers = self._placeholder_markers()
         for name, value in values.items():
-            description = mapped_secret_description(name, value, header=header)
+            description = mapped_secret_description(name, value, header=header, markers=markers)
             if description is None:
                 continue
             location = "HTTP header" if header else "environment variable"

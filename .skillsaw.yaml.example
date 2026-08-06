@@ -19,6 +19,7 @@ rules:
   agent-plugin-mcp-valid:
     enabled: auto
     severity: error
+    # additional-placeholders: []
 
   # Skill description should be meaningful and within length limits
   agentskill-description:

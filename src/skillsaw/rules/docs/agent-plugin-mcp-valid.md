@@ -30,9 +30,11 @@ Each server is one closed variant:
   string-map `headers`.
 
 A stdio `command` is one executable token: either a bare executable name or a
-package-relative path beginning with `./`. Package-relative commands must
-remain inside the resolved plugin root. `args` and environment values are
-opaque strings for path handling, even when they contain `..`.
+package-relative path beginning with `./`. A bare command containing
+whitespace (such as `node --eval`) is rejected — supply arguments through
+`args` — and a `./` path must name a file, not a directory. Package-relative
+commands must remain inside the resolved plugin root. `args` and environment
+values are opaque strings for path handling, even when they contain `..`.
 
 An explicit `cwd` must begin with `./`, `${PLUGIN_ROOT}`, or
 `${PLUGIN_DATA}` and remain inside the selected root after the recognized
@@ -48,12 +50,15 @@ Configured `env` values and remote `headers` are visible package data, not a
 portable secret mechanism. They must not embed credentials or other secrets.
 The rule conservatively reports recognized structured tokens and values under
 obvious credential-bearing environment or header names, while accepting clear
-placeholder and variable-reference values. Diagnostics identify the affected
+placeholder and variable-reference values. Extend the recognized placeholder
+markers with `additional-placeholders`. Diagnostics identify the affected
 mapping key but never include its value.
 
 Agent Plugin `mcp.json` nodes remain visible to the opt-in `mcp-prohibited`
-policy rule. The generic `mcp-valid-json` rule stands down for this format so
-the two validators do not issue contradictory or duplicate schema findings.
+policy rule. The generic `mcp-valid-json` rule stands down for this format
+whenever this rule can run, so the two validators never issue contradictory
+or duplicate schema findings; under a forced non-agent `--type`, the generic
+rule covers the file instead.
 
 ## How to fix
 

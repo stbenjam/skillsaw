@@ -11,7 +11,10 @@ from typing import Optional
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.paths import escapes_root, has_parent_traversal, is_absolute_path
-from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.utils import (  # noqa: F401  — re-exported for rule modules
+    read_text,
+    reject_nonfinite_json_number,
+)
 
 # A Codex marketplace repository contains the plugins it catalogs, so the
 # plugin rules have to fire there too — the same reason PLUGIN_REPO_TYPES
@@ -27,16 +30,6 @@ CODEX_MARKETPLACE_REPO_TYPES = {RepositoryType.CODEX_MARKETPLACE}
 # newline, so ``"my-plugin\n"`` would pass as kebab-case and the
 # registration autofix would write it into the published catalog.
 KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\Z")
-
-
-def reject_nonfinite_json_number(value: str) -> None:
-    """Reject JavaScript number extensions that strict JSON does not allow.
-
-    ``json.loads`` accepts ``NaN``/``Infinity``/``-Infinity`` by default;
-    Codex's strict parser does not. Passed as ``parse_constant`` so both the
-    validity rules and the registration fixer reject the same documents.
-    """
-    raise ValueError(f"non-finite JSON number: {value}")
 
 
 def nonfinite_constant_error(file_path: Path) -> str:

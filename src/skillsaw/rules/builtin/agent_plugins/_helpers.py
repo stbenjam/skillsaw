@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
-from pathlib import Path
-from typing import Any, Optional, Tuple
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -13,7 +10,9 @@ from jsonschema.exceptions import ValidationError
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.formats.agent_plugins import load_agent_plugin_schema
-from skillsaw.rules.builtin.utils import read_text
+from skillsaw.rules.builtin.utils import (  # noqa: F401  — re-exported for rule modules
+    strict_json,
+)
 
 AGENT_PLUGIN_REPO_TYPES = {RepositoryType.AGENT_PLUGIN}
 
@@ -21,26 +20,6 @@ PLUGIN_SCHEMA = load_agent_plugin_schema("plugin.schema.json")
 MCP_SCHEMA = load_agent_plugin_schema("mcp.schema.json")
 PLUGIN_VALIDATOR = Draft202012Validator(PLUGIN_SCHEMA)
 MCP_VALIDATOR = Draft202012Validator(MCP_SCHEMA)
-
-
-def _reject_nonfinite(value: str) -> None:
-    """Reject Python's non-standard NaN and Infinity JSON extensions."""
-    raise ValueError(f"non-finite JSON number: {value}")
-
-
-def strict_json(path: Path) -> Tuple[Optional[Any], Optional[str]]:
-    """Parse a UTF-8 document as strict JSON without network access."""
-    content = read_text(path)
-    if content is None:
-        return None, "could not read file"
-    try:
-        return json.loads(content, parse_constant=_reject_nonfinite), None
-    except json.JSONDecodeError as error:
-        return None, f"{error.msg} at line {error.lineno}, column {error.colno}"
-    except ValueError as error:
-        return None, str(error)
-    except RecursionError:
-        return None, "JSON nesting is too deep"
 
 
 def format_schema_error(error: ValidationError) -> str:
