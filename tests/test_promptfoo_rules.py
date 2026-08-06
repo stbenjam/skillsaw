@@ -1196,6 +1196,7 @@ def test_file_ref_stat_failure_reports_missing(temp_dir, monkeypatch):
     real_exists = Path.exists
 
     def hostile_exists(path):
+        """Raise when the hostile ref reaches a raw filesystem probe."""
         if path.name == "hostile.yaml":
             raise OSError("cannot stat hostile ref")
         return real_exists(path)

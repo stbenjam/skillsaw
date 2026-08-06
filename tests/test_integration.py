@@ -1593,6 +1593,7 @@ class TestOutputFormats:
         assert isinstance(gitlab, list)
 
     def test_output_write_failure_returns_clean_error(self, tmp_path):
+        """Report write failures must return a clean CLI error."""
         repo = copy_fixture("single-plugin/clean", tmp_path)
         output_dir = tmp_path / "report.json"
         output_dir.mkdir()

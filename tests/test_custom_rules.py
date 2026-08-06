@@ -86,6 +86,7 @@ def test_load_custom_rule_stat_error_preserves_cause(valid_plugin, monkeypatch):
     real_stat = Path.stat
 
     def unreadable_stat(path, *args, **kwargs):
+        """Raise an access failure for the targeted custom-rule path."""
         if path.name == "unreadable_rule.py":
             raise PermissionError("permission denied")
         return real_stat(path, *args, **kwargs)

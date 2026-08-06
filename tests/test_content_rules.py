@@ -1618,11 +1618,13 @@ class TestContentBrokenInternalReferenceRule:
         real_exists = Path.exists
 
         def hostile_resolve(path):
+            """Reject the hostile fixture path while resolving other paths."""
             if path.name == "hostile.md":
                 return None
             return real_safe_resolve(path)
 
         def hostile_exists(path):
+            """Fail if the rejected hostile path reaches a raw stat call."""
             if path.name == "hostile.md":
                 raise OSError("cannot stat hostile link")
             return real_exists(path)
@@ -1687,11 +1689,13 @@ class TestContentUnlinkedInternalReferenceRule:
         real_exists = Path.exists
 
         def hostile_resolve(path):
+            """Reject the hostile fixture path while resolving other paths."""
             if path.name == "hostile.md":
                 return None
             return real_safe_resolve(path)
 
         def hostile_exists(path):
+            """Fail if the rejected hostile path reaches a raw stat call."""
             if path.name == "hostile.md":
                 raise OSError("cannot stat hostile reference")
             return real_exists(path)

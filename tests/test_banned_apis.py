@@ -49,6 +49,7 @@ def _unsafe_path_calls() -> list[str]:
 
 class TestBannedApis:
     def test_no_unsafe_path_resolution_calls(self):
+        """Skillsaw source must use the safe path-resolution wrappers."""
         offenders = _unsafe_path_calls()
         assert not offenders, (
             "Unsafe path-resolution calls found: "
