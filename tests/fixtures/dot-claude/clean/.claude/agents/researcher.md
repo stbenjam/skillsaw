@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Research a technical question by reading code and documentation
+description: Research a technical question by reading code and documentation. Use when background investigation is needed.
 subagent_type: explore
 ---
 

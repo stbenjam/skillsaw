@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review code changes for correctness, style compliance, and test coverage
+description: Review code changes for correctness, style compliance, and test coverage. Use when assessing a pull request.
 ---
 
 # Code Review

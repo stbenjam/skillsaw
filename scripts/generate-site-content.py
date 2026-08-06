@@ -106,6 +106,7 @@ RULE_GROUPS = [
         [
             "skill-frontmatter",
             "agent-frontmatter",
+            "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
             "hooks-prohibited",

@@ -2113,6 +2113,53 @@ class TestDescriptionMaxLengthConfig:
         assert "256" in vs[0]["message"]
 
 
+@pytest.mark.integration
+class TestDescriptionRouting:
+    """Descriptions are linted as routing signals across block types."""
+
+    FIXTURE = "description-routing"
+
+    @staticmethod
+    def _routing_violations(result):
+        return [v for v in violations(result) if v["rule_id"] == "description-routing"]
+
+    def test_reports_each_routing_failure_and_keeps_clean_descriptions_clean(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--rule", "description-routing")
+        vs = self._routing_violations(r)
+
+        assert len(vs) == 5
+        assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
+        assert sum("when to use" in v["message"] for v in vs) == 2
+        assert sum("first-person" in v["message"] for v in vs) == 1
+        assert sum("restates the name" in v["message"] for v in vs) == 2
+        assert not any("incident-investigator" in v["file_path"] for v in vs)
+        assert not any("test-staging" in v["file_path"] for v in vs)
+        assert not any("check-release" in v["file_path"] for v in vs)
+
+        rerun = run_lint(repo, "--rule", "description-routing")
+        assert self._routing_violations(rerun) == vs
+
+    @pytest.mark.parametrize(
+        ("option", "message"),
+        [
+            ("require-trigger-phrasing", "when to use"),
+            ("flag-first-person", "first-person"),
+            ("flag-name-restatement", "restates the name"),
+        ],
+    )
+    def test_subchecks_can_be_disabled_independently(self, tmp_path, option, message):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  description-routing:\n    " + option + ": false\n",
+            encoding="utf-8",
+        )
+
+        r = run_lint(repo, config=config)
+        assert not any(message in v["message"] for v in self._routing_violations(r))
+
+
 class TestUnlinkedInternalReferenceAutofix:
     """Integration tests for content-unlinked-internal-reference autofix via CLI."""
 

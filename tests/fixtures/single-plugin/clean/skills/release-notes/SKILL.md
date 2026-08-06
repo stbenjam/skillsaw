@@ -1,6 +1,6 @@
 ---
 name: release-notes
-description: Generate release notes from git log between two tags or refs
+description: Generate release notes from git log between two tags or refs. Use when preparing a release.
 ---
 
 # Release Notes Generator
