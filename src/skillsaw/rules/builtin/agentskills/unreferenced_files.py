@@ -102,7 +102,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.context import RepositoryContext, _pattern_variants
+from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import SkillNode
 from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
@@ -201,6 +201,9 @@ class AgentSkillUnreferencedFilesRule(Rule):
             self.config_schema["directory_mention_covers"]["default"],
         )
         exclude_patterns = list(self.config.get("exclude", []) or [])
+        exclude_variants = [
+            variant for pattern in exclude_patterns for variant in context.pattern_variants(pattern)
+        ]
 
         violations: List[RuleViolation] = []
         for skill_node in context.lint_tree.find(SkillNode):
@@ -233,7 +236,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 if file_path in referenced:
                     continue
                 rel = (safe_resolve(file_path) or file_path).relative_to(skill_resolved).as_posix()
-                if self._is_excluded(rel, file_path.name, exclude_patterns):
+                if self._is_excluded(rel, file_path.name, exclude_variants):
                     continue
                 violations.append(
                     self.violation(
@@ -280,7 +283,8 @@ class AgentSkillUnreferencedFilesRule(Rule):
         return files
 
     @staticmethod
-    def _is_excluded(rel: str, name: str, extra_patterns: List[str]) -> bool:
+    def _is_excluded(rel: str, name: str, extra_variants: List[str]) -> bool:
+        """Return whether a bundled path matches built-in or configured exclusions."""
         if rel == "SKILL.md":
             return True
         if name in ("README.md", "CHANGELOG.md"):
@@ -293,13 +297,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
             return True
         if "testdata" in rel.split("/")[:-1]:
             return True
-        for pattern in extra_patterns:
-            # Same gitignore-style leading-**/ expansion as the global and
-            # per-rule excludes (see context._pattern_variants, issue #322):
-            # **/generated/** must also match a top-level generated/ dir.
-            for variant in _pattern_variants(pattern):
-                if fnmatch.fnmatch(rel, variant) or fnmatch.fnmatch(name, variant):
-                    return True
+        # Same gitignore-style leading-**/ expansion as the global and
+        # per-rule excludes (see RepositoryContext.pattern_variants, issue
+        # #322): **/generated/** must also match a top-level generated/ dir.
+        for variant in extra_variants:
+            if fnmatch.fnmatch(rel, variant) or fnmatch.fnmatch(name, variant):
+                return True
         return False
 
     # -- reachability --------------------------------------------------------

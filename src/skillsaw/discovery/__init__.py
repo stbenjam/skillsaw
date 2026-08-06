@@ -1,8 +1,9 @@
-"""Filesystem discovery of ecosystem plugin content.
+"""State-free filesystem discovery of repositories and ecosystem content.
 
-One state-free module per ecosystem (``discovery/codex.py``); this
-package holds only the ecosystem-neutral helpers. These modules must
-never import from ``skillsaw.context`` — the context imports them.
+The ``claude`` and ``codex`` modules handle ecosystem-specific content,
+while ``detect`` and ``excludes`` provide repository-wide helpers. This
+module contains shared composition helpers. Discovery modules must never
+import from ``skillsaw.context`` — the context imports them.
 """
 
 from __future__ import annotations

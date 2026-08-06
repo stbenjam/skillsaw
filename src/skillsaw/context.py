@@ -4,13 +4,10 @@ Repository context detection and management
 
 from __future__ import annotations
 
-import fnmatch
-import functools
 from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Iterator, Optional, List, Dict, Any, FrozenSet, Set, Tuple, TYPE_CHECKING
-import json
 import logging
 import os
 
@@ -20,6 +17,7 @@ import os
 # for callers that import them from ``skillsaw.context``.
 from .discovery import merge_plugin_dirs
 from .discovery import codex as codex_discovery
+from .discovery import claude as claude_discovery
 from .formats.codex import (
     CODEX_PLUGIN_MANIFEST as _CODEX_PLUGIN_MANIFEST,
     codex_declared_skill_dirs,
@@ -27,63 +25,15 @@ from .formats.codex import (
     codex_manifest_is_contained,
     codex_marker_escapes,
 )
-from .formats.promptfoo import is_promptfoo_config
+from .discovery import detect as detect_discovery
+from .discovery.excludes import pattern_variants as _pattern_variants
+from .discovery.excludes import path_matches_patterns
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
 
 logger = logging.getLogger(__name__)
-
-
-@functools.lru_cache(maxsize=None)
-def _pattern_variants(pattern: str) -> Tuple[str, ...]:
-    """Expand *pattern* into the fnmatch patterns it is tried as.
-
-    :mod:`fnmatch` treats ``**`` exactly like ``*`` (which already crosses
-    ``/``), so a leading ``**/`` demands at least one directory and misses a
-    top-level match. To honor gitignore semantics where ``**/`` also matches
-    zero leading directories, a variant with the prefix stripped is tried as
-    well; the original pattern is always kept, so the expansion is a strict
-    superset of plain fnmatch.
-
-    A trailing ``/**`` is not expanded: it matches strictly inside the
-    named directory, never the directory entry itself, so a violation
-    addressed to an excluded directory — a missing required file, say —
-    is still reported.
-    """
-    variants = {pattern}
-    if pattern.startswith("**/"):
-        variants.add(pattern[3:])
-    return tuple(sorted(variants))
-
-
-def path_matches_patterns(path: Path, root: Path, patterns: List[str]) -> bool:
-    """True if *path*, made relative to *root*, matches any fnmatch pattern.
-
-    Patterns use :mod:`fnmatch` syntax where ``*`` crosses ``/``, extended
-    with one gitignore-style rule via :func:`_pattern_variants`: a leading
-    ``**/`` also matches at the start of the relative path.
-
-    The single exclusion predicate shared by the context, the lint tree, and
-    the linter's per-rule excludes. *root* must be resolved; paths outside
-    *root* never match.
-    """
-    if not patterns:
-        return False
-    resolved = safe_resolve(path)
-    if resolved is None:
-        return False
-    try:
-        rel = str(resolved.relative_to(root))
-    except (ValueError, OSError, RuntimeError):
-        # OSError/RuntimeError: a symlink loop under *path*. Raising here
-        # would abort the lint that was about to report the loop's own
-        # diagnostic — unresolvable paths simply never match an exclude.
-        return False
-    return any(
-        fnmatch.fnmatch(rel, variant) for pat in patterns for variant in _pattern_variants(pat)
-    )
 
 
 class RepositoryType(Enum):
@@ -233,6 +183,7 @@ class RepositoryContext:
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
+        self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
@@ -342,7 +293,17 @@ class RepositoryContext:
 
     def is_path_excluded(self, path: Path) -> bool:
         """Check if a path matches any exclude pattern."""
-        return path_matches_patterns(path, self.root_path, self.exclude_patterns)
+        return self.matches_patterns(path, self.exclude_patterns)
+
+    def pattern_variants(self, pattern: str) -> Tuple[str, ...]:
+        """Expand one pattern once for this repository context."""
+        if pattern not in self._pattern_variants_cache:
+            self._pattern_variants_cache[pattern] = _pattern_variants(pattern)
+        return self._pattern_variants_cache[pattern]
+
+    def matches_patterns(self, path: Path, patterns: List[str]) -> bool:
+        """Match a path with pattern variants cached by this context."""
+        return path_matches_patterns(path, self.root_path, patterns, self.pattern_variants)
 
     def apm_compiled_roots(self) -> Set[Path]:
         """Resolved compiled-output directories to skip when APM is present.
@@ -355,9 +316,8 @@ class RepositoryContext:
             roots: Set[Path] = set()
             if self.has_apm:
                 for compiled_dir_name in self.APM_COMPILED_DIRS:
-                    compiled_path = safe_resolve((self.root_path / compiled_dir_name)) or (
-                        self.root_path / compiled_dir_name
-                    )
+                    compiled_path = self.root_path / compiled_dir_name
+                    compiled_path = safe_resolve(compiled_path) or compiled_path
                     if compiled_path.is_dir():
                         roots.add(compiled_path)
             self._apm_compiled_roots = roots
@@ -446,50 +406,12 @@ class RepositoryContext:
         - Any ``*.instructions.md`` files anywhere in the repo tree (Copilot
           named instruction files such as ``coding.instructions.md``)
         """
-        files: List[Path] = [
-            self.root_path / name
-            for name in self._INSTRUCTION_FILENAMES
-            if (self.root_path / name).exists()
-        ]
-        files.extend(self._find_named_instructions_md())
-        return files
-
-    def _find_named_instructions_md(self) -> List[Path]:
-        """Walk the repo collecting ``*.instructions.md`` files, skipping heavy directories."""
-        found: List[Path] = []
-        for dirpath, dirnames, filenames in os.walk(self.root_path):
-            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
-            for f in filenames:
-                if f.endswith(".instructions.md"):
-                    found.append(Path(dirpath) / f)
-        return sorted(found)
+        return detect_discovery.instruction_files(self.root_path, self._INSTRUCTION_FILENAMES)
 
     def _detect_formats(self) -> Set[str]:
-        formats: Set[str] = set()
-
-        def marker(*parts: str, is_dir: bool = False) -> bool:
-            # Excluded marker files must not flip format flags — the lint
-            # tree skips them, so format-gated rules would fire for nothing.
-            p = self.root_path.joinpath(*parts)
-            if self.is_path_excluded(p):
-                return False
-            return p.is_dir() if is_dir else p.exists()
-
-        if marker(".cursor", "rules", is_dir=True) or marker(".cursorrules"):
-            formats.add(HAS_CURSOR)
-        if marker(".github", "copilot-instructions.md") or self._has_instructions_md():
-            formats.add(HAS_COPILOT)
-        if marker("GEMINI.md"):
-            formats.add(HAS_GEMINI)
-        if marker("AGENTS.md"):
-            formats.add(HAS_AGENTS_MD)
-        if marker(".kiro", is_dir=True):
-            formats.add(HAS_KIRO)
-        if marker("CLAUDE.md"):
-            formats.add(HAS_CLAUDE_MD)
-        if marker(".coderabbit.yaml"):
-            formats.add(HAS_CODERABBIT)
-        return formats
+        return detect_discovery.instruction_formats(
+            self.root_path, self.instruction_files, self.is_path_excluded
+        )
 
     _WALK_SKIP_DIRS = frozenset(
         {
@@ -505,17 +427,9 @@ class RepositoryContext:
         }
     )
 
-    def _has_instructions_md(self) -> bool:
-        """Check whether any ``*.instructions.md`` files were discovered."""
-        return any(f.name.endswith(".instructions.md") for f in self.instruction_files)
-
     def _detect_apm(self) -> bool:
         """Check if this repository uses the APM (Agent Package Manager) format"""
-        if (self.root_path / ".apm").is_dir():
-            return True
-        if (self.root_path / "apm.yml").is_file():
-            return True
-        return False
+        return detect_discovery.has_apm(self.root_path)
 
     def _detect_types(self) -> Set[RepositoryType]:
         """Detect all applicable repository types.
@@ -524,7 +438,15 @@ class RepositoryContext:
         that also has a .coderabbit.yaml).  SINGLE_PLUGIN and MARKETPLACE are
         mutually exclusive (elif chain), but everything else is independent.
         """
-        types: Set[RepositoryType] = set()
+        types = {
+            RepositoryType(label)
+            for label in detect_discovery.marker_types(
+                self.root_path,
+                apm=self.has_apm,
+                should_skip=self._should_skip_dir,
+                walk_files=self._walk_files,
+            )
+        }
 
         # Marketplace / single-plugin (mutually exclusive)
         if (self.root_path / ".claude-plugin" / "marketplace.json").exists():
@@ -533,26 +455,6 @@ class RepositoryContext:
             types.add(RepositoryType.SINGLE_PLUGIN)
         elif self._plugins_dir_suggests_claude_marketplace():
             types.add(RepositoryType.MARKETPLACE)
-
-        # Agentskills
-        if self._is_agentskills_repo():
-            types.add(RepositoryType.AGENTSKILLS)
-
-        # CodeRabbit
-        if (self.root_path / ".coderabbit.yaml").exists():
-            types.add(RepositoryType.CODERABBIT)
-
-        # APM
-        if self.has_apm:
-            types.add(RepositoryType.APM)
-
-        # DOT_CLAUDE
-        if self._is_dot_claude():
-            types.add(RepositoryType.DOT_CLAUDE)
-
-        # Promptfoo
-        if self._is_promptfoo_repo():
-            types.add(RepositoryType.PROMPTFOO)
 
         # Codex — independent of the Claude types above. A repo commonly
         # ships both manifests side by side (skillsaw itself does), so these
@@ -567,25 +469,6 @@ class RepositoryContext:
             types.add(RepositoryType.UNKNOWN)
 
         return types
-
-    def _is_agentskills_repo(self) -> bool:
-        """Check if this looks like an agentskills.io skill repository"""
-        if (self.root_path / "SKILL.md").exists():
-            return True
-
-        # Standard discovery paths (checked explicitly since they start with dot)
-        for discovery_path in (
-            ".apm/skills",
-            ".claude/skills",
-            ".github/skills",
-            ".agents/skills",
-        ):
-            skills_path = self.root_path / discovery_path
-            if skills_path.is_dir() and self._has_skill_md_recursive(skills_path):
-                return True
-
-        # Recurse into non-dot subdirectories looking for SKILL.md
-        return self._has_skill_md_recursive(self.root_path)
 
     def _plugins_dir_suggests_claude_marketplace(self) -> bool:
         """Whether ``plugins/`` is marketplace evidence once Codex claims
@@ -613,41 +496,6 @@ class RepositoryContext:
             return not self.codex_catalog_exists()
         return any(not self.is_codex_only_plugin(item) for item in children)
 
-    def _is_dot_claude(self) -> bool:
-        """Check if this is a .claude/ directory or a repo containing one.
-
-        When APM is present, .claude/ is a compiled output directory and should
-        not drive repo type detection.
-        """
-        if self.has_apm:
-            return False
-        claude_dir = self.root_path
-        if self.root_path.name != ".claude":
-            claude_dir = self.root_path / ".claude"
-        if not claude_dir.is_dir():
-            return False
-        markers = ("commands", "skills", "hooks", "agents", "rules")
-        return any((claude_dir / m).is_dir() for m in markers)
-
-    def _is_promptfoo_repo(self) -> bool:
-        """Check if this repository contains promptfoo eval configs."""
-        for f in self._walk_files(self.root_path):
-            if fnmatch.fnmatch(f.name, "promptfooconfig*.yaml") or fnmatch.fnmatch(
-                f.name, "promptfooconfig*.yml"
-            ):
-                return True
-        evals_dir = self.root_path / "evals"
-        if evals_dir.is_dir():
-            from .utils import read_yaml
-
-            for yaml_file in self._walk_files(evals_dir):
-                if yaml_file.suffix not in (".yaml", ".yml"):
-                    continue
-                data, error = read_yaml(yaml_file)
-                if not error and is_promptfoo_config(data):
-                    return True
-        return False
-
     def _walk_files(self, root: Path) -> Iterator[Path]:
         """Yield all files under *root*, pruning ``_WALK_SKIP_DIRS`` directories."""
         for dirpath, dirnames, filenames in os.walk(root):
@@ -658,20 +506,6 @@ class RepositoryContext:
     def _should_skip_dir(self, item: Path) -> bool:
         """True if *item* is not a directory worth recursing into."""
         return not item.is_dir() or item.name.startswith(".") or item.name in self._WALK_SKIP_DIRS
-
-    def _has_skill_md_recursive(self, path: Path) -> bool:
-        """Check if any subdirectory contains SKILL.md, recursively"""
-        try:
-            for item in path.iterdir():
-                if self._should_skip_dir(item):
-                    continue
-                if (item / "SKILL.md").exists():
-                    return True
-                if self._has_skill_md_recursive(item):
-                    return True
-        except OSError:
-            pass
-        return False
 
     def has_marketplace(self) -> bool:
         """Check if repository has a marketplace"""
@@ -990,15 +824,7 @@ class RepositoryContext:
 
     def _load_marketplace(self) -> Optional[Dict[str, Any]]:
         """Load marketplace.json if it exists"""
-        marketplace_file = self.root_path / ".claude-plugin" / "marketplace.json"
-        if not marketplace_file.exists():
-            return None
-
-        try:
-            with open(marketplace_file, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return None
+        return claude_discovery.load_marketplace(self.root_path)
 
     def marketplace_plugin_root(self) -> Optional[str]:
         """
@@ -1009,290 +835,32 @@ class RepositoryContext:
         ``"./plugins"`` lets entries use ``"source": "formatter"`` instead
         of ``"./plugins/formatter"``).
         """
-        if not self.marketplace_data:
-            return None
-        metadata = self.marketplace_data.get("metadata")
-        if not isinstance(metadata, dict):
-            return None
-        plugin_root = metadata.get("pluginRoot")
-        if isinstance(plugin_root, str) and plugin_root:
-            return plugin_root
-        return None
+        return claude_discovery.marketplace_plugin_root(self.marketplace_data)
 
     def _resolve_plugin_source(self, source: Any, plugin_entry: Dict[str, Any]) -> Optional[Path]:
-        """
-        Resolve a plugin source from marketplace.json to a local path
-
-        Handles relative paths (e.g., "./", "./custom/path") and remote sources
-        (GitHub repos, git URLs). Remote sources are logged but skipped for local
-        validation. Relative paths are resolved under metadata.pluginRoot when
-        the marketplace declares one.
-
-        Args:
-            source: Plugin source (string path or dict with source type)
-            plugin_entry: Full plugin entry for context (used for logging)
-
-        Returns:
-            Resolved Path if local and valid, None otherwise
-        """
-        plugin_name = plugin_entry.get("name", "unknown")
-
-        # Handle relative path strings
-        if isinstance(source, str):
-            root = safe_resolve(self.root_path)
-            if root is None:
-                logger.warning(
-                    "Repository root cannot be resolved. Skipping plugin '%s'.", plugin_name
-                )
-                return None
-            candidate = contained_resolve(root / source, root)
-            plugin_root = self.marketplace_plugin_root()
-            if plugin_root and not Path(source).is_absolute():
-                # metadata.pluginRoot is prepended to relative sources, but
-                # real-world marketplaces set pluginRoot while their sources
-                # already include that prefix — prefer the spec composition,
-                # fall back to the root-relative path when only it exists.
-                # The containment check below still rejects any candidate
-                # that escapes the repository.
-                composed = contained_resolve(root / plugin_root / source, root)
-                if composed is not None and (
-                    safe_exists(composed) or candidate is None or not safe_exists(candidate)
-                ):
-                    candidate = composed
-                elif composed is None and (candidate is None or not safe_exists(candidate)):
-                    candidate = None
-
-            if candidate is None:
-                logger.warning(
-                    "Plugin '%s' source '%s' is unresolved or escapes repository root. Skipping.",
-                    plugin_name,
-                    source,
-                )
-                return None
-
-            if not safe_exists(candidate):
-                logger.info(
-                    "Plugin '%s' source '%s' not found locally. Skipping.", plugin_name, source
-                )
-                return None
-
-            if not safe_is_dir(candidate):
-                logger.info(
-                    "Plugin '%s' source '%s' is not a directory. Skipping.", plugin_name, source
-                )
-                return None
-
-            return candidate
-
-        # Handle remote source objects (GitHub, git URLs)
-        if isinstance(source, dict):
-            source_type = source.get("source", "unknown")
-            source_info = source.get("repo") or source.get("url", "unknown")
-            logger.info(
-                "Plugin '%s' uses remote source (%s: %s). Skipping local validation.",
-                plugin_name,
-                source_type,
-                source_info,
-            )
-            return None
-
-        # Unknown format
-        logger.info("Plugin '%s' has unknown source format. Skipping.", plugin_name)
-        return None
-
-    def _is_valid_plugin_dir(
-        self, path: Path, marketplace_entry: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """
-        Check if a directory is a valid plugin directory
-
-        A directory is valid if it has plugin.json, standard component directories
-        (commands, agents, skills, hooks), or if the marketplace entry has strict: false.
-
-        Args:
-            path: Directory path to check
-            marketplace_entry: Optional marketplace entry for the plugin
-
-        Returns:
-            True if directory appears to be a valid plugin
-        """
-        # Check for plugin.json or standard component directories
-        plugin_markers = [
-            path / ".claude-plugin" / "plugin.json",
-            path / "commands",
-            path / "agents",
-            path / "skills",
-            path / "hooks",
-        ]
-
-        if any(marker.exists() for marker in plugin_markers):
-            return True
-
-        # When strict:false, plugin.json and component dirs can be absent
-        if marketplace_entry is not None and marketplace_entry.get("strict", True) is False:
-            return True
-
-        return False
+        """Resolve a Claude marketplace source through state-free discovery."""
+        return claude_discovery.resolve_plugin_source(
+            self.root_path, self.marketplace_data, source, plugin_entry
+        )
 
     def _discover_plugins(self) -> List[Path]:
-        """
-        Discover all plugin directories in the repository
-
-        Handles three discovery methods:
-        1. Single plugin at repository root
-        2. Traditional plugins/ directory (backward compatibility)
-        3. Marketplace.json-defined sources (flat structures, custom paths, remote)
-
-        Multiple types can contribute plugins simultaneously.
-        """
-        plugins: List[Path] = []
-        discovered_paths: Set[Path] = set()
-
-        if RepositoryType.SINGLE_PLUGIN in self.repo_types:
-            plugins.append(self.root_path)
-            discovered_paths.add((safe_resolve(self.root_path) or self.root_path))
-
-        if (
-            RepositoryType.DOT_CLAUDE in self.repo_types
-            and RepositoryType.MARKETPLACE not in self.repo_types
-        ):
-            claude_dir = (
-                self.root_path if self.root_path.name == ".claude" else self.root_path / ".claude"
-            )
-            if (safe_resolve(claude_dir) or claude_dir) not in discovered_paths:
-                plugins.append(claude_dir)
-                discovered_paths.add((safe_resolve(claude_dir) or claude_dir))
-
-        if (
-            RepositoryType.MARKETPLACE in self.repo_types
-            or RepositoryType.CODEX_MARKETPLACE in self.repo_types
-            or RepositoryType.CODEX_PLUGIN in self.repo_types
-        ):
-            # Codex types too: a Codex-claimed directory that ships
-            # commands/ needs its PluginNode so every content and security
-            # rule reads its prose — Claude-format rules exempt Codex-only
-            # directories themselves.
-            self._discover_from_plugins_dir(plugins, discovered_paths)
-
-            # Discover from marketplace.json plugin entries
-            self._discover_from_marketplace(plugins, discovered_paths)
-
-        return plugins
-
-    def _discover_from_plugins_dir(self, plugins: List[Path], discovered_paths: Set[Path]) -> None:
-        """Discover plugins from traditional plugins/ directory"""
-        plugins_dir = self.root_path / "plugins"
-        if not plugins_dir.is_dir():
-            return
-
-        for item in plugins_dir.iterdir():
-            if not item.is_dir() or item.name.startswith("."):
-                continue
-
-            # Codex-claimed or not: a Codex plugin that ships commands/
-            # gets a PluginNode so its prose reaches every content and
-            # security rule; Claude-format rules exempt Codex-only
-            # directories themselves.
-            if not ((item / ".claude-plugin").exists() or (item / "commands").exists()):
-                continue
-
-            resolved_path = contained_resolve(item, self.root_path)
-            if resolved_path is None:
-                # Same diagnostic contract as _resolve_plugin_source: the
-                # containment stands (autofix must not write outside the
-                # checkout), but the drop is logged and recorded so
-                # marketplace-json-valid can surface it as a violation —
-                # a plugin must never lose all rule coverage silently.
-                logger.warning(
-                    "Plugin '%s' source '%s' escapes repository root. Skipping.",
-                    item.name,
-                    f"./plugins/{item.name}",
-                )
-                self.escaped_plugin_dirs.append(item)
-                continue
-            if resolved_path not in discovered_paths:
-                plugins.append(item)
-                discovered_paths.add(resolved_path)
-
-    def _discover_from_marketplace(self, plugins: List[Path], discovered_paths: Set[Path]) -> None:
-        """Discover plugins from marketplace.json plugin entries"""
-        if not self.marketplace_data or "plugins" not in self.marketplace_data:
-            return
-
-        marketplace_plugins = self.marketplace_data["plugins"]
-        if not isinstance(marketplace_plugins, list):
-            return
-
-        for plugin_entry in marketplace_plugins:
-            if not isinstance(plugin_entry, dict):
-                continue
-            source = plugin_entry.get("source")
-            if not source:
-                continue
-
-            # Resolve source to local path (or skip if remote)
-            plugin_path = self._resolve_plugin_source(source, plugin_entry)
-            if not plugin_path:
-                continue
-
-            resolved_path = safe_resolve(plugin_path) or plugin_path
-
-            # Always store marketplace entry data for metadata merging
-            self.marketplace_entries[resolved_path] = plugin_entry
-
-            # Store metadata for strict: false plugins without plugin.json.
-            # This must happen before the duplicate skip below so plugins the
-            # plugins/ dir scan already discovered still get their metadata.
-            is_strict = plugin_entry.get("strict", True)
-            has_plugin_json = (plugin_path / ".claude-plugin" / "plugin.json").exists()
-
-            if not is_strict and not has_plugin_json:
-                self.plugin_metadata[resolved_path] = plugin_entry
-
-            # Skip duplicates for plugin discovery
-            if resolved_path in discovered_paths:
-                continue
-
-            # Validate plugin directory
-            if not self._is_valid_plugin_dir(plugin_path, plugin_entry):
-                continue
-
-            plugins.append(plugin_path)
-            discovered_paths.add(resolved_path)
+        """Discover Claude-compatible plugin directories without moving state."""
+        result = claude_discovery.discover_plugins(
+            self.root_path,
+            single_plugin=RepositoryType.SINGLE_PLUGIN in self.repo_types,
+            dot_claude=RepositoryType.DOT_CLAUDE in self.repo_types,
+            marketplace=RepositoryType.MARKETPLACE in self.repo_types,
+            codex_enabled=bool(_CODEX_TYPES & self.repo_types),
+            marketplace_data=self.marketplace_data,
+        )
+        self.plugin_metadata.update(result.metadata)
+        self.marketplace_entries.update(result.entries)
+        self.escaped_plugin_dirs.extend(result.escaped)
+        return result.paths
 
     def get_plugin_name(self, plugin_path: Path) -> str:
-        """
-        Get the name of a plugin from its path
-
-        Checks plugin.json first, falls back to marketplace metadata,
-        then directory name.
-        """
-        resolved_path = safe_resolve(plugin_path) or plugin_path
-
-        # Non-string names (flagged by validation rules) fall through to
-        # the directory-name fallback rather than propagating a TypeError.
-        plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
-        if plugin_json.exists():
-            try:
-                with open(plugin_json, "r") as f:
-                    data = json.load(f)
-                    # A malformed plugin.json can hold any JSON type, not
-                    # just an object.
-                    if isinstance(data, dict):
-                        name = data.get("name")
-                        if name and isinstance(name, str):
-                            return name
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        # Try marketplace metadata
-        if resolved_path in self.plugin_metadata:
-            name = self.plugin_metadata[resolved_path].get("name", plugin_path.name)
-            if isinstance(name, str):
-                return name
-
-        # Fall back to directory name
-        return plugin_path.name
+        """Return the manifest, marketplace, or directory plugin name."""
+        return claude_discovery.plugin_name(plugin_path, self.plugin_metadata)
 
     def is_registered_in_marketplace(self, plugin_name: str) -> bool:
         """Check if a plugin is registered in marketplace.json"""
@@ -1306,187 +874,24 @@ class RepositoryContext:
         return any(isinstance(p, dict) and p.get("name") == plugin_name for p in plugins)
 
     def get_plugin_metadata(self, plugin_path: Path) -> Optional[Dict[str, Any]]:
-        """
-        Get complete metadata for a plugin
-
-        Returns metadata from plugin.json if present, otherwise falls back to
-        marketplace entry data (for strict: false plugins without plugin.json).
-
-        Args:
-            plugin_path: Path to the plugin directory
-
-        Returns:
-            Dictionary with plugin metadata, or None if no metadata found
-        """
-        metadata = {}
-        resolved_path = safe_resolve(plugin_path) or plugin_path
-
-        # Load from plugin.json if present
-        plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
-        if plugin_json.exists():
-            try:
-                with open(plugin_json, "r") as f:
-                    metadata = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        # Use marketplace metadata as fallback (for strict: false without plugin.json)
-        if resolved_path in self.plugin_metadata:
-            marketplace_entry = self.plugin_metadata[resolved_path]
-
-            # Exclude marketplace-specific fields
-            for key, value in marketplace_entry.items():
-                if key not in ("source", "strict"):
-                    metadata[key] = value
-
-        # Merge marketplace entry fields that aren't already in metadata
-        if resolved_path in self.marketplace_entries:
-            entry = self.marketplace_entries[resolved_path]
-            for key, value in entry.items():
-                if key not in ("source", "strict") and key not in metadata:
-                    metadata[key] = value
-
-        return metadata or None
+        """Return merged manifest and marketplace plugin metadata."""
+        return claude_discovery.plugin_metadata(
+            plugin_path, self.plugin_metadata, self.marketplace_entries
+        )
 
     def _discover_skills(self) -> List[Path]:
-        """
-        Discover agentskills.io skill directories.
-
-        For AGENTSKILLS repos: root (single skill) or subdirs with SKILL.md.
-        For plugin repos: skills from plugin_path/skills/*/.
-
-        When APM is present, skills are discovered from .apm/skills/ and
-        compiled output directories are excluded.
-        """
-        skills: List[Path] = []
-        discovered: Set[Path] = set()
-
-        if RepositoryType.AGENTSKILLS in self.repo_types:
-            # Single skill at root
-            if (self.root_path / "SKILL.md").exists():
-                skills.append(self.root_path)
-                discovered.add(self.root_path)
-            else:
-                # Skill collection: immediate subdirs with SKILL.md
-                self._discover_skills_in_dir(self.root_path, skills, discovered)
-
-            # Standard discovery paths (including APM)
-            for discovery_path in (
-                ".apm/skills",
-                ".claude/skills",
-                ".github/skills",
-                ".agents/skills",
-            ):
-                skills_path = self.root_path / discovery_path
-                if not skills_path.is_dir():
-                    continue
-                # Skip compiled output dirs when APM is present
-                if self.in_apm_compiled_dir(skills_path):
-                    continue
-                self._discover_skills_in_dir(skills_path, skills, discovered)
-
-        # For plugin repos, also discover embedded skills. Codex plugins
-        # included: an installed plugin under .codex/plugins/ lives in a
-        # hidden directory the repository-wide scan never walks.
-        for plugin_path in self.plugins:
-            skills_dir = plugin_path / "skills"
-            if skills_dir.is_dir():
-                self._discover_skills_in_dir(skills_dir, skills, discovered)
-
-        for plugin_path in self.codex_plugins:
-            plugin_root = safe_resolve(plugin_path)
-            if plugin_root is None:
-                continue
-            # ``skills/`` is only the default — a manifest may point the
-            # field somewhere else entirely.
-            for skills_dir in (
-                plugin_path / "skills",
-                *codex_declared_skill_dirs(plugin_path),
-            ):
-                if not skills_dir.is_dir():
-                    continue
-                if (skills_dir / "SKILL.md").exists():
-                    # A manifest may name one skill directly rather than a
-                    # collection — descending would step straight past it.
-                    resolved = contained_resolve(skills_dir, plugin_root)
-                    if resolved is None:
-                        continue
-                    if contained_resolve(skills_dir / "SKILL.md", plugin_root) is None:
-                        continue
-                    if resolved not in discovered:
-                        skills.append(skills_dir)
-                        discovered.add(resolved)
-                    continue
-                self._discover_skills_in_dir(
-                    skills_dir, skills, discovered, contain_within=plugin_root
-                )
-
-        return skills
-
-    def _discover_skills_in_dir(
-        self,
-        parent: Path,
-        skills: List[Path],
-        discovered: Set[Path],
-        contain_within: Optional[Path] = None,
-        visited: Optional[Set[Path]] = None,
-    ) -> None:
-        """Discover skill directories within a parent directory, recursively.
-
-        *contain_within* rejects children that resolve outside it — for
-        Codex plugins, ``skills/external`` can be a symlink out of the
-        repository, and the SKILL.md behind it would otherwise be read as
-        if the plugin shipped it. ``None`` means no caller-imposed boundary;
-        the walk still derives one from provenance below, so every route
-        into a Codex-only directory honors the same containment.
-        """
-        # ``discovered`` only records directories that held a SKILL.md, so
-        # it cannot stop a cycle: ``skills/a/loop -> ../..`` stays inside
-        # the plugin, passes containment, and recurses to RecursionError.
-        # ``visited`` records every directory descended into.
-        if visited is None:
-            visited = set()
-            if contain_within is None:
-                # The scan may *start* inside a claimed directory
-                # (``plugin/skills``), where the descent check below never
-                # sees the claimed ancestor.
-                contain_within = self._codex_claim_boundary(parent)
-        try:
-            for item in parent.iterdir():
-                if self._should_skip_dir(item):
-                    continue
-                resolved = safe_resolve(item)
-                if resolved is None or resolved in discovered or resolved in visited:
-                    continue
-                if contain_within is not None and not resolved.is_relative_to(contain_within):
-                    continue
-                if (item / "SKILL.md").exists():
-                    if contain_within is not None:
-                        # A contained directory is not enough: SKILL.md can
-                        # itself be a symlink out, and the tree follows it.
-                        # Resolved only where there is a boundary to test it
-                        # against — the walk sees every directory in the
-                        # repository, and a realpath on each is its dominant
-                        # cost.
-                        entrypoint = safe_resolve(item / "SKILL.md")
-                        if entrypoint is None or not entrypoint.is_relative_to(contain_within):
-                            continue
-                    skills.append(item)
-                    discovered.add(resolved)
-                else:
-                    visited.add(resolved)
-                    child_bound = contain_within
-                    if (
-                        child_bound is None
-                        and self._codex_claims_possible()
-                        and self.provenance(item).codex_only
-                    ):
-                        # Entering a Codex-only directory: from here down,
-                        # everything must resolve inside it.
-                        child_bound = resolved
-                    self._discover_skills_in_dir(item, skills, discovered, child_bound, visited)
-        except OSError:
-            pass
+        """Discover Agent Skills through the state-free Claude discovery seam."""
+        return claude_discovery.discover_skills(
+            self.root_path,
+            agentskills=RepositoryType.AGENTSKILLS in self.repo_types,
+            plugins=self.plugins,
+            codex_plugins=self.codex_plugins,
+            in_apm_compiled_dir=self.in_apm_compiled_dir,
+            should_skip=self._should_skip_dir,
+            claim_boundary=self._codex_claim_boundary,
+            codex_claims_possible=self._codex_claims_possible,
+            is_codex_only=self.is_codex_only_plugin,
+        )
 
     def __str__(self):
         """String representation of context"""

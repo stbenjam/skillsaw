@@ -282,7 +282,7 @@ def test_marketplace_source_resolution_failure_is_dropped(temp_dir, monkeypatch)
     plugin = temp_dir / "plugins" / "demo"
     plugin.mkdir(parents=True)
     context = RepositoryContext(temp_dir, repo_types={RepositoryType.MARKETPLACE})
-    monkeypatch.setattr("skillsaw.context.contained_resolve", lambda path, root: None)
+    monkeypatch.setattr("skillsaw.discovery.claude.contained_resolve", lambda path, root: None)
 
     resolved = context._resolve_plugin_source("./plugins/demo", {"name": "demo"})
 
@@ -915,3 +915,29 @@ class TestPathMatchesPatterns:
         root.mkdir()
         outside = temp_dir / "templates" / "x" / "SKILL.md"
         assert not path_matches_patterns(outside, root, ["**/templates/**"])
+
+    def test_repository_context_expands_each_pattern_once(self, temp_dir, monkeypatch):
+        """Repeated consumers share the context-owned variant expansion."""
+        import skillsaw.context as context_module
+
+        expanded = []
+        real_pattern_variants = context_module._pattern_variants
+
+        def pattern_variants(pattern):
+            """Record actual expansions while delegating to the pure helper."""
+            expanded.append(pattern)
+            return real_pattern_variants(pattern)
+
+        monkeypatch.setattr(context_module, "_pattern_variants", pattern_variants)
+        context = RepositoryContext(
+            temp_dir,
+            repo_types=set(),
+            exclude_patterns=["**/templates/**"],
+        )
+
+        for rel in ("templates/a", "nested/templates/b", "templates/c"):
+            assert context.is_path_excluded(temp_dir / rel)
+        for rel in ("generated/a", "nested/generated/b"):
+            assert context.matches_patterns(temp_dir / rel, ["**/generated/**"])
+
+        assert expanded == ["**/templates/**", "**/generated/**"]

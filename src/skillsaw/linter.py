@@ -461,9 +461,7 @@ class Linter:
         exclude = self.config.get_rule_config(rule_id).get("exclude")
         if not exclude:
             return False
-        from .context import path_matches_patterns
-
-        return path_matches_patterns(file_path, self.context.root_path, exclude)
+        return self.context.matches_patterns(file_path, exclude)
 
     def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
         """Get or build a suppression map for a file, with caching."""

@@ -121,8 +121,8 @@ See `.claude/rules/development.md` for the full guide. Key points:
 src/skillsaw/
 ├── __main__.py          # CLI entry point
 ├── config.py            # Config loading, rule enabling logic
-├── context.py           # Repo type detection
-├── discovery/           # State-free ecosystem discovery (codex.py)
+├── context.py           # Stateful repository model, caches, and provenance
+├── discovery/           # State-free Claude/Codex walks, detection, exclusions
 ├── linter.py            # Orchestration
 ├── rule.py              # Base Rule class
 ├── rules/builtin/       # All builtin rules
