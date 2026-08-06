@@ -62,19 +62,23 @@ class DescriptionRoutingRule(Rule):
 
     @property
     def rule_id(self) -> str:
+        """Return the stable identifier used in configuration and output."""
         return "description-routing"
 
     @property
     def description(self) -> str:
+        """Summarize the routing-quality checks performed by this rule."""
         return (
             "Skill and agent descriptions should guide routing; command descriptions should "
             "clearly explain their purpose"
         )
 
     def default_severity(self) -> Severity:
+        """Report routing-quality findings as non-blocking warnings."""
         return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        """Find weak descriptions across discovered skills, agents, and commands."""
         violations: List[RuleViolation] = []
         for block_type in (SkillBlock, AgentBlock, CommandBlock):
             for block in context.lint_tree.find(block_type):
@@ -133,11 +137,13 @@ class DescriptionRoutingRule(Rule):
 
     @staticmethod
     def _has_trigger_phrase(description: str) -> bool:
+        """Return whether a description contains a recognized usage trigger."""
         normalized = " ".join(description.lower().split())
         return any(marker in normalized for marker in _TRIGGER_MARKERS)
 
     @staticmethod
     def _block_name(path: Path, configured_name: object) -> str:
+        """Derive the block name from frontmatter or its conventional path."""
         if isinstance(configured_name, str) and configured_name.strip():
             return configured_name
         if path.name.lower() == "skill.md":
@@ -146,12 +152,14 @@ class DescriptionRoutingRule(Rule):
 
     @staticmethod
     def _tokens(value: str) -> Set[str]:
+        """Normalize meaningful name-comparison tokens from prose."""
         return {
             token for token in _WORD_RE.findall(value.lower()) if token not in _RESTATEMENT_FILLER
         }
 
     @classmethod
     def _restates_name(cls, description: str, name: str) -> bool:
+        """Return whether the description adds no tokens beyond the block name."""
         description_tokens = cls._tokens(description)
         name_tokens = cls._tokens(name)
         return bool(description_tokens and name_tokens and description_tokens <= name_tokens)

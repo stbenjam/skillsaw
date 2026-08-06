@@ -2121,9 +2121,11 @@ class TestDescriptionRouting:
 
     @staticmethod
     def _routing_violations(result):
+        """Return only description-routing violations from a lint result."""
         return [v for v in violations(result) if v["rule_id"] == "description-routing"]
 
     def test_reports_each_routing_failure_and_keeps_clean_descriptions_clean(self, tmp_path):
+        """Report every fixture failure deterministically while clean cases pass."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
@@ -2153,6 +2155,7 @@ class TestDescriptionRouting:
     def test_subchecks_can_be_disabled_independently(
         self, tmp_path, option, message, expected_count
     ):
+        """Allow each routing heuristic to be disabled without affecting its peers."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
         config = repo / ".skillsaw.yaml"
         config.write_text(
