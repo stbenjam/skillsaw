@@ -124,6 +124,8 @@ def build_baseline(
     entries: List[BaselineEntry] = []
 
     for v in violations:
+        if v.rule_id in _UNBASELINABLE_RULE_IDS:
+            continue
         fp = fingerprint_violation(v, root_path, _file_cache=file_cache)
         mode = modes.get(v.rule_id)
         entries.append(

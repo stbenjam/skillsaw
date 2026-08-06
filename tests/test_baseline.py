@@ -554,6 +554,18 @@ class TestBaselineRootStability:
 
 
 class TestBuildBaseline:
+    def test_skips_unbaselinable_violations(self, tmp_path):
+        fatal = _make_violation(
+            rule_id="repository-path-error",
+            message="Repository root could not be resolved",
+            severity=Severity.ERROR,
+        )
+        regular = _make_violation(rule_id="weak", message="weak language")
+
+        baseline = build_baseline([fatal, regular], tmp_path, "0.10.1")
+
+        assert [entry.rule_id for entry in baseline.violations] == ["weak"]
+
     def test_builds_from_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("try to do something\nmaybe fix later\n")
