@@ -22,7 +22,11 @@ Once a `.skillsaw-baseline.json` file exists (next to `.skillsaw.yaml` or
 in the repo root), `skillsaw lint` automatically loads it and subtracts
 matching violations from the output. Only new violations are reported.
 Fatal infrastructure violations such as `repository-path-error` are not
-written to the baseline and can never be suppressed by one.
+written to the baseline and can never be suppressed by one. The same
+goes for advisory `deprecated-rule` notices: baselining one would
+permanently hide the warning that a rule is going away, so they are
+never written and never suppressed — remove the deprecated rule from
+your config to clear the notice instead.
 
 Violations are matched by a **content hash** — a fingerprint built from
 the rule ID, file path, and the content of the source line (not the line

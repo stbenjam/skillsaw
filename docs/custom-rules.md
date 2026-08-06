@@ -111,6 +111,18 @@ rules:
     severity: warning
 ```
 
+### Rule IDs
+
+A custom rule's ID must not collide with a builtin, a legacy alias of a
+renamed builtin (for example `plugin-readme`, now `claude-plugin-readme`),
+or one of skillsaw's own advisory IDs (`deprecated-rule`). Aliases resolve
+to the builtin everywhere a rule is named, so a custom rule using one could
+never be configured or suppressed under its own ID; advisory IDs never
+affect the exit code, so findings reported under one would not fail CI. A
+rule claiming any of these is skipped with a `plugin-load-error` warning.
+Prefix your IDs with something distinctive when in doubt
+(`acme-no-todo`).
+
 ### Key concepts
 
 | Concept | What the example shows |
