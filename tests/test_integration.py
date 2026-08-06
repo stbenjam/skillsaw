@@ -1592,6 +1592,18 @@ class TestOutputFormats:
         assert "version" in native
         assert isinstance(gitlab, list)
 
+    def test_output_write_failure_returns_clean_error(self, tmp_path):
+        """Report write failures must return a clean CLI error."""
+        repo = copy_fixture("single-plugin/clean", tmp_path)
+        output_dir = tmp_path / "report.json"
+        output_dir.mkdir()
+
+        result = run_lint(repo, "--output", str(output_dir))
+
+        assert result["rc"] == 1
+        assert f"Failed to write report to '{output_dir}'" in result["stderr"]
+        assert "Traceback" not in result["stderr"]
+
 
 # ── Assert Directives (data-driven) ─────────────────────────────
 
@@ -2111,6 +2123,99 @@ class TestDescriptionMaxLengthConfig:
         assert len(vs) == 1
         assert "1334" in vs[0]["message"]
         assert "256" in vs[0]["message"]
+
+
+@pytest.mark.integration
+class TestDescriptionRouting:
+    """Descriptions are linted as routing signals across block types."""
+
+    FIXTURE = "description-routing"
+
+    @staticmethod
+    def _routing_violations(result):
+        """Return only description-routing violations from a lint result."""
+        return [v for v in violations(result) if v["rule_id"] == "description-routing"]
+
+    def test_reports_each_routing_failure_and_keeps_clean_descriptions_clean(self, tmp_path):
+        """Report every fixture failure deterministically while clean cases pass."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--rule", "description-routing")
+        vs = self._routing_violations(r)
+
+        assert len(vs) == 11
+        assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
+        assert sum("when to use" in v["message"] for v in vs) == 6
+        assert sum("restates the name" in v["message"] for v in vs) == 3
+        assert sum("Description is empty" in v["message"] for v in vs) == 2
+        assert any("sdk-guide" in v["file_path"] for v in vs)
+        assert any("user-event-explainer" in v["file_path"] for v in vs)
+        assert any("header-builder" in v["file_path"] for v in vs)
+        assert any("generic-command" in v["file_path"] for v in vs)
+        assert not any("explicit-use-this" in v["file_path"] for v in vs)
+        assert not any("incident-investigator" in v["file_path"] for v in vs)
+        assert not any("test-staging" in v["file_path"] for v in vs)
+        assert not any("request-router" in v["file_path"] for v in vs)
+        assert not any("check-release" in v["file_path"] for v in vs)
+
+        rerun = run_lint(repo, "--rule", "description-routing")
+        assert self._routing_violations(rerun) == vs
+
+    def test_codex_only_command_without_description_is_reported(self, tmp_path):
+        """Keep the always-on presence check active without Claude provenance."""
+        repo = copy_fixture("codex/clean", tmp_path)
+        command = repo / "plugins/note-taker/commands/capture.md"
+        command.write_text("---\nname: capture\n---\n\n# Capture\n", encoding="utf-8")
+
+        result = run_lint(repo, "--rule", "description-routing")
+        command_violations = [
+            violation
+            for violation in self._routing_violations(result)
+            if violation["file_path"].endswith("commands/capture.md")
+        ]
+
+        assert len(command_violations) == 1
+        assert "Description is missing" in command_violations[0]["message"]
+
+    def test_codex_only_command_without_frontmatter_is_reported(self, tmp_path):
+        """Do not depend on Claude frontmatter rules for the presence check."""
+        repo = copy_fixture("codex/clean", tmp_path)
+        command = repo / "plugins/note-taker/commands/capture.md"
+        command.write_text("# Capture\n\nCapture the current note.\n", encoding="utf-8")
+
+        result = run_lint(repo, "--rule", "description-routing")
+        command_violations = [
+            violation
+            for violation in self._routing_violations(result)
+            if violation["file_path"].endswith("commands/capture.md")
+        ]
+
+        assert len(command_violations) == 1
+        assert "Description is missing" in command_violations[0]["message"]
+
+    @pytest.mark.parametrize(
+        ("option", "message", "expected_count"),
+        [
+            ("require-trigger-phrasing", "when to use", 5),
+            ("flag-name-restatement", "restates the name", 8),
+        ],
+    )
+    def test_subchecks_can_be_disabled_independently(
+        self, tmp_path, option, message, expected_count
+    ):
+        """Allow either routing heuristic to be disabled without affecting its peer."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  description-routing:\n    " + option + ": false\n",
+            encoding="utf-8",
+        )
+
+        r = run_lint(repo, config=config)
+        assert r["rc"] == 0
+        assert isinstance(r["out"], dict)
+        routing_violations = self._routing_violations(r)
+        assert len(routing_violations) == expected_count
+        assert not any(message in v["message"] for v in routing_violations)
 
 
 class TestUnlinkedInternalReferenceAutofix:

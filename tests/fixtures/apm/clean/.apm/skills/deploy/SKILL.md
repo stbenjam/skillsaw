@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy applications to Kubernetes clusters
+description: Deploy applications to Kubernetes clusters. Use when releasing an application.
 compatibility: Requires helm, kubectl, and cluster credentials
 metadata:
   author: platform-team

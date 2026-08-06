@@ -1,6 +1,6 @@
 ---
 name: log-search
-description: Deep log analysis with pattern recognition and anomaly detection
+description: Deep log analysis with pattern recognition and anomaly detection. Use when investigating logs.
 ---
 
 # Log Search

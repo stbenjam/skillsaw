@@ -1,6 +1,6 @@
 ---
 name: report-builder
-description: Build weekly status reports from git history and issue tracker exports
+description: Build weekly status reports from git history and issue tracker exports. Use when preparing a status report.
 compatibility: Requires Python 3.9+ and git
 metadata:
   author: dx-team

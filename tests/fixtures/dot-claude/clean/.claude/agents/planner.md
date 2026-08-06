@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Plan implementation approach for complex tasks
+description: Plan implementation approach for complex tasks. Use when a change needs an implementation plan.
 subagent_type: planner
 ---
 

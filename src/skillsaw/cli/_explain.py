@@ -8,9 +8,11 @@ from ..config import LinterConfig
 from ..context import RepositoryContext
 from ._config import load_config
 from ._helpers import _ansi_colors, color_enabled
+from skillsaw.paths import safe_resolve
 
 
 def _run_explain(args):
+    """Render detailed documentation for one configured rule."""
     from ..rules.builtin import BUILTIN_RULES
     from ..rule_docs import load_rule_docs, rule_doc_url
 
@@ -138,7 +140,9 @@ def _run_explain(args):
 
     state = f"{c['green']}enabled{c['reset']}" if enabled else f"{c['red']}disabled{c['reset']}"
     print()
-    print(f"{c['bold']}Effective in {args.path.resolve()}{c['reset']} ({config_label}):")
+    print(
+        f"{c['bold']}Effective in {(safe_resolve(args.path) or args.path)}{c['reset']} ({config_label}):"
+    )
     print(f"  {state} — {reason}")
     if enabled:
         print(f"  severity: {effective_severity}")

@@ -23,6 +23,7 @@ from skillsaw.marketplace.branding import (
 from skillsaw.marketplace.init import init_marketplace
 from skillsaw.marketplace.add import (
     _find_plugin_context,
+    _marketplace_plugin_root,
     _register_plugin,
     _resolve_plugin_dir,
     add_agent,
@@ -387,6 +388,60 @@ class TestAddComponents:
         content = result.read_text()
         assert "subagent_type: helper" in content
 
+    def test_component_scaffolds_keep_name_specific_routing_descriptions(self, temp_dir):
+        """Different component names render distinct, routing-clean customization cues."""
+        from skillsaw.context import RepositoryContext
+        from skillsaw.rules.builtin.description_routing import DescriptionRoutingRule
+
+        root = self._init_with_plugin(temp_dir)
+        generated = (
+            (
+                (
+                    add_skill("deploy-staging", "my-plugin", path=root) / "SKILL.md",
+                    "deploy-staging",
+                ),
+                (
+                    add_skill("review-pull-request", "my-plugin", path=root) / "SKILL.md",
+                    "review-pull-request",
+                ),
+            ),
+            (
+                (add_agent("incident-triager", "my-plugin", path=root), "incident-triager"),
+                (
+                    add_agent("release-coordinator", "my-plugin", path=root),
+                    "release-coordinator",
+                ),
+            ),
+            (
+                (add_command("deploy", "my-plugin", path=root), "deploy"),
+                (add_command("review", "my-plugin", path=root), "review"),
+            ),
+        )
+
+        generated_paths = set()
+        for component_pair in generated:
+            descriptions = []
+            for component_path, rendered_name in component_pair:
+                generated_paths.add(component_path.resolve())
+                description_line = next(
+                    line
+                    for line in component_path.read_text(encoding="utf-8").splitlines()
+                    if line.startswith("description: ")
+                )
+                description = description_line.removeprefix("description: ").strip('"')
+                descriptions.append(description)
+                assert rendered_name in description
+                assert "customize this description" in description.lower()
+            assert descriptions[0] != descriptions[1]
+
+        violations = DescriptionRoutingRule().check(RepositoryContext(root))
+        generated_violations = [
+            violation
+            for violation in violations
+            if violation.file_path.resolve() in generated_paths
+        ]
+        assert generated_violations == []
+
     def test_add_hook(self, temp_dir):
         root = self._init_with_plugin(temp_dir)
         result = add_hook("PreToolUse", "my-plugin", path=root)
@@ -415,6 +470,19 @@ class TestAddComponents:
 
         with pytest.raises(FileNotFoundError, match="not found in marketplace"):
             add_skill("my-skill", "nonexistent", path=root)
+
+    def test_add_skill_rejects_unresolvable_standalone_base(self, temp_dir, monkeypatch):
+        """Standalone scaffolding must stop when its base cannot resolve."""
+
+        def no_context(path, plugin_name):
+            """Force the standalone add path."""
+            raise FileNotFoundError
+
+        monkeypatch.setattr("skillsaw.marketplace.add._find_plugin_context", no_context)
+        monkeypatch.setattr("skillsaw.marketplace.add.safe_resolve", lambda path: None)
+
+        with pytest.raises(ValueError, match="Skill base path cannot be resolved"):
+            add_skill("my-skill", path=temp_dir)
 
     def test_add_multiple_hooks_same_event_type(self, temp_dir):
         """Adding a second hook for a different event should not break hooks.json."""
@@ -892,6 +960,26 @@ class TestMalformedMarketplaceJson:
 
         resolved = _resolve_plugin_dir(root, "formatter")
         assert resolved == plugin_dir.resolve()
+
+    def test_marketplace_plugin_root_resolution_failure_is_ignored(self, temp_dir, monkeypatch):
+        """An unresolvable pluginRoot must not survive as a raw path."""
+        root = self._make_plugin_root_marketplace(temp_dir, "./pkgs", [])
+        monkeypatch.setattr("skillsaw.marketplace.add.safe_resolve", lambda path: None)
+
+        assert _marketplace_plugin_root(root) is None
+
+    def test_resolve_plugin_dir_rejects_resolution_failure(self, temp_dir, monkeypatch):
+        """An unresolvable plugin source must not be returned for writes."""
+        root = self._make_marketplace(temp_dir, [{"name": "foo", "source": "./plugins/foo"}])
+
+        def fail_source(path):
+            """Resolve only the trusted marketplace root."""
+            return root.resolve() if path == root else None
+
+        monkeypatch.setattr("skillsaw.marketplace.add.safe_resolve", fail_source)
+
+        with pytest.raises(ValueError, match="unresolved or outside marketplace root"):
+            _resolve_plugin_dir(root, "foo")
 
     def test_resolve_plugin_dir_remote_source_raises(self, temp_dir):
         """A remote object source cannot resolve to a local directory."""

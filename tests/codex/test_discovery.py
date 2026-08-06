@@ -311,6 +311,31 @@ class TestPrimaryRepoType:
 
 
 class TestDiscoveryRobustness:
+    def test_a_plugin_iteration_error_skips_the_unreadable_collection(self, tmp_path, monkeypatch):
+        """A lazy plugin iterator failure must not abort context construction."""
+        repo = tmp_path / "repo"
+        plugins = repo / "plugins"
+        plugins.mkdir(parents=True)
+        real_iterdir = Path.iterdir
+
+        def iterdir(path):
+            """Return a lazy failure only for the plugin collection."""
+            if path == plugins:
+
+                def fail_during_iteration():
+                    """Raise after iteration begins, not when it is requested."""
+                    yield from ()
+                    raise OSError("directory disappeared")
+
+                return fail_during_iteration()
+            return real_iterdir(path)
+
+        monkeypatch.setattr(Path, "iterdir", iterdir)
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.MARKETPLACE})
+
+        assert context.plugins == []
+
     def test_a_symlinked_plugin_directory_is_not_followed(self, tmp_path):
         """`plugins/foo -> /elsewhere` would pull an external tree in."""
         outside = tmp_path / "outside"
@@ -387,6 +412,30 @@ class TestDiscoveryRobustness:
 
 
 class TestSkillDiscoveryRobustness:
+    def test_an_iteration_error_skips_the_unreadable_collection(self, tmp_path, monkeypatch):
+        """A lazy skill iterator failure must not abort context construction."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        real_iterdir = Path.iterdir
+
+        def iterdir(path):
+            """Return a lazy failure only for the skill collection."""
+            if path == repo:
+
+                def fail_during_iteration():
+                    """Raise after iteration begins, not when it is requested."""
+                    yield from ()
+                    raise OSError("directory disappeared")
+
+                return fail_during_iteration()
+            return real_iterdir(path)
+
+        monkeypatch.setattr(Path, "iterdir", iterdir)
+
+        context = RepositoryContext(repo, repo_types={RepositoryType.AGENTSKILLS})
+
+        assert context.skills == []
+
     def test_a_symlinked_default_skills_dir_is_not_followed(self, tmp_path):
         outside = tmp_path / "outside-skill"
         outside.mkdir()

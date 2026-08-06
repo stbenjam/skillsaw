@@ -1,6 +1,6 @@
 ---
 name: summarize-diff
-description: Summarize a git diff into a reviewer-facing changelog grouped by subsystem.
+description: Summarize a git diff into a reviewer-facing changelog grouped by subsystem. Use when preparing a change review.
 ---
 
 # Summarize Diff

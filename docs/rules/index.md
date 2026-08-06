@@ -3,14 +3,14 @@
 
 # Rules Reference
 
-skillsaw includes **68** built-in rules organized into the following categories:
+skillsaw includes **69** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Plugin Structure](plugin-structure.md) (4 rules)
 - [Command Format](command-format.md) (4 rules)
 - [Marketplace](marketplace.md) (2 rules)
 - [OpenAI Codex](codex.md) (5 rules)
-- [Skills, Agents, Hooks](skills-agents-hooks.md) (5 rules)
+- [Skills, Agents, Hooks](skills-agents-hooks.md) (6 rules)
 - [Hidden-Content Validation](hidden-content.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [Rules Directory](rules-directory.md) (1 rule)
@@ -52,6 +52,7 @@ skillsaw includes **68** built-in rules organized into the following categories:
 | [`codex-marketplace-registration`](codex-marketplace-registration.md) | Codex plugins must be registered in .agents/plugins/marketplace.json | error (auto) | auto | OpenAI Codex |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto | Skills, Agents, Hooks |
 | [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Skills, Agents, Hooks |
+| [`description-routing`](description-routing.md) | Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose | warning (auto) | - | Skills, Agents, Hooks |
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
 | [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |

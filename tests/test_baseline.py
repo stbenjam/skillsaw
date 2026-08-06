@@ -26,6 +26,7 @@ def _make_violation(
     file_path=None,
     line=None,
     severity=Severity.WARNING,
+    fingerprint_discriminator=None,
 ):
     return RuleViolation(
         rule_id=rule_id,
@@ -33,6 +34,7 @@ def _make_violation(
         message=message,
         file_path=file_path,
         line=line,
+        fingerprint_discriminator=fingerprint_discriminator,
     )
 
 
@@ -99,6 +101,15 @@ class TestFingerprint:
         fp = fingerprint_violation(v, tmp_path)
         assert len(fp) == 16
 
+    def test_unresolvable_file_path_falls_back_without_reading(self, tmp_path):
+        """An embedded-NUL path must not escape the safe-resolve failure policy."""
+        hostile = Path(f"{tmp_path}/hostile\0.md")
+        violation = _make_violation(file_path=hostile, line=1)
+
+        fingerprint = fingerprint_violation(violation, tmp_path)
+
+        assert len(fingerprint) == 16
+
     def test_line_out_of_range_fallback(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("one line\n")
@@ -112,6 +123,40 @@ class TestFingerprint:
         v1 = _make_violation(rule_id="rule-a", file_path=src, line=1)
         v2 = _make_violation(rule_id="rule-b", file_path=src, line=1)
         assert fingerprint_violation(v1, tmp_path) != fingerprint_violation(v2, tmp_path)
+
+    def test_discriminator_distinguishes_same_line(self, tmp_path):
+        src = tmp_path / "SKILL.md"
+        src.write_text("description: Deploy staging.\n")
+        missing_trigger = _make_violation(
+            rule_id="description-routing",
+            file_path=src,
+            line=1,
+            fingerprint_discriminator="missing-trigger",
+        )
+        name_restatement = _make_violation(
+            rule_id="description-routing",
+            file_path=src,
+            line=1,
+            fingerprint_discriminator="name-restatement",
+        )
+
+        assert fingerprint_violation(missing_trigger, tmp_path) != fingerprint_violation(
+            name_restatement, tmp_path
+        )
+
+    def test_no_discriminator_keeps_legacy_fingerprint(self, tmp_path):
+        src = tmp_path / "SKILL.md"
+        src.write_text("description: Deploy staging.\n")
+        violation = _make_violation(
+            rule_id="description-routing",
+            file_path=src,
+            line=1,
+        )
+        legacy = hashlib.sha256(
+            b"description-routing\0SKILL.md\0description: Deploy staging."
+        ).hexdigest()[:16]
+
+        assert fingerprint_violation(violation, tmp_path) == legacy
 
 
 class TestBaselineIO:
@@ -208,6 +253,28 @@ class TestFilterBaselinedViolations:
         assert len(kept) == 0
         assert len(stale) == 0
 
+    def test_repository_path_error_cannot_be_baselined(self, tmp_path):
+        """A fatal incomplete-scan error must survive a matching baseline."""
+        violation = _make_violation(
+            rule_id="repository-path-error",
+            message="Repository root could not be resolved",
+            severity=Severity.ERROR,
+        )
+        entry = BaselineEntry(
+            fingerprint=fingerprint_violation(violation, tmp_path),
+            rule_id=violation.rule_id,
+            file_path=None,
+            line=None,
+            message=violation.message,
+            severity="error",
+        )
+        baseline = self._baseline_with([entry])
+
+        kept, stale = filter_baselined_violations([violation], baseline, tmp_path)
+
+        assert kept == [violation]
+        assert stale == [entry]
+
     def test_keeps_new_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("try to do something\n")
@@ -273,6 +340,30 @@ class TestFilterBaselinedViolations:
         kept, stale = filter_baselined_violations([v1, v2], baseline, tmp_path)
         assert len(kept) == 1
         assert len(stale) == 0
+
+    def test_sibling_discriminators_filter_independently(self, tmp_path):
+        src = tmp_path / "SKILL.md"
+        src.write_text("description: Deploy staging.\n")
+        missing_trigger = _make_violation(
+            rule_id="description-routing",
+            file_path=src,
+            line=1,
+            fingerprint_discriminator="missing-trigger",
+        )
+        name_restatement = _make_violation(
+            rule_id="description-routing",
+            file_path=src,
+            line=1,
+            fingerprint_discriminator="name-restatement",
+        )
+        baseline = build_baseline([missing_trigger], tmp_path, "0.18.0")
+
+        kept, stale = filter_baselined_violations(
+            [missing_trigger, name_restatement], baseline, tmp_path
+        )
+
+        assert kept == [name_restatement]
+        assert stale == []
 
     def test_empty_baseline(self, tmp_path):
         v = _make_violation()
@@ -452,6 +543,14 @@ class TestRatchetMetricDiscriminator:
         legacy = hashlib.sha256(f"context-budget\0{rel}".encode()).hexdigest()[:16]
         assert fingerprint_violation(v, tmp_path) == legacy
 
+    def test_finding_discriminator_does_not_change_ratchet_fingerprint(self, tmp_path):
+        """A sibling identity suffix must not churn an existing ratchet baseline."""
+        violation = self._v(tmp_path, 80, metric="skill-description", line=1)
+        legacy = fingerprint_violation(violation, tmp_path)
+        violation.fingerprint_discriminator = "description-budget"
+
+        assert fingerprint_violation(violation, tmp_path) == legacy
+
     def test_both_metrics_ratchet_independently(self, tmp_path):
         """A regression in one metric is not masked by the other's baseline."""
         # Whole-file entry: legacy (metric-less) fingerprint.
@@ -523,6 +622,18 @@ class TestBaselineRootStability:
 
 
 class TestBuildBaseline:
+    def test_skips_unbaselinable_violations(self, tmp_path):
+        fatal = _make_violation(
+            rule_id="repository-path-error",
+            message="Repository root could not be resolved",
+            severity=Severity.ERROR,
+        )
+        regular = _make_violation(rule_id="weak", message="weak language")
+
+        baseline = build_baseline([fatal, regular], tmp_path, "0.10.1")
+
+        assert [entry.rule_id for entry in baseline.violations] == ["weak"]
+
     def test_builds_from_violations(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("try to do something\nmaybe fix later\n")

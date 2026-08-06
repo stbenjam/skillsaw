@@ -80,7 +80,9 @@ def extract_docs(
 
     standalone_skills: List[SkillDoc] = []
     if RepositoryType.AGENTSKILLS in context.repo_types:
-        plugin_skill_paths = {s.dir_path.resolve() for p in plugins for s in p.skills}
+        plugin_skill_paths = {
+            (safe_resolve(s.dir_path) or s.dir_path) for p in plugins for s in p.skills
+        }
         # An installed plugin's skills match no PluginDoc, and the
         # standalone pass would publish someone else's skills as this
         # repository's own top-level content.
@@ -279,7 +281,7 @@ def _extract_codex_plugins(context: RepositoryContext) -> List[PluginDoc]:
     # the Codex manifest declares.
     codex_roots = _codex_roots(context)
     claude_dirs = {
-        pn.path.resolve()
+        (safe_resolve(pn.path) or pn.path)
         for pn in context.lint_tree.find(PluginNode)
         if not _is_codex_only(context, pn.path, codex_roots)
     }

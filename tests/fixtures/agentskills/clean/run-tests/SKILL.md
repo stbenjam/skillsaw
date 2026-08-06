@@ -1,6 +1,6 @@
 ---
 name: run-tests
-description: Execute the project test suite with coverage reporting
+description: Execute the project test suite with coverage reporting. Use when validating a change.
 compatibility: Requires pytest, jest, or go test
 metadata:
   author: dx-team

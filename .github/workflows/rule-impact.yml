@@ -118,17 +118,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
+          handle_comment_failure() {
+            echo "$1" >&2
+            if [ "$IS_FORK" = "true" ]; then
+              echo "::warning::Fork PR token cannot write the rule-impact comment; report remains in the job log."
+              return 0
+            fi
+            return 1
+          }
+
           marker='<!-- rule-impact-report -->'
-          existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
-            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)
-          if [ -n "$existing" ]; then
+          lookup_error=""
+          if ! existing=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" 2>&1); then
+            handle_comment_failure "$existing" || exit 1
+            existing=""
+            lookup_error="true"
+          else
+            existing=$(printf '%s\n' "$existing" | head -1)
+          fi
+          if [ -n "$lookup_error" ]; then
+            echo "Skipping comment write because the existing-comment lookup failed."
+          elif [ -n "$existing" ]; then
             # Keep an existing report current even when the delta drops to zero.
-            gh api --silent -X PATCH "repos/${REPO}/issues/comments/${existing}" \
-              -F body=@/tmp/report.md
+            comment_error=""
+            if ! comment_error=$(gh api --silent -X PATCH \
+              "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@/tmp/report.md 2>&1); then
+              handle_comment_failure "$comment_error" || exit 1
+            fi
           elif grep -q "No rule-impact differences" /tmp/report.md; then
             echo "No impact and no prior report comment — nothing to post."
           else
-            gh api --silent -X POST "repos/${REPO}/issues/${PR}/comments" \
-              -F body=@/tmp/report.md
+            comment_error=""
+            if ! comment_error=$(gh api --silent -X POST \
+              "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@/tmp/report.md 2>&1); then
+              handle_comment_failure "$comment_error" || exit 1
+            fi
           fi

@@ -95,7 +95,7 @@ class TestExtractor:
         assert plugin.version == "1.0.0"
         assert len(plugin.commands) == 1
         assert plugin.commands[0].name == "test-command"
-        assert plugin.commands[0].description == "A test command"
+        assert plugin.commands[0].description == "Runs a test workflow and reports the result"
         assert plugin.commands[0].full_name == "test-plugin:test-command"
         assert "test-plugin:test-command" in plugin.commands[0].synopsis
         assert plugin.has_readme is True
@@ -399,7 +399,7 @@ class TestHtmlRenderer:
 
         assert "test-plugin" in page
         assert "test-command" in page
-        assert "A test command" in page
+        assert "Runs a test workflow and reports the result" in page
 
     def test_marketplace_single_page(self, marketplace_repo):
         """Marketplace renders as a single page with embedded data."""

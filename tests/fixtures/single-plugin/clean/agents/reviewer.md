@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Perform thorough code reviews on pull request diffs
+description: Perform thorough code reviews on pull request diffs. Use when a change needs review.
 subagent_type: reviewer
 ---
 

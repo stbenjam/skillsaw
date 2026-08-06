@@ -156,3 +156,24 @@ def test_core_module_does_not_import_rules_package(rel_path):
             offenders.extend(a.name for a in node.names if "rules.builtin" in a.name)
         stack.extend(ast.iter_child_nodes(node))
     assert not offenders, f"{rel_path} imports from the rules package: {offenders}"
+
+
+@pytest.mark.parametrize("path", sorted((SRC / "discovery").glob("*.py")))
+def test_discovery_modules_are_state_free(path):
+    """Discovery may take callbacks from context, but must never import it."""
+    tree = ast.parse(path.read_text())
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            imports.append(module)
+            imports.extend(f"{module}.{alias.name}" for alias in node.names)
+    offenders = [name for name in imports if "context" in name.split(".")]
+    assert not offenders, f"{path.relative_to(SRC)} imports context: {offenders}"
+
+
+def test_context_stays_below_repository_model_budget():
+    """Keep filesystem walks from accreting back into the orchestrator."""
+    assert len((SRC / "context.py").read_text().splitlines()) < 900

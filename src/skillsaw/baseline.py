@@ -19,9 +19,11 @@ from typing import Dict, List, Optional, Tuple
 
 from .formatters import relative_path
 from .rule import RuleViolation
+from skillsaw.paths import safe_resolve
 
 BASELINE_FILENAME = ".skillsaw-baseline.json"
 _BASELINE_VERSION = "1"
+_UNBASELINABLE_RULE_IDS = frozenset({"repository-path-error"})
 
 
 @dataclass
@@ -46,14 +48,15 @@ class BaselineFile:
 
 
 def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Optional[List[str]]:
-    try:
-        resolved = path.resolve()
-    except OSError:
+    """Read and cache UTF-8 lines, returning ``None`` for unreadable files."""
+    resolved = safe_resolve(path)
+    if resolved is None:
+        cache[path] = None
         return None
     if resolved not in cache:
         try:
             cache[resolved] = resolved.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError, ValueError):
             cache[resolved] = None
     return cache[resolved]
 
@@ -91,6 +94,9 @@ def fingerprint_violation(
             raw = f"{rule_id}\0{rel_path}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
+    discriminator_suffix = (
+        f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""
+    )
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
         if not file_path.is_absolute():
@@ -98,13 +104,13 @@ def fingerprint_violation(
         lines = _read_file_lines(file_path, _file_cache)
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
-            raw = f"{rule_id}\0{rel_path}\0{line_content}"
+            raw = f"{rule_id}\0{rel_path}\0{line_content}{discriminator_suffix}"
             return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     if rel_path is not None:
-        raw = f"{rule_id}\0{rel_path}\0{violation.message}"
+        raw = f"{rule_id}\0{rel_path}\0{violation.message}{discriminator_suffix}"
     else:
-        raw = f"{rule_id}\0{violation.message}"
+        raw = f"{rule_id}\0{violation.message}{discriminator_suffix}"
 
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -115,11 +121,14 @@ def build_baseline(
     version_string: str,
     baseline_modes: Optional[Dict[str, str]] = None,
 ) -> BaselineFile:
+    """Build a baseline snapshot from the supplied rule violations."""
     file_cache: Dict[Path, Optional[List[str]]] = {}
     modes = baseline_modes or {}
     entries: List[BaselineEntry] = []
 
     for v in violations:
+        if v.rule_id in _UNBASELINABLE_RULE_IDS:
+            continue
         fp = fingerprint_violation(v, root_path, _file_cache=file_cache)
         mode = modes.get(v.rule_id)
         entries.append(
@@ -140,7 +149,7 @@ def build_baseline(
         generated_by=f"skillsaw {version_string}",
         generated_at=datetime.now(timezone.utc).isoformat(),
         violations=entries,
-        root_path=root_path.resolve(),
+        root_path=(safe_resolve(root_path) or root_path),
     )
 
 
@@ -157,6 +166,7 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
 
 
 def load_baseline(path: Path) -> BaselineFile:
+    """Load and validate a baseline file from *path*."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -200,7 +210,7 @@ def load_baseline(path: Path) -> BaselineFile:
         generated_by=data.get("generated_by", ""),
         generated_at=data.get("generated_at", ""),
         violations=entries,
-        root_path=path.resolve().parent,
+        root_path=(safe_resolve(path) or path).parent,
     )
 
 
@@ -211,7 +221,7 @@ def find_baseline(start_path: Path) -> Optional[Path]:
     baseline placed at ``/`` (containers that mount the repo at the root) is
     still found.
     """
-    current = start_path.resolve()
+    current = safe_resolve(start_path) or start_path
     for directory in (current, *current.parents):
         candidate = directory / BASELINE_FILENAME
         if candidate.exists():
@@ -257,6 +267,9 @@ def filter_baselined_violations(
     consumed_ratchet: set = set()
 
     for v in violations:
+        if v.rule_id in _UNBASELINABLE_RULE_IDS:
+            kept.append(v)
+            continue
         fp = fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)
 
         if fp in ratchet_entries:

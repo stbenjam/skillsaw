@@ -13,6 +13,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
+from skillsaw.paths import safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +307,18 @@ class Linter:
             for message in errors
         ]
 
+    def _lint_tree_error_violations(self) -> List[RuleViolation]:
+        """Translate persistent repository discovery errors into violations."""
+        errors = dict.fromkeys(self.context.lint_tree_errors)
+        return [
+            RuleViolation(
+                rule_id="repository-path-error",
+                severity=Severity.ERROR,
+                message=message,
+            )
+            for message in errors
+        ]
+
     def _load_custom_rule(self, rule_path: str):
         """
         Load a custom rule from a Python file
@@ -317,10 +330,17 @@ class Linter:
         if not path.is_absolute():
             base = self.config.config_dir or self.context.root_path
             path = base / path
-        path = path.resolve()
+        unresolved_path = path
+        path = safe_resolve(path)
+        if path is None:
+            raise ValueError(f"Custom rule path could not be resolved: {unresolved_path}")
 
-        if not path.exists():
+        try:
+            path.stat()
+        except (FileNotFoundError, NotADirectoryError):
             raise ValueError(f"Custom rule file not found: {path}")
+        except (OSError, ValueError) as e:
+            raise ValueError(f"Custom rule path cannot be accessed: {path}: {e}") from e
 
         warnings.warn(CustomRuleWarning(path), stacklevel=2)
         logger.info("Loading custom rules from %s", path)
@@ -441,13 +461,11 @@ class Linter:
         exclude = self.config.get_rule_config(rule_id).get("exclude")
         if not exclude:
             return False
-        from .context import path_matches_patterns
-
-        return path_matches_patterns(file_path, self.context.root_path, exclude)
+        return self.context.matches_patterns(file_path, exclude)
 
     def _get_suppression_map(self, file_path: Path) -> Optional[SuppressionMap]:
         """Get or build a suppression map for a file, with caching."""
-        resolved = file_path.resolve()
+        resolved = safe_resolve(file_path) or file_path
         if not hasattr(self, "_suppression_cache"):
             self._suppression_cache: Dict[Path, Optional[SuppressionMap]] = {}
         if resolved not in self._suppression_cache:
@@ -598,6 +616,8 @@ class Linter:
 
         # Tree contributors run lazily inside build_lint_tree (triggered by
         # the rule checks above), so their failures are only known now.
+        _ = self.context.lint_tree
+        violations.extend(self._lint_tree_error_violations())
         violations.extend(self._plugin_extension_error_violations())
 
         return self._filter_violations(violations)
@@ -663,6 +683,8 @@ class Linter:
             else:
                 all_violations.extend(visible)
 
+        _ = self.context.lint_tree
+        all_violations.extend(self._lint_tree_error_violations())
         all_violations.extend(self._plugin_extension_error_violations())
 
         # Baseline stale/suppressed accounting must consider all rules'
@@ -688,9 +710,9 @@ class Linter:
         independent: List[AutofixResult] = []
         has_conflicts = False
         for fix in fixes:
-            targets = {fix.file_path.resolve()}
+            targets = {safe_resolve(fix.file_path) or fix.file_path}
             if fix.rename_from is not None:
-                targets.add(fix.rename_from.resolve())
+                targets.add((safe_resolve(fix.rename_from) or fix.rename_from))
             if any(t in seen for t in targets):
                 has_conflicts = True
             else:
@@ -811,7 +833,7 @@ class Linter:
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip
                     # a case-only rename via the ``dst.exists()`` guard.
-                    same_file = src.resolve() == dst.resolve()
+                    same_file = (safe_resolve(src) or src) == (safe_resolve(dst) or dst)
                     if dst.exists() and not same_file:
                         continue
                     dst.parent.mkdir(parents=True, exist_ok=True)

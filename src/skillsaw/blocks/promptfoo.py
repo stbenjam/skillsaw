@@ -58,10 +58,10 @@ class PromptfooPromptBlock(ContentBlock):
     def __eq__(self, other):
         if not isinstance(other, PromptfooPromptBlock):
             return NotImplemented
-        return self.path.resolve() == other.path.resolve() and self.yaml_path == other.yaml_path
+        return self.resolved_path == other.resolved_path and self.yaml_path == other.yaml_path
 
     def __hash__(self):
-        return hash((type(self), self.path.resolve(), self.yaml_path))
+        return hash((type(self), self.resolved_path, self.yaml_path))
 
     _TEMPLATE_ONLY_RE = re.compile(r"^\s*\{\{.*\}\}\s*$")
 
