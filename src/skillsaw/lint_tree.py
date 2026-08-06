@@ -41,7 +41,7 @@ from .formats.codex import (
     codex_inline_mcp_servers,
     codex_manifest_is_contained,
 )
-from .paths import safe_is_dir, safe_is_file, safe_resolve
+from .paths import safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
     is_promptfoo_config,
@@ -726,7 +726,7 @@ def _build_promptfoo_nodes(
             resolved = resolve_file_ref(ref, config_dir, root=context.root_path)
             if resolved is None or resolved in seen:
                 continue
-            if not resolved.exists() or _is_excluded(Path(resolved)):
+            if not safe_exists(resolved) or _is_excluded(Path(resolved)):
                 continue
             seen.add(resolved)
             frag = PromptfooConfigNode(path=Path(resolved), is_fragment=True)

@@ -17,7 +17,7 @@ from skillsaw.rules.builtin.content_analysis import (
 from skillsaw.rules.builtin.utils import read_text
 
 from ._helpers import _IMPORT_RE
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 
 _MAX_IMPORT_HOPS = 4
 _LINE_START_IMPORT_PREFIX_RE = re.compile(r"^\s*(?:(?:>\s*)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*$")
@@ -120,9 +120,20 @@ class InstructionImportsValidRule(Rule):
                 if import_path_str.startswith("~"):
                     continue
 
-                target = safe_resolve((resolved_file.parent / import_path_str)) or (
-                    resolved_file.parent / import_path_str
-                )
+                unresolved_target = resolved_file.parent / import_path_str
+                target = safe_resolve(unresolved_target)
+                if target is None:
+                    if first_visit and _should_report_missing(
+                        import_path_str, line_start_import, unresolved_target
+                    ):
+                        violations.append(
+                            self.violation(
+                                f"Import '@{import_path_str}' references non-existent path",
+                                file_path=file_path,
+                                line=line_num,
+                            )
+                        )
+                    continue
 
                 try:
                     target.relative_to(root_path)
@@ -137,7 +148,7 @@ class InstructionImportsValidRule(Rule):
                         )
                     continue
 
-                if not target.exists():
+                if not safe_exists(target):
                     if first_visit and _should_report_missing(
                         import_path_str, line_start_import, target
                     ):
@@ -150,7 +161,7 @@ class InstructionImportsValidRule(Rule):
                         )
                     continue
 
-                if depth >= _MAX_IMPORT_HOPS or not target.is_file():
+                if depth >= _MAX_IMPORT_HOPS or not safe_is_file(target):
                     continue
 
                 content = read_text(target)
@@ -193,7 +204,7 @@ def _should_report_missing(import_path: str, line_start_import: bool, target: Pa
             # structurally identical. Only treat the reference as a broken
             # import when its parent directory actually exists in the repo;
             # otherwise assume it's a team mention and stay quiet.
-            return target.parent.exists()
+            return safe_exists(target.parent)
         return True
 
     if "." in import_path:

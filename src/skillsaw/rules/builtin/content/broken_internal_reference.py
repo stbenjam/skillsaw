@@ -14,7 +14,7 @@ from skillsaw.markdown_doc import file_span, splice
 from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
 )
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_exists, safe_resolve
 
 # RFC 3986 scheme, but two-plus characters so ``C:/path`` stays a file path.
 _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
@@ -89,14 +89,11 @@ class ContentBrokenInternalReferenceRule(Rule):
                 ):
                     continue
                 # Resolve relative to the file containing the link
-                try:
-                    resolved = safe_resolve((cf.path.parent / fs_path)) or (
-                        cf.path.parent / fs_path
-                    )
-                except (ValueError, OSError, RuntimeError):
+                resolved = safe_resolve(cf.path.parent / fs_path)
+                if resolved is None:
                     # Undecodable path (e.g. an embedded %00) cannot exist;
-                    # resolve() raises RuntimeError on circular symlinks on
-                    # Python <= 3.12.
+                    # circular symlinks and unreadable parents are likewise
+                    # broken references, not paths to probe again unsafely.
                     violations.append(
                         self.violation(
                             f"Broken internal link: [{link.text}]({target}) — target does not exist",
@@ -119,7 +116,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                         )
                     )
                     continue
-                if not resolved.exists():
+                if not safe_exists(resolved):
                     suggestion = self._find_similar(root, cf.path.parent, fs_path)
                     msg = f"Broken internal link: [{link.text}]({target}) — target does not exist"
                     if suggestion:
@@ -142,10 +139,12 @@ class ContentBrokenInternalReferenceRule(Rule):
     def _exists_in_repo(root: Path, link_dir: Path, rel_path: str) -> bool:
         """True when ``rel_path`` resolves inside ``root`` and exists."""
         try:
-            resolved = safe_resolve((link_dir / rel_path)) or (link_dir / rel_path)
+            resolved = safe_resolve(link_dir / rel_path)
+            if resolved is None:
+                return False
             resolved.relative_to(root)
-            return resolved.exists()
-        except (ValueError, OSError, RuntimeError):
+            return safe_exists(resolved)
+        except ValueError:
             return False
 
     def _collect_repo_paths(self, root: Path) -> List[str]:

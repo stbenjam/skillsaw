@@ -1607,6 +1607,33 @@ class TestContentBrokenInternalReferenceRule:
         assert len(violations) == 1
         assert "does not exist" in violations[0].message
 
+    def test_resolution_and_stat_failure_reports_broken(self, temp_dir, monkeypatch):
+        """A rejected link target must not be probed again through the raw path."""
+        from skillsaw.rules.builtin.content import broken_internal_reference as rule_module
+
+        (temp_dir / "CLAUDE.md").write_text("See [hostile](hostile.md).\n")
+        context = RepositoryContext(temp_dir)
+        context.lint_tree
+        real_safe_resolve = rule_module.safe_resolve
+        real_exists = Path.exists
+
+        def hostile_resolve(path):
+            if path.name == "hostile.md":
+                return None
+            return real_safe_resolve(path)
+
+        def hostile_exists(path):
+            if path.name == "hostile.md":
+                raise OSError("cannot stat hostile link")
+            return real_exists(path)
+
+        monkeypatch.setattr(rule_module, "safe_resolve", hostile_resolve)
+        monkeypatch.setattr(Path, "exists", hostile_exists)
+
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "does not exist" in violations[0].message
+
     @pytest.mark.skipif(os.name == "nt", reason="backslash is a separator on Windows")
     def test_literal_backslash_filename_suggestion_preserved(self, temp_dir):
         """On POSIX a literal backslash is part of the file name — the
@@ -1648,6 +1675,33 @@ class TestContentUnlinkedInternalReferenceRule:
         violations = ContentUnlinkedInternalReferenceRule().check(context)
         assert len(violations) == 1
         assert "./scripts/build.sh" in violations[0].message
+
+    def test_resolution_failure_is_not_autofixable(self, temp_dir, monkeypatch):
+        """An unresolvable bare path must not be statted or offered for autofix."""
+        from skillsaw.rules.builtin.content import unlinked_internal_reference as rule_module
+
+        (temp_dir / "CLAUDE.md").write_text("See docs/hostile.md for details.\n")
+        context = RepositoryContext(temp_dir)
+        context.lint_tree
+        real_safe_resolve = rule_module.safe_resolve
+        real_exists = Path.exists
+
+        def hostile_resolve(path):
+            if path.name == "hostile.md":
+                return None
+            return real_safe_resolve(path)
+
+        def hostile_exists(path):
+            if path.name == "hostile.md":
+                raise OSError("cannot stat hostile reference")
+            return real_exists(path)
+
+        monkeypatch.setattr(rule_module, "safe_resolve", hostile_resolve)
+        monkeypatch.setattr(Path, "exists", hostile_exists)
+
+        violations = ContentUnlinkedInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].fixable is False
 
     def test_path_abutting_close_paren_not_flagged(self, temp_dir):
         """Regression for #321: `scripts/test.pyc)` must not backtrack to a
