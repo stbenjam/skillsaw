@@ -48,7 +48,7 @@ my-plugin/
 Each skill must be an immediate child of `skills/`; deeper descendants are not
 discovered as additional skills. `plugin.json` and, when present, `mcp.json`
 must use the canonical Agent Plugins v1 schema identifiers. The
-`agent-plugin-manifest-valid` and `agent-plugin-mcp-valid` rules validate those
+`agent-plugin-json-valid` and `agent-plugin-mcp-valid` rules validate those
 files, while the `agentskill-*` rules validate discovered `SKILL.md` files.
 
 Automatic detection is deliberately strict. A `plugin.json` at the lint root,

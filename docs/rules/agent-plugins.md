@@ -7,6 +7,6 @@ Validates portable plugin packages against the [Agent Plugins v1 specification](
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`agent-plugin-manifest-valid`](agent-plugin-manifest-valid.md) | Agent Plugins plugin.json and skills location must conform to 1.0.0 | error (auto) | - |
+| [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to 1.0.0 | error (auto) | - |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics | error (auto) | - |
 

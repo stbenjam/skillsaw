@@ -317,7 +317,7 @@ class TestAgentPlugins:
         assert r["rc"] == 0, violations(r)
         assert "agent-plugin" in r["out"]["stats"]["repo_types"]
         assert len(r["out"]["stats"]["plugins"]) == 1
-        assert "agent-plugin-manifest-valid" not in rule_ids(r)
+        assert "agent-plugin-json-valid" not in rule_ids(r)
         assert "agent-plugin-mcp-valid" not in rule_ids(r)
 
     def test_broken_manifest_reports_errors_and_spec_warnings(self, tmp_path):
@@ -325,7 +325,7 @@ class TestAgentPlugins:
         r = run_lint(repo)
 
         assert r["rc"] == 1
-        found = by_rule(r)["agent-plugin-manifest-valid"]
+        found = by_rule(r)["agent-plugin-json-valid"]
         assert any(v["severity"] == "error" for v in found)
         assert any(v["severity"] == "warning" for v in found)
 
@@ -353,11 +353,11 @@ class TestAgentPlugins:
             "--type",
             "agent-plugin",
             "--rule",
-            "agent-plugin-manifest-valid",
+            "agent-plugin-json-valid",
         )
 
         assert r["rc"] == 1
-        assert "agent-plugin-manifest-valid" in rule_ids(r)
+        assert "agent-plugin-json-valid" in rule_ids(r)
         assert any("plugin.json" in v["message"] for v in violations(r))
 
     def test_legacy_root_manifest_does_not_auto_enable_agent_plugin_rules(self, tmp_path):
@@ -365,7 +365,7 @@ class TestAgentPlugins:
         r = run_lint(repo)
 
         assert "agent-plugin" not in r["out"]["stats"]["repo_types"]
-        assert "agent-plugin-manifest-valid" not in rule_ids(r)
+        assert "agent-plugin-json-valid" not in rule_ids(r)
         assert "agent-plugin-mcp-valid" not in rule_ids(r)
 
     def test_collection_counts_only_canonical_agent_plugins(self, tmp_path):

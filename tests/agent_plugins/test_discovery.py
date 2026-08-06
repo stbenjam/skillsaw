@@ -13,7 +13,7 @@ from skillsaw.blocks import (
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import AgentPluginConfigNode, SkillNode
 
-from ._helpers import MANIFEST_RULE, copy_fixture, lint_rules, messages_lower
+from ._helpers import PLUGIN_JSON_RULE, copy_fixture, lint_rules, messages_lower
 
 
 class TestAgentPluginDetection:
@@ -197,7 +197,7 @@ class TestExplicitAgentPluginType:
         repo = copy_fixture("agent-plugins/missing", tmp_path)
         findings = lint_rules(
             repo,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
@@ -211,7 +211,7 @@ class TestExplicitAgentPluginType:
         repo = copy_fixture("agent-plugins/legacy-root", tmp_path)
         findings = lint_rules(
             repo,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
@@ -225,7 +225,7 @@ class TestExplicitAgentPluginType:
 
         findings = lint_rules(
             repo,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
@@ -259,7 +259,7 @@ class TestExplicitAgentPluginType:
 
         findings = lint_rules(
             repo,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
         assert all(finding.file_path != repo / "plugin.json" for finding in findings)
@@ -282,7 +282,7 @@ class TestExplicitAgentPluginType:
 
         findings = lint_rules(
             repo,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
         assert any(

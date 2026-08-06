@@ -433,7 +433,7 @@ def _extract_agent_plugin(
 
     The manifest is read defensively: ``--type agent-plugin`` seeds this
     node even when plugin.json is missing or unparseable, and
-    agent-plugin-manifest-valid is what reports that — documentation stays
+    agent-plugin-json-valid is what reports that — documentation stays
     total and falls back to the directory name.
     """
     plugin_dir = node.plugin_dir

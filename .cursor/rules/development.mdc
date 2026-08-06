@@ -193,7 +193,7 @@ per-ecosystem attach paths and loses its content silently.
   by its target, and declaring `provenance_scope` there is a bug: under
   a forced `--type` with no filesystem claim the scope filter skips the
   node, so the rule never reports a missing or malformed manifest. That
-  is why `agent-plugin-manifest-valid` and `agent-plugin-mcp-valid` use
+  is why `agent-plugin-json-valid` and `agent-plugin-mcp-valid` use
   plain `find(AgentPluginConfigNode)`.
 - **Conditional strictness is not a skip.** The ecosystem-tightened
   checks (hooks/MCP shapes) stay `provenance_scope = None` and gate the

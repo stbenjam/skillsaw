@@ -11,7 +11,7 @@ rules:
     severity: error
 
   # Agent Plugins plugin.json and skills location must conform to 1.0.0
-  agent-plugin-manifest-valid:
+  agent-plugin-json-valid:
     enabled: auto
     severity: error
 

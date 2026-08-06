@@ -1,4 +1,4 @@
-"""Rule: agent-plugin-manifest-valid."""
+"""Rule: agent-plugin-json-valid."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from ._helpers import (
 _MANIFEST_FIELDS = frozenset(PLUGIN_SCHEMA["properties"])
 
 
-class AgentPluginManifestValidRule(Rule):
+class AgentPluginJsonValidRule(Rule):
     """Validate the portable manifest and fixed skills component location."""
 
     repo_types = AGENT_PLUGIN_REPO_TYPES
@@ -39,7 +39,7 @@ class AgentPluginManifestValidRule(Rule):
 
     @property
     def rule_id(self) -> str:
-        return "agent-plugin-manifest-valid"
+        return "agent-plugin-json-valid"
 
     @property
     def description(self) -> str:

@@ -9,7 +9,7 @@ from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.linter import Linter
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
-MANIFEST_RULE = "agent-plugin-manifest-valid"
+PLUGIN_JSON_RULE = "agent-plugin-json-valid"
 MCP_RULE = "agent-plugin-mcp-valid"
 
 

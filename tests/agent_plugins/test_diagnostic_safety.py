@@ -10,7 +10,7 @@ from skillsaw.formatters import format_report
 from skillsaw.formats.agent_plugins import MCP_SCHEMA_ID, PLUGIN_SCHEMA_ID
 from skillsaw.linter import Linter
 
-from ._helpers import MANIFEST_RULE, MCP_RULE
+from ._helpers import PLUGIN_JSON_RULE, MCP_RULE
 
 
 def _contains_surrogate(text: str) -> bool:
@@ -59,7 +59,7 @@ def test_escaped_lone_surrogate_keys_are_safe_in_every_output_format(
     context = RepositoryContext(tmp_path)
     config = LinterConfig.default()
     config.version = "99.0.0"
-    linter = Linter(context, config=config, rule_ids={MANIFEST_RULE, MCP_RULE})
+    linter = Linter(context, config=config, rule_ids={PLUGIN_JSON_RULE, MCP_RULE})
     findings = linter.run()
 
     assert len(findings) == 2

@@ -1,4 +1,4 @@
-"""Conformance tests for ``agent-plugin-manifest-valid``."""
+"""Conformance tests for ``agent-plugin-json-valid``."""
 
 import json
 
@@ -7,7 +7,7 @@ import pytest
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 
-from ._helpers import MANIFEST_RULE, copy_fixture, lint_rules, messages_lower
+from ._helpers import PLUGIN_JSON_RULE, copy_fixture, lint_rules, messages_lower
 
 SCHEMA_BASE = "https://agent-plugins.org/schemas/1.0.0"
 
@@ -46,15 +46,15 @@ def _has_location_finding(findings, needle: str) -> bool:
 class TestManifestSchema:
     def test_clean_full_manifest_passes(self, tmp_path):
         repo = copy_fixture("agent-plugins/clean", tmp_path)
-        assert lint_rules(repo, MANIFEST_RULE) == []
+        assert lint_rules(repo, PLUGIN_JSON_RULE) == []
 
     def test_recommended_metadata_formats_are_not_rejected(self, tmp_path):
         repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
-        assert lint_rules(repo, MANIFEST_RULE) == []
+        assert lint_rules(repo, PLUGIN_JSON_RULE) == []
 
     def test_schema_types_and_name_constraints_are_reported(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
         combined = "\n".join(messages_lower(findings))
 
         assert "does not conform" in combined
@@ -95,21 +95,21 @@ class TestManifestSchema:
             encoding="utf-8",
         )
 
-        findings = lint_rules(tmp_path, MANIFEST_RULE)
+        findings = lint_rules(tmp_path, PLUGIN_JSON_RULE)
 
         assert findings
         assert any(field in message for message in messages_lower(findings))
 
     def test_malformed_json_is_reported(self, tmp_path):
         repo = copy_fixture("agent-plugins/malformed-manifest", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         assert len(findings) == 1
         assert "json" in findings[0].message.lower()
 
     def test_unsupported_canonical_schema_version_is_reported(self, tmp_path):
         repo = copy_fixture("agent-plugins/unsupported-schema", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         assert findings
         combined = "\n".join(messages_lower(findings))
@@ -118,7 +118,7 @@ class TestManifestSchema:
 
     def test_unknown_fields_are_warnings_not_plugin_fatal(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         unknown = _finding_for(findings, "components")
         assert unknown
@@ -126,7 +126,7 @@ class TestManifestSchema:
 
     def test_non_object_extensions_is_a_warning(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         extensions = _finding_for(findings, "extensions")
         assert extensions
@@ -144,7 +144,7 @@ class TestManifestSchema:
         }
         (tmp_path / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-        assert lint_rules(tmp_path, MANIFEST_RULE) == []
+        assert lint_rules(tmp_path, PLUGIN_JSON_RULE) == []
 
     def test_extension_namespace_value_must_be_an_object(self, tmp_path):
         manifest = {
@@ -156,7 +156,7 @@ class TestManifestSchema:
         }
         (tmp_path / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-        findings = lint_rules(tmp_path, MANIFEST_RULE)
+        findings = lint_rules(tmp_path, PLUGIN_JSON_RULE)
 
         assert findings
         assert any(item.severity is Severity.ERROR for item in findings)
@@ -166,7 +166,7 @@ class TestManifestSchema:
 class TestFixedLocationsAndContainment:
     def test_skills_must_be_a_directory_when_present(self, tmp_path):
         repo = copy_fixture("agent-plugins/wrong-kinds", tmp_path)
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         combined = "\n".join(messages_lower(findings))
         assert "skills" in combined
@@ -177,7 +177,7 @@ class TestFixedLocationsAndContainment:
         repo = fixture / "repo"
         assert (repo / "skills").is_symlink()
 
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
         context = RepositoryContext(repo)
 
         assert _has_location_finding(findings, "skills")
@@ -188,7 +188,7 @@ class TestFixedLocationsAndContainment:
         repo = fixture / "repo"
         assert (repo / "skills" / "escaping" / "SKILL.md").is_symlink()
 
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
         context = RepositoryContext(repo)
 
         assert _has_location_finding(findings, "skill")
@@ -196,14 +196,14 @@ class TestFixedLocationsAndContainment:
 
     def test_missing_optional_component_locations_are_clean(self, tmp_path):
         repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
-        assert lint_rules(repo, MANIFEST_RULE) == []
+        assert lint_rules(repo, PLUGIN_JSON_RULE) == []
 
     def test_manifest_directory_is_not_a_manifest(self, tmp_path):
         (tmp_path / "plugin.json").mkdir()
 
         findings = lint_rules(
             tmp_path,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
@@ -222,7 +222,7 @@ class TestFixedLocationsAndContainment:
         (skills / "escaping").symlink_to("../../outside/borrowed", target_is_directory=True)
         _write_manifest(repo)
 
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
         context = RepositoryContext(repo)
 
         assert any(
@@ -240,7 +240,7 @@ class TestFixedLocationsAndContainment:
         (skills / "valid" / "SKILL.md").write_text(SKILL_BODY, encoding="utf-8")
         _write_manifest(repo)
 
-        findings = lint_rules(repo, MANIFEST_RULE)
+        findings = lint_rules(repo, PLUGIN_JSON_RULE)
 
         assert any(
             "shaped-like-a-skill/skill.md" in message and "regular file" in message
@@ -253,7 +253,7 @@ class TestFixedLocationsAndContainment:
 
         findings = lint_rules(
             tmp_path,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
@@ -264,4 +264,4 @@ class TestFixedLocationsAndContainment:
 
 def test_manifest_rule_is_scoped_to_agent_plugin_repositories(tmp_path):
     repo = copy_fixture("agent-plugins/legacy-root", tmp_path)
-    assert lint_rules(repo, MANIFEST_RULE) == []
+    assert lint_rules(repo, PLUGIN_JSON_RULE) == []

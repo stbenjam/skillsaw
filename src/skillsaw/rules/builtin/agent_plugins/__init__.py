@@ -1,6 +1,6 @@
 """Rules for the portable Agent Plugins specification."""
 
-from .manifest_valid import AgentPluginManifestValidRule
+from .plugin_json_valid import AgentPluginJsonValidRule
 from .mcp_valid import AgentPluginMcpValidRule
 
-__all__ = ["AgentPluginManifestValidRule", "AgentPluginMcpValidRule"]
+__all__ = ["AgentPluginJsonValidRule", "AgentPluginMcpValidRule"]

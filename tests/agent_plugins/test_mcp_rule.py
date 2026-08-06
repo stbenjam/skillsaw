@@ -8,7 +8,7 @@ from skillsaw.blocks import AgentPluginMcpBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.rule import Severity
 
-from ._helpers import MANIFEST_RULE, MCP_RULE, copy_fixture, lint_rules, messages_lower
+from ._helpers import PLUGIN_JSON_RULE, MCP_RULE, copy_fixture, lint_rules, messages_lower
 
 SCHEMA_BASE = "https://agent-plugins.org/schemas/1.0.0"
 
@@ -533,7 +533,7 @@ class TestSchemaIdentifierAndMissingManifest:
         )
         manifest_findings = lint_rules(
             tmp_path,
-            MANIFEST_RULE,
+            PLUGIN_JSON_RULE,
             repo_types={RepositoryType.AGENT_PLUGIN},
         )
 
