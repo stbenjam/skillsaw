@@ -13,7 +13,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_exists, safe_resolve
+from skillsaw.paths import safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -323,8 +323,12 @@ class Linter:
         if path is None:
             raise ValueError(f"Custom rule path could not be resolved: {unresolved_path}")
 
-        if not safe_exists(path):
+        try:
+            path.stat()
+        except (FileNotFoundError, NotADirectoryError):
             raise ValueError(f"Custom rule file not found: {path}")
+        except (OSError, ValueError) as e:
+            raise ValueError(f"Custom rule path cannot be accessed: {path}: {e}") from e
 
         warnings.warn(CustomRuleWarning(path), stacklevel=2)
         logger.info("Loading custom rules from %s", path)
