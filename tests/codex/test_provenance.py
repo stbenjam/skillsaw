@@ -966,9 +966,8 @@ class TestPluginProvenanceCodexOnlyTruthTable:
         assert {row[0] for row in self.TRUTH_TABLE} == expected
 
     def test_agent_plugin_twin_stays_codex_only(self):
-        """The behavior change this class exists to pin: adding a portable
-        declaration to a Codex directory must not flip it out of
-        ``codex_only`` the way adding a Claude one does."""
+        """Adding a portable declaration to a Codex directory must not flip
+        it out of ``codex_only`` the way adding a Claude one does."""
         codex = PluginProvenance(ecosystems=frozenset({"codex"}))
         with_portable = PluginProvenance(ecosystems=frozenset({"codex", "agent-plugin"}))
         with_claude = PluginProvenance(ecosystems=frozenset({"codex", "claude"}))
