@@ -415,26 +415,40 @@ class SecurityHiddenInstructionsRule(Rule):
         """
         violations = []
         for definition in cf.markdown.reference_definitions():
-            parts = [definition.label, unquote(definition.href), definition.title or ""]
-            candidates = []
-            classified = None
-            for part in parts:
-                text = part.strip()
-                if not text or self._exempt(text, allowed):
-                    continue
-                candidates.append(text)
-                family = _classify(text)
-                if family is not None:
-                    classified = (family, text)
-                    break
-            if classified is None:
-                text = " ".join(candidates)
-                family = _classify(text)
-                if family is not None:
-                    classified = (family, text)
-            if classified is None:
+            parts = [
+                part.strip()
+                for part in (
+                    definition.label,
+                    unquote(definition.href),
+                    definition.title or "",
+                )
+                if part.strip()
+            ]
+            text = " ".join(parts)
+            family = _classify(text)
+            if family is None:
                 continue
-            family, text = classified
+
+            # A configured prefix may exempt a directive-bearing component,
+            # but it must not hide a directive split across components. Only
+            # exempt when every component that classifies is independently
+            # allowed and the remaining components are benign together.
+            part_results = [(part, _classify(part)) for part in parts]
+            classified_parts = [
+                (part, part_family, self._exempt(part, allowed))
+                for part, part_family in part_results
+                if part_family is not None
+            ]
+            if classified_parts and all(exempt for _part, _family, exempt in classified_parts):
+                residual = " ".join(
+                    part for part, part_family in part_results if part_family is None
+                )
+                if _classify(residual) is None:
+                    continue
+            text = next(
+                (part for part, _family, exempt in classified_parts if not exempt),
+                text,
+            )
             violations.append(
                 self.violation(
                     f"Hidden {family} instruction in Markdown link label: "

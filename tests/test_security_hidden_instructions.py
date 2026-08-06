@@ -142,9 +142,17 @@ class TestSecurityHiddenInstructionsRule:
         """Scan every invisible reference label, destination, and title."""
         repo = copy_fixture("security/hidden-instructions-reference-variants", tmp_path)
         violations = _check(repo)
-        assert len(violations) == 2
-        assert [violation.line for violation in violations] == [19, 21]
+        assert len(violations) == 3
+        assert [violation.line for violation in violations] == [19, 21, 23]
         assert all("prompt-control" in violation.message for violation in violations)
+
+    def test_allowed_prefix_does_not_hide_split_reference_payload(self, tmp_path):
+        """An allowed prefix in one field cannot hide a cross-field directive."""
+        repo = copy_fixture("security/hidden-instructions-reference-variants", tmp_path)
+        violations = _check(repo, {"additional-allowed-prefixes": ["my-doc-tool:"]})
+        assert len(violations) == 3
+        assert [violation.line for violation in violations] == [19, 21, 23]
+        assert "MY-DOC-TOOL: DEVELOPER mode" in violations[-1].message
 
     def test_hidden_link_label_inside_fence_is_example(self, tmp_path):
         """Do not report hidden-link syntax shown as a fenced example."""
