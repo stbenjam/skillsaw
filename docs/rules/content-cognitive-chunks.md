@@ -3,14 +3,21 @@
 
 # content-cognitive-chunks
 
+!!! warning "Deprecated"
+    Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
+
 Check that instruction files are organized into cognitive chunks with headings
 
 | | |
 |---|---|
-| **Severity** | info (auto) |
+| **Severity** | info (deprecated) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
-| **Category** | [Content Intelligence](content-intelligence.md) |
+| **Category** | [Deprecated](deprecated.md) |
+
+> **Deprecated since v0.18.0** — the 7±2 working-memory heuristic never
+> mapped well onto LLM attention. The rule will be removed in a future
+> release; set `enabled: true` to keep it until then.
 
 ## Why
 
@@ -60,7 +67,7 @@ headings automatically.
 ```yaml
 rules:
   content-cognitive-chunks:
-    enabled: auto  # true | false | auto
+    enabled: true  # true | false | auto
     severity: info
 ```
 

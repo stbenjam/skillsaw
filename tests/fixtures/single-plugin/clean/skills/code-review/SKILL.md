@@ -33,3 +33,5 @@ Verify that new or modified functions have corresponding test cases.
 ### Step 4: Report Findings
 
 Present findings grouped by severity with file and line references.
+Where possible, include a suggested fix with each finding, and try to
+keep the summary shorter than the diff itself.

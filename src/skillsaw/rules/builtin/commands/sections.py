@@ -15,9 +15,11 @@ class CommandSectionsRule(Rule):
 
     provenance_scope = "claude"
 
+    aliases = ("command-sections",)
+
     @property
     def rule_id(self) -> str:
-        return "command-sections"
+        return "claude-command-sections"
 
     @property
     def description(self) -> str:

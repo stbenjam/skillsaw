@@ -40,9 +40,11 @@ class MarketplaceJsonValidRule(Rule):
 
     repo_types = {RepositoryType.MARKETPLACE}
 
+    aliases = ("marketplace-json-valid",)
+
     @property
     def rule_id(self) -> str:
-        return "marketplace-json-valid"
+        return "claude-marketplace-json-valid"
 
     @property
     def description(self) -> str:

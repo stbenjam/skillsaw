@@ -86,7 +86,7 @@ With `-v`, `stats` expands:
     "repo_type": "marketplace",
     "plugins": ["plugins/foo", "plugins/bar"],
     "skills": ["skills/baz"],
-    "rules_run": ["plugin-json-required", "plugin-json-valid", "..."]
+    "rules_run": ["claude-plugin-json-required", "claude-plugin-json-valid", "..."]
   }
 }
 ```

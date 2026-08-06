@@ -49,8 +49,8 @@ def test_linter_detects_errors(temp_dir):
     context = RepositoryContext(plugin_dir)
     config = LinterConfig.default()
 
-    # Enable plugin-json-required
-    config.rules["plugin-json-required"] = {"enabled": True, "severity": "error"}
+    # Enable claude-plugin-json-required
+    config.rules["claude-plugin-json-required"] = {"enabled": True, "severity": "error"}
 
     linter = Linter(context, config)
     violations = linter.run()
@@ -80,13 +80,13 @@ def test_linter_passes_rule_config(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
 
-    # Override recommended-fields for plugin-json-valid
-    config.rules["plugin-json-valid"]["recommended-fields"] = ["description"]
+    # Override recommended-fields for claude-plugin-json-valid
+    config.rules["claude-plugin-json-valid"]["recommended-fields"] = ["description"]
 
     linter = Linter(context, config)
 
-    # Find the plugin-json-valid rule and verify it got the config
-    pjv_rules = [r for r in linter.rules if r.rule_id == "plugin-json-valid"]
+    # Find the claude-plugin-json-valid rule and verify it got the config
+    pjv_rules = [r for r in linter.rules if r.rule_id == "claude-plugin-json-valid"]
     assert len(pjv_rules) == 1
     assert pjv_rules[0].config.get("recommended-fields") == ["description"]
 

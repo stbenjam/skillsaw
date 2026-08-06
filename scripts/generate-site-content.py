@@ -81,19 +81,29 @@ RULE_GROUPS = [
     (
         "Plugin Structure",
         "plugin-structure",
-        ["plugin-json-required", "plugin-json-valid", "plugin-naming", "plugin-readme"],
+        [
+            "claude-plugin-json-required",
+            "claude-plugin-json-valid",
+            "claude-plugin-naming",
+            "claude-plugin-readme",
+        ],
         None,
     ),
     (
         "Command Format",
         "command-format",
-        ["command-naming", "command-frontmatter", "command-sections", "command-name-format"],
+        [
+            "claude-command-naming",
+            "claude-command-frontmatter",
+            "claude-command-sections",
+            "claude-command-name-format",
+        ],
         None,
     ),
     (
         "Marketplace",
         "marketplace",
-        ["marketplace-json-valid", "marketplace-registration"],
+        ["claude-marketplace-json-valid", "claude-marketplace-registration"],
         None,
     ),
     (
@@ -118,8 +128,7 @@ RULE_GROUPS = [
         "Skills, Agents, Hooks",
         "skills-agents-hooks",
         [
-            "skill-frontmatter",
-            "agent-frontmatter",
+            "claude-agent-frontmatter",
             "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
@@ -146,7 +155,7 @@ RULE_GROUPS = [
         "smuggling, Trojan Source), agent directives hidden in HTML comments "
         "or Markdown link labels, and long high-entropy base64/hex blobs that "
         "can smuggle encoded payloads. They complement `hooks-dangerous`, "
-        "`settings-dangerous`, and `content-embedded-secrets`, which cover the "
+        "`claude-settings-dangerous`, and `content-embedded-secrets`, which cover the "
         "executable and credential sides of the same threat.",
     ),
     (
@@ -158,7 +167,7 @@ RULE_GROUPS = [
     (
         "Rules Directory",
         "rules-directory",
-        ["rules-valid"],
+        ["claude-rules-valid"],
         None,
     ),
     (
@@ -191,15 +200,12 @@ RULE_GROUPS = [
         [
             "content-weak-language",
             "content-tautological",
-            "content-critical-position",
             "content-redundant-with-tooling",
             "content-instruction-budget",
             "content-negative-only",
             "content-section-length",
             "content-contradiction",
             "content-hook-candidate",
-            "content-actionability-score",
-            "content-cognitive-chunks",
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
@@ -243,7 +249,7 @@ RULE_GROUPS = [
     (
         "Settings",
         "settings",
-        ["settings-dangerous"],
+        ["claude-settings-dangerous"],
         "Security rules for `.claude/settings.json`. Project-scoped settings "
         "can set keys that execute arbitrary shell commands or environment "
         "variables that hijack process behaviour — these rules flag them.",
@@ -254,6 +260,22 @@ RULE_GROUPS = [
         ["apm-yaml-valid", "apm-structure-valid"],
         "Validates repositories using the [APM](https://github.com/microsoft/apm) "
         "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
+    ),
+    (
+        "Deprecated",
+        "deprecated",
+        [
+            "content-critical-position",
+            "content-actionability-score",
+            "content-cognitive-chunks",
+            "skill-frontmatter",
+        ],
+        "These rules are deprecated and will be removed in a future release. "
+        "They no longer run under `enabled: auto`; set `enabled: true` in "
+        "`.skillsaw.yaml` to keep running one during the transition. The "
+        "content rules encoded attention-era heuristics that newer models no "
+        "longer need; `skill-frontmatter` is replaced by "
+        "[`agentskill-valid`](agentskill-valid.md).",
     ),
 ]
 
@@ -280,7 +302,9 @@ def collect_rules():
         enabled = rule_config.get("enabled", True)
         default_severity = rule_config.get("severity") or rule.default_severity().value
 
-        if enabled == "auto":
+        if rule.deprecated is not None:
+            severity_str = f"{default_severity} (deprecated)"
+        elif enabled == "auto":
             severity_str = f"{default_severity} (auto)"
         elif enabled is False:
             severity_str = f"{default_severity} (disabled)"
@@ -305,6 +329,9 @@ def collect_rules():
             "since": rule.since,
             "repo_types": repo_types_str,
             "enabled": enabled,
+            "deprecated": rule.deprecated,
+            "replaced_by": rule.replaced_by,
+            "aliases": rule.aliases,
         }
     return rules
 
@@ -521,7 +548,28 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     r = rules_data[rule_id]
 
     lines = [GENERATED_HEADER, f"# {rule_id}\n"]
+
+    if r["deprecated"]:
+        notice = (
+            f'!!! warning "Deprecated"\n'
+            f"    Deprecated since v{r['deprecated']} and will be removed in a "
+            f"future release. This rule no longer runs under `enabled: auto`; "
+            f"set `enabled: true` explicitly to keep it during the transition."
+        )
+        if r["replaced_by"]:
+            notice += f"\n    Use [`{r['replaced_by']}`]({r['replaced_by']}.md) instead."
+        lines.append(notice)
+        lines.append("")
+
     lines.append(f"{r['description']}\n")
+
+    if r["aliases"]:
+        former = ", ".join(f"`{a}`" for a in r["aliases"])
+        lines.append(
+            f"*Formerly known as {former}. The legacy name still works in "
+            "configs, `--rule`/`--skip-rule`, suppression comments, and "
+            "baselines.*\n"
+        )
 
     # Metadata badges
     lines.append("| | |")
@@ -751,6 +799,18 @@ def main():
             page = generate_rule_page(rule_id, group_name, slug, rules_data, research)
             (rules_dir / f"{rule_id}.md").write_text(page)
             print(f"  rules/{rule_id}.md")
+
+            # Renamed rules keep their old documentation URLs working via a
+            # stub page at the legacy path pointing at the canonical page.
+            for alias in rules_data[rule_id]["aliases"]:
+                stub = (
+                    f"{GENERATED_HEADER}# {alias}\n\n"
+                    f"This rule is now [`{rule_id}`]({rule_id}.md) — "
+                    f"`{alias}` is a legacy alias that still works in configs, "
+                    "`--rule`/`--skip-rule`, suppression comments, and baselines.\n"
+                )
+                (rules_dir / f"{alias}.md").write_text(stub)
+                print(f"  rules/{alias}.md (alias stub)")
 
     # CLI reference
     (docs_dir / "cli.md").write_text(generate_cli_reference(commands))

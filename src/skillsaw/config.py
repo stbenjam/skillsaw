@@ -159,6 +159,24 @@ class LinterConfig:
                 "      enabled: true"
             )
 
+        # Resolve legacy rule names (e.g. plugin-json-valid) to their
+        # canonical claude- prefixed IDs so the rest of the pipeline only
+        # ever sees canonical names. When a config names both the alias
+        # and the canonical rule, the canonical entry wins.
+        from .rules.builtin import canonical_rule_id
+
+        normalized: Dict[str, Any] = {}
+        for rule_id, rule_config in rules.items():
+            canonical = canonical_rule_id(rule_id) if isinstance(rule_id, str) else rule_id
+            if canonical != rule_id and canonical in rules:
+                load_warnings.append(
+                    f"config names rule '{rule_id}' and its current name "
+                    f"'{canonical}'; the '{canonical}' entry wins"
+                )
+                continue
+            normalized[canonical] = rule_config
+        rules = normalized
+
         for rule_id, rule_config in rules.items():
             if rule_config is None:
                 rules[rule_id] = {}
@@ -296,6 +314,11 @@ class LinterConfig:
         rules: Dict[str, Dict[str, Any]] = {}
         for rule_class in BUILTIN_RULES:
             rule = rule_class()
+            # Deprecated rules are left out of generated configs so fresh
+            # --init configs and the example file stop advertising them;
+            # they still run when a user config enables them explicitly.
+            if rule.deprecated is not None:
+                continue
             rules[rule.rule_id] = {
                 "enabled": rule.default_enabled,
                 "severity": rule.default_severity().value,
@@ -355,6 +378,7 @@ class LinterConfig:
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
+        deprecated: Optional[str] = None,
     ) -> bool:
         """
         Check if a rule is enabled for the given context
@@ -367,12 +391,20 @@ class LinterConfig:
             since_version: Minimum config version required for this rule
             default_enabled: Class-level default (``Rule.default_enabled``) for
                 rules outside the builtin registry — plugin rules
+            deprecated: Version the rule was deprecated in (``Rule.deprecated``);
+                deprecated rules only run when explicitly enabled
 
         Returns:
             True if rule should run
         """
         enabled, _reason = self.rule_enabled_reason(
-            rule_id, context, repo_types, formats, since_version, default_enabled=default_enabled
+            rule_id,
+            context,
+            repo_types,
+            formats,
+            since_version,
+            default_enabled=default_enabled,
+            deprecated=deprecated,
         )
         return enabled
 
@@ -384,6 +416,7 @@ class LinterConfig:
         formats: Optional[Set[str]] = None,
         since_version: str = "0.1.0",
         default_enabled: Any = None,
+        deprecated: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         Determine whether a rule is enabled and why.
@@ -406,11 +439,26 @@ class LinterConfig:
         if has_explicit_enabled:
             explicit = user_overrides["enabled"]
             if explicit is True:
+                if deprecated is not None:
+                    return True, (
+                        f"enabled: true set in config — deprecated since {deprecated}, "
+                        "will be removed in a future release"
+                    )
                 return True, "enabled: true set in config"
             if explicit is False:
                 return False, "enabled: false set in config"
             # enabled: "auto" falls through to version gate + auto logic below
-        else:
+
+        # Deprecated rules never activate through auto detection or default
+        # enablement — only an explicit ``enabled: true`` (handled above) or
+        # a --rule flag (which bypasses this method) runs them.
+        if deprecated is not None:
+            return False, (
+                f"deprecated since {deprecated} — will be removed in a future "
+                "release; set 'enabled: true' in config to keep running it"
+            )
+
+        if not has_explicit_enabled:
             # Any non-enabled override (e.g. severity) without an explicit
             # ``enabled`` key on a disabled-by-default rule implies the user
             # wants it active.  We must NOT do this for ``enabled: "auto"``

@@ -5,8 +5,8 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`command-naming`](command-naming.md) | Command files should use kebab-case naming | warning | auto |
-| [`command-frontmatter`](command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto |
-| [`command-sections`](command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |
-| [`command-name-format`](command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - |
+| [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto |
+| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto |
+| [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - |
+| [`claude-command-name-format`](claude-command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - |
 

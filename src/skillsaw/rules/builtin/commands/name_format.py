@@ -16,9 +16,11 @@ class CommandNameFormatRule(Rule):
 
     provenance_scope = "claude"
 
+    aliases = ("command-name-format",)
+
     @property
     def rule_id(self) -> str:
-        return "command-name-format"
+        return "claude-command-name-format"
 
     @property
     def description(self) -> str:

@@ -1,0 +1,9 @@
+version: "99.0.0"
+rules:
+  # Deprecated rule kept alive explicitly during the transition.
+  content-critical-position:
+    enabled: true
+    severity: warning
+  # Deprecated rule mentioned without enabling it — inert, should warn.
+  skill-frontmatter:
+    severity: info

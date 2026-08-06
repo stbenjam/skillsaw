@@ -1,3 +1,8 @@
+> **Deprecated since v0.18.0** — scoring prose "actionability" proved
+> too subjective to drive useful edits, and newer models follow
+> descriptive instructions fine. The rule will be removed in a future
+> release; set `enabled: true` to keep it until then.
+
 ## Why
 
 A low actionability score means the file reads more like documentation than

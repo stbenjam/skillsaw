@@ -66,6 +66,44 @@ BUILTIN_RULE_REGISTRY = _build_registry()
 BUILTIN_RULES = list(BUILTIN_RULE_REGISTRY.values())
 
 
+def _build_alias_map():
+    """Map legacy rule ID -> canonical rule ID, rejecting collisions."""
+    amap = {}
+    for rule_id, cls in BUILTIN_RULE_REGISTRY.items():
+        for alias in cls.aliases:
+            if alias in BUILTIN_RULE_REGISTRY:
+                raise RuntimeError(
+                    f"Alias {alias!r} of rule {rule_id!r} collides with an existing rule ID"
+                )
+            existing = amap.get(alias)
+            if existing is not None and existing != rule_id:
+                raise RuntimeError(
+                    f"Alias {alias!r} is claimed by both {existing!r} and {rule_id!r}"
+                )
+            amap[alias] = rule_id
+    return amap
+
+
+#: legacy rule ID -> canonical rule ID for every builtin rule alias.
+RULE_ALIASES = _build_alias_map()
+
+
+def canonical_rule_id(rule_id: str) -> str:
+    """Resolve a possibly-legacy rule ID to its canonical form.
+
+    Unknown IDs pass through unchanged — plugin and custom rules are not
+    registered here, and typo detection stays where it is today
+    (config validation and --rule / --skip-rule checks).
+    """
+    return RULE_ALIASES.get(rule_id, rule_id)
+
+
+def rule_aliases(rule_id: str) -> tuple:
+    """Legacy IDs for a canonical builtin rule ID (empty for most rules)."""
+    cls = BUILTIN_RULE_REGISTRY.get(rule_id)
+    return cls.aliases if cls is not None else ()
+
+
 def __getattr__(name):
     # Keep ``from skillsaw.rules.builtin import SkillFrontmatterRule`` working
     # without a hand-maintained re-export block (PEP 562).
@@ -80,5 +118,8 @@ def __getattr__(name):
 __all__ = [  # noqa: PLE0604
     "BUILTIN_RULES",
     "BUILTIN_RULE_REGISTRY",
+    "RULE_ALIASES",
+    "canonical_rule_id",
+    "rule_aliases",
     *sorted(cls.__name__ for cls in BUILTIN_RULES),
 ]

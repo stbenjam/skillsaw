@@ -72,7 +72,7 @@ class AbstractIntermediate(Rule):
 class ShadowsBuiltinRule(AlwaysFiresRule):
     @property
     def rule_id(self) -> str:
-        return "skill-frontmatter"  # collides with a builtin
+        return "mcp-valid-json"  # collides with a builtin
 
 
 @pytest.fixture(autouse=True)
@@ -364,7 +364,7 @@ def test_plugin_rule_raising_during_enablement_is_isolated(fake_plugin, repo):
 def test_rule_id_collision_with_builtin_is_skipped(fake_plugin, repo):
     fake_plugin("fake_shadow", module_attrs={"SKILLSAW_RULES": [ShadowsBuiltinRule]})
     linter, violations = _lint(repo)
-    shadow = [r for r in linter.rules if r.rule_id == "skill-frontmatter"]
+    shadow = [r for r in linter.rules if r.rule_id == "mcp-valid-json"]
     # Only the builtin instance remains.
     assert len(shadow) == 1
     assert getattr(shadow[0], "_source", "builtin") == "builtin"

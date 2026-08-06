@@ -1,0 +1,5 @@
+version: "99.0.0"
+rules:
+  # Legacy name from before the claude- prefix rename; must keep working.
+  command-frontmatter:
+    enabled: false

@@ -186,12 +186,12 @@ class TestSinglePlugin:
         assert r["rc"] == 1
 
         ids = rule_ids(r)
-        assert "plugin-json-valid" in ids
-        assert "plugin-naming" in ids
-        assert "plugin-readme" in ids
-        assert "command-naming" in ids
-        assert "command-frontmatter" in ids
-        assert "agent-frontmatter" in ids
+        assert "claude-plugin-json-valid" in ids
+        assert "claude-plugin-naming" in ids
+        assert "claude-plugin-readme" in ids
+        assert "claude-command-naming" in ids
+        assert "claude-command-frontmatter" in ids
+        assert "claude-agent-frontmatter" in ids
 
         s = summary(r)
         assert s["errors"] >= 4
@@ -202,13 +202,13 @@ class TestSinglePlugin:
         r = run_lint(repo)
         grouped = by_rule(r)
 
-        naming = grouped["plugin-naming"]
+        naming = grouped["claude-plugin-naming"]
         assert any("kebab-case" in v["message"] for v in naming)
 
-        frontmatter = grouped["command-frontmatter"]
+        frontmatter = grouped["claude-command-frontmatter"]
         assert any("Missing frontmatter" in v["message"] for v in frontmatter)
 
-        agent = grouped["agent-frontmatter"]
+        agent = grouped["claude-agent-frontmatter"]
         assert any("name" in v["message"].lower() for v in agent)
         assert any("description" in v["message"].lower() for v in agent)
 
@@ -420,7 +420,7 @@ class TestMarketplace:
         repo = copy_fixture("marketplace/broken", tmp_path)
         r = run_lint(repo)
         assert r["rc"] == 1
-        assert "marketplace-json-valid" in rule_ids(r)
+        assert "claude-marketplace-json-valid" in rule_ids(r)
 
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)
@@ -454,7 +454,7 @@ class TestMarketplace:
         drops = [
             v
             for v in violations(r)
-            if v["rule_id"] == "marketplace-json-valid"
+            if v["rule_id"] == "claude-marketplace-json-valid"
             and "resolves outside the repository root" in v["message"]
         ]
         assert len(drops) == 1, violations(r)
@@ -477,7 +477,7 @@ class TestMarketplace:
         assert summary(r)["warnings"] == 0
         # The strict: false plugin resolved through pluginRoot must not be
         # flagged for a missing plugin.json.
-        assert "plugin-json-required" not in rule_ids(r)
+        assert "claude-plugin-json-required" not in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 3
 
     def test_marketplace_plugin_root_prefixed_sources_resolve(self, tmp_path):
@@ -499,7 +499,7 @@ class TestMarketplace:
         repo = copy_fixture("marketplace/plugin-root-escape", tmp_path)
         r = run_lint(repo)
         assert r["rc"] == 1
-        assert "marketplace-json-valid" in rule_ids(r)
+        assert "claude-marketplace-json-valid" in rule_ids(r)
         assert len(r["out"]["stats"]["plugins"]) == 0
 
 
@@ -1405,7 +1405,7 @@ class TestConfigFeatures:
         repo = copy_fixture("config/per-rule-exclude", tmp_path)
         r = run_lint(repo)
         assert r["out"] is not None
-        frontmatter = by_rule(r).get("command-frontmatter", [])
+        frontmatter = by_rule(r).get("claude-command-frontmatter", [])
         files = {v["file_path"] for v in frontmatter}
         assert any("real-cmd.md" in f for f in files)
         assert not any("vendor-cmd.md" in f for f in files)
@@ -1414,9 +1414,62 @@ class TestConfigFeatures:
         repo = copy_fixture("config/disable-rules", tmp_path)
         r = run_lint(repo)
         assert r["out"] is not None
-        assert "command-frontmatter" not in rule_ids(r)
+        assert "claude-command-frontmatter" not in rule_ids(r)
         rules_run = r["out"]["stats"]["rules_run"]
-        assert "command-frontmatter" not in rules_run
+        assert "claude-command-frontmatter" not in rules_run
+
+    def test_legacy_rule_name_in_config_still_works(self, tmp_path):
+        """Pre-rename rule names in configs keep controlling the renamed rule."""
+        repo = copy_fixture("config/legacy-rule-names", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        # The legacy 'command-frontmatter' key disabled the renamed rule.
+        assert "claude-command-frontmatter" not in rule_ids(r)
+        assert "claude-command-frontmatter" not in r["out"]["stats"]["rules_run"]
+        # And it is not reported as an unknown rule.
+        assert "invalid-config" not in rule_ids(r)
+
+    def test_deprecated_rules_config_behavior(self, tmp_path):
+        """Explicitly enabled deprecated rules run with a removal warning;
+        mention-only entries warn that the rule no longer runs."""
+        repo = copy_fixture("config/deprecated-rules", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        # enabled: true keeps the deprecated rule running.
+        assert "content-critical-position" in rule_ids(r)
+        # skill-frontmatter is only mentioned (severity override), so it
+        # stays retired.
+        assert "skill-frontmatter" not in r["out"]["stats"]["rules_run"]
+        deprecation = [v for v in violations(r) if v["rule_id"] == "deprecated-rule"]
+        messages = " | ".join(v["message"] for v in deprecation)
+        assert "content-critical-position" in messages
+        assert "skill-frontmatter" in messages
+        assert all(v["severity"] == "warning" for v in deprecation)
+
+    def test_deprecation_notices_are_advisory_under_strict(self, tmp_path):
+        """Deprecation warnings alone must not fail a strict run — every
+        pre-0.18 --init config names now-deprecated rules."""
+        repo = copy_fixture("config/deprecated-rules", tmp_path)
+        config_path = repo / ".skillsaw.yaml"
+        # Keep only the inert mention so the deprecated rule itself cannot
+        # produce content violations, then tighten to strict.
+        config_path.write_text(
+            'version: "99.0.0"\n'
+            "strict: true\n"
+            "rules:\n"
+            "  skill-frontmatter:\n"
+            "    severity: info\n"
+        )
+        r = run_lint(repo)
+        deprecation = [v for v in violations(r) if v["rule_id"] == "deprecated-rule"]
+        assert deprecation, "expected a deprecation notice"
+        others = [
+            v
+            for v in violations(r)
+            if v["rule_id"] != "deprecated-rule" and v["severity"] in ("error", "warning")
+        ]
+        assert others == [], others
+        assert r["rc"] == 0
 
     def test_strict_mode_exits_nonzero_on_warnings(self, tmp_path):
         repo = copy_fixture("config/strict-mode", tmp_path)
@@ -1443,11 +1496,11 @@ class TestCliOverrides:
         """--type must influence discovery, not just rule enablement."""
         repo = copy_fixture("cli-overrides/type-override", tmp_path)
 
-        r = run_lint(repo, "--type", "single-plugin", "--rule", "command-frontmatter")
+        r = run_lint(repo, "--type", "single-plugin", "--rule", "claude-command-frontmatter")
 
         assert r["rc"] == 1
-        assert "command-frontmatter" in rule_ids(r)
-        assert any("foo.md" in v["file_path"] for v in by_rule(r)["command-frontmatter"])
+        assert "claude-command-frontmatter" in rule_ids(r)
+        assert any("foo.md" in v["file_path"] for v in by_rule(r)["claude-command-frontmatter"])
         assert r["out"]["stats"]["repo_types"] == ["single-plugin"]
 
     def test_type_unknown_rejected(self, tmp_path):
@@ -1595,7 +1648,7 @@ class TestExitCodes:
         r = run_lint(repo, "--output", str(out_file), verbose=False, fmt="text")
         assert r["rc"] == 1
         html = out_file.read_text()
-        assert "plugin-readme" in html
+        assert "claude-plugin-readme" in html
         assert '<span class="count-item count-info">Info:' in html
 
     def test_fail_on_info_includes_info_in_sarif_output(self, tmp_path):
@@ -1784,8 +1837,8 @@ CLEAN_FIXTURES = [
 ]
 
 OPT_IN_RULES = {
-    "command-sections",
-    "command-name-format",
+    "claude-command-sections",
+    "claude-command-name-format",
     "mcp-prohibited",
     "agentskill-structure",
     "agentskill-evals-required",
@@ -2672,13 +2725,19 @@ class TestContentUnclosedFenceAutofix:
 
 
 def _discover_safe_autofix_rule_ids() -> Set[str]:
-    """Auto-discover all rules that produce SAFE-confidence autofixes."""
+    """Auto-discover all rules that produce SAFE-confidence autofixes.
+
+    Deprecated rules no longer run in a default lint, so they are excluded —
+    their fixes cannot fire in the fixture.
+    """
     from skillsaw.rules.builtin import BUILTIN_RULES
     from skillsaw.rule import AutofixConfidence
 
     safe_ids: Set[str] = set()
     for rule_class in BUILTIN_RULES:
         instance = rule_class()
+        if instance.deprecated is not None:
+            continue
         if instance.autofix_confidence == AutofixConfidence.SAFE:
             safe_ids.add(instance.rule_id)
     return safe_ids
@@ -2825,7 +2884,7 @@ class TestEncodingPreservingAutofix:
         assert "agentskill-name" not in rule_ids(r)
 
     def test_bom_crlf_command_missing_frontmatter_fix_single_bom(self, tmp_path):
-        """command-frontmatter's missing-frontmatter fix must read via the
+        """claude-command-frontmatter's missing-frontmatter fix must read via the
         BOM-stripping utils reader: a raw utf-8 read keeps U+FEFF, and
         prepending the frontmatter block embeds a second BOM mid-file
         (``\\ufeff# Deploy``) that breaks heading parsing on later lints."""
@@ -2852,7 +2911,7 @@ class TestEncodingPreservingAutofix:
         _run_fix(repo)
         assert target.read_bytes() == raw
         # Converges: the missing-frontmatter violation is gone.
-        r = run_lint(repo, "--rule", "command-frontmatter")
+        r = run_lint(repo, "--rule", "claude-command-frontmatter")
         assert not any("Missing frontmatter" in v.get("message", "") for v in violations(r))
 
 
@@ -2873,12 +2932,11 @@ class TestSafeAutofixIdempotency:
     FIXTURE = "autofix/safe-idempotency"
 
     EXPECTED_SAFE_VIOLATIONS = {
-        "agent-frontmatter": 3,
+        "claude-agent-frontmatter": 3,
         "agentskill-name": 4,
         "agentskill-valid": 7,
-        "command-frontmatter": 3,
+        "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
-        "skill-frontmatter": 4,
     }
 
     def test_fixture_violation_counts(self, tmp_path):
@@ -3092,18 +3150,19 @@ class TestLintFixLoop:
         r = run_lint(repo, fmt="text", verbose=False)
 
         # SAFE-autofixable rules carry the [*] marker after the rule id.
-        assert "(agent-frontmatter) [*]" in r["stdout"]
-        assert "(command-frontmatter) [*]" in r["stdout"]
+        assert "(claude-agent-frontmatter) [*]" in r["stdout"]
+        assert "(claude-command-frontmatter) [*]" in r["stdout"]
         # Rules without an autofix never get a marker.
         assert "(agentskill-unreferenced-files) [*]" not in r["stdout"]
         assert "(agentskill-unreferenced-files) [?]" not in r["stdout"]
-        # agentskill-valid only fixes the missing-name subset.
+        # agentskill-valid fixes the missing-name and missing-frontmatter
+        # subsets; other violations (e.g. missing description) get no marker.
         assert (
             "(agentskill-valid) [*] [skills/missing-name/SKILL.md]: "
             "Missing required 'name' field" in r["stdout"]
         )
         assert (
-            "(agentskill-valid) [skills/no-frontmatter/SKILL.md]: "
+            "(agentskill-valid) [*] [skills/no-frontmatter/SKILL.md]: "
             "Missing YAML frontmatter" in r["stdout"]
         )
 
@@ -3121,13 +3180,17 @@ class TestLintFixLoop:
         r = run_lint(repo)
         grouped = by_rule(r)
 
-        for v in grouped["agent-frontmatter"]:
+        for v in grouped["claude-agent-frontmatter"]:
             assert v["fixable"] is True
             assert v["fix_confidence"] == "safe"
 
-        # agentskill-valid: only the missing-name subset is fixable.
+        # agentskill-valid: the missing-name and missing-frontmatter subsets
+        # are fixable; everything else is not.
         for v in grouped["agentskill-valid"]:
-            if "Missing required 'name'" in v["message"]:
+            if (
+                "Missing required 'name'" in v["message"]
+                or "Missing YAML frontmatter" in v["message"]
+            ):
                 assert v["fixable"] is True
                 assert v["fix_confidence"] == "safe"
             else:

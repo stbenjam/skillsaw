@@ -17,9 +17,11 @@ class CommandNamingRule(Rule):
 
     autofix_confidence = AutofixConfidence.SUGGEST
 
+    aliases = ("command-naming",)
+
     @property
     def rule_id(self) -> str:
-        return "command-naming"
+        return "claude-command-naming"
 
     @property
     def description(self) -> str:

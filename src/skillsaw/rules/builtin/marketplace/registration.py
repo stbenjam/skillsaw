@@ -80,9 +80,11 @@ class MarketplaceRegistrationRule(Rule):
     # Claude marketplace — codex-marketplace-registration owns them.
     provenance_scope = "claude"
 
+    aliases = ("marketplace-registration",)
+
     @property
     def rule_id(self) -> str:
-        return "marketplace-registration"
+        return "claude-marketplace-registration"
 
     @property
     def description(self) -> str:

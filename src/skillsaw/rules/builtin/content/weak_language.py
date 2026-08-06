@@ -26,7 +26,7 @@ class ContentWeakLanguageRule(Rule):
         return "Detect hedging, vague, and non-actionable language in instruction files"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.INFO
 
     _REFERENCE_BLOCK_TYPES = (SkillRefBlock,)
 

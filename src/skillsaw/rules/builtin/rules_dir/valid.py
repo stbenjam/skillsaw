@@ -47,9 +47,11 @@ class RulesValidRule(Rule):
 
     repo_types = {RepositoryType.DOT_CLAUDE}
 
+    aliases = ("rules-valid",)
+
     @property
     def rule_id(self) -> str:
-        return "rules-valid"
+        return "claude-rules-valid"
 
     @property
     def description(self) -> str:

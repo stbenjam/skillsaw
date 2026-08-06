@@ -136,7 +136,7 @@ Errors:
 
 Warnings:
   ⚠ WARNING (agentskill-description) [skills/helper/SKILL.md:3]: Description exceeds 1024 characters (1087)
-  ⚠ WARNING (plugin-readme) [plugins/utils]: Missing README.md (recommended)
+  ⚠ WARNING (claude-plugin-readme) [plugins/utils]: Missing README.md (recommended)
 
 Summary:
   Errors:   2

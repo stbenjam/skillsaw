@@ -27,9 +27,11 @@ class PluginJsonRequiredRule(Rule):
     # this rule reports, with `strict: false` as the designed opt-out).
     provenance_scope = "claude"
 
+    aliases = ("plugin-json-required",)
+
     @property
     def rule_id(self) -> str:
-        return "plugin-json-required"
+        return "claude-plugin-json-required"
 
     @property
     def description(self) -> str:

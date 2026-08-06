@@ -5,8 +5,8 @@
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`plugin-json-required`](plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
-| [`plugin-json-valid`](plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - |
-| [`plugin-naming`](plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - |
-| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - |
+| [`claude-plugin-json-required`](claude-plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - |
+| [`claude-plugin-json-valid`](claude-plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - |
+| [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - |
+| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - |
 

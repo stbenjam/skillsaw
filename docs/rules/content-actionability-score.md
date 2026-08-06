@@ -3,14 +3,22 @@
 
 # content-actionability-score
 
+!!! warning "Deprecated"
+    Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
+
 Score instruction files on actionability (verb density, commands, file references)
 
 | | |
 |---|---|
-| **Severity** | info (auto) |
+| **Severity** | info (deprecated) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
-| **Category** | [Content Intelligence](content-intelligence.md) |
+| **Category** | [Deprecated](deprecated.md) |
+
+> **Deprecated since v0.18.0** — scoring prose "actionability" proved
+> too subjective to drive useful edits, and newer models follow
+> descriptive instructions fine. The rule will be removed in a future
+> release; set `enabled: true` to keep it until then.
 
 ## Why
 
@@ -47,7 +55,7 @@ references. Replace descriptions with direct instructions. A coding agent can re
 ```yaml
 rules:
   content-actionability-score:
-    enabled: auto  # true | false | auto
+    enabled: true  # true | false | auto
     severity: info
 ```
 

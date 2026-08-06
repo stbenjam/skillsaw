@@ -3,14 +3,21 @@
 
 # content-critical-position
 
+!!! warning "Deprecated"
+    Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
+
 Detect critical instructions in the middle of files where LLM attention is lowest
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | info (deprecated) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
-| **Category** | [Content Intelligence](content-intelligence.md) |
+| **Category** | [Deprecated](deprecated.md) |
+
+> **Deprecated since v0.18.0** — newer models no longer show the
+> lost-in-the-middle attention dip this rule polices. The rule will be
+> removed in a future release; set `enabled: true` to keep it until then.
 
 ## Why
 
@@ -64,8 +71,8 @@ rules:
 ```yaml
 rules:
   content-critical-position:
-    enabled: auto  # true | false | auto
-    severity: warning
+    enabled: true  # true | false | auto
+    severity: info
 ```
 
 | Parameter | Description | Default |

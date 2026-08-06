@@ -7,7 +7,7 @@ Detect prohibitions without a positive alternative (agent has no path forward)
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | info (auto) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -48,7 +48,7 @@ positive alternatives automatically.
 rules:
   content-negative-only:
     enabled: auto  # true | false | auto
-    severity: warning
+    severity: info
 ```
 
 ## Research Basis

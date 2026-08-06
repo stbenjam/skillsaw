@@ -22,9 +22,11 @@ class PluginNamingRule(Rule):
     # would double up.
     provenance_scope = "claude"
 
+    aliases = ("plugin-naming",)
+
     @property
     def rule_id(self) -> str:
-        return "plugin-naming"
+        return "claude-plugin-naming"
 
     @property
     def description(self) -> str:

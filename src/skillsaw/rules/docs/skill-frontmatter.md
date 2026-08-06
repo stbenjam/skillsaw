@@ -1,3 +1,8 @@
+> **Deprecated since v0.18.0** — replaced by `agentskill-valid`, which
+> validates the same frontmatter against the agentskills.io
+> specification. The rule will be removed in a future release; set
+> `enabled: true` to keep it until then.
+
 ## Why
 
 A skill's YAML frontmatter is its public interface: the `name` and

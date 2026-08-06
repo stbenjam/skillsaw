@@ -66,6 +66,7 @@ def fingerprint_violation(
     root_path: Path,
     *,
     _file_cache: Optional[Dict[Path, Optional[List[str]]]] = None,
+    _rule_id: Optional[str] = None,
 ) -> str:
     """Compute a content-hash fingerprint for a violation.
 
@@ -73,11 +74,14 @@ def fingerprint_violation(
     stripped content of the source line.  Line numbers are intentionally
     excluded so that the fingerprint survives insertions/deletions elsewhere
     in the file.
+
+    ``_rule_id`` overrides the violation's rule ID — used to match baselines
+    generated before a rule was renamed, whose entries hash the legacy name.
     """
     if _file_cache is None:
         _file_cache = {}
 
-    rule_id = violation.rule_id
+    rule_id = _rule_id if _rule_id is not None else violation.rule_id
     rel_path = relative_path(violation.file_path, root_path)
     file_line = violation.file_line
 
@@ -266,22 +270,34 @@ def filter_baselined_violations(
     kept: List[RuleViolation] = []
     consumed_ratchet: set = set()
 
+    from .rules.builtin import rule_aliases
+
     for v in violations:
         if v.rule_id in _UNBASELINABLE_RULE_IDS:
             kept.append(v)
             continue
-        fp = fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)
+        # Baselines generated before a rule rename hash the legacy rule ID,
+        # so match the canonical fingerprint first and fall back to each
+        # alias's fingerprint — old baselines keep suppressing.
+        fps = [fingerprint_violation(v, fingerprint_root, _file_cache=file_cache)]
+        for alias in rule_aliases(v.rule_id):
+            fps.append(
+                fingerprint_violation(v, fingerprint_root, _file_cache=file_cache, _rule_id=alias)
+            )
 
-        if fp in ratchet_entries:
-            entry = ratchet_entries[fp]
-            # The entry matched a current violation, so it is not stale —
-            # even when the violation is kept because the value regressed
-            # past the baselined value.
-            consumed_ratchet.add(fp)
-            if v.value is not None and _is_worse(v.value, entry.value, entry.baseline_mode):
-                kept.append(v)
-        elif regular_budget[fp] > 0:
-            regular_budget[fp] -= 1
+        for fp in fps:
+            if fp in ratchet_entries:
+                entry = ratchet_entries[fp]
+                # The entry matched a current violation, so it is not stale —
+                # even when the violation is kept because the value regressed
+                # past the baselined value.
+                consumed_ratchet.add(fp)
+                if v.value is not None and _is_worse(v.value, entry.value, entry.baseline_mode):
+                    kept.append(v)
+                break
+            if regular_budget[fp] > 0:
+                regular_budget[fp] -= 1
+                break
         else:
             kept.append(v)
 

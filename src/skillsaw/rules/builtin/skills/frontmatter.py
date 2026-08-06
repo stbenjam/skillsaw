@@ -18,6 +18,8 @@ class SkillFrontmatterRule(Rule):
     """Check that SKILL.md files have frontmatter"""
 
     default_enabled = True
+    deprecated = "0.18.0"
+    replaced_by = "agentskill-valid"
 
     autofix_confidence = AutofixConfidence.SAFE
 

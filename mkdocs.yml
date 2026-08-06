@@ -143,4 +143,5 @@ nav:
     - CodeRabbit: rules/coderabbit.md
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
+    - Deprecated: rules/deprecated.md
   - Research: research.md

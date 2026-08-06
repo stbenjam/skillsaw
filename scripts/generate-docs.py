@@ -48,17 +48,27 @@ RULE_GROUPS = [
     ),
     (
         "Plugin Structure",
-        ["plugin-json-required", "plugin-json-valid", "plugin-naming", "plugin-readme"],
+        [
+            "claude-plugin-json-required",
+            "claude-plugin-json-valid",
+            "claude-plugin-naming",
+            "claude-plugin-readme",
+        ],
         None,
     ),
     (
         "Command Format",
-        ["command-naming", "command-frontmatter", "command-sections", "command-name-format"],
+        [
+            "claude-command-naming",
+            "claude-command-frontmatter",
+            "claude-command-sections",
+            "claude-command-name-format",
+        ],
         None,
     ),
     (
         "Marketplace",
-        ["marketplace-json-valid", "marketplace-registration"],
+        ["claude-marketplace-json-valid", "claude-marketplace-registration"],
         None,
     ),
     (
@@ -81,8 +91,7 @@ RULE_GROUPS = [
     (
         "Skills, Agents, Hooks",
         [
-            "skill-frontmatter",
-            "agent-frontmatter",
+            "claude-agent-frontmatter",
             "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
@@ -103,14 +112,14 @@ RULE_GROUPS = [
     ),
     (
         "Settings",
-        ["settings-dangerous"],
+        ["claude-settings-dangerous"],
         "Security rules for `.claude/settings.json`. Project-scoped settings "
         "can set keys that execute arbitrary shell commands or environment "
         "variables that hijack process behaviour — these rules flag them.",
     ),
     (
         "Rules Directory",
-        ["rules-valid"],
+        ["claude-rules-valid"],
         None,
     ),
     (
@@ -139,15 +148,12 @@ RULE_GROUPS = [
         [
             "content-weak-language",
             "content-tautological",
-            "content-critical-position",
             "content-redundant-with-tooling",
             "content-instruction-budget",
             "content-negative-only",
             "content-section-length",
             "content-contradiction",
             "content-hook-candidate",
-            "content-actionability-score",
-            "content-cognitive-chunks",
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
@@ -186,6 +192,20 @@ RULE_GROUPS = [
         ["apm-yaml-valid", "apm-structure-valid"],
         "Validates repositories using the [APM](https://github.com/microsoft/apm) "
         "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
+    ),
+    (
+        "Deprecated",
+        [
+            "content-critical-position",
+            "content-actionability-score",
+            "content-cognitive-chunks",
+            "skill-frontmatter",
+        ],
+        "These rules are deprecated and will be removed in a future release. "
+        "They no longer run under `enabled: auto`; set `enabled: true` in "
+        "`.skillsaw.yaml` to keep running one during the transition. The "
+        "content rules encoded attention-era heuristics that newer models no "
+        "longer need; `skill-frontmatter` is replaced by `agentskill-valid`.",
     ),
 ]
 
@@ -299,7 +319,9 @@ def main():
             enabled = rule_config.get("enabled", True)
             severity = rule_config.get("severity") or rule.default_severity().value
 
-            if enabled == "auto":
+            if rule.deprecated is not None:
+                severity_str = f"{severity} (deprecated)"
+            elif enabled == "auto":
                 severity_str = f"{severity} (auto)"
             elif enabled is False:
                 severity_str = f"{severity} (disabled)"
@@ -308,8 +330,13 @@ def main():
 
             fix_str = "auto" if rule.supports_autofix else "-"
 
+            description = rule.description
+            if rule.aliases:
+                former = ", ".join(f"`{a}`" for a in rule.aliases)
+                description = f"{description} (formerly {former})"
+
             lines.append(
-                f"| `{rule_id}` | {_table_cell(rule.description)} | {severity_str} | {fix_str} |"
+                f"| `{rule_id}` | {_table_cell(description)} | {severity_str} | {fix_str} |"
             )
 
             if rule.config_schema:

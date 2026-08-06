@@ -16,6 +16,9 @@ class ContentActionabilityScoreRule(Rule):
 
     formats = None
     since = "0.7.0"
+    # Subjective prose scoring that rarely drove a useful edit; newer models
+    # don't need instruction density policed.
+    deprecated = "0.18.0"
     baseline_mode = "floor"
 
     _VERB_WORDS = frozenset(

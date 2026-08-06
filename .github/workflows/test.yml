@@ -335,7 +335,7 @@ jobs:
           vs = r['violations']
           prose = [v for v in vs if '/commands/' in v['file_path'] or '/agents/' in v['file_path']]
           assert prose, 'no findings under plugin commands/ or agents/ — Codex plugin prose has vanished from the lint tree'
-          gated = ('command-frontmatter', 'command-naming', 'command-name-format', 'agent-frontmatter', 'plugin-json-required', 'plugin-naming')
+          gated = ('claude-command-frontmatter', 'claude-command-naming', 'claude-command-name-format', 'claude-agent-frontmatter', 'claude-plugin-json-required', 'claude-plugin-naming')
           leaked = [v for v in vs if v['rule_id'] in gated]
           assert not leaked, f'Claude-format rules fired on Codex-only plugins: {[(v[\"rule_id\"], v[\"file_path\"]) for v in leaked[:5]]}'
           print(f'Full-run canary: {len(prose)} findings in plugin prose, 0 Claude-format leaks')

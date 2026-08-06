@@ -190,7 +190,7 @@ def test_dangerous_settings_local_json(temp_dir):
 def test_dangerous_rule_metadata():
     """Test rule metadata."""
     rule = SettingsDangerousRule()
-    assert rule.rule_id == "settings-dangerous"
+    assert rule.rule_id == "claude-settings-dangerous"
     assert rule.default_severity() == Severity.ERROR
 
 

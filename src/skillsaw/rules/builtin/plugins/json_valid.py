@@ -27,9 +27,11 @@ class PluginJsonValidRule(Rule):
         },
     }
 
+    aliases = ("plugin-json-valid",)
+
     @property
     def rule_id(self) -> str:
-        return "plugin-json-valid"
+        return "claude-plugin-json-valid"
 
     @property
     def description(self) -> str:

@@ -5,11 +5,6 @@ version: "0.18.0"
 
 rules:
 
-  # Agent files must have valid frontmatter with name and description
-  agent-frontmatter:
-    enabled: true
-    severity: error
-
   # Agent Plugins plugin.json and skills location must conform to 1.0.0
   agent-plugin-json-valid:
     enabled: auto
@@ -82,6 +77,77 @@ rules:
     enabled: auto
     severity: error
 
+  # Agent files must have valid frontmatter with name and description
+  claude-agent-frontmatter:
+    enabled: true
+    severity: error
+
+  # Command files must have valid frontmatter with description
+  claude-command-frontmatter:
+    enabled: true
+    severity: error
+
+  # Command Name section should be 'plugin-name:command-name'
+  claude-command-name-format:
+    enabled: false
+    severity: warning
+
+  # Command files should use kebab-case naming
+  claude-command-naming:
+    enabled: true
+    severity: warning
+
+  # Command files should have Name, Synopsis, Description, and Implementation sections
+  claude-command-sections:
+    enabled: false
+    severity: warning
+
+  # Marketplace.json must be valid JSON with required fields
+  claude-marketplace-json-valid:
+    enabled: auto
+    severity: error
+
+  # Plugins must be registered in marketplace.json
+  claude-marketplace-registration:
+    enabled: auto
+    severity: error
+
+  # Plugin must have .claude-plugin/plugin.json
+  claude-plugin-json-required:
+    enabled: auto
+    severity: error
+
+  # plugin.json must be valid JSON with required fields
+  claude-plugin-json-valid:
+    enabled: auto
+    severity: error
+    # recommended-fields:
+    #   - description
+    #   - version
+    #   - author
+
+  # Plugin names should use kebab-case
+  claude-plugin-naming:
+    enabled: auto
+    severity: warning
+
+  # Plugin should have a README.md file
+  claude-plugin-readme:
+    enabled: auto
+    severity: warning
+
+  # .claude/rules/ files must be markdown with valid optional paths frontmatter
+  claude-rules-valid:
+    enabled: auto
+    severity: error
+
+  # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
+  claude-settings-dangerous:
+    enabled: auto
+    severity: error
+    # allow_command_exec_keys: []
+    # allow_env_vars: []
+
   # .coderabbit.yaml keys and enums should match the CodeRabbit schema
   coderabbit-schema-valid:
     enabled: auto
@@ -128,31 +194,6 @@ rules:
     enabled: auto
     severity: warning
 
-  # Command files must have valid frontmatter with description
-  command-frontmatter:
-    enabled: true
-    severity: error
-
-  # Command Name section should be 'plugin-name:command-name'
-  command-name-format:
-    enabled: false
-    severity: warning
-
-  # Command files should use kebab-case naming
-  command-naming:
-    enabled: true
-    severity: warning
-
-  # Command files should have Name, Synopsis, Description, and Implementation sections
-  command-sections:
-    enabled: false
-    severity: warning
-
-  # Score instruction files on actionability (verb density, commands, file references)
-  content-actionability-score:
-    enabled: auto
-    severity: info
-
   # Detect banned or deprecated model names, APIs, and custom patterns
   content-banned-references:
     enabled: auto
@@ -166,21 +207,10 @@ rules:
     enabled: auto
     severity: warning
 
-  # Check that instruction files are organized into cognitive chunks with headings
-  content-cognitive-chunks:
-    enabled: auto
-    severity: info
-
   # Detect likely contradictions within instruction files using keyword-pair heuristics
   content-contradiction:
     enabled: auto
     severity: warning
-
-  # Detect critical instructions in the middle of files where LLM attention is lowest
-  content-critical-position:
-    enabled: auto
-    severity: warning
-    # min-lines: 50
 
   # Detect potential API keys, tokens, and passwords in instruction files
   content-embedded-secrets:
@@ -231,7 +261,7 @@ rules:
   # Detect prohibitions without a positive alternative (agent has no path forward)
   content-negative-only:
     enabled: auto
-    severity: warning
+    severity: info
 
   # Detect TODO markers, bracket placeholders, and unfilled template text
   content-placeholder-text:
@@ -262,7 +292,7 @@ rules:
   # Detect tautological instructions that the model already follows by default
   content-tautological:
     enabled: auto
-    severity: warning
+    severity: info
 
   # Detect code fences opened but never closed, hiding the rest of the file from content rules
   content-unclosed-fence:
@@ -280,7 +310,7 @@ rules:
   # Detect hedging, vague, and non-actionable language in instruction files
   content-weak-language:
     enabled: auto
-    severity: warning
+    severity: info
 
   # Warn when instruction or config files exceed recommended token limits
   context-budget:
@@ -353,16 +383,6 @@ rules:
     enabled: auto
     severity: warning
 
-  # Marketplace.json must be valid JSON with required fields
-  marketplace-json-valid:
-    enabled: auto
-    severity: error
-
-  # Plugins must be registered in marketplace.json
-  marketplace-registration:
-    enabled: auto
-    severity: error
-
   # Repository should not enable non-allowlisted MCP servers
   mcp-prohibited:
     enabled: false
@@ -376,30 +396,6 @@ rules:
 
   # Validate metadata.openclaw fields against the OpenClaw spec
   openclaw-metadata:
-    enabled: auto
-    severity: warning
-
-  # Plugin must have .claude-plugin/plugin.json
-  plugin-json-required:
-    enabled: auto
-    severity: error
-
-  # plugin.json must be valid JSON with required fields
-  plugin-json-valid:
-    enabled: auto
-    severity: error
-    # recommended-fields:
-    #   - description
-    #   - version
-    #   - author
-
-  # Plugin names should use kebab-case
-  plugin-naming:
-    enabled: auto
-    severity: warning
-
-  # Plugin should have a README.md file
-  plugin-readme:
     enabled: auto
     severity: warning
 
@@ -418,11 +414,6 @@ rules:
 
   # Validate promptfoo eval YAML config structure and file references
   promptfoo-valid:
-    enabled: auto
-    severity: error
-
-  # .claude/rules/ files must be markdown with valid optional paths frontmatter
-  rules-valid:
     enabled: auto
     severity: error
 
@@ -447,18 +438,6 @@ rules:
     severity: error
     # allow-bidi-controls: false
     # allowed-codepoints: []
-
-  # Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.)
-  settings-dangerous:
-    enabled: auto
-    severity: error
-    # allow_command_exec_keys: []
-    # allow_env_vars: []
-
-  # SKILL.md files should have frontmatter with name and description
-  skill-frontmatter:
-    enabled: true
-    severity: warning
 
 # Load custom rules from these files
 custom-rules: []

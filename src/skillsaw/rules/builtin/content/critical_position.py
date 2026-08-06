@@ -15,6 +15,9 @@ class ContentCriticalPositionRule(Rule):
 
     formats = None
     since = "0.7.0"
+    # Newer models no longer show the lost-in-the-middle attention dip this
+    # rule polices, so it stopped earning its noise.
+    deprecated = "0.18.0"
 
     _DEFAULT_MIN_LINES = 50
 
@@ -35,7 +38,7 @@ class ContentCriticalPositionRule(Rule):
         return "Detect critical instructions in the middle of files where LLM attention is lowest"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.INFO
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []

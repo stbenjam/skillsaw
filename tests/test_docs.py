@@ -230,7 +230,7 @@ class TestExtractor:
         """A numeric plugin name in marketplace.json must not crash the docs
         renderers either: the marketplace markdown path derives per-plugin
         page filenames from ``plugin.name`` string methods (issue #322).
-        Non-string names are invalid (marketplace-json-valid flags them), so
+        Non-string names are invalid (claude-marketplace-json-valid flags them), so
         name resolution degrades to the plugin's directory name.
         """
         claude_dir = temp_dir / ".claude-plugin"

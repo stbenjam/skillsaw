@@ -1,8 +1,8 @@
 version: "99.0.0"
 rules:
-  command-sections:
+  claude-command-sections:
     enabled: true
-  command-name-format:
+  claude-command-name-format:
     enabled: true
   mcp-prohibited:
     enabled: true

@@ -16,9 +16,11 @@ class PluginReadmeRule(Rule):
 
     repo_types = PLUGIN_REPO_TYPES
 
+    aliases = ("plugin-readme",)
+
     @property
     def rule_id(self) -> str:
-        return "plugin-readme"
+        return "claude-plugin-readme"
 
     @property
     def description(self) -> str:

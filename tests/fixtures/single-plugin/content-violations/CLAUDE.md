@@ -36,7 +36,6 @@ Tag releases with semantic version numbers.
 Create feature branches for every new feature.
 Squash commits before merging to main.
 
-<!-- skillsaw-assert content-critical-position -->
 CRITICAL: Never deploy directly to production without approval.
 
 Review all pull requests within 24 hours.

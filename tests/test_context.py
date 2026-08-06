@@ -334,7 +334,7 @@ def test_plugins_dir_discovers_marker_only_plugin(tmp_path):
 def test_escaping_plugins_dir_child_is_dropped_with_a_warning(tmp_path, caplog):
     """A symlinked plugins/* child resolving outside the repository root is
     dropped from discovery, logged like an escaping marketplace source, and
-    recorded on the context so marketplace-json-valid can report it."""
+    recorded on the context so claude-marketplace-json-valid can report it."""
     import logging
 
     caplog.set_level(logging.WARNING)
@@ -878,10 +878,10 @@ def test_coderabbit_repo_no_command_violations(temp_dir):
         for v in violations
         if v.rule_id
         in {
-            "command-naming",
-            "command-frontmatter",
+            "claude-command-naming",
+            "claude-command-frontmatter",
             "skill-frontmatter",
-            "agent-frontmatter",
+            "claude-agent-frontmatter",
             "hooks-json-valid",
             "mcp-valid-json",
         }

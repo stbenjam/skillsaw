@@ -7,8 +7,7 @@ Validates skill/agent frontmatter and hook configuration. The `description-routi
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
-| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto |
-| [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto |
+| [`claude-agent-frontmatter`](claude-agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto |
 | [`description-routing`](description-routing.md) | Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose | warning (auto) | - |
 | [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - |
 | [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - |

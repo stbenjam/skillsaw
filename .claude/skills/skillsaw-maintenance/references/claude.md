@@ -26,14 +26,14 @@ layout. Each format below maps to its own skillsaw rules.
 - **Skills/agents**: frontmatter fields for skills and agents.
 
 ## skillsaw rules that map
-- Plugins — package `src/skillsaw/rules/builtin/plugins/`: `plugin-json-required`,
-  `plugin-json-valid`, `plugin-naming`, `plugin-readme`. (Back-compat shim:
+- Plugins — package `src/skillsaw/rules/builtin/plugins/`: `claude-plugin-json-required`,
+  `claude-plugin-json-valid`, `claude-plugin-naming`, `claude-plugin-readme`. (Back-compat shim:
   `plugin_structure.py`.)
-- Commands — package `src/skillsaw/rules/builtin/commands/`: `command-frontmatter`,
-  `command-name-format`, `command-naming`, `command-sections`. (Back-compat shim:
+- Commands — package `src/skillsaw/rules/builtin/commands/`: `claude-command-frontmatter`,
+  `claude-command-name-format`, `claude-command-naming`, `claude-command-sections`. (Back-compat shim:
   `command_format.py`.)
-- Marketplace — `src/skillsaw/rules/builtin/marketplace/`: `marketplace-json-valid`,
-  `marketplace-registration`.
+- Marketplace — `src/skillsaw/rules/builtin/marketplace/`: `claude-marketplace-json-valid`,
+  `claude-marketplace-registration`.
 - `.claude/` detection — `src/skillsaw/discovery/detect.py` (`is_dot_claude`,
   the `dot-claude` marker returned by `marker_types`); `src/skillsaw/context.py`
   maps that marker to `RepositoryType.DOT_CLAUDE`.
@@ -41,7 +41,7 @@ layout. Each format below maps to its own skillsaw rules.
   `hooks-prohibited`.
 - MCP — `src/skillsaw/rules/builtin/mcp/`: `mcp-valid-json`, `mcp-prohibited`.
 - Skills — `src/skillsaw/rules/builtin/skills/frontmatter.py`: `skill-frontmatter`.
-- Agents — `src/skillsaw/rules/builtin/agents/frontmatter.py`: `agent-frontmatter`.
+- Agents — `src/skillsaw/rules/builtin/agents/frontmatter.py`: `claude-agent-frontmatter`.
 
 ## Sync notes
 - `plugin_structure.py` and `command_format.py` are backward-compat import shims — the
