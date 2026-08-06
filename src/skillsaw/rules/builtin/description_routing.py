@@ -11,11 +11,12 @@ from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, Sk
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _FIRST_PERSON_RE = re.compile(
     r"(?:^|[.!?,;:]\s+|\n[ \t]*)I(?:['’](?:m|ll|ve|d)|\s+[A-Za-z]+)\b"
-    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s|[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
+    r"|\b(?:[Ww]e|[Oo]ur|[Oo]urs|[Oo]urselves|[Uu]s(?!-[A-Za-z0-9])|"
+    r"[Mm]e|[Mm]y|[Mm]ine|[Mm]yself)\b"
 )
+_USE_THIS_TRIGGER_RE = re.compile(r"\buse this(?: (?:skill|agent))? (?:when|if)\b")
 _TRIGGER_MARKERS = (
     "use when",
-    "use this",
     "when the user",
     "when users",
     "when you need",
@@ -56,7 +57,7 @@ class DescriptionRoutingRule(Rule):
         "flag-name-restatement": {
             "type": "bool",
             "default": True,
-            "description": "Flag descriptions that only restate the building block name",
+            "description": "Flag descriptions that only restate the name or generic category",
         },
     }
 
@@ -95,6 +96,7 @@ class DescriptionRoutingRule(Rule):
                             "Description is empty; explain what the building block does",
                             block=block,
                             line=line,
+                            metric="empty-description",
                         )
                     )
                     continue
@@ -111,6 +113,7 @@ class DescriptionRoutingRule(Rule):
                             f"{block.category}; include trigger phrasing such as 'Use when ...'",
                             block=block,
                             line=line,
+                            metric="missing-trigger",
                         )
                     )
 
@@ -120,6 +123,7 @@ class DescriptionRoutingRule(Rule):
                             "Description uses first-person voice; describe the routing signal directly",
                             block=block,
                             line=line,
+                            metric="first-person",
                         )
                     )
 
@@ -128,9 +132,11 @@ class DescriptionRoutingRule(Rule):
                 ):
                     violations.append(
                         self.violation(
-                            "Description only restates the name; explain what the building block does",
+                            "Description only restates the name or generic category; explain what "
+                            "the building block does",
                             block=block,
                             line=line,
+                            metric="name-restatement",
                         )
                     )
         return violations
@@ -139,7 +145,9 @@ class DescriptionRoutingRule(Rule):
     def _has_trigger_phrase(description: str) -> bool:
         """Return whether a description contains a recognized usage trigger."""
         normalized = " ".join(description.lower().split())
-        return any(marker in normalized for marker in _TRIGGER_MARKERS)
+        return any(marker in normalized for marker in _TRIGGER_MARKERS) or bool(
+            _USE_THIS_TRIGGER_RE.search(normalized)
+        )
 
     @staticmethod
     def _block_name(path: Path, configured_name: object) -> str:
@@ -159,7 +167,7 @@ class DescriptionRoutingRule(Rule):
 
     @classmethod
     def _restates_name(cls, description: str, name: str) -> bool:
-        """Return whether the description adds no tokens beyond the block name."""
+        """Return whether the description adds no meaning beyond name/category words."""
         description_tokens = cls._tokens(description)
         name_tokens = cls._tokens(name)
-        return bool(description_tokens and name_tokens and description_tokens <= name_tokens)
+        return not description_tokens or bool(name_tokens and description_tokens <= name_tokens)

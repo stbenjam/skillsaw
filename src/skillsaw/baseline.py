@@ -66,10 +66,10 @@ def fingerprint_violation(
 ) -> str:
     """Compute a content-hash fingerprint for a violation.
 
-    The fingerprint is built from ``rule_id``, relative file path, and the
-    stripped content of the source line.  Line numbers are intentionally
-    excluded so that the fingerprint survives insertions/deletions elsewhere
-    in the file.
+    The fingerprint is built from ``rule_id``, relative file path, the
+    stripped content of the source line, and an optional stable ``metric``
+    discriminator. Line numbers are intentionally excluded so that the
+    fingerprint survives insertions/deletions elsewhere in the file.
     """
     if _file_cache is None:
         _file_cache = {}
@@ -99,12 +99,16 @@ def fingerprint_violation(
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
             raw = f"{rule_id}\0{rel_path}\0{line_content}"
+            if violation.metric:
+                raw += f"\0{violation.metric}"
             return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     if rel_path is not None:
         raw = f"{rule_id}\0{rel_path}\0{violation.message}"
     else:
         raw = f"{rule_id}\0{violation.message}"
+    if violation.metric:
+        raw += f"\0{violation.metric}"
 
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

@@ -41,10 +41,10 @@ class RuleViolation:
     block: Optional["ContentBlock"] = field(default=None, repr=False)
     source: str = "builtin"
     value: Optional[float] = None
-    # Optional discriminator for rules that emit more than one ratchet
-    # (value-carrying) violation per file, so their baseline fingerprints
-    # don't collide. Example: context-budget emits whole-file and
-    # per-description token violations for the same SKILL.md.
+    # Optional stable discriminator for rules that emit multiple violations
+    # at one logical location, so formatter and baseline fingerprints do not
+    # collide. Example: context-budget identifies token categories, while
+    # description-routing identifies independently configurable subchecks.
     metric: Optional[str] = None
     # Whether ``skillsaw fix`` can resolve this violation. None means
     # unknown — e.g. synthetic violations constructed outside
@@ -248,7 +248,7 @@ class Rule(ABC):
 
         Pass ``block`` for content-based violations.  ``file_path`` is
         accepted for backward compatibility and auto-wraps into a block.
-        ``metric`` disambiguates multiple ratchet violations per file.
+        ``metric`` disambiguates multiple violations at one logical location.
 
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules

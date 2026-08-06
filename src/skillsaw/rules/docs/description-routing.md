@@ -2,11 +2,12 @@ Checks that skill, agent, and command descriptions work as routing signals rathe
 
 ## What it checks
 
+- Descriptions are non-empty strings. This basic check is always on.
 - Skill and agent descriptions say when the model should use them. Commands are excluded because users select them directly.
 - Descriptions avoid first-person voice such as "I can help" or "I'll".
-- Descriptions do more than restate the building block name, such as a `deploy-staging` skill described only as "Deploy staging."
+- Descriptions do more than restate the building block name or category, such as a `deploy-staging` skill described only as "Deploy staging" or a command described only as "A command."
 
-Each check can be configured independently:
+The three routing heuristics after the always-on empty check can be configured independently:
 
 ```yaml
 rules:

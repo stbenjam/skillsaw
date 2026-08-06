@@ -32,6 +32,8 @@ def format_code_climate(
             rel = rel[2:]
 
         fingerprint_input = f"{v.rule_id}:{rel or ''}:{v.file_line or ''}"
+        if v.metric:
+            fingerprint_input += f":{v.metric}"
         fingerprint = hashlib.sha256(fingerprint_input.encode()).hexdigest()
 
         entry = {

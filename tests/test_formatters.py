@@ -901,6 +901,35 @@ def test_gitlab_fingerprints_unique(valid_plugin):
     assert len(fingerprints) == len(set(fingerprints))
 
 
+def test_gitlab_metric_distinguishes_same_location(valid_plugin):
+    """Sibling subchecks at one source line retain distinct fingerprints."""
+    context = RepositoryContext(valid_plugin)
+    path = Path("plugins/foo/skills/deploy/SKILL.md")
+    violations = [
+        RuleViolation(
+            rule_id="description-routing",
+            severity=Severity.WARNING,
+            message="missing trigger",
+            file_path=path,
+            line=3,
+            metric="missing-trigger",
+        ),
+        RuleViolation(
+            rule_id="description-routing",
+            severity=Severity.WARNING,
+            message="name restatement",
+            file_path=path,
+            line=3,
+            metric="name-restatement",
+        ),
+    ]
+
+    output = format_code_climate(violations, context, [], "1.0.0")
+    fingerprints = [entry["fingerprint"] for entry in json.loads(output)]
+
+    assert len(fingerprints) == len(set(fingerprints)) == 2
+
+
 def test_gitlab_fingerprint_is_sha256_hex(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()
