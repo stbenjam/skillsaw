@@ -1,7 +1,3 @@
-> **Deprecated since v0.18.0** — newer models no longer show the
-> lost-in-the-middle attention dip this rule polices. The rule will be
-> removed in a future release; set `enabled: true` to keep it until then.
-
 ## Why
 
 LLM attention is strongest at the beginning and end of context and

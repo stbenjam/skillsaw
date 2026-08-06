@@ -13,7 +13,7 @@ Plugin names should use kebab-case
 | **Autofix** | - |
 | **Since** | v0.1.0 |
 | **Repo Types** | marketplace, single-plugin |
-| **Category** | [Plugin Structure](plugin-structure.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

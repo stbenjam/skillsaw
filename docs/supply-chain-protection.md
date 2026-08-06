@@ -23,8 +23,8 @@ skillsaw includes four rules designed to catch these attacks:
 
 | Rule | Default | What it does |
 |------|---------|-------------|
-| [`hooks-dangerous`](rules/skills-agents-hooks.md) | auto, error | Flags hook commands matching supply-chain patterns |
-| [`hooks-prohibited`](rules/skills-agents-hooks.md) | disabled, error | Prohibits all hooks unless explicitly allowlisted |
+| [`hooks-dangerous`](rules/hooks.md) | auto, error | Flags hook commands matching supply-chain patterns |
+| [`hooks-prohibited`](rules/hooks.md) | disabled, error | Prohibits all hooks unless explicitly allowlisted |
 | [`mcp-prohibited`](rules/mcp.md) | disabled, error | Prohibits all MCP servers unless explicitly allowlisted |
 | [`claude-settings-dangerous`](rules/settings.md) | auto, error | Flags settings keys that execute arbitrary commands or set dangerous env vars |
 

@@ -1,7 +1,3 @@
-> **Deprecated since v0.18.0** — the 7±2 working-memory heuristic never
-> mapped well onto LLM attention. The rule will be removed in a future
-> release; set `enabled: true` to keep it until then.
-
 ## Why
 
 Models process grouped instructions more reliably than flat lists.

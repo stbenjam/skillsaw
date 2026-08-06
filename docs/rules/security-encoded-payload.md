@@ -10,7 +10,7 @@ Detect long high-entropy base64/hex blobs that can smuggle encoded payloads
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.17.0 |
-| **Category** | [Hidden-Content Validation](hidden-content.md) |
+| **Category** | [Security](security.md) |
 
 ## Why
 

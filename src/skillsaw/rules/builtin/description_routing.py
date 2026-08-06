@@ -70,7 +70,7 @@ class DescriptionRoutingRule(Rule):
     @property
     def rule_id(self) -> str:
         """Return the stable identifier used in configuration and output."""
-        return "description-routing"
+        return "content-description-routing"
 
     @property
     def description(self) -> str:

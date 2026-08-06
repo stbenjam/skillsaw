@@ -10,7 +10,7 @@ Flags hook commands that execute scripts from dotfile directories, download-and-
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.12.0 |
-| **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
+| **Category** | [Hooks](hooks.md) |
 
 ## Why
 

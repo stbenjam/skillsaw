@@ -14,9 +14,6 @@ class ContentCognitiveChunksRule(Rule):
 
     formats = None
     since = "0.7.0"
-    # The 7±2 working-memory heuristic never mapped well onto LLM attention;
-    # retired rather than tuned.
-    deprecated = "0.18.0"
 
     @property
     def rule_id(self) -> str:

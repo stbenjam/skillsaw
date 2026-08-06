@@ -9,6 +9,19 @@ These rules are deprecated and will be removed in a future release. They no long
 |---------|-------------|------------------|---------|
 | [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (deprecated) | - |
 | [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (deprecated) | - |
-| [`content-cognitive-chunks`](content-cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (deprecated) | - |
 | [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning (deprecated) | auto |
+
+## Why these rules were deprecated
+
+### [`content-critical-position`](content-critical-position.md)
+
+Built on the lost-in-the-middle attention research: instructions in the middle 20–80% of a long file were the most likely to be dropped. Newer models no longer show that attention dip, so moving CRITICAL lines to the edges of a file stopped being worth the churn.
+
+### [`content-actionability-score`](content-actionability-score.md)
+
+Scored prose by its ratio of imperative verbs to hedging and descriptive text. The score proved too subjective to drive useful edits — reference material legitimately describes rather than commands — and newer models follow descriptive instructions fine.
+
+### [`skill-frontmatter`](skill-frontmatter.md)
+
+Superseded by agentskill-valid, which validates the same name and description frontmatter against the agentskills.io specification and carries the same missing-frontmatter autofix — running both reported every problem twice.
 

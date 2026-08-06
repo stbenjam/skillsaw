@@ -89,6 +89,8 @@ def _run_explain(args):
         if default_rule.replaced_by:
             notice += f"; use '{default_rule.replaced_by}' instead"
         print(f"{c['red']}{notice}{c['reset']}")
+        if default_rule.deprecated_reason:
+            print(default_rule.deprecated_reason)
     print()
     print(default_rule.description)
 

@@ -47,29 +47,28 @@ RULE_GROUPS = [
         "`--type agent-plugin` to force validation.",
     ),
     (
-        "Plugin Structure",
+        "Claude Code",
         [
             "claude-plugin-json-required",
             "claude-plugin-json-valid",
             "claude-plugin-naming",
             "claude-plugin-readme",
-        ],
-        None,
-    ),
-    (
-        "Command Format",
-        [
             "claude-command-naming",
             "claude-command-frontmatter",
             "claude-command-sections",
             "claude-command-name-format",
+            "claude-agent-frontmatter",
+            "claude-marketplace-json-valid",
+            "claude-marketplace-registration",
+            "claude-settings-dangerous",
+            "claude-rules-valid",
         ],
-        None,
-    ),
-    (
-        "Marketplace",
-        ["claude-marketplace-json-valid", "claude-marketplace-registration"],
-        None,
+        "Validates the Claude Code formats: plugin manifests "
+        "(`.claude-plugin/plugin.json`), `marketplace.json` catalogs, "
+        "command and agent frontmatter, `.claude/settings.json` security, "
+        "and `.claude/rules/` files. These rules carry the `claude-` prefix "
+        "(mirroring `codex-`); their pre-0.18 bare names still work as "
+        "legacy aliases everywhere a rule is named.",
     ),
     (
         "OpenAI Codex",
@@ -89,37 +88,34 @@ RULE_GROUPS = [
         "auto-enable only when their Codex manifests are present.",
     ),
     (
-        "Skills, Agents, Hooks",
+        "Hooks",
         [
-            "claude-agent-frontmatter",
-            "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates skill/agent frontmatter and hook configuration. The "
-        "`description-routing` rule checks when-to-use phrasing and name restatements; "
-        "both checks are independently configurable. The security "
-        "rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent "
+        "Validates hook configuration. The security rules scan hooks in "
+        "`hooks.json`, `.claude/settings*.json`, and skill/agent "
         "frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
+        "Security",
+        [
+            "security-invisible-unicode",
+            "security-hidden-instructions",
+            "security-encoded-payload",
+        ],
+        "Content-validation rules that catch payloads and instructions "
+        "invisible to human review: invisible/bidi unicode smuggling, agent "
+        "directives hidden in HTML comments or Markdown link labels, and "
+        "long high-entropy base64/hex blobs that can smuggle encoded "
+        "payloads.",
+    ),
+    (
         "MCP (Model Context Protocol)",
         ["mcp-valid-json", "mcp-prohibited"],
-        None,
-    ),
-    (
-        "Settings",
-        ["claude-settings-dangerous"],
-        "Security rules for `.claude/settings.json`. Project-scoped settings "
-        "can set keys that execute arbitrary shell commands or environment "
-        "variables that hijack process behaviour — these rules flag them.",
-    ),
-    (
-        "Rules Directory",
-        ["claude-rules-valid"],
         None,
     ),
     (
@@ -148,12 +144,14 @@ RULE_GROUPS = [
         [
             "content-weak-language",
             "content-tautological",
+            "content-description-routing",
             "content-redundant-with-tooling",
             "content-instruction-budget",
             "content-negative-only",
             "content-section-length",
             "content-contradiction",
             "content-hook-candidate",
+            "content-cognitive-chunks",
             "content-embedded-secrets",
             "content-banned-references",
             "content-inconsistent-terminology",
@@ -198,7 +196,6 @@ RULE_GROUPS = [
         [
             "content-critical-position",
             "content-actionability-score",
-            "content-cognitive-chunks",
             "skill-frontmatter",
         ],
         "These rules are deprecated and will be removed in a future release. "

@@ -19,6 +19,12 @@ class ContentActionabilityScoreRule(Rule):
     # Subjective prose scoring that rarely drove a useful edit; newer models
     # don't need instruction density policed.
     deprecated = "0.18.0"
+    deprecated_reason = (
+        "Scored prose by its ratio of imperative verbs to hedging and "
+        "descriptive text. The score proved too subjective to drive useful "
+        "edits — reference material legitimately describes rather than "
+        "commands — and newer models follow descriptive instructions fine."
+    )
     baseline_mode = "floor"
 
     _VERB_WORDS = frozenset(

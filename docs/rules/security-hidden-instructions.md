@@ -10,7 +10,7 @@ Detect agent directives hidden in HTML comments or Markdown link labels invisibl
 | **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.17.0 |
-| **Category** | [Hidden-Content Validation](hidden-content.md) |
+| **Category** | [Security](security.md) |
 
 ## Why
 

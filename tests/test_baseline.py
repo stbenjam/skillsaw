@@ -128,13 +128,13 @@ class TestFingerprint:
         src = tmp_path / "SKILL.md"
         src.write_text("description: Deploy staging.\n")
         missing_trigger = _make_violation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             file_path=src,
             line=1,
             fingerprint_discriminator="missing-trigger",
         )
         name_restatement = _make_violation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             file_path=src,
             line=1,
             fingerprint_discriminator="name-restatement",
@@ -148,12 +148,12 @@ class TestFingerprint:
         src = tmp_path / "SKILL.md"
         src.write_text("description: Deploy staging.\n")
         violation = _make_violation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             file_path=src,
             line=1,
         )
         legacy = hashlib.sha256(
-            b"description-routing\0SKILL.md\0description: Deploy staging."
+            b"content-description-routing\0SKILL.md\0description: Deploy staging."
         ).hexdigest()[:16]
 
         assert fingerprint_violation(violation, tmp_path) == legacy
@@ -345,13 +345,13 @@ class TestFilterBaselinedViolations:
         src = tmp_path / "SKILL.md"
         src.write_text("description: Deploy staging.\n")
         missing_trigger = _make_violation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             file_path=src,
             line=1,
             fingerprint_discriminator="missing-trigger",
         )
         name_restatement = _make_violation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             file_path=src,
             line=1,
             fingerprint_discriminator="name-restatement",

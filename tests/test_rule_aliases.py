@@ -200,7 +200,6 @@ def test_deprecated_rules_are_marked():
     for rule_id in (
         "content-critical-position",
         "content-actionability-score",
-        "content-cognitive-chunks",
         "skill-frontmatter",
     ):
         assert BUILTIN_RULE_REGISTRY[rule_id].deprecated == "0.18.0", rule_id

@@ -10,7 +10,7 @@ hooks.json must be valid JSON with proper hook configuration structure
 | **Severity** | error |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
+| **Category** | [Hooks](hooks.md) |
 
 ## Why
 

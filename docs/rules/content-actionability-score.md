@@ -6,6 +6,8 @@
 !!! warning "Deprecated"
     Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
 
+    Scored prose by its ratio of imperative verbs to hedging and descriptive text. The score proved too subjective to drive useful edits — reference material legitimately describes rather than commands — and newer models follow descriptive instructions fine.
+
 Score instruction files on actionability (verb density, commands, file references)
 
 | | |
@@ -14,11 +16,6 @@ Score instruction files on actionability (verb density, commands, file reference
 | **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Deprecated](deprecated.md) |
-
-> **Deprecated since v0.18.0** — scoring prose "actionability" proved
-> too subjective to drive useful edits, and newer models follow
-> descriptive instructions fine. The rule will be removed in a future
-> release; set `enabled: true` to keep it until then.
 
 ## Why
 

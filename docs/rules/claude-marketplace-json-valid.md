@@ -13,7 +13,7 @@ Marketplace.json must be valid JSON with required fields
 | **Autofix** | - |
 | **Since** | v0.1.0 |
 | **Repo Types** | marketplace |
-| **Category** | [Marketplace](marketplace.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

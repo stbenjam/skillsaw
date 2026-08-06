@@ -12,7 +12,7 @@ Command files should use kebab-case naming
 | **Severity** | warning |
 | **Autofix** | auto |
 | **Since** | v0.1.0 |
-| **Category** | [Command Format](command-format.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

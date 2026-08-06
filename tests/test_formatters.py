@@ -911,7 +911,7 @@ def test_gitlab_discriminator_distinguishes_same_location(valid_plugin):
     path = Path("plugins/foo/skills/deploy/SKILL.md")
     violations = [
         RuleViolation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             severity=Severity.WARNING,
             message="missing trigger",
             file_path=path,
@@ -919,7 +919,7 @@ def test_gitlab_discriminator_distinguishes_same_location(valid_plugin):
             fingerprint_discriminator="missing-trigger",
         ),
         RuleViolation(
-            rule_id="description-routing",
+            rule_id="content-description-routing",
             severity=Severity.WARNING,
             message="name restatement",
             file_path=path,

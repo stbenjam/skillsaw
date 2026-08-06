@@ -12,7 +12,7 @@ Command Name section should be 'plugin-name:command-name'
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Category** | [Command Format](command-format.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

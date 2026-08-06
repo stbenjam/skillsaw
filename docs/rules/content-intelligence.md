@@ -9,12 +9,14 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 |---------|-------------|------------------|---------|
 | [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | info (auto) | - |
 | [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | info (auto) | - |
+| [`content-description-routing`](content-description-routing.md) | Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose | warning (auto) | - |
 | [`content-redundant-with-tooling`](content-redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | - |
 | [`content-instruction-budget`](content-instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | - |
 | [`content-negative-only`](content-negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | info (auto) | - |
 | [`content-section-length`](content-section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | - |
 | [`content-contradiction`](content-contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | - |
 | [`content-hook-candidate`](content-hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | - |
+| [`content-cognitive-chunks`](content-cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | - |
 | [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - |
 | [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - |
 | [`content-inconsistent-terminology`](content-inconsistent-terminology.md) | Detect inconsistent terminology across instruction files (e.g., mixing 'directory' and 'folder') | info (auto) | - |

@@ -13,7 +13,7 @@
 | **Autofix** | - |
 | **Since** | v0.1.0 |
 | **Repo Types** | dot-claude |
-| **Category** | [Rules Directory](rules-directory.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

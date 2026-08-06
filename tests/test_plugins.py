@@ -75,6 +75,14 @@ class ShadowsBuiltinRule(AlwaysFiresRule):
         return "mcp-valid-json"  # collides with a builtin
 
 
+class DeprecatedPluginRule(AlwaysFiresRule):
+    deprecated = "2.0.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "plugin-deprecated-test"
+
+
 @pytest.fixture(autouse=True)
 def _clear_dist_fallback_cache():
     plugins_mod._dist_by_entry_point.cache_clear()
@@ -371,6 +379,31 @@ def test_rule_id_collision_with_builtin_is_skipped(fake_plugin, repo):
     warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
     assert warnings[0].severity == Severity.WARNING
+
+
+def test_deprecated_plugin_rule_inert_config_entry_warns(fake_plugin, repo):
+    """A config entry naming a deprecated plugin rule warns even though the
+    rule no longer runs (parity with builtin deprecation notices)."""
+    fake_plugin("fake_deprecated", module_attrs={"SKILLSAW_RULES": [DeprecatedPluginRule]})
+    config = LinterConfig.default()
+    config.rules["plugin-deprecated-test"] = {"severity": "error"}
+    linter, violations = _lint(repo, config=config)
+    assert "plugin-deprecated-test" not in {r.rule_id for r in linter.rules}
+    notices = [v for v in violations if v.rule_id == "deprecated-rule"]
+    assert len(notices) == 1
+    assert "plugin-deprecated-test" in notices[0].message
+    assert "no longer runs" in notices[0].message
+
+
+def test_deprecated_plugin_rule_runs_when_enabled(fake_plugin, repo):
+    fake_plugin("fake_deprecated", module_attrs={"SKILLSAW_RULES": [DeprecatedPluginRule]})
+    config = LinterConfig.default()
+    config.rules["plugin-deprecated-test"] = {"enabled": True}
+    linter, violations = _lint(repo, config=config)
+    assert "plugin-deprecated-test" in {r.rule_id for r in linter.rules}
+    notices = [v for v in violations if v.rule_id == "deprecated-rule"]
+    assert len(notices) == 1
+    assert "will be removed in a future release" in notices[0].message
 
 
 def test_plugin_rule_configurable_via_rules_section(fake_plugin, repo):

@@ -12,7 +12,7 @@ Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefres
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.12.0 |
-| **Category** | [Settings](settings.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

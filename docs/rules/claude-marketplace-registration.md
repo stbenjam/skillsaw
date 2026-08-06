@@ -13,7 +13,7 @@ Plugins must be registered in marketplace.json
 | **Autofix** | auto |
 | **Since** | v0.1.0 |
 | **Repo Types** | marketplace |
-| **Category** | [Marketplace](marketplace.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

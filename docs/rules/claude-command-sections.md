@@ -12,7 +12,7 @@ Command files should have Name, Synopsis, Description, and Implementation sectio
 | **Severity** | warning (disabled) |
 | **Autofix** | - |
 | **Since** | v0.1.0 |
-| **Category** | [Command Format](command-format.md) |
+| **Category** | [Claude Code](claude.md) |
 
 ## Why
 

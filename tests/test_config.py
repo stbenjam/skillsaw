@@ -316,6 +316,7 @@ def test_content_rules_default_to_auto():
         "content-section-length",
         "content-contradiction",
         "content-hook-candidate",
+        "content-cognitive-chunks",
         "content-embedded-secrets",
         "content-banned-references",
         "content-inconsistent-terminology",

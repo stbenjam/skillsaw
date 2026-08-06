@@ -1446,6 +1446,21 @@ class TestConfigFeatures:
         assert "skill-frontmatter" in messages
         assert all(v["severity"] == "warning" for v in deprecation)
 
+    def test_fix_command_surfaces_deprecation_notices(self, tmp_path):
+        """skillsaw fix prints the deprecation notices its lint pass found —
+        its output otherwise only lists fixes, not violations."""
+        repo = copy_fixture("config/deprecated-rules", tmp_path)
+        result = subprocess.run(
+            [sys.executable, "-m", "skillsaw", "fix", str(repo)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "deprecated since 0.18.0" in result.stdout
+        assert "content-critical-position" in result.stdout
+        assert "skill-frontmatter" in result.stdout
+
     def test_deprecation_notices_are_advisory_under_strict(self, tmp_path):
         """Deprecation warnings alone must not fail a strict run — every
         pre-0.18 --init config names now-deprecated rules."""
@@ -2283,17 +2298,17 @@ class TestDescriptionMaxLengthConfig:
 class TestDescriptionRouting:
     """Descriptions are linted as routing signals across block types."""
 
-    FIXTURE = "description-routing"
+    FIXTURE = "content-description-routing"
 
     @staticmethod
     def _routing_violations(result):
-        """Return only description-routing violations from a lint result."""
-        return [v for v in violations(result) if v["rule_id"] == "description-routing"]
+        """Return only content-description-routing violations from a lint result."""
+        return [v for v in violations(result) if v["rule_id"] == "content-description-routing"]
 
     def test_reports_each_routing_failure_and_keeps_clean_descriptions_clean(self, tmp_path):
         """Report every fixture failure deterministically while clean cases pass."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        r = run_lint(repo, "--rule", "description-routing")
+        r = run_lint(repo, "--rule", "content-description-routing")
         vs = self._routing_violations(r)
 
         assert len(vs) == 12
@@ -2312,13 +2327,13 @@ class TestDescriptionRouting:
         assert not any("request-router" in v["file_path"] for v in vs)
         assert not any("check-release" in v["file_path"] for v in vs)
 
-        rerun = run_lint(repo, "--rule", "description-routing")
+        rerun = run_lint(repo, "--rule", "content-description-routing")
         assert self._routing_violations(rerun) == vs
 
     def test_accepts_explicit_trigger_phrase_variants(self, tmp_path):
         """Accept active, passive, and restrictive selection clauses."""
         repo = copy_fixture(self.FIXTURE, tmp_path)
-        result = run_lint(repo, "--rule", "description-routing")
+        result = run_lint(repo, "--rule", "content-description-routing")
         routing_violations = self._routing_violations(result)
         expected_clean = {
             "active-invoke-whenever",
@@ -2347,7 +2362,7 @@ class TestDescriptionRouting:
         command = repo / "plugins/note-taker/commands/capture.md"
         command.write_text("---\nname: capture\n---\n\n# Capture\n", encoding="utf-8")
 
-        result = run_lint(repo, "--rule", "description-routing")
+        result = run_lint(repo, "--rule", "content-description-routing")
         command_violations = [
             violation
             for violation in self._routing_violations(result)
@@ -2363,7 +2378,7 @@ class TestDescriptionRouting:
         command = repo / "plugins/note-taker/commands/capture.md"
         command.write_text("# Capture\n\nCapture the current note.\n", encoding="utf-8")
 
-        result = run_lint(repo, "--rule", "description-routing")
+        result = run_lint(repo, "--rule", "content-description-routing")
         command_violations = [
             violation
             for violation in self._routing_violations(result)
@@ -2387,7 +2402,7 @@ class TestDescriptionRouting:
         repo = copy_fixture(self.FIXTURE, tmp_path)
         config = repo / ".skillsaw.yaml"
         config.write_text(
-            "rules:\n  description-routing:\n    " + option + ": false\n",
+            "rules:\n  content-description-routing:\n    " + option + ": false\n",
             encoding="utf-8",
         )
 
@@ -2402,7 +2417,7 @@ class TestDescriptionRouting:
         """Default skipping is limited to the actual YAML boolean true."""
         repo = copy_fixture("description-routing-user-only", tmp_path)
 
-        result = run_lint(repo, "--rule", "description-routing")
+        result = run_lint(repo, "--rule", "content-description-routing")
         routing_violations = self._routing_violations(result)
         skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
         checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
@@ -2422,7 +2437,7 @@ class TestDescriptionRouting:
         repo = copy_fixture("description-routing-user-only", tmp_path)
         config = repo / ".skillsaw.yaml"
         config.write_text(
-            "rules:\n  description-routing:\n    check-user-only-skills: true\n",
+            "rules:\n  content-description-routing:\n    check-user-only-skills: true\n",
             encoding="utf-8",
         )
 
@@ -2454,7 +2469,7 @@ class TestDescriptionRouting:
         repo = copy_fixture("description-routing-user-only", tmp_path)
         config = repo / ".skillsaw.yaml"
         config.write_text(
-            'rules:\n  description-routing:\n    check-user-only-skills: "false"\n',
+            'rules:\n  content-description-routing:\n    check-user-only-skills: "false"\n',
             encoding="utf-8",
         )
 

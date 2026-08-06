@@ -127,6 +127,9 @@ class Rule(ABC):
     deprecated: Optional[str] = None
     # Rule ID that supersedes this one, named in deprecation messages.
     replaced_by: Optional[str] = None
+    # One-sentence rationale rendered on the documentation site's
+    # Deprecated page and each deprecated rule's own page.
+    deprecated_reason: Optional[str] = None
     # Default activation when the user config doesn't mention the rule:
     # True (always on), False (opt-in), or "auto" (on when repo_types /
     # formats match the repository). ``LinterConfig.default()`` is generated
