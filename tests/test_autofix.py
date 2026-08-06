@@ -515,6 +515,7 @@ class TestSkillFixBothFieldsMissing:
         ["metadata:\n  name: nested", "displayname: example", 'note: "name: example"'],
     )
     def test_skill_fix_uses_top_level_keys(self, temp_dir, misleading_field):
+        """Nested keys must not satisfy required top-level skill fields."""
         plugin_dir = temp_dir / "test-plugin"
         (plugin_dir / ".claude-plugin").mkdir(parents=True)
         (plugin_dir / ".claude-plugin" / "plugin.json").write_text('{"name":"test"}')
