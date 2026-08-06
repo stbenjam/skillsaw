@@ -113,17 +113,6 @@ class TestFingerprint:
         v2 = _make_violation(rule_id="rule-b", file_path=src, line=1)
         assert fingerprint_violation(v1, tmp_path) != fingerprint_violation(v2, tmp_path)
 
-    def test_metric_distinguishes_same_rule_and_line(self, tmp_path):
-        """A stable subcheck metric prevents same-location fingerprint collisions."""
-        src = tmp_path / "SKILL.md"
-        src.write_text("description: Deploy staging.\n")
-        v1 = _make_violation(rule_id="description-routing", file_path=src, line=1)
-        v2 = _make_violation(rule_id="description-routing", file_path=src, line=1)
-        v1.metric = "missing-trigger"
-        v2.metric = "name-restatement"
-
-        assert fingerprint_violation(v1, tmp_path) != fingerprint_violation(v2, tmp_path)
-
 
 class TestBaselineIO:
     def test_save_and_load_roundtrip(self, tmp_path):

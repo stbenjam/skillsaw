@@ -41,10 +41,10 @@ class RuleViolation:
     block: Optional["ContentBlock"] = field(default=None, repr=False)
     source: str = "builtin"
     value: Optional[float] = None
-    # Optional stable discriminator for rules that emit multiple violations
-    # at one logical location, so formatter and baseline fingerprints do not
-    # collide. Example: context-budget identifies token categories, while
-    # description-routing identifies independently configurable subchecks.
+    # Optional discriminator for rules that emit more than one ratchet
+    # (value-carrying) violation per file, so their baseline fingerprints
+    # don't collide. Example: context-budget emits whole-file and
+    # per-description token violations for the same SKILL.md.
     metric: Optional[str] = None
     # Whether ``skillsaw fix`` can resolve this violation. None means
     # unknown — e.g. synthetic violations constructed outside
@@ -53,6 +53,10 @@ class RuleViolation:
     # Confidence of the fix when ``fixable``: SAFE fixes apply with plain
     # ``skillsaw fix``, SUGGEST fixes require ``--suggest``.
     fix_confidence: Optional["AutofixConfidence"] = None
+    # Stable suffix for formatter identities when a rule emits sibling
+    # findings at the same path and line. Rules should set this from their
+    # first release so existing external fingerprints never churn.
+    fingerprint_discriminator: Optional[str] = None
 
     def __post_init__(self):
         if self.block is None and self.file_path is not None:
@@ -243,12 +247,15 @@ class Rule(ABC):
         metric: Optional[str] = None,
         fixable: Optional[bool] = None,
         fix_confidence: Optional[AutofixConfidence] = None,
+        fingerprint_discriminator: Optional[str] = None,
     ) -> RuleViolation:
         """Create a violation for this rule.
 
         Pass ``block`` for content-based violations.  ``file_path`` is
         accepted for backward compatibility and auto-wraps into a block.
-        ``metric`` disambiguates multiple violations at one logical location.
+        ``metric`` disambiguates multiple ratchet violations per file.
+        ``fingerprint_discriminator`` disambiguates sibling formatter findings
+        at the same path and line without changing identities for other rules.
 
         ``fixable`` defaults from the rule: True when the rule overrides
         ``fix()`` and declares a class-level ``autofix_confidence``.  Rules
@@ -274,4 +281,5 @@ class Rule(ABC):
             metric=metric,
             fixable=fixable,
             fix_confidence=fix_confidence,
+            fingerprint_discriminator=fingerprint_discriminator,
         )

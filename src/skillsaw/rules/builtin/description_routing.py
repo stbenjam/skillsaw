@@ -96,7 +96,7 @@ class DescriptionRoutingRule(Rule):
                             "Description is empty; explain what the building block does",
                             block=block,
                             line=line,
-                            metric="empty-description",
+                            fingerprint_discriminator="empty-description",
                         )
                     )
                     continue
@@ -113,7 +113,7 @@ class DescriptionRoutingRule(Rule):
                             f"{block.category}; include trigger phrasing such as 'Use when ...'",
                             block=block,
                             line=line,
-                            metric="missing-trigger",
+                            fingerprint_discriminator="missing-trigger",
                         )
                     )
 
@@ -123,7 +123,7 @@ class DescriptionRoutingRule(Rule):
                             "Description uses first-person voice; describe the routing signal directly",
                             block=block,
                             line=line,
-                            metric="first-person",
+                            fingerprint_discriminator="first-person",
                         )
                     )
 
@@ -136,7 +136,7 @@ class DescriptionRoutingRule(Rule):
                             "the building block does",
                             block=block,
                             line=line,
-                            metric="name-restatement",
+                            fingerprint_discriminator="name-restatement",
                         )
                     )
         return violations
