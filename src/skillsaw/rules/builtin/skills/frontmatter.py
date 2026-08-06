@@ -18,6 +18,14 @@ class SkillFrontmatterRule(Rule):
     """Check that SKILL.md files have frontmatter"""
 
     default_enabled = True
+    deprecated = "0.18.0"
+    replaced_by = "agentskill-valid"
+    deprecated_reason = (
+        "Superseded by agentskill-valid, which validates the same name and "
+        "description frontmatter against the agentskills.io specification "
+        "and carries the same missing-frontmatter autofix — running both "
+        "reported every problem twice."
+    )
 
     autofix_confidence = AutofixConfidence.SAFE
 

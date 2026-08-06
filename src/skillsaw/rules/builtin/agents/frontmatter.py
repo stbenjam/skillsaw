@@ -22,9 +22,11 @@ class AgentFrontmatterRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
+    aliases = ("agent-frontmatter",)
+
     @property
     def rule_id(self) -> str:
-        return "agent-frontmatter"
+        return "claude-agent-frontmatter"
 
     @property
     def description(self) -> str:

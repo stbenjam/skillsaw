@@ -10,7 +10,7 @@ Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Sourc
 | **Severity** | error (auto) |
 | **Autofix** | - |
 | **Since** | v0.17.0 |
-| **Category** | [Hidden-Content Validation](hidden-content.md) |
+| **Category** | [Security](security.md) |
 
 ## Why
 

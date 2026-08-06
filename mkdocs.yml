@@ -127,20 +127,17 @@ nav:
     - rules/index.md
     - AgentSkills: rules/agentskills.md
     - Agent Plugins: rules/agent-plugins.md
-    - Plugin Structure: rules/plugin-structure.md
-    - Command Format: rules/command-format.md
-    - Marketplace: rules/marketplace.md
+    - Claude Code: rules/claude.md
     - OpenAI Codex: rules/codex.md
-    - Skills, Agents, Hooks: rules/skills-agents-hooks.md
-    - Hidden-Content Validation: rules/hidden-content.md
+    - Hooks: rules/hooks.md
+    - Security: rules/security.md
     - MCP: rules/mcp.md
-    - Rules Directory: rules/rules-directory.md
     - OpenClaw: rules/openclaw.md
     - Instruction Files: rules/instruction-files.md
     - Context Budget: rules/context-budget.md
     - Content Intelligence: rules/content-intelligence.md
-    - Settings: rules/settings.md
     - CodeRabbit: rules/coderabbit.md
     - Promptfoo: rules/promptfoo.md
     - APM: rules/apm.md
+    - Deprecated: rules/deprecated.md
   - Research: research.md

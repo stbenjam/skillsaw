@@ -212,11 +212,16 @@ def _run_lint(args):
     lint_duration = time.perf_counter() - lint_started
 
     from ..grade import compute_grade
+    from ..linter import ADVISORY_RULE_IDS
 
     content_tokens = sum(
         block.estimate_tokens() for ctx in contexts for block in ctx.lint_tree.content_blocks()
     )
-    grade = compute_grade(all_violations, content_tokens)
+    # Advisory notices (deprecation warnings) are about the config, not the
+    # repository's content — they don't count toward the content grade.
+    grade = compute_grade(
+        [v for v in all_violations if v.rule_id not in ADVISORY_RULE_IDS], content_tokens
+    )
 
     color = color_enabled(sys.stdout, args.color)
     stdout_output = format_report(
@@ -258,7 +263,11 @@ def _run_lint(args):
             print(f"Error: Failed to write report to '{out_path}': {e}", file=sys.stderr)
             sys.exit(1)
 
-    errors, warnings_count, info = get_counts(all_violations)
+    # Advisory violations (deprecation notices) display like warnings but
+    # never affect the exit code — a skillsaw upgrade must not break strict
+    # CI runs whose configs still name deprecated rules.
+    fatal_violations = [v for v in all_violations if v.rule_id not in ADVISORY_RULE_IDS]
+    errors, warnings_count, info = get_counts(fatal_violations)
 
     if missing_count > 0 or errors > 0:
         sys.exit(1)

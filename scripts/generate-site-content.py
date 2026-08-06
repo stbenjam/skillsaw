@@ -79,22 +79,29 @@ RULE_GROUPS = [
         "`--type agent-plugin` to force validation.",
     ),
     (
-        "Plugin Structure",
-        "plugin-structure",
-        ["plugin-json-required", "plugin-json-valid", "plugin-naming", "plugin-readme"],
-        None,
-    ),
-    (
-        "Command Format",
-        "command-format",
-        ["command-naming", "command-frontmatter", "command-sections", "command-name-format"],
-        None,
-    ),
-    (
-        "Marketplace",
-        "marketplace",
-        ["marketplace-json-valid", "marketplace-registration"],
-        None,
+        "Claude Code",
+        "claude",
+        [
+            "claude-plugin-json-required",
+            "claude-plugin-json-valid",
+            "claude-plugin-naming",
+            "claude-plugin-readme",
+            "claude-command-naming",
+            "claude-command-frontmatter",
+            "claude-command-sections",
+            "claude-command-name-format",
+            "claude-agent-frontmatter",
+            "claude-marketplace-json-valid",
+            "claude-marketplace-registration",
+            "claude-settings-dangerous",
+            "claude-rules-valid",
+        ],
+        "Validates the Claude Code formats: plugin manifests "
+        "(`.claude-plugin/plugin.json`), `marketplace.json` catalogs, "
+        "command and agent frontmatter, `.claude/settings.json` security, "
+        "and `.claude/rules/` files. These rules carry the `claude-` prefix "
+        "(mirroring `codex-`); their pre-0.18 bare names still work as "
+        "legacy aliases everywhere a rule is named.",
     ),
     (
         "OpenAI Codex",
@@ -115,27 +122,22 @@ RULE_GROUPS = [
         "auto-enable only when their Codex manifests are present.",
     ),
     (
-        "Skills, Agents, Hooks",
-        "skills-agents-hooks",
+        "Hooks",
+        "hooks",
         [
-            "skill-frontmatter",
-            "agent-frontmatter",
-            "description-routing",
             "hooks-json-valid",
             "hooks-dangerous",
             "hooks-prohibited",
         ],
-        "Validates skill/agent frontmatter and hook configuration. The "
-        "`description-routing` rule checks when-to-use phrasing and name restatements; "
-        "both checks are independently configurable. The security "
-        "rules scan hooks in `hooks.json`, `.claude/settings*.json`, and skill/agent "
+        "Validates hook configuration. The security rules scan hooks in "
+        "`hooks.json`, `.claude/settings*.json`, and skill/agent "
         "frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
     (
-        "Hidden-Content Validation",
-        "hidden-content",
+        "Security",
+        "security",
         [
             "security-invisible-unicode",
             "security-hidden-instructions",
@@ -146,19 +148,13 @@ RULE_GROUPS = [
         "smuggling, Trojan Source), agent directives hidden in HTML comments "
         "or Markdown link labels, and long high-entropy base64/hex blobs that "
         "can smuggle encoded payloads. They complement `hooks-dangerous`, "
-        "`settings-dangerous`, and `content-embedded-secrets`, which cover the "
+        "`claude-settings-dangerous`, and `content-embedded-secrets`, which cover the "
         "executable and credential sides of the same threat.",
     ),
     (
         "MCP (Model Context Protocol)",
         "mcp",
         ["mcp-valid-json", "mcp-prohibited"],
-        None,
-    ),
-    (
-        "Rules Directory",
-        "rules-directory",
-        ["rules-valid"],
         None,
     ),
     (
@@ -191,14 +187,13 @@ RULE_GROUPS = [
         [
             "content-weak-language",
             "content-tautological",
-            "content-critical-position",
+            "content-description-routing",
             "content-redundant-with-tooling",
             "content-instruction-budget",
             "content-negative-only",
             "content-section-length",
             "content-contradiction",
             "content-hook-candidate",
-            "content-actionability-score",
             "content-cognitive-chunks",
             "content-embedded-secrets",
             "content-banned-references",
@@ -241,19 +236,26 @@ RULE_GROUPS = [
         "`promptfoo-assertions` and `promptfoo-metadata` are opt-in policy rules.",
     ),
     (
-        "Settings",
-        "settings",
-        ["settings-dangerous"],
-        "Security rules for `.claude/settings.json`. Project-scoped settings "
-        "can set keys that execute arbitrary shell commands or environment "
-        "variables that hijack process behaviour — these rules flag them.",
-    ),
-    (
         "APM (Agent Package Manager)",
         "apm",
         ["apm-yaml-valid", "apm-structure-valid"],
         "Validates repositories using the [APM](https://github.com/microsoft/apm) "
         "directory layout (`.apm/`). Auto-enables when `.apm/` is detected.",
+    ),
+    (
+        "Deprecated",
+        "deprecated",
+        [
+            "content-critical-position",
+            "content-actionability-score",
+            "skill-frontmatter",
+        ],
+        "These rules are deprecated and will be removed in a future release. "
+        "They no longer run under `enabled: auto`; set `enabled: true` in "
+        "`.skillsaw.yaml` to keep running one during the transition. The "
+        "content rules encoded attention-era heuristics that newer models no "
+        "longer need; `skill-frontmatter` is replaced by "
+        "[`agentskill-valid`](agentskill-valid.md).",
     ),
 ]
 
@@ -280,7 +282,9 @@ def collect_rules():
         enabled = rule_config.get("enabled", True)
         default_severity = rule_config.get("severity") or rule.default_severity().value
 
-        if enabled == "auto":
+        if rule.deprecated is not None:
+            severity_str = f"{default_severity} (deprecated)"
+        elif enabled == "auto":
             severity_str = f"{default_severity} (auto)"
         elif enabled is False:
             severity_str = f"{default_severity} (disabled)"
@@ -305,6 +309,10 @@ def collect_rules():
             "since": rule.since,
             "repo_types": repo_types_str,
             "enabled": enabled,
+            "deprecated": rule.deprecated,
+            "deprecated_reason": rule.deprecated_reason,
+            "replaced_by": rule.replaced_by,
+            "aliases": rule.aliases,
         }
     return rules
 
@@ -509,6 +517,18 @@ def generate_group_page(group_name, slug, rule_ids, description, rules_data):
     lines.append(_rule_table(rule_ids, rules_data))
     lines.append("")
 
+    # The Deprecated page explains why each rule was retired.
+    reasons = [
+        (rule_id, rules_data[rule_id]["deprecated_reason"])
+        for rule_id in rule_ids
+        if rules_data[rule_id]["deprecated"] and rules_data[rule_id]["deprecated_reason"]
+    ]
+    if reasons:
+        lines.append("## Why these rules were deprecated\n")
+        for rule_id, reason in reasons:
+            lines.append(f"### [`{rule_id}`]({rule_id}.md)\n")
+            lines.append(f"{reason}\n")
+
     return "\n".join(lines) + "\n"
 
 
@@ -521,7 +541,30 @@ def generate_rule_page(rule_id, group_name, slug, rules_data, research):
     r = rules_data[rule_id]
 
     lines = [GENERATED_HEADER, f"# {rule_id}\n"]
+
+    if r["deprecated"]:
+        notice = (
+            f'!!! warning "Deprecated"\n'
+            f"    Deprecated since v{r['deprecated']} and will be removed in a "
+            f"future release. This rule no longer runs under `enabled: auto`; "
+            f"set `enabled: true` explicitly to keep it during the transition."
+        )
+        if r["deprecated_reason"]:
+            notice += f"\n\n    {r['deprecated_reason']}"
+        if r["replaced_by"]:
+            notice += f"\n\n    Use [`{r['replaced_by']}`]({r['replaced_by']}.md) instead."
+        lines.append(notice)
+        lines.append("")
+
     lines.append(f"{r['description']}\n")
+
+    if r["aliases"]:
+        former = ", ".join(f"`{a}`" for a in r["aliases"])
+        lines.append(
+            f"*Formerly known as {former}. The legacy name still works in "
+            "configs, `--rule`/`--skip-rule`, suppression comments, and "
+            "baselines.*\n"
+        )
 
     # Metadata badges
     lines.append("| | |")
@@ -751,6 +794,63 @@ def main():
             page = generate_rule_page(rule_id, group_name, slug, rules_data, research)
             (rules_dir / f"{rule_id}.md").write_text(page)
             print(f"  rules/{rule_id}.md")
+
+            # Renamed rules keep their old documentation URLs working via a
+            # stub page at the legacy path pointing at the canonical page.
+            for alias in rules_data[rule_id]["aliases"]:
+                stub = (
+                    f"{GENERATED_HEADER}# {alias}\n\n"
+                    f"This rule is now [`{rule_id}`]({rule_id}.md) — "
+                    f"`{alias}` is a legacy alias that still works in configs, "
+                    "`--rule`/`--skip-rule`, suppression comments, and baselines.\n"
+                )
+                (rules_dir / f"{alias}.md").write_text(stub)
+                print(f"  rules/{alias}.md (alias stub)")
+
+    # Group pages retired by the 0.18 Claude Code consolidation keep their
+    # URLs working via stubs pointing at the new page.
+    retired_groups = {
+        "plugin-structure": (
+            "Plugin Structure",
+            "The Plugin Structure rules moved to the [Claude Code](claude.md) "
+            "page when they gained their `claude-` prefixes in 0.18.0.",
+        ),
+        "command-format": (
+            "Command Format",
+            "The Command Format rules moved to the [Claude Code](claude.md) "
+            "page when they gained their `claude-` prefixes in 0.18.0.",
+        ),
+        "marketplace": (
+            "Marketplace",
+            "The Marketplace rules moved to the [Claude Code](claude.md) "
+            "page when they gained their `claude-` prefixes in 0.18.0.",
+        ),
+        "settings": (
+            "Settings",
+            "The Settings rules moved to the [Claude Code](claude.md) "
+            "page when they gained their `claude-` prefixes in 0.18.0.",
+        ),
+        "rules-directory": (
+            "Rules Directory",
+            "The Rules Directory rules moved to the [Claude Code](claude.md) "
+            "page when they gained their `claude-` prefixes in 0.18.0.",
+        ),
+        "skills-agents-hooks": (
+            "Skills, Agents, Hooks",
+            "This group was split up in 0.18.0: the hook rules live on the "
+            "[Hooks](hooks.md) page, `claude-agent-frontmatter` moved to "
+            "[Claude Code](claude.md), and `content-description-routing` to "
+            "[Content Intelligence](content-intelligence.md).",
+        ),
+        "hidden-content": (
+            "Hidden-Content Validation",
+            "This group was renamed to [Security](security.md) in 0.18.0.",
+        ),
+    }
+    for slug, (old_name, blurb) in retired_groups.items():
+        stub = f"{GENERATED_HEADER}# {old_name}\n\n{blurb}\n"
+        (rules_dir / f"{slug}.md").write_text(stub)
+        print(f"  rules/{slug}.md (retired group stub)")
 
     # CLI reference
     (docs_dir / "cli.md").write_text(generate_cli_reference(commands))

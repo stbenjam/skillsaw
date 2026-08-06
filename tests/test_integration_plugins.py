@@ -321,7 +321,8 @@ def test_scoped_plugin_rule_inactive_without_repo_type(tmp_path):
 def test_content_rules_cover_plugin_content_paths(tmp_path):
     """Files matched by a repo type's content_paths get content-* rules."""
     repo = copy_fixture("plugin-target-acme", tmp_path)
-    r = run_cli("lint", str(repo), fmt="json")
+    # -v: content-weak-language reports at info severity, hidden by default.
+    r = run_cli("lint", "-v", str(repo), fmt="json")
     weak = [
         v
         for v in r["out"]["violations"]

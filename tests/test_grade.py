@@ -208,6 +208,21 @@ def test_badge_writes_shields_json(tmp_path):
     assert payload["color"] == "brightgreen"
     assert set(payload) <= _SHIELDS_ENDPOINT_KEYS
 
+
+def test_badge_grade_ignores_advisory_deprecation_notices(tmp_path):
+    """Deprecation notices describe the config, not the content — they must
+    not ding the badge grade (mirrors the lint command's behavior)."""
+    repo = copy_fixture("config/deprecated-rules", tmp_path)
+    # Keep only the inert mention so the deprecated rule itself cannot
+    # produce content violations; the advisory notice is all that remains.
+    (repo / ".skillsaw.yaml").write_text(
+        'version: "99.0.0"\nrules:\n  skill-frontmatter:\n    severity: info\n'
+    )
+    result = run_badge(repo)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads((repo / ".skillsaw-badge.json").read_text())
+    assert payload["message"] == "A+"
+
     # README markdown for both shields.io badge styles, linking to skillsaw.org
     assert "img.shields.io/badge/dynamic/json" in result.stdout
     assert "query=%24.message" in result.stdout

@@ -75,7 +75,7 @@ class TestContentWeakLanguageRule:
     def test_rule_metadata(self):
         rule = ContentWeakLanguageRule()
         assert rule.rule_id == "content-weak-language"
-        assert rule.default_severity() == Severity.WARNING
+        assert rule.default_severity() == Severity.INFO
 
     def test_detects_weak_language(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Try to handle errors gracefully if possible.\n")
@@ -139,11 +139,12 @@ class TestContentWeakLanguageRule:
         for v in ref_violations:
             assert v.severity == Severity.INFO
 
-    def test_non_reference_files_keep_warning_severity(self, temp_dir):
-        """Non-reference content blocks should keep WARNING severity."""
+    def test_non_reference_files_keep_configured_severity(self, temp_dir):
+        """Non-reference content blocks keep the configured severity; only
+        reference blocks are demoted to INFO."""
         (temp_dir / "CLAUDE.md").write_text("Handle errors properly and correctly.\n")
         context = RepositoryContext(temp_dir)
-        violations = ContentWeakLanguageRule().check(context)
+        violations = ContentWeakLanguageRule({"severity": "warning"}).check(context)
         assert len(violations) >= 1
         for v in violations:
             assert v.severity == Severity.WARNING
@@ -153,7 +154,7 @@ class TestContentTautologicalRule:
     def test_rule_metadata(self):
         rule = ContentTautologicalRule()
         assert rule.rule_id == "content-tautological"
-        assert rule.default_severity() == Severity.WARNING
+        assert rule.default_severity() == Severity.INFO
 
     def test_detects_tautology(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Always write clean code.\nFollow best practices.\n")
@@ -174,7 +175,7 @@ class TestContentCriticalPositionRule:
     def test_rule_metadata(self):
         rule = ContentCriticalPositionRule()
         assert rule.rule_id == "content-critical-position"
-        assert rule.default_severity() == Severity.WARNING
+        assert rule.default_severity() == Severity.INFO
 
     def test_critical_in_middle_flagged(self, temp_dir):
         lines = [f"Line {i}" for i in range(1, 51)]
@@ -259,7 +260,7 @@ class TestContentNegativeOnlyRule:
     def test_rule_metadata(self):
         rule = ContentNegativeOnlyRule()
         assert rule.rule_id == "content-negative-only"
-        assert rule.default_severity() == Severity.WARNING
+        assert rule.default_severity() == Severity.INFO
 
     def test_detects_negative_without_alternative(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("Never use var in JavaScript.\n")

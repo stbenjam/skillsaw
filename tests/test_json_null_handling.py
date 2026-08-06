@@ -104,7 +104,7 @@ def test_plugin_json_null_mcp_valid_rule(temp_dir):
     # Should not raise
     violations = rule.check(context)
     # No MCP-specific violations expected; the non-dict is silently skipped
-    # (plugin-json-valid rule handles that case)
+    # (claude-plugin-json-valid rule handles that case)
     assert isinstance(violations, list)
 
 

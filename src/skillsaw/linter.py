@@ -27,6 +27,13 @@ if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
 
 
+# Violations that display like warnings but never flip the exit code.
+# Deprecation notices must stay advisory: every pre-0.18 `skillsaw init`
+# config names now-deprecated rules, so a fatal warning would break every
+# strict-mode CI run on upgrade.
+ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
+
+
 class CustomRuleWarning(UserWarning):
     """Emitted just before skillsaw executes a custom rule file from the repo.
 
@@ -55,10 +62,14 @@ class Linter:
         no_custom_rules: bool = False,
         no_plugins: bool = False,
     ):
+        from .rules.builtin import canonical_rule_id
+
         self.context = context
         self.config = config or LinterConfig.default()
-        self._rule_ids = rule_ids
-        self._skip_rule_ids = skip_rule_ids or set()
+        # Legacy rule names keep working on the CLI: resolve --rule /
+        # --skip-rule arguments to canonical IDs before any matching.
+        self._rule_ids = {canonical_rule_id(r) for r in rule_ids} if rule_ids else rule_ids
+        self._skip_rule_ids = {canonical_rule_id(r) for r in (skip_rule_ids or set())}
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
@@ -98,6 +109,11 @@ class Linter:
     def _load_rules(self):
         """Load all enabled rules"""
         self._known_rule_ids: set = set()
+        # Deprecated non-builtin rules seen during loading, kept so a config
+        # entry that names one still gets its deprecation notice even when
+        # the rule itself no longer runs (builtins are covered by the
+        # registry).
+        self._deprecated_known: Dict[str, Rule] = {}
 
         # Load builtin rules
         self._load_builtin_rules()
@@ -131,6 +147,7 @@ class Linter:
                 rule_instance.repo_types,
                 rule_instance.formats,
                 since_version=rule_instance.since,
+                deprecated=rule_instance.deprecated,
             ):
                 self.rules.append(rule_instance)
                 logger.info("Rule %-30s enabled", rule_instance.rule_id)
@@ -210,6 +227,8 @@ class Linter:
                     continue
 
                 self._known_rule_ids.add(rid)
+                if getattr(rule_instance, "deprecated", None) is not None:
+                    self._deprecated_known[rid] = rule_instance
                 if self._rule_ids and rid not in self._rule_ids:
                     continue
                 if rid in self._skip_rule_ids:
@@ -248,6 +267,7 @@ class Linter:
                         rule_instance.formats,
                         since_version=rule_instance.since,
                         default_enabled=rule_instance.default_enabled,
+                        deprecated=rule_instance.deprecated,
                     )
                 except Exception as e:
                     self._plugin_load_violations.append(
@@ -379,6 +399,8 @@ class Linter:
                 ):
                     rule_instance = obj()
                     self._known_rule_ids.add(rule_instance.rule_id)
+                    if getattr(rule_instance, "deprecated", None) is not None:
+                        self._deprecated_known[rule_instance.rule_id] = rule_instance
                     if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
                         continue
                     if rule_instance.rule_id in self._skip_rule_ids:
@@ -398,6 +420,7 @@ class Linter:
                         rule_instance.repo_types,
                         rule_instance.formats,
                         since_version=rule_instance.since,
+                        deprecated=rule_instance.deprecated,
                     ):
                         rule_instance._source = "custom"
                         self.rules.append(rule_instance)
@@ -430,6 +453,7 @@ class Linter:
 
             skip_unknown = bool(installed_plugin_names())
         warnings = list(self._plugin_load_violations)
+        warnings.extend(self._deprecation_violations())
         for rule_id in self.config.rules:
             if rule_id not in self._known_rule_ids:
                 if skip_unknown:
@@ -447,6 +471,69 @@ class Linter:
                     )
                 )
         return warnings
+
+    def _deprecation_violations(self) -> List[RuleViolation]:
+        """Warnings for deprecated rules the user still runs or configures.
+
+        A deprecated rule that is actually going to run (explicitly enabled
+        or forced via --rule) warns that it will be removed in a future
+        release. A config entry for a deprecated rule that no longer runs
+        warns that the entry is now inert. Each rule warns once.
+        """
+        from .rules.builtin import BUILTIN_RULE_REGISTRY
+
+        violations: List[RuleViolation] = []
+        warned: set = set()
+
+        def _removal_hint(rule) -> str:
+            hint = f"deprecated since {rule.deprecated} and will be removed in a future release"
+            if getattr(rule, "replaced_by", None):
+                hint += f" — use '{rule.replaced_by}' instead"
+            return hint
+
+        for rule in self.rules:
+            # getattr: tests and duck-typed custom rules may not inherit the
+            # class attribute from Rule.
+            if getattr(rule, "deprecated", None) is None:
+                continue
+            warned.add(rule.rule_id)
+            violations.append(
+                RuleViolation(
+                    rule_id="deprecated-rule",
+                    severity=Severity.WARNING,
+                    message=f"Rule '{rule.rule_id}' is {_removal_hint(rule)}",
+                )
+            )
+        for rule_id in self.config.rules:
+            if rule_id in warned:
+                continue
+            # Builtins come from the registry; deprecated plugin and custom
+            # rules were recorded during loading so their inert config
+            # entries warn too.
+            rule_class = BUILTIN_RULE_REGISTRY.get(rule_id) or self._deprecated_known.get(rule_id)
+            if rule_class is None or getattr(rule_class, "deprecated", None) is None:
+                continue
+            violations.append(
+                RuleViolation(
+                    rule_id="deprecated-rule",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Rule '{rule_id}' is {_removal_hint(rule_class)}; it no longer "
+                        "runs unless the config sets 'enabled: true' — remove the config "
+                        "entry or enable it explicitly"
+                    ),
+                )
+            )
+        return violations
+
+    def deprecation_notices(self) -> List[RuleViolation]:
+        """Advisory notices for deprecated rules this run touches.
+
+        Public for CLI commands whose output does not include lint
+        violations (``skillsaw fix``) so they can still surface the
+        promised removal warnings.
+        """
+        return self._deprecation_violations()
 
     def _is_excluded(self, violation: RuleViolation) -> bool:
         """Check if a violation's file path matches any exclude pattern."""

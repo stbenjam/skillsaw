@@ -10,7 +10,7 @@ All hook commands are prohibited unless explicitly allowlisted; catches new or u
 | **Severity** | error (disabled) |
 | **Autofix** | - |
 | **Since** | v0.12.0 |
-| **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
+| **Category** | [Hooks](hooks.md) |
 
 ## Why
 

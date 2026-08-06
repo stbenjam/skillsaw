@@ -78,6 +78,18 @@ class AgentSkillValidRule(Rule):
             return None
         return original, fixed, kebab_name
 
+    def _plan_missing_frontmatter_fix(self, file_path: Path) -> Optional[Tuple[str, str, str]]:
+        """Return a validated add-frontmatter rewrite, or ``None`` if unsafe."""
+        original = read_text(file_path)
+        if original is None:
+            return None
+        kebab_name = _to_kebab(file_path.parent.name)
+        fixed = f"---\nname: {kebab_name}\ndescription: \n---\n{original}"
+        new_fm, _new_body, new_error = parse_frontmatter(fixed)
+        if new_error or not new_fm or new_fm.get("name") != kebab_name:
+            return None
+        return original, fixed, kebab_name
+
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
     ) -> List[AutofixResult]:
@@ -86,6 +98,23 @@ class AgentSkillValidRule(Rule):
             if not v.file_path or not v.file_path.exists():
                 continue
             if is_installed_plugin_skill(context, v.file_path):
+                continue
+            if "Missing YAML frontmatter" in v.message:
+                plan = self._plan_missing_frontmatter_fix(v.file_path)
+                if plan is None:
+                    continue
+                original, fixed, kebab_name = plan
+                results.append(
+                    AutofixResult(
+                        rule_id=self.rule_id,
+                        file_path=v.file_path,
+                        confidence=AutofixConfidence.SAFE,
+                        original_content=original,
+                        fixed_content=fixed,
+                        description=f"Added frontmatter with name '{kebab_name}' to SKILL.md",
+                        violations_fixed=[v],
+                    )
+                )
                 continue
             if "Missing required 'name'" not in v.message:
                 continue
@@ -132,10 +161,15 @@ class AgentSkillValidRule(Rule):
                 continue
 
             if not block.has_frontmatter:
+                fixable = (
+                    not is_installed_plugin_skill(context, block.path)
+                    and self._plan_missing_frontmatter_fix(block.path) is not None
+                )
                 violations.append(
                     self.violation(
                         "Missing YAML frontmatter (must start with ---)",
                         block=block,
+                        fixable=fixable,
                     )
                 )
                 continue
@@ -304,10 +338,14 @@ class AgentSkillValidRule(Rule):
                                 )
                             )
 
-        # fix() only repairs the missing-name case (it derives the name from
-        # the directory); every other violation needs a human.
+        # fix() only repairs the missing-name and missing-frontmatter cases
+        # (both derive the name from the directory); every other violation
+        # needs a human.
         for v in violations:
-            if "Missing required 'name'" not in v.message:
+            if (
+                "Missing required 'name'" not in v.message
+                and "Missing YAML frontmatter" not in v.message
+            ):
                 v.fixable = False
                 v.fix_confidence = None
 

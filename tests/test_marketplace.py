@@ -1185,7 +1185,7 @@ class TestInteractive:
 
 # ---------------------------------------------------------------------------
 # Non-string plugin names in marketplace.json (regression for
-# rule-execution-error crash in plugin-naming via get_plugin_name)
+# rule-execution-error crash in claude-plugin-naming via get_plugin_name)
 # ---------------------------------------------------------------------------
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -1210,14 +1210,16 @@ def _run_lint_json(path):
 
 class TestNonStringPluginName:
     """A non-string plugin 'name' in marketplace.json must produce a
-    marketplace-json-valid ERROR, not a rule-execution-error crash."""
+    claude-marketplace-json-valid ERROR, not a rule-execution-error crash."""
 
     def test_marketplace_json_valid_reports_error(self, tmp_path):
         repo = _copy_fixture("marketplace/nonstring-name", tmp_path)
         result, output = _run_lint_json(repo)
 
         messages = [
-            v["message"] for v in output["violations"] if v["rule_id"] == "marketplace-json-valid"
+            v["message"]
+            for v in output["violations"]
+            if v["rule_id"] == "claude-marketplace-json-valid"
         ]
         assert any(
             "plugins[1] plugin name must be a string" in m and "123" in m for m in messages
@@ -1225,7 +1227,7 @@ class TestNonStringPluginName:
         errors = [
             v
             for v in output["violations"]
-            if v["rule_id"] == "marketplace-json-valid" and v["severity"] == "error"
+            if v["rule_id"] == "claude-marketplace-json-valid" and v["severity"] == "error"
         ]
         assert errors, "non-string plugin name must be reported at ERROR severity"
 

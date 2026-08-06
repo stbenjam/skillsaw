@@ -50,9 +50,11 @@ class SettingsDangerousRule(Rule):
         },
     }
 
+    aliases = ("settings-dangerous",)
+
     @property
     def rule_id(self) -> str:
-        return "settings-dangerous"
+        return "claude-settings-dangerous"
 
     @property
     def description(self) -> str:

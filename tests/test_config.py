@@ -19,9 +19,9 @@ from skillsaw.context import (
 def test_default_config():
     """Test default configuration"""
     config = LinterConfig.default()
-    assert "plugin-json-required" in config.rules
-    assert config.rules["plugin-json-required"]["enabled"] == "auto"
-    assert config.rules["plugin-json-required"]["severity"] == "error"
+    assert "claude-plugin-json-required" in config.rules
+    assert config.rules["claude-plugin-json-required"]["enabled"] == "auto"
+    assert config.rules["claude-plugin-json-required"]["severity"] == "error"
 
 
 def test_default_exclude_patterns():
@@ -80,7 +80,7 @@ def test_config_from_file(temp_dir):
     """Test loading configuration from file"""
     config_file = temp_dir / ".skillsaw.yaml"
     config_data = {
-        "rules": {"plugin-json-required": {"enabled": False, "severity": "warning"}},
+        "rules": {"claude-plugin-json-required": {"enabled": False, "severity": "warning"}},
         "strict": True,
     }
 
@@ -88,8 +88,8 @@ def test_config_from_file(temp_dir):
         yaml.dump(config_data, f)
 
     config = LinterConfig.from_file(config_file)
-    assert config.rules["plugin-json-required"]["enabled"] is False
-    assert config.rules["plugin-json-required"]["severity"] == "warning"
+    assert config.rules["claude-plugin-json-required"]["enabled"] is False
+    assert config.rules["claude-plugin-json-required"]["severity"] == "warning"
     assert config.strict is True
 
 
@@ -131,9 +131,9 @@ def test_rule_enabled_for_context(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()
 
-    # marketplace-registration should be disabled for single plugin
+    # claude-marketplace-registration should be disabled for single plugin
     enabled = config.is_rule_enabled(
-        "marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
     )
     assert enabled is False
 
@@ -143,9 +143,9 @@ def test_rule_enabled_auto(marketplace_repo):
     context = RepositoryContext(marketplace_repo)
     config = LinterConfig.default()
 
-    # marketplace-registration should be enabled for marketplace
+    # claude-marketplace-registration should be enabled for marketplace
     enabled = config.is_rule_enabled(
-        "marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
     )
     assert enabled is True
 
@@ -202,7 +202,7 @@ def test_save_no_trailing_whitespace(tmp_path):
     """Test that saved config has no trailing whitespace and is valid YAML"""
     config = LinterConfig.default()
     # Explicit list value exercises block-style list serialization
-    config.rules["plugin-json-valid"]["recommended-fields"] = [
+    config.rules["claude-plugin-json-valid"]["recommended-fields"] = [
         "description",
         "version",
         "author",
@@ -222,7 +222,7 @@ def test_save_no_trailing_whitespace(tmp_path):
     assert "rules" in parsed
 
     # Verify the block-style list round-trips correctly
-    plugin_json_valid = parsed["rules"]["plugin-json-valid"]
+    plugin_json_valid = parsed["rules"]["claude-plugin-json-valid"]
     assert plugin_json_valid["recommended-fields"] == [
         "description",
         "version",
@@ -310,14 +310,12 @@ def test_content_rules_default_to_auto():
     content_rules = [
         "content-weak-language",
         "content-tautological",
-        "content-critical-position",
         "content-redundant-with-tooling",
         "content-instruction-budget",
         "content-negative-only",
         "content-section-length",
         "content-contradiction",
         "content-hook-candidate",
-        "content-actionability-score",
         "content-cognitive-chunks",
         "content-embedded-secrets",
         "content-banned-references",
@@ -640,7 +638,7 @@ def test_explicit_null_rules(temp_dir):
 def test_rules_as_list_raises_error(temp_dir):
     """rules as a list instead of dict should raise a clear ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text("rules:\n  - plugin-json-required\n  - plugin-naming\n")
+    config_file.write_text("rules:\n  - claude-plugin-json-required\n  - claude-plugin-naming\n")
 
     import pytest
 
@@ -673,11 +671,11 @@ def test_exclude_wrong_type_raises_error(temp_dir):
 def test_null_rule_config_value(temp_dir):
     """A rule key with null value should not crash get_rule_config"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text("rules:\n  plugin-json-required:\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n")
 
     config = LinterConfig.from_file(config_file)
     # Should not crash; null rule config treated as empty override
-    rule_config = config.get_rule_config("plugin-json-required")
+    rule_config = config.get_rule_config("claude-plugin-json-required")
     # Should still get defaults
     assert "enabled" in rule_config
 
@@ -742,25 +740,27 @@ def test_strict_string_raises_error(temp_dir):
 
 
 def test_rule_config_non_mapping_raises_error(temp_dir):
-    """rules: {plugin-json-required: true} should raise ValueError"""
+    """rules: {claude-plugin-json-required: true} should raise ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text("rules:\n  plugin-json-required: true\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required: true\n")
 
     import pytest
 
-    with pytest.raises(ValueError, match="'rules.plugin-json-required' must be a mapping or null"):
+    with pytest.raises(
+        ValueError, match="'rules.claude-plugin-json-required' must be a mapping or null"
+    ):
         LinterConfig.from_file(config_file)
 
 
 def test_enabled_typo_raises_error(temp_dir):
     """enabled: falsie (typo) should raise ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: falsie\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n    enabled: falsie\n")
 
     import pytest
 
     with pytest.raises(
-        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+        ValueError, match=r"'rules\.claude-plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -768,12 +768,12 @@ def test_enabled_typo_raises_error(temp_dir):
 def test_enabled_string_false_raises_error(temp_dir):
     """enabled: "false" (string, not bool) should raise ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "false"\n')
+    config_file.write_text('rules:\n  claude-plugin-json-required:\n    enabled: "false"\n')
 
     import pytest
 
     with pytest.raises(
-        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+        ValueError, match=r"'rules\.claude-plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -781,12 +781,12 @@ def test_enabled_string_false_raises_error(temp_dir):
 def test_enabled_string_true_raises_error(temp_dir):
     """enabled: "true" (string, not bool) should raise ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text('rules:\n  plugin-json-required:\n    enabled: "true"\n')
+    config_file.write_text('rules:\n  claude-plugin-json-required:\n    enabled: "true"\n')
 
     import pytest
 
     with pytest.raises(
-        ValueError, match=r"'rules\.plugin-json-required\.enabled' must be true, false"
+        ValueError, match=r"'rules\.claude-plugin-json-required\.enabled' must be true, false"
     ):
         LinterConfig.from_file(config_file)
 
@@ -795,26 +795,26 @@ def test_enabled_valid_values_accepted(temp_dir):
     """enabled: true, false, and auto should all load without error"""
     config_file = temp_dir / ".skillsaw.yaml"
 
-    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: true\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n    enabled: true\n")
     LinterConfig.from_file(config_file)
 
-    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: false\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n    enabled: false\n")
     LinterConfig.from_file(config_file)
 
-    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: auto\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n    enabled: auto\n")
     LinterConfig.from_file(config_file)
 
 
 def test_enabled_null_raises_error(temp_dir):
     """enabled: null should raise ValueError"""
     config_file = temp_dir / ".skillsaw.yaml"
-    config_file.write_text("rules:\n  plugin-json-required:\n    enabled: null\n")
+    config_file.write_text("rules:\n  claude-plugin-json-required:\n    enabled: null\n")
 
     import pytest
 
     with pytest.raises(
         ValueError,
-        match=r"'rules\.plugin-json-required\.enabled' must be true, false",
+        match=r"'rules\.claude-plugin-json-required\.enabled' must be true, false",
     ):
         LinterConfig.from_file(config_file)
 
@@ -888,10 +888,12 @@ def test_explicit_enabled_auto_with_matching_repo(marketplace_repo):
     """Explicit enabled: auto should still work with matching repo types"""
     context = RepositoryContext(marketplace_repo)
     config = LinterConfig(
-        rules={"marketplace-registration": {"enabled": "auto"}},
+        rules={"claude-marketplace-registration": {"enabled": "auto"}},
     )
     assert (
-        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        config.is_rule_enabled(
+            "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        )
         is True
     )
 
@@ -900,10 +902,12 @@ def test_explicit_enabled_auto_with_non_matching_repo(valid_plugin):
     """Explicit enabled: auto should not fire when repo type doesn't match"""
     context = RepositoryContext(valid_plugin)
     config = LinterConfig(
-        rules={"marketplace-registration": {"enabled": "auto"}},
+        rules={"claude-marketplace-registration": {"enabled": "auto"}},
     )
     assert (
-        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        config.is_rule_enabled(
+            "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        )
         is False
     )
 
@@ -911,13 +915,15 @@ def test_explicit_enabled_auto_with_non_matching_repo(valid_plugin):
 def test_severity_override_on_auto_rule_respects_repo_type(valid_plugin):
     """Overriding severity on an 'auto' rule should not bypass repo type checks"""
     context = RepositoryContext(valid_plugin)
-    # marketplace-registration is enabled: "auto" for MARKETPLACE repos.
+    # claude-marketplace-registration is enabled: "auto" for MARKETPLACE repos.
     # valid_plugin is SINGLE_PLUGIN.
     config = LinterConfig(
-        rules={"marketplace-registration": {"severity": "warning"}},
+        rules={"claude-marketplace-registration": {"severity": "warning"}},
     )
     assert (
-        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        config.is_rule_enabled(
+            "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        )
         is False
     )
 
@@ -926,10 +932,12 @@ def test_severity_override_on_auto_rule_still_fires_when_matching(marketplace_re
     """Overriding severity on an 'auto' rule should still fire when repo type matches"""
     context = RepositoryContext(marketplace_repo)
     config = LinterConfig(
-        rules={"marketplace-registration": {"severity": "warning"}},
+        rules={"claude-marketplace-registration": {"severity": "warning"}},
     )
     assert (
-        config.is_rule_enabled("marketplace-registration", context, {RepositoryType.MARKETPLACE})
+        config.is_rule_enabled(
+            "claude-marketplace-registration", context, {RepositoryType.MARKETPLACE}
+        )
         is True
     )
 
@@ -947,7 +955,7 @@ def test_save_includes_description_comments(tmp_path):
 
     # Check a few known rule descriptions appear as comments
     assert "# Plugin must have .claude-plugin/plugin.json" in content
-    assert "# SKILL.md files should have frontmatter with name and description" in content
+    assert "# SKILL.md must have valid frontmatter with name and description" in content
     assert "# Detect potential API keys, tokens, and passwords in instruction files" in content
 
 
@@ -971,16 +979,16 @@ def test_save_includes_config_schema_as_comments(tmp_path):
 def test_save_does_not_duplicate_existing_config_keys(tmp_path):
     """Config keys already in the rule config should not also appear as comments"""
     config = LinterConfig.for_init()
-    config.rules["content-critical-position"]["min-lines"] = 50
+    config.rules["content-section-length"]["max-tokens"] = 500
     config_path = tmp_path / ".skillsaw.yaml"
     config.save(config_path)
 
     content = config_path.read_text()
 
-    # min-lines is set explicitly in the rule config, so it must be written
+    # max-tokens is set explicitly in the rule config, so it must be written
     # once as a real key — NOT also as a commented-out option.
-    assert "    min-lines: 50\n" in content
-    assert "    # min-lines:" not in content
+    assert "    max-tokens: 500\n" in content
+    assert "    # max-tokens:" not in content
 
     # Schema params not present in the config are written commented-out
     # (generated defaults no longer materialize tunable params).
@@ -997,14 +1005,14 @@ def test_save_no_schema_comments_for_rules_without_schema(tmp_path):
     content = config_path.read_text()
     lines = content.split("\n")
 
-    # Find the plugin-naming rule block (has no config_schema)
+    # Find the claude-plugin-naming rule block (has no config_schema)
     plugin_naming_idx = None
     for i, line in enumerate(lines):
-        if line.strip() == "plugin-naming:":
+        if line.strip() == "claude-plugin-naming:":
             plugin_naming_idx = i
             break
 
-    assert plugin_naming_idx is not None, "plugin-naming rule not found in output"
+    assert plugin_naming_idx is not None, "claude-plugin-naming rule not found in output"
 
     # The line before should be a description comment
     assert lines[plugin_naming_idx - 1].strip().startswith("# Plugin names should")
@@ -1020,7 +1028,7 @@ def test_save_no_schema_comments_for_rules_without_schema(tmp_path):
         if line.startswith("# ") and ":" not in line:
             break
         # Should not reach a commented-out param like "# some-key: value"
-        assert False, f"Unexpected commented-out config option for plugin-naming: {line}"
+        assert False, f"Unexpected commented-out config option for claude-plugin-naming: {line}"
 
 
 def test_save_with_config_schema_is_valid_yaml(tmp_path):

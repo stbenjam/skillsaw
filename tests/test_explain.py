@@ -86,10 +86,10 @@ def test_explain_unknown_rule_suggests_close_match(temp_dir):
 
 
 def test_explain_shows_long_docs(temp_dir):
-    result = run_explain("marketplace-json-valid", str(temp_dir))
+    result = run_explain("claude-marketplace-json-valid", str(temp_dir))
     assert result.returncode == 0
-    assert "marketplace-json-valid" in result.stdout
-    assert "https://skillsaw.org/rules/marketplace-json-valid/" in result.stdout
+    assert "claude-marketplace-json-valid" in result.stdout
+    assert "https://skillsaw.org/rules/claude-marketplace-json-valid/" in result.stdout
     assert "## How to fix" in result.stdout
 
 
@@ -111,9 +111,9 @@ def test_explain_effective_version_gate(temp_dir):
 
 
 def test_explain_effective_repo_type_no_match(temp_dir):
-    # Empty dir: marketplace-registration is auto + repo-type gated
+    # Empty dir: claude-marketplace-registration is auto + repo-type gated
     (temp_dir / ".skillsaw.yaml").write_text("version: '99.0.0'\n")
-    result = run_explain("marketplace-registration", str(temp_dir))
+    result = run_explain("claude-marketplace-registration", str(temp_dir))
     assert result.returncode == 0
     assert "no matching repo type or format detected" in result.stdout
 
@@ -131,7 +131,7 @@ def test_explain_missing_config_file_fails(temp_dir):
 
 
 def test_explain_effective_repo_type_match(valid_plugin):
-    result = run_explain("plugin-json-required", str(valid_plugin))
+    result = run_explain("claude-plugin-json-required", str(valid_plugin))
     assert result.returncode == 0
     assert "enabled: auto — detected repo type:" in result.stdout
     assert "single-plugin" in result.stdout
@@ -147,7 +147,7 @@ def test_explain_effective_repo_type_match(valid_plugin):
         "version: '0.1.0'\n",
         "version: '99.0.0'\n",
         "rules:\n  content-weak-language:\n    enabled: false\n",
-        "rules:\n  command-sections:\n    severity: error\n",
+        "rules:\n  claude-command-sections:\n    severity: error\n",
     ],
 )
 def test_rule_enabled_reason_matches_is_rule_enabled(temp_dir, config_yaml):

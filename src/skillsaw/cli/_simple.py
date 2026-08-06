@@ -23,8 +23,13 @@ def _run_init(args):
 
 def _print_rule_entry(rule):
     fix_label = "auto" if rule.supports_autofix else "none"
-    print(f"  {rule.rule_id}")
+    label = f"  {rule.rule_id}"
+    if rule.deprecated is not None:
+        label += "  (DEPRECATED — will be removed in a future release)"
+    print(label)
     print(f"    {rule.description}")
+    if rule.aliases:
+        print(f"    Legacy name{'s' if len(rule.aliases) > 1 else ''}: {', '.join(rule.aliases)}")
     print(f"    Default severity: {rule.default_severity().value}")
     print(f"    Autofix: {fix_label}")
     print()

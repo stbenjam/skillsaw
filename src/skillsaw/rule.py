@@ -114,6 +114,22 @@ class Rule(ABC):
     formats = None
     config_schema = {}
     since = "0.1.0"
+    # Former rule IDs this rule was known by. Aliases resolve to the
+    # canonical ``rule_id`` everywhere a rule is named: config keys,
+    # --rule / --skip-rule, inline suppression directives, baseline
+    # matching, and ``skillsaw explain``.
+    aliases: tuple = ()
+    # Version in which the rule was deprecated (e.g. "0.18.0"); None means
+    # active. A deprecated rule no longer runs under ``enabled: auto`` —
+    # it only runs when a config sets ``enabled: true`` or a --rule flag
+    # names it — and naming it anywhere emits a warning that the rule
+    # will be removed in a future release.
+    deprecated: Optional[str] = None
+    # Rule ID that supersedes this one, named in deprecation messages.
+    replaced_by: Optional[str] = None
+    # One-sentence rationale rendered on the documentation site's
+    # Deprecated page and each deprecated rule's own page.
+    deprecated_reason: Optional[str] = None
     # Default activation when the user config doesn't mention the rule:
     # True (always on), False (opt-in), or "auto" (on when repo_types /
     # formats match the repository). ``LinterConfig.default()`` is generated
@@ -162,7 +178,7 @@ class Rule(ABC):
     @property
     @abstractmethod
     def rule_id(self) -> str:
-        """Unique identifier for this rule (e.g., 'plugin-json-required')"""
+        """Unique identifier for this rule (e.g., 'claude-plugin-json-required')"""
         pass
 
     @property

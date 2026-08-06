@@ -3,14 +3,21 @@
 
 # skill-frontmatter
 
+!!! warning "Deprecated"
+    Deprecated since v0.18.0 and will be removed in a future release. This rule no longer runs under `enabled: auto`; set `enabled: true` explicitly to keep it during the transition.
+
+    Superseded by agentskill-valid, which validates the same name and description frontmatter against the agentskills.io specification and carries the same missing-frontmatter autofix — running both reported every problem twice.
+
+    Use [`agentskill-valid`](agentskill-valid.md) instead.
+
 SKILL.md files should have frontmatter with name and description
 
 | | |
 |---|---|
-| **Severity** | warning |
+| **Severity** | warning (deprecated) |
 | **Autofix** | auto |
 | **Since** | v0.1.0 |
-| **Category** | [Skills, Agents, Hooks](skills-agents-hooks.md) |
+| **Category** | [Deprecated](deprecated.md) |
 
 ## Why
 

@@ -348,7 +348,7 @@ def test_command_name_format_reports_line_number(temp_dir):
     assert violations[0].line == 5
 
 
-# --- marketplace-json-valid ---
+# --- claude-marketplace-json-valid ---
 
 
 def test_marketplace_json_valid_passes(marketplace_repo):
@@ -778,7 +778,7 @@ def test_skill_frontmatter_malformed_yaml_reports_line(temp_dir):
     assert fm_violations[0].line == 5
 
 
-# --- marketplace-registration autofix ---
+# --- claude-marketplace-registration autofix ---
 
 
 def _add_unregistered_plugin(repo, name):
@@ -924,7 +924,7 @@ def test_marketplace_registration_fix_skips_plugin_outside_plugin_root(temp_dir)
 def test_marketplace_registration_fix_plugins_not_list(temp_dir):
     """Regression: fix() crashed with AttributeError when 'plugins' was a JSON
     object instead of an array. The malformed document is reported by
-    marketplace-json-valid; fix() must skip it, not crash."""
+    claude-marketplace-json-valid; fix() must skip it, not crash."""
     import json
 
     repo = _marketplace_with_raw_json(
@@ -1058,7 +1058,7 @@ def test_marketplace_registration_fixable_true_for_registrable_plugin(marketplac
     assert len(rule.fix(context, violations)) == 1
 
 
-# --- marketplace-json-valid: malformed documents ---
+# --- claude-marketplace-json-valid: malformed documents ---
 
 
 def test_marketplace_json_invalid_json(temp_dir):
@@ -1119,7 +1119,7 @@ def test_marketplace_json_plugins_not_array(temp_dir):
     assert [v.message for v in violations] == ["'plugins' must be an array"]
 
 
-# --- command-sections ---
+# --- claude-command-sections ---
 
 
 def test_command_sections_all_present(valid_plugin):

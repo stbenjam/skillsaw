@@ -72,7 +72,15 @@ class AbstractIntermediate(Rule):
 class ShadowsBuiltinRule(AlwaysFiresRule):
     @property
     def rule_id(self) -> str:
-        return "skill-frontmatter"  # collides with a builtin
+        return "mcp-valid-json"  # collides with a builtin
+
+
+class DeprecatedPluginRule(AlwaysFiresRule):
+    deprecated = "2.0.0"
+
+    @property
+    def rule_id(self) -> str:
+        return "plugin-deprecated-test"
 
 
 @pytest.fixture(autouse=True)
@@ -364,13 +372,38 @@ def test_plugin_rule_raising_during_enablement_is_isolated(fake_plugin, repo):
 def test_rule_id_collision_with_builtin_is_skipped(fake_plugin, repo):
     fake_plugin("fake_shadow", module_attrs={"SKILLSAW_RULES": [ShadowsBuiltinRule]})
     linter, violations = _lint(repo)
-    shadow = [r for r in linter.rules if r.rule_id == "skill-frontmatter"]
+    shadow = [r for r in linter.rules if r.rule_id == "mcp-valid-json"]
     # Only the builtin instance remains.
     assert len(shadow) == 1
     assert getattr(shadow[0], "_source", "builtin") == "builtin"
     warnings = [v for v in violations if v.rule_id == "plugin-load-error"]
     assert len(warnings) == 1
     assert warnings[0].severity == Severity.WARNING
+
+
+def test_deprecated_plugin_rule_inert_config_entry_warns(fake_plugin, repo):
+    """A config entry naming a deprecated plugin rule warns even though the
+    rule no longer runs (parity with builtin deprecation notices)."""
+    fake_plugin("fake_deprecated", module_attrs={"SKILLSAW_RULES": [DeprecatedPluginRule]})
+    config = LinterConfig.default()
+    config.rules["plugin-deprecated-test"] = {"severity": "error"}
+    linter, violations = _lint(repo, config=config)
+    assert "plugin-deprecated-test" not in {r.rule_id for r in linter.rules}
+    notices = [v for v in violations if v.rule_id == "deprecated-rule"]
+    assert len(notices) == 1
+    assert "plugin-deprecated-test" in notices[0].message
+    assert "no longer runs" in notices[0].message
+
+
+def test_deprecated_plugin_rule_runs_when_enabled(fake_plugin, repo):
+    fake_plugin("fake_deprecated", module_attrs={"SKILLSAW_RULES": [DeprecatedPluginRule]})
+    config = LinterConfig.default()
+    config.rules["plugin-deprecated-test"] = {"enabled": True}
+    linter, violations = _lint(repo, config=config)
+    assert "plugin-deprecated-test" in {r.rule_id for r in linter.rules}
+    notices = [v for v in violations if v.rule_id == "deprecated-rule"]
+    assert len(notices) == 1
+    assert "will be removed in a future release" in notices[0].message
 
 
 def test_plugin_rule_configurable_via_rules_section(fake_plugin, repo):

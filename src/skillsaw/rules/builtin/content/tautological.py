@@ -25,7 +25,7 @@ class ContentTautologicalRule(Rule):
         return "Detect tautological instructions that the model already follows by default"
 
     def default_severity(self) -> Severity:
-        return Severity.WARNING
+        return Severity.INFO
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []

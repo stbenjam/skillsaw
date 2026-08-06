@@ -7,7 +7,7 @@ Detect hedging, vague, and non-actionable language in instruction files
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | info (auto) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -59,7 +59,7 @@ lines automatically.
 rules:
   content-weak-language:
     enabled: auto  # true | false | auto
-    severity: warning
+    severity: info
 ```
 
 ## Research Basis

@@ -34,10 +34,10 @@ rules:
     enabled: auto
     severity: warning
 
-  content-critical-position:
+  content-section-length:
     enabled: auto
-    severity: warning
-    min-lines: 50
+    severity: info
+    max-tokens: 500
 
   mcp-prohibited:
     enabled: false
@@ -102,6 +102,30 @@ rules:
     enabled: auto
     severity: warning
 ```
+
+## Renamed Rules (Legacy Aliases)
+
+0.18.0 renamed the Claude Code format rules to `claude-` prefixed IDs
+(for example `plugin-json-valid` became `claude-plugin-json-valid`),
+matching how the Codex rules carry a `codex-` prefix. The old names keep
+working everywhere a rule is named — config keys, `--rule` /
+`--skip-rule`, inline suppression comments, and existing baselines — but
+new configs and documentation use the canonical `claude-` names.
+`skillsaw explain <legacy-name>` resolves the alias and shows the
+canonical rule.
+
+## Deprecated Rules
+
+A deprecated rule no longer runs under `enabled: auto` and is dropped
+from generated configs; it only runs when a config sets `enabled: true`
+(or a `--rule` flag names it), and doing so emits a warning that the
+rule will be removed in a future release. A config entry that merely
+mentions a deprecated rule (for example a severity override) also warns,
+since the entry has become inert. These deprecation notices are
+advisory: they display as warnings but never affect the exit code or
+the grade, so upgrading skillsaw cannot break a `strict: true` CI run
+whose config still names a deprecated rule. The [Deprecated rules
+page](rules/deprecated.md) lists the current set and replacements.
 
 ## Strict Mode
 

@@ -1,5 +1,5 @@
 version: "99.0.0"
 
 rules:
-  plugin-readme:
+  claude-plugin-readme:
     severity: info

@@ -13,8 +13,11 @@ from skillsaw.paths import safe_resolve
 
 def _run_explain(args):
     """Render detailed documentation for one configured rule."""
-    from ..rules.builtin import BUILTIN_RULES
+    from ..rules.builtin import BUILTIN_RULES, canonical_rule_id
     from ..rule_docs import load_rule_docs, rule_doc_url
+
+    requested_id = args.rule_id
+    args.rule_id = canonical_rule_id(args.rule_id)
 
     if not args.path.exists():
         print(f"Error: Path not found: {args.path}", file=sys.stderr)
@@ -63,7 +66,11 @@ def _run_explain(args):
     c = _ansi_colors(color_enabled(sys.stdout, args.color))
     defaults = LinterConfig.default()
     default_rule = rule_class(defaults.get_rule_config(args.rule_id))
-    default_enabled = defaults.get_rule_config(args.rule_id).get("enabled", True)
+    # Deprecated rules have no entry in the generated defaults; fall back to
+    # the class-level default rather than implying "enabled: true".
+    default_enabled = defaults.get_rule_config(args.rule_id).get(
+        "enabled", default_rule.default_enabled
+    )
 
     autofix_label = "auto" if default_rule.supports_autofix else "none"
 
@@ -73,6 +80,17 @@ def _run_explain(args):
     if plugin_name:
         header_meta += f", plugin: {plugin_name}"
     print(f"{c['bold']}{args.rule_id}{c['reset']} ({header_meta})")
+    if requested_id != args.rule_id:
+        print(f"('{requested_id}' is a legacy alias of '{args.rule_id}')")
+    if default_rule.deprecated is not None:
+        notice = (
+            f"DEPRECATED since {default_rule.deprecated} — " "will be removed in a future release"
+        )
+        if default_rule.replaced_by:
+            notice += f"; use '{default_rule.replaced_by}' instead"
+        print(f"{c['red']}{notice}{c['reset']}")
+        if default_rule.deprecated_reason:
+            print(default_rule.deprecated_reason)
     print()
     print(default_rule.description)
 
@@ -131,6 +149,7 @@ def _run_explain(args):
         # Plugin rules have no entry in the builtin defaults registry; their
         # class-level default drives activation (None for builtins).
         default_enabled=default_rule.default_enabled if plugin_name else None,
+        deprecated=default_rule.deprecated,
     )
     try:
         effective_rule = rule_class(config.get_rule_config(args.rule_id))

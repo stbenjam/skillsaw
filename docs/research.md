@@ -68,37 +68,6 @@ line must earn its place."*
 
 ---
 
-## [Critical Position](rules/content-critical-position.md)
-
-**Rule:** `content-critical-position`
-
-**Flags critical instructions buried in the middle of files** where LLM
-attention is lowest.
-
-The "lost in the middle" effect is one of the most replicated findings in LLM
-research. Liu et al. showed that LLM performance follows a **U-shaped curve**:
-information at the beginning and end of context is recalled reliably, while
-information in the middle is significantly degraded. This has been replicated
-across all tested model families.
-
-The implication for instruction files is clear: if you mark something as
-IMPORTANT or CRITICAL, it should be at the top of the file — not buried between
-routine instructions at line 47.
-
-**References:**
-
-- Liu et al., [Lost in the Middle: How Language Models Use Long
-  Contexts](https://arxiv.org/abs/2307.03172) (arXiv:2307.03172, TACL 2024) —
-  The foundational U-shaped attention curve paper
-- [Serial Position Effects of Large Language
-  Models](https://arxiv.org/abs/2406.15981) (arXiv:2406.15981, Jun 2024) —
-  Confirms primacy and recency biases analogous to human cognition
-- Chroma Research, [Context Rot: How Increasing Input Tokens Impacts LLM
-  Performance](https://research.trychroma.com/context-rot) (Jul 2025) — Tested
-  18 frontier models, confirms lost-in-the-middle across all of them
-
----
-
 ## [Redundant With Tooling](rules/content-redundant-with-tooling.md)
 
 **Rule:** `content-redundant-with-tooling`
@@ -297,40 +266,6 @@ belong in hooks.
 - [aitmpl.com: Block API Keys & Secrets from Your Commits with Claude Code
   Hooks](https://aitmpl.com/blog/security-hooks-secrets/) — "CLAUDE.md rules
   are suggestions. Hooks are enforcement."
-
----
-
-## [Actionability Score](rules/content-actionability-score.md)
-
-**Rule:** `content-actionability-score`
-
-**Scores instruction files on actionability** — verb density, command
-references, file path mentions.
-
-Instruction files full of passive descriptions ("the system architecture is
-microservices-based") give the model no direction. Files with imperative verbs
-("use microservices architecture for all new services") give clear marching
-orders.
-
-Google's Gemini prompting guide states: *"Always remember to include a verb or
-command as part of your task — this is the most important part of a prompt."*
-The Bsharat et al. study confirmed that imperative framing is one of the
-strongest predictors of prompt quality.
-
-**References:**
-
-- Bsharat et al., [Principled Instructions Are All You
-  Need](https://arxiv.org/abs/2312.16171) — Imperative framing as a quality
-  predictor
-- [Google Workspace Gemini Prompt
-  Guide](https://services.google.com/fh/files/misc/gemini_for_workspace_prompt_guide_october_2024_digital_final.pdf)
-  — "Always include a verb or command"
-- [OpenAI Prompt Engineering
-  Guide](https://platform.openai.com/docs/guides/prompt-engineering) — "Specify
-  the steps required to complete a task"
-- [IBM Prompt Engineering
-  Techniques](https://www.ibm.com/think/topics/prompt-engineering-techniques) —
-  "The request should be an action verb: 'analyze', 'summarize', 'classify'"
 
 ---
 

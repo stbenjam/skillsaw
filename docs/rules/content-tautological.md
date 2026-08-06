@@ -7,7 +7,7 @@ Detect tautological instructions that the model already follows by default
 
 | | |
 |---|---|
-| **Severity** | warning (auto) |
+| **Severity** | info (auto) |
 | **Autofix** | - |
 | **Since** | v0.7.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -50,7 +50,7 @@ this on purpose?" If not, the instruction is a tautology. A coding agent can rew
 rules:
   content-tautological:
     enabled: auto  # true | false | auto
-    severity: warning
+    severity: info
 ```
 
 ## Research Basis

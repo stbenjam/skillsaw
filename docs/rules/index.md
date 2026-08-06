@@ -7,22 +7,19 @@ skillsaw includes **71** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (2 rules)
-- [Plugin Structure](plugin-structure.md) (4 rules)
-- [Command Format](command-format.md) (4 rules)
-- [Marketplace](marketplace.md) (2 rules)
+- [Claude Code](claude.md) (13 rules)
 - [OpenAI Codex](codex.md) (5 rules)
-- [Skills, Agents, Hooks](skills-agents-hooks.md) (6 rules)
-- [Hidden-Content Validation](hidden-content.md) (3 rules)
+- [Hooks](hooks.md) (3 rules)
+- [Security](security.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
-- [Rules Directory](rules-directory.md) (1 rule)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (22 rules)
+- [Content Intelligence](content-intelligence.md) (21 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
-- [Settings](settings.md) (1 rule)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
+- [Deprecated](deprecated.md) (3 rules)
 
 ## All Rules
 
@@ -38,47 +35,45 @@ skillsaw includes **71** built-in rules organized into the following categories:
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - | agentskills.io |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to 1.0.0 | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics | error (auto) | - | Agent Plugins |
-| [`plugin-json-required`](plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Plugin Structure |
-| [`plugin-json-valid`](plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Plugin Structure |
-| [`plugin-naming`](plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Plugin Structure |
-| [`plugin-readme`](plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Plugin Structure |
-| [`command-naming`](command-naming.md) | Command files should use kebab-case naming | warning | auto | Command Format |
-| [`command-frontmatter`](command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Command Format |
-| [`command-sections`](command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Command Format |
-| [`command-name-format`](command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Command Format |
-| [`marketplace-json-valid`](marketplace-json-valid.md) | Marketplace.json must be valid JSON with required fields | error (auto) | - | Marketplace |
-| [`marketplace-registration`](marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto | Marketplace |
+| [`claude-plugin-json-required`](claude-plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Claude Code |
+| [`claude-plugin-json-valid`](claude-plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Claude Code |
+| [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Claude Code |
+| [`claude-plugin-readme`](claude-plugin-readme.md) | Plugin should have a README.md file | warning (auto) | - | Claude Code |
+| [`claude-command-naming`](claude-command-naming.md) | Command files should use kebab-case naming | warning | auto | Claude Code |
+| [`claude-command-frontmatter`](claude-command-frontmatter.md) | Command files must have valid frontmatter with description | error | auto | Claude Code |
+| [`claude-command-sections`](claude-command-sections.md) | Command files should have Name, Synopsis, Description, and Implementation sections | warning (disabled) | - | Claude Code |
+| [`claude-command-name-format`](claude-command-name-format.md) | Command Name section should be 'plugin-name:command-name' | warning (disabled) | - | Claude Code |
+| [`claude-agent-frontmatter`](claude-agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Claude Code |
+| [`claude-marketplace-json-valid`](claude-marketplace-json-valid.md) | Marketplace.json must be valid JSON with required fields | error (auto) | - | Claude Code |
+| [`claude-marketplace-registration`](claude-marketplace-registration.md) | Plugins must be registered in marketplace.json | error (auto) | auto | Claude Code |
+| [`claude-settings-dangerous`](claude-settings-dangerous.md) | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - | Claude Code |
+| [`claude-rules-valid`](claude-rules-valid.md) | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Claude Code |
 | [`codex-openai-metadata`](codex-openai-metadata.md) | Validate skill openai.yaml and catalog-compatible plugin metadata | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-json-valid`](codex-plugin-json-valid.md) | .codex-plugin/plugin.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
 | [`codex-plugin-structure`](codex-plugin-structure.md) | Only plugin.json belongs in .codex-plugin/ | warning (auto) | - | OpenAI Codex |
 | [`codex-marketplace-json-valid`](codex-marketplace-json-valid.md) | .agents/plugins/marketplace.json must be valid JSON with required fields | error (auto) | - | OpenAI Codex |
 | [`codex-marketplace-registration`](codex-marketplace-registration.md) | Codex plugins must be registered in .agents/plugins/marketplace.json | error (auto) | auto | OpenAI Codex |
-| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning | auto | Skills, Agents, Hooks |
-| [`agent-frontmatter`](agent-frontmatter.md) | Agent files must have valid frontmatter with name and description | error | auto | Skills, Agents, Hooks |
-| [`description-routing`](description-routing.md) | Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose | warning (auto) | - | Skills, Agents, Hooks |
-| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Skills, Agents, Hooks |
-| [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Skills, Agents, Hooks |
-| [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Skills, Agents, Hooks |
-| [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Hidden-Content Validation |
-| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - | Hidden-Content Validation |
-| [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Hidden-Content Validation |
+| [`hooks-json-valid`](hooks-json-valid.md) | hooks.json must be valid JSON with proper hook configuration structure | error | - | Hooks |
+| [`hooks-dangerous`](hooks-dangerous.md) | Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl\|sh), obfuscation (eval/base64), or perform network requests | error (auto) | - | Hooks |
+| [`hooks-prohibited`](hooks-prohibited.md) | All hook commands are prohibited unless explicitly allowlisted; catches new or unexpected hooks added to a project | error (disabled) | - | Hooks |
+| [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Security |
+| [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - | Security |
+| [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Security |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
-| [`rules-valid`](rules-valid.md) | .claude/rules/ files must be markdown with valid optional paths frontmatter | error (auto) | - | Rules Directory |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |
-| [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | warning (auto) | - | Content Intelligence |
-| [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | warning (auto) | - | Content Intelligence |
-| [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | warning (auto) | - | Content Intelligence |
+| [`content-weak-language`](content-weak-language.md) | Detect hedging, vague, and non-actionable language in instruction files | info (auto) | - | Content Intelligence |
+| [`content-tautological`](content-tautological.md) | Detect tautological instructions that the model already follows by default | info (auto) | - | Content Intelligence |
+| [`content-description-routing`](content-description-routing.md) | Skill and agent descriptions should guide routing; command descriptions should clearly explain their purpose | warning (auto) | - | Content Intelligence |
 | [`content-redundant-with-tooling`](content-redundant-with-tooling.md) | Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings | warning (auto) | - | Content Intelligence |
 | [`content-instruction-budget`](content-instruction-budget.md) | Check if instruction count in a file exceeds LLM instruction budget (~150) | warning (auto) | - | Content Intelligence |
-| [`content-negative-only`](content-negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | warning (auto) | - | Content Intelligence |
+| [`content-negative-only`](content-negative-only.md) | Detect prohibitions without a positive alternative (agent has no path forward) | info (auto) | - | Content Intelligence |
 | [`content-section-length`](content-section-length.md) | Warn about markdown sections longer than ~500 tokens | info (auto) | - | Content Intelligence |
 | [`content-contradiction`](content-contradiction.md) | Detect likely contradictions within instruction files using keyword-pair heuristics | warning (auto) | - | Content Intelligence |
 | [`content-hook-candidate`](content-hook-candidate.md) | Detect instructions that should be automated as hooks instead of prose instructions | info (auto) | - | Content Intelligence |
-| [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (auto) | - | Content Intelligence |
 | [`content-cognitive-chunks`](content-cognitive-chunks.md) | Check that instruction files are organized into cognitive chunks with headings | info (auto) | - | Content Intelligence |
 | [`content-embedded-secrets`](content-embedded-secrets.md) | Detect potential API keys, tokens, and passwords in instruction files | error (auto) | - | Content Intelligence |
 | [`content-banned-references`](content-banned-references.md) | Detect banned or deprecated model names, APIs, and custom patterns | warning (auto) | - | Content Intelligence |
@@ -96,6 +91,8 @@ skillsaw includes **71** built-in rules organized into the following categories:
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |
 | [`promptfoo-assertions`](promptfoo-assertions.md) | Require specific assertion types in all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
 | [`promptfoo-metadata`](promptfoo-metadata.md) | Require specific metadata keys on all promptfoo eval tests | warning (disabled) | - | Promptfoo Evals |
-| [`settings-dangerous`](settings-dangerous.md) | Flags settings keys that execute arbitrary commands (apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper) and dangerous env vars (LD_PRELOAD, NODE_OPTIONS, proxy settings, GIT_SSH_COMMAND, etc.) | error (auto) | - | Settings |
 | [`apm-yaml-valid`](apm-yaml-valid.md) | apm.yml must exist with valid YAML and required fields (name, version) | error (auto) | - | APM (Agent Package Manager) |
 | [`apm-structure-valid`](apm-structure-valid.md) | .apm/ directory must contain a recognized primitive subdirectory with valid structure | warning (auto) | - | APM (Agent Package Manager) |
+| [`content-critical-position`](content-critical-position.md) | Detect critical instructions in the middle of files where LLM attention is lowest | info (deprecated) | - | Deprecated |
+| [`content-actionability-score`](content-actionability-score.md) | Score instruction files on actionability (verb density, commands, file references) | info (deprecated) | - | Deprecated |
+| [`skill-frontmatter`](skill-frontmatter.md) | SKILL.md files should have frontmatter with name and description | warning (deprecated) | auto | Deprecated |

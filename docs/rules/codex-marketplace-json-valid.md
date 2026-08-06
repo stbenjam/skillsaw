@@ -21,7 +21,7 @@ entry instead of failing the whole marketplace", so a broken entry is
 invisible at runtime — the plugin simply never appears.
 
 This rule validates the Codex schema only. `.claude-plugin/marketplace.json`
-is a different schema and stays with `marketplace-json-valid`.
+is a different schema and stays with `claude-marketplace-json-valid`.
 
 ## Examples
 

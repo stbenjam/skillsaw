@@ -70,8 +70,14 @@ _ENABLE_DIR = re.compile(
 
 
 def _parse_rule_ids(raw: str) -> List[str]:
-    """Parse comma-separated rule IDs from a directive."""
-    return [rid.strip() for rid in raw.split(",") if rid.strip()]
+    """Parse comma-separated rule IDs from a directive.
+
+    Legacy rule names in existing suppression comments resolve to their
+    canonical IDs so the directives keep suppressing the renamed rules.
+    """
+    from .rules.builtin import canonical_rule_id
+
+    return [canonical_rule_id(rid.strip()) for rid in raw.split(",") if rid.strip()]
 
 
 # ------------------------------------------------------------------

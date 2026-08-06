@@ -55,7 +55,7 @@ class TestClaudeRulesStandDown:
 
         Shipping ``.claude-plugin/plugin.json`` declares the directory a
         Claude plugin, and a Claude plugin needs the Claude marketplace that
-        would publish it — the same asymmetry plugin-json-required already
+        would publish it — the same asymmetry claude-plugin-json-required already
         respects.
         """
         (tmp_path / ".agents" / "plugins").mkdir(parents=True)
@@ -890,14 +890,14 @@ class TestProvenanceScopeMechanism:
             cls({}).rule_id for cls in BUILTIN_RULES if cls.provenance_scope == "claude"
         }
         assert claude_scoped == {
-            "agent-frontmatter",
-            "command-frontmatter",
-            "command-name-format",
-            "command-naming",
-            "command-sections",
-            "marketplace-registration",
-            "plugin-json-required",
-            "plugin-naming",
+            "claude-agent-frontmatter",
+            "claude-command-frontmatter",
+            "claude-command-name-format",
+            "claude-command-naming",
+            "claude-command-sections",
+            "claude-marketplace-registration",
+            "claude-plugin-json-required",
+            "claude-plugin-naming",
         }
         assert all(cls.provenance_scope in (None, "claude") for cls in BUILTIN_RULES)
 

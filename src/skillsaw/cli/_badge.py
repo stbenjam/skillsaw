@@ -101,6 +101,12 @@ def _run_badge(args):
         rule_progress.clear()
 
     from ..grade import compute_grade
+    from ..linter import ADVISORY_RULE_IDS
+
+    # Advisory notices (deprecation warnings) describe the config, not the
+    # repository's content — exclude them from the grade and card exactly
+    # like the lint command does.
+    violations = [v for v in violations if v.rule_id not in ADVISORY_RULE_IDS]
 
     content_tokens = sum(b.estimate_tokens() for b in context.lint_tree.content_blocks())
     grade = compute_grade(violations, content_tokens)

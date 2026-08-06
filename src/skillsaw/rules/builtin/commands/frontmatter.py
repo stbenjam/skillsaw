@@ -16,9 +16,11 @@ class CommandFrontmatterRule(Rule):
 
     autofix_confidence = AutofixConfidence.SAFE
 
+    aliases = ("command-frontmatter",)
+
     @property
     def rule_id(self) -> str:
-        return "command-frontmatter"
+        return "claude-command-frontmatter"
 
     @property
     def description(self) -> str:

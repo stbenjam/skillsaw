@@ -23,10 +23,10 @@ skillsaw includes four rules designed to catch these attacks:
 
 | Rule | Default | What it does |
 |------|---------|-------------|
-| [`hooks-dangerous`](rules/skills-agents-hooks.md) | auto, error | Flags hook commands matching supply-chain patterns |
-| [`hooks-prohibited`](rules/skills-agents-hooks.md) | disabled, error | Prohibits all hooks unless explicitly allowlisted |
+| [`hooks-dangerous`](rules/hooks.md) | auto, error | Flags hook commands matching supply-chain patterns |
+| [`hooks-prohibited`](rules/hooks.md) | disabled, error | Prohibits all hooks unless explicitly allowlisted |
 | [`mcp-prohibited`](rules/mcp.md) | disabled, error | Prohibits all MCP servers unless explicitly allowlisted |
-| [`settings-dangerous`](rules/settings.md) | auto, error | Flags settings keys that execute arbitrary commands or set dangerous env vars |
+| [`claude-settings-dangerous`](rules/settings.md) | auto, error | Flags settings keys that execute arbitrary commands or set dangerous env vars |
 
 ### hooks-dangerous
 
@@ -57,7 +57,7 @@ skillsaw discovers — root-level and plugin-level `.mcp.json`, Agent Plugin
 `.codex-plugin/plugin.json`, and `mcpServers` embedded in a Claude
 plugin's `plugin.json`.
 
-### settings-dangerous
+### claude-settings-dangerous
 
 Always on by default. Flags settings keys that execute arbitrary shell
 commands when Claude Code starts:
@@ -113,7 +113,7 @@ rules:
   # Opt-in: flags settings keys that execute arbitrary commands
   # (apiKeyHelper, awsAuthRefresh, etc.) and dangerous env vars
   # (LD_PRELOAD, NODE_OPTIONS, proxy settings).
-  settings-dangerous:
+  claude-settings-dangerous:
     enabled: true
     severity: error
 ```
@@ -151,8 +151,8 @@ be defined:
 | Source | Rules that scan it |
 |--------|--------------------|
 | `.claude/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
-| `.claude/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
-| `.claude/settings.local.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
+| `.claude/settings.json` | hooks-dangerous, hooks-prohibited, claude-settings-dangerous |
+| `.claude/settings.local.json` | hooks-dangerous, hooks-prohibited, claude-settings-dangerous |
 | `.mcp.json` (repo root) | mcp-prohibited, mcp-valid-json |
 | Plugin `hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
 | Plugin `.mcp.json` | mcp-prohibited, mcp-valid-json |
@@ -160,7 +160,7 @@ be defined:
 | Codex manifest-declared or inline `mcpServers` | mcp-prohibited, mcp-valid-json |
 | Agent Plugin `mcp.json` | mcp-prohibited, agent-plugin-mcp-valid |
 | `.apm/hooks/hooks.json` | hooks-dangerous, hooks-prohibited |
-| `.apm/settings.json` | hooks-dangerous, hooks-prohibited, settings-dangerous |
+| `.apm/settings.json` | hooks-dangerous, hooks-prohibited, claude-settings-dangerous |
 
 ## Skillsaw as a vector
 

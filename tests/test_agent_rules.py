@@ -251,6 +251,6 @@ def test_fix_both_name_and_description_missing(plugin_with_missing_both_fields):
 def test_rule_metadata():
     """Test rule metadata"""
     rule = AgentFrontmatterRule()
-    assert rule.rule_id == "agent-frontmatter"
+    assert rule.rule_id == "claude-agent-frontmatter"
     assert "agent" in rule.description.lower()
     assert rule.default_severity().value == "error"
