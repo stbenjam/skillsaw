@@ -99,6 +99,15 @@ class TestFingerprint:
         fp = fingerprint_violation(v, tmp_path)
         assert len(fp) == 16
 
+    def test_unresolvable_file_path_falls_back_without_reading(self, tmp_path):
+        """An embedded-NUL path must not escape the safe-resolve failure policy."""
+        hostile = Path(f"{tmp_path}/hostile\0.md")
+        violation = _make_violation(file_path=hostile, line=1)
+
+        fingerprint = fingerprint_violation(violation, tmp_path)
+
+        assert len(fingerprint) == 16
+
     def test_line_out_of_range_fallback(self, tmp_path):
         src = tmp_path / "CLAUDE.md"
         src.write_text("one line\n")

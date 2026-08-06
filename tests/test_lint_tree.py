@@ -4,6 +4,7 @@ Tests for the lint tree data structure and tree builder.
 
 from pathlib import Path
 
+from skillsaw.config import LinterConfig
 from skillsaw.lint_target import (
     LintTarget,
     ApmConfigNode,
@@ -17,6 +18,7 @@ from skillsaw.lint_target import (
     SkillNode,
 )
 from skillsaw.context import RepositoryContext
+from skillsaw.linter import Linter
 
 # --- LintTarget.walk() ---
 
@@ -250,6 +252,19 @@ def test_tree_rejects_coderabbit_symlink_outside_repo(tmp_path):
     tree = RepositoryContext(repo).lint_tree
 
     assert tree.find(CodeRabbitNode) == []
+
+
+def test_unresolvable_repository_root_surfaces_lint_error(temp_dir, monkeypatch):
+    """A failed canonical-root lookup must not silently produce a partial tree."""
+    context = RepositoryContext(temp_dir)
+    monkeypatch.setattr("skillsaw.lint_tree.safe_resolve", lambda path: None)
+
+    violations = Linter(context, LinterConfig.default()).run()
+
+    errors = [v for v in violations if v.rule_id == "repository-path-error"]
+    assert len(errors) == 1
+    assert str(temp_dir) in errors[0].message
+    assert list(context.lint_tree.walk()) == [context.lint_tree]
 
 
 def test_content_blocks_returns_all_content(temp_dir):

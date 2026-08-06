@@ -296,6 +296,10 @@ class RepositoryContext:
         self.plugin_content_paths: List[str] = []
         self.plugin_tree_contributors: List[tuple] = []
         self.plugin_extension_errors: List[str] = []
+        # Fatal discovery problems that affect the repository itself rather
+        # than a plugin. Linter surfaces these as repository-path-error
+        # violations; direct tree/docs commands report them before output.
+        self.lint_tree_errors: List[str] = []
         # Set by skillsaw.plugins.register_extensions so repeated calls on a
         # shared context (e.g. two Linters over one context) are no-ops.
         self._plugin_extensions_registered = False

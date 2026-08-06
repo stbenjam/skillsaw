@@ -35,6 +35,10 @@ def _run_tree(args):
     _apply_plugin_extensions(context, config)
 
     tree = context.lint_tree
+    if context.lint_tree_errors:
+        for message in context.lint_tree_errors:
+            print(f"Error: {message}", file=sys.stderr)
+        sys.exit(1)
     if args.fmt == "dot":
         print(tree.print_dot(root_path=context.root_path))
     else:

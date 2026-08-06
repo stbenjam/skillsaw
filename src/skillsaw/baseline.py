@@ -48,14 +48,14 @@ class BaselineFile:
 
 def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Optional[List[str]]:
     """Read and cache UTF-8 lines, returning ``None`` for unreadable files."""
-    try:
-        resolved = safe_resolve(path) or path
-    except OSError:
+    resolved = safe_resolve(path)
+    if resolved is None:
+        cache[path] = None
         return None
     if resolved not in cache:
         try:
             cache[resolved] = resolved.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError, ValueError):
             cache[resolved] = None
     return cache[resolved]
 

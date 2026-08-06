@@ -307,6 +307,19 @@ class Linter:
             for message in errors
         ]
 
+    def _lint_tree_error_violations(self) -> List[RuleViolation]:
+        """Consume fatal repository discovery errors collected by tree build."""
+        errors = self.context.lint_tree_errors
+        self.context.lint_tree_errors = []
+        return [
+            RuleViolation(
+                rule_id="repository-path-error",
+                severity=Severity.ERROR,
+                message=message,
+            )
+            for message in errors
+        ]
+
     def _load_custom_rule(self, rule_path: str):
         """
         Load a custom rule from a Python file
@@ -606,6 +619,8 @@ class Linter:
 
         # Tree contributors run lazily inside build_lint_tree (triggered by
         # the rule checks above), so their failures are only known now.
+        _ = self.context.lint_tree
+        violations.extend(self._lint_tree_error_violations())
         violations.extend(self._plugin_extension_error_violations())
 
         return self._filter_violations(violations)
@@ -671,6 +686,8 @@ class Linter:
             else:
                 all_violations.extend(visible)
 
+        _ = self.context.lint_tree
+        all_violations.extend(self._lint_tree_error_violations())
         all_violations.extend(self._plugin_extension_error_violations())
 
         # Baseline stale/suppressed accounting must consider all rules'

@@ -78,6 +78,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     root = LintTarget(path=context.root_path)
     repo_root = safe_resolve(context.root_path)
+    if repo_root is None:
+        message = f"Repository root could not be resolved: {context.root_path}"
+        if message not in context.lint_tree_errors:
+            context.lint_tree_errors.append(message)
+        logger.error(message)
+        root.set_parents()
+        return root
     seen: Set[Path] = set()
     seen_roles: Set[Tuple[Path, type]] = set()
     openai_seen: Set[Tuple[Path, Path]] = set()
