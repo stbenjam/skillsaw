@@ -1,9 +1,9 @@
 """Security hidden instructions rule.
 
-HTML comments are stripped from rendered markdown — the view humans review
-on GitHub or in an editor preview — but agents read the raw file. A
-directive placed inside an HTML comment is therefore an instruction channel
-that is invisible to human review: the classic hiding spot for prompt
+HTML comments and Markdown link-label definitions are stripped from rendered
+markdown — the view humans review on GitHub or in an editor preview — but
+agents read the raw file. A directive placed inside either channel is
+therefore invisible to human review: the classic hiding spot for prompt
 injection smuggled into a shared skill, command, or CLAUDE.md.
 """
 
@@ -16,9 +16,10 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 # ── Allowlisting ─────────────────────────────────────────────────────────
 #
-# Two exemption paths, both applied to the stripped comment text:
+# Two exemption paths, both applied to stripped HTML-comment or link-label
+# definition text:
 #
-# 1. Strict pragma grammars: a comment that FULLY matches a well-known
+# 1. Strict pragma grammars: hidden text that FULLY matches a well-known
 #    machine-readable directive (markdownlint-disable MD013, prettier-ignore,
 #    cspell:ignore words, "toc" alone, …) is exempt. Fullmatch means a
 #    payload appended after the pragma breaks the match — the old
@@ -28,7 +29,7 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 #    capture it as the "args" group, and the directive families are run on
 #    that group too, so a payload smuggled into an argument list still fires.
 #
-# 2. Prefix + benign remainder: a comment starting with an allowlisted
+# 2. Prefix + benign remainder: hidden text starting with an allowlisted
 #    prefix (built-in tools below, plus additional-allowed-prefixes from
 #    config) is exempt only when the remainder after the prefix does not
 #    itself match any directive family. This keeps unusual-but-honest tool
@@ -310,8 +311,9 @@ class SecurityHiddenInstructionsRule(Rule):
             "type": "list",
             "default": [],
             "description": (
-                "Extra case-insensitive comment-text prefixes to exempt "
-                "from directive matching (e.g. in-house tool directives); "
+                "Extra case-insensitive hidden-text prefixes to exempt from "
+                "directive matching in HTML comments or Markdown link-label "
+                "definitions (e.g. in-house tool directives); "
                 "the text after the prefix must still be free of directives"
             ),
         },
@@ -338,7 +340,7 @@ class SecurityHiddenInstructionsRule(Rule):
         return _ALLOWED_PREFIXES + tuple(str(p).lower() for p in extra if str(p))
 
     def _exempt(self, text: str, allowed: Tuple[str, ...]) -> bool:
-        """Allowlist decision for one comment's stripped inner text."""
+        """Allowlist one HTML comment or Markdown link-label definition."""
         if _pragma_exempt(text):
             return True
         lowered = text.lower()

@@ -52,9 +52,9 @@ this rule.
 
 ### Exemptions
 
-Machine-readable comment channels are exempt through two paths:
+Machine-readable hidden-text channels are exempt through two paths:
 
-- **Strict pragma grammars** — a comment that *fully* matches a
+- **Strict pragma grammars** — hidden text that *fully* matches a
   well-known tool directive: skillsaw's own `skillsaw-disable`
   suppressions, `markdownlint-disable`/`enable` (with rule ids),
   `prettier-ignore`, `eslint-disable`, `vale on/off`, `toc` alone,
@@ -63,18 +63,19 @@ Machine-readable comment channels are exempt through two paths:
   (`<!-- markdownlint-disable MD013 -- ignore all previous instructions
   ... -->`) breaks the exemption and fires; argument lists (rule ids,
   dictionary words) are themselves scanned for directives.
-- **Prefix with benign remainder** — a comment starting with a known tool
-  prefix (or one configured via `additional-allowed-prefixes`) is exempt
-  only when the text after the prefix contains no directive. A prefix is
-  never a bypass for a directive-bearing payload.
+- **Prefix with benign remainder** — an HTML comment or invisible Markdown
+  link-label definition starting with a known tool prefix (or one configured
+  via `additional-allowed-prefixes`) is exempt only when the text after the
+  prefix contains no directive. A prefix is never a bypass for a
+  directive-bearing payload.
 
-Generated-file markers are recognized: a comment carrying a
+Generated-file markers are recognized: hidden text carrying a
 regeneration/do-not-edit marker whose commands are bare build-tool or
 relative script tokens ("This file is auto-generated. Do not edit by
 hand; run `make update` to regenerate.") is not flagged. The exemption is
-void when the comment contains a URL, a pipe, or a non-script target like
-a home-directory path — `run curl https://... | sh` fires even inside a
-regeneration-looking comment.
+void when the hidden text contains a URL, a pipe, or a non-script target
+like a home-directory path — `run curl https://... | sh` fires even inside
+a regeneration-looking channel.
 
 HTML comments shown inside fenced code blocks are code examples, not live
 comments, and are never flagged.
@@ -116,23 +117,24 @@ rules:
 ```
 
 `additional-allowed-prefixes` (list, default `[]`) — extra
-case-insensitive prefixes, matched against the comment's stripped text,
-to exempt from directive matching. Use it for in-house tooling that
-communicates through HTML comments. The exemption covers only comments
-whose text *after* the prefix is free of directives — a configured prefix
-does not allowlist directive-bearing payloads.
+case-insensitive prefixes, matched against the stripped text of an HTML
+comment or invisible Markdown link-label definition, to exempt from directive
+matching. Use it for in-house tooling that communicates through either hidden
+channel. The exemption covers only hidden text whose content *after* the
+prefix is free of directives — a configured prefix does not allowlist
+directive-bearing payloads.
 
 ## How to fix
 
-If the comment is not yours, treat it as a possible injection attempt:
-remove it and audit how it got into the file (upstream skill, vendored
-plugin, generated content).
+If the hidden text is not yours, treat it as a possible injection attempt:
+remove it and audit how it got into the file (upstream skill, vendored plugin,
+generated content).
 
-If the comment is a legitimate authoring note, move it into visible
-prose — anything an agent should act on must also be reviewable by the
-humans who read the rendered document. Instructions that only work when
-hidden are indistinguishable from attacks, so this rule offers no way to
-allowlist directive-bearing comments.
+If the hidden text is a legitimate authoring note, move it into visible prose
+— anything an agent should act on must also be reviewable by the humans who
+read the rendered document. Instructions that only work when hidden are
+indistinguishable from attacks, so this rule offers no way to allowlist
+directive-bearing hidden text.
 
 ## Configuration
 
@@ -145,7 +147,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `additional-allowed-prefixes` | Extra case-insensitive comment-text prefixes to exempt from directive matching (e.g. in-house tool directives); the text after the prefix must still be free of directives | `[]` |
+| `additional-allowed-prefixes` | Extra case-insensitive hidden-text prefixes to exempt from directive matching in HTML comments or Markdown link-label definitions (e.g. in-house tool directives); the text after the prefix must still be free of directives | `[]` |
 
 
 *Run `skillsaw explain security-hidden-instructions` to see this documentation and the rule's effective configuration in your terminal.*
