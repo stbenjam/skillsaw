@@ -226,6 +226,32 @@ class Linter:
                     )
                     continue
 
+                # Legacy aliases still resolve to their builtin everywhere a
+                # rule is named (config keys, flags, suppressions), so a
+                # plugin claiming one could never be addressed under its own
+                # name. Advisory IDs are reserved for skillsaw's own notices
+                # — a rule reporting under one would never affect the exit
+                # code.
+                from .rules.builtin import RULE_ALIASES
+
+                if rid in RULE_ALIASES or rid in ADVISORY_RULE_IDS:
+                    reason = (
+                        f"'{rid}' is a legacy alias of builtin rule '{RULE_ALIASES[rid]}'"
+                        if rid in RULE_ALIASES
+                        else f"'{rid}' is reserved for skillsaw's own advisory notices"
+                    )
+                    self._plugin_load_violations.append(
+                        RuleViolation(
+                            rule_id="plugin-load-error",
+                            severity=Severity.WARNING,
+                            message=(
+                                f"Plugin '{plugin.name}' provides rule '{rid}', but "
+                                f"{reason} — the plugin's rule was skipped."
+                            ),
+                        )
+                    )
+                    continue
+
                 self._known_rule_ids.add(rid)
                 if getattr(rule_instance, "deprecated", None) is not None:
                     self._deprecated_known[rid] = rule_instance
@@ -398,6 +424,33 @@ class Linter:
                     and not inspect.isabstract(obj)
                 ):
                     rule_instance = obj()
+
+                    # Same reservation as plugin rules: a custom rule named
+                    # after a legacy alias could never be addressed (config
+                    # keys and flags resolve the alias to the builtin), and
+                    # an advisory ID would exempt its findings from the exit
+                    # code.
+                    from .rules.builtin import RULE_ALIASES
+
+                    rid = rule_instance.rule_id
+                    if rid in RULE_ALIASES or rid in ADVISORY_RULE_IDS:
+                        reason = (
+                            f"'{rid}' is a legacy alias of builtin rule '{RULE_ALIASES[rid]}'"
+                            if rid in RULE_ALIASES
+                            else f"'{rid}' is reserved for skillsaw's own advisory notices"
+                        )
+                        self._plugin_load_violations.append(
+                            RuleViolation(
+                                rule_id="plugin-load-error",
+                                severity=Severity.WARNING,
+                                message=(
+                                    f"Custom rule file {path.name} provides rule '{rid}', "
+                                    f"but {reason} — the rule was skipped."
+                                ),
+                            )
+                        )
+                        continue
+
                     self._known_rule_ids.add(rule_instance.rule_id)
                     if getattr(rule_instance, "deprecated", None) is not None:
                         self._deprecated_known[rule_instance.rule_id] = rule_instance

@@ -84,7 +84,7 @@ class AgentSkillValidRule(Rule):
         if original is None:
             return None
         kebab_name = _to_kebab(file_path.parent.name)
-        fixed = f"---\nname: {kebab_name}\ndescription: \n---\n{original}"
+        fixed = f"---\nname: {kebab_name}\ndescription:\n---\n{original}"
         new_fm, _new_body, new_error = parse_frontmatter(fixed)
         if new_error or not new_fm or new_fm.get("name") != kebab_name:
             return None

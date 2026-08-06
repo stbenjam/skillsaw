@@ -242,7 +242,12 @@ class NoTodoInstructionsRule(Rule):
 
 Rule IDs must be unique across builtins and all installed plugins — a
 colliding plugin rule is skipped with a warning, never silently shadowed.
-Prefix rule IDs with something distinctive when in doubt (`acme-no-todo`).
+Legacy aliases of renamed builtins (for example `plugin-readme`, now
+`claude-plugin-readme`) and skillsaw's own advisory IDs
+(`deprecated-rule`) are reserved too: aliases resolve to the builtin
+everywhere a rule is named, so a rule using one could never be
+configured, and advisory IDs never affect the exit code. Prefix rule
+IDs with something distinctive when in doubt (`acme-no-todo`).
 
 Plugins can also ship **deterministic autofixes** by setting
 `autofix_confidence` and overriding `fix()` — see the

@@ -23,7 +23,10 @@ from skillsaw.paths import safe_resolve
 
 BASELINE_FILENAME = ".skillsaw-baseline.json"
 _BASELINE_VERSION = "1"
-_UNBASELINABLE_RULE_IDS = frozenset({"repository-path-error"})
+# "deprecated-rule" mirrors linter.ADVISORY_RULE_IDS (kept literal to avoid
+# a module cycle; pinned by a test): baselining a deprecation notice would
+# permanently hide the removal warning it exists to deliver.
+_UNBASELINABLE_RULE_IDS = frozenset({"repository-path-error", "deprecated-rule"})
 
 
 @dataclass
