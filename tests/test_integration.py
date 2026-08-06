@@ -2130,10 +2130,10 @@ class TestDescriptionRouting:
         r = run_lint(repo, "--rule", "description-routing")
         vs = self._routing_violations(r)
 
-        assert len(vs) == 19
+        assert len(vs) == 20
         assert all(v["severity"] == "warning" and v["line"] in {2, 3} for v in vs)
         assert sum("when to use" in v["message"] for v in vs) == 6
-        assert sum("first-person" in v["message"] for v in vs) == 8
+        assert sum("first-person" in v["message"] for v in vs) == 9
         assert sum("restates the name" in v["message"] for v in vs) == 3
         assert sum("Description is empty" in v["message"] for v in vs) == 2
         assert any("sdk-guide" in v["file_path"] for v in vs)
@@ -2186,9 +2186,9 @@ class TestDescriptionRouting:
     @pytest.mark.parametrize(
         ("option", "message", "expected_count"),
         [
-            ("require-trigger-phrasing", "when to use", 13),
+            ("require-trigger-phrasing", "when to use", 14),
             ("flag-first-person", "first-person", 11),
-            ("flag-name-restatement", "restates the name", 16),
+            ("flag-name-restatement", "restates the name", 17),
         ],
     )
     def test_subchecks_can_be_disabled_independently(
