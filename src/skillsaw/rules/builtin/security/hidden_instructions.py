@@ -414,7 +414,7 @@ class SecurityHiddenInstructionsRule(Rule):
         """
         violations = []
         for definition in cf.markdown.reference_definitions():
-            if definition.label != "//" or definition.href not in ("", "#") or not definition.title:
+            if definition.label != "//" or not definition.title:
                 continue
             text = definition.title.strip()
             if self._exempt(text, allowed):

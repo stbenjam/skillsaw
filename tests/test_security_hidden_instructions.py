@@ -130,6 +130,14 @@ class TestSecurityHiddenInstructionsRule:
         assert violations[0].line == 19
         assert "prompt-control" in violations[0].message
 
+    def test_ordinary_destination_hidden_link_label_fires(self, tmp_path):
+        """Treat every destination as hidden for the // reference label."""
+        repo = copy_fixture("security/hidden-instructions-link-label-destination", tmp_path)
+        violations = _check(repo)
+        assert len(violations) == 1
+        assert violations[0].line == 19
+        assert "prompt-control" in violations[0].message
+
     def test_hidden_link_label_inside_fence_is_example(self, tmp_path):
         """Do not report hidden-link syntax shown as a fenced example."""
         repo = copy_fixture("security/hidden-instructions-link-label-fenced", tmp_path)

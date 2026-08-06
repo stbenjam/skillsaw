@@ -3,7 +3,7 @@
 
 # Hidden-Content Validation
 
-Content-validation rules that catch payloads and instructions invisible to human review: invisible/bidi unicode smuggling (ASCII smuggling, Trojan Source), agent directives hidden in HTML comments, and long high-entropy base64/hex blobs that can smuggle encoded payloads. They complement `hooks-dangerous`, `settings-dangerous`, and `content-embedded-secrets`, which cover the executable and credential sides of the same threat.
+Content-validation rules that catch payloads and instructions invisible to human review: invisible/bidi unicode smuggling (ASCII smuggling, Trojan Source), agent directives hidden in HTML comments or Markdown link labels, and long high-entropy base64/hex blobs that can smuggle encoded payloads. They complement `hooks-dangerous`, `settings-dangerous`, and `content-embedded-secrets`, which cover the executable and credential sides of the same threat.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
