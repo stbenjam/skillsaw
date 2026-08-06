@@ -491,10 +491,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
             # plugins/ itself — a package declared at the repository root
             # says nothing about why plugins/ exists.
             resolved_plugins = safe_resolve(plugins_dir)
-            portable_claims_plugins_dir = resolved_plugins is not None and any(
+            agent_plugin_claims_plugins_dir = resolved_plugins is not None and any(
                 claim.is_relative_to(resolved_plugins) for claim in self._agent_plugin_claim_set()
             )
-            return not self.codex_catalog_exists() and not portable_claims_plugins_dir
+            return not self.codex_catalog_exists() and not agent_plugin_claims_plugins_dir
         return any(
             not (provenance := self.provenance(item)).ecosystems or provenance.claude
             for item in children
@@ -774,7 +774,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     def _discover_skills(self) -> List[Path]:
         """Discover Agent Skills through the state-free Claude discovery seam."""
-        portable_recursive = [
+        recursive_agent_plugins = [
             plugin
             for plugin in self.agent_plugin_roots()
             if (provenance := self.provenance(plugin)).claude or provenance.codex
@@ -795,7 +795,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
             # an unrelated ``--type`` override while still enforcing their
             # fixed immediate-child discovery semantics.
             agent_plugins=self.agent_plugin_roots(),
-            portable_recursive_plugins=portable_recursive,
+            recursive_agent_plugins=recursive_agent_plugins,
             in_apm_compiled_dir=self.in_apm_compiled_dir,
             should_skip=self._should_skip_dir,
             claim_boundary=self._contained_plugin_claim_boundary,

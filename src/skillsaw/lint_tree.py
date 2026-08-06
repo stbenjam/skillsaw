@@ -161,7 +161,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     _contained_plugin_owner = context.contained_plugin_owning
     agent_plugin_roots = set(context.agent_plugin_roots())
 
-    def _shadowed_by_portable_mcp(path: Path, portable_mcp: Path | None) -> bool:
+    def _shadowed_by_agent_plugin_mcp(path: Path, agent_plugin_mcp: Path | None) -> bool:
         """Whether *path* is the portable ``mcp.json`` under another name.
 
         A dual-format package may symlink ``.mcp.json`` (or declare a Codex
@@ -169,7 +169,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         attached once as the Agent Plugins parser role, so a second parser
         role here would duplicate every policy and security finding.
         """
-        return portable_mcp is not None and safe_resolve(path) == portable_mcp
+        return agent_plugin_mcp is not None and safe_resolve(path) == agent_plugin_mcp
 
     def _add_contained_plugin_block(
         parent: CodexPluginConfigNode | AgentPluginConfigNode,
@@ -292,11 +292,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # A dual-format package may symlink both conventional paths to one file.
     # Prefer the portable parser role so ecosystem-neutral policy rules see
     # the executable surface once rather than reporting duplicate findings.
-    root_portable_mcp = (
+    root_agent_plugin_mcp = (
         safe_resolve(context.root_path / "mcp.json") if repo_root in agent_plugin_roots else None
     )
     root_native_mcp = context.root_path / ".mcp.json"
-    if not _shadowed_by_portable_mcp(root_native_mcp, root_portable_mcp):
+    if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
         _add_block(root, root_native_mcp, McpBlock)
 
     _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
@@ -389,7 +389,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             continue
 
         is_agent_plugin = resolved_plugin in agent_plugin_roots
-        portable_mcp = safe_resolve(plugin_path / "mcp.json") if is_agent_plugin else None
+        agent_plugin_mcp = safe_resolve(plugin_path / "mcp.json") if is_agent_plugin else None
 
         # Container type: Claude identity keeps PluginNode and its Claude
         # rules. Otherwise Codex wins the neutral hierarchy choice when a
@@ -438,7 +438,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                 container, plugin_path / "hooks" / "hooks.json", HooksBlock, owner=resolved_plugin
             )
             native_mcp = plugin_path / ".mcp.json"
-            if not _shadowed_by_portable_mcp(native_mcp, portable_mcp):
+            if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
                 _add_block(container, native_mcp, McpBlock, owner=resolved_plugin)
         # settings.json is Claude-side configuration with no Codex
         # counterpart: attached only for Claude-style directories, keeping
@@ -489,10 +489,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # Same treatment for MCP: the conventional .mcp.json, declared
             # files, and inline maps are all commands the host will spawn.
             native_mcp = plugin_path / ".mcp.json"
-            if not _shadowed_by_portable_mcp(native_mcp, portable_mcp):
+            if not _shadowed_by_agent_plugin_mcp(native_mcp, agent_plugin_mcp):
                 _add_contained_plugin_block(node, native_mcp, McpBlock, owner=resolved_plugin)
             for declared_mcp in codex_declared_mcp_files(plugin_path):
-                if _shadowed_by_portable_mcp(declared_mcp, portable_mcp):
+                if _shadowed_by_agent_plugin_mcp(declared_mcp, agent_plugin_mcp):
                     continue
                 _add_parser_block(node, declared_mcp, McpBlock, owner=resolved_plugin)
             for inline_mcp in codex_inline_mcp_servers(plugin_path):

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-from skillsaw.discovery import agent_plugins as portable_discovery
+from skillsaw.discovery import agent_plugins as agent_plugins_discovery
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
@@ -208,7 +208,7 @@ def discover_skills(
     plugins: Iterable[Path],
     codex_plugins: Iterable[Path],
     agent_plugins: Iterable[Path],
-    portable_recursive_plugins: Iterable[Path],
+    recursive_agent_plugins: Iterable[Path],
     in_apm_compiled_dir: Callable[[Path], bool],
     should_skip: Callable[[Path], bool],
     claim_boundary: Callable[[Path], Optional[Path]],
@@ -218,16 +218,18 @@ def discover_skills(
     """Discover contained Agent Skill directories across repository roots."""
     skills: List[Path] = []
     discovered: Set[Path] = set()
-    portable_plugins = list(agent_plugins)
-    portable_roots = {
-        resolved for plugin in portable_plugins if (resolved := safe_resolve(plugin)) is not None
-    }
-    portable_recursive_roots = {
+    agent_plugin_packages = list(agent_plugins)
+    agent_plugin_roots = {
         resolved
-        for plugin in portable_recursive_plugins
+        for plugin in agent_plugin_packages
         if (resolved := safe_resolve(plugin)) is not None
     }
-    portable_immediate_only = portable_roots - portable_recursive_roots
+    recursive_agent_plugin_roots = {
+        resolved
+        for plugin in recursive_agent_plugins
+        if (resolved := safe_resolve(plugin)) is not None
+    }
+    agent_plugin_immediate_only = agent_plugin_roots - recursive_agent_plugin_roots
 
     def walk(
         parent: Path,
@@ -237,7 +239,7 @@ def discover_skills(
         """Walk one skill collection without crossing its claim boundary."""
         resolved_parent = safe_resolve(parent)
         skip_subtrees: Set[Path] = set()
-        if resolved_parent is not None and resolved_parent in portable_immediate_only:
+        if resolved_parent is not None and resolved_parent in agent_plugin_immediate_only:
             if visited is not None:
                 # Mid-walk descent into a portable package: Agent Plugins has
                 # a fixed, one-level skill scan below; the generic recursive
@@ -264,7 +266,7 @@ def discover_skills(
                 resolved = safe_resolve(item)
                 if resolved is None or resolved in discovered or resolved in visited:
                     continue
-                if resolved in portable_immediate_only or resolved in skip_subtrees:
+                if resolved in agent_plugin_immediate_only or resolved in skip_subtrees:
                     continue
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue
@@ -320,8 +322,8 @@ def discover_skills(
                     discovered.add(resolved)
             else:
                 walk(path, plugin_root)
-    for plugin in portable_plugins:
-        for skill in portable_discovery.discover_agent_plugin_skills(plugin):
+    for plugin in agent_plugin_packages:
+        for skill in agent_plugins_discovery.discover_agent_plugin_skills(plugin):
             resolved = safe_resolve(skill)
             if resolved is not None and resolved not in discovered:
                 skills.append(skill)
