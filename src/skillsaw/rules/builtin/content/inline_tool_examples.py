@@ -217,7 +217,9 @@ class ContentInlineToolExamplesRule(Rule):
         its legally indented closer while a 4-space-indented backtick
         run inside an unclosed top-level fence stays payload.
         """
-        without_quotes = _QUOTE_MARKER_RE.sub("", line)
+        # Tabs count as four columns (CommonMark) — expand before
+        # measuring so a tab-prefixed backtick run stays payload.
+        without_quotes = _QUOTE_MARKER_RE.sub("", line).expandtabs(4)
         indent = len(without_quotes) - len(without_quotes.lstrip(" "))
         if indent - base_indent > 3:
             return False
@@ -367,7 +369,18 @@ class ContentInlineToolExamplesRule(Rule):
 
     @staticmethod
     def _is_comment_line(line: str, styles: frozenset) -> bool:
-        return line.lstrip().startswith(tuple(styles))
+        stripped = line.lstrip()
+        if stripped.startswith(tuple(styles)):
+            return True
+        # A complete single-line C-family block comment.  One that spans
+        # lines is not tracked — the following lines disqualify the
+        # fence conservatively rather than corrupting call state.
+        return (
+            "//" in styles
+            and stripped.startswith("/*")
+            and stripped.endswith("*/")
+            and len(stripped) >= 4
+        )
 
     @staticmethod
     def _advance(
@@ -399,6 +412,16 @@ class ContentInlineToolExamplesRule(Rule):
                     continue
                 if char == quote:
                     quote = None
+            elif char == "/" and "//" in styles and i + 1 < length and line[i + 1] == "*":
+                # A C-family block comment outside any string: skip a
+                # same-line '*/' close (its text, parens included, is
+                # commentary); one left open runs into following lines,
+                # which then disqualify the fence conservatively.
+                close = line.find("*/", i + 2)
+                if close == -1:
+                    break
+                i = close + 2
+                continue
             elif (char == "#" and "#" in styles) or (
                 char == "/" and "//" in styles and i + 1 < length and line[i + 1] == "/"
             ):
@@ -444,6 +467,10 @@ class ContentInlineToolExamplesRule(Rule):
         trailer = trailer.strip()
         if trailer.startswith(";"):
             trailer = trailer[1:].strip()
+        if "//" in styles and trailer.startswith("/*"):
+            close = trailer.find("*/")
+            if close != -1:
+                trailer = trailer[close + 2 :].strip()
         return trailer == "" or trailer.startswith(tuple(styles))
 
     @classmethod

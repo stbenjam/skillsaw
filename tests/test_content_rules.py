@@ -3202,6 +3202,41 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_tab_indented_delimiter_payload_not_a_closer(self, temp_dir):
+        """A tab counts as four columns (CommonMark), so a tab-prefixed
+        backtick run inside an unclosed fence is payload."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "```\n"
+            'search(query="a")\n'
+            "```\n\n"
+            "Another example:\n\n"
+            "```\n"
+            'search(query="b")\n'
+            "```\n\n"
+            "A third example:\n\n"
+            "```\n"
+            'search(query="c")\n'
+            "\t```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_block_comments_in_js_fences(self, temp_dir):
+        """C-family block comments — leading lines, inline (parens in
+        the text included), and trailing — are commentary."""
+        parts = []
+        for q in ("a", "b", "c"):
+            parts.append(
+                "```js\n"
+                "/* symbol lookup */\n"
+                f'search({{query: "{q}"}} /* tricky ) text */); /* done */\n'
+                "```\n"
+            )
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_two_level_blockquote_indented_blocks(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\n"
