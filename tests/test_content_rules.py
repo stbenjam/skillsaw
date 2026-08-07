@@ -3202,6 +3202,25 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_qualified_keyword_named_method_is_nested_call(self, temp_dir):
+        """`client.match(...)` inside arguments is a qualified method
+        call, not the bare `match` keyword."""
+        snippet = 'retry(client.match(query="{}"))'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_triple_quoted_argument(self, temp_dir):
+        """A ')' inside a triple-quoted literal — even next to an
+        embedded single quote — must not close the call."""
+        snippet = "search(query='''find the 'close)' token {}''')"
+        parts = [f"```python\n{snippet.format(n)}\n```\n" for n in ("1", "2", "3")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_dollar_identifiers(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(['$("#first")', '$("#second")', '$("#third")'])

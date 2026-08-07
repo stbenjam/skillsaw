@@ -320,8 +320,10 @@ class ContentInlineToolExamplesRule(Rule):
                 if char == "\\":
                     i += 2
                     continue
-                if char == quote:
+                if line.startswith(quote, i):
+                    i += len(quote)
                     quote = None
+                    continue
             elif char == "/" and "//" in styles and i + 1 < length and line[i + 1] == "*":
                 # A C-family block comment outside any string: skip a
                 # same-line '*/' close (its text, parens included, is
@@ -339,6 +341,12 @@ class ContentInlineToolExamplesRule(Rule):
                 # line is commentary, not call syntax.
                 break
             elif char in "\"'`":
+                # A Python triple-quoted literal is one delimiter, not
+                # three — the whole run must close it.
+                if char != "`" and line.startswith(char * 3, i):
+                    quote = char * 3
+                    i += 3
+                    continue
                 quote = char
             elif char == "(":
                 if depth > 0:
@@ -358,9 +366,13 @@ class ContentInlineToolExamplesRule(Rule):
                         before, word_end = prev_tail.rstrip(), len(prev_tail.rstrip()) - 1
                     if word_end >= 0 and (before[word_end].isalnum() or before[word_end] in "_])"):
                         k = word_end
-                        while k >= 0 and (before[k].isalnum() or before[k] == "_"):
+                        while k >= 0 and (before[k].isalnum() or before[k] in "_$"):
                             k -= 1
-                        if before[k + 1 : word_end + 1] not in _NON_CALL_KEYWORDS:
+                        # The exemption applies to bare keywords only:
+                        # 'client.match(...)' is a qualified method call,
+                        # not the match statement.
+                        qualified = k >= 0 and before[k] == "."
+                        if qualified or before[k + 1 : word_end + 1] not in _NON_CALL_KEYWORDS:
                             nested_call = True
                 depth += 1
             elif char == ")":
