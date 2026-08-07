@@ -3165,6 +3165,7 @@ class TestContentProgressiveDisclosureRule:
         assert rule.rule_id == "content-progressive-disclosure"
         assert rule.default_severity() == Severity.INFO
         assert rule.default_enabled == "auto"
+        assert "progressive disclosure" in rule.description
 
     def test_default_limits_over_budget_fires(self, temp_dir):
         self._write_claude(temp_dir, repeats=200)  # ~6.5k tokens
@@ -3259,6 +3260,46 @@ class TestContentProgressiveDisclosureRule:
 
     def test_skill_mention_of_missing_script_does_not_count(self, temp_dir):
         self._write_skill(temp_dir, extra="\nRun scripts/run.py before deploying.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_home_and_self_imports_do_not_count(self, temp_dir):
+        self._write_claude(temp_dir, extra="\n@~/.claude/notes.md\n\n@CLAUDE.md\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_references_escaping_repo_do_not_count(self, temp_dir):
+        (temp_dir / "secret.md").write_text("# Outside\n")
+        repo = temp_dir / "repo"
+        repo.mkdir()
+        (repo / "CLAUDE.md").write_text(
+            "# Project notes\n\n"
+            + self._PARA * 6
+            + "\nSee [notes](../secret.md).\n\n@../secret.md\n"
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(repo))) == 1
+
+    def test_skill_dot_slash_mention_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\nRead ./references/guide.md before starting.\n",
+            files=("references/guide.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_unmentioned_bundle_still_fires(self, temp_dir):
+        """Bundled files nothing in the body names are not disclosure, and
+        extensionless files (Makefile) are never bare-name candidates."""
+        self._write_skill(temp_dir, files=("scripts/unused.py", "scripts/Makefile"))
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_symlink_mention_does_not_count(self, temp_dir):
+        skill = self._write_skill(temp_dir, extra="\nRun linked.py when stages fail.\n")
+        (skill / "scripts").mkdir()
+        (skill / "scripts" / "linked.py").symlink_to(skill / "SKILL.md")
         rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
 
