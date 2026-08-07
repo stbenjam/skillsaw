@@ -2786,7 +2786,7 @@ class TestContentInlineToolExamplesRule:
                     'get_balance(account=42, as_of="2026-01-31")',
                     'get_balance(account=42, currency="USD")',
                 ],
-                caption="Historical balances\n-------------------\n\nWith a date:",
+                caption="Historical balances\n-------------------",
             )
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
@@ -3004,6 +3004,42 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_unterminated_call_disqualifies(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(['search(query="a"', 'search(query="b"', 'search(query="c"'])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_nested_call_in_arguments_disqualifies(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'retry(search(query="a"))',
+                    'retry(search(query="b"))',
+                    'retry(search(query="c"))',
+                ]
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_fence_on_list_marker_line_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Use the search tool:\n\n"
+            "- ~~~\n"
+            '  search(query="TransferFunds", type="symbol")\n'
+            "  ~~~\n"
+            "- ~~~\n"
+            '  search(query="ledger.go", type="file")\n'
+            "  ~~~\n"
+            "- ~~~\n"
+            '  search(query="fixed-point", type="text")\n'
+            "  ~~~\n"
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_mixed_callees_within_one_fence_pass(self, temp_dir):
         snippet = 'open_account(owner="acme")\ntransfer(source=42, dest=43)'
         (temp_dir / "CLAUDE.md").write_text(self._fences([snippet, snippet, snippet]))
@@ -3067,6 +3103,10 @@ class TestContentInlineToolExamplesRule:
             ContentInlineToolExamplesRule({"max-lines-between": -1})
         with pytest.raises(ValueError, match="must be an integer"):
             ContentInlineToolExamplesRule({"max-lines-between": "2"})
+        with pytest.raises(ValueError, match="must be an integer"):
+            ContentInlineToolExamplesRule({"min-consecutive": True})
+        with pytest.raises(ValueError, match="must be an integer"):
+            ContentInlineToolExamplesRule({"max-lines-between": False})
 
     def test_no_files_no_violations(self, temp_dir):
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []

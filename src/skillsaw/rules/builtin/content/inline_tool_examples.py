@@ -149,7 +149,11 @@ class ContentInlineToolExamplesRule(Rule):
         ``body_line_start``/``body_line_end`` are 1-based and include the
         fence delimiters for fenced blocks; indented blocks have no
         delimiters and carry blockquote markers and/or their code indent
-        on every line.
+        on every line.  Container-nested content (blockquote markers,
+        list-item indentation — including a fence opened on the list
+        marker line itself) is normalized by stripping quote markers and
+        the common indent; a fence outside any container is taken as-is
+        so code that legitimately starts with ``>`` survives.
         """
         if fence.indented:
             raw = [
@@ -158,23 +162,26 @@ class ContentInlineToolExamplesRule(Rule):
             ]
             return ContentInlineToolExamplesRule._dedent(raw)
         raw = lines[fence.body_line_start : fence.body_line_end - 1]
-        opening = lines[fence.body_line_start - 1] if fence.body_line_start <= len(lines) else ""
-        prefix = _CONTAINER_PREFIX_RE.match(opening).group(0)
-        if prefix:
-            raw = [line[len(prefix) :] if line.startswith(prefix) else line for line in raw]
+        if fence.nested:
+            raw = [_QUOTE_MARKER_RE.sub("", line) for line in raw]
+            return ContentInlineToolExamplesRule._dedent(raw)
         return raw
 
     @staticmethod
     def _advance(
         line: str, start: int, depth: int, quote: Optional[str]
-    ) -> Tuple[int, Optional[str], Optional[str]]:
+    ) -> Tuple[int, Optional[str], Optional[str], bool]:
         """Track paren depth and quote state across ``line[start:]``.
 
         Parens inside string literals are data, not syntax —
         ``search(query="foo)")`` must not close early.  Returns
-        ``(depth, quote, trailer)`` where *trailer* is the text after the
-        paren that closed the call, or ``None`` while the call stays open.
+        ``(depth, quote, trailer, nested_call)`` where *trailer* is the
+        text after the paren that closed the call (``None`` while it
+        stays open) and *nested_call* reports an identifier-adjacent
+        ``(`` inside the arguments — ``retry(search(...))`` invokes two
+        functions, which the rule's single-callee contract excludes.
         """
+        nested_call = False
         i = start
         length = len(line)
         while i < length:
@@ -188,13 +195,15 @@ class ContentInlineToolExamplesRule(Rule):
             elif char in "\"'":
                 quote = char
             elif char == "(":
+                if depth > 0 and i > 0 and (line[i - 1].isalnum() or line[i - 1] == "_"):
+                    nested_call = True
                 depth += 1
             elif char == ")":
                 depth -= 1
                 if depth == 0:
-                    return 0, None, line[i + 1 :]
+                    return 0, None, line[i + 1 :], nested_call
             i += 1
-        return depth, quote, None
+        return depth, quote, None, nested_call
 
     @staticmethod
     def _is_call_trailer(trailer: str) -> bool:
@@ -224,8 +233,8 @@ class ContentInlineToolExamplesRule(Rule):
             if not line.strip():
                 continue
             if depth > 0:
-                depth, quote, trailer = cls._advance(line, 0, depth, quote)
-                if trailer is not None and not cls._is_call_trailer(trailer):
+                depth, quote, trailer, nested_call = cls._advance(line, 0, depth, quote)
+                if nested_call or (trailer is not None and not cls._is_call_trailer(trailer)):
                     return None
                 continue
             if _COMMENT_LINE_RE.match(line):
@@ -240,9 +249,14 @@ class ContentInlineToolExamplesRule(Rule):
                 callee = name
             elif name != callee:
                 return None
-            depth, quote, trailer = cls._advance(line, match.end() - 1, 0, None)
-            if trailer is not None and not cls._is_call_trailer(trailer):
+            depth, quote, trailer, nested_call = cls._advance(line, match.end() - 1, 0, None)
+            if nested_call or (trailer is not None and not cls._is_call_trailer(trailer)):
                 return None
+        # An invocation left unterminated at the end of the fence
+        # ('search(' with no closing paren) is malformed code, not a
+        # completed call example.
+        if depth > 0 or quote is not None:
+            return None
         return callee
 
     def _run_breaks(
