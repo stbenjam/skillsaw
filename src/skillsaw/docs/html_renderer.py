@@ -1182,6 +1182,7 @@ def _get_js() -> str:
     });
   }
 
+  // BEGIN_ESCAPERS
   function esc(str) {
     if (!str) return '';
     var d = document.createElement('div');
@@ -1217,6 +1218,7 @@ def _get_js() -> str:
     // innerHTML decodes the entities before the inline handler compiles.
     return escAttr(escJs(str));
   }
+  // END_ESCAPERS
 
   init();
 })();

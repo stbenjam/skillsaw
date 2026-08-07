@@ -475,9 +475,7 @@ class TestRendererHardening:
             assert "javascript:alert" not in content
 
     def test_emitted_page_script_survives_backslash_escaping(self, tmp_path):
-        """The JS template is a non-raw Python string — backslash halving
-        once shipped an unparseable script and a blank page. Pin the emitted
-        (post-halving) escJs escapes, and parse every script block with
+        """Pin the emitted escJs escapes and parse every script block with
         node when it is available."""
         import shutil
         import subprocess
@@ -521,9 +519,13 @@ class TestRendererHardening:
             pytest.skip("node not available")
 
         js = _get_js()
-        helpers = js[
-            js.index("function escAttr") : js.index("\n\n  init();", js.index("function escAttr"))
-        ]
+        start_marker = "  // BEGIN_ESCAPERS"
+        end_marker = "  // END_ESCAPERS"
+        assert start_marker in js, "missing JavaScript escaper start marker"
+        assert end_marker in js, "missing JavaScript escaper end marker"
+        start = js.index(start_marker)
+        end = js.index(end_marker, start) + len(end_marker)
+        helpers = js[start:end]
         value = "first\r\nsecond\u2028third\u2029fourth\\'quote"
         expected_js = json.dumps(value, ensure_ascii=False)
         expected_js = expected_js.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
