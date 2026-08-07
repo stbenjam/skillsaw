@@ -3202,6 +3202,46 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_typed_assignment_prefix(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'result: SearchResult = await search(query="a")',
+                    'result: SearchResult = await search(query="b")',
+                    'result: SearchResult = await search(query="c")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_keyword_expression_not_a_callee(self, temp_dir):
+        """`raise(error)` is a keyword expression, not a tool call."""
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(["raise(err_a)", "raise(err_b)", "raise(err_c)"])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_literal_quote_in_blockquote_indented_block(self, temp_dir):
+        """A '>' after the 4-space code indent inside a blockquote's
+        indented block is payload, not another container level."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> Quoted output looks like this:\n"
+            ">\n"
+            ">     > search(a=1)\n"
+            ">\n"
+            "> Another sample:\n"
+            ">\n"
+            ">     > search(a=2)\n"
+            ">\n"
+            "> A third sample:\n"
+            ">\n"
+            ">     > search(a=3)\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_variable_quote_marker_whitespace(self, temp_dir):
         """CommonMark lets the space after '>' vary per line —
         '>search(...)' inside a '> ```' fence is legal content."""

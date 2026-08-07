@@ -14,7 +14,8 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 # opening paren.  Continuation lines of a multi-line call are tracked
 # by paren depth in _fence_callee().
 _CALL_HEAD_RE = re.compile(
-    r"^(?:\$\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?(?:[\w.]+\s*=\s*)?(?:await\s+)?"
+    r"^(?:\$\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
+    r"(?:[\w.]+(?:\s*:\s*[\w.\[\], ]+)?\s*=\s*)?(?:await\s+)?"
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 
@@ -77,6 +78,7 @@ _NON_CALL_KEYWORDS = frozenset(
         "typeof",
         "del",
         "raise",
+        "throw",
         "new",
     }
 )
@@ -93,9 +95,11 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 _QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
 
 # One blockquote level, for peeling container markers a level at a time
-# so a literal '>' in the code itself survives.
-_QUOTE_LEAD_RE = re.compile(r"^\s*>")
-_ONE_QUOTE_LEVEL_RE = re.compile(r"^\s*>\s?")
+# so a literal '>' in the code itself survives.  A container marker may
+# be indented at most three spaces (CommonMark) — a '>' after a 4-space
+# code indent ('>     > search(...)') is payload, never a container.
+_QUOTE_LEAD_RE = re.compile(r"^ {0,3}>")
+_ONE_QUOTE_LEVEL_RE = re.compile(r"^ {0,3}>\s?")
 
 
 class ContentInlineToolExamplesRule(Rule):
@@ -417,7 +421,7 @@ class ContentInlineToolExamplesRule(Rule):
             if not match:
                 return None
             name = match.group(1)
-            if "." not in name and name in _NON_TOOL_CALLEES:
+            if "." not in name and (name in _NON_TOOL_CALLEES or name in _NON_CALL_KEYWORDS):
                 return None
             if callee is None:
                 callee = name
