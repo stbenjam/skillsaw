@@ -13,13 +13,15 @@ The rule fires only on files already over a threshold (by default the
 `context-budget` warn limits), and only when it finds zero disclosure
 references. What counts as a reference differs by surface:
 
-- **Skills**: markdown links resolving inside the skill directory,
-  path-like mentions of bundled files (`references/guide.md`,
+- **Skills**: markdown links to bundled files (or directories holding
+  them), path-like mentions of bundled files (`references/guide.md`,
   `scripts/run.py` — including inside fenced code blocks, where bundled
   scripts are typically invoked), and bare filename mentions of bundled
-  files ("run `helper.py`"). References outside the bundle do not
-  count: a skill is distributed as its directory, so only material that
-  ships with it can be disclosed progressively.
+  files ("run `helper.py`"). References outside the bundle, image
+  embeds, packaging scaffolding (README.md), and nested skills' files
+  do not count: a skill is distributed as its directory, so only
+  instructional material that ships with it can be disclosed
+  progressively.
 - **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends):
   explicit markdown links to local files and `@path` imports (files or
   imported directories). Bare path mentions and directory links

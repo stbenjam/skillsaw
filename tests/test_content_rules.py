@@ -3427,6 +3427,41 @@ class TestContentProgressiveDisclosureRule:
         rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
 
+    def test_image_embed_does_not_count(self, temp_dir):
+        """An embedded diagram is rendered, not loaded on demand."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "arch.png").write_text("png\n")
+        self._write_claude(temp_dir, extra="\n![architecture](docs/arch.png)\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_link_to_scaffolding_or_nested_skill_does_not_count(self, temp_dir):
+        """Linking README.md or a nested skill's file is not disclosure —
+        the same exclusions the bundled inventory applies to mentions."""
+        skill = self._write_skill(
+            temp_dir,
+            extra="\nSee [the readme](README.md) and [inner](sub/inner.py).\n",
+            files=("README.md",),
+        )
+        nested = skill / "sub"
+        nested.mkdir()
+        (nested / "SKILL.md").write_text(
+            "---\nname: sub\ndescription: Nested helper. Use when asked.\n---\n\n# Sub\n"
+        )
+        (nested / "inner.py").write_text("print('hi')\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert [v.file_path for v in violations] == [skill / "SKILL.md"]
+
+    def test_skill_directory_link_with_bundled_content_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\nWork through [the references](references/) in order.\n",
+            files=("references/checklist.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
     def test_skill_self_directory_link_does_not_count(self, temp_dir):
         self._write_skill(temp_dir, extra="\nEverything lives in [this skill](.).\n")
         rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})

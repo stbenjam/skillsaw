@@ -11,11 +11,13 @@ even started that split, so the two findings deserve different advice:
 What counts as a disclosure reference differs by surface:
 
 * **Skills** bundle their own material, so only references into the
-  bundle count: markdown links resolving inside the skill directory,
-  path-like tokens (``references/guide.md``, ``scripts/run.py``) that
-  name a file bundled with the skill — including inside fenced code
-  blocks, where bundled scripts are typically invoked — and bare
-  filename mentions of bundled files ("run helper.py").
+  bundle count: markdown links to disclosure-eligible bundled files (or
+  directories holding them), path-like tokens (``references/guide.md``,
+  ``scripts/run.py``) that name a file bundled with the skill —
+  including inside fenced code blocks, where bundled scripts are
+  typically invoked — and bare filename mentions of bundled files ("run
+  helper.py").  Image embeds, scaffolding (README.md), and nested
+  skills' files never count.
 * **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends)
   disclose through explicit markdown links to local files and ``@path``
   imports (files or imported directories).  Bare path mentions and
@@ -213,29 +215,40 @@ class ContentProgressiveDisclosureRule(Rule):
         # silence the finding by pointing at an unrelated repo file.
         is_skill = cf.category == "skill"
         boundary = self_path.parent if is_skill else root
-        if self._has_local_link(cf, boundary, self_path, dirs_ok=is_skill):
+        inventory = self._bundled_inventory(self_path.parent) if is_skill else None
+        if self._has_local_link(cf, boundary, self_path, inventory=inventory):
             return True
         body = cf.read_body(strip_code_blocks=False) or ""
         if cf.category in _IMPORT_CATEGORIES and self._has_import_reference(
             cf, body, boundary, self_path
         ):
             return True
-        if not is_skill:
+        if inventory is None:
             return False
-        return self._has_bundled_mention(body, self_path.parent)
+        return self._has_bundled_mention(body, *inventory)
 
     def _has_local_link(
-        self, cf: ContentBlock, boundary: Path, self_path: Path, *, dirs_ok: bool
+        self,
+        cf: ContentBlock,
+        boundary: Path,
+        self_path: Path,
+        *,
+        inventory: Optional[Tuple[Set[str], Set[str]]],
     ) -> bool:
         """A markdown link resolving to a local file inside *boundary*.
 
-        Directory links count only for skills (*dirs_ok*), where a link
-        to ``references/`` is a link to bundled material.  For
-        instruction files a directory link ("see [src](src/)") is
+        Images never count — an embedded diagram is rendered, not loaded
+        on demand.  For skills (*inventory* given), the target must be a
+        disclosure-eligible bundled file, or a directory holding one:
+        scaffolding (README.md) and nested skills' files sit inside the
+        skill directory but are not the skill's own disclosed material.
+        For instruction files a directory link ("see [src](src/)") is
         structure narration, not on-demand loading.  The boundary
         directory itself never counts — ``[.](.)`` discloses nothing.
         """
         for link in cf.markdown.links():
+            if link.is_image:
+                continue
             target = link.href.strip()
             if not target or target.startswith(("#", "//")) or _URI_SCHEME.match(target):
                 continue
@@ -247,7 +260,15 @@ class ContentProgressiveDisclosureRule(Rule):
                 continue
             if not resolved.is_relative_to(boundary):
                 continue
-            if safe_is_file(resolved) or (dirs_ok and safe_exists(resolved)):
+            if inventory is None:
+                if safe_is_file(resolved):
+                    return True
+                continue
+            rel_paths, _names = inventory
+            rel = resolved.relative_to(boundary).as_posix().lower()
+            if rel in rel_paths:
+                return True
+            if any(bundled.startswith(rel + "/") for bundled in rel_paths):
                 return True
         return False
 
@@ -281,17 +302,15 @@ class ContentProgressiveDisclosureRule(Rule):
                     return True
         return False
 
-    def _has_bundled_mention(self, body: str, skill_dir: Path) -> bool:
+    def _has_bundled_mention(self, body: str, rel_paths: Set[str], names: Set[str]) -> bool:
         """The body mentions a bundled file by relative path or bare name.
 
-        Bundled files are enumerated once and matched by set membership
-        against the body's path-like tokens — a mention only counts when
-        it names a file that actually ships with the skill, so no
-        per-token filesystem probing is needed (matters on multi-thousand-
-        token bodies full of URLs and example paths).  Case-insensitive,
-        like agentskill-unreferenced-files.
+        Matched by set membership against the body's path-like tokens —
+        a mention only counts when it names a file that actually ships
+        with the skill, so no per-token filesystem probing is needed
+        (matters on multi-thousand-token bodies full of URLs and example
+        paths).  Case-insensitive, like agentskill-unreferenced-files.
         """
-        rel_paths, names = self._bundled_inventory(skill_dir)
         if not rel_paths:
             return False
         body_lower = body.lower()
