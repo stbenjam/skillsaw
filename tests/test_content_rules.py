@@ -3351,3 +3351,105 @@ class TestContentProgressiveDisclosureRule:
             ContentProgressiveDisclosureRule({"limits": {"skill": "big"}})
         with pytest.raises(ValueError, match="must be integers"):
             ContentProgressiveDisclosureRule({"limits": {"skill": True}})
+        with pytest.raises(ValueError, match="must be a mapping"):
+            ContentProgressiveDisclosureRule({"limits": 3000})
+        with pytest.raises(ValueError, match="non-negative"):
+            ContentProgressiveDisclosureRule({"limits": {"skill": -1}})
+
+    def test_null_limit_opts_category_out(self, temp_dir):
+        self._write_claude(temp_dir, repeats=200)  # over the default budget
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": None}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_context_budget_dict_shape_accepted(self, temp_dir):
+        """A copied context-budget limits block ({warn: N, error: M}) works."""
+        self._write_claude(temp_dir)
+        rule = ContentProgressiveDisclosureRule(
+            {"limits": {"claude-md": {"warn": 100, "error": 200}}}
+        )
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_exactly_at_limit_is_silent(self, temp_dir):
+        self._write_claude(temp_dir)
+        exact = len((temp_dir / "CLAUDE.md").read_text()) // 4
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": exact}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": exact - 1}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_agents_md_category_fires(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text("# Project notes\n\n" + self._PARA * 6)
+        rule = ContentProgressiveDisclosureRule({"limits": {"agents-md": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "agents-md" in violations[0].message
+
+    def test_directory_link_does_not_count_for_instructions(self, temp_dir):
+        """[src](src/) is structure narration, not on-demand loading."""
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "main.py").write_text("print('hi')\n")
+        self._write_claude(temp_dir, extra="\nStart from [the source tree](src/).\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_fenced_import_does_not_count(self, temp_dir):
+        """An @import shown inside a code fence is an example, not an import."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\n```markdown\n@docs/testing.md\n```\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_scaffolding_mention_does_not_count(self, temp_dir):
+        """Bundled packaging scaffolding (README.md) is not disclosure."""
+        self._write_skill(
+            temp_dir,
+            extra="\nSee README.md for background.\n",
+            files=("README.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_self_directory_link_does_not_count(self, temp_dir):
+        self._write_skill(temp_dir, extra="\nEverything lives in [this skill](.).\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_nested_skill_files_are_not_parent_bundle(self, temp_dir):
+        """A nested skill's files belong to the nested skill, not the parent."""
+        skill = self._write_skill(temp_dir, extra="\nRun inner.py when stages fail.\n")
+        nested = skill / "sub"
+        nested.mkdir()
+        (nested / "SKILL.md").write_text(
+            "---\nname: sub\ndescription: Nested helper. Use when asked.\n---\n\n# Sub\n"
+        )
+        (nested / "inner.py").write_text("print('hi')\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert [v.file_path for v in violations] == [skill / "SKILL.md"]
+
+    def test_url_ending_in_bundled_name_does_not_count(self, temp_dir):
+        """A URL path segment matching a bundled file's name is not a mention."""
+        self._write_skill(
+            temp_dir,
+            extra="\nBackground: https://example.com/docs/deploy.md has the history.\n",
+            files=("references/deploy.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_bare_name_boundaries_and_case(self, temp_dir):
+        """myhelper.py must not credit helper.py; case differences must."""
+        self._write_skill(
+            temp_dir,
+            extra="\nNever touch myhelper.py directly.\n",
+            files=("scripts/helper.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+        skill_md = temp_dir / ".claude" / "skills" / "deploy" / "SKILL.md"
+        skill_md.write_text(skill_md.read_text() + "\nRun Helper.PY when stages fail.\n")
+        from skillsaw.utils import invalidate_read_caches
+
+        invalidate_read_caches()
+        assert rule.check(RepositoryContext(temp_dir)) == []

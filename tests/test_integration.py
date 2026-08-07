@@ -2250,6 +2250,9 @@ class TestContentProgressiveDisclosure:
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         vs = by_rule(r).get("content-progressive-disclosure", [])
         assert not any(v["file_path"].endswith("CLAUDE.md") for v in vs)
+        # The untouched monolith skill must still fire — the rule as a whole
+        # didn't go quiet, only the file that gained a reference.
+        assert any(v["file_path"].endswith("deploy/SKILL.md") for v in vs)
 
 
 @pytest.mark.integration

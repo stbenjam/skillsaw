@@ -18,9 +18,10 @@ What counts as a disclosure reference differs by surface:
   filename mentions of bundled files ("run helper.py").
 * **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends)
   disclose through explicit markdown links to local files and ``@path``
-  imports.  Bare path mentions deliberately do not count: "``src/api/``
-  contains the handlers" is structure narration, not an instruction to
-  load a file on demand.
+  imports (files or imported directories).  Bare path mentions and
+  directory links deliberately do not count: "``src/api/`` contains the
+  handlers" and "see [src](src/)" are structure narration, not an
+  instruction to load a file on demand.
 
 The rule only inspects files already over a budget threshold, so its
 scans run on a handful of files per repository at most.
@@ -29,16 +30,16 @@ scans run on a handful of files per repository at most.
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote
 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.blocks import ContentBlock
-from skillsaw.paths import safe_exists, safe_resolve
+from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
-from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS
-from skillsaw.rules.builtin.instructions._helpers import _IMPORT_RE
+from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS, _estimate_tokens
+from skillsaw.rules.builtin.instructions._helpers import IMPORT_RE
 from skillsaw.rules.builtin.utils import read_text
 
 # Thresholds default to the context-budget warn limits so the two rules
@@ -59,9 +60,13 @@ _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
 _PATH_TOKEN_RE = re.compile(r"(?:\./)?[\w.-]+(?:/[\w.-]+)+")
 
 # Bare-filename mentions must sit on token boundaries: `run.py` must not
-# match inside `myrun.py` or `run.pyc` (same boundaries as
-# agentskill-unreferenced-files).
-_MENTION_BEFORE = r"(?<![A-Za-z0-9_-])"
+# match inside `myrun.py` or `run.pyc` (same after-boundary as
+# agentskill-unreferenced-files).  The before-boundary additionally
+# rejects `/` and `.`: a slash-preceded name is a path segment, and any
+# genuine bundled path already matched the rel-path set, so what remains
+# is a URL or foreign path ending in a bundled file's name
+# (https://example.com/docs/deploy.md must not credit references/deploy.md).
+_MENTION_BEFORE = r"(?<![A-Za-z0-9_./-])"
 _MENTION_AFTER = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 
 # Bundled files that are packaging scaffolding, not disclosure targets.
@@ -85,24 +90,55 @@ class ContentProgressiveDisclosureRule(Rule):
             "description": (
                 "Token thresholds per file category above which a file with "
                 "no local file references is flagged; add a category "
-                "(e.g. command) to extend the rule to it, set one to a "
-                "higher value to relax it"
+                "(e.g. command) to extend the rule to it, set one higher to "
+                "relax it, or set one to null to opt the category out. "
+                "context-budget's {warn: N} shape is accepted (warn is used)"
             ),
         },
     }
 
     def __init__(self, config: Dict[str, Any] = None):
         super().__init__(config)
+        raw = self.config.get("limits", {}) or {}
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"'limits' for rule '{self.rule_id}' must be a mapping of "
+                f"category to token threshold, got {type(raw).__name__}"
+            )
         merged: Dict[str, Any] = dict(DEFAULT_THRESHOLDS)
-        merged.update(self.config.get("limits", {}) or {})
+        merged.update(raw)
         self._limits: Dict[str, int] = {}
         for category, value in merged.items():
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(
-                    f"'limits' values for rule '{self.rule_id}' must be integers, "
-                    f"got {type(value).__name__} for '{category}'"
-                )
-            self._limits[category] = value
+            threshold = self._parse_threshold(category, value)
+            if threshold is not None:
+                self._limits[category] = threshold
+        self._pattern_cache: Dict[str, re.Pattern] = {}
+
+    def _parse_threshold(self, category: str, value: Any) -> Optional[int]:
+        """Parse one category's threshold.
+
+        Accepts an int, ``null``/``False`` to opt the category out, or
+        context-budget's ``{warn: N}`` dict shape (users copy their
+        existing limits block; the warn threshold is the one this rule
+        mirrors).
+        """
+        if value is None or value is False:
+            return None
+        if isinstance(value, dict):
+            value = value.get("warn")
+            if value is None:
+                return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"'limits' values for rule '{self.rule_id}' must be integers, "
+                f"null, or {{warn: N}}, got {type(value).__name__} for '{category}'"
+            )
+        if value < 0:
+            raise ValueError(
+                f"'limits' values for rule '{self.rule_id}' must be non-negative, "
+                f"got {value} for '{category}'"
+            )
+        return value
 
     @property
     def rule_id(self) -> str:
@@ -121,7 +157,7 @@ class ContentProgressiveDisclosureRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         # Per-run cache: bare-name mention patterns repeat across skills
         # that bundle files with the same names (run.py, guide.md, ...).
-        self._pattern_cache: Dict[str, re.Pattern] = {}
+        self._pattern_cache.clear()
         root = safe_resolve(context.root_path) or context.root_path
         violations: List[RuleViolation] = []
         for cf in gather_all_content_blocks(context):
@@ -131,7 +167,7 @@ class ContentProgressiveDisclosureRule(Rule):
             content = read_text(cf.path)
             if content is None:
                 continue
-            tokens = len(content) // 4  # same estimate as context-budget
+            tokens = _estimate_tokens(content)
             if tokens <= limit:
                 continue
             if self._has_disclosure_reference(cf, root):
@@ -145,7 +181,8 @@ class ContentProgressiveDisclosureRule(Rule):
             else:
                 advice = (
                     "move detail into skills, rules, or files pulled in via "
-                    "markdown links or @imports so it loads on demand"
+                    "markdown links or @imports (where your tool supports "
+                    "them) so it loads on demand"
                 )
             violations.append(
                 self.violation(
@@ -166,8 +203,9 @@ class ContentProgressiveDisclosureRule(Rule):
         # must land inside the skill directory (the same containment as
         # agentskill-unreferenced-files), so an oversized skill cannot
         # silence the finding by pointing at an unrelated repo file.
-        boundary = self_path.parent if cf.category == "skill" else root
-        if self._has_local_link(cf, boundary, self_path):
+        is_skill = cf.category == "skill"
+        boundary = self_path.parent if is_skill else root
+        if self._has_local_link(cf, boundary, self_path, dirs_ok=is_skill):
             return True
         body = cf.read_body(strip_code_blocks=False) or ""
         if self._has_import_reference(cf, body, boundary, self_path):
@@ -176,8 +214,17 @@ class ContentProgressiveDisclosureRule(Rule):
             return False
         return self._has_bundled_mention(body, self_path.parent)
 
-    def _has_local_link(self, cf: ContentBlock, boundary: Path, self_path: Path) -> bool:
-        """A markdown link resolving to a local file or directory in *boundary*."""
+    def _has_local_link(
+        self, cf: ContentBlock, boundary: Path, self_path: Path, *, dirs_ok: bool
+    ) -> bool:
+        """A markdown link resolving to a local file inside *boundary*.
+
+        Directory links count only for skills (*dirs_ok*), where a link
+        to ``references/`` is a link to bundled material.  For
+        instruction files a directory link ("see [src](src/)") is
+        structure narration, not on-demand loading.  The boundary
+        directory itself never counts — ``[.](.)`` discloses nothing.
+        """
         for link in cf.markdown.links():
             target = link.href.strip()
             if not target or target.startswith(("#", "//")) or _URI_SCHEME.match(target):
@@ -186,11 +233,11 @@ class ContentProgressiveDisclosureRule(Rule):
             if not target:
                 continue
             resolved = safe_resolve(cf.path.parent / target)
-            if resolved is None or resolved == self_path:
+            if resolved is None or resolved == self_path or resolved == boundary:
                 continue
             if not resolved.is_relative_to(boundary):
                 continue
-            if safe_exists(resolved):
+            if safe_is_file(resolved) or (dirs_ok and safe_exists(resolved)):
                 return True
         return False
 
@@ -211,7 +258,7 @@ class ContentProgressiveDisclosureRule(Rule):
         for _line_num, line in cf.markdown.prose_lines():
             if "@" not in line:
                 continue
-            for match in _IMPORT_RE.finditer(line):
+            for match in IMPORT_RE.finditer(line):
                 import_path = match.group(1).rstrip(".!?")
                 if not import_path or import_path.startswith("~"):
                     continue
