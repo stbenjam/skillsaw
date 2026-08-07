@@ -133,6 +133,7 @@ class MarkdownFence:
     indented: bool = False
     markup: str = ""  # opening fence run ("```", "~~~~", …); empty for indented blocks
     nested: bool = False  # inside a container (blockquote, list item)
+    content: str = ""  # normalized code content (container markers/indent removed)
 
 
 @dataclass
@@ -886,6 +887,7 @@ class MarkdownDoc:
                         indented=token.type == "code_block",
                         markup=token.markup or "",
                         nested=token.level > 0,
+                        content=token.content or "",
                     )
                 )
         return result

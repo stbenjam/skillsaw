@@ -20,6 +20,7 @@ from .unclosed_fence import ContentUnclosedFenceRule
 from .repeated_directive import ContentRepeatedDirectiveRule
 from .emphasis_density import ContentEmphasisDensityRule
 from .missing_stop_condition import ContentMissingStopConditionRule
+from .inline_tool_examples import ContentInlineToolExamplesRule
 
 __all__ = [
     "ContentWeakLanguageRule",
@@ -44,4 +45,5 @@ __all__ = [
     "ContentRepeatedDirectiveRule",
     "ContentEmphasisDensityRule",
     "ContentMissingStopConditionRule",
+    "ContentInlineToolExamplesRule",
 ]

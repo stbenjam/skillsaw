@@ -1878,6 +1878,7 @@ OPT_IN_RULES = {
     "promptfoo-metadata",
     "hooks-prohibited",
     "content-missing-stop-condition",
+    "content-inline-tool-examples",
 }
 
 
@@ -2233,6 +2234,43 @@ class TestContentMissingStopCondition:
         assert v["file_path"].endswith("CLAUDE.md")
         assert v["line"] == 8
         assert "keep monitoring" in v["message"]
+
+
+@pytest.mark.integration
+class TestContentInlineToolExamples:
+    """End-to-end tests for content-inline-tool-examples (opt-in).
+
+    The fixture CLAUDE.md has one run of three consecutive fenced
+    `search(...)` examples plus negative sections (a two-block run,
+    mixed callees, CLI commands, and a heading-broken run); the skill
+    file shows the same pattern with indented code blocks.
+    """
+
+    FIXTURE = "content/inline-tool-examples"
+
+    def test_same_tool_runs_reported_negatives_not(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-inline-tool-examples", [])
+        assert len(vs) == 2
+        claude = [v for v in vs if v["file_path"].endswith("CLAUDE.md")]
+        assert len(claude) == 1
+        assert claude[0]["line"] == 10
+        assert claude[0]["severity"] == "info"
+        assert "`search`" in claude[0]["message"]
+        assert "3 consecutive" in claude[0]["message"]
+        skill = [v for v in vs if v["file_path"].endswith("SKILL.md")]
+        assert len(skill) == 1
+        assert skill[0]["line"] == 10
+        assert "`query`" in skill[0]["message"]
+
+    def test_silent_without_config(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-inline-tool-examples" not in rule_ids(r)
 
 
 @pytest.mark.integration

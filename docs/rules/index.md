@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **72** built-in rules organized into the following categories:
+skillsaw includes **73** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -15,7 +15,7 @@ skillsaw includes **72** built-in rules organized into the following categories:
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
-- [Content Intelligence](content-intelligence.md) (21 rules)
+- [Content Intelligence](content-intelligence.md) (22 rules)
 - [CodeRabbit](coderabbit.md) (2 rules)
 - [Promptfoo Evals](promptfoo.md) (3 rules)
 - [APM (Agent Package Manager)](apm.md) (2 rules)
@@ -87,6 +87,7 @@ skillsaw includes **72** built-in rules organized into the following categories:
 | [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - | Content Intelligence |
 | [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
 | [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
+| [`content-inline-tool-examples`](content-inline-tool-examples.md) | Detect consecutive code-block examples that all invoke the same tool | info (disabled) | - | Content Intelligence |
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - | CodeRabbit |
 | [`coderabbit-schema-valid`](coderabbit-schema-valid.md) | .coderabbit.yaml keys and enums should match the CodeRabbit schema | warning (auto) | - | CodeRabbit |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |

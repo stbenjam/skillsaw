@@ -1,0 +1,4 @@
+version: "99.0.0"
+rules:
+  content-inline-tool-examples:
+    enabled: true

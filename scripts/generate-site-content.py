@@ -206,6 +206,7 @@ RULE_GROUPS = [
             "content-repeated-directive",
             "content-emphasis-density",
             "content-missing-stop-condition",
+            "content-inline-tool-examples",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
