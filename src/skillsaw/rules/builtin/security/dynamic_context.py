@@ -1,7 +1,8 @@
 """Security rule for dynamic context injection in agent-facing content.
 
-Some agent clients expand ``!`command``` inline forms and `````!`` fenced
-blocks by executing their contents before agent-facing content is sent to the
+Some agent clients expand dynamic-context markers — an inline code span
+prefixed with ``!``, or a fenced block whose info string starts with ``!`` —
+by executing their contents before agent-facing content is sent to the
 model.  That turns otherwise prompt-only content into a shell execution
 surface, so this rule requires every such command in agent-facing content to
 be explicitly allowlisted.
@@ -23,7 +24,7 @@ class SecurityDynamicContextRule(Rule):
 
     formats = None
     repo_types = None
-    since = "0.18.0"
+    since = "0.19.0"
 
     config_schema = {
         "allowlist": {
@@ -48,7 +49,11 @@ class SecurityDynamicContextRule(Rule):
         )
 
     def default_severity(self) -> Severity:
-        return Severity.ERROR
+        # Dynamic context is a documented, first-party feature with a high
+        # legitimate base rate, so the auto-enabled default must not fail
+        # previously-clean CI runs. Repos that want a hard gate raise this
+        # to error (or run with --fail-level warning).
+        return Severity.WARNING
 
     def _allowlist(self) -> Set[str]:
         configured = self.config.get("allowlist", [])
@@ -90,21 +95,26 @@ class SecurityDynamicContextRule(Rule):
         doc = block.markdown
         matches: List[DynamicContextMatch] = []
         for fence in doc.fences():
-            if fence.indented or fence.info.strip() != "!":
+            # Any info string starting with "!" is treated as executable so
+            # a client matching loosely (e.g. ```!bash) cannot slip past a
+            # rule that required exactly "!".
+            if fence.indented or not fence.info.startswith("!"):
                 continue
             # MarkdownDoc exposes parser-normalized fence content, which
             # removes blockquote/list prefixes and includes the final command
-            # line even when the fence is unterminated. Remove only the
-            # structural trailing newline; horizontal whitespace is part of
-            # exact allowlist matching.
-            command = fence.content.rstrip("\n")
+            # line even when the fence is unterminated. Remove only the one
+            # structural trailing newline; blank lines and horizontal
+            # whitespace are part of exact allowlist matching.
+            command = fence.content.removesuffix("\n")
             if command:
                 matches.append(
                     (
                         fence.body_line_start,
                         command,
                         "fenced",
-                        f"fenced:{fence.body_line_start}",
+                        # Content-based so baselined findings survive
+                        # unrelated edits above the fence.
+                        f"fenced:{command}",
                     )
                 )
         return matches

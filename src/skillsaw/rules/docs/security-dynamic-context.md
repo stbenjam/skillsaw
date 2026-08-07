@@ -1,20 +1,23 @@
 ## Why
 
 Some agent clients support dynamic context injection in agent-facing content.
-[Claude Code's documentation](https://code.claude.com/docs/en/slash-commands#inject-dynamic-context)
-describes the inline form, ``!`<command>``, and fenced blocks whose info string
-is `!`. These forms execute shell commands before content is sent to the model.
-Other clients can adopt the same mechanism, so this rule scans every content
-block that skillsaw attaches to the lint tree rather than tying the check to
-one client or format.
-The command output is then inserted into the prompt, turning otherwise static
-content into a shell execution surface that can expose repository data or run
-an unexpected command during context loading.
+[Claude Code's documentation](https://code.claude.com/docs/en/skills#inject-dynamic-context)
+describes the inline form, `` !`<command>` ``, and fenced blocks whose info
+string is `!`. These forms execute shell commands before content is sent to
+the model, and the command output is inserted into the prompt — turning
+otherwise static content into a shell execution surface that can expose
+repository data or run an unexpected command during context loading.
+
+As defense in depth, this rule scans every content block that skillsaw
+attaches to the lint tree rather than tying the check to one client or
+format: prose files are routinely cross-loaded into surfaces that do expand
+the syntax, and other clients can adopt the same mechanism.
 
 This rule treats dynamic context as prohibited unless the exact command has
 been reviewed and added to an explicit allowlist. It is enabled automatically
-so every repository gets this supply-chain check; content that does use
-dynamic context must review and allowlist each command.
+so every repository gets this supply-chain check, and reports at `warning`
+severity by default so adopting a new skillsaw release does not fail
+previously-clean CI runs; raise it to `error` for a hard gate.
 
 ## Examples
 

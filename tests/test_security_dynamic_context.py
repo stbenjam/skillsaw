@@ -2,6 +2,7 @@
 
 import pytest
 
+from skillsaw.baseline import fingerprint_violation
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.security.dynamic_context import SecurityDynamicContextRule
@@ -24,9 +25,9 @@ class TestSecurityDynamicContextRule:
     def test_rule_metadata(self):
         rule = SecurityDynamicContextRule()
         assert rule.rule_id == "security-dynamic-context"
-        assert rule.default_severity() == Severity.ERROR
+        assert rule.default_severity() == Severity.WARNING
         assert rule.default_enabled == "auto"
-        assert rule.since == "0.18.0"
+        assert rule.since == "0.19.0"
         assert not rule.supports_autofix
         assert "allowlist" in rule.config_schema
 
@@ -150,6 +151,49 @@ class TestSecurityDynamicContextRule:
 
         assert len(violations) == 2
         assert len({v.fingerprint_discriminator for v in violations}) == 2
+
+    def test_fenced_fingerprint_survives_insertions_above(self, tmp_path):
+        # Two directories rather than one rewritten file so the comparison
+        # cannot be masked by mtime-granularity content caching.
+        before_dir = tmp_path / "before"
+        after_dir = tmp_path / "after"
+        before_dir.mkdir()
+        after_dir.mkdir()
+        _write_skill(before_dir, "# Environment\n\n```!\nnode --version\n```\n")
+        _write_skill(
+            after_dir, "# Environment\n\nAn unrelated paragraph.\n\n```!\nnode --version\n```\n"
+        )
+
+        before = _check(before_dir)
+        after = _check(after_dir)
+
+        assert len(before) == len(after) == 1
+        assert after[0].file_line == before[0].file_line + 2
+        assert fingerprint_violation(after[0], after_dir) == fingerprint_violation(
+            before[0], before_dir
+        )
+
+    def test_fenced_trailing_blank_lines_are_part_of_the_command(self, temp_dir):
+        _write_skill(temp_dir, "```!\necho one\n\n```\n")
+
+        assert _check(temp_dir, {"allowlist": ["echo one"]})
+        assert _check(temp_dir, {"allowlist": ["echo one\n"]}) == []
+
+    def test_fence_info_starting_with_marker_is_detected(self, temp_dir):
+        _write_skill(temp_dir, "```!bash\ngit status --short\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert "git status --short" in violations[0].message
+
+    def test_multiline_inline_span_is_not_classified(self, temp_dir):
+        # Pins the recorded boundary: an inline code span that wraps across
+        # lines has no trustworthy column, so it is skipped; the fenced form
+        # is the supported representation for multi-line commands.
+        _write_skill(temp_dir, "Run !`git\nstatus` when reviewing.\n")
+
+        assert _check(temp_dir) == []
 
     def test_ordinary_code_and_non_dynamic_fence_are_clean(self, temp_dir):
         _write_skill(

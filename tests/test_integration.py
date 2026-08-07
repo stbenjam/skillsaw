@@ -1931,6 +1931,34 @@ class TestMaliciousSkillDetection:
         assert not missing, f"Expected rules did not fire on malicious fixture: {sorted(missing)}"
 
 
+@pytest.mark.integration
+class TestDynamicContextAllowlist:
+    """End-to-end tests for the security-dynamic-context allowlist via .skillsaw.yaml.
+
+    The fixture SKILL.md uses two allowlisted commands (an inline `git diff
+    HEAD` and a fenced block configured with the documented `|-` block
+    scalar) plus one inline command that is not allowlisted.
+    """
+
+    FIXTURE = "security/dynamic-context-allowlist"
+
+    def test_allowlist_travels_through_config(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 1
+        assert "git log --oneline -5" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert all("git diff HEAD" not in v["message"] for v in vs)
+
+    def test_without_config_every_command_is_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 3
+
+
 # ── Opt-In Rules ────────────────────────────────────────────────
 
 

@@ -60,7 +60,7 @@ skillsaw includes **73** built-in rules organized into the following categories:
 | [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Security |
 | [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - | Security |
 | [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Security |
-| [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for dynamic context commands that execute shell code while loading agent context | error (auto) | - | Security |
+| [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for dynamic context commands that execute shell code while loading agent context | warning (auto) | - | Security |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
