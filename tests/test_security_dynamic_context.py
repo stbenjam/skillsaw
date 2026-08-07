@@ -187,6 +187,15 @@ class TestSecurityDynamicContextRule:
         assert len(violations) == 1
         assert "git status --short" in violations[0].message
 
+    def test_html_comment_content_is_not_classified(self, temp_dir):
+        # Pins the recorded boundary: dynamic-context syntax inside an HTML
+        # comment is not expanded by clients and is not reported here —
+        # hidden directives in comments are security-hidden-instructions'
+        # territory.
+        _write_skill(temp_dir, "<!-- !`git diff HEAD` -->\n\n<!--\n```!\ngit status\n```\n-->\n")
+
+        assert _check(temp_dir) == []
+
     def test_multiline_inline_span_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: an inline code span that wraps across
         # lines has no trustworthy column, so it is skipped; the fenced form
