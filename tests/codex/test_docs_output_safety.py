@@ -475,16 +475,16 @@ class TestRendererHardening:
             assert "javascript:alert" not in content
 
     def test_emitted_page_script_survives_backslash_escaping(self, tmp_path):
-        """Pin the emitted escJs escapes and parse every script block with
-        node when it is available."""
+        """Pin the emitted escJsAttr escapes and parse every script block
+        with node when it is available."""
         import shutil
         import subprocess
 
         from skillsaw.docs.html_renderer import _get_js
 
         js = _get_js()
-        assert "function escJs(str)" in js
-        assert "return JSON.stringify(String(str))" in js
+        assert "function escJsAttr(str)" in js
+        assert "JSON.stringify(String(str))" in js
         assert ".replace(/\\u2028/g, '\\\\u2028')" in js
         assert ".replace(/\\u2029/g, '\\\\u2029')" in js
 
@@ -535,17 +535,11 @@ class TestRendererHardening:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        script = (
-            f"{helpers}\nprocess.stdout.write(JSON.stringify({{"
-            f"js: escJs({json.dumps(value)}), attr: escJsAttr({json.dumps(value)})"
-            "}));"
-        )
+        script = f"{helpers}\nprocess.stdout.write(JSON.stringify(escJsAttr({json.dumps(value)})));"
         proc = subprocess.run([node, "-e", script], capture_output=True, text=True)
 
         assert proc.returncode == 0, proc.stderr
-        result = json.loads(proc.stdout)
-        assert result["js"] == expected_js
-        assert result["attr"] == expected_attr
+        assert json.loads(proc.stdout) == expected_attr
 
 
 class TestSafeUrlEntityDecoding:

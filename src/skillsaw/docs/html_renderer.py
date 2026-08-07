@@ -1202,21 +1202,15 @@ def _get_js() -> str:
       .replace(/>/g, '&gt;');
   }
 
-  function escJs(str) {
+  function escJsAttr(str) {
     // JSON.stringify is the JavaScript string-literal serializer. It handles
     // quotes, backslashes, and ordinary line terminators; escape the two
-    // legacy Unicode line separators that it leaves literal.
-    if (!str) return '""';
-    return JSON.stringify(String(str))
-      .replace(/\\u2028/g, '\\\\u2028')
-      .replace(/\\u2029/g, '\\\\u2029');
-  }
-
-  function escJsAttr(str) {
-    // escJs returns a complete double-quoted JS string literal. HTML-escape
-    // that literal so it can be placed inside a double-quoted attribute;
-    // innerHTML decodes the entities before the inline handler compiles.
-    return escAttr(escJs(str));
+    // legacy Unicode line separators that it leaves literal. Then HTML-escape
+    // the complete literal for the double-quoted attribute.
+    var literal = !str ? '""' : JSON.stringify(String(str));
+    return escAttr(
+      literal.replace(/\\u2028/g, '\\\\u2028').replace(/\\u2029/g, '\\\\u2029')
+    );
   }
   // END_ESCAPERS
 
