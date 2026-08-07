@@ -1529,6 +1529,29 @@ class TestProfileRegistry:
                             f"'{key}' in its config_schema"
                         )
 
+    def test_profile_limits_parameters_are_well_formed(self):
+        """A 'limits' parameter in any profile must hold values the
+        context-budget rule can consume: per-category ints (warn-only) or
+        {warn, error} mappings of ints. A malformed entry would otherwise
+        pass the schema-key check above and only blow up at lint time."""
+        from skillsaw.profiles import PROFILES
+
+        for profile in PROFILES.values():
+            for rule_id, overrides in profile.rules.items():
+                limits = overrides.get("limits")
+                if limits is None:
+                    continue
+                assert isinstance(limits, dict), f"{profile.name}: {rule_id}.limits"
+                for category, value in limits.items():
+                    label = f"{profile.name}: {rule_id}.limits.{category}"
+                    if isinstance(value, int):
+                        continue
+                    assert isinstance(value, dict), label
+                    assert set(value) <= {"warn", "error"}, label
+                    assert value, f"{label} is empty"
+                    for threshold in value.values():
+                        assert isinstance(threshold, int) and threshold > 0, label
+
     def test_default_profile_is_empty(self):
         from skillsaw.profiles import PROFILES
 
