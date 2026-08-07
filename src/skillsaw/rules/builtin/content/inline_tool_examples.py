@@ -55,13 +55,6 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # code indentation that must survive (indented blocks in blockquotes).
 _QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
 
-# Pieces of an HTML comment on a boundary line: a complete inline span,
-# a dangling opener, and a dangling closer.  What survives stripping all
-# three is the line's visible prose.
-_COMMENT_SPAN_RE = re.compile(r"<!--.*?-->")
-_COMMENT_OPEN_RE = re.compile(r"<!--.*$")
-_COMMENT_CLOSE_RE = re.compile(r"^.*?-->")
-
 
 class ContentInlineToolExamplesRule(Rule):
     """Detect consecutive fenced examples that all invoke the same tool"""
@@ -135,6 +128,29 @@ class ContentInlineToolExamplesRule(Rule):
         return Severity.INFO
 
     @staticmethod
+    def _strip_comment_pieces(line: str) -> str:
+        """Remove HTML-comment pieces from one comment-boundary line.
+
+        The line comes from an AST-located comment span, so this is
+        visibility accounting for prose counting, not HTML sanitization.
+        A closer belonging to a comment opened on an earlier line is
+        dropped first, then complete inline spans, then a dangling
+        opener; what survives is the line's visible prose.
+        """
+        close = line.find("-->")
+        opened = line.find("<!--")
+        if close != -1 and (opened == -1 or close < opened):
+            line = line[close + 3 :]
+        while True:
+            start = line.find("<!--")
+            if start == -1:
+                return line
+            end = line.find("-->", start + 4)
+            if end == -1:
+                return line[:start]
+            line = line[:start] + line[end + 3 :]
+
+    @staticmethod
     def _dedent(raw: List[str]) -> List[str]:
         """Strip the common leading whitespace of the non-blank lines.
 
@@ -159,7 +175,8 @@ class ContentInlineToolExamplesRule(Rule):
         on every line.  Container-nested content (blockquote markers,
         list-item indentation — including a fence opened on the list
         marker line itself) is normalized by stripping quote markers and
-        the common indent; a fence outside any container is taken as-is
+        the common indent; a fence outside any container is only
+        dedented (CommonMark allows up to three spaces of indentation),
         so code that legitimately starts with ``>`` survives.
         """
         if fence.indented:
@@ -303,9 +320,7 @@ class ContentInlineToolExamplesRule(Rule):
                 continue
             text = lines[line_num - 1]
             if line_num in comment_boundary:
-                text = _COMMENT_SPAN_RE.sub("", text)
-                text = _COMMENT_OPEN_RE.sub("", text)
-                text = _COMMENT_CLOSE_RE.sub("", text)
+                text = self._strip_comment_pieces(text)
             # A bare '>' between fences in a blockquote is a blank line,
             # not a caption.
             if not _CONTAINER_PREFIX_RE.sub("", text).strip():
