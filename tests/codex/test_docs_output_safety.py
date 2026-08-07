@@ -476,15 +476,21 @@ class TestRendererHardening:
 
     def test_emitted_page_script_survives_backslash_escaping(self, tmp_path):
         """The JS template is a non-raw Python string — backslash halving
-        once shipped an unparseable script and a blank page. Pin the
-        emitted (post-halving) escJsAttr line, and parse every script
-        block with node when it is available."""
+        once shipped an unparseable script and a blank page. Pin the emitted
+        (post-halving) escJsAttr escapes, and parse every script block with
+        node when it is available."""
         import shutil
         import subprocess
 
         from skillsaw.docs.html_renderer import _get_js
 
-        assert ".replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\")" in _get_js()
+        js = _get_js()
+        assert ".replace(/\\\\/g, '\\\\\\\\')" in js
+        assert ".replace(/'/g, \"\\\\'\")" in js
+        assert ".replace(/\\r/g, '\\\\r')" in js
+        assert ".replace(/\\n/g, '\\\\n')" in js
+        assert ".replace(/\\u2028/g, '\\\\u2028')" in js
+        assert ".replace(/\\u2029/g, '\\\\u2029')" in js
 
         node = shutil.which("node")
         if node is None:
@@ -505,6 +511,28 @@ class TestRendererHardening:
                 js.write_text(script, encoding="utf-8")
                 proc = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
                 assert proc.returncode == 0, proc.stderr
+
+    def test_escjsattr_escapes_javascript_line_terminators(self, tmp_path):
+        import shutil
+        import subprocess
+
+        from skillsaw.docs.html_renderer import _get_js
+
+        node = shutil.which("node")
+        if node is None:
+            pytest.skip("node not available")
+
+        js = _get_js()
+        helpers = js[
+            js.index("function escAttr") : js.index("\n\n  init();", js.index("function escAttr"))
+        ]
+        value = "first\r\nsecond\u2028third\u2029fourth\\'quote"
+        expected = "first\\r\\nsecond\\u2028third\\u2029fourth\\\\\\'quote"
+        script = f"{helpers}\nprocess.stdout.write(JSON.stringify(escJsAttr({json.dumps(value)})));"
+        proc = subprocess.run([node, "-e", script], capture_output=True, text=True)
+
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout) == expected
 
 
 class TestSafeUrlEntityDecoding:

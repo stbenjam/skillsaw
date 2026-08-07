@@ -1207,7 +1207,17 @@ def _get_js() -> str:
     // handler compiles, so the JS escapes must survive that decode: \' stays
     // \', while " arrives as a plain quote which cannot close a
     // single-quoted JS string.
-    return escAttr(String(str).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'"));
+    // Line terminators are valid in HTML attributes but not in JavaScript
+    // string literals, so escape those after introducing the other escapes.
+    return escAttr(
+      String(str)
+        .replace(/\\\\/g, '\\\\\\\\')
+        .replace(/'/g, "\\\\'")
+        .replace(/\\r/g, '\\\\r')
+        .replace(/\\n/g, '\\\\n')
+        .replace(/\\u2028/g, '\\\\u2028')
+        .replace(/\\u2029/g, '\\\\u2029')
+    );
   }
 
   init();
