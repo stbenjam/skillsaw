@@ -58,9 +58,6 @@ class LinterConfig:
     """Configuration for the linter"""
 
     version: str = ""
-    # Named rule-set profile (see skillsaw.profiles): a curated bundle of
-    # rule overrides applied under the user's own ``rules:`` entries.
-    profile: str = DEFAULT_PROFILE
     rules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     custom_rules: List[str] = field(default_factory=list)
     exclude_patterns: List[str] = field(default_factory=list)
@@ -80,6 +77,11 @@ class LinterConfig:
     # Excluded from equality so two configs loaded the same way still compare
     # equal regardless of the advisory messages attached.
     warnings: List[str] = field(default_factory=list, compare=False)
+    # Named rule-set profile (see skillsaw.profiles): a curated bundle of
+    # rule overrides applied under the user's own ``rules:`` entries.
+    # Declared after every pre-profile field so the dataclass keeps the
+    # positional constructor signature of earlier releases.
+    profile: str = DEFAULT_PROFILE
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(

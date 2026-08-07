@@ -1633,3 +1633,15 @@ def test_profile_set_auto_bypasses_version_gate(temp_dir, monkeypatch):
     )
     assert enabled is True
     assert "auto" in reason
+
+
+def test_positional_constructor_signature_unchanged():
+    """The profile field is declared after every pre-profile field so
+    positional construction from earlier releases keeps its meaning:
+    the second positional argument is still ``rules``."""
+    config = LinterConfig("0.19.0", {"mcp-prohibited": {"enabled": True}})
+    assert config.version == "0.19.0"
+    assert config.rules == {"mcp-prohibited": {"enabled": True}}
+    assert config.profile == "default"
+    # get_rule_config must not choke on the profile lookup either.
+    assert config.get_rule_config("mcp-prohibited")["enabled"] is True
