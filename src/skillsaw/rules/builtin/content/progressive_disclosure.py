@@ -73,6 +73,12 @@ _MENTION_AFTER = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 _SCAFFOLDING_NAMES = {"SKILL.md", "README.md", "CHANGELOG.md"}
 _SCAFFOLDING_PREFIXES = ("LICENSE", "NOTICE")
 
+# Categories whose host actually loads ``@path`` imports — the same
+# surface instruction-imports-valid validates.  In a generic instruction
+# file (.cursorrules, copilot-instructions.md) an ``@docs`` token is
+# just prose, so it must not count as disclosure there.
+_IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md"})
+
 
 class ContentProgressiveDisclosureRule(Rule):
     """Long files should split detail into referenced files that load on demand"""
@@ -99,7 +105,9 @@ class ContentProgressiveDisclosureRule(Rule):
 
     def __init__(self, config: Dict[str, Any] = None):
         super().__init__(config)
-        raw = self.config.get("limits", {}) or {}
+        raw = self.config.get("limits", {})
+        if raw is None:
+            raw = {}
         if not isinstance(raw, dict):
             raise ValueError(
                 f"'limits' for rule '{self.rule_id}' must be a mapping of "
@@ -208,9 +216,11 @@ class ContentProgressiveDisclosureRule(Rule):
         if self._has_local_link(cf, boundary, self_path, dirs_ok=is_skill):
             return True
         body = cf.read_body(strip_code_blocks=False) or ""
-        if self._has_import_reference(cf, body, boundary, self_path):
+        if cf.category in _IMPORT_CATEGORIES and self._has_import_reference(
+            cf, body, boundary, self_path
+        ):
             return True
-        if cf.category != "skill":
+        if not is_skill:
             return False
         return self._has_bundled_mention(body, self_path.parent)
 

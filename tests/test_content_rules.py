@@ -3353,6 +3353,8 @@ class TestContentProgressiveDisclosureRule:
             ContentProgressiveDisclosureRule({"limits": {"skill": True}})
         with pytest.raises(ValueError, match="must be a mapping"):
             ContentProgressiveDisclosureRule({"limits": 3000})
+        with pytest.raises(ValueError, match="must be a mapping"):
+            ContentProgressiveDisclosureRule({"limits": False})
         with pytest.raises(ValueError, match="non-negative"):
             ContentProgressiveDisclosureRule({"limits": {"skill": -1}})
 
@@ -3391,6 +3393,21 @@ class TestContentProgressiveDisclosureRule:
         self._write_claude(temp_dir, extra="\nStart from [the source tree](src/).\n")
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_import_in_generic_instruction_file_does_not_count(self, temp_dir):
+        """copilot-instructions.md has no @import mechanism — the token is
+        prose there, so it earns no disclosure credit."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        gh_dir = temp_dir / ".github"
+        gh_dir.mkdir()
+        (gh_dir / "copilot-instructions.md").write_text(
+            "# Project notes\n\n" + self._PARA * 6 + "\n@docs/testing.md\n"
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"instruction": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].file_path.name == "copilot-instructions.md"
 
     def test_fenced_import_does_not_count(self, temp_dir):
         """An @import shown inside a code fence is an example, not an import."""
