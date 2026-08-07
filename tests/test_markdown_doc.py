@@ -265,6 +265,7 @@ class TestFences:
         body = "before\n\n```yaml\nkey: val\n```\n\nafter\n"
         (fence,) = _doc(body).fences()
         assert fence.info == "yaml"
+        assert fence.content == "key: val\n"
         assert fence.body_line_start == 3
         assert fence.body_line_end == 5
         assert not fence.indented

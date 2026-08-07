@@ -1,5 +1,7 @@
 """Tests for the security-dynamic-context rule."""
 
+import pytest
+
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.security.dynamic_context import SecurityDynamicContextRule
@@ -66,6 +68,40 @@ class TestSecurityDynamicContextRule:
         assert "node --version\\ngit status --short" in violations[0].message
         assert "command block" in violations[0].message
 
+    def test_tilde_fenced_dynamic_context_is_detected(self, temp_dir):
+        _write_skill(temp_dir, "~~~!\nnode --version\n~~~\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert "node --version" in violations[0].message
+
+    def test_unterminated_fenced_dynamic_context_is_detected(self, temp_dir):
+        _write_skill(temp_dir, "```!\necho one\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert "echo one" in violations[0].message
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "> ```!\n> echo one\n> echo two\n> ```\n",
+            "- item\n  ```!\n  echo one\n  echo two\n  ```\n",
+        ],
+    )
+    def test_nested_fence_allowlist_uses_command_content(self, temp_dir, body):
+        _write_skill(temp_dir, body)
+
+        assert (
+            _check(
+                temp_dir,
+                {"allowlist": ["echo one\necho two"]},
+            )
+            == []
+        )
+
     def test_allowlist_matches_inline_command_exactly(self, temp_dir):
         _write_skill(temp_dir, "!`git diff HEAD`\n" "!`git diff HEAD --stat`\n")
 
@@ -94,6 +130,26 @@ class TestSecurityDynamicContextRule:
         violations = _check(temp_dir, {"allowlist": ["git diff HEAD"]})
 
         assert len(violations) == 1
+
+    def test_allowlist_matching_preserves_inline_whitespace(self, temp_dir):
+        _write_skill(temp_dir, "!`git diff HEAD `\n")
+
+        assert _check(temp_dir, {"allowlist": ["git diff HEAD"]})
+        assert _check(temp_dir, {"allowlist": ["git diff HEAD "]}) == []
+
+    def test_allowlist_matching_preserves_fenced_whitespace(self, temp_dir):
+        _write_skill(temp_dir, "```!\necho one \n```\n")
+
+        assert _check(temp_dir, {"allowlist": ["echo one"]})
+        assert _check(temp_dir, {"allowlist": ["echo one "]}) == []
+
+    def test_same_line_commands_have_distinct_fingerprints(self, temp_dir):
+        _write_skill(temp_dir, "!`git status` and !`git diff`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 2
+        assert len({v.fingerprint_discriminator for v in violations}) == 2
 
     def test_ordinary_code_and_non_dynamic_fence_are_clean(self, temp_dir):
         _write_skill(

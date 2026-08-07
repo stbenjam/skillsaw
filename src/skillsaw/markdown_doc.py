@@ -126,6 +126,7 @@ class MarkdownFence:
     """A fenced or indented code block. Line range includes the delimiters."""
 
     info: str
+    content: str
     body_line_start: int
     body_line_end: int
     file_line_start: int
@@ -879,6 +880,7 @@ class MarkdownDoc:
                 result.append(
                     MarkdownFence(
                         info=(token.info or "").strip(),
+                        content=token.content or "",
                         body_line_start=start + 1,
                         body_line_end=end,
                         file_line_start=self.file_line(start + 1),

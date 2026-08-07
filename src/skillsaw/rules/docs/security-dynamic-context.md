@@ -2,10 +2,11 @@
 
 Some agent clients support dynamic context injection in agent-facing content.
 [Claude Code's documentation](https://code.claude.com/docs/en/slash-commands#inject-dynamic-context)
-describes the inline form, `!`<command>``, and the fenced form, ` ```! `, which
-execute shell commands before content is sent to the model. Other clients can
-adopt the same mechanism, so this rule scans every content block that skillsaw
-attaches to the lint tree rather than tying the check to one client or format.
+describes the inline form, ``!`<command>``, and fenced blocks whose info string
+is `!`. These forms execute shell commands before content is sent to the model.
+Other clients can adopt the same mechanism, so this rule scans every content
+block that skillsaw attaches to the lint tree rather than tying the check to
+one client or format.
 The command output is then inserted into the prompt, turning otherwise static
 content into a shell execution surface that can expose repository data or run
 an unexpected command during context loading.
@@ -49,8 +50,8 @@ rules:
 
 Ordinary inline code is not dynamic context. The established inline form is
 recognized only when `!` is at the start of a line or immediately follows
-whitespace; for example, `KEY=!`cmd`` is left literal by clients following
-the documented convention.
+whitespace. An exclamation marker immediately after `KEY=` is left literal by
+clients following the documented convention.
 
 ## How to fix
 

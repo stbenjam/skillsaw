@@ -1,10 +1,10 @@
 """Security rule for dynamic context injection in agent-facing content.
 
 Some agent clients expand ``!`command``` inline forms and `````!`` fenced
-blocks by executing their contents before a skill is sent to the model.  That
-turns otherwise prompt-only content into a shell execution surface, so this
-rule requires every such command in agent-facing content to be explicitly
-allowlisted.
+blocks by executing their contents before agent-facing content is sent to the
+model.  That turns otherwise prompt-only content into a shell execution
+surface, so this rule requires every such command in agent-facing content to
+be explicitly allowlisted.
 """
 
 from typing import List, Set, Tuple
@@ -13,7 +13,7 @@ from skillsaw.context import RepositoryContext
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
-DynamicContextMatch = Tuple[int, str, str]
+DynamicContextMatch = Tuple[int, str, str, str]
 
 
 class SecurityDynamicContextRule(Rule):
@@ -54,11 +54,7 @@ class SecurityDynamicContextRule(Rule):
         configured = self.config.get("allowlist", [])
         if not isinstance(configured, list):
             return set()
-        return {
-            command.strip()
-            for command in configured
-            if isinstance(command, str) and command.strip()
-        }
+        return {command for command in configured if isinstance(command, str) and command}
 
     @staticmethod
     def _inline_matches(block) -> List[DynamicContextMatch]:
@@ -83,9 +79,9 @@ class SecurityDynamicContextRule(Rule):
                 continue
             if marker > 0 and not line[marker - 1].isspace():
                 continue
-            command = span.content.strip()
+            command = span.content
             if command:
-                matches.append((span.body_line, command, "inline"))
+                matches.append((span.body_line, command, "inline", f"inline:{marker}"))
         return matches
 
     @staticmethod
@@ -96,15 +92,21 @@ class SecurityDynamicContextRule(Rule):
         for fence in doc.fences():
             if fence.indented or fence.info.strip() != "!":
                 continue
-            # MarkdownFence line ranges include the opening and closing
-            # delimiters.  Preserve command line boundaries for exact
-            # allowlist matching, while trimming only the outer blank space.
-            command = "\n".join(
-                doc.line(line_number)
-                for line_number in range(fence.body_line_start + 1, fence.body_line_end)
-            ).strip()
+            # MarkdownDoc exposes parser-normalized fence content, which
+            # removes blockquote/list prefixes and includes the final command
+            # line even when the fence is unterminated. Remove only the
+            # structural trailing newline; horizontal whitespace is part of
+            # exact allowlist matching.
+            command = fence.content.rstrip("\n")
             if command:
-                matches.append((fence.body_line_start, command, "fenced"))
+                matches.append(
+                    (
+                        fence.body_line_start,
+                        command,
+                        "fenced",
+                        f"fenced:{fence.body_line_start}",
+                    )
+                )
         return matches
 
     def _violation_message(self, command: str, kind: str, allowlist: Set[str]) -> str:
@@ -125,11 +127,11 @@ class SecurityDynamicContextRule(Rule):
 
         for block in gather_all_content_blocks(context):
             body = block.read_body(strip_code_blocks=False)
-            if not body or "!" not in body or "`" not in body:
+            if not body or "!" not in body:
                 continue
 
             matches = self._inline_matches(block) + self._fenced_matches(block)
-            for line, command, kind in sorted(matches, key=lambda match: match[0]):
+            for line, command, kind, discriminator in sorted(matches, key=lambda match: match[0]):
                 if command in allowlist:
                     continue
                 violations.append(
@@ -137,6 +139,7 @@ class SecurityDynamicContextRule(Rule):
                         self._violation_message(command, kind, allowlist),
                         block=block,
                         line=line,
+                        fingerprint_discriminator=discriminator,
                     )
                 )
         return violations
