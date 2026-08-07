@@ -3565,6 +3565,27 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_go_short_declaration(self, temp_dir):
+        parts = [f'```go\nresult, err := search("{q}")\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_rust_error_propagation_trailer(self, temp_dir):
+        parts = [f'```rust\nlet result = search("{q}")?;\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_namespace_qualified_callee(self, temp_dir):
+        parts = [f'```cpp\ntools::search("{q}");\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`tools::search`" in violations[0].message
+
     def test_tuple_unpacking_assignment(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(

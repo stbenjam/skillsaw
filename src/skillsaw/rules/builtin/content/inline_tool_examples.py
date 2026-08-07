@@ -23,15 +23,15 @@ _CALL_HEAD_RE = re.compile(
     # the comma separator's neighbors are disjoint char classes, so
     # matching stays linear.
     r"^(?:\$\s+|>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:[\w.]+(?:\s*,\s*[\w.]+)*[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
-    r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
+    r"(?:[\w.]+(?:\s*,\s*[\w.]+)*[ \t]*(?::=|(?::[^=]+)?=)\s*)?(?:await\s+)?"
+    r"([A-Za-z_]\w*(?:(?:\.|::)[A-Za-z_]\w*)*)\s*\("
 )
 _CALL_HEAD_JS_RE = re.compile(
     # The assignment target also admits simple destructuring patterns
     # ('const { data } =', 'const [first] ='); their char classes
     # exclude '=' so the match stays linear.
     r"^(?:>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:(?:[\w.$]+|\{[^}=]*\}|\[[^\]=]*\])[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
+    r"(?:(?:[\w.$]+|\{[^}=]*\}|\[[^\]=]*\])[ \t]*(?::=|(?::[^=]+)?=)\s*)?(?:await\s+)?"
     r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:\?\.)?\s*\("
 )
 _JS_LANGS = frozenset({"js", "javascript", "ts", "typescript", "jsx", "tsx"})
@@ -431,6 +431,9 @@ class ContentInlineToolExamplesRule(Rule):
         """True when *trailer* may follow a closed call: nothing, a lone
         statement terminator, and/or a comment in the fence's styles."""
         trailer = trailer.strip()
+        # Rust error propagation: 'search(...)?;' closes the call.
+        if trailer.startswith("?"):
+            trailer = trailer[1:].lstrip()
         if trailer.startswith(";"):
             trailer = trailer[1:].strip()
         if "//" in styles and trailer.startswith("/*"):
