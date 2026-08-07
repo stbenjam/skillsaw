@@ -477,7 +477,7 @@ class TestRendererHardening:
     def test_emitted_page_script_survives_backslash_escaping(self, tmp_path):
         """The JS template is a non-raw Python string — backslash halving
         once shipped an unparseable script and a blank page. Pin the emitted
-        (post-halving) escJsAttr escapes, and parse every script block with
+        (post-halving) escJs escapes, and parse every script block with
         node when it is available."""
         import shutil
         import subprocess
@@ -485,10 +485,8 @@ class TestRendererHardening:
         from skillsaw.docs.html_renderer import _get_js
 
         js = _get_js()
-        assert ".replace(/\\\\/g, '\\\\\\\\')" in js
-        assert ".replace(/'/g, \"\\\\'\")" in js
-        assert ".replace(/\\r/g, '\\\\r')" in js
-        assert ".replace(/\\n/g, '\\\\n')" in js
+        assert "function escJs(str)" in js
+        assert "return JSON.stringify(String(str))" in js
         assert ".replace(/\\u2028/g, '\\\\u2028')" in js
         assert ".replace(/\\u2029/g, '\\\\u2029')" in js
 
@@ -512,7 +510,7 @@ class TestRendererHardening:
                 proc = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
                 assert proc.returncode == 0, proc.stderr
 
-    def test_escjsattr_escapes_javascript_line_terminators(self, tmp_path):
+    def test_escjsattr_serializes_javascript_line_terminators(self, tmp_path):
         import shutil
         import subprocess
 
@@ -527,12 +525,25 @@ class TestRendererHardening:
             js.index("function escAttr") : js.index("\n\n  init();", js.index("function escAttr"))
         ]
         value = "first\r\nsecond\u2028third\u2029fourth\\'quote"
-        expected = "first\\r\\nsecond\\u2028third\\u2029fourth\\\\\\'quote"
-        script = f"{helpers}\nprocess.stdout.write(JSON.stringify(escJsAttr({json.dumps(value)})));"
+        expected_js = json.dumps(value, ensure_ascii=False)
+        expected_js = expected_js.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+        expected_attr = (
+            expected_js.replace("&", "&amp;")
+            .replace('"', "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        script = (
+            f"{helpers}\nprocess.stdout.write(JSON.stringify({{"
+            f"js: escJs({json.dumps(value)}), attr: escJsAttr({json.dumps(value)})"
+            "}));"
+        )
         proc = subprocess.run([node, "-e", script], capture_output=True, text=True)
 
         assert proc.returncode == 0, proc.stderr
-        assert json.loads(proc.stdout) == expected
+        result = json.loads(proc.stdout)
+        assert result["js"] == expected_js
+        assert result["attr"] == expected_attr
 
 
 class TestSafeUrlEntityDecoding:
