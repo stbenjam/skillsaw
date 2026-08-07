@@ -9,11 +9,12 @@ from skillsaw.blocks import ContentBlock
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 # A line that begins a call-syntax invocation: an optional shell prompt,
-# assignment, and/or `await` (before or after the assignment), then a
-# dotted identifier and an opening paren.  Continuation lines of a
-# multi-line call are tracked by paren depth in _fence_callee().
+# declaration keyword (const/let/var), assignment, and/or `await`
+# (before or after the assignment), then a dotted identifier and an
+# opening paren.  Continuation lines of a multi-line call are tracked
+# by paren depth in _fence_callee().
 _CALL_HEAD_RE = re.compile(
-    r"^(?:\$\s+)?(?:await\s+)?(?:[\w.]+\s*=\s*)?(?:await\s+)?"
+    r"^(?:\$\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?(?:[\w.]+\s*=\s*)?(?:await\s+)?"
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 
@@ -128,19 +129,22 @@ class ContentInlineToolExamplesRule(Rule):
         return Severity.INFO
 
     @staticmethod
-    def _strip_comment_pieces(line: str) -> str:
+    def _strip_comment_pieces(line: str, closes_earlier: bool) -> str:
         """Remove HTML-comment pieces from one comment-boundary line.
 
         The line comes from an AST-located comment span, so this is
         visibility accounting for prose counting, not HTML sanitization.
-        A closer belonging to a comment opened on an earlier line is
-        dropped first, then complete inline spans, then a dangling
-        opener; what survives is the line's visible prose.
+        Only when the AST says this line closes a comment opened on an
+        earlier line (*closes_earlier*) is the text up to the first
+        ``-->`` dropped — a literal ``-->`` in prose ('Caption --> next')
+        is visible text, not a closer.  Complete inline spans and a
+        dangling opener are then removed; what survives is the line's
+        visible prose.
         """
-        close = line.find("-->")
-        opened = line.find("<!--")
-        if close != -1 and (opened == -1 or close < opened):
-            line = line[close + 3 :]
+        if closes_earlier:
+            close = line.find("-->")
+            if close != -1:
+                line = line[close + 3 :]
         while True:
             start = line.find("<!--")
             if start == -1:
@@ -149,6 +153,17 @@ class ContentInlineToolExamplesRule(Rule):
             if end == -1:
                 return line[:start]
             line = line[:start] + line[end + 3 :]
+
+    @staticmethod
+    def _is_closing_marker(line: str, markup: str) -> bool:
+        """True when *line* is the fence's closing delimiter run."""
+        stripped = _QUOTE_MARKER_RE.sub("", line).strip()
+        return (
+            bool(markup)
+            and bool(stripped)
+            and set(stripped) == {markup[0]}
+            and len(stripped) >= len(markup)
+        )
 
     @staticmethod
     def _dedent(raw: List[str]) -> List[str]:
@@ -185,7 +200,14 @@ class ContentInlineToolExamplesRule(Rule):
                 for line in lines[fence.body_line_start - 1 : fence.body_line_end]
             ]
             return ContentInlineToolExamplesRule._dedent(raw)
-        raw = lines[fence.body_line_start : fence.body_line_end - 1]
+        # An unclosed fence at end of file has no closing delimiter —
+        # its final line is content and must not be sliced off.
+        end0 = fence.body_line_end - 1
+        last = lines[end0] if 0 <= end0 < len(lines) else ""
+        if ContentInlineToolExamplesRule._is_closing_marker(last, fence.markup):
+            raw = lines[fence.body_line_start : end0]
+        else:
+            raw = lines[fence.body_line_start : end0 + 1]
         if fence.nested:
             raw = [_QUOTE_MARKER_RE.sub("", line) for line in raw]
         # Dedent even outside containers: CommonMark allows a top-level
@@ -217,7 +239,11 @@ class ContentInlineToolExamplesRule(Rule):
                     continue
                 if char == quote:
                     quote = None
-            elif char in "\"'":
+            elif char == "#" or (char == "/" and i + 1 < length and line[i + 1] == "/"):
+                # An inline comment outside any string: the rest of the
+                # line is commentary, not call syntax.
+                break
+            elif char in "\"'`":
                 quote = char
             elif char == "(":
                 if depth > 0:
@@ -262,6 +288,12 @@ class ContentInlineToolExamplesRule(Rule):
             if not line.strip():
                 continue
             if depth > 0:
+                # A comment-only line inside a multi-line call is
+                # commentary, not call state — its text must not open
+                # calls or close parens.  Only lines outside strings can
+                # be comments.
+                if quote is None and _COMMENT_LINE_RE.match(line):
+                    continue
                 depth, quote, trailer, nested_call = cls._advance(line, 0, depth, quote)
                 if nested_call or (trailer is not None and not cls._is_call_trailer(trailer)):
                     return None
@@ -292,8 +324,9 @@ class ContentInlineToolExamplesRule(Rule):
         self,
         lines: List[str],
         heading_lines: frozenset,
-        comment_interior: frozenset,
+        invisible_lines: frozenset,
         comment_boundary: frozenset,
+        closing_boundary: frozenset,
         prev_end: int,
         next_start: int,
     ) -> bool:
@@ -307,8 +340,9 @@ class ContentInlineToolExamplesRule(Rule):
         *heading_lines* holds the AST heading construct lines, so a
         hash-prefixed caption like ``#release-notes`` (not a heading —
         ATX requires a space) counts as prose instead of a break.
-        HTML comments are invisible in rendered output and count as
-        neither prose nor a break — but a boundary line that carries
+        *invisible_lines* — HTML comment interiors and reference
+        definitions — are omitted from rendered output and count as
+        neither prose nor a break; a comment boundary line that carries
         visible prose alongside the comment markers still counts as
         prose once the comment pieces are stripped.
         """
@@ -316,11 +350,11 @@ class ContentInlineToolExamplesRule(Rule):
         for line_num in range(prev_end + 1, next_start):
             if line_num in heading_lines:
                 return True
-            if line_num in comment_interior:
+            if line_num in invisible_lines:
                 continue
             text = lines[line_num - 1]
             if line_num in comment_boundary:
-                text = self._strip_comment_pieces(text)
+                text = self._strip_comment_pieces(text, line_num in closing_boundary)
             # A bare '>' between fences in a blockquote is a blank line,
             # not a caption.
             if not _CONTAINER_PREFIX_RE.sub("", text).strip():
@@ -362,14 +396,21 @@ class ContentInlineToolExamplesRule(Rule):
             for h in cf.markdown.headings()
             for line in range(h.body_line, max(h.body_line_end, h.body_line + 1))
         )
-        comment_interior = set()
+        invisible_lines = set()
         comment_boundary = set()
+        closing_boundary = set()
         for c in cf.markdown.html_comments():
-            comment_interior.update(range(c.body_line_start + 1, c.body_line_end))
+            invisible_lines.update(range(c.body_line_start + 1, c.body_line_end))
             comment_boundary.add(c.body_line_start)
             comment_boundary.add(c.body_line_end)
-        comment_interior = frozenset(comment_interior)
-        comment_boundary = frozenset(comment_boundary - comment_interior)
+            if c.body_line_end > c.body_line_start:
+                closing_boundary.add(c.body_line_end)
+        comment_boundary = frozenset(comment_boundary - invisible_lines)
+        closing_boundary = frozenset(closing_boundary - invisible_lines)
+        # Reference definitions are omitted from rendered output too.
+        for r in cf.markdown.reference_definitions():
+            invisible_lines.update(range(r.body_line_start, r.body_line_end + 1))
+        invisible_lines = frozenset(invisible_lines)
         violations: List[RuleViolation] = []
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
@@ -384,8 +425,9 @@ class ContentInlineToolExamplesRule(Rule):
                 if callee != prev_callee or self._run_breaks(
                     lines,
                     heading_lines,
-                    comment_interior,
+                    invisible_lines,
                     comment_boundary,
+                    closing_boundary,
                     prev_fence.body_line_end,
                     fence.body_line_start,
                 ):

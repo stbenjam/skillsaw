@@ -3043,6 +3043,96 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_literal_arrow_prose_still_counts(self, temp_dir):
+        """A literal '-->' in prose is visible text, not a comment
+        closer — three such caption lines break the run."""
+        caption = (
+            "Request --> gateway first. <!-- note -->\n"
+            "Gateway --> ledger next. <!-- note -->\n"
+            "Ledger --> audit last. <!-- note -->"
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                ['search(query="a")', 'search(query="b")', 'search(query="c")'],
+                caption=caption,
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_unclosed_final_fence_keeps_last_line(self, temp_dir):
+        """An unclosed fence has no closing delimiter to slice off — a
+        trailing second statement must still disqualify it."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "```\n"
+            'search(query="a")\n'
+            "```\n\n"
+            "Another example:\n\n"
+            "```\n"
+            'search(query="b")\n'
+            "```\n\n"
+            "A third example:\n\n"
+            "```\n"
+            'search(query="c")\n'
+            "cleanup()\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_comments_inside_multiline_call(self, temp_dir):
+        """Comment text inside an open call is commentary — parens in it
+        must not corrupt call state."""
+        snippet = 'search(\n  query="{}",  # tighten (later)\n  # a trailing) note\n)'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_reference_definitions_not_counted(self, temp_dir):
+        """Reference definitions are omitted from rendered output and
+        must not break a run by prose count."""
+        caption = (
+            "[query-docs]: docs/query.md\n"
+            "[query-schema]: docs/schema.md\n"
+            "[query-limits]: docs/limits.md"
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                ['search(query="a")', 'search(query="b")', 'search(query="c")'],
+                caption=caption,
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_js_declaration_assignments(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'const result = await search({query: "a"});',
+                    'const result = await search({query: "b"});',
+                    'const result = await search({query: "c"});',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_template_literal_arguments(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    "search({query: `foo)`})",
+                    "search({query: `bar)`})",
+                    "search({query: `baz)`})",
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
     def test_escaped_quotes_in_arguments(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(
