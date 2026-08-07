@@ -243,11 +243,25 @@ class ContentInlineToolExamplesRule(Rule):
         # A fence whose payload is uniformly indented is still a bare
         # invocation — strip the common code indent so call heads sit
         # at column zero, preserving relative continuation indent.
+        # Leading tabs expand to columns first so a 4-space prefix and a
+        # tab prefix dedent identically; text after the indent is
+        # untouched.
+        content_lines = [
+            ContentInlineToolExamplesRule._expand_leading_tabs(line) for line in content_lines
+        ]
         indents = [len(line) - len(line.lstrip()) for line in content_lines if line.strip()]
         cut = min(indents) if indents else 0
         if cut:
             content_lines = [line[cut:] if line.strip() else line for line in content_lines]
         return content_lines
+
+    @staticmethod
+    def _expand_leading_tabs(line: str) -> str:
+        """Expand tabs in the leading whitespace only (4-column stops)."""
+        i = 0
+        while i < len(line) and line[i] in " \t":
+            i += 1
+        return line[:i].expandtabs(4) + line[i:]
 
     @staticmethod
     def _comment_styles(info: str) -> frozenset:

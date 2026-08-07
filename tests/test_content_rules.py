@@ -3263,6 +3263,17 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_mixed_tab_space_fence_payload(self, temp_dir):
+        """A 4-space prefix and a tab prefix are the same column indent
+        — the payload dedents to column zero either way."""
+        snippet = '    search(query="{}1")\n\tsearch(query="{}2")'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q, q) for q in ("a", "b", "c")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_uniformly_indented_fence_payload(self, temp_dir):
         snippet = '    search(query="{}")'
         (temp_dir / "CLAUDE.md").write_text(
