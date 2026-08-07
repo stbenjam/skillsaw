@@ -95,6 +95,7 @@ add local rules or install rule plugins.
 | Install and run skillsaw | [Getting Started](https://skillsaw.org/getting-started/) |
 | Tune rules and exclusions | [Configuration](https://skillsaw.org/configuration/) |
 | Adopt it without fixing everything at once | [Baselines](https://skillsaw.org/baseline/) |
+| Convert plugins to Agent Plugins v1 with `skillsaw port` | [Porting to Agent Plugins](https://skillsaw.org/porting/) |
 | Add checks to pull requests | [CI Integration](https://skillsaw.org/ci/) |
 | Understand and apply fixes | [Autofixing](https://skillsaw.org/autofixing/) |
 | Create project-specific checks | [Custom Rules](https://skillsaw.org/custom-rules/) |

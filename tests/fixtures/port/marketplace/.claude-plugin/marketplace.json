@@ -1,0 +1,18 @@
+{
+  "name": "team-tools",
+  "owner": {
+    "name": "Example Team"
+  },
+  "plugins": [
+    {
+      "name": "release-notes",
+      "source": "./plugins/release-notes",
+      "description": "Draft release notes from merged pull requests"
+    },
+    {
+      "name": "issue-triage",
+      "source": "./plugins/issue-triage",
+      "description": "Triage incoming issues against the support runbook"
+    }
+  ]
+}

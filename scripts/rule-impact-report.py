@@ -74,9 +74,10 @@ def violation_keys(data):
 
 def _sample_order(key):
     # line can be None (whole-file violations) or an int — never compare
-    # them directly: sort None first within a (rule, file) group.
+    # them directly: sort None first within a (rule, file) group. file_path
+    # can also be None (repo-level findings such as advisory notices).
     rule_id, file_path, line, message = key
-    return (rule_id, file_path, line is not None, line or 0, message)
+    return (rule_id, file_path or "", line is not None, line or 0, message)
 
 
 def format_sample(keys, slug=None, sha=None):
@@ -84,7 +85,12 @@ def format_sample(keys, slug=None, sha=None):
     file (and line) at the commit that was linted when the repo slug and
     SHA are known."""
     lines = []
-    for rule_id, file_path, line, _message in sorted(keys, key=_sample_order)[:SAMPLE_LIMIT]:
+    for rule_id, file_path, line, message in sorted(keys, key=_sample_order)[:SAMPLE_LIMIT]:
+        if file_path is None:
+            # Repo-level findings (advisory notices, load errors) have no
+            # file to link; show the message instead of a location.
+            lines.append(f"- `{rule_id}` — {message}")
+            continue
         location = f"{file_path}:{line}" if line else file_path
         if slug and sha:
             url = f"https://github.com/{slug}/blob/{sha}/{quote(file_path.lstrip('./'))}"

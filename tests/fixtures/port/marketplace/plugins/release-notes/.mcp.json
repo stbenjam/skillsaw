@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "changelog": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/changelog-server",
+      "args": ["--cache", "${CLAUDE_PLUGIN_ROOT}/cache"],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    },
+    "tracker": {
+      "type": "http",
+      "url": "https://tracker.example.com/mcp"
+    },
+    "legacy-socket": {
+      "type": "ws",
+      "url": "wss://old.example.com/socket"
+    }
+  }
+}

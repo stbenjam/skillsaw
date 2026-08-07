@@ -3,10 +3,10 @@
 
 # Rules Reference
 
-skillsaw includes **71** built-in rules organized into the following categories:
+skillsaw includes **72** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
-- [Agent Plugins](agent-plugins.md) (2 rules)
+- [Agent Plugins](agent-plugins.md) (3 rules)
 - [Claude Code](claude.md) (13 rules)
 - [OpenAI Codex](codex.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
@@ -35,6 +35,7 @@ skillsaw includes **71** built-in rules organized into the following categories:
 | [`agentskill-unreferenced-files`](agentskill-unreferenced-files.md) | Every bundled skill file should be referenced from SKILL.md, directly or transitively | warning (auto) | - | agentskills.io |
 | [`agent-plugin-json-valid`](agent-plugin-json-valid.md) | Agent Plugins plugin.json and skills location must conform to 1.0.0 | error (auto) | - | Agent Plugins |
 | [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md) | Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics | error (auto) | - | Agent Plugins |
+| [`agent-plugin-required`](agent-plugin-required.md) | Plugins must also be available as vendor-neutral Agent Plugins v1 packages, with shared manifest metadata in sync | warning (disabled) | auto | Agent Plugins |
 | [`claude-plugin-json-required`](claude-plugin-json-required.md) | Plugin must have .claude-plugin/plugin.json | error (auto) | - | Claude Code |
 | [`claude-plugin-json-valid`](claude-plugin-json-valid.md) | plugin.json must be valid JSON with required fields | error (auto) | - | Claude Code |
 | [`claude-plugin-naming`](claude-plugin-naming.md) | Plugin names should use kebab-case | warning (auto) | - | Claude Code |

@@ -37,7 +37,7 @@ RULE_GROUPS = [
     ),
     (
         "Agent Plugins",
-        ["agent-plugin-json-valid", "agent-plugin-mcp-valid"],
+        ["agent-plugin-json-valid", "agent-plugin-mcp-valid", "agent-plugin-required"],
         "Validates portable plugin packages against the "
         "[Agent Plugins v1 specification]"
         "(https://agent-plugins.org/specification). The manifest rule checks "
@@ -159,6 +159,10 @@ RULE_GROUPS = [
             "content-broken-internal-reference",
             "content-unlinked-internal-reference",
             "content-placeholder-text",
+            "content-unclosed-fence",
+            "content-repeated-directive",
+            "content-emphasis-density",
+            "content-missing-stop-condition",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "
@@ -170,7 +174,7 @@ RULE_GROUPS = [
     ),
     (
         "CodeRabbit",
-        ["coderabbit-yaml-valid"],
+        ["coderabbit-yaml-valid", "coderabbit-schema-valid"],
         "Validates `.coderabbit.yaml` config files for YAML syntax. "
         "Instruction text fields (`reviews.instructions`, per-path "
         "instructions, per-tool instructions, `chat.instructions`) are "

@@ -86,6 +86,19 @@ Generate documentation for a Claude or Codex plugin, marketplace, or .claude rep
 | `--title` | Custom title for the documentation |  |
 | `--theme` | Color theme for HTML output. Presets: indigo (default), forest-green, ocean-blue, sunset-orange, royal-purple, crimson-red. |  |
 
+## `skillsaw port`
+
+Port Claude Code and Codex plugins to Agent Plugins v1 packages
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--to` | Target format (default and currently only: agent-plugin) | `agent-plugin` |
+| `-c`, `--config` | Path to .skillsaw.yaml config file (default: auto-discover from the path) |  |
+| `--marketplaces` | Comma-separated marketplace catalogs to generate for the ported plugins so catalog-driven clients can discover them (default: codex; use 'none' to skip) | `codex` |
+| `--dry-run` | Show the files that would be written without writing them |  |
+| `--no-progress` | Disable the interactive conversion progress indicator (auto-disabled when stderr is not a terminal) |  |
+| `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
+
 ## `skillsaw tree`
 
 Display the repository lint tree

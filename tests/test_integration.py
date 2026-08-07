@@ -1825,6 +1825,7 @@ BROKEN_FIXTURES = [
     "root-mcp/invalid-json",
     "agent-plugins/broken-manifest",
     "agent-plugins/broken-mcp",
+    "agent-plugins/missing-portable",
     "content-unclosed-fence/skill-hides-violations",
     "content/instruction-drift",
     "content/repeated-directive",
@@ -2751,7 +2752,9 @@ def _discover_safe_autofix_rule_ids() -> Set[str]:
     safe_ids: Set[str] = set()
     for rule_class in BUILTIN_RULES:
         instance = rule_class()
-        if instance.deprecated is not None:
+        # The fixture exercises a default lint run: deprecated rules no
+        # longer run in one, and opt-in rules never did.
+        if instance.deprecated is not None or instance.default_enabled is False:
             continue
         if instance.autofix_confidence == AutofixConfidence.SAFE:
             safe_ids.add(instance.rule_id)
