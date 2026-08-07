@@ -3202,9 +3202,24 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
-    def test_unterminated_call_disqualifies(self, temp_dir):
+    def test_literal_quote_in_top_level_indented_block(self, temp_dir):
+        """A leading '>' in a top-level indented block is literal code
+        (quoted output), not a container marker to strip."""
         (temp_dir / "CLAUDE.md").write_text(
-            self._fences(['search(query="a"', 'search(query="b"', 'search(query="c"'])
+            "# Rules\n\n"
+            "Quoted output looks like this:\n\n"
+            "    > search(a=1)\n\n"
+            "Another sample:\n\n"
+            "    > search(a=2)\n\n"
+            "A third sample:\n\n"
+            "    > search(a=3)\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_subscripted_nested_call_disqualifies(self, temp_dir):
+        snippet = 'retry(handlers[0](query="{}"))'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 

@@ -156,14 +156,21 @@ class ContentInlineToolExamplesRule(Rule):
             close = line.find("-->")
             if close != -1:
                 line = line[close + 3 :]
+        # Single pass over the line — appending visible segments keeps
+        # this linear even on a crafted line packed with comment spans.
+        parts = []
+        i = 0
         while True:
-            start = line.find("<!--")
+            start = line.find("<!--", i)
             if start == -1:
-                return line
+                parts.append(line[i:])
+                break
+            parts.append(line[i:start])
             end = line.find("-->", start + 4)
             if end == -1:
-                return line[:start]
-            line = line[:start] + line[end + 3 :]
+                break
+            i = end + 3
+        return "".join(parts)
 
     @staticmethod
     def _is_closing_marker(line: str, markup: str) -> bool:
@@ -206,9 +213,12 @@ class ContentInlineToolExamplesRule(Rule):
         so code that legitimately starts with ``>`` survives.
         """
         if fence.indented:
-            raw = ContentInlineToolExamplesRule._strip_common_quote_levels(
-                lines[fence.body_line_start - 1 : fence.body_line_end]
-            )
+            raw = lines[fence.body_line_start - 1 : fence.body_line_end]
+            # Only a container-nested block carries quote markers; on a
+            # top-level indented block a leading '>' is literal code
+            # (quoted output samples) and must survive.
+            if fence.nested:
+                raw = ContentInlineToolExamplesRule._strip_common_quote_levels(raw)
             return ContentInlineToolExamplesRule._dedent(raw)
         # An unclosed fence at end of file has no closing delimiter —
         # its final line is content and must not be sliced off.
@@ -305,7 +315,10 @@ class ContentInlineToolExamplesRule(Rule):
                     j = i - 1
                     while j >= 0 and line[j].isspace():
                         j -= 1
-                    if j >= 0 and (line[j].isalnum() or line[j] == "_"):
+                    # An identifier, a closing subscript ('handlers[0](')
+                    # or a closing call ('f(x)(') before '(' invokes a
+                    # second callable.
+                    if j >= 0 and (line[j].isalnum() or line[j] in "_])"):
                         nested_call = True
                 depth += 1
             elif char == ")":
@@ -431,14 +444,15 @@ class ContentInlineToolExamplesRule(Rule):
         if len(run) < self._min_consecutive:
             return
         first_fence, callee, _ = run[0]
+        # Non-identical fences may differ in more than their arguments
+        # (assignment targets, comments) — claim nothing about how, and
+        # call out the one case the scanner can prove: exact repeats.
         distinct = len({key for _, _, key in run})
-        qualifier = (
-            "differing only in arguments" if distinct > 1 else "each repeating the same invocation"
-        )
+        qualifier = "" if distinct > 1 else ", each repeating the same invocation,"
         violations.append(
             self.violation(
-                f"{len(run)} consecutive fenced examples invoke `{callee}` "
-                f"{qualifier} — describe the tool's "
+                f"{len(run)} consecutive fenced examples invoke "
+                f"`{callee}`{qualifier} — describe the tool's "
                 f"parameters, types, and constraints once instead of "
                 f"enumerating example calls",
                 block=cf,
