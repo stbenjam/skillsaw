@@ -136,16 +136,6 @@ class LinterConfig:
                 + ". Known keys: "
                 + ", ".join(sorted(cls._KNOWN_KEYS))
             )
-        raw_version = data.get("version")
-        if raw_version is None:
-            # Covers both a missing key and an explicit ``version:`` (None) —
-            # both would otherwise version-gate as 0.0.0 and disable newer rules.
-            load_warnings.append(
-                f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
-                "added in later versions are silently disabled. Set 'version' to your "
-                "skillsaw version to enable them."
-            )
-
         raw_profile = data.get("profile")
         if raw_profile is None:
             profile = DEFAULT_PROFILE
@@ -156,6 +146,31 @@ class LinterConfig:
                 f"'profile' must be one of {', '.join(available_profiles())}, "
                 f"got {raw_profile!r}"
             )
+
+        raw_version = data.get("version")
+        default_version = _DEFAULT_VERSION
+        if raw_version is None:
+            # Covers both a missing key and an explicit ``version:`` (None) —
+            # both would otherwise version-gate as 0.0.0 and disable newer rules.
+            if profile != DEFAULT_PROFILE:
+                # Selecting a curated profile is an opt-in to the current
+                # rule set, so an unpinned config follows the installed
+                # version: new rules apply immediately after upgrades
+                # instead of being gated behind a version bump.
+                from . import __version__
+
+                default_version = __version__
+                load_warnings.append(
+                    f"config has no 'version' field; 'profile: {profile}' implies the "
+                    f"installed version ({__version__}), so new rules apply immediately "
+                    "after upgrades. Set 'version' to pin the rule set instead."
+                )
+            else:
+                load_warnings.append(
+                    f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
+                    "added in later versions are silently disabled. Set 'version' to your "
+                    "skillsaw version to enable them."
+                )
 
         raw_rules = data.get("rules")
         raw_custom_rules = data.get("custom-rules")
@@ -302,7 +317,7 @@ class LinterConfig:
             )
 
         return cls(
-            version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
+            version=default_version if raw_version is None else str(raw_version),
             profile=profile,
             rules=rules,
             custom_rules=custom_rules,
@@ -373,11 +388,26 @@ class LinterConfig:
             return {}
         return profile.rules.get(rule_id, {})
 
+    @staticmethod
+    def _merge_layer(base: Dict[str, Any], overlay: Dict[str, Any]) -> None:
+        """Merge *overlay* into *base* in place, recursing into mappings.
+
+        Nested dicts merge per key so a layer overriding one entry of a
+        parameter like ``limits`` keeps the lower layer's other entries;
+        every non-mapping value (including lists) replaces wholesale.
+        """
+        for key, value in overlay.items():
+            if isinstance(value, dict) and isinstance(base.get(key), dict):
+                LinterConfig._merge_layer(base[key], value)
+            else:
+                base[key] = copy.deepcopy(value)
+
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
         Get configuration for a specific rule, merging the active profile's
         overrides and then user overrides on top of defaults, so unmentioned
-        fields keep their default (or profile-set) values.
+        fields — including entries of nested mappings — keep their default
+        (or profile-set) values.
 
         Args:
             rule_id: Rule identifier
@@ -385,15 +415,15 @@ class LinterConfig:
         Returns:
             Rule configuration dict
         """
-        # Deep-copy the cached defaults and the shared profile registry so
-        # callers mutating the merged result (or its nested containers like
-        # ``limits`` / ``recommended-fields``) cannot corrupt either.
-        defaults = copy.deepcopy(_default_rules().get(rule_id, {}))
-        profile_overrides = copy.deepcopy(self._profile_rules(rule_id))
+        # Deep-copy the cached defaults (and, in _merge_layer, every overlay
+        # value) so callers mutating the merged result — or its nested
+        # containers like ``limits`` / ``recommended-fields`` — cannot
+        # corrupt the shared registry caches.
+        merged = copy.deepcopy(_default_rules().get(rule_id, {}))
+        self._merge_layer(merged, self._profile_rules(rule_id))
         overrides = self.rules.get(rule_id)
-        if overrides is None:
-            overrides = {}
-        merged = {**defaults, **profile_overrides, **overrides}
+        if overrides:
+            self._merge_layer(merged, overrides)
         return merged
 
     def is_rule_enabled(
@@ -599,6 +629,11 @@ class LinterConfig:
                 "# under your own 'rules:' entries. Available: "
                 + ", ".join(available_profiles())
                 + "\n"
+                "# NOTE: the explicit per-rule entries below count as your own "
+                "overrides and win\n"
+                "# over the profile — to adopt one, also delete the rule "
+                "entries you want the\n"
+                "# profile to manage.\n"
             )
             if self.profile and self.profile != DEFAULT_PROFILE:
                 f.write(f"profile: {self._yaml_value(self.profile)}\n\n")

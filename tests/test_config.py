@@ -1540,3 +1540,58 @@ class TestProfileRegistry:
         names = available_profiles()
         assert names[0] == "default"
         assert "claude-5" in names
+
+
+def test_null_profile_behaves_like_default(tmp_path):
+    """profile: null behaves like the key being absent, matching the
+    convention for other keys (fail-on: null, version:)."""
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile:\n'))
+    assert config.profile == "default"
+
+
+def test_directly_constructed_unknown_profile_contributes_nothing():
+    """A LinterConfig built in code with an unregistered profile name falls
+    back to no profile overrides instead of crashing (from_file rejects the
+    name before this can happen)."""
+    config = LinterConfig(version="0.19.0", profile="not-a-profile")
+    assert config.get_rule_config("content-repeated-directive")["severity"] == "warning"
+
+
+def test_nested_user_override_merges_with_profile():
+    """Overriding one entry of a nested parameter keeps the profile's other
+    entries — layers deep-merge mappings instead of replacing them."""
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"context-budget": {"limits": {"skill": {"warn": 1000}}}},
+    )
+    limits = config.get_rule_config("context-budget")["limits"]
+    assert limits["skill"] == {"warn": 1000, "error": 5000}
+    assert limits["claude-md"] == {"warn": 3000, "error": 8000}
+    assert limits["agents-md"] == {"warn": 3000, "error": 8000}
+    assert limits["gemini-md"] == {"warn": 3000, "error": 8000}
+
+
+def test_profile_without_version_implies_installed_version(tmp_path):
+    """A non-default profile with no 'version' opts into the installed
+    version instead of the 0.6.0 fallback — choosing a curated profile
+    means wanting the current rule set."""
+    from skillsaw import __version__
+
+    config = LinterConfig.from_file(_write(tmp_path, "profile: claude-5\n"))
+    assert config.version == __version__
+    assert any("implies the installed version" in w for w in config.warnings)
+
+
+def test_default_profile_without_version_keeps_fallback(tmp_path):
+    """profile: default (or no profile) keeps the legacy 0.6.0 fallback and
+    its warning — only a curated profile implies the installed version."""
+    config = LinterConfig.from_file(_write(tmp_path, "profile: default\n"))
+    assert config.version == "0.6.0"
+    assert any("defaulting to 0.6.0" in w for w in config.warnings)
+
+
+def test_explicit_version_wins_over_profile_implication(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.17.0"\nprofile: claude-5\n'))
+    assert config.version == "0.17.0"
+    assert not any("version" in w for w in config.warnings)

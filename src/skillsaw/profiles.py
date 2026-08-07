@@ -89,9 +89,7 @@ _CLAUDE_5 = Profile(
         "content-missing-stop-condition": {"enabled": True},
         # Judgment-delegating prose ("use judgment", "when appropriate")
         # is the style the post recommends over rigid absolutes; flagging
-        # hedges fights it. Calibration against anthropics/
-        # claude-plugins-official (#484) showed this rule dominating the
-        # violation count on Anthropic's own flagship plugins.
+        # hedges fights it.
         "content-weak-language": {"enabled": False},
     },
 )
