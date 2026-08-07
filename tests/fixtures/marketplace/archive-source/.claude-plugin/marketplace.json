@@ -1,0 +1,24 @@
+{
+  "name": "acme-artifacts",
+  "owner": {"name": "ACME Corp", "url": "https://acme.example.com"},
+  "plugins": [
+    {
+      "name": "widget-maker",
+      "source": {
+        "source": "archive",
+        "url": "https://artifacts.acme.example.com/claude-plugins/widget-maker-2.1.0.zip"
+      },
+      "description": "Build and manage widgets, shipped as a zip archive"
+    },
+    {
+      "name": "log-analyzer",
+      "source": {
+        "source": "archive",
+        "url": "https://artifacts.acme.example.com/claude-plugins/log-analyzer-1.4.2.zip",
+        "sha256": "6bfa50e3d2e00c052b46abe51fff89346ac803e45771f76dcf6df1ab74cca5e1"
+      },
+      "version": "1.4.2",
+      "description": "Analyze application logs, pinned to an archive digest"
+    }
+  ]
+}
