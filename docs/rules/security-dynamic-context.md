@@ -3,7 +3,7 @@
 
 # security-dynamic-context
 
-Require an allowlist for Claude Code dynamic context commands that execute shell code while loading agent context
+Require an allowlist for dynamic context commands that execute shell code while loading agent context
 
 | | |
 |---|---|
@@ -14,16 +14,19 @@ Require an allowlist for Claude Code dynamic context commands that execute shell
 
 ## Why
 
-Claude Code supports [dynamic context injection](https://code.claude.com/docs/en/slash-commands#inject-dynamic-context) in skills and custom commands.
-The inline form, `!`<command>``, and the fenced form, ` ```! `, execute shell
-commands before the skill content is sent to Claude. The command output is
-then inserted into the prompt, so this feature turns prompt content into a
-shell execution surface and can expose repository data or run an unexpected
-command during skill loading.
+Some agent clients support dynamic context injection in agent-facing content.
+[Claude Code's documentation](https://code.claude.com/docs/en/slash-commands#inject-dynamic-context)
+describes the inline form, `!`<command>``, and the fenced form, ` ```! `, which
+execute shell commands before content is sent to the model. Other clients can
+adopt the same mechanism, so this rule scans every content block that skillsaw
+attaches to the lint tree rather than tying the check to one client or format.
+The command output is then inserted into the prompt, turning otherwise static
+content into a shell execution surface that can expose repository data or run
+an unexpected command during context loading.
 
 This rule treats dynamic context as prohibited unless the exact command has
 been reviewed and added to an explicit allowlist. It is enabled automatically
-so every repository gets this supply-chain check; repositories that do use
+so every repository gets this supply-chain check; content that does use
 dynamic context must review and allowlist each command.
 
 ## Examples
@@ -41,7 +44,7 @@ dynamic context must review and allowlist each command.
 ```yaml
 rules:
   security-dynamic-context:
-    enabled: true
+    enabled: auto
     allowlist:
       - "gh pr diff"
 ```
@@ -58,13 +61,14 @@ rules:
         git status --short
 ```
 
-Ordinary inline code is not dynamic context. The inline form is recognized
-only when `!` is at the start of a line or immediately follows whitespace;
-for example, `KEY=!`cmd`` is left literal by Claude Code.
+Ordinary inline code is not dynamic context. The established inline form is
+recognized only when `!` is at the start of a line or immediately follows
+whitespace; for example, `KEY=!`cmd`` is left literal by clients following
+the documented convention.
 
 ## How to fix
 
-Remove the dynamic context command when the skill does not need live shell
+Remove the dynamic context command when the content does not need live shell
 output. If it is intentional, review the command and add the exact inline
 command or complete fenced command block to `allowlist`. Exact matching means
 that adding arguments or changing whitespace in a command causes it to be
@@ -72,7 +76,8 @@ reported again.
 
 For a centrally managed policy, Claude Code also supports disabling skill
 shell execution with `disableSkillShellExecution`; that setting prevents
-these commands from running even when a skill contains them.
+these commands from running even when content contains them. Other clients
+may offer an equivalent setting.
 
 ## Configuration
 
@@ -85,7 +90,7 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `allowlist` | Claude Code dynamic-context commands to permit (exact match; multi-line fenced commands may be one YAML block scalar) | `[]` |
+| `allowlist` | Dynamic-context commands to permit (exact match; multi-line fenced commands may be one YAML block scalar) | `[]` |
 
 
 *Run `skillsaw explain security-dynamic-context` to see this documentation and the rule's effective configuration in your terminal.*

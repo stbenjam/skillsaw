@@ -111,8 +111,8 @@ RULE_GROUPS = [
         "Content-validation rules that catch payloads and instructions "
         "invisible to human review: invisible/bidi unicode smuggling, agent "
         "directives hidden in HTML comments or Markdown link labels, and "
-        "long high-entropy base64/hex blobs or unallowlisted Claude Code "
-        "dynamic-context commands that can smuggle or execute payloads.",
+        "long high-entropy base64/hex blobs or unallowlisted dynamic-context "
+        "commands in agent content that can smuggle or execute payloads.",
     ),
     (
         "MCP (Model Context Protocol)",

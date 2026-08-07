@@ -148,8 +148,8 @@ RULE_GROUPS = [
         "invisible to human review: invisible/bidi unicode smuggling (ASCII "
         "smuggling, Trojan Source), agent directives hidden in HTML comments "
         "or Markdown link labels, and long high-entropy base64/hex blobs that "
-        "can smuggle encoded payloads, plus unallowlisted Claude Code "
-        "dynamic-context commands. They complement `hooks-dangerous`, "
+        "can smuggle encoded payloads, plus unallowlisted dynamic-context "
+        "commands in agent content. They complement `hooks-dangerous`, "
         "`claude-settings-dangerous`, and `content-embedded-secrets`, which cover the "
         "executable and credential sides of the same threat.",
     ),

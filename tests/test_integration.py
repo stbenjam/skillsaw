@@ -1914,6 +1914,7 @@ EXPECTED_MALICIOUS_RULES = {
     "security-invisible-unicode",
     "security-hidden-instructions",
     "security-encoded-payload",
+    "security-dynamic-context",
 }
 
 

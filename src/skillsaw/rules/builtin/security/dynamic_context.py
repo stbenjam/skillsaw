@@ -1,9 +1,10 @@
-"""Security rule for Claude Code dynamic context injection.
+"""Security rule for dynamic context injection in agent-facing content.
 
-Claude Code expands ``!`command``` inline forms and `````!`` fenced blocks
-by executing their contents before the skill is sent to the model.  That
+Some agent clients expand ``!`command``` inline forms and `````!`` fenced
+blocks by executing their contents before a skill is sent to the model.  That
 turns otherwise prompt-only content into a shell execution surface, so this
-rule requires every such command to be explicitly allowlisted.
+rule requires every such command in agent-facing content to be explicitly
+allowlisted.
 """
 
 from typing import List, Set, Tuple
@@ -16,7 +17,7 @@ DynamicContextMatch = Tuple[int, str, str]
 
 
 class SecurityDynamicContextRule(Rule):
-    """Require explicit approval for Claude Code dynamic context commands."""
+    """Require explicit approval for dynamic context commands in agent content."""
 
     default_enabled = "auto"
 
@@ -29,7 +30,7 @@ class SecurityDynamicContextRule(Rule):
             "type": "list",
             "default": [],
             "description": (
-                "Claude Code dynamic-context commands to permit (exact match; "
+                "Dynamic-context commands to permit (exact match; "
                 "multi-line fenced commands may be one YAML block scalar)"
             ),
         },
@@ -42,8 +43,8 @@ class SecurityDynamicContextRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "Require an allowlist for Claude Code dynamic context commands "
-            "that execute shell code while loading agent context"
+            "Require an allowlist for dynamic context commands that execute "
+            "shell code while loading agent context"
         )
 
     def default_severity(self) -> Severity:
@@ -63,17 +64,18 @@ class SecurityDynamicContextRule(Rule):
     def _inline_matches(block) -> List[DynamicContextMatch]:
         """Return inline dynamic-context spans in *block*.
 
-        ``MarkdownDoc`` supplies the code-span position.  Claude only
-        expands the inline form when the marker is at the start of a line or
-        follows whitespace, so ``KEY=!`command``` remains ordinary text.
+        ``MarkdownDoc`` supplies the code-span position.  The established
+        syntax expands the inline form when the marker is at the start of a
+        line or follows whitespace, so ``KEY=!`command``` remains ordinary
+        text.
         """
         doc = block.markdown
         matches: List[DynamicContextMatch] = []
         for span in doc.code_spans():
             if span.col_start is None:
-                # Claude documents the fenced form for multi-line commands;
-                # an inline code span without a trustworthy column cannot be
-                # classified safely.
+                # A fenced form is the portable representation for
+                # multi-line commands; an inline code span without a
+                # trustworthy column cannot be classified safely.
                 continue
             line = doc.line(span.body_line)
             marker = span.col_start - 1
@@ -107,9 +109,9 @@ class SecurityDynamicContextRule(Rule):
 
     def _violation_message(self, command: str, kind: str, allowlist: Set[str]) -> str:
         if allowlist:
-            prefix = "Non-allowlisted Claude Code dynamic context"
+            prefix = "Non-allowlisted dynamic context"
         else:
-            prefix = "Claude Code dynamic context is prohibited"
+            prefix = "Dynamic context is prohibited"
         form = "command" if kind == "inline" else "command block"
         return (
             f"{prefix} {form}: {command!r} — it executes shell code before "
