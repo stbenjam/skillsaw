@@ -241,6 +241,14 @@ class TestHooksJson:
         assert r["rc"] == 0
         assert "content-cognitive-chunks" not in rule_ids(r)
 
+    def test_directory_added_event_accepted(self, tmp_path):
+        """DirectoryAdded is a documented hook event, not an unknown one."""
+        repo = copy_fixture("hooks-directory-added", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        assert r["rc"] == 0
+        assert "hooks-json-valid" not in rule_ids(r)
+
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
 
