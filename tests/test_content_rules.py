@@ -3202,6 +3202,29 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_quote_marker_delimiter_payload_not_a_closer(self, temp_dir):
+        """In an unclosed blockquote fence, '>     > ```' carries a
+        payload '>' after the code indent — not a closing delimiter."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> ```\n"
+            '> search(query="a")\n'
+            "> ```\n"
+            ">\n"
+            "> Another example:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="b")\n'
+            "> ```\n"
+            ">\n"
+            "> A third example:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="c")\n'
+            ">     > ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_indented_opener_keeps_absolute_closer_cap(self, temp_dir):
         """A top-level opener's own ≤3-space indent doesn't lift the
         closer's absolute 3-space cap — a 6-space delimiter payload in

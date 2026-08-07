@@ -117,10 +117,6 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # fence itself ('- > ```'); stripped before measuring quote depth.
 _LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
-# Blockquote markers alone — used per line where trailing whitespace is
-# code indentation that must survive (indented blocks in blockquotes).
-_QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
-
 # Container quote levels are peeled by _quote_offsets()/_peel_quote_levels():
 # each marker is up to three spaces (CommonMark), '>', and one optional
 # whitespace char — a '>' after a 4-space code indent
@@ -243,7 +239,7 @@ class ContentInlineToolExamplesRule(Rule):
         """
         # Tabs count as four columns (CommonMark) — expand before
         # measuring so a tab-prefixed backtick run stays payload.
-        without_quotes = _QUOTE_MARKER_RE.sub("", line).expandtabs(4)
+        without_quotes = ContentInlineToolExamplesRule._strip_quote_markers(line).expandtabs(4)
         indent = len(without_quotes) - len(without_quotes.lstrip(" "))
         if indent - base_indent > 3:
             return False
@@ -280,6 +276,17 @@ class ContentInlineToolExamplesRule(Rule):
                 i = j
             else:
                 return offsets
+
+    @staticmethod
+    def _strip_quote_markers(line: str) -> str:
+        """Strip every legal leading blockquote marker from *line*.
+
+        Uses the same ≤3-space marker syntax as _quote_offsets(), so a
+        literal ``>`` after a 4-space code indent ('>     > ```')
+        survives instead of being greedily consumed.
+        """
+        offsets = ContentInlineToolExamplesRule._quote_offsets(line)
+        return line[offsets[-1] :] if offsets else line
 
     @staticmethod
     def _peel_quote_levels(raw: List[str], depth: int) -> List[str]:
@@ -339,7 +346,7 @@ class ContentInlineToolExamplesRule(Rule):
         # closer's 3-space cap is relative to the opening delimiter's
         # indentation (its container may legally indent both).
         opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
-        opening_wo = _QUOTE_MARKER_RE.sub("", opening)
+        opening_wo = ContentInlineToolExamplesRule._strip_quote_markers(opening)
         # Only container indentation raises the closer's allowance — a
         # top-level opener's own optional ≤3-space indent does not lift
         # CommonMark's absolute 3-space cap.
