@@ -24,8 +24,11 @@ _CALL_HEAD_RE = re.compile(
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 _CALL_HEAD_JS_RE = re.compile(
+    # The assignment target also admits simple destructuring patterns
+    # ('const { data } =', 'const [first] ='); their char classes
+    # exclude '=' so the match stays linear.
     r"^(?:>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:[\w.$]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
+    r"(?:(?:[\w.$]+|\{[^}=]*\}|\[[^\]=]*\])[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
     r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\("
 )
 _JS_LANGS = frozenset({"js", "javascript", "ts", "typescript", "jsx", "tsx"})
@@ -394,7 +397,12 @@ class ContentInlineToolExamplesRule(Rule):
                         before, word_end = line, j
                     else:
                         before, word_end = prev_tail.rstrip(), len(prev_tail.rstrip()) - 1
-                    if word_end >= 0 and (before[word_end].isalnum() or before[word_end] in "_])$"):
+                    # A JS optional call ('callback?.(') is a call too.
+                    if word_end >= 1 and before[word_end] == "." and before[word_end - 1] == "?":
+                        nested_call = True
+                    elif word_end >= 0 and (
+                        before[word_end].isalnum() or before[word_end] in "_])$"
+                    ):
                         k = word_end
                         while k >= 0 and (before[k].isalnum() or before[k] in "_$"):
                             k -= 1

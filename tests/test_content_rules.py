@@ -3228,6 +3228,18 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`$`" in violations[0].message
 
+    def test_js_destructuring_assignment_targets(self, temp_dir):
+        parts = [f'```js\nconst {{ data }} = client.search("{q}")\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`client.search`" in violations[0].message
+
+    def test_js_optional_call_is_nested(self, temp_dir):
+        parts = [f'```js\nretry(callback?.("{q}"))\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_shell_command_substitution_not_a_callee(self, temp_dir):
         """In a shell fence '$(date)' is command substitution, not a
         call to a tool named '$'."""
