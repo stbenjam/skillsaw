@@ -3665,6 +3665,16 @@ class TestContentInlineToolExamplesRule:
         assert time.monotonic() - started < 2.0
         assert violations == []
 
+    def test_dynamic_imports_not_a_callee(self, temp_dir):
+        """`import("module")` / `require("module")` are module loading,
+        not tool invocations."""
+        parts = [f'```js\nimport("{m}")\n```\n' for m in ("./a", "./b", "./c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+        parts = [f'```js\nrequire("{m}")\n```\n' for m in ("./a", "./b", "./c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_keyword_expression_not_a_callee(self, temp_dir):
         """`raise(error)` is a keyword expression, not a tool call."""
         (temp_dir / "CLAUDE.md").write_text(

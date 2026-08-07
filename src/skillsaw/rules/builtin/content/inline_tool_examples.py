@@ -117,6 +117,8 @@ _NON_CALL_KEYWORDS = frozenset(
         "sizeof",
         "alignof",
         "decltype",
+        "import",
+        "require",
     }
 )
 
