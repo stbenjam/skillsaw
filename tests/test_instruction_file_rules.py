@@ -15,8 +15,10 @@ from skillsaw.rules.builtin.instructions import (
 
 @pytest.fixture
 def temp_dir():
+    # Resolve symlinks (macOS /var -> /private/var) so path assertions match
+    # the resolved paths the imports rule reports for nested files.
     tmp = tempfile.mkdtemp()
-    yield Path(tmp)
+    yield Path(tmp).resolve()
     shutil.rmtree(tmp)
 
 
