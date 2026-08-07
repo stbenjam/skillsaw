@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .formats.agent_plugins import is_agent_plugin_schema
-from .paths import safe_resolve
+from .paths import contained_resolve, safe_resolve
 from .utils import read_json
 
 PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -35,8 +35,21 @@ MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 # the Agent Plugins closed schema (spec §5.4).
 _COPIED_STRING_FIELDS = ("version", "description", "homepage", "repository", "license")
 
-# Spec §5.5: 1-64 chars of [a-z0-9.-], alphanumeric ends, no -- or ..
-_NAME_RE = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+# Spec §5.5: 1-64 chars of [a-z0-9.-], alphanumeric ends. The no-repetition
+# rule (no -- or ..) is checked in code rather than with a lookahead — see
+# the autofix-invariants development rule on lookarounds in fix-feeding
+# patterns.
+_NAME_SHAPE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+
+
+def _is_valid_name(name: str) -> bool:
+    return (
+        len(name) <= 64
+        and bool(_NAME_SHAPE_RE.match(name))
+        and "--" not in name
+        and ".." not in name
+    )
+
 
 # Claude MCP transport names → Agent Plugins transport names (spec §7.2.1).
 # "ws" has no portable equivalent and its servers are skipped with a note.
@@ -70,24 +83,36 @@ def plan_port(root: Path) -> PortPlan:
         plan.skipped = "no readable .claude-plugin/plugin.json or .codex-plugin/plugin.json"
         return plan
 
-    existing = read_json(root / "plugin.json")[0]
-    if (root / "plugin.json").exists():
+    already_ported = False
+    target = root / "plugin.json"
+    if target.is_symlink() or target.exists():
+        # A symlink here (even dangling) means writing would land somewhere
+        # the author didn't hand this tool — refuse rather than follow it.
+        existing = read_json(target)[0] if target.exists() and not target.is_symlink() else None
         if isinstance(existing, dict) and is_agent_plugin_schema(existing.get("$schema"), "plugin"):
-            plan.skipped = "already an Agent Plugins package (plugin.json declares the schema)"
+            already_ported = True
         else:
             plan.skipped = "a plugin.json not declaring the Agent Plugins schema already exists — refusing to overwrite"
-        return plan
+            return plan
 
-    plan.writes["plugin.json"] = _render_manifest(manifest, root, plan.notes)
+    if not already_ported:
+        plan.writes["plugin.json"] = _render_manifest(manifest, root, plan.notes)
 
     mcp = read_source_mcp(root)
     if mcp is not None:
         content = render_mcp(mcp, plan.notes)
         if content is not None:
-            if (root / "mcp.json").exists():
+            mcp_target = root / "mcp.json"
+            if mcp_target.is_symlink() or mcp_target.exists():
                 plan.notes.append("mcp.json already exists — leaving it untouched")
             else:
                 plan.writes["mcp.json"] = content
+
+    if already_ported and not plan.writes:
+        plan.skipped = "already an Agent Plugins package (plugin.json declares the schema)"
+        return plan
+    if already_ported:
+        plan.notes.append("plugin.json already declares Agent Plugins — kept as-is")
 
     _note_client_specific_content(root, plan.notes)
     return plan
@@ -98,6 +123,10 @@ def apply_plan(plan: PortPlan) -> List[Path]:
     written = []
     for filename, content in plan.writes.items():
         path = plan.root / filename
+        # plan_port refuses symlinked targets, but re-check at write time:
+        # the plan may be applied later than it was made.
+        if path.is_symlink():
+            continue
         path.write_text(content, encoding="utf-8")
         written.append(path)
     return written
@@ -113,12 +142,15 @@ def read_source_manifest(
     notes: List[str] = []
     merged: Dict[str, Any] = {}
     sources: List[str] = []
+    resolved_root = safe_resolve(root)
     for label, rel in (
         ("claude", ".claude-plugin/plugin.json"),
         ("codex", ".codex-plugin/plugin.json"),
     ):
-        path = root / rel
-        if not path.is_file():
+        # Only read manifests that resolve inside the plugin root — a
+        # symlink escaping the package must not supply its identity.
+        path = contained_resolve(root / rel, resolved_root) if resolved_root is not None else None
+        if path is None or not path.is_file():
             continue
         data, error = read_json(path)
         if error or not isinstance(data, dict):
@@ -134,7 +166,13 @@ def read_source_manifest(
 
 def read_source_mcp(root: Path) -> Optional[Dict[str, Any]]:
     """Return the source ``mcpServers`` mapping, if the plugin has one."""
-    data, error = read_json(root / ".mcp.json")
+    resolved_root = safe_resolve(root)
+    path = (
+        contained_resolve(root / ".mcp.json", resolved_root) if resolved_root is not None else None
+    )
+    if path is None:
+        return None
+    data, error = read_json(path)
     if error or not isinstance(data, dict):
         return None
     servers = data.get("mcpServers")
@@ -184,13 +222,13 @@ def _render_manifest(source: Dict[str, Any], root: Path, notes: List[str]) -> st
 
 def normalize_name(name: str) -> Optional[str]:
     """Coerce a source name into the spec's name constraints (§5.5)."""
-    if _NAME_RE.match(name) and len(name) <= 64:
+    if _is_valid_name(name):
         return name
     candidate = re.sub(r"[^a-z0-9.-]+", "-", name.lower())
     candidate = re.sub(r"-{2,}", "-", candidate)
     candidate = re.sub(r"\.{2,}", ".", candidate)
     candidate = candidate.strip("-.")[:64].strip("-.")
-    return candidate if candidate and _NAME_RE.match(candidate) else None
+    return candidate if candidate and _is_valid_name(candidate) else None
 
 
 # ── MCP translation ─────────────────────────────────────────────
@@ -232,7 +270,7 @@ def _port_server(name: str, config: Dict[str, Any], notes: List[str]) -> Optiona
         # front of a path is exactly a plugin-relative reference.
         if command.startswith(_CLAUDE_ROOT_VAR + "/"):
             command = "./" + command[len(_CLAUDE_ROOT_VAR) + 1 :]
-        if _CLAUDE_ROOT_VAR in command or " " in command:
+        if _CLAUDE_ROOT_VAR in command or any(ch.isspace() for ch in command):
             notes.append(
                 f"MCP server '{name}' 'command' is not a single plain executable token — skipped"
             )

@@ -123,6 +123,12 @@ def _run_port(args):
                 continue
 
             apply_plan(plan)
+            # Planning cached a read miss for the file just written; drop
+            # the read caches or verification silently never discovers the
+            # new package and passes vacuously.
+            from ..rules.builtin.utils import invalidate_read_caches
+
+            invalidate_read_caches()
             # A port isn't done until the target format's own rules accept
             # it. Config advisories (e.g. deprecation notices) belong to
             # lint runs; only the format's own findings gate the port.
@@ -141,12 +147,13 @@ def _run_port(args):
     finally:
         progress.clear()
 
+    conflicts = [p for p in skipped if "refusing to overwrite" in p.skipped]
+
     if not ported:
         print("\nNothing to port.")
         # A rerun over an already-ported tree is success. Refusing to
         # overwrite a foreign plugin.json, or finding nothing portable at
         # all, is not.
-        conflicts = any("refusing to overwrite" in p.skipped for p in skipped)
         already = any("already an Agent Plugins package" in p.skipped for p in skipped)
         sys.exit(0 if already and not conflicts else 1)
 
@@ -219,5 +226,13 @@ def _run_port(args):
         sys.exit(1)
 
     print(f"  Validation: {c['green']}✓ passed{c['reset']}")
+    if conflicts:
+        # Some plugins ported, but others were refused — surface that as a
+        # failure so a scripted port cannot silently leave gaps.
+        print(
+            f"\n{c['red']}✗{c['reset']} Converted {len(ported)} {plugin_word}, but "
+            f"{len(conflicts)} plugin(s) were refused (foreign plugin.json)."
+        )
+        sys.exit(1)
     print(f"\n{c['green']}✓{c['reset']} Converted {len(ported)} {plugin_word} to Agent Plugins v1")
     sys.exit(0)

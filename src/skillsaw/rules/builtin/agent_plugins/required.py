@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from skillsaw.context import RepositoryContext
-from skillsaw.discovery.agent_plugins import declares_agent_plugin
+from skillsaw.paths import safe_resolve
 from skillsaw.port import (
     normalize_name,
     read_source_manifest,
@@ -53,18 +53,24 @@ class AgentPluginRequiredRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
+        # Ownership comes from discovery's verdicts, not a fresh filesystem
+        # probe (see the ecosystem-provenance development rule): a directory
+        # is an Agent Plugins package iff discovery already claimed it.
+        agent_plugin_roots = {safe_resolve(p) or p for p in getattr(context, "agent_plugins", [])}
         for plugin_dir in context.distinct_plugin_dirs():
             source, _sources, _notes = read_source_manifest(plugin_dir)
             if source is None:
                 continue
 
-            if not declares_agent_plugin(plugin_dir):
+            if (safe_resolve(plugin_dir) or plugin_dir) not in agent_plugin_roots:
+                fixable = bool(plan_port(plugin_dir).writes)
                 violations.append(
                     self.violation(
                         "Plugin is not available as an Agent Plugins v1 package — "
                         "add a root plugin.json declaring the schema "
                         "(skillsaw port --to agent-plugin, or skillsaw fix)",
                         file_path=plugin_dir / "plugin.json",
+                        fixable=fixable,
                     )
                 )
                 continue
@@ -87,13 +93,19 @@ class AgentPluginRequiredRule(Rule):
                         "Claude MCP configuration (.mcp.json) has no portable "
                         "mcp.json counterpart",
                         file_path=plugin_dir / "mcp.json",
+                        # Not fixable when no server survives translation.
+                        fixable=self._portable_mcp(plugin_dir) is not None,
                     )
                 )
         return violations
 
     @staticmethod
     def _drifted_fields(source: Dict[str, Any], portable: Dict[str, Any]) -> List[str]:
-        """Shared fields present in both manifests whose values disagree."""
+        """Shared fields present in both manifests whose values disagree.
+
+        Each source value is normalized the same way the port renders it,
+        so a clean port never reads as drift.
+        """
         drifted = []
         for field in _SHARED_FIELDS:
             if field not in source or field not in portable:
@@ -101,8 +113,15 @@ class AgentPluginRequiredRule(Rule):
             left, right = source[field], portable[field]
             if field == "name" and isinstance(left, str):
                 left = normalize_name(left) or left
-            if field == "author" and isinstance(left, str):
-                left = {"name": left}
+            if field == "author":
+                if isinstance(left, str):
+                    left = {"name": left}
+                elif isinstance(left, dict):
+                    left = {
+                        k: v
+                        for k, v in left.items()
+                        if k in ("name", "email", "url") and isinstance(v, str)
+                    }
             if left != right:
                 drifted.append(field)
         return drifted

@@ -60,6 +60,9 @@ packages. By default a multi-plugin port also writes Codex's
 `.agents/plugins/marketplace.json`, listing every ported plugin as a
 `local` source with the spec-recommended policy fields (and the
 category carried over from a Claude marketplace entry when one exists).
+Codex writing its catalog into the client-neutral `.agents/` directory
+reads as a step toward a vendor-neutral catalog format, which makes it
+the reasonable one to emit until a real standard exists.
 An existing catalog is left untouched —
 `codex-marketplace-registration`'s fix can append missing entries.
 Control it with `--marketplaces` (default `codex`, `none` to skip);

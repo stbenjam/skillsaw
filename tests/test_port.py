@@ -191,6 +191,32 @@ def test_ported_marketplace_lints_clean(tmp_path):
         assert findings == [], plugin
 
 
+def test_port_completes_mcp_for_already_ported_plugin(tmp_path):
+    """A package with the portable manifest but no portable mcp.json still
+    gets the MCP translation on a later run."""
+    repo = copy_fixture("marketplace", tmp_path)
+    assert run_port(repo).returncode == 0
+    mcp_path = repo / "plugins" / "release-notes" / "mcp.json"
+    original = mcp_path.read_text()
+    mcp_path.unlink()
+    rerun = run_port(repo)
+    assert rerun.returncode == 0, rerun.stdout
+    assert mcp_path.read_text() == original
+
+
+def test_port_fails_when_any_plugin_conflicts(tmp_path):
+    """A partial port still exits nonzero when a plugin was refused."""
+    repo = copy_fixture("marketplace", tmp_path)
+    foreign = repo / "plugins" / "issue-triage" / "plugin.json"
+    foreign.write_text('{"name": "issue-triage", "note": "someone else\'s file"}\n')
+    result = run_port(repo)
+    assert result.returncode == 1
+    assert "refused" in result.stdout
+    # The portable plugin still ported; the foreign file survived.
+    assert (repo / "plugins" / "release-notes" / "plugin.json").exists()
+    assert "someone else" in foreign.read_text()
+
+
 def test_port_writes_codex_catalog(tmp_path):
     """A multi-plugin port also emits the Codex marketplace catalog so
     catalog-driven clients can discover the ported packages."""
