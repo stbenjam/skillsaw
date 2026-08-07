@@ -70,6 +70,11 @@ automatically but may occasionally fail after a skillsaw upgrade.
     `version` to your skillsaw version (`skillsaw --version`) and bump it
     when you upgrade.
 
+    The one exception: an unversioned config that selects a curated
+    [profile](#profiles) follows the **installed** version instead of
+    falling back to 0.6.0 — new rules apply immediately after upgrades
+    until you pin `version`.
+
 ## Profiles
 
 A profile is a named, curated bundle of rule overrides — severities,
