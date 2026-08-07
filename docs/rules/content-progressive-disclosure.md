@@ -9,7 +9,7 @@ Long skills and instruction files should use progressive disclosure: split detai
 |---|---|
 | **Severity** | info (auto) |
 | **Autofix** | - |
-| **Since** | v0.18.0 |
+| **Since** | v0.19.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
 
 ## Why
@@ -27,10 +27,13 @@ The rule fires only on files already over a threshold (by default the
 `context-budget` warn limits), and only when it finds zero disclosure
 references. What counts as a reference differs by surface:
 
-- **Skills**: markdown links to local files or directories, path-like
-  mentions (`references/guide.md`, `scripts/run.py` — including inside
-  fenced code blocks, where bundled scripts are typically invoked), and
-  bare filename mentions of bundled files ("run `helper.py`").
+- **Skills**: markdown links resolving inside the skill directory,
+  path-like mentions of bundled files (`references/guide.md`,
+  `scripts/run.py` — including inside fenced code blocks, where bundled
+  scripts are typically invoked), and bare filename mentions of bundled
+  files ("run `helper.py`"). References outside the bundle do not
+  count: a skill is distributed as its directory, so only material that
+  ships with it can be disclosed progressively.
 - **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends):
   explicit markdown links to local files and `@path` imports. Bare path
   mentions deliberately do not count — "`src/api/` contains the

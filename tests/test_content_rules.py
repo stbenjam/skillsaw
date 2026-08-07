@@ -3296,6 +3296,18 @@ class TestContentProgressiveDisclosureRule:
         rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
 
+    def test_skill_reference_outside_bundle_does_not_count(self, temp_dir):
+        """Links and @imports leaving the skill directory are not disclosure:
+        the skill ships as its bundle, so only bundled material counts."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "guide.md").write_text("# Guide\n")
+        self._write_skill(
+            temp_dir,
+            extra="\nSee [the guide](../../../docs/guide.md).\n\n@../../../docs/guide.md\n",
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
     def test_skill_symlink_mention_does_not_count(self, temp_dir):
         skill = self._write_skill(temp_dir, extra="\nRun linked.py when stages fail.\n")
         (skill / "scripts").mkdir()

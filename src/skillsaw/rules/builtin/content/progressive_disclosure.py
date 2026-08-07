@@ -10,8 +10,8 @@ even started that split, so the two findings deserve different advice:
 
 What counts as a disclosure reference differs by surface:
 
-* **Skills** bundle their own material, so any reference to a bundled
-  file counts: markdown links resolving to a local file or directory,
+* **Skills** bundle their own material, so only references into the
+  bundle count: markdown links resolving inside the skill directory,
   path-like tokens (``references/guide.md``, ``scripts/run.py``) that
   name a file bundled with the skill — including inside fenced code
   blocks, where bundled scripts are typically invoked — and bare
@@ -74,7 +74,8 @@ class ContentProgressiveDisclosureRule(Rule):
 
     formats = None
     repo_types = None
-    since = "0.18.0"
+    default_enabled = "auto"
+    since = "0.19.0"
     baseline_mode = "ceiling"
 
     config_schema = {
@@ -161,17 +162,22 @@ class ContentProgressiveDisclosureRule(Rule):
 
     def _has_disclosure_reference(self, cf: ContentBlock, root: Path) -> bool:
         self_path = safe_resolve(cf.path) or cf.path
-        if self._has_local_link(cf, root, self_path):
+        # A skill's disclosure surface is its own bundle: links and imports
+        # must land inside the skill directory (the same containment as
+        # agentskill-unreferenced-files), so an oversized skill cannot
+        # silence the finding by pointing at an unrelated repo file.
+        boundary = self_path.parent if cf.category == "skill" else root
+        if self._has_local_link(cf, boundary, self_path):
             return True
         body = cf.read_body(strip_code_blocks=False) or ""
-        if self._has_import_reference(cf, body, root, self_path):
+        if self._has_import_reference(cf, body, boundary, self_path):
             return True
         if cf.category != "skill":
             return False
         return self._has_bundled_mention(body, self_path.parent)
 
-    def _has_local_link(self, cf: ContentBlock, root: Path, self_path: Path) -> bool:
-        """A markdown link resolving to a local file or directory in the repo."""
+    def _has_local_link(self, cf: ContentBlock, boundary: Path, self_path: Path) -> bool:
+        """A markdown link resolving to a local file or directory in *boundary*."""
         for link in cf.markdown.links():
             target = link.href.strip()
             if not target or target.startswith(("#", "//")) or _URI_SCHEME.match(target):
@@ -182,20 +188,20 @@ class ContentProgressiveDisclosureRule(Rule):
             resolved = safe_resolve(cf.path.parent / target)
             if resolved is None or resolved == self_path:
                 continue
-            if not resolved.is_relative_to(root):
+            if not resolved.is_relative_to(boundary):
                 continue
             if safe_exists(resolved):
                 return True
         return False
 
     def _has_import_reference(
-        self, cf: ContentBlock, body: str, root: Path, self_path: Path
+        self, cf: ContentBlock, body: str, boundary: Path, self_path: Path
     ) -> bool:
-        """An ``@path`` import resolving to an existing local file.
+        """An ``@path`` import resolving to an existing file in *boundary*.
 
-        Only tokens that resolve inside the repository count — an
+        Only tokens that resolve inside the boundary count — an
         ``@octocat`` mention or a ``@~/.claude/...`` home import is not
-        in-repo disclosure this rule can credit.
+        disclosure this rule can credit.
         """
         if "@" not in body:
             return False
@@ -209,7 +215,7 @@ class ContentProgressiveDisclosureRule(Rule):
                 resolved = safe_resolve(cf.path.parent / import_path)
                 if resolved is None or resolved == self_path:
                     continue
-                if not resolved.is_relative_to(root):
+                if not resolved.is_relative_to(boundary):
                     continue
                 if safe_is_file(resolved):
                     return True
