@@ -51,6 +51,36 @@ _SLASH_COMMENT_LANGS = frozenset(
 )
 _ALL_COMMENT_STYLES = frozenset({"#", "//"})
 
+# Keywords that may directly precede a parenthesized expression inside
+# call arguments without invoking anything ('x for x in items if
+# (x.ready)') — a '(' after one of these is grouping, not a second call.
+_NON_CALL_KEYWORDS = frozenset(
+    {
+        "if",
+        "elif",
+        "else",
+        "for",
+        "while",
+        "in",
+        "not",
+        "and",
+        "or",
+        "return",
+        "await",
+        "yield",
+        "lambda",
+        "assert",
+        "match",
+        "case",
+        "switch",
+        "catch",
+        "typeof",
+        "del",
+        "raise",
+        "new",
+    }
+)
+
 _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 
 # Container prefix a nested fence carries on every line: blockquote
@@ -229,13 +259,20 @@ class ContentInlineToolExamplesRule(Rule):
         else:
             raw = lines[fence.body_line_start : end0 + 1]
         if fence.nested:
-            # Strip exactly the container prefix measured on the opening
-            # delimiter line — a blanket quote-marker sub would also eat
-            # a literal '>' belonging to the code ('> > search(...)').
+            # Peel exactly the container's quote depth, measured on the
+            # opening delimiter line, one marker at a time per line —
+            # CommonMark lets the space after '>' vary line to line
+            # ('> ```' with '>search(...)' content), so an exact-prefix
+            # match would miss legal lines, while a blanket sub would
+            # also eat a literal '>' belonging to the code
+            # ('> > search(...)').
             opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
-            prefix = _CONTAINER_PREFIX_RE.match(opening).group(0)
-            if prefix:
-                raw = [line[len(prefix) :] if line.startswith(prefix) else line for line in raw]
+            depth = _CONTAINER_PREFIX_RE.match(opening).group(0).count(">")
+            for _ in range(depth):
+                raw = [
+                    _ONE_QUOTE_LEVEL_RE.sub("", line, count=1) if line.strip() else line
+                    for line in raw
+                ]
         # Dedent even outside containers: CommonMark allows a top-level
         # fence (and its content) to be indented up to three spaces.
         return ContentInlineToolExamplesRule._dedent(raw)
@@ -317,9 +354,15 @@ class ContentInlineToolExamplesRule(Rule):
                         j -= 1
                     # An identifier, a closing subscript ('handlers[0](')
                     # or a closing call ('f(x)(') before '(' invokes a
-                    # second callable.
+                    # second callable — unless the identifier is a
+                    # control keyword grouping an expression
+                    # ('... if (x.ready)'), which calls nothing.
                     if j >= 0 and (line[j].isalnum() or line[j] in "_])"):
-                        nested_call = True
+                        k = j
+                        while k >= 0 and (line[k].isalnum() or line[k] == "_"):
+                            k -= 1
+                        if line[k + 1 : j + 1] not in _NON_CALL_KEYWORDS:
+                            nested_call = True
                 depth += 1
             elif char == ")":
                 depth -= 1

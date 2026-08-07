@@ -3202,6 +3202,44 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_variable_quote_marker_whitespace(self, temp_dir):
+        """CommonMark lets the space after '>' vary per line —
+        '>search(...)' inside a '> ```' fence is legal content."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> Use the search tool. For example:\n"
+            ">\n"
+            "> ```\n"
+            '>search(query="a")\n'
+            "> ```\n"
+            ">\n"
+            "> Another example:\n"
+            ">\n"
+            "> ```\n"
+            '>search(query="b")\n'
+            "> ```\n"
+            ">\n"
+            "> A third example:\n"
+            ">\n"
+            "> ```\n"
+            '>search(query="c")\n'
+            "> ```\n"
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_keyword_group_in_arguments_not_nested_call(self, temp_dir):
+        """A control keyword before a parenthesized group inside the
+        arguments ('... if (x.ready)') calls nothing."""
+        snippet = "search(x for x in items if (x.{}))"
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(a) for a in ("ready", "stale", "held")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_literal_quote_in_top_level_indented_block(self, temp_dir):
         """A leading '>' in a top-level indented block is literal code
         (quoted output), not a container marker to strip."""
