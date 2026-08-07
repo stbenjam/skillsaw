@@ -97,12 +97,10 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # code indentation that must survive (indented blocks in blockquotes).
 _QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
 
-# One blockquote level, for peeling container markers a level at a time
-# so a literal '>' in the code itself survives.  A container marker may
-# be indented at most three spaces (CommonMark) — a '>' after a 4-space
-# code indent ('>     > search(...)') is payload, never a container.
-_QUOTE_LEAD_RE = re.compile(r"^ {0,3}>")
-_ONE_QUOTE_LEVEL_RE = re.compile(r"^ {0,3}>\s?")
+# Container quote levels are peeled by _quote_offsets()/_peel_quote_levels():
+# each marker is up to three spaces (CommonMark), '>', and one optional
+# whitespace char — a '>' after a 4-space code indent
+# ('>     > search(...)') is payload, never a container.
 
 
 class ContentInlineToolExamplesRule(Rule):
@@ -210,15 +208,18 @@ class ContentInlineToolExamplesRule(Rule):
         return "".join(parts)
 
     @staticmethod
-    def _is_closing_marker(line: str, markup: str) -> bool:
+    def _is_closing_marker(line: str, markup: str, base_indent: int = 0) -> bool:
         """True when *line* is the fence's closing delimiter run.
 
-        A closing fence may be indented at most three spaces
-        (CommonMark) — a 4-space-indented backtick run inside an
-        unclosed fence is payload, not a closer.
+        A closing fence may be indented at most three spaces beyond its
+        container's indentation (CommonMark) — *base_indent* is the
+        opening delimiter's indentation, so a list-nested fence keeps
+        its legally indented closer while a 4-space-indented backtick
+        run inside an unclosed top-level fence stays payload.
         """
         without_quotes = _QUOTE_MARKER_RE.sub("", line)
-        if len(without_quotes) - len(without_quotes.lstrip(" ")) > 3:
+        indent = len(without_quotes) - len(without_quotes.lstrip(" "))
+        if indent - base_indent > 3:
             return False
         stripped = without_quotes.strip()
         return (
@@ -227,6 +228,48 @@ class ContentInlineToolExamplesRule(Rule):
             and set(stripped) == {markup[0]}
             and len(stripped) >= len(markup)
         )
+
+    @staticmethod
+    def _quote_offsets(line: str) -> List[int]:
+        """Offsets just past each successive leading blockquote marker.
+
+        Each marker is up to three spaces, ``>``, and one optional
+        following whitespace char — a single linear scan per line, so
+        peeling any number of container levels stays O(line length).
+        """
+        offsets: List[int] = []
+        i = 0
+        length = len(line)
+        while True:
+            j = i
+            spaces = 0
+            while j < length and line[j] == " " and spaces < 3:
+                j += 1
+                spaces += 1
+            if j < length and line[j] == ">":
+                j += 1
+                if j < length and line[j] in " \t":
+                    j += 1
+                offsets.append(j)
+                i = j
+            else:
+                return offsets
+
+    @staticmethod
+    def _peel_quote_levels(raw: List[str], depth: int) -> List[str]:
+        """Strip up to *depth* leading quote-marker levels per line, in
+        one pass over the text."""
+        if depth <= 0:
+            return raw
+        peeled = []
+        for line in raw:
+            if not line.strip():
+                peeled.append(line)
+                continue
+            offsets = ContentInlineToolExamplesRule._quote_offsets(line)
+            take = min(depth, len(offsets))
+            peeled.append(line[offsets[take - 1] :] if take else line)
+        return peeled
 
     @staticmethod
     def _dedent(raw: List[str]) -> List[str]:
@@ -266,28 +309,27 @@ class ContentInlineToolExamplesRule(Rule):
                 raw = ContentInlineToolExamplesRule._strip_common_quote_levels(raw)
             return ContentInlineToolExamplesRule._dedent(raw)
         # An unclosed fence at end of file has no closing delimiter —
-        # its final line is content and must not be sliced off.
+        # its final line is content and must not be sliced off.  The
+        # closer's 3-space cap is relative to the opening delimiter's
+        # indentation (its container may legally indent both).
+        opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
+        opening_wo = _QUOTE_MARKER_RE.sub("", opening)
+        base_indent = len(opening_wo) - len(opening_wo.lstrip(" "))
         end0 = fence.body_line_end - 1
         last = lines[end0] if 0 <= end0 < len(lines) else ""
-        if ContentInlineToolExamplesRule._is_closing_marker(last, fence.markup):
+        if ContentInlineToolExamplesRule._is_closing_marker(last, fence.markup, base_indent):
             raw = lines[fence.body_line_start : end0]
         else:
             raw = lines[fence.body_line_start : end0 + 1]
         if fence.nested:
             # Peel exactly the container's quote depth, measured on the
-            # opening delimiter line, one marker at a time per line —
-            # CommonMark lets the space after '>' vary line to line
-            # ('> ```' with '>search(...)' content), so an exact-prefix
-            # match would miss legal lines, while a blanket sub would
-            # also eat a literal '>' belonging to the code
-            # ('> > search(...)').
-            opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
+            # opening delimiter line — CommonMark lets the space after
+            # '>' vary line to line ('> ```' with '>search(...)'
+            # content), so an exact-prefix match would miss legal lines,
+            # while a blanket sub would also eat a literal '>' belonging
+            # to the code ('> > search(...)').
             depth = _CONTAINER_PREFIX_RE.match(opening).group(0).count(">")
-            for _ in range(depth):
-                raw = [
-                    _ONE_QUOTE_LEVEL_RE.sub("", line, count=1) if line.strip() else line
-                    for line in raw
-                ]
+            raw = ContentInlineToolExamplesRule._peel_quote_levels(raw, depth)
         # Dedent even outside containers: CommonMark allows a top-level
         # fence (and its content) to be indented up to three spaces.
         return ContentInlineToolExamplesRule._dedent(raw)
@@ -301,13 +343,11 @@ class ContentInlineToolExamplesRule(Rule):
         to all lines — a literal ``>`` carried by only some code lines
         survives.
         """
-        while True:
-            non_blank = [line for line in raw if line.strip()]
-            if not non_blank or not all(_QUOTE_LEAD_RE.match(line) for line in non_blank):
-                return raw
-            raw = [
-                _ONE_QUOTE_LEVEL_RE.sub("", line, count=1) if line.strip() else line for line in raw
-            ]
+        non_blank = [line for line in raw if line.strip()]
+        if not non_blank:
+            return raw
+        depth = min(len(ContentInlineToolExamplesRule._quote_offsets(line)) for line in non_blank)
+        return ContentInlineToolExamplesRule._peel_quote_levels(raw, depth)
 
     @staticmethod
     def _comment_styles(info: str) -> frozenset:
@@ -331,7 +371,12 @@ class ContentInlineToolExamplesRule(Rule):
 
     @staticmethod
     def _advance(
-        line: str, start: int, depth: int, quote: Optional[str], styles: frozenset
+        line: str,
+        start: int,
+        depth: int,
+        quote: Optional[str],
+        styles: frozenset,
+        prev_tail: str = "",
     ) -> Tuple[int, Optional[str], Optional[str], bool]:
         """Track paren depth and quote state across ``line[start:]``.
 
@@ -371,12 +416,18 @@ class ContentInlineToolExamplesRule(Rule):
                     # or a closing call ('f(x)(') before '(' invokes a
                     # second callable — unless the identifier is a
                     # control keyword grouping an expression
-                    # ('... if (x.ready)'), which calls nothing.
-                    if j >= 0 and (line[j].isalnum() or line[j] in "_])"):
-                        k = j
-                        while k >= 0 and (line[k].isalnum() or line[k] == "_"):
+                    # ('... if (x.ready)'), which calls nothing.  When
+                    # the '(' opens the line, the token may sit at the
+                    # end of the previous continuation line (*prev_tail*).
+                    if j >= 0:
+                        before, word_end = line, j
+                    else:
+                        before, word_end = prev_tail.rstrip(), len(prev_tail.rstrip()) - 1
+                    if word_end >= 0 and (before[word_end].isalnum() or before[word_end] in "_])"):
+                        k = word_end
+                        while k >= 0 and (before[k].isalnum() or before[k] == "_"):
                             k -= 1
-                        if line[k + 1 : j + 1] not in _NON_CALL_KEYWORDS:
+                        if before[k + 1 : word_end + 1] not in _NON_CALL_KEYWORDS:
                             nested_call = True
                 depth += 1
             elif char == ")":
@@ -410,6 +461,7 @@ class ContentInlineToolExamplesRule(Rule):
         callee: Optional[str] = None
         depth = 0
         quote: Optional[str] = None
+        carry = ""
         for line in content_lines:
             if not line.strip():
                 continue
@@ -420,11 +472,14 @@ class ContentInlineToolExamplesRule(Rule):
                 # be comments.
                 if quote is None and cls._is_comment_line(line, styles):
                     continue
-                depth, quote, trailer, nested_call = cls._advance(line, 0, depth, quote, styles)
+                depth, quote, trailer, nested_call = cls._advance(
+                    line, 0, depth, quote, styles, carry
+                )
                 if nested_call or (
                     trailer is not None and not cls._is_call_trailer(trailer, styles)
                 ):
                     return None
+                carry = line
                 continue
             if cls._is_comment_line(line, styles):
                 continue
@@ -443,11 +498,7 @@ class ContentInlineToolExamplesRule(Rule):
             )
             if nested_call or (trailer is not None and not cls._is_call_trailer(trailer, styles)):
                 return None
-        # An invocation left unterminated at the end of the fence
-        # ('search(' with no closing paren) is malformed code, not a
-        # completed call example.
-        if depth > 0 or quote is not None:
-            return None
+            carry = line
         # A fence that ends mid-call or mid-string is malformed code,
         # not a completed invocation.
         if depth > 0 or quote is not None:
