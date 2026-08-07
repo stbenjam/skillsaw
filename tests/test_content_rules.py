@@ -3089,6 +3089,13 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_unterminated_call_disqualifies(self, temp_dir):
+        """A fence ending mid-call is malformed code, not an invocation."""
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(['search(query="a"', 'search(query="b"', 'search(query="c"'])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_python_floor_division_not_a_comment(self, temp_dir):
         """In a python-labeled fence '//' is floor division, not a
         comment — the call still scans to its closing paren."""

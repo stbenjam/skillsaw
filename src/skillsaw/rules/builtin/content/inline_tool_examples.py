@@ -377,6 +377,10 @@ class ContentInlineToolExamplesRule(Rule):
         # completed call example.
         if depth > 0 or quote is not None:
             return None
+        # A fence that ends mid-call or mid-string is malformed code,
+        # not a completed invocation.
+        if depth > 0 or quote is not None:
+            return None
         return callee
 
     def _run_breaks(
