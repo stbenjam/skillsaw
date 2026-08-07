@@ -415,7 +415,9 @@ class ContentInlineToolExamplesRule(Rule):
                         # The exemption applies to bare keywords only:
                         # 'client.match(...)' is a qualified method call,
                         # not the match statement.
-                        qualified = k >= 0 and before[k] == "."
+                        qualified = k >= 0 and (
+                            before[k] == "." or (k >= 1 and before[k - 1 : k + 1] == "::")
+                        )
                         if qualified or before[k + 1 : word_end + 1] not in _NON_CALL_KEYWORDS:
                             nested_call = True
                 depth += 1

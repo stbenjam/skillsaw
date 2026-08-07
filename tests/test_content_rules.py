@@ -3591,6 +3591,13 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_namespace_qualified_keyword_method_is_nested_call(self, temp_dir):
+        """`client::match(...)` is a qualified call, not the bare match
+        keyword — the fence makes two calls and is excluded."""
+        parts = [f'```cpp\nretry(client::match("{q}"));\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_namespace_qualified_callee(self, temp_dir):
         parts = [f'```cpp\ntools::search("{q}");\n```\n' for q in ("a", "b", "c")]
         (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
