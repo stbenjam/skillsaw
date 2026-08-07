@@ -100,6 +100,9 @@ _NON_CALL_KEYWORDS = frozenset(
         "raise",
         "throw",
         "new",
+        "sizeof",
+        "alignof",
+        "decltype",
     }
 )
 
@@ -337,7 +340,10 @@ class ContentInlineToolExamplesRule(Rule):
         # indentation (its container may legally indent both).
         opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
         opening_wo = _QUOTE_MARKER_RE.sub("", opening)
-        base_indent = len(opening_wo) - len(opening_wo.lstrip(" "))
+        # Only container indentation raises the closer's allowance — a
+        # top-level opener's own optional ≤3-space indent does not lift
+        # CommonMark's absolute 3-space cap.
+        base_indent = len(opening_wo) - len(opening_wo.lstrip(" ")) if fence.nested else 0
         end0 = fence.body_line_end - 1
         last = lines[end0] if 0 <= end0 < len(lines) else ""
         if ContentInlineToolExamplesRule._is_closing_marker(last, fence.markup, base_indent):

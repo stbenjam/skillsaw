@@ -3202,6 +3202,31 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_indented_opener_keeps_absolute_closer_cap(self, temp_dir):
+        """A top-level opener's own ≤3-space indent doesn't lift the
+        closer's absolute 3-space cap — a 6-space delimiter payload in
+        an unclosed indented fence stays content."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "```\n"
+            'search(query="a")\n'
+            "```\n\n"
+            "Another example:\n\n"
+            "```\n"
+            'search(query="b")\n'
+            "```\n\n"
+            "A third example:\n\n"
+            "   ```\n"
+            '   search(query="c")\n'
+            "      ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_sizeof_not_a_callee(self, temp_dir):
+        parts = [f"```c\nsizeof(record_{n})\n```\n" for n in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_repl_prompt_examples(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(
