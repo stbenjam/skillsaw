@@ -3202,6 +3202,56 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_quote_list_quote_nested_fences(self, temp_dir):
+        """A blockquote→list→blockquote fence normalizes fully."""
+        item = "> - > ```\n" '>   > search(query="{}")\n' ">   > ```\n"
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n" + "\nAnother example:\n\n".join(item.format(q) for q in ("a", "b", "c"))
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_adjacent_quote_marker_payload_in_unclosed_fence(self, temp_dir):
+        """In an unclosed blockquote fence, '> > ```' is one container
+        marker plus literal payload — not a closer."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> ```\n"
+            '> search(query="a")\n'
+            "> ```\n"
+            ">\n"
+            "> Another example:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="b")\n'
+            "> ```\n"
+            ">\n"
+            "> A third example:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="c")\n'
+            "> > ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_mixed_tab_space_indented_blocks(self, temp_dir):
+        """Tab and 4-space indentation are equivalent columns — a block
+        mixing them still normalizes to column zero."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Use the search tool. For example:\n\n"
+            '    search(query="a")\n'
+            '\tsearch(query="b")\n\n'
+            "Another example:\n\n"
+            '    search(query="c")\n\n'
+            "A third example:\n\n"
+            '\tsearch(query="d")\n'
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_quote_marker_delimiter_payload_not_a_closer(self, temp_dir):
         """In an unclosed blockquote fence, '>     > ```' carries a
         payload '>' after the code indent — not a closing delimiter."""

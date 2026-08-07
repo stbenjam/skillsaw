@@ -106,21 +106,10 @@ _NON_CALL_KEYWORDS = frozenset(
     }
 )
 
-_INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
-
 # Container prefix a nested fence carries on every line: blockquote
 # markers and/or list-item indentation.  Measured on the opening fence
 # line and stripped from the content so call heads sit at column 0.
 _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
-
-# A list marker opening the same line as further containers or the
-# fence itself ('- > ```'); stripped before measuring quote depth.
-_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
-
-# Container quote levels are peeled by _quote_offsets()/_peel_quote_levels():
-# each marker is up to three spaces (CommonMark), '>', and one optional
-# whitespace char — a '>' after a 4-space code indent
-# ('>     > search(...)') is payload, never a container.
 
 
 class ContentInlineToolExamplesRule(Rule):
@@ -228,165 +217,17 @@ class ContentInlineToolExamplesRule(Rule):
         return "".join(parts)
 
     @staticmethod
-    def _is_closing_marker(line: str, markup: str, base_indent: int = 0) -> bool:
-        """True when *line* is the fence's closing delimiter run.
+    def _fence_content_lines(fence) -> List[str]:
+        """The code lines of *fence*, normalized by the markdown parser.
 
-        A closing fence may be indented at most three spaces beyond its
-        container's indentation (CommonMark) — *base_indent* is the
-        opening delimiter's indentation, so a list-nested fence keeps
-        its legally indented closer while a 4-space-indented backtick
-        run inside an unclosed top-level fence stays payload.
+        ``MarkdownFence.content`` is markdown-it's token content: fence
+        delimiters are excluded, container markers (blockquote levels,
+        list indentation, in any combination) are stripped, indented
+        blocks are dedented with tabs handled as columns, and an
+        unclosed fence keeps every payload line — while literal ``>``
+        or delimiter-lookalike lines inside the code survive untouched.
         """
-        # Tabs count as four columns (CommonMark) — expand before
-        # measuring so a tab-prefixed backtick run stays payload.
-        without_quotes = ContentInlineToolExamplesRule._strip_quote_markers(line).expandtabs(4)
-        indent = len(without_quotes) - len(without_quotes.lstrip(" "))
-        if indent - base_indent > 3:
-            return False
-        stripped = without_quotes.strip()
-        return (
-            bool(markup)
-            and bool(stripped)
-            and set(stripped) == {markup[0]}
-            and len(stripped) >= len(markup)
-        )
-
-    @staticmethod
-    def _quote_offsets(line: str) -> List[int]:
-        """Offsets just past each successive leading blockquote marker.
-
-        Each marker is up to three spaces, ``>``, and one optional
-        following whitespace char — a single linear scan per line, so
-        peeling any number of container levels stays O(line length).
-        """
-        offsets: List[int] = []
-        i = 0
-        length = len(line)
-        while True:
-            j = i
-            spaces = 0
-            while j < length and line[j] == " " and spaces < 3:
-                j += 1
-                spaces += 1
-            if j < length and line[j] == ">":
-                j += 1
-                if j < length and line[j] in " \t":
-                    j += 1
-                offsets.append(j)
-                i = j
-            else:
-                return offsets
-
-    @staticmethod
-    def _strip_quote_markers(line: str) -> str:
-        """Strip every legal leading blockquote marker from *line*.
-
-        Uses the same ≤3-space marker syntax as _quote_offsets(), so a
-        literal ``>`` after a 4-space code indent ('>     > ```')
-        survives instead of being greedily consumed.
-        """
-        offsets = ContentInlineToolExamplesRule._quote_offsets(line)
-        return line[offsets[-1] :] if offsets else line
-
-    @staticmethod
-    def _peel_quote_levels(raw: List[str], depth: int) -> List[str]:
-        """Strip up to *depth* leading quote-marker levels per line, in
-        one pass over the text."""
-        if depth <= 0:
-            return raw
-        peeled = []
-        for line in raw:
-            if not line.strip():
-                peeled.append(line)
-                continue
-            offsets = ContentInlineToolExamplesRule._quote_offsets(line)
-            take = min(depth, len(offsets))
-            peeled.append(line[offsets[take - 1] :] if take else line)
-        return peeled
-
-    @staticmethod
-    def _dedent(raw: List[str]) -> List[str]:
-        """Strip the common leading whitespace of the non-blank lines.
-
-        Unlike a fixed 4-space strip this normalizes indented blocks at
-        any nesting depth (a list-nested indented block sits 6+ columns
-        deep) while preserving the relative indent of continuation lines.
-        """
-        indents = [len(line) - len(line.lstrip()) for line in raw if line.strip()]
-        if not indents:
-            return raw
-        cut = min(indents)
-        return [line[cut:] if line.strip() else line for line in raw]
-
-    @staticmethod
-    def _fence_content_lines(fence, lines: List[str]) -> List[str]:
-        """The code lines of *fence*, with delimiters and container/indent
-        prefixes removed so call heads sit at column 0.
-
-        ``body_line_start``/``body_line_end`` are 1-based and include the
-        fence delimiters for fenced blocks; indented blocks have no
-        delimiters and carry blockquote markers and/or their code indent
-        on every line.  Container-nested content (blockquote markers,
-        list-item indentation — including a fence opened on the list
-        marker line itself) is normalized by stripping quote markers and
-        the common indent; a fence outside any container is only
-        dedented (CommonMark allows up to three spaces of indentation),
-        so code that legitimately starts with ``>`` survives.
-        """
-        if fence.indented:
-            raw = lines[fence.body_line_start - 1 : fence.body_line_end]
-            # Only a container-nested block carries quote markers; on a
-            # top-level indented block a leading '>' is literal code
-            # (quoted output samples) and must survive.
-            if fence.nested:
-                raw = ContentInlineToolExamplesRule._strip_common_quote_levels(raw)
-            return ContentInlineToolExamplesRule._dedent(raw)
-        # An unclosed fence at end of file has no closing delimiter —
-        # its final line is content and must not be sliced off.  The
-        # closer's 3-space cap is relative to the opening delimiter's
-        # indentation (its container may legally indent both).
-        opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
-        opening_wo = ContentInlineToolExamplesRule._strip_quote_markers(opening)
-        # Only container indentation raises the closer's allowance — a
-        # top-level opener's own optional ≤3-space indent does not lift
-        # CommonMark's absolute 3-space cap.
-        base_indent = len(opening_wo) - len(opening_wo.lstrip(" ")) if fence.nested else 0
-        end0 = fence.body_line_end - 1
-        last = lines[end0] if 0 <= end0 < len(lines) else ""
-        if ContentInlineToolExamplesRule._is_closing_marker(last, fence.markup, base_indent):
-            raw = lines[fence.body_line_start : end0]
-        else:
-            raw = lines[fence.body_line_start : end0 + 1]
-        if fence.nested:
-            # Peel exactly the container's quote depth, measured on the
-            # opening delimiter line — CommonMark lets the space after
-            # '>' vary line to line ('> ```' with '>search(...)'
-            # content), so an exact-prefix match would miss legal lines,
-            # while a blanket sub would also eat a literal '>' belonging
-            # to the code ('> > search(...)').
-            # A list marker may share the opening line ('- > ```');
-            # strip it before measuring the quote depth.
-            opening_after_marker = _LIST_MARKER_RE.sub("", opening)
-            depth = _CONTAINER_PREFIX_RE.match(opening_after_marker).group(0).count(">")
-            raw = ContentInlineToolExamplesRule._peel_quote_levels(raw, depth)
-        # Dedent even outside containers: CommonMark allows a top-level
-        # fence (and its content) to be indented up to three spaces.
-        return ContentInlineToolExamplesRule._dedent(raw)
-
-    @staticmethod
-    def _strip_common_quote_levels(raw: List[str]) -> List[str]:
-        """Peel blockquote-marker levels shared by every non-blank line.
-
-        An indented block has no delimiter line to measure a container
-        prefix from, so the container is whatever marker depth is common
-        to all lines — a literal ``>`` carried by only some code lines
-        survives.
-        """
-        non_blank = [line for line in raw if line.strip()]
-        if not non_blank:
-            return raw
-        depth = min(len(ContentInlineToolExamplesRule._quote_offsets(line)) for line in non_blank)
-        return ContentInlineToolExamplesRule._peel_quote_levels(raw, depth)
+        return fence.content.splitlines()
 
     @staticmethod
     def _comment_styles(info: str) -> frozenset:
@@ -664,7 +505,7 @@ class ContentInlineToolExamplesRule(Rule):
         violations: List[RuleViolation] = []
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
-            content_lines = self._fence_content_lines(fence, lines)
+            content_lines = self._fence_content_lines(fence)
             callee = self._fence_callee(content_lines, self._comment_styles(fence.info))
             if callee is None:
                 self._flush(cf, run, violations)
