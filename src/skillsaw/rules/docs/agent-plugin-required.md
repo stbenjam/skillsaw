@@ -1,11 +1,5 @@
 ## Why
 
-Agent Plugins v1 is the vendor-neutral plugin format: a root
-`plugin.json`, skills at `skills/*/SKILL.md`, and an optional portable
-`mcp.json`. It coexists with Claude Code and Codex formats in the same
-directory, so publishing it costs two generated files per plugin — and
-buys installation by any conforming client.
-
 Agent Plugins coexists with Claude Code and Codex formats in the same
 directory, so publishing it costs at most two generated files per
 plugin (`mcp.json` only when the plugin has MCP configuration) — and
