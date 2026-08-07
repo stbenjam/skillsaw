@@ -3216,6 +3216,38 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_indented_delimiter_payload_not_a_closer(self, temp_dir):
+        """A 4-space-indented backtick run inside an unclosed fence is
+        payload (CommonMark caps closer indentation at 3 spaces) — it
+        must not be sliced off as the closing delimiter."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "```\n"
+            'search(query="a")\n'
+            "```\n\n"
+            "Another example:\n\n"
+            "```\n"
+            'search(query="b")\n'
+            "```\n\n"
+            "A third example:\n\n"
+            "```\n"
+            'search(query="c")\n'
+            "    ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_annotation_regex_linear_on_crafted_input(self, temp_dir):
+        """A crafted 'x:' line with a long whitespace run must fail the
+        call-head match without pathological backtracking."""
+        crafted = "x:" + " " * 5000 + "y"
+        (temp_dir / "CLAUDE.md").write_text(self._fences([crafted, crafted, crafted]))
+        import time
+
+        started = time.monotonic()
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert time.monotonic() - started < 2.0
+        assert violations == []
+
     def test_keyword_expression_not_a_callee(self, temp_dir):
         """`raise(error)` is a keyword expression, not a tool call."""
         (temp_dir / "CLAUDE.md").write_text(

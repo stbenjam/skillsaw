@@ -14,8 +14,11 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 # opening paren.  Continuation lines of a multi-line call are tracked
 # by paren depth in _fence_callee().
 _CALL_HEAD_RE = re.compile(
+    # The annotation atom excludes '=' and the '=' follows it directly,
+    # so no two adjacent quantifiers can trade the same whitespace — a
+    # failed match stays linear on crafted input.
     r"^(?:\$\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:[\w.]+(?:\s*:\s*[\w.\[\], ]+)?\s*=\s*)?(?:await\s+)?"
+    r"(?:[\w.]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 
@@ -208,8 +211,16 @@ class ContentInlineToolExamplesRule(Rule):
 
     @staticmethod
     def _is_closing_marker(line: str, markup: str) -> bool:
-        """True when *line* is the fence's closing delimiter run."""
-        stripped = _QUOTE_MARKER_RE.sub("", line).strip()
+        """True when *line* is the fence's closing delimiter run.
+
+        A closing fence may be indented at most three spaces
+        (CommonMark) — a 4-space-indented backtick run inside an
+        unclosed fence is payload, not a closer.
+        """
+        without_quotes = _QUOTE_MARKER_RE.sub("", line)
+        if len(without_quotes) - len(without_quotes.lstrip(" ")) > 3:
+            return False
+        stripped = without_quotes.strip()
         return (
             bool(markup)
             and bool(stripped)
