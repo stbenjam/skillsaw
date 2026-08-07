@@ -17,8 +17,12 @@ Require an allowlist for dynamic context commands that execute shell code while 
 Some agent clients support dynamic context injection in agent-facing content.
 [Claude Code's documentation](https://code.claude.com/docs/en/skills#inject-dynamic-context)
 describes the inline form, `` !`<command>` ``, and fenced blocks whose info
-string is `!`. These forms execute shell commands before content is sent to
-the model, and the command output is inserted into the prompt — turning
+string is `!`. This rule reports any fence whose info string *starts with*
+`!` (so a variant like ```` ```!bash ```` is also flagged): no legitimate
+info string begins with `!`, and a client that matches the marker loosely
+must not slip past a rule that required exactly `!`. These forms execute
+shell commands before content is sent to the model, and the command output
+is inserted into the prompt — turning
 otherwise static content into a shell execution surface that can expose
 repository data or run an unexpected command during context loading.
 

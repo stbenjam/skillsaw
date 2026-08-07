@@ -126,7 +126,6 @@ class MarkdownFence:
     """A fenced or indented code block. Line range includes the delimiters."""
 
     info: str
-    content: str
     body_line_start: int
     body_line_end: int
     file_line_start: int
@@ -134,6 +133,11 @@ class MarkdownFence:
     indented: bool = False
     markup: str = ""  # opening fence run ("```", "~~~~", …); empty for indented blocks
     nested: bool = False  # inside a container (blockquote, list item)
+    # Parser-normalized body: container prefixes (blockquote "> ", list
+    # indentation) are stripped, and the final line is included even when the
+    # fence is unterminated at EOF. Trailing defaulted field so pre-existing
+    # positional constructor calls keep their meaning.
+    content: str = ""
 
 
 @dataclass

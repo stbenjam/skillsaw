@@ -8,13 +8,24 @@ surface, so this rule requires every such command in agent-facing content to
 be explicitly allowlisted.
 """
 
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from skillsaw.context import RepositoryContext
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 DynamicContextMatch = Tuple[int, str, str, str]
+
+# Reports and baselines copy the message verbatim, so untrusted command text
+# is bounded here; the full command stays authoritative for allowlist
+# matching and fingerprints.
+_MAX_COMMAND_DISPLAY = 60
+
+
+def _display_command(command: str) -> str:
+    if len(command) <= _MAX_COMMAND_DISPLAY:
+        return repr(command)
+    return repr(command[:_MAX_COMMAND_DISPLAY] + "…")
 
 
 class SecurityDynamicContextRule(Rule):
@@ -94,6 +105,7 @@ class SecurityDynamicContextRule(Rule):
         """Return `` ```! `` fenced dynamic-context blocks in *block*."""
         doc = block.markdown
         matches: List[DynamicContextMatch] = []
+        occurrences: Dict[str, int] = {}
         for fence in doc.fences():
             # Any info string starting with "!" is treated as executable so
             # a client matching loosely (e.g. ```!bash) cannot slip past a
@@ -107,16 +119,14 @@ class SecurityDynamicContextRule(Rule):
             # whitespace are part of exact allowlist matching.
             command = fence.content.removesuffix("\n")
             if command:
-                matches.append(
-                    (
-                        fence.body_line_start,
-                        command,
-                        "fenced",
-                        # Content-based so baselined findings survive
-                        # unrelated edits above the fence.
-                        f"fenced:{command}",
-                    )
-                )
+                # Content-based so baselined findings survive unrelated
+                # edits above the fence; the per-command ordinal keeps
+                # repeated identical commands distinct without reintroducing
+                # position sensitivity.
+                index = occurrences.get(command, 0)
+                occurrences[command] = index + 1
+                discriminator = f"fenced:{command}" if index == 0 else f"fenced:{index}:{command}"
+                matches.append((fence.body_line_start, command, "fenced", discriminator))
         return matches
 
     def _violation_message(self, command: str, kind: str, allowlist: Set[str]) -> str:
@@ -126,9 +136,9 @@ class SecurityDynamicContextRule(Rule):
             prefix = "Dynamic context is prohibited"
         form = "command" if kind == "inline" else "command block"
         return (
-            f"{prefix} {form}: {command!r} — it executes shell code before "
-            "the agent sees this content; remove it or add the exact command "
-            "to the rule's allowlist"
+            f"{prefix} {form}: {_display_command(command)} — it executes "
+            "shell code before the agent sees this content; remove it or add "
+            "the exact command to the rule's allowlist"
         )
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

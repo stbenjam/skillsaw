@@ -152,6 +152,35 @@ class TestSecurityDynamicContextRule:
         assert len(violations) == 2
         assert len({v.fingerprint_discriminator for v in violations}) == 2
 
+    def test_repeated_fenced_commands_have_distinct_fingerprints(self, temp_dir):
+        _write_skill(
+            temp_dir,
+            "# Setup\n\n```!\nnode --version\n```\n\n# Teardown\n\n```!\nnode --version\n```\n",
+        )
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 2
+        fingerprints = {fingerprint_violation(v, temp_dir) for v in violations}
+        assert len(fingerprints) == 2
+
+    def test_repeated_fenced_fingerprints_survive_insertions_above(self, tmp_path):
+        before_dir = tmp_path / "before"
+        after_dir = tmp_path / "after"
+        before_dir.mkdir()
+        after_dir.mkdir()
+        repeated = "```!\nnode --version\n```\n\n```!\nnode --version\n```\n"
+        _write_skill(before_dir, "# Environment\n\n" + repeated)
+        _write_skill(after_dir, "# Environment\n\nAn unrelated paragraph.\n\n" + repeated)
+
+        before = _check(before_dir)
+        after = _check(after_dir)
+
+        assert len(before) == len(after) == 2
+        assert {fingerprint_violation(v, after_dir) for v in after} == {
+            fingerprint_violation(v, before_dir) for v in before
+        }
+
     def test_fenced_fingerprint_survives_insertions_above(self, tmp_path):
         # Two directories rather than one rewritten file so the comparison
         # cannot be masked by mtime-granularity content caching.
@@ -186,6 +215,17 @@ class TestSecurityDynamicContextRule:
 
         assert len(violations) == 1
         assert "git status --short" in violations[0].message
+
+    def test_long_command_is_truncated_in_message_but_matched_exactly(self, temp_dir):
+        command = "echo " + "a" * 200
+        _write_skill(temp_dir, f"!`{command}`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert command not in violations[0].message
+        assert "…" in violations[0].message
+        assert _check(temp_dir, {"allowlist": [command]}) == []
 
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML
