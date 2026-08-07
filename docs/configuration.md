@@ -70,6 +70,56 @@ automatically but may occasionally fail after a skillsaw upgrade.
     `version` to your skillsaw version (`skillsaw --version`) and bump it
     when you upgrade.
 
+## Profiles
+
+A profile is a named, curated bundle of rule overrides — severities,
+enablement, and rule parameters — selected with one config line instead of a
+hand-maintained `rules:` block:
+
+```yaml
+version: "0.19.0"
+profile: claude-5
+```
+
+Profile overrides apply **between** the builtin defaults and your own
+`rules:` entries, so precedence is:
+
+```
+builtin defaults  <  profile  <  your rules: overrides
+```
+
+Anything you set per rule wins over the profile, including an explicit
+`enabled: auto` (which restores repo-type/format detection over the
+profile's decision). A severity-only override on a rule the profile
+disables does **not** re-enable it — re-enabling takes an explicit
+`enabled` setting. `skillsaw explain <rule-id>` reports when a rule's
+state comes from the active profile.
+
+Available profiles:
+
+| Profile | Meaning |
+|---------|---------|
+| `default` | The builtin defaults, unchanged. This is what runs when the key is absent. |
+| `claude-5` | Tuned to Anthropic's [Claude 5 context-engineering guidance](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models). |
+
+The `claude-5` profile makes these changes over the defaults:
+
+| Rule | Change | Rationale from the guidance |
+|------|--------|------------------------------|
+| `content-repeated-directive` | severity → `error` | "Eliminate duplicate instructions" — state each directive once |
+| `content-instruction-drift` | severity → `warning` | The same shift, across files: drifted near-duplicates cost budget twice |
+| `content-tautological` | severity → `warning` | Remove guidance modern models exhibit by default |
+| `content-section-length` | severity → `warning` | Progressive disclosure: split long content into many files |
+| `context-budget` | tighter `limits` for `claude-md`/`agents-md`/`gemini-md` (3k warn / 8k error) and `skill` (2k warn / 5k error) | "Keep your CLAUDE.md lightweight" |
+| `content-missing-stop-condition` | `enabled: true` | Open-ended loops with no stop condition burn autonomous sessions |
+| `content-weak-language` | `enabled: false` | Judgment-delegating prose is the recommended style; flagging hedges fights it |
+
+A profile's `enabled` decisions bypass the config [`version`
+gate](#version-pinning) — profiles ship with the installed skillsaw, so
+choosing one is an explicit opt-in to its rule set. Severity- and
+parameter-only profile entries never change whether a rule runs; activation
+still follows the rule's own default and the `version` gate.
+
 ## Enabling Rules
 
 Each rule's `enabled` key accepts three values:

@@ -1501,6 +1501,83 @@ class TestConfigFeatures:
         assert len(docs_violations) >= 1
 
 
+# ── Rule-Set Profiles ────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestRuleSetProfiles:
+    """End-to-end behavior of ``profile: claude-5`` vs the defaults.
+
+    The fixture CLAUDE.md carries a repeated directive, a hedging phrase,
+    and an open-ended monitoring instruction, so one file exercises an
+    elevation, a disable, and an opt-in enable.
+    """
+
+    def _severities(self, r):
+        return {v["rule_id"]: v["severity"] for v in violations(r)}
+
+    def test_claude5_profile_reshapes_results(self, tmp_path):
+        repo = copy_fixture("config/profile-claude-5", tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        sev = self._severities(r)
+        # Elevated: repeated directives are errors under claude-5.
+        assert sev.get("content-repeated-directive") == "error"
+        # Enabled: the opt-in stop-condition rule runs.
+        assert sev.get("content-missing-stop-condition") == "warning"
+        # Disabled: hedging-language pedantry is off.
+        assert "content-weak-language" not in sev
+
+    def test_same_content_under_default_profile(self, tmp_path):
+        """The same file under the defaults: warning-level repetition, weak
+        language reported, no stop-condition rule."""
+        repo = copy_fixture("config/profile-claude-5", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\n', encoding="utf-8")
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        sev = self._severities(r)
+        assert sev.get("content-repeated-directive") == "warning"
+        assert sev.get("content-weak-language") == "info"
+        assert "content-missing-stop-condition" not in sev
+
+    def test_explicit_default_profile_is_a_no_op(self, tmp_path):
+        """profile: default must produce byte-identical violations to no
+        profile key at all."""
+        repo = copy_fixture("config/profile-claude-5", tmp_path)
+        (repo / ".skillsaw.yaml").write_text('version: "99.0.0"\n', encoding="utf-8")
+        baseline = run_lint(repo, config=repo / ".skillsaw.yaml")
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\nprofile: default\n', encoding="utf-8"
+        )
+        named = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert violations(baseline) == violations(named)
+
+    def test_user_rules_override_profile(self, tmp_path):
+        """A user rules: entry wins over the profile's setting for that rule."""
+        repo = copy_fixture("config/profile-claude-5", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "profile: claude-5\n"
+            "rules:\n"
+            "  content-repeated-directive:\n"
+            "    severity: warning\n"
+            "  content-weak-language:\n"
+            "    enabled: true\n",
+            encoding="utf-8",
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        sev = self._severities(r)
+        assert sev.get("content-repeated-directive") == "warning"
+        assert sev.get("content-weak-language") == "info"
+
+    def test_unknown_profile_fails_with_friendly_error(self, tmp_path):
+        repo = copy_fixture("config/profile-claude-5", tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\nprofile: does-not-exist\n', encoding="utf-8"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["rc"] != 0
+        assert "'profile' must be one of default, claude-5" in r["stderr"]
+
+
 # ── CLI Overrides ────────────────────────────────────────────────
 
 
