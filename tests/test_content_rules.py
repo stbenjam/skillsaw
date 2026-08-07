@@ -3235,6 +3235,31 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`client.search`" in violations[0].message
 
+    def test_js_top_level_optional_call(self, temp_dir):
+        parts = [f'```js\nclient.search?.("{q}")\n```\n' for q in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`client.search`" in violations[0].message
+
+    def test_list_marker_html_headings_break_runs(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- <h2>First workflow</h2>\n\n"
+            "  ```\n"
+            '  search(query="a")\n'
+            "  ```\n\n"
+            "- <h2>Second workflow</h2>\n\n"
+            "  ```\n"
+            '  search(query="b")\n'
+            "  ```\n\n"
+            "- <h2>Third workflow</h2>\n\n"
+            "  ```\n"
+            '  search(query="c")\n'
+            "  ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_js_optional_call_is_nested(self, temp_dir):
         parts = [f'```js\nretry(callback?.("{q}"))\n```\n' for q in ("a", "b", "c")]
         (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))

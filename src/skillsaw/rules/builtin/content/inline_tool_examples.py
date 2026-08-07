@@ -29,7 +29,7 @@ _CALL_HEAD_JS_RE = re.compile(
     # exclude '=' so the match stays linear.
     r"^(?:>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
     r"(?:(?:[\w.$]+|\{[^}=]*\}|\[[^\]=]*\])[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
-    r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\("
+    r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:\?\.)?\s*\("
 )
 _JS_LANGS = frozenset({"js", "javascript", "ts", "typescript", "jsx", "tsx"})
 
@@ -123,8 +123,11 @@ _NON_CALL_KEYWORDS = frozenset(
 _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 
 # A raw HTML heading opening a block ('<h2>First workflow</h2>') — a
-# section boundary just like an ATX or setext heading.
+# section boundary just like an ATX or setext heading.  Container
+# prefixes (blockquote markers, a list marker) are stripped before
+# matching.
 _HTML_HEADING_RE = re.compile(r"<h[1-6][\s>/]", re.IGNORECASE)
+_LEAD_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 
 class ContentInlineToolExamplesRule(Rule):
@@ -575,7 +578,10 @@ class ContentInlineToolExamplesRule(Rule):
         # reports them only as html blocks.
         for start0, end0 in cf.markdown.html_block_spans():
             first = lines[start0] if 0 <= start0 < len(lines) else ""
-            if _HTML_HEADING_RE.match(_CONTAINER_PREFIX_RE.sub("", first).lstrip()):
+            normalized = _CONTAINER_PREFIX_RE.sub("", first)
+            normalized = _LEAD_LIST_MARKER_RE.sub("", normalized)
+            normalized = _CONTAINER_PREFIX_RE.sub("", normalized)
+            if _HTML_HEADING_RE.match(normalized.lstrip()):
                 heading_lines.update(range(start0 + 1, end0 + 1))
         heading_lines = frozenset(heading_lines)
         invisible_lines = set()
