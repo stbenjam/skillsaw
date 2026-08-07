@@ -1595,3 +1595,41 @@ def test_explicit_version_wins_over_profile_implication(tmp_path):
     config = LinterConfig.from_file(_write(tmp_path, 'version: "0.17.0"\nprofile: claude-5\n'))
     assert config.version == "0.17.0"
     assert not any("version" in w for w in config.warnings)
+
+
+def test_unknown_programmatic_profile_roundtrips_as_default(tmp_path):
+    """A LinterConfig built in code with an unregistered profile contributes
+    nothing, so save() writes its effective (default) behavior — the saved
+    file must reload cleanly rather than failing profile validation."""
+    config = LinterConfig.default()
+    config.profile = "not-a-profile"
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    assert "not-a-profile" not in config_path.read_text(encoding="utf-8")
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.profile == "default"
+    assert "profile" not in config.to_dict()
+
+
+def test_profile_set_auto_bypasses_version_gate(temp_dir, monkeypatch):
+    """A profile-set enabled: "auto" is still a profile activation decision:
+    it falls through to repo-type/format detection but must skip the config
+    version gate, like the profile's true/false decisions do."""
+    from skillsaw.profiles import PROFILES, Profile
+
+    monkeypatch.setitem(
+        PROFILES,
+        "test-auto-profile",
+        Profile(
+            name="test-auto-profile",
+            description="test-only",
+            rules={"content-repeated-directive": {"enabled": "auto"}},
+        ),
+    )
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.1.0", profile="test-auto-profile")
+    enabled, reason = config.rule_enabled_reason(
+        "content-repeated-directive", context, since_version="0.17.0"
+    )
+    assert enabled is True
+    assert "auto" in reason

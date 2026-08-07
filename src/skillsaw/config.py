@@ -388,6 +388,15 @@ class LinterConfig:
             return {}
         return profile.rules.get(rule_id, {})
 
+    def _serializable_profile(self) -> bool:
+        """Whether ``profile`` is worth writing out: a registered,
+        non-default name. A programmatically-assigned unknown profile
+        contributes no overrides, so serializing it would produce a file
+        ``from_file()`` rejects — the effective (default) behavior is
+        written instead.
+        """
+        return bool(self.profile) and self.profile != DEFAULT_PROFILE and self.profile in PROFILES
+
     @staticmethod
     def _merge_layer(base: Dict[str, Any], overlay: Dict[str, Any]) -> None:
         """Merge *overlay* into *base* in place, recursing into mappings.
@@ -519,14 +528,18 @@ class LinterConfig:
         # setting (handled above) and above everything else. Profiles ship
         # with the installed skillsaw, so their decisions bypass the config
         # ``version`` gate — choosing one is an explicit opt-in to its rule
-        # set. Severity/parameter-only profile entries don't reach here and
-        # never change activation; ``enabled: "auto"`` falls through to the
-        # detection logic below.
+        # set. That applies to a profile-set ``"auto"`` too: it falls
+        # through to the detection logic below, but skips the gate (see
+        # ``profile_sets_enabled``). Severity/parameter-only profile
+        # entries never change activation.
         # ``has_explicit_enabled`` also covers a user ``enabled: "auto"`` —
         # any explicit user setting replaces the profile's, so "auto" falls
         # through to detection rather than to the profile's decision.
+        profile_sets_enabled = False
         if not has_explicit_enabled:
-            profile_enabled = self._profile_rules(rule_id).get("enabled")
+            profile_overrides = self._profile_rules(rule_id)
+            profile_sets_enabled = "enabled" in profile_overrides
+            profile_enabled = profile_overrides.get("enabled")
             if profile_enabled is True:
                 return True, f"enabled: true set by profile '{self.profile}'"
             if profile_enabled is False:
@@ -547,10 +560,12 @@ class LinterConfig:
                 # activation — fall through to version gate + auto logic.
 
         # Any explicit user override (enabled or otherwise) implies the user
-        # wants this rule, so skip the version gate.
+        # wants this rule, so skip the version gate. A profile-set
+        # ``enabled`` (only "auto" reaches here) skips it the same way —
+        # the profile's activation decisions are version-independent.
         has_user_overrides = bool(user_overrides)
 
-        if not has_user_overrides and self.version:
+        if not has_user_overrides and not profile_sets_enabled and self.version:
             if _parse_version(self.version) < _parse_version(since_version):
                 return False, (
                     f"config version {self.version} is older than the rule "
@@ -588,7 +603,7 @@ class LinterConfig:
         d: Dict[str, Any] = {}
         if self.version:
             d["version"] = self.version
-        if self.profile and self.profile != DEFAULT_PROFILE:
+        if self._serializable_profile():
             d["profile"] = self.profile
         d["rules"] = self.rules
         d["custom-rules"] = self.custom_rules
@@ -635,7 +650,7 @@ class LinterConfig:
                 "entries you want the\n"
                 "# profile to manage.\n"
             )
-            if self.profile and self.profile != DEFAULT_PROFILE:
+            if self._serializable_profile():
                 f.write(f"profile: {self._yaml_value(self.profile)}\n\n")
             else:
                 f.write("# profile: claude-5\n\n")
