@@ -3004,6 +3004,71 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_prose_with_inline_comment_still_counts(self, temp_dir):
+        """Visible prose sharing a line with an HTML comment is prose —
+        three such caption lines exceed max-lines-between and break the
+        run."""
+        caption = (
+            "The replica lags the primary. <!-- note -->\n"
+            "Wait for the write to settle. <!-- note -->\n"
+            "Then look the row up again: <!-- note -->"
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                ['search(query="a")', 'search(query="b")', 'search(query="c")'],
+                caption=caption,
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_indented_standalone_fence_flagged(self, temp_dir):
+        """CommonMark allows a top-level fence indented up to 3 spaces."""
+        blocks = "\n\nAnother example:\n\n".join(
+            '   ```\n   search(query="{}")\n   ```'.format(q) for q in ("a", "b", "c")
+        )
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + blocks + "\n")
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_spaced_nested_call_disqualifies(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'retry(search (query="a"))',
+                    'retry(search (query="b"))',
+                    'retry(search (query="c"))',
+                ]
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_escaped_quotes_in_arguments(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="say \\"a)\\"")',
+                    'search(query="say \\"b)\\"")',
+                    'search(query="say \\"c)\\"")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_trailing_statement_on_closing_line_disqualifies(self, temp_dir):
+        snippet = 'search(\n  query="{}"\n); cleanup()'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_empty_fence_breaks_run(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(['search(query="a")', "", 'search(query="b")'])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_unterminated_call_disqualifies(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(['search(query="a"', 'search(query="b"', 'search(query="c"'])

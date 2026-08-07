@@ -55,6 +55,13 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # code indentation that must survive (indented blocks in blockquotes).
 _QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
 
+# Pieces of an HTML comment on a boundary line: a complete inline span,
+# a dangling opener, and a dangling closer.  What survives stripping all
+# three is the line's visible prose.
+_COMMENT_SPAN_RE = re.compile(r"<!--.*?-->")
+_COMMENT_OPEN_RE = re.compile(r"<!--.*$")
+_COMMENT_CLOSE_RE = re.compile(r"^.*?-->")
+
 
 class ContentInlineToolExamplesRule(Rule):
     """Detect consecutive fenced examples that all invoke the same tool"""
@@ -164,8 +171,9 @@ class ContentInlineToolExamplesRule(Rule):
         raw = lines[fence.body_line_start : fence.body_line_end - 1]
         if fence.nested:
             raw = [_QUOTE_MARKER_RE.sub("", line) for line in raw]
-            return ContentInlineToolExamplesRule._dedent(raw)
-        return raw
+        # Dedent even outside containers: CommonMark allows a top-level
+        # fence (and its content) to be indented up to three spaces.
+        return ContentInlineToolExamplesRule._dedent(raw)
 
     @staticmethod
     def _advance(
@@ -195,8 +203,12 @@ class ContentInlineToolExamplesRule(Rule):
             elif char in "\"'":
                 quote = char
             elif char == "(":
-                if depth > 0 and i > 0 and (line[i - 1].isalnum() or line[i - 1] == "_"):
-                    nested_call = True
+                if depth > 0:
+                    j = i - 1
+                    while j >= 0 and line[j].isspace():
+                        j -= 1
+                    if j >= 0 and (line[j].isalnum() or line[j] == "_"):
+                        nested_call = True
                 depth += 1
             elif char == ")":
                 depth -= 1
@@ -263,7 +275,8 @@ class ContentInlineToolExamplesRule(Rule):
         self,
         lines: List[str],
         heading_lines: frozenset,
-        comment_lines: frozenset,
+        comment_interior: frozenset,
+        comment_boundary: frozenset,
         prev_end: int,
         next_start: int,
     ) -> bool:
@@ -277,18 +290,25 @@ class ContentInlineToolExamplesRule(Rule):
         *heading_lines* holds the AST heading construct lines, so a
         hash-prefixed caption like ``#release-notes`` (not a heading —
         ATX requires a space) counts as prose instead of a break.
-        *comment_lines* holds HTML comment spans, which are invisible in
-        rendered output and count as neither prose nor a break.
+        HTML comments are invisible in rendered output and count as
+        neither prose nor a break — but a boundary line that carries
+        visible prose alongside the comment markers still counts as
+        prose once the comment pieces are stripped.
         """
         non_blank = 0
         for line_num in range(prev_end + 1, next_start):
             if line_num in heading_lines:
                 return True
-            if line_num in comment_lines:
+            if line_num in comment_interior:
                 continue
+            text = lines[line_num - 1]
+            if line_num in comment_boundary:
+                text = _COMMENT_SPAN_RE.sub("", text)
+                text = _COMMENT_OPEN_RE.sub("", text)
+                text = _COMMENT_CLOSE_RE.sub("", text)
             # A bare '>' between fences in a blockquote is a blank line,
             # not a caption.
-            if not _CONTAINER_PREFIX_RE.sub("", lines[line_num - 1]).strip():
+            if not _CONTAINER_PREFIX_RE.sub("", text).strip():
                 continue
             non_blank += 1
         return non_blank > self._max_between
@@ -327,11 +347,14 @@ class ContentInlineToolExamplesRule(Rule):
             for h in cf.markdown.headings()
             for line in range(h.body_line, max(h.body_line_end, h.body_line + 1))
         )
-        comment_lines = frozenset(
-            line
-            for c in cf.markdown.html_comments()
-            for line in range(c.body_line_start, c.body_line_end + 1)
-        )
+        comment_interior = set()
+        comment_boundary = set()
+        for c in cf.markdown.html_comments():
+            comment_interior.update(range(c.body_line_start + 1, c.body_line_end))
+            comment_boundary.add(c.body_line_start)
+            comment_boundary.add(c.body_line_end)
+        comment_interior = frozenset(comment_interior)
+        comment_boundary = frozenset(comment_boundary - comment_interior)
         violations: List[RuleViolation] = []
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
@@ -346,7 +369,8 @@ class ContentInlineToolExamplesRule(Rule):
                 if callee != prev_callee or self._run_breaks(
                     lines,
                     heading_lines,
-                    comment_lines,
+                    comment_interior,
+                    comment_boundary,
                     prev_fence.body_line_end,
                     fence.body_line_start,
                 ):
