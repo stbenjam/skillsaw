@@ -3221,13 +3221,56 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
-    def test_dollar_identifiers(self, temp_dir):
-        (temp_dir / "CLAUDE.md").write_text(
-            self._fences(['$("#first")', '$("#second")', '$("#third")'])
-        )
+    def test_dollar_identifiers_in_js_fences(self, temp_dir):
+        parts = [f'```js\n$("#{n}")\n```\n' for n in ("first", "second", "third")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
         violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "`$`" in violations[0].message
+
+    def test_shell_command_substitution_not_a_callee(self, temp_dir):
+        """In a shell fence '$(date)' is command substitution, not a
+        call to a tool named '$'."""
+        parts = [f"```bash\n$({cmd})\n```\n" for cmd in ("date", "pwd", "whoami")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_nested_dollar_call_disqualifies(self, temp_dir):
+        parts = [f'```js\nretry($("#{n}"))\n```\n' for n in ("a", "b", "c")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_blockquoted_html_headings_break_runs(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> <h2>First workflow</h2>\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="a")\n'
+            "> ```\n"
+            ">\n"
+            "> <h2>Second workflow</h2>\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="b")\n'
+            "> ```\n"
+            ">\n"
+            "> <h2>Third workflow</h2>\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="c")\n'
+            "> ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_uniformly_indented_fence_payload(self, temp_dir):
+        snippet = '    search(query="{}")'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
 
     def test_comment_before_continuation_group(self, temp_dir):
         """An inline comment between a keyword and the grouped

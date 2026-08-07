@@ -13,14 +13,22 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 # (before or after the assignment), then a dotted identifier and an
 # opening paren.  Continuation lines of a multi-line call are tracked
 # by paren depth in _fence_callee().
+# The annotation atom excludes '=' and the '=' follows it directly, so
+# no two adjacent quantifiers can trade the same whitespace — a failed
+# match stays linear on crafted input.  '$' identifiers are valid only
+# in JS/TS fences — in a shell fence '$(date)' is command substitution,
+# not a call to a tool named '$'.
 _CALL_HEAD_RE = re.compile(
-    # The annotation atom excludes '=' and the '=' follows it directly,
-    # so no two adjacent quantifiers can trade the same whitespace — a
-    # failed match stays linear on crafted input.
     r"^(?:\$\s+|>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
+    r"(?:[\w.]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
+    r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
+)
+_CALL_HEAD_JS_RE = re.compile(
+    r"^(?:>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
     r"(?:[\w.$]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
     r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\("
 )
+_JS_LANGS = frozenset({"js", "javascript", "ts", "typescript", "jsx", "tsx"})
 
 # Control-flow and I/O keywords that take parens in common languages —
 # `if (x) {` or `while (true)` is code structure, not a tool invocation.
@@ -231,7 +239,15 @@ class ContentInlineToolExamplesRule(Rule):
         unclosed fence keeps every payload line — while literal ``>``
         or delimiter-lookalike lines inside the code survive untouched.
         """
-        return fence.content.splitlines()
+        content_lines = fence.content.splitlines()
+        # A fence whose payload is uniformly indented is still a bare
+        # invocation — strip the common code indent so call heads sit
+        # at column zero, preserving relative continuation indent.
+        indents = [len(line) - len(line.lstrip()) for line in content_lines if line.strip()]
+        cut = min(indents) if indents else 0
+        if cut:
+            content_lines = [line[cut:] if line.strip() else line for line in content_lines]
+        return content_lines
 
     @staticmethod
     def _comment_styles(info: str) -> frozenset:
@@ -364,7 +380,7 @@ class ContentInlineToolExamplesRule(Rule):
                         before, word_end = line, j
                     else:
                         before, word_end = prev_tail.rstrip(), len(prev_tail.rstrip()) - 1
-                    if word_end >= 0 and (before[word_end].isalnum() or before[word_end] in "_])"):
+                    if word_end >= 0 and (before[word_end].isalnum() or before[word_end] in "_])$"):
                         k = word_end
                         while k >= 0 and (before[k].isalnum() or before[k] in "_$"):
                             k -= 1
@@ -396,7 +412,9 @@ class ContentInlineToolExamplesRule(Rule):
         return trailer == "" or trailer.startswith(tuple(styles))
 
     @classmethod
-    def _fence_callee(cls, content_lines: List[str], styles: frozenset) -> Optional[str]:
+    def _fence_callee(
+        cls, content_lines: List[str], styles: frozenset, head_re: "re.Pattern"
+    ) -> Optional[str]:
         """The single tool/function every invocation in the fence targets.
 
         Returns ``None`` unless the fence consists solely of call-syntax
@@ -432,7 +450,7 @@ class ContentInlineToolExamplesRule(Rule):
                 continue
             if cls._is_comment_line(line, styles):
                 continue
-            match = _CALL_HEAD_RE.match(line)
+            match = head_re.match(line)
             if not match:
                 return None
             name = match.group(1)
@@ -535,7 +553,7 @@ class ContentInlineToolExamplesRule(Rule):
         # reports them only as html blocks.
         for start0, end0 in cf.markdown.html_block_spans():
             first = lines[start0] if 0 <= start0 < len(lines) else ""
-            if _HTML_HEADING_RE.match(first.lstrip()):
+            if _HTML_HEADING_RE.match(_CONTAINER_PREFIX_RE.sub("", first).lstrip()):
                 heading_lines.update(range(start0 + 1, end0 + 1))
         heading_lines = frozenset(heading_lines)
         invisible_lines = set()
@@ -557,7 +575,10 @@ class ContentInlineToolExamplesRule(Rule):
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
             content_lines = self._fence_content_lines(fence)
-            callee = self._fence_callee(content_lines, self._comment_styles(fence.info))
+            lang_token = (fence.info or "").strip().split()
+            lang = lang_token[0].lower() if lang_token else ""
+            head_re = _CALL_HEAD_JS_RE if lang in _JS_LANGS else _CALL_HEAD_RE
+            callee = self._fence_callee(content_lines, self._comment_styles(fence.info), head_re)
             if callee is None:
                 self._flush(cf, run, violations)
                 run = []
