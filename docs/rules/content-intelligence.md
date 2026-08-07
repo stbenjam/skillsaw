@@ -28,4 +28,5 @@ Rules that go beyond structural validation to analyze the *quality* of instructi
 | [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - |
 | [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - |
 | [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - |
+| [`content-inline-tool-examples`](content-inline-tool-examples.md) | Detect runs of fenced examples invoking one tool with varying arguments | info (disabled) | - |
 

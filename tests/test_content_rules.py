@@ -34,6 +34,7 @@ from skillsaw.rules.builtin.content import (
     ContentRepeatedDirectiveRule,
     ContentEmphasisDensityRule,
     ContentMissingStopConditionRule,
+    ContentInlineToolExamplesRule,
 )
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
@@ -2689,6 +2690,173 @@ class TestContentMissingStopConditionRule:
 
     def test_no_files_no_violations(self, temp_dir):
         assert ContentMissingStopConditionRule().check(RepositoryContext(temp_dir)) == []
+
+
+class TestContentInlineToolExamplesRule:
+    def test_rule_metadata(self):
+        rule = ContentInlineToolExamplesRule()
+        assert rule.rule_id == "content-inline-tool-examples"
+        assert rule.default_severity() == Severity.INFO
+        assert rule.default_enabled is False
+
+    @staticmethod
+    def _fences(bodies, caption="Another example:"):
+        """Markdown with one fenced block per body, caption lines between."""
+        parts = []
+        for i, body in enumerate(bodies):
+            if i:
+                parts.append(f"{caption}\n")
+            parts.append(f"```\n{body}\n```\n")
+        return "# Rules\n\n" + "\n".join(parts)
+
+    def test_flags_three_same_tool_fences(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="TransferFunds", type="symbol")',
+                    'search(query="ledger.go", type="file")',
+                    'search(query="fixed-point", type="text")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "`search`" in violations[0].message
+        assert "3 consecutive" in violations[0].message
+
+    def test_two_fences_pass(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'fetch_row(table="transfers", id=42)',
+                    'fetch_row(table="transfers", id=[42, 43])',
+                ]
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_mixed_callees_pass(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'open_account(owner="acme")',
+                    "close_account(id=911)",
+                    "transfer(source=42, dest=43)",
+                ]
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_heading_breaks_run(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    "get_balance(account=42)",
+                    'get_balance(account=42, as_of="2026-01-31")',
+                    'get_balance(account=42, currency="USD")',
+                ],
+                caption="## Historical balances\n\nWith a date:",
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_prose_gap_breaks_run(self, temp_dir):
+        prose = (
+            "The call hits the read replica, which lags the primary by\n"
+            "up to thirty seconds, so a freshly written row may not be\n"
+            "visible yet — retry once the write settles:"
+        )
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    "get_balance(account=42)",
+                    "get_balance(account=43)",
+                    "get_balance(account=44)",
+                ],
+                caption=prose,
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_indented_blocks_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Use the search tool. For example:\n\n"
+            '    search(query="TransferFunds", type="symbol")\n\n'
+            "Another example, searching for a file:\n\n"
+            '    search(query="ledger.go", type="file")\n\n'
+            "A third example, searching text:\n\n"
+            '    search(query="fixed-point", type="text")\n'
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].line == 5
+        assert "`search`" in violations[0].message
+
+    def test_multiline_calls_flagged(self, temp_dir):
+        call = 'client.messages.create(\n    model="{}",\n    max_tokens=64,\n)'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [call.format(m) for m in ("claude-fable-5", "claude-opus-5", "claude-sonnet-5")]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`client.messages.create`" in violations[0].message
+
+    def test_real_code_fences_pass(self, temp_dir):
+        snippet = "import ledger\n\nrow = ledger.fetch(42)\nledger.audit(row)"
+        (temp_dir / "CLAUDE.md").write_text(self._fences([snippet, snippet, snippet]))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_cli_commands_pass(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(self._fences(["make build", "make lint", "make test"]))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_control_flow_keywords_not_tools(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(["if (ready) start()", "if (done) stop()", "if (stuck) page()"])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_min_consecutive_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'fetch_row(table="transfers", id=42)',
+                    'fetch_row(table="transfers", id=[42, 43])',
+                ]
+            )
+        )
+        rule = ContentInlineToolExamplesRule({"min-consecutive": 2})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "2 consecutive" in violations[0].message
+
+    def test_max_lines_between_config(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="a")',
+                    'search(query="b")',
+                    'search(query="c")',
+                ]
+            )
+        )
+        rule = ContentInlineToolExamplesRule({"max-lines-between": 0})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_invalid_config_rejected(self):
+        with pytest.raises(ValueError, match="at least 2"):
+            ContentInlineToolExamplesRule({"min-consecutive": 1})
+        with pytest.raises(ValueError, match="must be an integer"):
+            ContentInlineToolExamplesRule({"min-consecutive": "3"})
+        with pytest.raises(ValueError, match="at least 0"):
+            ContentInlineToolExamplesRule({"max-lines-between": -1})
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
 
 class TestContentRepeatedDirectiveTuning:
