@@ -19,8 +19,11 @@ from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 # in JS/TS fences — in a shell fence '$(date)' is command substitution,
 # not a call to a tool named '$'.
 _CALL_HEAD_RE = re.compile(
+    # The assignment target admits tuple unpacking ('result, meta =');
+    # the comma separator's neighbors are disjoint char classes, so
+    # matching stays linear.
     r"^(?:\$\s+|>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:[\w.]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
+    r"(?:[\w.]+(?:\s*,\s*[\w.]+)*[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 _CALL_HEAD_JS_RE = re.compile(

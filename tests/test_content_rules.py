@@ -3565,6 +3565,20 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_tuple_unpacking_assignment(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'result, metadata = search(query="a")',
+                    'result, metadata = search(query="b")',
+                    'result, metadata = search(query="c")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_typed_assignment_prefix(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             self._fences(
