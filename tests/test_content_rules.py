@@ -3200,6 +3200,15 @@ class TestContentProgressiveDisclosureRule:
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
         assert rule.check(RepositoryContext(temp_dir)) == []
 
+    def test_directory_import_counts(self, temp_dir):
+        """instruction-imports-valid accepts @docs when the directory
+        exists, so an imported directory is disclosure here too."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\n@docs\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
     def test_broken_link_does_not_count(self, temp_dir):
         self._write_claude(temp_dir, extra="\nSee [testing notes](docs/missing.md).\n")
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
@@ -3295,6 +3304,17 @@ class TestContentProgressiveDisclosureRule:
         self._write_skill(temp_dir, files=("scripts/unused.py", "scripts/Makefile"))
         rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_extensionless_path_mention_counts(self, temp_dir):
+        """A full relative path to an extensionless bundled executable
+        (scripts/deploy) is disclosure even though the bare name is not."""
+        self._write_skill(
+            temp_dir,
+            extra="\nRun scripts/deploy after the soak completes.\n",
+            files=("scripts/deploy",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
 
     def test_skill_reference_outside_bundle_does_not_count(self, temp_dir):
         """Links and @imports leaving the skill directory are not disclosure:

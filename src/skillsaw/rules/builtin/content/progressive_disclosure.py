@@ -35,7 +35,7 @@ from urllib.parse import unquote
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.blocks import ContentBlock
-from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
+from skillsaw.paths import safe_exists, safe_resolve
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS
 from skillsaw.rules.builtin.instructions._helpers import _IMPORT_RE
@@ -197,8 +197,11 @@ class ContentProgressiveDisclosureRule(Rule):
     def _has_import_reference(
         self, cf: ContentBlock, body: str, boundary: Path, self_path: Path
     ) -> bool:
-        """An ``@path`` import resolving to an existing file in *boundary*.
+        """An ``@path`` import resolving to an existing path in *boundary*.
 
+        Directory imports count too — ``instruction-imports-valid``
+        accepts ``@docs`` when the directory exists, so a file that has
+        split its detail into an imported directory must not be flagged.
         Only tokens that resolve inside the boundary count — an
         ``@octocat`` mention or a ``@~/.claude/...`` home import is not
         disclosure this rule can credit.
@@ -217,7 +220,7 @@ class ContentProgressiveDisclosureRule(Rule):
                     continue
                 if not resolved.is_relative_to(boundary):
                     continue
-                if safe_is_file(resolved):
+                if safe_exists(resolved):
                     return True
         return False
 
@@ -232,7 +235,7 @@ class ContentProgressiveDisclosureRule(Rule):
         like agentskill-unreferenced-files.
         """
         rel_paths, names = self._bundled_inventory(skill_dir)
-        if not names:
+        if not rel_paths:
             return False
         body_lower = body.lower()
         for match in _PATH_TOKEN_RE.finditer(body_lower):
@@ -262,8 +265,10 @@ class ContentProgressiveDisclosureRule(Rule):
         files, lowercased.
 
         Hidden entries, symlinks, nested skills, and packaging scaffolding
-        (SKILL.md, README.md, licenses) are skipped; names must carry an
-        extension so a bare-name mention is unambiguously a file reference.
+        (SKILL.md, README.md, licenses) are skipped.  Extensionless files
+        (``scripts/deploy``) stay matchable by relative path, but only
+        names carrying an extension become bare-name candidates — a
+        mention of "deploy" alone is a word, not unambiguously a file.
         """
         rel_paths: Set[str] = set()
         names: Set[str] = set()
@@ -278,7 +283,7 @@ class ContentProgressiveDisclosureRule(Rule):
                     and not (base / d / "SKILL.md").is_file()
                 )
                 for name in filenames:
-                    if name.startswith(".") or "." not in name.strip("."):
+                    if name.startswith("."):
                         continue
                     if name in _SCAFFOLDING_NAMES or name.startswith(_SCAFFOLDING_PREFIXES):
                         continue
@@ -286,7 +291,8 @@ class ContentProgressiveDisclosureRule(Rule):
                         continue
                     rel = (base / name).relative_to(skill_dir).as_posix()
                     rel_paths.add(rel.lower())
-                    names.add(name.lower())
+                    if "." in name.strip("."):
+                        names.add(name.lower())
         except OSError:
             pass
         return rel_paths, names
