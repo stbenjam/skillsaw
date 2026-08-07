@@ -3,6 +3,13 @@
 
 version: "0.18.0"
 
+# Rule-set profile: a curated bundle of severity/enablement overrides applied
+# under your own 'rules:' entries. Available: default, claude-5
+# NOTE: the explicit per-rule entries below count as your own overrides and win
+# over the profile — to adopt one, also delete the rule entries you want the
+# profile to manage.
+# profile: claude-5
+
 rules:
 
   # Agent Plugins plugin.json and skills location must conform to 1.0.0

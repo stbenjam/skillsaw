@@ -87,8 +87,10 @@ reference](https://skillsaw.org/rules/) for details.
 skillsaw works locally, in CI, and inside coding-agent workflows. It provides
 line-level findings, explanations for every rule, deterministic autofixes,
 baselines for gradual adoption, GitHub and GitLab integration, and text, JSON,
-SARIF, HTML, and Code Climate output. Rules are configurable, and projects can
-add local rules or install rule plugins.
+SARIF, HTML, and Code Climate output. Rules are configurable — one-line
+[profiles](https://skillsaw.org/configuration/#profiles) select curated rule
+sets like `claude-5`, tuned to Anthropic's Claude 5 context-engineering
+guidance — and projects can add local rules or install rule plugins.
 
 | Goal | Documentation |
 | --- | --- |

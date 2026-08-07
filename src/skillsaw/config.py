@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
+from skillsaw.profiles import DEFAULT_PROFILE, PROFILES, available_profiles
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -76,11 +77,17 @@ class LinterConfig:
     # Excluded from equality so two configs loaded the same way still compare
     # equal regardless of the advisory messages attached.
     warnings: List[str] = field(default_factory=list, compare=False)
+    # Named rule-set profile (see skillsaw.profiles): a curated bundle of
+    # rule overrides applied under the user's own ``rules:`` entries.
+    # Declared after every pre-profile field so the dataclass keeps the
+    # positional constructor signature of earlier releases.
+    profile: str = DEFAULT_PROFILE
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
         {
             "version",
+            "profile",
             "rules",
             "custom-rules",
             "exclude",
@@ -131,15 +138,41 @@ class LinterConfig:
                 + ". Known keys: "
                 + ", ".join(sorted(cls._KNOWN_KEYS))
             )
+        raw_profile = data.get("profile")
+        if raw_profile is None:
+            profile = DEFAULT_PROFILE
+        elif isinstance(raw_profile, str) and raw_profile in PROFILES:
+            profile = raw_profile
+        else:
+            raise ValueError(
+                f"'profile' must be one of {', '.join(available_profiles())}, "
+                f"got {raw_profile!r}"
+            )
+
         raw_version = data.get("version")
+        default_version = _DEFAULT_VERSION
         if raw_version is None:
             # Covers both a missing key and an explicit ``version:`` (None) —
             # both would otherwise version-gate as 0.0.0 and disable newer rules.
-            load_warnings.append(
-                f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
-                "added in later versions are silently disabled. Set 'version' to your "
-                "skillsaw version to enable them."
-            )
+            if profile != DEFAULT_PROFILE:
+                # Selecting a curated profile is an opt-in to the current
+                # rule set, so an unpinned config follows the installed
+                # version: new rules apply immediately after upgrades
+                # instead of being gated behind a version bump.
+                from . import __version__
+
+                default_version = __version__
+                load_warnings.append(
+                    f"config has no 'version' field; 'profile: {profile}' implies the "
+                    f"installed version ({__version__}), so new rules apply immediately "
+                    "after upgrades. Set 'version' to pin the rule set instead."
+                )
+            else:
+                load_warnings.append(
+                    f"config has no 'version' field; defaulting to {_DEFAULT_VERSION}, so rules "
+                    "added in later versions are silently disabled. Set 'version' to your "
+                    "skillsaw version to enable them."
+                )
 
         raw_rules = data.get("rules")
         raw_custom_rules = data.get("custom-rules")
@@ -286,7 +319,8 @@ class LinterConfig:
             )
 
         return cls(
-            version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
+            version=default_version if raw_version is None else str(raw_version),
+            profile=profile,
             rules=rules,
             custom_rules=custom_rules,
             exclude_patterns=exclude_patterns,
@@ -349,10 +383,42 @@ class LinterConfig:
             candidates.append("warning")
         return max(candidates, key=_FAIL_ON_LEVELS.__getitem__)
 
+    def _profile_rules(self, rule_id: str) -> Dict[str, Any]:
+        """Overrides the active profile contributes for *rule_id* ({} if none)."""
+        profile = PROFILES.get(self.profile)
+        if profile is None:
+            return {}
+        return profile.rules.get(rule_id, {})
+
+    def _serializable_profile(self) -> bool:
+        """Whether ``profile`` is worth writing out: a registered,
+        non-default name. A programmatically-assigned unknown profile
+        contributes no overrides, so serializing it would produce a file
+        ``from_file()`` rejects — the effective (default) behavior is
+        written instead.
+        """
+        return bool(self.profile) and self.profile != DEFAULT_PROFILE and self.profile in PROFILES
+
+    @staticmethod
+    def _merge_layer(base: Dict[str, Any], overlay: Dict[str, Any]) -> None:
+        """Merge *overlay* into *base* in place, recursing into mappings.
+
+        Nested dicts merge per key so a layer overriding one entry of a
+        parameter like ``limits`` keeps the lower layer's other entries;
+        every non-mapping value (including lists) replaces wholesale.
+        """
+        for key, value in overlay.items():
+            if isinstance(value, dict) and isinstance(base.get(key), dict):
+                LinterConfig._merge_layer(base[key], value)
+            else:
+                base[key] = copy.deepcopy(value)
+
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """
-        Get configuration for a specific rule, merging user overrides
-        on top of defaults so unmentioned fields keep their default values.
+        Get configuration for a specific rule, merging the active profile's
+        overrides and then user overrides on top of defaults, so unmentioned
+        fields — including entries of nested mappings — keep their default
+        (or profile-set) values.
 
         Args:
             rule_id: Rule identifier
@@ -360,14 +426,15 @@ class LinterConfig:
         Returns:
             Rule configuration dict
         """
-        # Deep-copy the cached defaults so callers mutating the merged result
-        # (or its nested lists like ``recommended-fields``) cannot corrupt the
-        # shared cache.
-        defaults = copy.deepcopy(_default_rules().get(rule_id, {}))
+        # Deep-copy the cached defaults (and, in _merge_layer, every overlay
+        # value) so callers mutating the merged result — or its nested
+        # containers like ``limits`` / ``recommended-fields`` — cannot
+        # corrupt the shared registry caches.
+        merged = copy.deepcopy(_default_rules().get(rule_id, {}))
+        self._merge_layer(merged, self._profile_rules(rule_id))
         overrides = self.rules.get(rule_id)
-        if overrides is None:
-            overrides = {}
-        merged = {**defaults, **overrides}
+        if overrides:
+            self._merge_layer(merged, overrides)
         return merged
 
     def is_rule_enabled(
@@ -451,12 +518,34 @@ class LinterConfig:
 
         # Deprecated rules never activate through auto detection or default
         # enablement — only an explicit ``enabled: true`` (handled above) or
-        # a --rule flag (which bypasses this method) runs them.
+        # a --rule flag (which bypasses this method) runs them. Checked
+        # before the profile layer so a profile cannot resurrect one.
         if deprecated is not None:
             return False, (
                 f"deprecated since {deprecated} — will be removed in a future "
                 "release; set 'enabled: true' in config to keep running it"
             )
+
+        # Profile-set ``enabled`` decides next, under the user's explicit
+        # setting (handled above) and above everything else. Profiles ship
+        # with the installed skillsaw, so their decisions bypass the config
+        # ``version`` gate — choosing one is an explicit opt-in to its rule
+        # set. That applies to a profile-set ``"auto"`` too: it falls
+        # through to the detection logic below, but skips the gate (see
+        # ``profile_sets_enabled``). Severity/parameter-only profile
+        # entries never change activation.
+        # ``has_explicit_enabled`` also covers a user ``enabled: "auto"`` —
+        # any explicit user setting replaces the profile's, so "auto" falls
+        # through to detection rather than to the profile's decision.
+        profile_sets_enabled = False
+        if not has_explicit_enabled:
+            profile_overrides = self._profile_rules(rule_id)
+            profile_sets_enabled = "enabled" in profile_overrides
+            profile_enabled = profile_overrides.get("enabled")
+            if profile_enabled is True:
+                return True, f"enabled: true set by profile '{self.profile}'"
+            if profile_enabled is False:
+                return False, f"disabled by profile '{self.profile}'"
 
         if not has_explicit_enabled:
             # Any non-enabled override (e.g. severity) without an explicit
@@ -473,10 +562,12 @@ class LinterConfig:
                 # activation — fall through to version gate + auto logic.
 
         # Any explicit user override (enabled or otherwise) implies the user
-        # wants this rule, so skip the version gate.
+        # wants this rule, so skip the version gate. A profile-set
+        # ``enabled`` (only "auto" reaches here) skips it the same way —
+        # the profile's activation decisions are version-independent.
         has_user_overrides = bool(user_overrides)
 
-        if not has_user_overrides and self.version:
+        if not has_user_overrides and not profile_sets_enabled and self.version:
             if _parse_version(self.version) < _parse_version(since_version):
                 return False, (
                     f"config version {self.version} is older than the rule "
@@ -514,6 +605,8 @@ class LinterConfig:
         d: Dict[str, Any] = {}
         if self.version:
             d["version"] = self.version
+        if self._serializable_profile():
+            d["profile"] = self.profile
         d["rules"] = self.rules
         d["custom-rules"] = self.custom_rules
         d["exclude"] = self.exclude_patterns
@@ -547,6 +640,22 @@ class LinterConfig:
             f.write("# https://github.com/stbenjam/skillsaw\n\n")
             if self.version:
                 f.write(f'version: "{self.version}"\n\n')
+            f.write(
+                "# Rule-set profile: a curated bundle of severity/enablement "
+                "overrides applied\n"
+                "# under your own 'rules:' entries. Available: "
+                + ", ".join(available_profiles())
+                + "\n"
+                "# NOTE: the explicit per-rule entries below count as your own "
+                "overrides and win\n"
+                "# over the profile — to adopt one, also delete the rule "
+                "entries you want the\n"
+                "# profile to manage.\n"
+            )
+            if self._serializable_profile():
+                f.write(f"profile: {self._yaml_value(self.profile)}\n\n")
+            else:
+                f.write("# profile: claude-5\n\n")
             f.write("rules:\n")
             for rule_id, rule_config in self.rules.items():
                 desc = descriptions.get(rule_id, "")

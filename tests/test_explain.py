@@ -166,3 +166,29 @@ def test_rule_enabled_reason_matches_is_rule_enabled(temp_dir, config_yaml):
         )
         assert enabled == reason_enabled, rule.rule_id
         assert reason, rule.rule_id
+
+
+def test_explain_attributes_profile_severity(tmp_path):
+    """A profile-supplied severity is attributed in the effective-state block."""
+    (tmp_path / ".skillsaw.yaml").write_text(
+        'version: "99.0.0"\nprofile: claude-5\n', encoding="utf-8"
+    )
+    result = run_explain("content-repeated-directive", str(tmp_path))
+    assert result.returncode == 0
+    assert "severity: error (set by profile 'claude-5')" in result.stdout
+
+
+def test_explain_user_severity_override_drops_profile_attribution(tmp_path):
+    """A user rules: severity wins over the profile and is not attributed to it."""
+    (tmp_path / ".skillsaw.yaml").write_text(
+        'version: "99.0.0"\n'
+        "profile: claude-5\n"
+        "rules:\n"
+        "  content-repeated-directive:\n"
+        "    severity: info\n",
+        encoding="utf-8",
+    )
+    result = run_explain("content-repeated-directive", str(tmp_path))
+    assert result.returncode == 0
+    assert "severity: info" in result.stdout
+    assert "set by profile" not in result.stdout

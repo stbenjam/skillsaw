@@ -164,7 +164,15 @@ def _run_explain(args):
     )
     print(f"  {state} — {reason}")
     if enabled:
-        print(f"  severity: {effective_severity}")
+        # Attribute a profile-supplied severity so the effective value is
+        # traceable; a user rules: entry overrides the profile and drops
+        # the annotation.
+        severity_note = ""
+        if "severity" in config._profile_rules(args.rule_id) and "severity" not in config.rules.get(
+            args.rule_id, {}
+        ):
+            severity_note = f" (set by profile '{config.profile}')"
+        print(f"  severity: {effective_severity}{severity_note}")
 
     if plugin_name is None:
         # Plugin rules have no page on the skillsaw documentation site.

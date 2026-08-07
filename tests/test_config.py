@@ -1286,3 +1286,385 @@ def test_fail_on_roundtrips_through_save(tmp_path):
     config.save(config_path)
     reloaded = LinterConfig.from_file(config_path)
     assert reloaded.fail_on == "info"
+
+
+# ---------------------------------------------------------------------------
+# Rule-set profiles: named bundles of rule overrides (profile: claude-5)
+# merged between the builtin defaults and the user's rules: section.
+# ---------------------------------------------------------------------------
+
+
+def test_profile_defaults_to_default(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\n'))
+    assert config.profile == "default"
+    assert "profile" not in config.to_dict()
+
+
+def test_profile_parsed_from_config(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile: claude-5\n'))
+    assert config.profile == "claude-5"
+    assert config.to_dict()["profile"] == "claude-5"
+
+
+def test_unknown_profile_raises_with_available_list(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'profile' must be one of default, claude-5"):
+        LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile: gpt-6\n'))
+
+
+def test_non_string_profile_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="'profile' must be one of"):
+        LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile: [claude-5]\n'))
+
+
+def test_explicit_default_profile_matches_no_profile(tmp_path):
+    """profile: default must change nothing relative to omitting the key."""
+    plain = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\n'))
+    named = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile: default\n'))
+    from skillsaw.rules.builtin import BUILTIN_RULES
+
+    for rule_class in BUILTIN_RULES:
+        rule_id = rule_class().rule_id
+        assert plain.get_rule_config(rule_id) == named.get_rule_config(rule_id)
+
+
+def test_profile_severity_override_applies():
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    assert config.get_rule_config("content-repeated-directive")["severity"] == "error"
+    assert config.get_rule_config("content-instruction-drift")["severity"] == "warning"
+
+
+def test_profile_parameter_override_applies():
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    limits = config.get_rule_config("context-budget")["limits"]
+    assert limits["claude-md"] == {"warn": 3000, "error": 8000}
+    assert limits["skill"] == {"warn": 2000, "error": 5000}
+
+
+def test_user_severity_beats_profile():
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"content-repeated-directive": {"severity": "info"}},
+    )
+    assert config.get_rule_config("content-repeated-directive")["severity"] == "info"
+
+
+def test_profile_config_not_shared_between_calls():
+    """Mutating a merged rule config must not corrupt the profile registry."""
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    config.get_rule_config("context-budget")["limits"]["claude-md"]["warn"] = 1
+    assert config.get_rule_config("context-budget")["limits"]["claude-md"]["warn"] == 3000
+
+
+def test_profile_enables_opt_in_rule(temp_dir):
+    """claude-5 turns on content-missing-stop-condition (enabled: false by default)."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    enabled, reason = config.rule_enabled_reason(
+        "content-missing-stop-condition", context, since_version="0.17.0"
+    )
+    assert enabled is True
+    assert reason == "enabled: true set by profile 'claude-5'"
+
+
+def test_profile_disables_rule(temp_dir):
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    enabled, reason = config.rule_enabled_reason("content-weak-language", context)
+    assert enabled is False
+    assert reason == "disabled by profile 'claude-5'"
+
+
+def test_user_explicit_enabled_beats_profile_disable(temp_dir):
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"content-weak-language": {"enabled": True}},
+    )
+    assert config.is_rule_enabled("content-weak-language", context) is True
+
+
+def test_user_explicit_enabled_false_beats_profile_enable(temp_dir):
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"content-missing-stop-condition": {"enabled": False}},
+    )
+    assert (
+        config.is_rule_enabled("content-missing-stop-condition", context, since_version="0.17.0")
+        is False
+    )
+
+
+def test_user_enabled_auto_beats_profile(temp_dir):
+    """An explicit user 'auto' restores detection semantics over the profile's
+    decision — the user layer replaces the profile layer entirely."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"content-weak-language": {"enabled": "auto"}},
+    )
+    # content-weak-language is repo-type-agnostic, so auto means enabled.
+    assert config.is_rule_enabled("content-weak-language", context) is True
+
+
+def test_user_severity_only_does_not_reenable_profile_disabled(temp_dir):
+    """A severity-only user override must not undo the profile's disable —
+    re-enabling takes an explicit 'enabled' setting."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"content-weak-language": {"severity": "warning"}},
+    )
+    assert config.is_rule_enabled("content-weak-language", context) is False
+
+
+def test_profile_enable_bypasses_version_gate(temp_dir):
+    """Profiles ship with the installed skillsaw, so a profile-set 'enabled'
+    activates the rule even under an old config version."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.1.0", profile="claude-5")
+    assert (
+        config.is_rule_enabled(
+            "content-missing-stop-condition",
+            context,
+            since_version="0.17.0",
+        )
+        is True
+    )
+
+
+def test_profile_severity_only_respects_version_gate(temp_dir):
+    """A severity-only profile entry never changes activation: the rule stays
+    version-gated for configs older than the rule."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.1.0", profile="claude-5")
+    enabled, reason = config.rule_enabled_reason(
+        "content-repeated-directive", context, since_version="0.17.0"
+    )
+    assert enabled is False
+    assert "older than the rule" in reason
+
+
+def test_profile_cannot_resurrect_deprecated_rule(temp_dir):
+    """Even if a profile named a deprecated rule, deprecation wins."""
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.19.0", profile="claude-5")
+    enabled, reason = config.rule_enabled_reason(
+        "content-actionability-score", context, deprecated="0.18.0"
+    )
+    assert enabled is False
+    assert "deprecated" in reason
+
+
+def test_profile_roundtrips_through_save(tmp_path):
+    config = LinterConfig.default()
+    config.profile = "claude-5"
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.profile == "claude-5"
+
+
+def test_default_profile_saved_as_comment(tmp_path):
+    """The generated config advertises the profile key without setting one."""
+    config = LinterConfig.default()
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    assert "# profile: claude-5" in text
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.profile == "default"
+
+
+class TestProfileRegistry:
+    """Every profile entry must stay valid as rules evolve: canonical IDs,
+    live (non-deprecated) rules, valid severities/enabled values, and
+    parameters the rule actually declares."""
+
+    def _rules_by_id(self):
+        from skillsaw.rules.builtin import BUILTIN_RULES
+
+        return {rc().rule_id: rc() for rc in BUILTIN_RULES}
+
+    def test_profile_rule_ids_are_canonical_and_live(self):
+        from skillsaw.profiles import PROFILES
+        from skillsaw.rules.builtin import canonical_rule_id
+
+        rules_by_id = self._rules_by_id()
+        for profile in PROFILES.values():
+            for rule_id in profile.rules:
+                assert rule_id in rules_by_id, f"{profile.name}: unknown rule '{rule_id}'"
+                assert (
+                    canonical_rule_id(rule_id) == rule_id
+                ), f"{profile.name}: '{rule_id}' is a legacy alias"
+                assert (
+                    rules_by_id[rule_id].deprecated is None
+                ), f"{profile.name}: '{rule_id}' is deprecated"
+
+    def test_profile_override_values_are_valid(self):
+        from skillsaw.profiles import PROFILES
+
+        rules_by_id = self._rules_by_id()
+        valid_severities = {"error", "warning", "info"}
+        for profile in PROFILES.values():
+            for rule_id, overrides in profile.rules.items():
+                for key, value in overrides.items():
+                    if key == "enabled":
+                        assert value in (True, False, "auto"), f"{profile.name}: {rule_id}.enabled"
+                    elif key == "severity":
+                        assert value in valid_severities, f"{profile.name}: {rule_id}.severity"
+                    else:
+                        schema = rules_by_id[rule_id].config_schema
+                        assert key in schema, (
+                            f"{profile.name}: '{rule_id}' has no config parameter "
+                            f"'{key}' in its config_schema"
+                        )
+
+    def test_profile_limits_parameters_are_well_formed(self):
+        """A 'limits' parameter in any profile must hold values the
+        context-budget rule can consume: per-category ints (warn-only) or
+        {warn, error} mappings of ints. A malformed entry would otherwise
+        pass the schema-key check above and only blow up at lint time."""
+        from skillsaw.profiles import PROFILES
+
+        for profile in PROFILES.values():
+            for rule_id, overrides in profile.rules.items():
+                limits = overrides.get("limits")
+                if limits is None:
+                    continue
+                assert isinstance(limits, dict), f"{profile.name}: {rule_id}.limits"
+                for category, value in limits.items():
+                    label = f"{profile.name}: {rule_id}.limits.{category}"
+                    if isinstance(value, int):
+                        continue
+                    assert isinstance(value, dict), label
+                    assert set(value) <= {"warn", "error"}, label
+                    assert value, f"{label} is empty"
+                    for threshold in value.values():
+                        assert isinstance(threshold, int) and threshold > 0, label
+
+    def test_default_profile_is_empty(self):
+        from skillsaw.profiles import PROFILES
+
+        assert PROFILES["default"].rules == {}
+
+    def test_available_profiles_lists_default_first(self):
+        from skillsaw.profiles import available_profiles
+
+        names = available_profiles()
+        assert names[0] == "default"
+        assert "claude-5" in names
+
+
+def test_null_profile_behaves_like_default(tmp_path):
+    """profile: null behaves like the key being absent, matching the
+    convention for other keys (fail-on: null, version:)."""
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.19.0"\nprofile:\n'))
+    assert config.profile == "default"
+
+
+def test_directly_constructed_unknown_profile_contributes_nothing():
+    """A LinterConfig built in code with an unregistered profile name falls
+    back to no profile overrides instead of crashing (from_file rejects the
+    name before this can happen)."""
+    config = LinterConfig(version="0.19.0", profile="not-a-profile")
+    assert config.get_rule_config("content-repeated-directive")["severity"] == "warning"
+
+
+def test_nested_user_override_merges_with_profile():
+    """Overriding one entry of a nested parameter keeps the profile's other
+    entries — layers deep-merge mappings instead of replacing them."""
+    config = LinterConfig(
+        version="0.19.0",
+        profile="claude-5",
+        rules={"context-budget": {"limits": {"skill": {"warn": 1000}}}},
+    )
+    limits = config.get_rule_config("context-budget")["limits"]
+    assert limits["skill"] == {"warn": 1000, "error": 5000}
+    assert limits["claude-md"] == {"warn": 3000, "error": 8000}
+    assert limits["agents-md"] == {"warn": 3000, "error": 8000}
+    assert limits["gemini-md"] == {"warn": 3000, "error": 8000}
+
+
+def test_profile_without_version_implies_installed_version(tmp_path):
+    """A non-default profile with no 'version' opts into the installed
+    version instead of the 0.6.0 fallback — choosing a curated profile
+    means wanting the current rule set."""
+    from skillsaw import __version__
+
+    config = LinterConfig.from_file(_write(tmp_path, "profile: claude-5\n"))
+    assert config.version == __version__
+    assert any("implies the installed version" in w for w in config.warnings)
+
+
+def test_default_profile_without_version_keeps_fallback(tmp_path):
+    """profile: default (or no profile) keeps the legacy 0.6.0 fallback and
+    its warning — only a curated profile implies the installed version."""
+    config = LinterConfig.from_file(_write(tmp_path, "profile: default\n"))
+    assert config.version == "0.6.0"
+    assert any("defaulting to 0.6.0" in w for w in config.warnings)
+
+
+def test_explicit_version_wins_over_profile_implication(tmp_path):
+    config = LinterConfig.from_file(_write(tmp_path, 'version: "0.17.0"\nprofile: claude-5\n'))
+    assert config.version == "0.17.0"
+    assert not any("version" in w for w in config.warnings)
+
+
+def test_unknown_programmatic_profile_roundtrips_as_default(tmp_path):
+    """A LinterConfig built in code with an unregistered profile contributes
+    nothing, so save() writes its effective (default) behavior — the saved
+    file must reload cleanly rather than failing profile validation."""
+    config = LinterConfig.default()
+    config.profile = "not-a-profile"
+    config_path = tmp_path / ".skillsaw.yaml"
+    config.save(config_path)
+    assert "not-a-profile" not in config_path.read_text(encoding="utf-8")
+    reloaded = LinterConfig.from_file(config_path)
+    assert reloaded.profile == "default"
+    assert "profile" not in config.to_dict()
+
+
+def test_profile_set_auto_bypasses_version_gate(temp_dir, monkeypatch):
+    """A profile-set enabled: "auto" is still a profile activation decision:
+    it falls through to repo-type/format detection but must skip the config
+    version gate, like the profile's true/false decisions do."""
+    from skillsaw.profiles import PROFILES, Profile
+
+    monkeypatch.setitem(
+        PROFILES,
+        "test-auto-profile",
+        Profile(
+            name="test-auto-profile",
+            description="test-only",
+            rules={"content-repeated-directive": {"enabled": "auto"}},
+        ),
+    )
+    context = RepositoryContext(temp_dir)
+    config = LinterConfig(version="0.1.0", profile="test-auto-profile")
+    enabled, reason = config.rule_enabled_reason(
+        "content-repeated-directive", context, since_version="0.17.0"
+    )
+    assert enabled is True
+    assert "auto" in reason
+
+
+def test_positional_constructor_signature_unchanged():
+    """The profile field is declared after every pre-profile field so
+    positional construction from earlier releases keeps its meaning:
+    the second positional argument is still ``rules``."""
+    config = LinterConfig("0.19.0", {"mcp-prohibited": {"enabled": True}})
+    assert config.version == "0.19.0"
+    assert config.rules == {"mcp-prohibited": {"enabled": True}}
+    assert config.profile == "default"
+    # get_rule_config must not choke on the profile lookup either.
+    assert config.get_rule_config("mcp-prohibited")["enabled"] is True
