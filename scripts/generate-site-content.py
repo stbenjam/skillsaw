@@ -142,12 +142,14 @@ RULE_GROUPS = [
             "security-invisible-unicode",
             "security-hidden-instructions",
             "security-encoded-payload",
+            "security-dynamic-context",
         ],
         "Content-validation rules that catch payloads and instructions "
         "invisible to human review: invisible/bidi unicode smuggling (ASCII "
         "smuggling, Trojan Source), agent directives hidden in HTML comments "
         "or Markdown link labels, and long high-entropy base64/hex blobs that "
-        "can smuggle encoded payloads. They complement `hooks-dangerous`, "
+        "can smuggle encoded payloads, plus unallowlisted Claude Code "
+        "dynamic-context commands. They complement `hooks-dangerous`, "
         "`claude-settings-dangerous`, and `content-embedded-secrets`, which cover the "
         "executable and credential sides of the same threat.",
     ),

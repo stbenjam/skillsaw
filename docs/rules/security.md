@@ -3,11 +3,12 @@
 
 # Security
 
-Content-validation rules that catch payloads and instructions invisible to human review: invisible/bidi unicode smuggling (ASCII smuggling, Trojan Source), agent directives hidden in HTML comments or Markdown link labels, and long high-entropy base64/hex blobs that can smuggle encoded payloads. They complement `hooks-dangerous`, `claude-settings-dangerous`, and `content-embedded-secrets`, which cover the executable and credential sides of the same threat.
+Content-validation rules that catch payloads and instructions invisible to human review: invisible/bidi unicode smuggling (ASCII smuggling, Trojan Source), agent directives hidden in HTML comments or Markdown link labels, and long high-entropy base64/hex blobs that can smuggle encoded payloads, plus unallowlisted Claude Code dynamic-context commands. They complement `hooks-dangerous`, `claude-settings-dangerous`, and `content-embedded-secrets`, which cover the executable and credential sides of the same threat.
 
 | Rule ID | Description | Default Severity | Autofix |
 |---------|-------------|------------------|---------|
 | [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - |
 | [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - |
 | [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - |
+| [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for Claude Code dynamic context commands that execute shell code while loading agent context | error (auto) | - |
 

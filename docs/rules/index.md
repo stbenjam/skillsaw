@@ -3,14 +3,14 @@
 
 # Rules Reference
 
-skillsaw includes **72** built-in rules organized into the following categories:
+skillsaw includes **73** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
 - [Claude Code](claude.md) (13 rules)
 - [OpenAI Codex](codex.md) (5 rules)
 - [Hooks](hooks.md) (3 rules)
-- [Security](security.md) (3 rules)
+- [Security](security.md) (4 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [OpenClaw](openclaw.md) (1 rule)
 - [Instruction Files](instruction-files.md) (2 rules)
@@ -60,6 +60,7 @@ skillsaw includes **72** built-in rules organized into the following categories:
 | [`security-invisible-unicode`](security-invisible-unicode.md) | Detect invisible or reordering unicode characters (ASCII smuggling, Trojan Source) in agent context | error (auto) | - | Security |
 | [`security-hidden-instructions`](security-hidden-instructions.md) | Detect agent directives hidden in HTML comments or Markdown link labels invisible to human review | warning (auto) | - | Security |
 | [`security-encoded-payload`](security-encoded-payload.md) | Detect long high-entropy base64/hex blobs that can smuggle encoded payloads | warning (auto) | - | Security |
+| [`security-dynamic-context`](security-dynamic-context.md) | Require an allowlist for Claude Code dynamic context commands that execute shell code while loading agent context | error (auto) | - | Security |
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |

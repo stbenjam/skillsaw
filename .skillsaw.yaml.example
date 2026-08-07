@@ -427,6 +427,12 @@ rules:
     enabled: auto
     severity: error
 
+  # Require an allowlist for Claude Code dynamic context commands that execute shell code while loading agent context
+  security-dynamic-context:
+    enabled: auto
+    severity: error
+    # allowlist: []
+
   # Detect long high-entropy base64/hex blobs that can smuggle encoded payloads
   security-encoded-payload:
     enabled: auto
