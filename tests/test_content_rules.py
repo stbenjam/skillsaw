@@ -3242,6 +3242,18 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`client.search`" in violations[0].message
 
+    def test_multiline_html_heading_tag_breaks_runs(self, temp_dir):
+        """An opening heading tag split across lines ('<h2' then
+        '>...') is still a section boundary."""
+        section = '<h2\n>{} workflow</h2>\n\n```\nsearch(query="{}")\n```\n'
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            + "\n".join(
+                section.format(n, q) for n, q in (("First", "a"), ("Second", "b"), ("Third", "c"))
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_list_marker_html_headings_break_runs(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(
             "# Rules\n\n"

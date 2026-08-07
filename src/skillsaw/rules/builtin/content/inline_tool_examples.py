@@ -129,7 +129,7 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # section boundary just like an ATX or setext heading.  Container
 # prefixes (blockquote markers, a list marker) are stripped before
 # matching.
-_HTML_HEADING_RE = re.compile(r"<h[1-6][\s>/]", re.IGNORECASE)
+_HTML_HEADING_RE = re.compile(r"<h[1-6](?:[\s>/]|$)", re.IGNORECASE)
 _LEAD_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 
