@@ -3202,6 +3202,39 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_repl_prompt_examples(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    '>>> search(query="a")',
+                    '>>> search(query="b")',
+                    '>>> search(query="c")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_cpp_include_not_a_comment(self, temp_dir):
+        """In a c++ fence '#include' is code, not a comment — the fence
+        contains ordinary code and never participates."""
+        snippet = "#include <search.h>\nsearch({})"
+        parts = [f"```c++\n{snippet.format(n)}\n```\n" for n in ("1", "2", "3")]
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_list_marker_blockquote_fence(self, temp_dir):
+        """A fence opened on a combined list/blockquote marker line
+        ('- > ```') still normalizes its quote depth."""
+        item = "- > ```\n" '  > search(query="{}")\n' "  > ```\n"
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n" + "\nAnother example:\n\n".join(item.format(q) for q in ("a", "b", "c"))
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_tab_indented_delimiter_payload_not_a_closer(self, temp_dir):
         """A tab counts as four columns (CommonMark), so a tab-prefixed
         backtick run inside an unclosed fence is payload."""

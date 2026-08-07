@@ -17,7 +17,7 @@ _CALL_HEAD_RE = re.compile(
     # The annotation atom excludes '=' and the '=' follows it directly,
     # so no two adjacent quantifiers can trade the same whitespace — a
     # failed match stays linear on crafted input.
-    r"^(?:\$\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
+    r"^(?:\$\s+|>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
     r"(?:[\w.]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
     r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
@@ -51,7 +51,24 @@ _NON_TOOL_CALLEES = frozenset(
 # C-family languages.  An unlabeled fence accepts both styles.
 _HASH_COMMENT_LANGS = frozenset({"python", "py", "python3", "sh", "bash", "shell", "zsh", "yaml"})
 _SLASH_COMMENT_LANGS = frozenset(
-    {"js", "javascript", "ts", "typescript", "jsx", "tsx", "java", "c", "cpp", "go", "rust"}
+    {
+        "js",
+        "javascript",
+        "ts",
+        "typescript",
+        "jsx",
+        "tsx",
+        "java",
+        "c",
+        "cpp",
+        "c++",
+        "cc",
+        "cxx",
+        "cs",
+        "csharp",
+        "go",
+        "rust",
+    }
 )
 _ALL_COMMENT_STYLES = frozenset({"#", "//"})
 
@@ -92,6 +109,10 @@ _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 # markers and/or list-item indentation.  Measured on the opening fence
 # line and stripped from the content so call heads sit at column 0.
 _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
+
+# A list marker opening the same line as further containers or the
+# fence itself ('- > ```'); stripped before measuring quote depth.
+_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 # Blockquote markers alone — used per line where trailing whitespace is
 # code indentation that must survive (indented blocks in blockquotes).
@@ -330,7 +351,10 @@ class ContentInlineToolExamplesRule(Rule):
             # content), so an exact-prefix match would miss legal lines,
             # while a blanket sub would also eat a literal '>' belonging
             # to the code ('> > search(...)').
-            depth = _CONTAINER_PREFIX_RE.match(opening).group(0).count(">")
+            # A list marker may share the opening line ('- > ```');
+            # strip it before measuring the quote depth.
+            opening_after_marker = _LIST_MARKER_RE.sub("", opening)
+            depth = _CONTAINER_PREFIX_RE.match(opening_after_marker).group(0).count(">")
             raw = ContentInlineToolExamplesRule._peel_quote_levels(raw, depth)
         # Dedent even outside containers: CommonMark allows a top-level
         # fence (and its content) to be indented up to three spaces.
