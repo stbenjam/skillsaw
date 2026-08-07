@@ -2761,6 +2761,36 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_hash_prefixed_caption_not_a_heading(self, temp_dir):
+        """`#release-notes` is a channel name, not an ATX heading (no
+        space after the hash) — it must not break the run."""
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="TransferFunds", type="symbol")',
+                    'search(query="ledger.go", type="file")',
+                    'search(query="fixed-point", type="text")',
+                ],
+                caption="#release-notes wants a link to the results:",
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_setext_heading_breaks_run(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    "get_balance(account=42)",
+                    'get_balance(account=42, as_of="2026-01-31")',
+                    'get_balance(account=42, currency="USD")',
+                ],
+                caption="Historical balances\n-------------------\n\nWith a date:",
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_prose_gap_breaks_run(self, temp_dir):
         prose = (
             "The call hits the read replica, which lags the primary by\n"
@@ -2804,6 +2834,93 @@ class TestContentInlineToolExamplesRule:
         violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "`client.messages.create`" in violations[0].message
+
+    def test_trailing_statement_disqualifies(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="a"); cleanup()',
+                    'search(query="b"); cleanup()',
+                    'search(query="c"); cleanup()',
+                ]
+            )
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_dotted_keyword_callee_allowed(self, temp_dir):
+        """`client.print(...)` is a namespaced tool, not the print builtin."""
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                ['client.print("invoice")', 'client.print("receipt")', 'client.print("label")']
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`client.print`" in violations[0].message
+
+    def test_identical_fences_reported_as_repeats(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(self._fences(['search(query="same")'] * 3))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "each repeating the same invocation" in violations[0].message
+        assert "differing only in arguments" not in violations[0].message
+
+    def test_blockquote_nested_fences_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> Use the search tool. For example:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="TransferFunds", type="symbol")\n'
+            "> ```\n"
+            ">\n"
+            "> Another example, searching for a file:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="ledger.go", type="file")\n'
+            "> ```\n"
+            ">\n"
+            "> A third example, searching text:\n"
+            ">\n"
+            "> ```\n"
+            '> search(query="fixed-point", type="text")\n'
+            "> ```\n"
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_list_nested_fences_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "- Use the search tool. For example:\n\n"
+            "  ```\n"
+            '  search(query="TransferFunds", type="symbol")\n'
+            "  ```\n\n"
+            "  Another example, searching for a file:\n\n"
+            "  ```\n"
+            '  search(query="ledger.go", type="file")\n'
+            "  ```\n\n"
+            "  A third example, searching text:\n\n"
+            "  ```\n"
+            '  search(query="fixed-point", type="text")\n'
+            "  ```\n"
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_mixed_callees_within_one_fence_pass(self, temp_dir):
+        snippet = 'open_account(owner="acme")\ntransfer(source=42, dest=43)'
+        (temp_dir / "CLAUDE.md").write_text(self._fences([snippet, snippet, snippet]))
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_blank_lines_within_fence_ignored(self, temp_dir):
+        snippet = 'search(query="a")\n\nsearch(query="b")'
+        (temp_dir / "CLAUDE.md").write_text(self._fences([snippet, snippet, snippet]))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
 
     def test_real_code_fences_pass(self, temp_dir):
         snippet = "import ledger\n\nrow = ledger.fetch(42)\nledger.audit(row)"
@@ -2854,6 +2971,8 @@ class TestContentInlineToolExamplesRule:
             ContentInlineToolExamplesRule({"min-consecutive": "3"})
         with pytest.raises(ValueError, match="at least 0"):
             ContentInlineToolExamplesRule({"max-lines-between": -1})
+        with pytest.raises(ValueError, match="must be an integer"):
+            ContentInlineToolExamplesRule({"max-lines-between": "2"})
 
     def test_no_files_no_violations(self, temp_dir):
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []

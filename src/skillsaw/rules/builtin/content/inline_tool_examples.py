@@ -46,6 +46,11 @@ _CONTINUATION_LEAD = ")]}#,"
 
 _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 
+# Container prefix a nested fence carries on every line: blockquote
+# markers and/or list-item indentation.  Measured on the opening fence
+# line and stripped from the content so call heads sit at column 0.
+_CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
+
 
 class ContentInlineToolExamplesRule(Rule):
     """Detect runs of fenced examples invoking one tool with varying arguments"""
@@ -129,7 +134,33 @@ class ContentInlineToolExamplesRule(Rule):
         if fence.indented:
             raw = lines[fence.body_line_start - 1 : fence.body_line_end]
             return [_INDENTED_PREFIX_RE.sub("", line) for line in raw]
-        return lines[fence.body_line_start : fence.body_line_end - 1]
+        raw = lines[fence.body_line_start : fence.body_line_end - 1]
+        opening = lines[fence.body_line_start - 1] if fence.body_line_start <= len(lines) else ""
+        prefix = _CONTAINER_PREFIX_RE.match(opening).group(0)
+        if prefix:
+            raw = [line[len(prefix) :] if line.startswith(prefix) else line for line in raw]
+        return raw
+
+    @staticmethod
+    def _call_consumes_line(line: str, open_idx: int) -> bool:
+        """True when the call whose paren opens at *open_idx* spans the line.
+
+        Walks paren depth from the opening paren; once the call closes,
+        only a ``;`` or a comment may follow — ``search(a=1); cleanup()``
+        is a multi-statement snippet, not a bare invocation.  A call whose
+        parens stay open continues on the next line.
+        """
+        depth = 0
+        for i in range(open_idx, len(line)):
+            char = line[i]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    trailer = line[i + 1 :].strip()
+                    return trailer in ("", ";") or trailer.startswith("#")
+        return True
 
     @staticmethod
     def _fence_callee(content_lines: List[str]) -> Optional[str]:
@@ -137,8 +168,10 @@ class ContentInlineToolExamplesRule(Rule):
 
         Returns ``None`` unless the fence consists solely of call-syntax
         invocations of one callee (plus their continuation lines) — mixed
-        callees or ordinary code (imports, control flow, prose) disqualify
-        the fence.
+        callees, trailing statements after a call, and ordinary code
+        (imports, control flow, prose) disqualify the fence.  The keyword
+        exclusion applies to bare names only: ``print(...)`` is code,
+        ``client.print(...)`` is a namespaced tool.
         """
         callee: Optional[str] = None
         for line in content_lines:
@@ -147,7 +180,9 @@ class ContentInlineToolExamplesRule(Rule):
             match = _CALL_HEAD_RE.match(line)
             if match:
                 name = match.group(1)
-                if name.split(".")[-1] in _NON_TOOL_CALLEES or name in _NON_TOOL_CALLEES:
+                if "." not in name and name in _NON_TOOL_CALLEES:
+                    return None
+                if not ContentInlineToolExamplesRule._call_consumes_line(line, match.end() - 1):
                     return None
                 if callee is None:
                     callee = name
@@ -161,7 +196,9 @@ class ContentInlineToolExamplesRule(Rule):
             return None
         return callee
 
-    def _run_breaks(self, lines: List[str], prev_end: int, next_start: int) -> bool:
+    def _run_breaks(
+        self, lines: List[str], heading_lines: frozenset, prev_end: int, next_start: int
+    ) -> bool:
         """True when the gap between two fences ends the run.
 
         *prev_end* / *next_start* are 1-based body lines (closing line of
@@ -169,28 +206,35 @@ class ContentInlineToolExamplesRule(Rule):
         the gap starts a new section — examples across sections are not a
         consecutive run — and more than ``max-lines-between`` non-blank
         lines means the fences are separated by real prose, not captions.
+        *heading_lines* holds the AST heading construct lines, so a
+        hash-prefixed caption like ``#release-notes`` (not a heading —
+        ATX requires a space) counts as prose instead of a break.
         """
-        gap = lines[prev_end : next_start - 1]
         non_blank = 0
-        for line in gap:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith("#"):
+        for line_num in range(prev_end + 1, next_start):
+            if line_num in heading_lines:
                 return True
+            # A bare '>' between fences in a blockquote is a blank line,
+            # not a caption.
+            if not _CONTAINER_PREFIX_RE.sub("", lines[line_num - 1]).strip():
+                continue
             non_blank += 1
         return non_blank > self._max_between
 
     def _flush(
-        self, cf: ContentBlock, run: List[Tuple[Any, str]], violations: List[RuleViolation]
+        self, cf: ContentBlock, run: List[Tuple[Any, str, tuple]], violations: List[RuleViolation]
     ) -> None:
         if len(run) < self._min_consecutive:
             return
-        first_fence, callee = run[0]
+        first_fence, callee, _ = run[0]
+        distinct = len({key for _, _, key in run})
+        qualifier = (
+            "differing only in arguments" if distinct > 1 else "each repeating the same invocation"
+        )
         violations.append(
             self.violation(
                 f"{len(run)} consecutive fenced examples invoke `{callee}` "
-                f"differing only in arguments — describe the tool's "
+                f"{qualifier} — describe the tool's "
                 f"parameters, types, and constraints once instead of "
                 f"enumerating example calls",
                 block=cf,
@@ -206,22 +250,29 @@ class ContentInlineToolExamplesRule(Rule):
         if not body:
             return []
         lines = body.splitlines()
+        heading_lines = frozenset(
+            line
+            for h in cf.markdown.headings()
+            for line in range(h.body_line, max(h.body_line_end, h.body_line + 1))
+        )
         violations: List[RuleViolation] = []
-        run: List[Tuple[Any, str]] = []
+        run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
-            callee = self._fence_callee(self._fence_content_lines(fence, lines))
+            content_lines = self._fence_content_lines(fence, lines)
+            callee = self._fence_callee(content_lines)
             if callee is None:
                 self._flush(cf, run, violations)
                 run = []
                 continue
             if run:
-                prev_fence, prev_callee = run[-1]
+                prev_fence, prev_callee, _ = run[-1]
                 if callee != prev_callee or self._run_breaks(
-                    lines, prev_fence.body_line_end, fence.body_line_start
+                    lines, heading_lines, prev_fence.body_line_end, fence.body_line_start
                 ):
                     self._flush(cf, run, violations)
                     run = []
-            run.append((fence, callee))
+            content_key = tuple(line.strip() for line in content_lines if line.strip())
+            run.append((fence, callee, content_key))
         self._flush(cf, run, violations)
         return violations
 
