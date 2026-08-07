@@ -18,8 +18,8 @@ _CALL_HEAD_RE = re.compile(
     # so no two adjacent quantifiers can trade the same whitespace — a
     # failed match stays linear on crafted input.
     r"^(?:\$\s+|>>>\s+)?(?:await\s+)?(?:(?:const|let|var)\s+)?"
-    r"(?:[\w.]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
-    r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
+    r"(?:[\w.$]+[ \t]*(?::[^=]+)?=\s*)?(?:await\s+)?"
+    r"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\("
 )
 
 # Control-flow and I/O keywords that take parens in common languages —
@@ -111,9 +111,13 @@ _NON_CALL_KEYWORDS = frozenset(
 # line and stripped from the content so call heads sit at column 0.
 _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 
+# A raw HTML heading opening a block ('<h2>First workflow</h2>') — a
+# section boundary just like an ATX or setext heading.
+_HTML_HEADING_RE = re.compile(r"<h[1-6][\s>/]", re.IGNORECASE)
+
 
 class ContentInlineToolExamplesRule(Rule):
-    """Detect consecutive fenced examples that all invoke the same tool"""
+    """Detect consecutive code-block examples that all invoke the same tool"""
 
     formats = None
     repo_types = None  # instruction content appears in every repo type
@@ -128,7 +132,7 @@ class ContentInlineToolExamplesRule(Rule):
             "type": "int",
             "default": _DEFAULT_MIN_CONSECUTIVE,
             "description": (
-                "Minimum number of consecutive fenced blocks invoking the "
+                "Minimum number of consecutive code blocks invoking the "
                 "same tool or function before the run is flagged"
             ),
         },
@@ -137,7 +141,7 @@ class ContentInlineToolExamplesRule(Rule):
             "default": _DEFAULT_MAX_LINES_BETWEEN,
             "description": (
                 "Maximum number of non-blank prose lines allowed between two "
-                "adjacent fenced blocks (caption lines like 'Another "
+                "adjacent code blocks (caption lines like 'Another "
                 "example:') before the run is considered broken; a heading "
                 "always breaks the run, and HTML comments are not counted"
             ),
@@ -178,7 +182,7 @@ class ContentInlineToolExamplesRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Detect consecutive fenced examples that all invoke the same tool"
+        return "Detect consecutive code-block examples that all invoke the same tool"
 
     def default_severity(self) -> Severity:
         return Severity.INFO
@@ -244,6 +248,34 @@ class ContentInlineToolExamplesRule(Rule):
         if lang in _SLASH_COMMENT_LANGS:
             return frozenset({"//"})
         return _ALL_COMMENT_STYLES
+
+    @staticmethod
+    def _strip_inline_comment(line: str, styles: frozenset) -> str:
+        """The part of *line* before any inline comment outside strings.
+
+        Used for the continuation carry, so a trailing comment between a
+        keyword and a grouped expression on the next line ('x if  # why'
+        then '(x.ready)') doesn't masquerade as the preceding token.
+        """
+        quote = None
+        i = 0
+        length = len(line)
+        while i < length:
+            char = line[i]
+            if quote:
+                if char == "\\":
+                    i += 2
+                    continue
+                if char == quote:
+                    quote = None
+            elif char in "\"'`":
+                quote = char
+            elif (char == "#" and "#" in styles) or (
+                char == "/" and "//" in styles and i + 1 < length and line[i + 1] in "/*"
+            ):
+                return line[:i]
+            i += 1
+        return line
 
     @staticmethod
     def _is_comment_line(line: str, styles: frozenset) -> bool:
@@ -384,7 +416,7 @@ class ContentInlineToolExamplesRule(Rule):
                     trailer is not None and not cls._is_call_trailer(trailer, styles)
                 ):
                     return None
-                carry = line
+                carry = cls._strip_inline_comment(line, styles)
                 continue
             if cls._is_comment_line(line, styles):
                 continue
@@ -403,7 +435,7 @@ class ContentInlineToolExamplesRule(Rule):
             )
             if nested_call or (trailer is not None and not cls._is_call_trailer(trailer, styles)):
                 return None
-            carry = line
+            carry = cls._strip_inline_comment(line, styles)
         # A fence that ends mid-call or mid-string is malformed code,
         # not a completed invocation.
         if depth > 0 or quote is not None:
@@ -465,7 +497,7 @@ class ContentInlineToolExamplesRule(Rule):
         qualifier = "" if distinct > 1 else ", each repeating the same invocation,"
         violations.append(
             self.violation(
-                f"{len(run)} consecutive fenced examples invoke "
+                f"{len(run)} consecutive code-block examples invoke "
                 f"`{callee}`{qualifier} — describe the tool's "
                 f"parameters, types, and constraints once instead of "
                 f"enumerating example calls",
@@ -482,11 +514,18 @@ class ContentInlineToolExamplesRule(Rule):
         if not body:
             return []
         lines = body.splitlines()
-        heading_lines = frozenset(
+        heading_lines = {
             line
             for h in cf.markdown.headings()
             for line in range(h.body_line, max(h.body_line_end, h.body_line + 1))
-        )
+        }
+        # Raw HTML headings are section boundaries too; markdown-it
+        # reports them only as html blocks.
+        for start0, end0 in cf.markdown.html_block_spans():
+            first = lines[start0] if 0 <= start0 < len(lines) else ""
+            if _HTML_HEADING_RE.match(first.lstrip()):
+                heading_lines.update(range(start0 + 1, end0 + 1))
+        heading_lines = frozenset(heading_lines)
         invisible_lines = set()
         comment_boundary = set()
         closing_boundary = set()

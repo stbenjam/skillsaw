@@ -3202,6 +3202,43 @@ class TestContentInlineToolExamplesRule:
         )
         assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
 
+    def test_dollar_identifiers(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(['$("#first")', '$("#second")', '$("#third")'])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`$`" in violations[0].message
+
+    def test_comment_before_continuation_group(self, temp_dir):
+        """An inline comment between a keyword and the grouped
+        expression on the next line is not the preceding token."""
+        snippet = "search(x if  # prefer ready rows\n  (x.ready) else x, q={})"
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(n) for n in ("1", "2", "3")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_html_headings_break_runs(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "<h2>First workflow</h2>\n\n"
+            "```\n"
+            'search(query="a")\n'
+            "```\n\n"
+            "<h2>Second workflow</h2>\n\n"
+            "```\n"
+            'search(query="b")\n'
+            "```\n\n"
+            "<h2>Third workflow</h2>\n\n"
+            "```\n"
+            'search(query="c")\n'
+            "```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_quote_list_quote_nested_fences(self, temp_dir):
         """A blockquote→list→blockquote fence normalizes fully."""
         item = "> - > ```\n" '>   > search(query="{}")\n' ">   > ```\n"

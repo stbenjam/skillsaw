@@ -87,7 +87,7 @@ skillsaw includes **73** built-in rules organized into the following categories:
 | [`content-repeated-directive`](content-repeated-directive.md) | Detect the same directive stated more than once within a file | warning (auto) | - | Content Intelligence |
 | [`content-emphasis-density`](content-emphasis-density.md) | Detect emphasis inflation: too many ALWAYS/NEVER/MUST/IMPORTANT directives per file | warning (auto) | - | Content Intelligence |
 | [`content-missing-stop-condition`](content-missing-stop-condition.md) | Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition | warning (disabled) | - | Content Intelligence |
-| [`content-inline-tool-examples`](content-inline-tool-examples.md) | Detect consecutive fenced examples that all invoke the same tool | info (disabled) | - | Content Intelligence |
+| [`content-inline-tool-examples`](content-inline-tool-examples.md) | Detect consecutive code-block examples that all invoke the same tool | info (disabled) | - | Content Intelligence |
 | [`coderabbit-yaml-valid`](coderabbit-yaml-valid.md) | .coderabbit.yaml must be valid YAML | error (auto) | - | CodeRabbit |
 | [`coderabbit-schema-valid`](coderabbit-schema-valid.md) | .coderabbit.yaml keys and enums should match the CodeRabbit schema | warning (auto) | - | CodeRabbit |
 | [`promptfoo-valid`](promptfoo-valid.md) | Validate promptfoo eval YAML config structure and file references | error (auto) | - | Promptfoo Evals |

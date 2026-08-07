@@ -3,7 +3,7 @@
 
 # content-inline-tool-examples
 
-Detect consecutive fenced examples that all invoke the same tool
+Detect consecutive code-block examples that all invoke the same tool
 
 | | |
 |---|---|
@@ -107,8 +107,8 @@ rules:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `min-consecutive` | Minimum number of consecutive fenced blocks invoking the same tool or function before the run is flagged | `3` |
-| `max-lines-between` | Maximum number of non-blank prose lines allowed between two adjacent fenced blocks (caption lines like 'Another example:') before the run is considered broken; a heading always breaks the run, and HTML comments are not counted | `2` |
+| `min-consecutive` | Minimum number of consecutive code blocks invoking the same tool or function before the run is flagged | `3` |
+| `max-lines-between` | Maximum number of non-blank prose lines allowed between two adjacent code blocks (caption lines like 'Another example:') before the run is considered broken; a heading always breaks the run, and HTML comments are not counted | `2` |
 
 
 *Run `skillsaw explain content-inline-tool-examples` to see this documentation and the rule's effective configuration in your terminal.*

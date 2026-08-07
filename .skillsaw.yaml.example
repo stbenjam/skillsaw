@@ -255,7 +255,7 @@ rules:
     severity: info
     # groups: {}
 
-  # Detect consecutive fenced examples that all invoke the same tool
+  # Detect consecutive code-block examples that all invoke the same tool
   content-inline-tool-examples:
     enabled: false
     severity: info
