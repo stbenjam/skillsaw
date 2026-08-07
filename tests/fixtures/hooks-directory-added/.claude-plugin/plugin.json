@@ -1,0 +1,8 @@
+{
+  "name": "monorepo-dir-hooks",
+  "description": "Prepares a service directory that is added mid-session",
+  "version": "1.0.0",
+  "author": {
+    "name": "Platform Team"
+  }
+}

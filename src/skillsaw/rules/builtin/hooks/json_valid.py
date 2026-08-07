@@ -33,6 +33,7 @@ _VALID_HOOK_EVENTS = {
     "TeammateIdle",
     "ConfigChange",
     "CwdChanged",
+    "DirectoryAdded",
     "FileChanged",
     "WorktreeCreate",
     "WorktreeRemove",
