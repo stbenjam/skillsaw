@@ -559,6 +559,7 @@ def test_marketplace_source_object_required_fields(temp_dir):
             {"name": "web", "source": {"source": "url"}},
             {"name": "sub", "source": {"source": "git-subdir", "url": "https://x"}},
             {"name": "pkg", "source": {"source": "npm"}},
+            {"name": "zip", "source": {"source": "archive"}},
         ],
     )
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
@@ -567,6 +568,7 @@ def test_marketplace_source_object_required_fields(temp_dir):
     assert any("plugins[1].source of type 'url' requires a 'url'" in m for m in messages)
     assert any("plugins[2].source of type 'git-subdir' requires a 'path'" in m for m in messages)
     assert any("plugins[3].source of type 'npm' requires a 'package'" in m for m in messages)
+    assert any("plugins[4].source of type 'archive' requires a 'url'" in m for m in messages)
 
 
 def test_marketplace_source_object_valid_types_pass(temp_dir):
@@ -580,6 +582,17 @@ def test_marketplace_source_object_valid_types_pass(temp_dir):
                 "source": {"source": "git-subdir", "url": "https://x", "path": "plugins/sub"},
             },
             {"name": "pkg", "source": {"source": "npm", "package": "@scope/pkg"}},
+            # `sha256` is optional on an archive source; `url` is the only
+            # required field.
+            {"name": "zip", "source": {"source": "archive", "url": "https://x/p-1.0.0.zip"}},
+            {
+                "name": "pinned-zip",
+                "source": {
+                    "source": "archive",
+                    "url": "https://x/p-1.1.0.zip",
+                    "sha256": "6bfa50e3d2e00c052b46abe51fff89346ac803e45771f76dcf6df1ab74cca5e1",
+                },
+            },
         ],
     )
     violations = MarketplaceJsonValidRule().check(RepositoryContext(repo))
