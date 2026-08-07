@@ -3089,6 +3089,42 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_python_floor_division_not_a_comment(self, temp_dir):
+        """In a python-labeled fence '//' is floor division, not a
+        comment — the call still scans to its closing paren."""
+        parts = []
+        for offset in ("0", "page_size", "2 * page_size"):
+            parts.append(f"```python\nsearch(limit=items // page_size, offset={offset})\n```\n")
+        (temp_dir / "CLAUDE.md").write_text("# Rules\n\n" + "\nAnother example:\n\n".join(parts))
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_literal_quote_marker_in_blockquote_fence(self, temp_dir):
+        """Code that itself starts with '>' inside a blockquote fence is
+        not a call — only the container's marker is stripped."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> Grep output looks like this:\n"
+            ">\n"
+            "> ```\n"
+            "> > search(a=1)\n"
+            "> ```\n"
+            ">\n"
+            "> Another example:\n"
+            ">\n"
+            "> ```\n"
+            "> > search(a=2)\n"
+            "> ```\n"
+            ">\n"
+            "> A third example:\n"
+            ">\n"
+            "> ```\n"
+            "> > search(a=3)\n"
+            "> ```\n"
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
     def test_reference_definitions_not_counted(self, temp_dir):
         """Reference definitions are omitted from rendered output and
         must not break a run by prose count."""

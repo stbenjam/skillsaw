@@ -42,8 +42,14 @@ _NON_TOOL_CALLEES = frozenset(
     }
 )
 
-# A comment-only line inside a fence ('# find the symbol', '// lookup').
-_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//)")
+# Comment syntax by fence language: '#' opens a comment in Python or
+# shell but '//' is floor division in Python; the reverse holds for
+# C-family languages.  An unlabeled fence accepts both styles.
+_HASH_COMMENT_LANGS = frozenset({"python", "py", "python3", "sh", "bash", "shell", "zsh", "yaml"})
+_SLASH_COMMENT_LANGS = frozenset(
+    {"js", "javascript", "ts", "typescript", "jsx", "tsx", "java", "c", "cpp", "go", "rust"}
+)
+_ALL_COMMENT_STYLES = frozenset({"#", "//"})
 
 _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 
@@ -55,6 +61,11 @@ _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 # Blockquote markers alone — used per line where trailing whitespace is
 # code indentation that must survive (indented blocks in blockquotes).
 _QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
+
+# One blockquote level, for peeling container markers a level at a time
+# so a literal '>' in the code itself survives.
+_QUOTE_LEAD_RE = re.compile(r"^\s*>")
+_ONE_QUOTE_LEVEL_RE = re.compile(r"^\s*>\s?")
 
 
 class ContentInlineToolExamplesRule(Rule):
@@ -195,10 +206,9 @@ class ContentInlineToolExamplesRule(Rule):
         so code that legitimately starts with ``>`` survives.
         """
         if fence.indented:
-            raw = [
-                _QUOTE_MARKER_RE.sub("", line)
-                for line in lines[fence.body_line_start - 1 : fence.body_line_end]
-            ]
+            raw = ContentInlineToolExamplesRule._strip_common_quote_levels(
+                lines[fence.body_line_start - 1 : fence.body_line_end]
+            )
             return ContentInlineToolExamplesRule._dedent(raw)
         # An unclosed fence at end of file has no closing delimiter —
         # its final line is content and must not be sliced off.
@@ -209,14 +219,57 @@ class ContentInlineToolExamplesRule(Rule):
         else:
             raw = lines[fence.body_line_start : end0 + 1]
         if fence.nested:
-            raw = [_QUOTE_MARKER_RE.sub("", line) for line in raw]
+            # Strip exactly the container prefix measured on the opening
+            # delimiter line — a blanket quote-marker sub would also eat
+            # a literal '>' belonging to the code ('> > search(...)').
+            opening = lines[fence.body_line_start - 1] if fence.body_line_start >= 1 else ""
+            prefix = _CONTAINER_PREFIX_RE.match(opening).group(0)
+            if prefix:
+                raw = [line[len(prefix) :] if line.startswith(prefix) else line for line in raw]
         # Dedent even outside containers: CommonMark allows a top-level
         # fence (and its content) to be indented up to three spaces.
         return ContentInlineToolExamplesRule._dedent(raw)
 
     @staticmethod
+    def _strip_common_quote_levels(raw: List[str]) -> List[str]:
+        """Peel blockquote-marker levels shared by every non-blank line.
+
+        An indented block has no delimiter line to measure a container
+        prefix from, so the container is whatever marker depth is common
+        to all lines — a literal ``>`` carried by only some code lines
+        survives.
+        """
+        while True:
+            non_blank = [line for line in raw if line.strip()]
+            if not non_blank or not all(_QUOTE_LEAD_RE.match(line) for line in non_blank):
+                return raw
+            raw = [
+                _ONE_QUOTE_LEVEL_RE.sub("", line, count=1) if line.strip() else line for line in raw
+            ]
+
+    @staticmethod
+    def _comment_styles(info: str) -> frozenset:
+        """Comment prefixes valid for the fence's declared language.
+
+        ``//`` is floor division in Python, and ``#`` is not a comment
+        in C-family languages — a declared language narrows which
+        prefixes end call scanning; an unlabeled fence accepts both.
+        """
+        token = (info or "").strip().split()
+        lang = token[0].lower() if token else ""
+        if lang in _HASH_COMMENT_LANGS:
+            return frozenset({"#"})
+        if lang in _SLASH_COMMENT_LANGS:
+            return frozenset({"//"})
+        return _ALL_COMMENT_STYLES
+
+    @staticmethod
+    def _is_comment_line(line: str, styles: frozenset) -> bool:
+        return line.lstrip().startswith(tuple(styles))
+
+    @staticmethod
     def _advance(
-        line: str, start: int, depth: int, quote: Optional[str]
+        line: str, start: int, depth: int, quote: Optional[str], styles: frozenset
     ) -> Tuple[int, Optional[str], Optional[str], bool]:
         """Track paren depth and quote state across ``line[start:]``.
 
@@ -239,7 +292,9 @@ class ContentInlineToolExamplesRule(Rule):
                     continue
                 if char == quote:
                     quote = None
-            elif char == "#" or (char == "/" and i + 1 < length and line[i + 1] == "/"):
+            elif (char == "#" and "#" in styles) or (
+                char == "/" and "//" in styles and i + 1 < length and line[i + 1] == "/"
+            ):
                 # An inline comment outside any string: the rest of the
                 # line is commentary, not call syntax.
                 break
@@ -261,16 +316,16 @@ class ContentInlineToolExamplesRule(Rule):
         return depth, quote, None, nested_call
 
     @staticmethod
-    def _is_call_trailer(trailer: str) -> bool:
+    def _is_call_trailer(trailer: str, styles: frozenset) -> bool:
         """True when *trailer* may follow a closed call: nothing, a lone
-        statement terminator, and/or a comment (`#` or `//`)."""
+        statement terminator, and/or a comment in the fence's styles."""
         trailer = trailer.strip()
         if trailer.startswith(";"):
             trailer = trailer[1:].strip()
-        return trailer == "" or trailer.startswith("#") or trailer.startswith("//")
+        return trailer == "" or trailer.startswith(tuple(styles))
 
     @classmethod
-    def _fence_callee(cls, content_lines: List[str]) -> Optional[str]:
+    def _fence_callee(cls, content_lines: List[str], styles: frozenset) -> Optional[str]:
         """The single tool/function every invocation in the fence targets.
 
         Returns ``None`` unless the fence consists solely of call-syntax
@@ -292,13 +347,15 @@ class ContentInlineToolExamplesRule(Rule):
                 # commentary, not call state — its text must not open
                 # calls or close parens.  Only lines outside strings can
                 # be comments.
-                if quote is None and _COMMENT_LINE_RE.match(line):
+                if quote is None and cls._is_comment_line(line, styles):
                     continue
-                depth, quote, trailer, nested_call = cls._advance(line, 0, depth, quote)
-                if nested_call or (trailer is not None and not cls._is_call_trailer(trailer)):
+                depth, quote, trailer, nested_call = cls._advance(line, 0, depth, quote, styles)
+                if nested_call or (
+                    trailer is not None and not cls._is_call_trailer(trailer, styles)
+                ):
                     return None
                 continue
-            if _COMMENT_LINE_RE.match(line):
+            if cls._is_comment_line(line, styles):
                 continue
             match = _CALL_HEAD_RE.match(line)
             if not match:
@@ -310,8 +367,10 @@ class ContentInlineToolExamplesRule(Rule):
                 callee = name
             elif name != callee:
                 return None
-            depth, quote, trailer, nested_call = cls._advance(line, match.end() - 1, 0, None)
-            if nested_call or (trailer is not None and not cls._is_call_trailer(trailer)):
+            depth, quote, trailer, nested_call = cls._advance(
+                line, match.end() - 1, 0, None, styles
+            )
+            if nested_call or (trailer is not None and not cls._is_call_trailer(trailer, styles)):
                 return None
         # An invocation left unterminated at the end of the fence
         # ('search(' with no closing paren) is malformed code, not a
@@ -415,7 +474,7 @@ class ContentInlineToolExamplesRule(Rule):
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
             content_lines = self._fence_content_lines(fence, lines)
-            callee = self._fence_callee(content_lines)
+            callee = self._fence_callee(content_lines, self._comment_styles(fence.info))
             if callee is None:
                 self._flush(cf, run, violations)
                 run = []
