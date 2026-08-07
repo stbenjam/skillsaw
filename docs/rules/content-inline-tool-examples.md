@@ -3,7 +3,7 @@
 
 # content-inline-tool-examples
 
-Detect runs of fenced examples invoking one tool with varying arguments
+Detect consecutive fenced examples that all invoke the same tool
 
 | | |
 |---|---|
@@ -33,10 +33,12 @@ three different query strings.
 The rule looks at fenced (and indented) code blocks whose content is
 call-syntax invocations of a single tool or function — `search(...)`,
 `client.messages.create(...)` — and flags a run of `min-consecutive` or
-more adjacent blocks that all invoke the same callee, differing only in
-their arguments. Blocks separated by a heading, or by more than
-`max-lines-between` non-blank prose lines (caption lines like "Another
-example:" don't break the run), are not considered adjacent. Fences
+more adjacent blocks that all invoke the same callee. Usually the calls
+differ only in their arguments; byte-identical example blocks are also
+flagged, with the message saying the invocation repeats. Blocks
+separated by a heading, or by more than `max-lines-between` non-blank
+prose lines (caption lines like "Another example:" don't break the run;
+HTML comments aren't counted), are not considered adjacent. Fences
 containing ordinary code — imports, control flow, calls to more than one
 function — never participate.
 
@@ -106,7 +108,7 @@ rules:
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `min-consecutive` | Minimum number of consecutive fenced blocks invoking the same tool or function before the run is flagged | `3` |
-| `max-lines-between` | Maximum number of non-blank prose lines allowed between two adjacent fenced blocks (caption lines like 'Another example:') before the run is considered broken; a heading always breaks the run | `2` |
+| `max-lines-between` | Maximum number of non-blank prose lines allowed between two adjacent fenced blocks (caption lines like 'Another example:') before the run is considered broken; a heading always breaks the run, and HTML comments are not counted | `2` |
 
 
 *Run `skillsaw explain content-inline-tool-examples` to see this documentation and the rule's effective configuration in your terminal.*

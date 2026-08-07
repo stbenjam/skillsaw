@@ -2910,6 +2910,100 @@ class TestContentInlineToolExamplesRule:
         assert len(violations) == 1
         assert "`search`" in violations[0].message
 
+    def test_quoted_paren_in_argument(self, temp_dir):
+        """A ')' inside a string literal must not close the call early."""
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="foo)")',
+                    'search(query="bar)")',
+                    'search(query="baz)")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_indented_second_statement_disqualifies(self, temp_dir):
+        """An indented follow-up statement is not a continuation once the
+        call has closed."""
+        snippet = 'search(query="{}")\n  cleanup()'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(q) for q in ("a", "b", "c")])
+        )
+        assert ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_js_trailing_comment_allowed(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search({query: "a"}); // symbol lookup',
+                    'search({query: "b"}); // file lookup',
+                    'search({query: "c"}); // text lookup',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_comment_lines_within_fence_allowed(self, temp_dir):
+        snippet = '# find the {0}\nsearch(query="x", type="{0}")'
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences([snippet.format(t) for t in ("symbol", "file", "text")])
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_assignment_before_await(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'result = await search(query="a")',
+                    'result = await search(query="b")',
+                    'result = await search(query="c")',
+                ]
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
+    def test_html_comment_gap_not_counted(self, temp_dir):
+        comment = "<!-- keep these in sync\nwith the search schema\nin tools.json -->"
+        (temp_dir / "CLAUDE.md").write_text(
+            self._fences(
+                [
+                    'search(query="a")',
+                    'search(query="b")',
+                    'search(query="c")',
+                ],
+                caption=comment,
+            )
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+
+    def test_blockquote_indented_blocks_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "> Use the search tool. For example:\n"
+            ">\n"
+            '>     search(query="TransferFunds", type="symbol")\n'
+            ">\n"
+            "> Another example, searching for a file:\n"
+            ">\n"
+            '>     search(query="ledger.go", type="file")\n'
+            ">\n"
+            "> A third example, searching text:\n"
+            ">\n"
+            '>     search(query="fixed-point", type="text")\n'
+        )
+        violations = ContentInlineToolExamplesRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "`search`" in violations[0].message
+
     def test_mixed_callees_within_one_fence_pass(self, temp_dir):
         snippet = 'open_account(owner="acme")\ntransfer(source=42, dest=43)'
         (temp_dir / "CLAUDE.md").write_text(self._fences([snippet, snippet, snippet]))

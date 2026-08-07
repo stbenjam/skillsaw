@@ -255,7 +255,7 @@ rules:
     severity: info
     # groups: {}
 
-  # Detect runs of fenced examples invoking one tool with varying arguments
+  # Detect consecutive fenced examples that all invoke the same tool
   content-inline-tool-examples:
     enabled: false
     severity: info

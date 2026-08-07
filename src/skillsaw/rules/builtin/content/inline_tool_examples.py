@@ -9,16 +9,17 @@ from skillsaw.blocks import ContentBlock
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
 # A line that begins a call-syntax invocation: an optional shell prompt,
-# `await`, or assignment prefix, then a dotted identifier and an opening
-# paren.  Anchored per line via MULTILINE by the caller; continuation
-# lines of a multi-line call (indented arguments, closing brackets) are
-# recognized separately in _fence_callee().
+# assignment, and/or `await` (before or after the assignment), then a
+# dotted identifier and an opening paren.  Continuation lines of a
+# multi-line call are tracked by paren depth in _fence_callee().
 _CALL_HEAD_RE = re.compile(
-    r"^(?:\$\s+)?(?:await\s+)?(?:[\w.]+\s*=\s*)?" r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
+    r"^(?:\$\s+)?(?:await\s+)?(?:[\w.]+\s*=\s*)?(?:await\s+)?"
+    r"([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*\("
 )
 
 # Control-flow and I/O keywords that take parens in common languages —
 # `if (x) {` or `while (true)` is code structure, not a tool invocation.
+# Applied to bare names only: `client.print(...)` is a namespaced tool.
 _NON_TOOL_CALLEES = frozenset(
     {
         "if",
@@ -31,6 +32,7 @@ _NON_TOOL_CALLEES = frozenset(
         "except",
         "return",
         "assert",
+        "await",
         "with",
         "def",
         "function",
@@ -39,10 +41,8 @@ _NON_TOOL_CALLEES = frozenset(
     }
 )
 
-# Characters that may open a continuation line of a multi-line call at
-# column 0: closing brackets, a comma-separated argument spillover, or a
-# comment on the call.
-_CONTINUATION_LEAD = ")]}#,"
+# A comment-only line inside a fence ('# find the symbol', '// lookup').
+_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//)")
 
 _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 
@@ -51,9 +51,13 @@ _INDENTED_PREFIX_RE = re.compile(r"^(?:    |\t)")
 # line and stripped from the content so call heads sit at column 0.
 _CONTAINER_PREFIX_RE = re.compile(r"^\s*(?:>\s*)*")
 
+# Blockquote markers alone — used per line where trailing whitespace is
+# code indentation that must survive (indented blocks in blockquotes).
+_QUOTE_MARKER_RE = re.compile(r"^(?:\s*>)+\s?")
+
 
 class ContentInlineToolExamplesRule(Rule):
-    """Detect runs of fenced examples invoking one tool with varying arguments"""
+    """Detect consecutive fenced examples that all invoke the same tool"""
 
     formats = None
     repo_types = None  # instruction content appears in every repo type
@@ -79,7 +83,7 @@ class ContentInlineToolExamplesRule(Rule):
                 "Maximum number of non-blank prose lines allowed between two "
                 "adjacent fenced blocks (caption lines like 'Another "
                 "example:') before the run is considered broken; a heading "
-                "always breaks the run"
+                "always breaks the run, and HTML comments are not counted"
             ),
         },
     }
@@ -118,22 +122,41 @@ class ContentInlineToolExamplesRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Detect runs of fenced examples invoking one tool with varying arguments"
+        return "Detect consecutive fenced examples that all invoke the same tool"
 
     def default_severity(self) -> Severity:
         return Severity.INFO
 
     @staticmethod
+    def _dedent(raw: List[str]) -> List[str]:
+        """Strip the common leading whitespace of the non-blank lines.
+
+        Unlike a fixed 4-space strip this normalizes indented blocks at
+        any nesting depth (a list-nested indented block sits 6+ columns
+        deep) while preserving the relative indent of continuation lines.
+        """
+        indents = [len(line) - len(line.lstrip()) for line in raw if line.strip()]
+        if not indents:
+            return raw
+        cut = min(indents)
+        return [line[cut:] if line.strip() else line for line in raw]
+
+    @staticmethod
     def _fence_content_lines(fence, lines: List[str]) -> List[str]:
-        """The code lines of *fence*, with delimiters and indentation removed.
+        """The code lines of *fence*, with delimiters and container/indent
+        prefixes removed so call heads sit at column 0.
 
         ``body_line_start``/``body_line_end`` are 1-based and include the
         fence delimiters for fenced blocks; indented blocks have no
-        delimiters and carry their 4-space/tab prefix on every line.
+        delimiters and carry blockquote markers and/or their code indent
+        on every line.
         """
         if fence.indented:
-            raw = lines[fence.body_line_start - 1 : fence.body_line_end]
-            return [_INDENTED_PREFIX_RE.sub("", line) for line in raw]
+            raw = [
+                _QUOTE_MARKER_RE.sub("", line)
+                for line in lines[fence.body_line_start - 1 : fence.body_line_end]
+            ]
+            return ContentInlineToolExamplesRule._dedent(raw)
         raw = lines[fence.body_line_start : fence.body_line_end - 1]
         opening = lines[fence.body_line_start - 1] if fence.body_line_start <= len(lines) else ""
         prefix = _CONTAINER_PREFIX_RE.match(opening).group(0)
@@ -142,62 +165,93 @@ class ContentInlineToolExamplesRule(Rule):
         return raw
 
     @staticmethod
-    def _call_consumes_line(line: str, open_idx: int) -> bool:
-        """True when the call whose paren opens at *open_idx* spans the line.
+    def _advance(
+        line: str, start: int, depth: int, quote: Optional[str]
+    ) -> Tuple[int, Optional[str], Optional[str]]:
+        """Track paren depth and quote state across ``line[start:]``.
 
-        Walks paren depth from the opening paren; once the call closes,
-        only a ``;`` or a comment may follow — ``search(a=1); cleanup()``
-        is a multi-statement snippet, not a bare invocation.  A call whose
-        parens stay open continues on the next line.
+        Parens inside string literals are data, not syntax —
+        ``search(query="foo)")`` must not close early.  Returns
+        ``(depth, quote, trailer)`` where *trailer* is the text after the
+        paren that closed the call, or ``None`` while the call stays open.
         """
-        depth = 0
-        for i in range(open_idx, len(line)):
+        i = start
+        length = len(line)
+        while i < length:
             char = line[i]
-            if char == "(":
+            if quote:
+                if char == "\\":
+                    i += 2
+                    continue
+                if char == quote:
+                    quote = None
+            elif char in "\"'":
+                quote = char
+            elif char == "(":
                 depth += 1
             elif char == ")":
                 depth -= 1
                 if depth == 0:
-                    trailer = line[i + 1 :].strip()
-                    return trailer in ("", ";") or trailer.startswith("#")
-        return True
+                    return 0, None, line[i + 1 :]
+            i += 1
+        return depth, quote, None
 
     @staticmethod
-    def _fence_callee(content_lines: List[str]) -> Optional[str]:
+    def _is_call_trailer(trailer: str) -> bool:
+        """True when *trailer* may follow a closed call: nothing, a lone
+        statement terminator, and/or a comment (`#` or `//`)."""
+        trailer = trailer.strip()
+        if trailer.startswith(";"):
+            trailer = trailer[1:].strip()
+        return trailer == "" or trailer.startswith("#") or trailer.startswith("//")
+
+    @classmethod
+    def _fence_callee(cls, content_lines: List[str]) -> Optional[str]:
         """The single tool/function every invocation in the fence targets.
 
         Returns ``None`` unless the fence consists solely of call-syntax
-        invocations of one callee (plus their continuation lines) — mixed
-        callees, trailing statements after a call, and ordinary code
-        (imports, control flow, prose) disqualify the fence.  The keyword
-        exclusion applies to bare names only: ``print(...)`` is code,
-        ``client.print(...)`` is a namespaced tool.
+        invocations of one callee (plus their continuation lines and
+        comment lines) — mixed callees, statements trailing a call on the
+        same or a following line, and ordinary code (imports, control
+        flow, prose) disqualify the fence.  The keyword exclusion applies
+        to bare names only: ``print(...)`` is code, ``client.print(...)``
+        is a namespaced tool.
         """
         callee: Optional[str] = None
+        depth = 0
+        quote: Optional[str] = None
         for line in content_lines:
             if not line.strip():
                 continue
+            if depth > 0:
+                depth, quote, trailer = cls._advance(line, 0, depth, quote)
+                if trailer is not None and not cls._is_call_trailer(trailer):
+                    return None
+                continue
+            if _COMMENT_LINE_RE.match(line):
+                continue
             match = _CALL_HEAD_RE.match(line)
-            if match:
-                name = match.group(1)
-                if "." not in name and name in _NON_TOOL_CALLEES:
-                    return None
-                if not ContentInlineToolExamplesRule._call_consumes_line(line, match.end() - 1):
-                    return None
-                if callee is None:
-                    callee = name
-                elif name != callee:
-                    return None
-                continue
-            # Continuation of a multi-line call: an indented argument line
-            # or a closing-bracket/comment line.
-            if line[0].isspace() or line[0] in _CONTINUATION_LEAD:
-                continue
-            return None
+            if not match:
+                return None
+            name = match.group(1)
+            if "." not in name and name in _NON_TOOL_CALLEES:
+                return None
+            if callee is None:
+                callee = name
+            elif name != callee:
+                return None
+            depth, quote, trailer = cls._advance(line, match.end() - 1, 0, None)
+            if trailer is not None and not cls._is_call_trailer(trailer):
+                return None
         return callee
 
     def _run_breaks(
-        self, lines: List[str], heading_lines: frozenset, prev_end: int, next_start: int
+        self,
+        lines: List[str],
+        heading_lines: frozenset,
+        comment_lines: frozenset,
+        prev_end: int,
+        next_start: int,
     ) -> bool:
         """True when the gap between two fences ends the run.
 
@@ -209,11 +263,15 @@ class ContentInlineToolExamplesRule(Rule):
         *heading_lines* holds the AST heading construct lines, so a
         hash-prefixed caption like ``#release-notes`` (not a heading —
         ATX requires a space) counts as prose instead of a break.
+        *comment_lines* holds HTML comment spans, which are invisible in
+        rendered output and count as neither prose nor a break.
         """
         non_blank = 0
         for line_num in range(prev_end + 1, next_start):
             if line_num in heading_lines:
                 return True
+            if line_num in comment_lines:
+                continue
             # A bare '>' between fences in a blockquote is a blank line,
             # not a caption.
             if not _CONTAINER_PREFIX_RE.sub("", lines[line_num - 1]).strip():
@@ -255,6 +313,11 @@ class ContentInlineToolExamplesRule(Rule):
             for h in cf.markdown.headings()
             for line in range(h.body_line, max(h.body_line_end, h.body_line + 1))
         )
+        comment_lines = frozenset(
+            line
+            for c in cf.markdown.html_comments()
+            for line in range(c.body_line_start, c.body_line_end + 1)
+        )
         violations: List[RuleViolation] = []
         run: List[Tuple[Any, str, tuple]] = []
         for fence in fences:
@@ -267,7 +330,11 @@ class ContentInlineToolExamplesRule(Rule):
             if run:
                 prev_fence, prev_callee, _ = run[-1]
                 if callee != prev_callee or self._run_breaks(
-                    lines, heading_lines, prev_fence.body_line_end, fence.body_line_start
+                    lines,
+                    heading_lines,
+                    comment_lines,
+                    prev_fence.body_line_end,
+                    fence.body_line_start,
                 ):
                     self._flush(cf, run, violations)
                     run = []

@@ -19,10 +19,12 @@ three different query strings.
 The rule looks at fenced (and indented) code blocks whose content is
 call-syntax invocations of a single tool or function — `search(...)`,
 `client.messages.create(...)` — and flags a run of `min-consecutive` or
-more adjacent blocks that all invoke the same callee, differing only in
-their arguments. Blocks separated by a heading, or by more than
-`max-lines-between` non-blank prose lines (caption lines like "Another
-example:" don't break the run), are not considered adjacent. Fences
+more adjacent blocks that all invoke the same callee. Usually the calls
+differ only in their arguments; byte-identical example blocks are also
+flagged, with the message saying the invocation repeats. Blocks
+separated by a heading, or by more than `max-lines-between` non-blank
+prose lines (caption lines like "Another example:" don't break the run;
+HTML comments aren't counted), are not considered adjacent. Fences
 containing ordinary code — imports, control flow, calls to more than one
 function — never participate.
 
