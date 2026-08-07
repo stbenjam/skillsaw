@@ -34,6 +34,7 @@ from skillsaw.rules.builtin.content import (
     ContentRepeatedDirectiveRule,
     ContentEmphasisDensityRule,
     ContentMissingStopConditionRule,
+    ContentProgressiveDisclosureRule,
 )
 
 # Stripe test keys built from parts to avoid triggering GitHub push protection
@@ -3135,3 +3136,145 @@ class TestContentRuleFalsePositiveGuards:
         )
         assert len(violations) == 1
         assert "17.2% exceeds the 15% limit" in violations[0].message
+
+
+class TestContentProgressiveDisclosureRule:
+    _PARA = (
+        "Validate the payload against the schema, normalize the field names,\n"
+        "then apply the transformation chain in order, logging each stage.\n"
+    )
+
+    def _write_claude(self, temp_dir, extra="", repeats=6):
+        (temp_dir / "CLAUDE.md").write_text("# Project notes\n\n" + self._PARA * repeats + extra)
+
+    def _write_skill(self, temp_dir, extra="", files=()):
+        skill = temp_dir / ".claude" / "skills" / "deploy"
+        skill.mkdir(parents=True)
+        for rel in files:
+            target = skill / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("Detail lives here.\n")
+        (skill / "SKILL.md").write_text(
+            "---\nname: deploy\ndescription: Deploy the service. Use when releasing.\n---\n\n"
+            "# Deploy\n\n" + self._PARA * 6 + extra
+        )
+        return skill
+
+    def test_rule_metadata(self):
+        rule = ContentProgressiveDisclosureRule()
+        assert rule.rule_id == "content-progressive-disclosure"
+        assert rule.default_severity() == Severity.INFO
+        assert rule.default_enabled == "auto"
+
+    def test_default_limits_over_budget_fires(self, temp_dir):
+        self._write_claude(temp_dir, repeats=200)  # ~6.5k tokens
+        violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "claude-md" in violations[0].message
+        assert violations[0].severity == Severity.INFO
+
+    def test_under_threshold_silent(self, temp_dir):
+        self._write_claude(temp_dir)
+        violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
+        assert violations == []
+
+    def test_monolith_claude_md_fires(self, temp_dir):
+        self._write_claude(temp_dir)
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "loads on demand" in violations[0].message
+
+    def test_link_to_local_file_counts(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\nSee [testing notes](docs/testing.md).\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_import_counts(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\n@docs/testing.md\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_broken_link_does_not_count(self, temp_dir):
+        self._write_claude(temp_dir, extra="\nSee [testing notes](docs/missing.md).\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_prose_path_mention_does_not_count_for_instructions(self, temp_dir):
+        """Bare path narration is not disclosure for instruction files."""
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        self._write_claude(temp_dir, extra="\nThe docs/testing.md file explains tests.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_self_link_does_not_count(self, temp_dir):
+        self._write_claude(temp_dir, extra="\nKeep [this file](CLAUDE.md) short.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_external_link_does_not_count(self, temp_dir):
+        self._write_claude(temp_dir, extra="\nSee [the docs](https://example.com/docs/guide.md).\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_no_references_fires(self, temp_dir):
+        self._write_skill(temp_dir)
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert violations[0].file_path.name == "SKILL.md"
+        assert "SKILL.md" in violations[0].message
+
+    def test_skill_fence_script_mention_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\n```bash\npython scripts/run.py --check\n```\n",
+            files=("scripts/run.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_bare_name_mention_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\nRun helper.py from the scripts directory when stages fail.\n",
+            files=("scripts/helper.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_link_to_reference_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\nFollow [the checklist](references/checklist.md) for each stage.\n",
+            files=("references/checklist.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_mention_of_missing_script_does_not_count(self, temp_dir):
+        self._write_skill(temp_dir, extra="\nRun scripts/run.py before deploying.\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_extra_category_via_config(self, temp_dir):
+        commands = temp_dir / ".claude" / "commands"
+        commands.mkdir(parents=True)
+        (commands / "ship.md").write_text(
+            "---\ndescription: Ship the release\n---\n\n# Ship\n\n" + self._PARA * 6
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"command": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "command" in violations[0].message
+
+    def test_config_validation(self):
+        with pytest.raises(ValueError, match="must be integers"):
+            ContentProgressiveDisclosureRule({"limits": {"skill": "big"}})
+        with pytest.raises(ValueError, match="must be integers"):
+            ContentProgressiveDisclosureRule({"limits": {"skill": True}})
