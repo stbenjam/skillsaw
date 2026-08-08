@@ -64,6 +64,20 @@ def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Opti
     return cache[resolved]
 
 
+def _hash(raw: str) -> str:
+    """Hash one fingerprint input, tolerating text no codec can encode.
+
+    A JSON config may carry an escaped lone surrogate (``"\\ud800"``) — pure
+    ASCII on disk, so the file reads back fine, but ``json`` decodes it to an
+    unpaired surrogate. It reaches here through a block's embedded identity or
+    a rule's message, and a plain ``str.encode`` raises ``UnicodeEncodeError``
+    on it, aborting the entire baseline rather than one entry.
+    ``surrogatepass`` is byte-identical for every string that *can* be
+    encoded, so no existing fingerprint changes.
+    """
+    return hashlib.sha256(raw.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
 def fingerprint_violation(
     violation: RuleViolation,
     root_path: Path,
@@ -104,7 +118,7 @@ def fingerprint_violation(
             parts.append(embedded)
         if violation.metric:
             parts.append(violation.metric)
-        return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:16]
+        return _hash("\0".join(parts))
 
     discriminator_suffix = (
         f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""
@@ -120,7 +134,7 @@ def fingerprint_violation(
     )
     if identity is not None and rel_path is not None:
         raw = f"{rule_id}\0{rel_path}\0{identity}{discriminator_suffix}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+        return _hash(raw)
 
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
@@ -130,14 +144,14 @@ def fingerprint_violation(
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
             raw = f"{rule_id}\0{rel_path}\0{line_content}{discriminator_suffix}"
-            return hashlib.sha256(raw.encode()).hexdigest()[:16]
+            return _hash(raw)
 
     if rel_path is not None:
         raw = f"{rule_id}\0{rel_path}\0{violation.message}{discriminator_suffix}"
     else:
         raw = f"{rule_id}\0{violation.message}{discriminator_suffix}"
 
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return _hash(raw)
 
 
 def build_baseline(

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json
+from skillsaw.utils import read_text, read_json, read_json_strict
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -148,8 +148,8 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
     return result
 
 
-def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
-    data, error = read_json(path)
+def _parse_json_file(path: Path, *, strict: bool = False) -> Tuple[Optional[Any], Optional[str]]:
+    data, error = (read_json_strict if strict else read_json)(path)
     return data, error
 
 
@@ -164,13 +164,19 @@ class JsonConfigBlock(LintTarget):
     """
 
     category: str = ""
+    #: Whether to reject ``NaN``/``Infinity`` — tokens ``json.loads`` accepts
+    #: and no JSON host does, so the file is unreadable to the tool it
+    #: configures. Off by default: the pre-existing block types have shipped
+    #: results that a tightened parser would turn into "Invalid JSON" on
+    #: upgrade. The locations added since opt in, having no such history.
+    strict_json: ClassVar[bool] = False
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path)
+            self._parsed = _parse_json_file(self.path, strict=self.strict_json)
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -275,6 +281,7 @@ class CursorHooksBlock(JsonConfigBlock):
     """
 
     category: str = "hooks"
+    strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         return "hooks.json (cursor hooks)"
@@ -415,6 +422,13 @@ class McpBlock(JsonConfigBlock):
     #: reads; an editor that loads its own MCP config has no such built-ins,
     #: so shadowing is not a thing that can happen there.
     claude_builtins_reserved: ClassVar[bool] = True
+    #: Whether the connection field must be *usable* and not merely present.
+    #: ``{"command": []}`` names nothing a host can spawn, so the server
+    #: never starts. Left False for the Claude-family files, whose results
+    #: predate the check and are held stable (a Codex-only plugin opts in
+    #: separately, per-path); the editor locations are new surfaces with no
+    #: established results to preserve, so they require it from the start.
+    require_usable_connection: ClassVar[bool] = False
 
     @property
     def servers(self) -> List[McpServerConfig]:
@@ -459,6 +473,8 @@ class CursorMcpBlock(McpBlock):
 
     allow_bare_server_map: ClassVar[bool] = False
     claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         return "mcp.json (Cursor MCP)"
@@ -479,6 +495,8 @@ class VsCodeMcpBlock(McpBlock):
     allow_bare_server_map: ClassVar[bool] = False
     non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
     claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"

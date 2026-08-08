@@ -283,8 +283,10 @@ class CursorHooksValidRule(Rule):
         if timeout is not None and (
             isinstance(timeout, bool)
             or not isinstance(timeout, (int, float))
-            # Python's json accepts NaN/Infinity; a strict reader does not,
-            # so treating them as numbers would call an unloadable file clean.
+            # Normally unreachable: the block parses strictly, so a file
+            # carrying NaN/Infinity fails above as invalid JSON. Kept
+            # because this rule's correctness should not depend on a flag
+            # set on a class in another module.
             or not math.isfinite(timeout)
         ):
             violations.append(

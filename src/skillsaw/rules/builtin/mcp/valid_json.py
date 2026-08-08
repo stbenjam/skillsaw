@@ -115,7 +115,9 @@ class McpValidJsonRule(Rule):
             # Conditional strictness, not a skip: the tightened
             # non-empty-string checks apply only inside Codex-ONLY plugins,
             # so dual-manifest plugins keep their established Claude results.
-            require_usable = context.in_codex_only_plugin(block.path)
+            require_usable = block.require_usable_connection or context.in_codex_only_plugin(
+                block.path
+            )
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
@@ -259,10 +261,17 @@ class McpValidJsonRule(Rule):
             return violations
 
         for server_name, server_config in mcp_servers.items():
+            # Sanitized once, used by every message below. A server name is
+            # author-controlled text that lands in terminal output, JSON and
+            # SARIF, so it gets the same treatment as any other echoed
+            # manifest value: userinfo redacted, control characters and lone
+            # surrogates replaced. Bound at the top of the loop rather than
+            # per message so a diagnostic added later cannot forget it.
+            shown = safe_display(server_name)
             if not isinstance(server_config, dict):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' configuration must be an object",
+                        f"MCP server '{shown}' configuration must be an object",
                         file_path=file_path,
                     )
                 )
@@ -271,7 +280,7 @@ class McpValidJsonRule(Rule):
             if check_reserved and server_name in self.RESERVED_SERVER_NAMES:
                 violations.append(
                     self.violation(
-                        f"MCP server name '{server_name}' is reserved "
+                        f"MCP server name '{shown}' is reserved "
                         f"for a Claude Code built-in server",
                         file_path=file_path,
                         severity=Severity.WARNING,
@@ -295,7 +304,7 @@ class McpValidJsonRule(Rule):
             if server_type not in self.VALID_MCP_TYPES:
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' has invalid type '{server_type}'. Must be one of: {', '.join(self.VALID_MCP_TYPES)}",
+                        f"MCP server '{shown}' has invalid type '{safe_display(server_type)}'. Must be one of: {', '.join(self.VALID_MCP_TYPES)}",
                         file_path=file_path,
                     )
                 )
@@ -304,7 +313,7 @@ class McpValidJsonRule(Rule):
                 if required_field not in server_config:
                     violations.append(
                         self.violation(
-                            f"MCP server '{server_name}' with type '{server_type}' must have a '{required_field}' field",
+                            f"MCP server '{shown}' with type '{safe_display(server_type)}' must have a '{required_field}' field",
                             file_path=file_path,
                         )
                     )
@@ -320,7 +329,7 @@ class McpValidJsonRule(Rule):
                 ):
                     violations.append(
                         self.violation(
-                            f"MCP server '{safe_display(server_name)}' '{required_field}' "
+                            f"MCP server '{shown}' '{required_field}' "
                             "must be a non-empty string",
                             file_path=file_path,
                         )
@@ -329,7 +338,7 @@ class McpValidJsonRule(Rule):
             if "args" in server_config and not isinstance(server_config["args"], list):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'args' must be an array",
+                        f"MCP server '{shown}' 'args' must be an array",
                         file_path=file_path,
                     )
                 )
@@ -337,7 +346,7 @@ class McpValidJsonRule(Rule):
             if "env" in server_config and not isinstance(server_config["env"], dict):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'env' must be an object",
+                        f"MCP server '{shown}' 'env' must be an object",
                         file_path=file_path,
                     )
                 )
@@ -345,7 +354,7 @@ class McpValidJsonRule(Rule):
             if "cwd" in server_config and not isinstance(server_config["cwd"], str):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'cwd' must be a string",
+                        f"MCP server '{shown}' 'cwd' must be a string",
                         file_path=file_path,
                     )
                 )
@@ -353,7 +362,7 @@ class McpValidJsonRule(Rule):
             if "url" in server_config and not isinstance(server_config["url"], str):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'url' must be a string",
+                        f"MCP server '{shown}' 'url' must be a string",
                         file_path=file_path,
                     )
                 )
@@ -361,7 +370,7 @@ class McpValidJsonRule(Rule):
             if "headers" in server_config and not isinstance(server_config["headers"], dict):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'headers' must be an object",
+                        f"MCP server '{shown}' 'headers' must be an object",
                         file_path=file_path,
                     )
                 )
@@ -379,7 +388,7 @@ class McpValidJsonRule(Rule):
                     if not is_valid_number:
                         violations.append(
                             self.violation(
-                                f"MCP server '{server_name}' '{timeout_field}' must be a number",
+                                f"MCP server '{shown}' '{timeout_field}' must be a number",
                                 file_path=file_path,
                             )
                         )
@@ -389,7 +398,7 @@ class McpValidJsonRule(Rule):
             ):
                 violations.append(
                     self.violation(
-                        f"MCP server '{server_name}' 'headersHelper' must be a string",
+                        f"MCP server '{shown}' 'headersHelper' must be a string",
                         file_path=file_path,
                     )
                 )
@@ -399,7 +408,7 @@ class McpValidJsonRule(Rule):
                 if not isinstance(val, bool):
                     violations.append(
                         self.violation(
-                            f"MCP server '{server_name}' 'alwaysLoad' must be a boolean",
+                            f"MCP server '{shown}' 'alwaysLoad' must be a boolean",
                             file_path=file_path,
                         )
                     )
@@ -409,7 +418,7 @@ class McpValidJsonRule(Rule):
                 if not isinstance(oauth, dict):
                     violations.append(
                         self.violation(
-                            f"MCP server '{server_name}' 'oauth' must be an object",
+                            f"MCP server '{shown}' 'oauth' must be an object",
                             file_path=file_path,
                         )
                     )

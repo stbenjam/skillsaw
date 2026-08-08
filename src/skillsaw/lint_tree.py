@@ -50,7 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
-from .utils import read_yaml
+from .utils import has_generated_marker, read_text, read_yaml
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
@@ -198,10 +198,30 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         for kind in ("agents", "prompts", "chatmodes", "instructions"):
             if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
                 apm_compiled_github.add(root_github / kind)
+        # `.apm/instructions/` compiles to two places, not one: the
+        # per-glob copies under `.github/instructions/` *and* the whole
+        # concatenation as the root `copilot-instructions.md`. Guarding
+        # only the directory left the root file attached beside its own
+        # sources — the duplication this set exists to prevent, which is
+        # why skillsaw's own config had to exclude that path by hand.
+        #
+        # A file, unlike a directory, can say for itself whether it is
+        # output, so require the stamp too. A source directory proves APM
+        # *would* write here; the stamp proves it did. Demanding both keeps
+        # a hand-written Copilot file linted — including one a user wrote
+        # before adopting APM, and one written by an APM version that
+        # compiles only the directory.
+        root_copilot = context.root_path / ".github" / "copilot-instructions.md"
+        if (
+            root_github is not None
+            and (context.root_path / ".apm" / "instructions").is_dir()
+            and has_generated_marker(read_text(root_copilot))
+        ):
+            apm_compiled_github.add(root_github / "copilot-instructions.md")
 
-    def _is_apm_compiled_github(directory: Path) -> bool:
-        """Whether *directory* is APM output rather than authored content."""
-        resolved = safe_resolve(directory)
+    def _is_apm_compiled_github(path: Path) -> bool:
+        """Whether *path* is APM output rather than authored content."""
+        resolved = safe_resolve(path)
         return resolved is not None and resolved in apm_compiled_github
 
     def _add_block(
@@ -463,7 +483,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
-        _add_block(root, github_dir / "copilot-instructions.md", InstructionBlock)
+        copilot_instructions = github_dir / "copilot-instructions.md"
+        if not _is_apm_compiled_github(copilot_instructions):
+            _add_block(root, copilot_instructions, InstructionBlock)
         # ``.github/instructions/**/*.instructions.md`` needs no entry: the
         # repository scan collects every ``*.instructions.md`` wherever it
         # lives, and they are attached with the root instruction files above.
