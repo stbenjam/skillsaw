@@ -301,8 +301,9 @@ class CursorHooksBlock(JsonConfigBlock):
                 # would silently exempt every Cursor hook.
                 entry_type = _as_str(entry.get("type")) or "command"
                 if entry_type != "command":
-                    # A prompt hook asks the model a question; it spawns no
+                    # A prompt hook injects text instead of spawning a
                     # process, so the command scanners have nothing to read.
+                    # ``prompt_hooks()`` surfaces its prose separately.
                     continue
                 command = _as_str(entry.get("command"))
                 if not command:
@@ -318,6 +319,38 @@ class CursorHooksBlock(JsonConfigBlock):
             if configs:
                 result[event_type] = configs
         return result
+
+    def prompt_hooks(self) -> List[Tuple[str, int, str]]:
+        """Return ``(event_type, index, prompt)`` for every prompt hook.
+
+        The complement of :attr:`events`, which covers only the handlers
+        that run a command. A prompt hook is still a hook — it fires on the
+        same lifecycle events and ships in the same file — but what it
+        delivers is text for the model, so it belongs to the content rules
+        rather than the command scanners.
+
+        The index is the entry's position in its event's list, which is how
+        a violation names one prompt among several on the same event.
+        """
+        data = self.raw_data
+        if data is None:
+            return []
+        hooks_obj = data.get("hooks")
+        if not isinstance(hooks_obj, dict):
+            return []
+        found: List[Tuple[str, int, str]] = []
+        for event_type, entries in hooks_obj.items():
+            if not isinstance(entries, list):
+                continue
+            for index, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    continue
+                if _as_str(entry.get("type")) != "prompt":
+                    continue
+                prompt = _as_str(entry.get("prompt"))
+                if prompt:
+                    found.append((event_type, index, prompt))
+        return found
 
 
 @dataclass

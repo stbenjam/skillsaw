@@ -333,16 +333,21 @@ def _split_mdc_frontmatter(content: str) -> Optional[Tuple[str, str]]:
     empty block (``---\\n---``), which Cursor reads perfectly well as a rule
     with no metadata.
     """
-    if not content.startswith("---"):
-        return None
     lines = content.split("\n")
+    # The opening delimiter must be exactly ``---``. ``----`` is a setext
+    # heading rule, and treating it as an opener would swallow the prose up
+    # to the next thematic break — hiding it from every content rule.
+    if not lines or lines[0].strip() != "---":
+        return None
     for index, line in enumerate(lines[1:], start=1):
         if line.strip() == "---":
             return "\n".join(lines[1:index]), "\n".join(lines[index + 1 :])
     return None
 
 
-def _parse_mdc_frontmatter(text: str) -> Dict[str, Any]:
+def _parse_mdc_frontmatter(
+    text: str, line_offset: int = 0
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
     """Read ``.mdc`` frontmatter the permissive way Cursor does.
 
     Cursor's rule reader is not a YAML parser, and its own documentation
@@ -354,30 +359,49 @@ def _parse_mdc_frontmatter(text: str) -> Dict[str, Any]:
     Only the scalar and simple-list shapes Cursor documents are recognised;
     quoting is preserved so a quoted ``"true"`` stays the string that makes
     ``alwaysApply`` silently inert.
+
+    Returns the parsed mapping and a key-to-file-line map. The line map is
+    the whole reason this parser tracks positions: the strict YAML line
+    mapper cannot read a file strict YAML rejected, so without one every
+    violation on Cursor's own documented syntax would lose its line.
     """
     data: Dict[str, Any] = {}
+    key_lines: Dict[str, int] = {}
     pending_list_key: Optional[str] = None
-    for raw_line in text.splitlines():
+    for index, raw_line in enumerate(text.splitlines()):
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
             continue
         item = _MDC_LIST_ITEM_RE.match(raw_line)
         if item is not None and pending_list_key is not None:
             value, _ = _unquote(item.group(1))
-            data.setdefault(pending_list_key, []).append(value)
+            # The bare ``key:`` above stored ``None`` to mark "declared, no
+            # scalar". The first item is what proves it was a list header,
+            # so the list is created here rather than there — ``setdefault``
+            # would hand back that ``None`` and append to it.
+            existing = data.get(pending_list_key)
+            if isinstance(existing, list):
+                existing.append(value)
+            else:
+                data[pending_list_key] = [value]
             continue
         match = _MDC_KEY_RE.match(raw_line)
         if match is None:
             continue
         key, rest = match.group(1), match.group(2)
+        key_lines[key] = index + line_offset
         if not rest.strip():
             # A bare ``key:`` opens a list block or declares an empty value.
+            # Which one it is only becomes clear at the next line.
             pending_list_key = key
             data[key] = None
             continue
         pending_list_key = None
         value, _ = _unquote(rest)
         data[key] = value
-    return {key: value for key, value in data.items() if value is not None or key not in data}
+    # Null values are kept: ``alwaysApply:`` with no value is a defect the
+    # strict parser reports, and dropping the key here would make the
+    # lenient path silently more permissive than the one it stands in for.
+    return data, key_lines
 
 
 @dataclass(eq=False)
@@ -385,6 +409,11 @@ class CursorRuleBlock(FrontmatteredBlock):
     """.cursor/rules/**/*.mdc files."""
 
     category: str = "instruction"
+
+    #: Key-to-line map from the lenient reader, populated only when the
+    #: lenient reader actually ran. Empty means the strict YAML line mapper
+    #: is authoritative, as it is for every well-formed file.
+    _mdc_key_lines: Optional[Dict[str, int]] = field(default=None, repr=False)
 
     def _parse_frontmatter_file(
         self,
@@ -411,7 +440,18 @@ class CursorRuleBlock(FrontmatteredBlock):
             return parsed
         fm_text, body = split
         fm_line_count = content[: len(content) - len(body)].count("\n")
-        return _parse_mdc_frontmatter(fm_text), None, None, body, fm_line_count
+        # Frontmatter text starts on file line 2, after the opening ``---``,
+        # and the parser counts its own lines from 0.
+        data, key_lines = _parse_mdc_frontmatter(fm_text, line_offset=2)
+        self._mdc_key_lines = key_lines
+        return data, None, None, body, fm_line_count
+
+    def key_line(self, key: str) -> Optional[int]:
+        """Prefer the lenient reader's line map when it did the parsing."""
+        self._ensure_parsed()
+        if self._mdc_key_lines is not None:
+            return self._mdc_key_lines.get(key)
+        return super().key_line(key)
 
 
 @dataclass(eq=False)

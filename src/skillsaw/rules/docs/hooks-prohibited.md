@@ -7,6 +7,11 @@ execution vector — even legitimate hooks should be inventoried. This
 rule inventories hooks in plugin `hooks/hooks.json`, `.claude/settings*.json`,
 **skill/agent frontmatter** (`hooks:` key), and Cursor's `.cursor/hooks.json`.
 
+A Cursor `type: "prompt"` hook runs no command, so there is nothing for a
+command allowlist to match — it is reported whenever the rule is on. It is
+still a hook: it fires on the same lifecycle events, and what it injects is
+text the model acts on.
+
 ## Examples
 
 **Bad (no allowlist configured):**

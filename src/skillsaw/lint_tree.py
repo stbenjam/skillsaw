@@ -25,6 +25,7 @@ from .blocks import (
     CopilotPromptBlock,
     CursorCommandBlock,
     CursorHooksBlock,
+    CursorPromptHookBlock,
     CursorRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
@@ -374,18 +375,42 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_parser_block(root, cursor_dir / "mcp.json", McpBlock)
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
+    # APM's Copilot target compiles `.apm/<kind>/` into the root
+    # `.github/<kind>/`. Attaching both would report every finding twice and
+    # point half of them at a generated file the author must not edit. The
+    # matching `.apm/` source is the evidence — a `.github/prompts/` in a
+    # repository with no `.apm/prompts/` is authored content and stays.
+    apm_compiled_github: Set[Path] = set()
+    if context.has_apm:
+        root_github = safe_resolve(context.root_path / ".github")
+        for kind in ("agents", "prompts", "chatmodes"):
+            if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
+                apm_compiled_github.add(root_github / kind)
+
+    def _is_apm_compiled_github(directory: Path) -> bool:
+        """Whether *directory* is APM output rather than authored content."""
+        resolved = safe_resolve(directory)
+        return resolved is not None and resolved in apm_compiled_github
+
     for github_dir in context.agent_tool_dirs(".github"):
         _add_block(root, github_dir / "copilot-instructions.md", InstructionBlock)
         # ``.github/instructions/**/*.instructions.md`` needs no entry: the
         # repository scan collects every ``*.instructions.md`` wherever it
         # lives, and they are attached with the root instruction files above.
-        _add_glob(root, github_dir / "prompts", "**/*.prompt.md", CopilotPromptBlock)
-        # VS Code detects *any* .md in .github/agents as a custom agent;
-        # .agent.md is the recommended convention, not the detection rule.
-        _add_glob(root, github_dir / "agents", "**/*.md", CopilotAgentBlock)
-        # Chat modes are the pre-2026 spelling of custom agents. VS Code
-        # still loads them, so they are still shipped prose.
-        _add_glob(root, github_dir / "chatmodes", "**/*.chatmode.md", CopilotAgentBlock)
+        for sub, pattern, block_cls in (
+            ("prompts", "**/*.prompt.md", CopilotPromptBlock),
+            # VS Code detects *any* .md in .github/agents as a custom agent;
+            # .agent.md is the recommended convention, not the detection rule.
+            ("agents", "**/*.md", CopilotAgentBlock),
+            # Chat modes are the pre-2026 spelling of custom agents. VS Code
+            # documents renaming them to .agent.md; still linted because the
+            # prose ships in the repository either way.
+            ("chatmodes", "**/*.chatmode.md", CopilotAgentBlock),
+        ):
+            directory = github_dir / sub
+            if _is_apm_compiled_github(directory):
+                continue
+            _add_glob(root, directory, pattern, block_cls)
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
@@ -687,6 +712,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Promptfoo eval configs ---
     _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
+
+    # --- Cursor prompt-hook content blocks ---
+    # Attached to the root rather than to the hooks block: a JsonConfigBlock
+    # is a leaf, and hanging prose off it would put content blocks inside the
+    # config half of the hierarchy.
+    root.children.extend(CursorPromptHookBlock.gather_from_tree(root))
 
     # --- Promptfoo prompt content blocks ---
     for block in PromptfooPromptBlock.gather_from_tree(root):

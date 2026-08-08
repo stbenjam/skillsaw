@@ -2,13 +2,16 @@
 Tests for the lint tree data structure and tree builder.
 """
 
+import json
 from pathlib import Path
 
 from skillsaw.blocks import (
+    BodyContent,
     ClineWorkflowBlock,
     CopilotAgentBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
+    CursorPromptHookBlock,
     CursorRuleBlock,
     InstructionBlock,
     QwenMdBlock,
@@ -278,6 +281,80 @@ def test_tree_contains_editor_tool_blocks(temp_dir):
     # Exact, not a subset: if the dedup regressed, release.md would land in
     # both sets and be double-budgeted as always-on system-prompt text.
     assert names(InstructionBlock) == {"style.md", "policy.txt"}
+
+
+def test_setext_underline_is_not_read_as_mdc_frontmatter(temp_dir):
+    """``----`` opens a heading rule, so the prose under it stays body text.
+
+    Treating it as a frontmatter delimiter would end the block at the next
+    thematic break and hand the content rules a body missing everything
+    before it.
+    """
+    rules = temp_dir / ".cursor" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "notes.mdc").write_text(
+        "----\n\nUse int64 minor units for money.\n\n---\n\nMore prose.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+    block = tree.find(CursorRuleBlock)[0]
+    body = "".join(
+        child.read_body(strip_code_blocks=False) or "" for child in block.find(BodyContent)
+    )
+
+    assert "int64 minor units" in body
+    assert "More prose." in body
+
+
+def test_cursor_prompt_hook_text_is_a_content_block(temp_dir):
+    """The prompt is prose the agent reads; hooks.json around it stays config."""
+    cursor = temp_dir / ".cursor"
+    cursor.mkdir(parents=True)
+    (cursor / "hooks.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "beforeShellExecution": [
+                        {"type": "prompt", "prompt": "Check the ledger first."},
+                        {"command": "./audit.sh"},
+                    ]
+                },
+            }
+        )
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+    prompts = tree.find(CursorPromptHookBlock)
+
+    assert [b.json_path for b in prompts] == ["hooks.beforeShellExecution[0].prompt"]
+    assert prompts[0].read_body(strip_code_blocks=False) == "Check the ledger first."
+    # JSON has no line numbers, so every body line maps to file-level.
+    assert prompts[0].file_line(1) == 0
+    # The command hook is not prose and must not become one.
+    assert len(prompts) == 1
+
+
+def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
+    """APM writes .github/agents from .apm/agents; linting both reports twice."""
+    (temp_dir / ".apm" / "agents").mkdir(parents=True)
+    (temp_dir / ".apm" / "agents" / "sec.agent.md").write_text(
+        "---\ndescription: Security reviewer\n---\n\nCheck the inputs.\n"
+    )
+    (temp_dir / ".github" / "agents").mkdir(parents=True)
+    (temp_dir / ".github" / "agents" / "sec.agent.md").write_text(
+        "---\ndescription: Security reviewer\n---\n\nCheck the inputs.\n"
+    )
+    # Authored .github content with no .apm source keeps being linted.
+    (temp_dir / ".github" / "prompts").mkdir()
+    (temp_dir / ".github" / "prompts" / "log.prompt.md").write_text(
+        "---\ndescription: Log review\n---\n\nSummarise the log.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert tree.find(CopilotAgentBlock) == []
+    assert [b.path.name for b in tree.find(CopilotPromptBlock)] == ["log.prompt.md"]
 
 
 def test_tree_finds_editor_tool_dirs_in_subpackages(temp_dir):

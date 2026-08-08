@@ -19,6 +19,24 @@ def _is_usable(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+#: Fields that appear on one server, never on a map of them.
+_SERVER_FIELDS = frozenset({"command", "url", "type", "args", "env", "headers"})
+
+
+def _looks_like_server_map(value: Any) -> bool:
+    """Whether *value* reads as a map of servers rather than one server.
+
+    Used only to disambiguate a key named ``servers`` in a file that also
+    accepts a bare server map, where the name alone cannot say whether it
+    is VS Code's wrapper or a server someone named ``servers``.
+    """
+    if not isinstance(value, dict) or not value:
+        return False
+    if _SERVER_FIELDS & set(value):
+        return False
+    return all(isinstance(entry, dict) for entry in value.values())
+
+
 class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
@@ -100,7 +118,16 @@ class McpValidJsonRule(Rule):
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
-            wrong_keys = sorted(self.FOREIGN_SERVER_KEYS & set(data) - {servers_key})
+            wrong_keys = sorted(
+                key
+                for key in self.FOREIGN_SERVER_KEYS & set(data) - {servers_key}
+                # In a file that accepts a bare map, a key named "servers"
+                # is ambiguous: it is either another host's wrapper or a
+                # server that happens to be called that. Nothing forbids the
+                # name, so the value decides — a wrapper holds server
+                # objects, a server holds connection fields.
+                if not block.allow_bare_server_map or _looks_like_server_map(data[key])
+            )
             if servers_key in data:
                 payload: Any = data[servers_key]
             elif wrong_keys:

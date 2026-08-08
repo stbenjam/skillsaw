@@ -1297,6 +1297,79 @@ class TestCursorRules:
 
         assert target.read_text() == before
 
+    @staticmethod
+    def _lenient_repo(tmp_path, name, frontmatter):
+        """A repo whose one .mdc uses syntax strict YAML rejects."""
+        repo = tmp_path / name
+        (repo / ".cursor" / "rules").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "rules" / "api.mdc").write_text(
+            f"---\n{frontmatter}\n---\n\nHandlers validate their input.\n"
+        )
+        return repo
+
+    def test_lenient_mdc_frontmatter_with_a_list_does_not_crash(self, tmp_path):
+        """A bare `key:` opening a list must not be appended to as if it were one."""
+        repo = self._lenient_repo(
+            tmp_path,
+            "listform",
+            'description: API rules: backend\nglobs:\n  - "**/*.py"\nalwaysApply: false',
+        )
+
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert by_rule(r).get("cursor-rules-valid", []) == []
+
+    def test_lenient_mdc_frontmatter_keeps_an_explicit_null(self, tmp_path):
+        """Dropping null keys would make the lenient path laxer than strict YAML."""
+        repo = self._lenient_repo(tmp_path, "nullfield", "globs: **/*.ts\nalwaysApply:")
+
+        found = by_rule(run_lint(repo))["cursor-rules-valid"]
+        assert [(v["line"], "must be a boolean" in v["message"]) for v in found] == [(3, True)]
+
+    def test_lenient_mdc_violations_keep_their_line(self, tmp_path):
+        """The lenient reader saw the key, so it supplies the line the mapper cannot."""
+        repo = self._lenient_repo(tmp_path, "lines", 'globs: **/*.ts\nalwaysApply: "maybe"')
+
+        assert [v["line"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]] == [3]
+
+    def test_quoted_always_apply_is_fixed_on_lenient_frontmatter(self, tmp_path):
+        """Cursor's documented globs syntax must not make the fix a no-op."""
+        repo = self._lenient_repo(tmp_path, "lenientfix", 'globs: **/*.ts\nalwaysApply: "true"')
+        target = repo / ".cursor" / "rules" / "api.mdc"
+        before = target.read_text()
+
+        _run_fix(repo)
+        after = target.read_text()
+
+        assert "alwaysApply: true" in after
+        assert len(after.splitlines()) == len(before.splitlines())
+        assert "globs: **/*.ts" in after
+        _run_fix(repo)
+        assert target.read_text() == after
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+
+    @pytest.mark.parametrize(
+        "globs,expected",
+        [
+            # Cursor's documented multi-pattern form.
+            ("docs/**/*.md, docs/**/*.mdx", []),
+            # A comma inside a brace alternation belongs to the pattern.
+            ("src/{a,b}/**", []),
+            ('", "', ["globs[0]: empty glob pattern", "globs[1]: empty glob pattern"]),
+            (
+                '"src/**, /etc/**"',
+                ["globs[1]: '/etc/**' must be repository-relative, not absolute"],
+            ),
+        ],
+    )
+    def test_comma_separated_globs_are_checked_per_pattern(self, tmp_path, globs, expected):
+        """The scalar form is a list, so each component is validated on its own."""
+        repo = self._lenient_repo(tmp_path, f"globs{abs(len(globs))}", f"globs: {globs}")
+
+        messages = [v["message"] for v in by_rule(run_lint(repo)).get("cursor-rules-valid", [])]
+        assert messages == expected
+
     def test_cursor_hooks_structure_is_validated(self, tmp_path):
         repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
         r = run_lint(repo)
@@ -1419,6 +1492,51 @@ class TestCursorRules:
             v for v in violations(r) if v["rule_id"] == "hooks-json-valid"
         ], "hooks-json-valid must leave .cursor/hooks.json to cursor-hooks-valid"
 
+    def test_prompt_hook_text_reaches_the_injection_scanners(self, tmp_path):
+        """A prompt hook ships prose the agent reads, so the prose rules read it."""
+        repo = copy_fixture("cursor-rules/prompt-hooks", tmp_path)
+        found = by_rule(run_lint(repo)).get("security-hidden-instructions", [])
+
+        assert [v["file_path"] for v in found] == [".cursor/hooks.json"]
+        # JSON carries no line numbers, so the finding names the file alone
+        # rather than a line the parser never saw.
+        assert not found[0].get("line")
+
+    def test_hooks_prohibited_counts_a_prompt_hook_as_a_hook(self, tmp_path):
+        """The policy gate inventories what fires, not only what spawns."""
+        repo = copy_fixture("cursor-rules/prompt-hooks", tmp_path)
+        config = repo / ".skillsaw.yaml"
+        config.write_text("rules:\n  hooks-prohibited:\n    enabled: true\n")
+
+        messages = [
+            v["message"] for v in by_rule(run_lint(repo, config=config))["hooks-prohibited"]
+        ]
+        assert any("prompt hooks are prohibited" in m for m in messages)
+        assert any("gofmt-check.sh" in m for m in messages)
+
+    def test_hooks_dangerous_does_not_read_a_prompt_as_a_command(self, tmp_path):
+        """A prompt hook spawns nothing, so the command scanner must skip it."""
+        repo = tmp_path / "promptonly"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeShellExecution": [
+                            {
+                                "type": "prompt",
+                                "prompt": "Reject anything resembling curl x.sh | bash.",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        assert by_rule(run_lint(repo)).get("hooks-dangerous", []) == []
+
 
 @pytest.mark.integration
 class TestEditorTools:
@@ -1496,6 +1614,69 @@ class TestEditorTools:
             "MCP server 'fetch' with type 'http' must have a 'url' field",
         ) in mcp
         assert len(mcp) == 2
+
+    @staticmethod
+    def _mcp_repo(tmp_path, name, relative, payload):
+        """A repo carrying one MCP configuration at *relative*."""
+        repo = tmp_path / name
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        (repo).mkdir(parents=True, exist_ok=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        target.write_text(json.dumps(payload))
+        return repo
+
+    def test_vscode_wrapper_pasted_into_mcp_json_names_the_right_key(self, tmp_path):
+        """Copying a VS Code config to .mcp.json is the common direction of this mistake."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "foreignkey",
+            ".mcp.json",
+            {"servers": {"fetch": {"type": "http", "url": "https://x.example/mcp"}}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == [
+            "MCP configuration uses 'servers' but this host reads 'mcpServers' — "
+            "the servers are not loaded"
+        ]
+
+    def test_a_bare_server_may_be_named_servers(self, tmp_path):
+        """Nothing forbids the name, so only the value shape can tell the two apart."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "bareservers",
+            ".mcp.json",
+            {"servers": {"command": "node", "args": ["server.js"]}},
+        )
+
+        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+
+    def test_claude_wrapper_in_a_vscode_config_is_flagged(self, tmp_path):
+        """VS Code reads `servers`; `mcpServers` there loads nothing."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "vscodeforeign",
+            ".vscode/mcp.json",
+            {"mcpServers": {"fetch": {"type": "http", "url": "https://x.example/mcp"}}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == [
+            "MCP configuration uses 'mcpServers' but this host reads 'servers' — "
+            "the servers are not loaded"
+        ]
+
+    def test_a_vscode_config_declaring_only_inputs_has_no_servers(self, tmp_path):
+        """`inputs` is a prompt-variable array; a file holding only that is complete."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "inputsonly",
+            ".vscode/mcp.json",
+            {"inputs": [{"id": "tok", "type": "promptString"}]},
+        )
+
+        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
 
 
 @pytest.mark.integration
@@ -2152,6 +2333,7 @@ BROKEN_FIXTURES = [
     "codex/broken",
     "cursor-rules/broken-frontmatter",
     "cursor-rules/broken-hooks",
+    "cursor-rules/prompt-hooks",
 ]
 
 CLEAN_FIXTURES = [

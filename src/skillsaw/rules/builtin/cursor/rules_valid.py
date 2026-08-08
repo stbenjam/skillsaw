@@ -32,15 +32,63 @@ _BOOLEAN_STRINGS = {
 }
 
 
+def _split_patterns(value: str) -> List[str]:
+    """Split Cursor's documented comma-separated ``globs`` scalar.
+
+    Cursor's docs say "separate multiple patterns with commas", so the scalar
+    form is a list, and each component has to be checked on its own — a
+    ``globs`` of ``", "`` is one non-empty string but no usable pattern.
+    Commas inside a brace alternation (``src/{a,b}/**``) belong to the
+    pattern, so only depth-zero commas separate.
+    """
+    parts: List[str] = []
+    current: List[str] = []
+    depth = 0
+    for char in value:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(depth - 1, 0)
+        if char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
 def _as_glob_list(value: Any) -> Optional[List[str]]:
     """Normalize a ``globs`` value to a list of patterns, or ``None`` if malformed."""
     if isinstance(value, str):
-        return [value]
+        return _split_patterns(value)
     if isinstance(value, list):
         if not all(isinstance(item, str) for item in value):
             return None
         return list(value)
     return None
+
+
+def _replace_key_line(original: str, line: Optional[int], replacement: str) -> Optional[str]:
+    """Replace one 1-based line, keeping the file's line count and endings.
+
+    Refuses unless the line really does declare the key the replacement
+    declares, so a stale or wrong line number can never rewrite something
+    else. Line-scoped by construction: no search, no ``str.replace``.
+    """
+    if line is None or line < 1:
+        return None
+    lines = original.split("\n")
+    if line > len(lines):
+        return None
+    key = replacement.split(":", 1)[0].strip()
+    target = lines[line - 1]
+    if target.split(":", 1)[0].strip() != key:
+        return None
+    # Preserve a CRLF ending: splitting on "\n" leaves the "\r" on the line.
+    suffix = "\r" if target.endswith("\r") else ""
+    lines[line - 1] = replacement + suffix
+    return "\n".join(lines)
 
 
 class CursorRulesValidRule(Rule):
@@ -288,4 +336,12 @@ class CursorRulesValidRule(Rule):
         boolean = _BOOLEAN_STRINGS.get(field.value.strip().lower())
         if boolean is None:
             return None
-        return replace_frontmatter_field(original, "alwaysApply", f"alwaysApply: {boolean}")
+        replaced = replace_frontmatter_field(original, "alwaysApply", f"alwaysApply: {boolean}")
+        if replaced != original:
+            return replaced
+        # ``replace_frontmatter_field`` parses the block as YAML, so it
+        # declines exactly the files the lenient reader exists for — and a
+        # violation reported fixable that no fix ever repairs is worse than
+        # one reported unfixable. Rewrite the single line the parser read
+        # the value from instead; nothing else in the file is touched.
+        return _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")

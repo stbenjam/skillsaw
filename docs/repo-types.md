@@ -29,7 +29,11 @@ skills-repo/
     └── SKILL.md
 ```
 
-Standard discovery paths (`.claude/skills/`, `.github/skills/`, `.agents/skills/`) are checked automatically.
+Standard discovery paths are checked automatically: `.agents/skills/`,
+`.apm/skills/`, `.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
+`.clinerules/skills/`, `.cline/skills/` and `.qwen/skills/`. A `SKILL.md`
+under any of them makes the repository an Agent Skills repository, which
+turns on the `agentskill-*` rules.
 
 ## Agent Plugins
 
@@ -231,7 +235,7 @@ wherever a tool's own metadata can fail silently — see
 | **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
 | **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
-| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt`, `.clinerules/workflows/**/*.md`, `.cline/skills/*/SKILL.md` |
+| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
 | **Kiro** | `.kiro/steering/*.md` |
 | **Windsurf** | `.windsurfrules` |
@@ -267,5 +271,11 @@ repository, so its commands are scanned by
 and settings. Cursor's schema is flatter than Claude's — hooks hang directly
 off the event name rather than off a matcher group — so `hooks-json-valid`
 leaves the file alone and `cursor-hooks-valid` validates the shape instead.
-A `type: "prompt"` hook asks the model a question rather than spawning a
-process, so the command scanners skip it.
+A `type: "prompt"` hook injects text rather than spawning a process, so the
+command scanners skip it — but Cursor puts that text into the agent's
+context every time the event fires, which makes it shipped instruction
+prose. Its `prompt` string is linted as content, so
+[`security-hidden-instructions`](rules/security-hidden-instructions.md) and
+the other injection scanners read it, and `hooks-prohibited` counts it as a
+hook. JSON carries no line numbers, so those findings name the file without
+a line.

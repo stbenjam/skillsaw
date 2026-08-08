@@ -20,6 +20,10 @@ non-allowlisted MCP server can execute arbitrary code when a
 contributor opens the repository — this is a supply-chain attack
 vector analogous to malicious npm lifecycle scripts.
 
+Every project-scoped MCP configuration is inventoried, wherever the host
+that reads it keeps one: `.mcp.json`, `.cursor/mcp.json`,
+`.vscode/mcp.json`, and the MCP files a plugin manifest declares.
+
 ## Examples
 
 **Bad (no allowlist configured):**
@@ -47,8 +51,10 @@ rules:
 
 Review the flagged MCP server. If it is trusted, add its name to the
 `allowlist` in your skillsaw config. Allowlist entries match by server
-name (the key in `mcpServers`). This rule is disabled by default —
-enable it for supply-chain-sensitive repositories.
+name — the key in the server map, which is `mcpServers` in `.mcp.json`,
+`.cursor/mcp.json` and plugin manifests, and `servers` in
+`.vscode/mcp.json`. This rule is disabled by default — enable it for
+supply-chain-sensitive repositories.
 
 ## Configuration
 

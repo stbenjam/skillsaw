@@ -16,8 +16,9 @@ Detect near-duplicate sections that have drifted apart across instruction files
 
 Teams often copy a section between instruction files — CLAUDE.md,
 AGENTS.md, GEMINI.md, QWEN.md, `.github/copilot-instructions.md`,
-`.cursor/rules/**/*.mdc`, `.clinerules/**/*.md`, `.claude/rules/*.md` — so
-every assistant gets the same guidance. Then someone edits one copy and
+`.cursor/rules/**/*.mdc`, `.clinerules/**/*.md` (not `workflows/`, which
+load on demand rather than every turn), `.claude/rules/*.md` — so every
+assistant gets the same guidance. Then someone edits one copy and
 forgets the others. The copies silently disagree, and different agents
 follow different rules for the same task.
 

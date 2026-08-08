@@ -9,6 +9,7 @@ runtimes or network access.
 import re
 from typing import Dict, List
 
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
@@ -144,7 +145,8 @@ class HooksDangerousRule(Rule):
                     for message in _check_dangerous(command):
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: {message} — " f"command: {command!r}",
+                                f"Hook {safe_display(event_type)}: {message} — "
+                                f"command: {safe_display(command)!r}",
                                 file_path=file_path,
                                 line=line,
                             )
