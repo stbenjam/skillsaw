@@ -13,3 +13,7 @@ comments as they arrive.
 Retry when the smoke-test job fails with a container-registry pull
 error; it recovers on its own. Give up after 3 attempts and page the
 infra channel instead.
+
+## Reviewing changes
+
+Show the current changes with !`git diff HEAD` before reviewing the pull request.
