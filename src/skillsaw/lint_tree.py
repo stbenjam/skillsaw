@@ -339,6 +339,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
             return
+        # Contain the glob *base*, not just each match: pathlib follows a
+        # symlink at the base even though it will not follow one during
+        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
+        # filesystem before a single match was rejected.
+        if _resolve_repo_path(directory) is None:
+            return
         try:
             matches = sorted(directory.glob(pattern))
         except OSError as exc:
@@ -381,7 +387,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # still loads them, so they are still shipped prose.
         _add_glob(root, github_dir / "chatmodes", "**/*.chatmode.md", CopilotAgentBlock)
 
-    _add_parser_block(root, context.root_path / ".vscode" / "mcp.json", VsCodeMcpBlock)
+    for vscode_dir in context.agent_tool_dirs(".vscode"):
+        _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():

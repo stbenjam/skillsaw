@@ -1195,6 +1195,12 @@ class TestCursorRules:
             )
 
     def test_clean_cursor_repo_passes(self, tmp_path):
+        """Includes the frontmatter shapes Cursor documents but YAML rejects.
+
+        ``globs: **/*.ts`` opens with the YAML alias indicator and a
+        comma-separated glob string is Cursor's documented multi-pattern
+        form; both must lint clean.
+        """
         repo = copy_fixture("cursor-rules/clean", tmp_path)
         r = run_lint(repo)
         assert r["rc"] == 0
@@ -1214,9 +1220,10 @@ class TestCursorRules:
         assert (".cursor/rules/bad-types.mdc", 3, "error") in found
         assert (".cursor/rules/bad-types.mdc", 4, "error") in found
         assert (".cursor/rules/backend/absolute.mdc", 3, "error") in found
-        assert (".cursor/rules/comma-globs.mdc", 3, "warning") in found
-        # Manual-only is a legitimate Cursor mode, so it stays advisory.
+        # Manual-only is a legitimate Cursor mode, so it stays advisory —
+        # both when the frontmatter declares nothing and when it is empty.
         assert (".cursor/rules/manual-only.mdc", None, "info") in found
+        assert (".cursor/rules/empty-frontmatter.mdc", None, "info") in found
 
     def test_unterminated_mdc_frontmatter_is_not_autofixable(self, tmp_path):
         repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
@@ -1360,7 +1367,7 @@ class TestCursorRules:
         assert by_rule(run_lint(repo)).get("cursor-hooks-valid", []) == []
 
     def test_post_launch_cursor_hook_events_are_accepted(self, tmp_path):
-        """The event list is current, not the Cursor 1.7 launch set."""
+        """Events Cursor added after the 1.7 launch are accepted, not reported unknown."""
         repo = tmp_path / "modern-events"
         (repo / ".cursor").mkdir(parents=True)
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
@@ -1450,10 +1457,11 @@ class TestEditorTools:
         assert lines[".cursor/rules/backend/api.mdc"] == 13
 
     def test_all_fixture_files_are_tracked_by_git(self):
-        """A fixture .gitignore swallows is invisible locally and red in CI.
+        """Every file under tests/fixtures must be tracked by git.
 
-        ``.vscode/`` did exactly that to the VS Code MCP fixtures: the suite
-        passed on untracked files sitting on disk and failed on a fresh clone.
+        An untracked fixture passes locally off the working copy and fails
+        on a fresh clone, so the .gitignore patterns have to leave
+        tests/fixtures alone.
         """
         tracked = subprocess.run(
             ["git", "ls-files", "tests/fixtures"],
@@ -1462,6 +1470,7 @@ class TestEditorTools:
             cwd=FIXTURES.parent.parent,
             timeout=60,
         )
+        assert tracked.returncode == 0, tracked.stderr
         on_disk = {
             str(p.relative_to(FIXTURES.parent.parent))
             for p in FIXTURES.rglob("*")

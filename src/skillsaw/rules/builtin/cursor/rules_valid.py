@@ -43,24 +43,6 @@ def _as_glob_list(value: Any) -> Optional[List[str]]:
     return None
 
 
-def _has_separator_comma(pattern: str) -> bool:
-    """Whether *pattern* has a comma outside brace expansion.
-
-    ``src/**/*.{ts,tsx}`` is one pattern whose comma belongs to the brace
-    group — every reading of it agrees. Only a comma at brace depth zero is
-    the ambiguous "one pattern or several?" case.
-    """
-    depth = 0
-    for char in pattern:
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth = max(0, depth - 1)
-        elif char == "," and depth == 0:
-            return True
-    return False
-
-
 class CursorRulesValidRule(Rule):
     """Validate .cursor/rules/*.mdc frontmatter and the legacy .cursorrules file"""
 
@@ -209,11 +191,6 @@ class CursorRulesValidRule(Rule):
                 )
             ]
 
-        # The comma question only arises for the string form. A YAML list has
-        # already said how many patterns it holds, so telling its author to
-        # "write a YAML list" would prescribe the state the file is in.
-        written_as_string = isinstance(field.value, str)
-
         violations: List[RuleViolation] = []
         kept: List[str] = []
         for index, pattern in enumerate(patterns):
@@ -230,24 +207,6 @@ class CursorRulesValidRule(Rule):
                     )
                 )
                 continue
-            if written_as_string and _has_separator_comma(stripped):
-                # Cursor documents a comma-separated string, but whether the
-                # parser splits it or keeps one literal pattern has changed
-                # between releases. A YAML list means the same thing under
-                # every reading, so the ambiguity is the finding — not a
-                # claim about which way this Cursor version jumps.
-                violations.append(
-                    self.violation(
-                        f"{where}: {safe_display(stripped)!r} contains a comma, which "
-                        "different Cursor versions read as one pattern or several — "
-                        "write a YAML list instead",
-                        file_path=block.path,
-                        line=field.field_line,
-                        block=block,
-                        severity=Severity.WARNING,
-                        fixable=False,
-                    )
-                )
             if stripped.startswith("/") or stripped.startswith("\\"):
                 violations.append(
                     self.violation(

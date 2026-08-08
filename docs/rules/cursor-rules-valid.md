@@ -40,6 +40,14 @@ community reports disagree on how the two interact — which is the point:
 you cannot tell from the repository which instructions the agent is
 following.
 
+Cursor's `.mdc` reader is not a YAML parser, and its documentation ships
+frontmatter that strict YAML rejects — `globs: **/*.ts` opens with the YAML
+alias indicator, and an unquoted `description` often contains a bare colon.
+skillsaw reads those the way Cursor does rather than calling them malformed;
+only frontmatter with no closing `---` is unreadable. `globs` may be a
+comma-separated string (Cursor's documented multi-pattern form) or a YAML
+list.
+
 Whether a `globs` pattern *matches* anything is deliberately not checked: it
 would cost a repository walk per pattern, and a rule written for files that
 do not exist yet is a reasonable thing to commit. `cursor-rules-valid`
@@ -53,9 +61,8 @@ Type and shape defects are errors: malformed frontmatter, a non-boolean
 `alwaysApply`, a non-string `description`, a `globs` value that is neither a
 string nor a list of strings, and empty or absolute patterns.
 
-An ambiguous comma in a `globs` string and a superseded `.cursorrules` are
-warnings. A rule that only loads via `@name` is `info`, because Manual is a
-legitimate mode.
+A superseded `.cursorrules` is a warning. A rule that only loads via `@name`
+is `info`, because Manual is a legitimate mode.
 
 ## Examples
 
@@ -95,7 +102,6 @@ Components export a default function.
 - `skillsaw fix` converts a boolean-looking quoted `alwaysApply` value
   (`"true"`, `"yes"`, `"on"`) into a YAML boolean. `"1"` is left alone —
   reading it as `true` would infer intent rather than repair a spelling.
-- Replace a comma-containing `globs` string with a YAML list.
 - Malformed frontmatter needs a human: fix the YAML, or delete the
   frontmatter block if the rule is meant to be manual-only.
 - For a rule that never activates, decide which mode you meant and add the

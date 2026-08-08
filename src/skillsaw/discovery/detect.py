@@ -19,11 +19,19 @@ WALK_SKIP_DIRS = frozenset(
     {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache"}
 )
 
+# Directories holding code this repository did not author. Their editor
+# configuration belongs to whoever vendored it, and reporting on it would
+# turn a green CI run red on upgrade over a file the maintainer cannot fix.
+# Override with ``content-paths`` to lint a vendored tree deliberately.
+VENDOR_DIR_NAMES = frozenset(
+    {"vendor", "vendored", "third_party", "thirdparty", "bower_components"}
+)
+
 # Editor-owned directories whose contents ship in a repository. Cursor,
 # Copilot/VS Code and Cline all read these from the nearest enclosing
 # folder as well as the repository root, so a monorepo package can carry
 # its own set — hence a walk rather than a root-anchored lookup.
-AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github"})
+AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github", ".vscode"})
 
 
 @dataclass
@@ -48,7 +56,12 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         here = Path(dirpath)
         found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
         for name in dirnames:
-            if name in AGENT_TOOL_DIR_NAMES:
+            # Instruction files keep the historical behaviour — the sweep
+            # above already collected them — but a tool directory is a new
+            # claim, so vendored trees stay out of it.
+            if name in AGENT_TOOL_DIR_NAMES and not VENDOR_DIR_NAMES.intersection(
+                here.relative_to(root).parts
+            ):
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
         instruction_files=tuple(sorted(found)),
@@ -70,6 +83,9 @@ _EDITOR_EVIDENCE = {
             ("hooks.json", False),
         ),
     ),
+    # ``.vscode`` is walked for attachment but contributes no format label:
+    # the only thing skillsaw reads there is ``mcp.json``, and the MCP rules
+    # are ungated, so there is no format-gated rule left looking at nothing.
     "HAS_COPILOT": (
         ".github",
         (

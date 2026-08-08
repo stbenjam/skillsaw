@@ -1,6 +1,6 @@
 ---
-description: TypeScript conventions
-globs: "**/*.ts, **/*.tsx"
+description: TypeScript conventions for files Cursor is editing
+globs: **/*.ts
 alwaysApply: false
 ---
 

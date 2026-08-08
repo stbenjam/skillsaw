@@ -100,24 +100,25 @@ class McpValidJsonRule(Rule):
             # Hosts spell the wrapper key differently (VS Code uses
             # ``servers``); the block knows its own.
             servers_key = block.servers_key
+            wrong_keys = sorted(self.FOREIGN_SERVER_KEYS & set(data) - {servers_key})
             if servers_key in data:
                 payload: Any = data[servers_key]
-            elif block.allow_bare_server_map:
-                # The Claude-family files may be written as a bare map.
-                payload = data
-            elif any(key in data for key in self.FOREIGN_SERVER_KEYS - {servers_key}):
+            elif wrong_keys:
                 # Another host's wrapper key: the servers are really there,
-                # this host just will not find them. Name the right key
-                # rather than reading the foreign wrapper as a server.
-                wrong = sorted(self.FOREIGN_SERVER_KEYS & set(data) - {servers_key})
+                # this host just will not find them. Checked before the
+                # bare-map fallback, which would otherwise read the wrapper
+                # itself as a server named "servers".
                 violations.append(
                     self.violation(
-                        f"MCP configuration uses '{wrong[0]}' but this host reads "
+                        f"MCP configuration uses '{wrong_keys[0]}' but this host reads "
                         f"'{servers_key}' — the servers are not loaded",
                         file_path=block.path,
                     )
                 )
                 continue
+            elif block.allow_bare_server_map:
+                # The Claude-family files may be written as a bare map.
+                payload = data
             else:
                 # No wrapper and no foreign key: the file declares no servers.
                 # Legal while only ``inputs``/``sandbox`` are filled in.
@@ -219,16 +220,19 @@ class McpValidJsonRule(Rule):
                     )
                 )
 
-            # Transport is only defaulted when the server does not say. Every
+            # Transport is only inferred when the server does not say. Every
             # host infers it from the connection field, so a remote server
             # written as ``{"url": "..."}`` — the most common remote form —
-            # is not a stdio server missing its ``command``.
-            server_type = server_config.get("type")
-            if server_type is None:
+            # is not a stdio server missing its ``command``. An explicit
+            # ``"type": null`` is a stated wrong answer, not silence: it
+            # falls through to the enum check below and is reported.
+            if "type" not in server_config:
                 if "url" in server_config and "command" not in server_config:
                     server_type = "http"
                 else:
                     server_type = "stdio"
+            else:
+                server_type = server_config["type"]
 
             if server_type not in self.VALID_MCP_TYPES:
                 violations.append(

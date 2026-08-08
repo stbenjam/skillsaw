@@ -206,8 +206,9 @@ per-ecosystem attach paths and loses its content silently.
 packages and installs content (Claude plugins, Codex, Agent Plugins), so it
 needs provenance: two of them can claim the same directory, and the format
 rules must stay out of each other's trees. An *editor tool* (Cursor,
-Copilot, Cline, Qwen) only reads files out of its own directory — nothing
-else claims `.cursor/` — so it needs no provenance machinery at all. Pick
+Copilot, Cline, Qwen) reads its own configuration locations, which no other
+tool claims — nothing else installs into `.cursor/`, and `QWEN.md` belongs
+to one reader — so it needs no provenance machinery at all. Pick
 the recipe that matches; following the ecosystem one for an editor tool
 builds machinery that design does not need.
 
