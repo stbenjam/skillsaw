@@ -257,10 +257,19 @@ either way — committed instructions are worth checking wherever a teammate
 might open them, and a rule that turns out not to load is worth knowing
 about too.
 
-The plain instruction files are the exception: `AGENTS.md`, `CLAUDE.md`,
-`GEMINI.md` and `QWEN.md` are read at the repository root only, so a nested
+Two things are the exception, and both are root-only today.
+
+The plain instruction files — `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and
+`QWEN.md` — are read at the repository root only, so a nested
 `apps/web/AGENTS.md` is not linted even though Cursor and Codex read one.
 Point `content-paths` at it to include it.
+
+Skills are the other: the conventional skill directories in the table above
+(`.cursor/skills/`, `.clinerules/skills/`, `.github/skills/` and the rest)
+are discovered under the repository root only. A skill in a nested
+workspace — `apps/web/.cursor/skills/review/SKILL.md` — is not discovered
+and gets no `agentskill-*`, content or security checks. Point
+`content-paths` at it for the content and security rules in the meantime.
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and

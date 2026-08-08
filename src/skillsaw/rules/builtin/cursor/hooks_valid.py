@@ -194,7 +194,11 @@ class CursorHooksValidRule(Rule):
                         severity=Severity.WARNING,
                     )
                 )
-                continue
+                # Fall through rather than skipping. The warning already says
+                # the name may be a real event this release has not heard of;
+                # if it is, its entries are live configuration and deserve the
+                # same shape checks. Skipping them made a malformed hook
+                # invisible until the author found and set ``extra-events``.
             violations.extend(self._check_entries(event, entries, block))
 
         return violations

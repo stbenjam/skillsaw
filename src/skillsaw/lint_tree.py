@@ -50,7 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
-from .utils import has_generated_header, read_text, read_yaml
+from .utils import has_apm_generated_header, read_text, read_yaml
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
@@ -97,25 +97,6 @@ _EDITOR_GLOBS = (
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
-
-
-def _apm_targets_copilot(root_path: Path) -> bool:
-    """Whether this APM project compiles anything into ``.github/``.
-
-    A source directory alone does not make the ``.github`` copy generated:
-    with ``targets: [claude]`` APM writes nothing there, so suppressing the
-    directory would drop hand-written Copilot content out of the tree
-    entirely. An unreadable or target-less manifest is treated as
-    compiling, which keeps the established de-duplication rather than
-    doubling every finding on a misparse.
-    """
-    data, error = read_yaml(root_path / "apm.yml")
-    if error or not isinstance(data, dict):
-        return True
-    targets = data.get("targets")
-    if not isinstance(targets, list):
-        return True
-    return any(isinstance(t, str) and t.strip().lower() == "copilot" for t in targets)
 
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
@@ -220,7 +201,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # matching `.apm/` source is the evidence — a `.github/prompts/` in a
     # repository with no `.apm/prompts/` is authored content and stays.
     apm_compiled_github: Set[Path] = set()
-    if context.has_apm and _apm_targets_copilot(context.root_path):
+    if context.has_apm and context.apm_targets("copilot"):
         root_github = safe_resolve(context.root_path / ".github")
         for kind in ("agents", "prompts", "chatmodes", "instructions"):
             if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
@@ -242,7 +223,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if (
             root_github is not None
             and (context.root_path / ".apm" / "instructions").is_dir()
-            and has_generated_header(read_text(root_copilot))
+            and has_apm_generated_header(read_text(root_copilot))
         ):
             apm_compiled_github.add(root_github / "copilot-instructions.md")
 
@@ -506,7 +487,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # Cursor reads the legacy file from the nearest enclosing directory too,
     # so a monorepo package keeps its own — discovered in the same walk that
     # finds `.cursor/`, which is what keeps detection and attachment agreeing.
-    for legacy_cursor in context.legacy_cursor_files():
+    for legacy_cursor in context.legacy_editor_files(".cursorrules"):
         _add_block(root, legacy_cursor, InstructionBlock)
 
     for cursor_dir in context.agent_tool_dirs(".cursor"):
@@ -552,8 +533,10 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     _add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
-    clinerules_file = context.root_path / ".clinerules"
-    if safe_is_file(clinerules_file):
+    # Same story as `.cursorrules`: the file form of `.clinerules` is read
+    # from the workspace directory, so a package that carries its own is
+    # linted alongside the root's.
+    for clinerules_file in context.legacy_editor_files(".clinerules"):
         _add_block(root, clinerules_file, InstructionBlock)
     for clinerules_dir in context.agent_tool_dirs(".clinerules"):
         # Cline concatenates every .md and .txt under .clinerules/ into the

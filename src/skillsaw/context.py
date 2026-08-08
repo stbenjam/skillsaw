@@ -26,6 +26,7 @@ from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
+from .utils import read_yaml
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
@@ -128,7 +129,18 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     # Compiled output directories that APM generates from .apm/ sources.
     # When .apm/ is present these are generated artifacts and should not be linted.
-    APM_COMPILED_DIRS = frozenset((".claude", ".cursor", ".gemini", ".opencode", ".agents"))
+    # Compiled-output directory -> the ``targets:`` entry that produces it.
+    # APM only writes a directory when its target is listed, so a project
+    # with ``targets: [claude]`` and a hand-authored ``.cursor/`` has
+    # authored content there, not generated output.
+    APM_COMPILED_DIR_TARGETS = {
+        ".claude": "claude",
+        ".cursor": "cursor",
+        ".gemini": "gemini",
+        ".opencode": "opencode",
+        ".agents": "codex",
+    }
+    APM_COMPILED_DIRS = frozenset(APM_COMPILED_DIR_TARGETS)
 
     def __init__(
         self,
@@ -157,6 +169,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self.has_apm = self._detect_apm()
         self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
+        self._apm_targets: Optional[frozenset] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
@@ -288,6 +301,24 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Match a path with pattern variants cached by this context."""
         return path_matches_patterns(path, self.root_path, patterns, self.pattern_variants)
 
+    def apm_targets(self, target: str) -> bool:
+        """Whether ``apm.yml`` lists *target* among its compile targets.
+
+        An unreadable or target-less manifest answers True for everything,
+        which keeps the established de-duplication rather than doubling
+        every finding on a misparse.
+        """
+        if self._apm_targets is None:
+            data, error = read_yaml(self.root_path / "apm.yml")
+            declared = data.get("targets") if isinstance(data, dict) else None
+            if error or not isinstance(declared, list):
+                self._apm_targets = frozenset()  # empty means "unknown"
+            else:
+                self._apm_targets = frozenset(
+                    t.strip().lower() for t in declared if isinstance(t, str)
+                )
+        return not self._apm_targets or target in self._apm_targets
+
     def apm_compiled_roots(self) -> Set[Path]:
         """Resolved compiled-output directories to skip when APM is present.
 
@@ -298,7 +329,13 @@ class RepositoryContext(RepositoryProvenanceMixin):
         if self._apm_compiled_roots is None:
             roots: Set[Path] = set()
             if self.has_apm:
-                for compiled_dir_name in self.APM_COMPILED_DIRS:
+                for compiled_dir_name, target in self.APM_COMPILED_DIR_TARGETS.items():
+                    # A source tree alone does not make the directory
+                    # generated. Suppressing one APM never writes hides
+                    # hand-authored content from every rule — the same
+                    # mistake the `.github` guard already avoids.
+                    if not self.apm_targets(target):
+                        continue
                     compiled_path = self.root_path / compiled_dir_name
                     compiled_path = safe_resolve(compiled_path) or compiled_path
                     if compiled_path.is_dir():
@@ -432,17 +469,17 @@ class RepositoryContext(RepositoryProvenanceMixin):
             if not self.is_path_excluded(path)
         ]
 
-    def legacy_cursor_files(self) -> List[Path]:
-        """Every non-excluded ``.cursorrules`` in the repository.
+    def legacy_editor_files(self, name: str) -> List[Path]:
+        """Every non-excluded *name* file in the repository.
 
-        Cursor reads the legacy file from the nearest enclosing directory,
-        exactly as it reads ``.cursor/``, so a monorepo package carries its
-        own. Detection and attachment both read this, so they cannot
-        disagree about a nested one.
+        Cursor and Cline read their pre-directory instruction file from the
+        nearest enclosing directory, exactly as they read `.cursor/` and
+        `.clinerules/`, so a monorepo package carries its own. Detection and
+        attachment both read this, so they cannot disagree about a nested one.
         """
         return [
             path
-            for path in self._repository_scan().legacy_cursor_files
+            for path in self._repository_scan().legacy_editor_files.get(name, ())
             if not self.is_path_excluded(path)
         ]
 
@@ -452,7 +489,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
             self.instruction_files,
             self.is_path_excluded,
             self._repository_scan().tool_dirs,
-            self.legacy_cursor_files(),
+            self._repository_scan().legacy_editor_files,
         )
 
     _WALK_SKIP_DIRS = frozenset(

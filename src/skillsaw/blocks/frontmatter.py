@@ -311,7 +311,13 @@ class FrontmatteredBlock(LintTarget):
 ParsedFrontmatterBlock = FrontmatteredBlock
 
 
-_MDC_KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$")
+# A key may be quoted: ``"alwaysApply": "true"`` declares the same field as
+# the bare spelling, YAML allows it and Cursor's reader tolerates it. Missing
+# that here meant the field was never created at all on the lenient path, so
+# a rule pairing a quoted key with Cursor-valid syntax that strict YAML
+# rejects — ``globs: **/*.ts`` — went unvalidated. ``_replace_key_line``
+# already accepted the quoted form, so the two disagreed.
+_MDC_KEY_RE = re.compile(r"""^["']?([A-Za-z][A-Za-z0-9_-]*)["']?:[ \t]*(.*)$""")
 _MDC_LIST_ITEM_RE = re.compile(r"^[ \t]*-[ \t]+(.*)$")
 
 

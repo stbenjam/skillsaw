@@ -1344,6 +1344,33 @@ class TestCursorRules:
         # And the defect is still reported rather than quietly dropped.
         assert by_rule(run_lint(repo))["cursor-rules-valid"]
 
+    def test_an_inline_comment_survives_the_always_apply_fix(self, tmp_path):
+        """Only the scalar is wrong, so only the scalar is rewritten."""
+        repo = self._lenient_repo(
+            tmp_path, "inlinecomment", 'alwaysApply: "true" # why this is global'
+        )
+        target = repo / ".cursor" / "rules" / "api.mdc"
+
+        _run_fix(repo)
+        after = target.read_text()
+
+        assert "alwaysApply: true # why this is global" in after
+        _run_fix(repo)
+        assert target.read_text() == after
+
+    def test_a_quoted_key_is_read_on_the_lenient_path(self, tmp_path):
+        """The lenient reader must accept every key spelling the fixer does.
+
+        `globs: **/*.ts` forces the lenient path, and the quoted key was
+        invisible to it — so the inert string value went unreported.
+        """
+        repo = self._lenient_repo(
+            tmp_path, "quotedlenient", '"alwaysApply": "true"\nglobs: **/*.ts'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]]
+        assert any("'alwaysApply' must be a boolean" in m for m in messages)
+
     def test_a_flow_style_globs_list_keeps_its_structure(self, tmp_path):
         """A YAML flow list is structure PyYAML got right, not a mistyped scalar.
 
@@ -1672,6 +1699,19 @@ class TestCursorRules:
         # field — only the crash was the defect.
         assert found.get("cursor-hooks-valid", []) == []
         assert found.get("mcp-valid-json", []) == []
+
+    def test_entries_under_an_unknown_event_are_still_checked(self, tmp_path):
+        """The rule calls unknown names possibly-future, so their entries are live."""
+        repo = tmp_path / "futureevent"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"newCursorEvent": [{"command": []}]}}'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
+        assert any("Unknown hook event" in m for m in messages)
+        assert any("command" in m and "Unknown hook event" not in m for m in messages)
 
     def test_a_malformed_extra_events_config_does_not_kill_the_rule(self, tmp_path):
         """The declared type is not enforced at load, so the rule must not assume it."""

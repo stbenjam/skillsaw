@@ -69,6 +69,18 @@ def _as_glob_list(value: Any) -> Optional[List[str]]:
     return None
 
 
+def _cursor_workspace(mdc_path: Path) -> Optional[Path]:
+    """The directory a ``.cursor/rules/**.mdc`` file's workspace root.
+
+    Cursor resolves both `.cursorrules` and `.cursor/` from the directory
+    opened as the workspace, so the two only compete when they share one.
+    """
+    for parent in mdc_path.parents:
+        if parent.name == ".cursor":
+            return safe_resolve(parent.parent)
+    return None
+
+
 def _replace_key_line(original: str, line: Optional[int], replacement: str) -> Optional[str]:
     """Replace one 1-based line, keeping the file's line count and endings.
 
@@ -90,8 +102,30 @@ def _replace_key_line(original: str, line: Optional[int], replacement: str) -> O
         return None
     # Preserve a CRLF ending: splitting on "\n" leaves the "\r" on the line.
     suffix = "\r" if target.endswith("\r") else ""
-    lines[line - 1] = replacement + suffix
+    lines[line - 1] = replacement + _trailing_comment(target) + suffix
     return "\n".join(lines)
+
+
+def _trailing_comment(line: str) -> str:
+    """The ``# ...`` suffix of *line*, with the spacing before it, or ``""``.
+
+    Only the scalar needs rewriting, so an authored note beside it survives:
+    replacing the whole line deleted ``# why this is global`` on every fix.
+    A ``#`` inside quotes is part of the value, not a comment, so the scan
+    tracks quoting rather than taking the first ``#`` it sees.
+    """
+    body = line.rstrip("\r")
+    quote = ""
+    for index, char in enumerate(body):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and index > 0 and body[index - 1] in " \t":
+            before = body[:index]
+            return before[len(before.rstrip()) :] + body[index:]
+    return ""
 
 
 class CursorRulesValidRule(Rule):
@@ -117,18 +151,18 @@ class CursorRulesValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
-        root_rules_dir = safe_resolve(context.root_path / ".cursor" / "rules")
-        has_root_rules = False
+        # Which workspaces hold modern rules. A package's .cursor/rules
+        # governs that package and says nothing about the root file, so the
+        # legacy check pairs each .cursorrules with rules from its *own*
+        # enclosing directory rather than the repository root's.
+        rules_workspaces = set()
         for block in context.lint_tree.find(CursorRuleBlock):
             violations.extend(self._check_mdc(block))
-            # Only a rules directory at the repository root displaces the
-            # root .cursorrules. A nested package's .cursor/rules governs
-            # that package, and says nothing about the root file.
-            resolved = safe_resolve(block.path)
-            if root_rules_dir is not None and resolved is not None:
-                has_root_rules = has_root_rules or resolved.is_relative_to(root_rules_dir)
+            workspace = _cursor_workspace(block.path)
+            if workspace is not None:
+                rules_workspaces.add(workspace)
 
-        violations.extend(self._check_legacy_cursorrules(context, has_root_rules))
+        violations.extend(self._check_legacy_cursorrules(context, rules_workspaces))
         return violations
 
     def _check_mdc(self, block: CursorRuleBlock) -> List[RuleViolation]:
@@ -283,16 +317,22 @@ class CursorRulesValidRule(Rule):
         return kept, violations
 
     def _check_legacy_cursorrules(
-        self, context: RepositoryContext, has_root_rules: bool
+        self, context: RepositoryContext, rules_workspaces: set
     ) -> List[RuleViolation]:
-        """A legacy .cursorrules is dead weight once .cursor/rules/ exists."""
-        if not has_root_rules:
-            return []
-        legacy = context.root_path / ".cursorrules"
+        """A legacy .cursorrules is dead weight beside a sibling .cursor/rules/.
+
+        Per workspace, not per repository: opening ``apps/web`` in Cursor
+        shows it that package's ``.cursorrules`` and its ``.cursor/rules/``
+        together, which is the same ambiguity the root pair has.
+        """
+        violations: List[RuleViolation] = []
         for block in context.lint_tree.find(InstructionBlock):
-            if block.path != legacy:
+            if block.path.name != ".cursorrules":
                 continue
-            return [
+            workspace = safe_resolve(block.path.parent)
+            if workspace is None or workspace not in rules_workspaces:
+                continue
+            violations.append(
                 self.violation(
                     ".cursorrules is deprecated and its precedence against "
                     ".cursor/rules/ is undefined — move its content into a .mdc "
@@ -301,8 +341,8 @@ class CursorRulesValidRule(Rule):
                     severity=Severity.WARNING,
                     fixable=False,
                 )
-            ]
-        return []
+            )
+        return violations
 
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation]
@@ -349,17 +389,28 @@ class CursorRulesValidRule(Rule):
         field = block.field("alwaysApply")
         if field is None or not isinstance(field.value, str):
             return None
+        # A value carrying a newline came from a folded or literal block
+        # scalar — ``alwaysApply: >`` over an indented ``true``. Its source
+        # spans more lines than the key line, so neither a one-line rewrite
+        # (which orphans the continuation) nor a whole-field rewrite (which
+        # deletes it, shifting every later diagnostic) is correct. Decline;
+        # check() asks this same function, so the violation stops
+        # advertising a fix with it.
+        if "\n" in field.value:
+            return None
         boolean = _BOOLEAN_STRINGS.get(field.value.strip().lower())
         if boolean is None:
             return None
-        candidate = replace_frontmatter_field(original, "alwaysApply", f"alwaysApply: {boolean}")
-        if candidate == original:
-            # ``replace_frontmatter_field`` parses the block as YAML, so it
-            # declines exactly the files the lenient reader exists for — and a
-            # violation reported fixable that no fix ever repairs is worse than
-            # one reported unfixable. Rewrite the single line the parser read
-            # the value from instead; nothing else in the file is touched.
-            candidate = _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")
+        # The line-scoped rewrite is preferred, not a fallback: it touches
+        # exactly the span that is wrong, so the line count holds and an
+        # authored trailing comment survives. ``replace_frontmatter_field``
+        # re-emits the whole field and drops both. It stays for the case
+        # where no line number was recovered.
+        candidate = _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")
+        if candidate is None:
+            candidate = replace_frontmatter_field(
+                original, "alwaysApply", f"alwaysApply: {boolean}"
+            )
         if candidate is None or candidate == original:
             return None
         # A value wider than its key line — a folded or literal block scalar,

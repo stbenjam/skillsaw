@@ -45,21 +45,23 @@ class RepositoryScan:
 
     instruction_files: Tuple[Path, ...]
     tool_dirs: Dict[str, Tuple[Path, ...]]
-    legacy_cursor_files: Tuple[Path, ...]
+    legacy_editor_files: Dict[str, Tuple[Path, ...]]
 
 
-#: Cursor's pre-`.cursor/` instruction file. Read from the nearest enclosing
-#: directory just like `.cursor/` itself, so a monorepo package carries its
-#: own — collecting only the root copy left a package's rules out of the tree
-#: entirely, and out of Cursor detection with them.
-LEGACY_CURSOR_FILE = ".cursorrules"
+#: Pre-directory instruction files, read from the nearest enclosing directory
+#: just as the matching `.cursor/` and `.clinerules/` directories are. `.clinerules`
+#: is both a file and a directory name depending on the convention in use, and
+#: the walk separates them by which listing they appear in. Collecting only the
+#: root copy left a package's rules out of the tree entirely, and out of tool
+#: detection with them.
+LEGACY_EDITOR_FILES = (".cursorrules", ".clinerules")
 
 
 def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     """Walk *root* once, collecting instruction files and editor directories."""
     found = [root / name for name in root_names if (root / name).exists()]
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
-    legacy_cursor: List[Path] = []
+    legacy_editor: Dict[str, List[Path]] = {name: [] for name in LEGACY_EDITOR_FILES}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
@@ -68,8 +70,9 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
         # The root copy has always been attached; a nested one is a new
         # claim, so it follows the tool-directory rule rather than the
         # instruction-file one and stays out of vendored trees.
-        if LEGACY_CURSOR_FILE in filenames and (here == root or not vendored):
-            legacy_cursor.append(here / LEGACY_CURSOR_FILE)
+        for legacy_name in LEGACY_EDITOR_FILES:
+            if legacy_name in filenames and (here == root or not vendored):
+                legacy_editor[legacy_name].append(here / legacy_name)
         for name in dirnames:
             # Instruction files keep the historical behaviour — the sweep
             # above already collected them — but a tool directory is a new
@@ -79,7 +82,7 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     return RepositoryScan(
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
-        legacy_cursor_files=tuple(sorted(legacy_cursor)),
+        legacy_editor_files={name: tuple(sorted(paths)) for name, paths in legacy_editor.items()},
     )
 
 
@@ -119,7 +122,7 @@ def instruction_formats(
     files: Iterable[Path],
     is_excluded: Callable[[Path], bool],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
-    legacy_cursor_files: Iterable[Path] = (),
+    legacy_editor_files: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> Set[str]:
     """Return instruction-format evidence labels from non-excluded markers.
 
@@ -161,10 +164,15 @@ def instruction_formats(
         Reads the same walk attachment reads, so detection and attachment
         cannot disagree about a nested one.
         """
-        return any(not is_excluded(path) for path in legacy_cursor_files)
+        paths = (legacy_editor_files or {}).get(".cursorrules", ())
+        return any(not is_excluded(path) for path in paths)
 
     def cline_marker() -> bool:
         """``.clinerules`` is a file in the old convention, a directory in the new."""
+        if any(
+            not is_excluded(path) for path in (legacy_editor_files or {}).get(".clinerules", ())
+        ):
+            return True
         if marker(".clinerules"):
             return True
         return any(not is_excluded(path) for path in (dirs.get(".clinerules") or ()))
