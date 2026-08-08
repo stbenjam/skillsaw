@@ -32,6 +32,9 @@ _SOURCE_REQUIRED_FIELDS = {
     "url": ("url",),
     "git-subdir": ("url", "path"),
     "npm": ("package",),
+    # Zip archive downloaded over HTTPS; `sha256` is optional. Claude Code
+    # v2.1.224 or later is required to install one.
+    "archive": ("url",),
 }
 
 
