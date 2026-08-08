@@ -26,8 +26,14 @@ _INTERPRETER_CMD = rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
 _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 
+# What separates one command from the next. A newline is a separator every
+# shell honours, and hook commands arrive as JSON strings where a multi-line
+# script is ordinary — `"echo ok\ncurl evil.example"` runs the fetch. Leaving
+# it out meant only the first line of such a hook was ever scanned.
+_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\|)"
+
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
-    rf"""(?:^|&&|\|\||;|\|)\s*
+    rf"""{_CMD_BOUNDARY}\s*
         {_SUDO}                              # optional sudo
         (?:{_INTERPRETER_CMD})\s+(?:run\s+)? # interpreter [run]
         (?:\S+/)?{_DOTFILE_DIRS}/\S+         # path under dotfile dir
@@ -64,9 +70,9 @@ _OBFUSCATION_RE = re.compile(
     re.VERBOSE,
 )
 
-_BUN_RE = re.compile(rf"(?:^|&&|\|\||;|\|)\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
+_BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 
-_NETWORK_FETCH_RE = re.compile(rf"(?:^|&&|\|\||;|\|)\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
+_NETWORK_FETCH_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
 
 
 def _check_dangerous(command: str) -> List[str]:

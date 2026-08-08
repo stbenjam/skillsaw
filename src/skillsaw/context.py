@@ -432,12 +432,27 @@ class RepositoryContext(RepositoryProvenanceMixin):
             if not self.is_path_excluded(path)
         ]
 
+    def legacy_cursor_files(self) -> List[Path]:
+        """Every non-excluded ``.cursorrules`` in the repository.
+
+        Cursor reads the legacy file from the nearest enclosing directory,
+        exactly as it reads ``.cursor/``, so a monorepo package carries its
+        own. Detection and attachment both read this, so they cannot
+        disagree about a nested one.
+        """
+        return [
+            path
+            for path in self._repository_scan().legacy_cursor_files
+            if not self.is_path_excluded(path)
+        ]
+
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
             self.root_path,
             self.instruction_files,
             self.is_path_excluded,
             self._repository_scan().tool_dirs,
+            self.legacy_cursor_files(),
         )
 
     _WALK_SKIP_DIRS = frozenset(

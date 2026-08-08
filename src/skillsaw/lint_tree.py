@@ -50,7 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
-from .utils import has_generated_marker, read_text, read_yaml
+from .utils import has_generated_header, read_text, read_yaml
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
@@ -242,7 +242,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         if (
             root_github is not None
             and (context.root_path / ".apm" / "instructions").is_dir()
-            and has_generated_marker(read_text(root_copilot))
+            and has_generated_header(read_text(root_copilot))
         ):
             apm_compiled_github.add(root_github / "copilot-instructions.md")
 
@@ -468,6 +468,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
             return
+        # An excluded directory is not walked. Testing only each match let
+        # `exclude: [".cursor/rules"]` through, because the pattern names the
+        # directory and the matches are its children — so the files stayed in
+        # every content and security rule while format detection, which does
+        # honour the directory, disagreed.
+        if _is_excluded(directory):
+            return
         # Contain the glob *base*, not just each match: pathlib follows a
         # symlink at the base even though it will not follow one during
         # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
@@ -496,7 +503,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if safe_is_file(match):
                 _add_block(parent, match, block_cls)
 
-    _add_block(root, context.root_path / ".cursorrules", InstructionBlock)
+    # Cursor reads the legacy file from the nearest enclosing directory too,
+    # so a monorepo package keeps its own — discovered in the same walk that
+    # finds `.cursor/`, which is what keeps detection and attachment agreeing.
+    for legacy_cursor in context.legacy_cursor_files():
+        _add_block(root, legacy_cursor, InstructionBlock)
 
     for cursor_dir in context.agent_tool_dirs(".cursor"):
         if _is_in_compiled_dir(cursor_dir):

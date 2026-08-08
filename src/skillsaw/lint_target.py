@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
+from skillsaw.diagnostics import safe_display
 from skillsaw.paths import safe_resolve
 
 T = TypeVar("T", bound="LintTarget")
@@ -181,7 +182,12 @@ class LintTarget:
         if root_path and self.path == root_path:
             label = f"{self.path.name}/{token_str}"
         else:
-            label = f"{self.tree_label()}{token_str}"
+            # A label can carry author text — a Cursor hook event key becomes
+            # part of its prompt block's label. `skillsaw tree` prints this
+            # straight to the terminal, with none of the report pipeline's
+            # sanitizing in front of it, so an escape sequence would execute
+            # and a lone surrogate would abort the command outright.
+            label = f"{safe_display(self.tree_label())}{token_str}"
 
         if _prefix or not root_path:
             connector = "└── " if _last else "├── "
@@ -236,7 +242,7 @@ class LintTarget:
             if root_path and node.path == root_path:
                 name = f"{node.path.name}/"
             else:
-                name = node.tree_label()
+                name = safe_display(node.tree_label())
             tokens = node.estimate_tokens()
             return f"{name}\\n({node._format_tokens(tokens)} tokens)"
 

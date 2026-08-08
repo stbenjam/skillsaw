@@ -90,8 +90,17 @@ class CursorHooksValidRule(Rule):
         return Severity.ERROR
 
     def _known_events(self) -> Set[str]:
-        """Built-in event names plus any the project declares."""
-        extra = self.config.get("extra-events", []) or []
+        """Built-in event names plus any the project declares.
+
+        The declared type is not enforced when the config loads, so
+        ``extra-events: 42`` arrives here as an int. Iterating it raised
+        ``TypeError``, which cost the whole rule — every structural finding
+        in every Cursor hooks file, over one bad config line. A value of the
+        wrong shape simply contributes no extra events.
+        """
+        extra = self.config.get("extra-events") or []
+        if not isinstance(extra, (list, tuple, set, frozenset)):
+            return CURSOR_HOOK_EVENTS
         return CURSOR_HOOK_EVENTS | {e for e in extra if isinstance(e, str)}
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

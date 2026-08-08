@@ -10,7 +10,8 @@ The server map has two spellings, and each host reads exactly one:
 
 | File | Key | Wrapper required? |
 | --- | --- | --- |
-| `.mcp.json`, plugin manifests | `mcpServers` | No — see below |
+| `.mcp.json` | `mcpServers` | No — see below |
+| plugin manifests | `mcpServers` | Yes |
 | `.cursor/mcp.json` | `mcpServers` | Yes |
 | `.vscode/mcp.json` | `servers` | Yes |
 
@@ -18,10 +19,13 @@ A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and
 `sandbox` are not servers and are left alone.
 
-The Claude-family files accept a **wrapperless** map as well: a `.mcp.json`
+A standalone `.mcp.json` accepts a **wrapperless** map as well: a file
 whose top level is the server map itself, with no `mcpServers` key, is
-valid and is not reported. Cursor and VS Code document one shape each and
-have no such form, so a bare map there loads nothing and is reported.
+valid and is not reported. Everywhere else the wrapper is the only form.
+Cursor and VS Code document one shape each, so a bare map there loads
+nothing and is reported; in a plugin manifest the servers live under the
+manifest's own `mcpServers` field, and bare keys beside it are ordinary
+manifest data that neither the host nor this rule reads as servers.
 
 ```json
 {"my-server": {"command": "node", "args": ["server.js"]}}

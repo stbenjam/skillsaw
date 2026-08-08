@@ -352,12 +352,24 @@ class CursorRulesValidRule(Rule):
         boolean = _BOOLEAN_STRINGS.get(field.value.strip().lower())
         if boolean is None:
             return None
-        replaced = replace_frontmatter_field(original, "alwaysApply", f"alwaysApply: {boolean}")
-        if replaced != original:
-            return replaced
-        # ``replace_frontmatter_field`` parses the block as YAML, so it
-        # declines exactly the files the lenient reader exists for — and a
-        # violation reported fixable that no fix ever repairs is worse than
-        # one reported unfixable. Rewrite the single line the parser read
-        # the value from instead; nothing else in the file is touched.
-        return _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")
+        candidate = replace_frontmatter_field(original, "alwaysApply", f"alwaysApply: {boolean}")
+        if candidate == original:
+            # ``replace_frontmatter_field`` parses the block as YAML, so it
+            # declines exactly the files the lenient reader exists for — and a
+            # violation reported fixable that no fix ever repairs is worse than
+            # one reported unfixable. Rewrite the single line the parser read
+            # the value from instead; nothing else in the file is touched.
+            candidate = _replace_key_line(original, field.field_line, f"alwaysApply: {boolean}")
+        if candidate is None or candidate == original:
+            return None
+        # A value wider than its key line — a folded or literal block scalar,
+        # ``alwaysApply: >`` with an indented ``true`` — has a span the
+        # one-line replacement cannot fill, so rewriting it deletes the
+        # continuation and shifts every later diagnostic. Decline instead of
+        # corrupting; check() asks this same function, so the violation stops
+        # advertising a fix at the same moment. Stated as the line-count
+        # invariant rather than as a block-scalar test, so any other
+        # multi-line spelling is refused too.
+        if candidate.count("\n") != original.count("\n"):
+            return None
+        return candidate

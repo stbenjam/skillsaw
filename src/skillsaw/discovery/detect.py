@@ -45,27 +45,41 @@ class RepositoryScan:
 
     instruction_files: Tuple[Path, ...]
     tool_dirs: Dict[str, Tuple[Path, ...]]
+    legacy_cursor_files: Tuple[Path, ...]
+
+
+#: Cursor's pre-`.cursor/` instruction file. Read from the nearest enclosing
+#: directory just like `.cursor/` itself, so a monorepo package carries its
+#: own — collecting only the root copy left a package's rules out of the tree
+#: entirely, and out of Cursor detection with them.
+LEGACY_CURSOR_FILE = ".cursorrules"
 
 
 def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     """Walk *root* once, collecting instruction files and editor directories."""
     found = [root / name for name in root_names if (root / name).exists()]
     tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
+    legacy_cursor: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
         here = Path(dirpath)
         found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
+        vendored = bool(VENDOR_DIR_NAMES.intersection(here.relative_to(root).parts))
+        # The root copy has always been attached; a nested one is a new
+        # claim, so it follows the tool-directory rule rather than the
+        # instruction-file one and stays out of vendored trees.
+        if LEGACY_CURSOR_FILE in filenames and (here == root or not vendored):
+            legacy_cursor.append(here / LEGACY_CURSOR_FILE)
         for name in dirnames:
             # Instruction files keep the historical behaviour — the sweep
             # above already collected them — but a tool directory is a new
             # claim, so vendored trees stay out of it.
-            if name in AGENT_TOOL_DIR_NAMES and not VENDOR_DIR_NAMES.intersection(
-                here.relative_to(root).parts
-            ):
+            if name in AGENT_TOOL_DIR_NAMES and not vendored:
                 tool_dirs[name].append(here / name)
     return RepositoryScan(
         instruction_files=tuple(sorted(found)),
         tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
+        legacy_cursor_files=tuple(sorted(legacy_cursor)),
     )
 
 
@@ -105,6 +119,7 @@ def instruction_formats(
     files: Iterable[Path],
     is_excluded: Callable[[Path], bool],
     tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
+    legacy_cursor_files: Iterable[Path] = (),
 ) -> Set[str]:
     """Return instruction-format evidence labels from non-excluded markers.
 
@@ -140,6 +155,14 @@ def instruction_formats(
                     return True
         return False
 
+    def legacy_cursor() -> bool:
+        """Any non-excluded `.cursorrules`, at the root or in a subpackage.
+
+        Reads the same walk attachment reads, so detection and attachment
+        cannot disagree about a nested one.
+        """
+        return any(not is_excluded(path) for path in legacy_cursor_files)
+
     def cline_marker() -> bool:
         """``.clinerules`` is a file in the old convention, a directory in the new."""
         if marker(".clinerules"):
@@ -148,7 +171,7 @@ def instruction_formats(
 
     found: Set[str] = set()
     checks = (
-        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or marker(".cursorrules")),
+        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or legacy_cursor()),
         (
             "HAS_COPILOT",
             editor_marker("HAS_COPILOT")
