@@ -1424,6 +1424,28 @@ class TestCursorRules:
         found = by_rule(run_lint(repo)).get("cursor-rules-valid", [])
         assert not [v for v in found if "Cursor skips the rule" in v["message"]]
 
+    def test_a_quoted_frontmatter_key_is_still_repaired(self, tmp_path):
+        """Advertised fixable must mean fixable — asked of the repair, not guessed."""
+        repo = tmp_path / "quotedkey"
+        (repo / ".cursor" / "rules").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        target = repo / ".cursor" / "rules" / "qk.mdc"
+        target.write_text('---\n"alwaysApply": "true"\n---\n\nQuoted key.\n')
+        before = target.read_text()
+
+        assert [v["fixable"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]] == [True]
+        _run_fix(repo)
+        after = target.read_text()
+
+        assert "alwaysApply: true" in after
+        assert len(after.splitlines()) == len(before.splitlines())
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+
+    def test_an_unrepairable_value_is_not_advertised_as_fixable(self, tmp_path):
+        repo = self._lenient_repo(tmp_path, "unrepairable", 'alwaysApply: "maybe"')
+
+        assert [v["fixable"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]] == [False]
+
     def test_a_windows_absolute_glob_is_absolute_everywhere(self, tmp_path):
         """The repository it cannot match is the same whatever OS lints it."""
         repo = self._lenient_repo(tmp_path, "winglob", 'globs: "C:/repo/**/*.py"')
@@ -1896,6 +1918,30 @@ class TestEditorTools:
 
         messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
         assert messages == ["MCP configuration has no 'servers' key — no servers are loaded"]
+
+    def test_a_populated_foreign_wrapper_is_reported_beside_the_right_one(self, tmp_path):
+        """The host reads its own key, so the other one's servers never load."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "bothwrappers",
+            ".vscode/mcp.json",
+            {"servers": {}, "mcpServers": {"search": {"command": "node"}}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert any("also has 'mcpServers'" in m for m in messages)
+
+    def test_a_non_finite_mcp_timeout_is_rejected(self, tmp_path):
+        """Python's json parses NaN; a strict host cannot load the file."""
+        repo = tmp_path / "nanmcp"
+        (repo / ".vscode").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".vscode" / "mcp.json").write_text(
+            '{"servers": {"x": {"command": "node", "timeout": NaN}}}'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert any("'timeout' must be a number" in m for m in messages)
 
     def test_a_vscode_config_declaring_only_inputs_has_no_servers(self, tmp_path):
         """`inputs` is a prompt-variable array; a file holding only that is complete."""

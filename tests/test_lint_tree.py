@@ -409,8 +409,30 @@ def test_only_top_level_cline_dirs_are_reserved(temp_dir):
     assert [b.path.name for b in tree.find(InstructionBlock)] == ["policy.md"]
 
 
+def test_apm_without_a_copilot_target_keeps_authored_github_content(temp_dir):
+    """A source directory alone does not make the .github copy generated."""
+    (temp_dir / "apm.yml").write_text(
+        "name: t\nversion: 1.0.0\ndescription: Test\ntargets:\n  - claude\n"
+    )
+    (temp_dir / ".apm" / "agents").mkdir(parents=True)
+    (temp_dir / ".apm" / "agents" / "src.agent.md").write_text(
+        "---\ndescription: APM source\n---\n\nAuthored in .apm.\n"
+    )
+    (temp_dir / ".github" / "agents").mkdir(parents=True)
+    (temp_dir / ".github" / "agents" / "custom.agent.md").write_text(
+        "---\ndescription: Hand-written\n---\n\nAPM never generated this.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(CopilotAgentBlock)] == ["custom.agent.md"]
+
+
 def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
     """APM writes .github/agents from .apm/agents; linting both reports twice."""
+    (temp_dir / "apm.yml").write_text(
+        "name: t\nversion: 1.0.0\ndescription: Test\ntargets:\n  - copilot\n"
+    )
     (temp_dir / ".apm" / "agents").mkdir(parents=True)
     (temp_dir / ".apm" / "agents" / "sec.agent.md").write_text(
         "---\ndescription: Security reviewer\n---\n\nCheck the inputs.\n"

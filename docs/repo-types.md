@@ -215,11 +215,14 @@ Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependenci
 
 These are not repository types — skillsaw picks them up in any repository,
 whatever its type, because they ship in the checkout. Every **prose** file
-listed below gets the full `content-*` rule set (weak language,
+listed below gets the `content-*` rules that apply to it (weak language,
 contradictions, attention dead zones, secrets, and the rest) plus the
-security rules, because its text lands in an agent's context window. The
-JSON configuration files — `mcp.json`, `hooks.json` — are machine config,
-never linted as prose; they get the MCP and hook rules instead.
+security rules, because its text lands in an agent's context window. A few
+content rules are scoped to a role rather than to all prose —
+`content-instruction-drift` compares always-on instruction files, so it
+does not look at on-demand commands, prompts, agents or workflows. The JSON
+configuration files — `mcp.json`, `hooks.json` — are machine config, never
+linted as prose; they get the MCP and hook rules instead.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md

@@ -83,7 +83,10 @@ def _replace_key_line(original: str, line: Optional[int], replacement: str) -> O
         return None
     key = replacement.split(":", 1)[0].strip()
     target = lines[line - 1]
-    if target.split(":", 1)[0].strip() != key:
+    # ``"alwaysApply": true`` declares the same key as ``alwaysApply: true``;
+    # YAML allows the quotes and Cursor's reader tolerates them.
+    declared = target.split(":", 1)[0].strip().strip("\"'")
+    if declared != key:
         return None
     # Preserve a CRLF ending: splitting on "\n" leaves the "\r" on the line.
     suffix = "\r" if target.endswith("\r") else ""
@@ -190,9 +193,13 @@ class CursorRulesValidRule(Rule):
                 file_path=block.path,
                 line=field.field_line,
                 block=block,
-                # Only a recognisable boolean spelling can be repaired without
-                # guessing what the author meant.
-                fixable=isinstance(value, str) and value.strip().lower() in _BOOLEAN_STRINGS,
+                # Asked of the fix rather than guessed alongside it. Three
+                # separate spellings have now been advertised as fixable and
+                # then declined by ``fix()`` — a lenient-frontmatter file, a
+                # diagnostic-only block, a quoted key — because the predicate
+                # and the repair reasoned independently. They cannot diverge
+                # if the predicate *is* the repair.
+                fixable=self._repair_always_apply(block.path) is not None,
             )
         ]
 
@@ -310,7 +317,7 @@ class CursorRulesValidRule(Rule):
             original = read_text(file_path)
             if original is None:
                 continue
-            fixed = self._fix_always_apply(file_path, original)
+            fixed = self._repair_always_apply(file_path)
             if fixed is None or fixed == original:
                 continue
             results.append(
@@ -326,13 +333,18 @@ class CursorRulesValidRule(Rule):
             )
         return results
 
-    def _fix_always_apply(self, file_path: Path, original: str) -> Optional[str]:
-        """Rewrite a boolean-looking string ``alwaysApply`` as a real boolean.
+    def _repair_always_apply(self, file_path: Path) -> Optional[str]:
+        """The repaired file content, or ``None`` when no repair is possible.
 
-        Re-reads the value from the file rather than parsing it back out of
-        the violation message, so the fix can never act on a spelling
-        ``check()`` did not actually see.
+        Reads the value from the file rather than parsing it back out of the
+        violation message, so a fix can never act on a spelling ``check()``
+        did not see. The single source of truth for "is this fixable": ``check()`` asks
+        it to set ``fixable`` and ``fix()`` asks it for the content, so the
+        answer cannot differ between them.
         """
+        original = read_text(file_path)
+        if original is None:
+            return None
         block = CursorRuleBlock(path=file_path)
         field = block.field("alwaysApply")
         if field is None or not isinstance(field.value, str):

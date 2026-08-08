@@ -50,6 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .utils import read_yaml
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
@@ -96,6 +97,25 @@ _EDITOR_GLOBS = (
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
+
+
+def _apm_targets_copilot(root_path: Path) -> bool:
+    """Whether this APM project compiles anything into ``.github/``.
+
+    A source directory alone does not make the ``.github`` copy generated:
+    with ``targets: [claude]`` APM writes nothing there, so suppressing the
+    directory would drop hand-written Copilot content out of the tree
+    entirely. An unreadable or target-less manifest is treated as
+    compiling, which keeps the established de-duplication rather than
+    doubling every finding on a misparse.
+    """
+    data, error = read_yaml(root_path / "apm.yml")
+    if error or not isinstance(data, dict):
+        return True
+    targets = data.get("targets")
+    if not isinstance(targets, list):
+        return True
+    return any(isinstance(t, str) and t.strip().lower() == "copilot" for t in targets)
 
 
 def build_lint_tree(context: "RepositoryContext") -> LintTarget:
@@ -173,7 +193,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # matching `.apm/` source is the evidence — a `.github/prompts/` in a
     # repository with no `.apm/prompts/` is authored content and stays.
     apm_compiled_github: Set[Path] = set()
-    if context.has_apm:
+    if context.has_apm and _apm_targets_copilot(context.root_path):
         root_github = safe_resolve(context.root_path / ".github")
         for kind in ("agents", "prompts", "chatmodes", "instructions"):
             if root_github is not None and (context.root_path / ".apm" / kind).is_dir():

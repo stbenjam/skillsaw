@@ -2,6 +2,7 @@
 Rule: mcp-valid-json
 """
 
+import math
 from typing import List, Dict, Any
 from pathlib import Path
 
@@ -130,6 +131,19 @@ class McpValidJsonRule(Rule):
             )
             if servers_key in data:
                 payload: Any = data[servers_key]
+                # Both wrappers present: the host reads its own, so the
+                # servers under the other one are silently not loaded. That
+                # is the whole point of the diagnostic, and it does not stop
+                # being true because the expected key also exists.
+                for wrong in wrong_keys:
+                    if data[wrong]:
+                        violations.append(
+                            self.violation(
+                                f"MCP configuration also has '{wrong}' — this host reads "
+                                f"'{servers_key}', so those servers are not loaded",
+                                file_path=block.path,
+                            )
+                        )
             elif wrong_keys:
                 # Another host's wrapper key: the servers are really there,
                 # this host just will not find them. Checked before the
@@ -355,7 +369,13 @@ class McpValidJsonRule(Rule):
             for timeout_field in ("startupTimeout", "timeout"):
                 if timeout_field in server_config:
                     val = server_config[timeout_field]
-                    is_valid_number = isinstance(val, (int, float)) and not isinstance(val, bool)
+                    is_valid_number = (
+                        isinstance(val, (int, float))
+                        and not isinstance(val, bool)
+                        # Python's json accepts NaN/Infinity; strict JSON does
+                        # not, and neither is a duration in any case.
+                        and math.isfinite(val)
+                    )
                     if not is_valid_number:
                         violations.append(
                             self.violation(
