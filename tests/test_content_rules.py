@@ -3597,3 +3597,16 @@ class TestContentProgressiveDisclosureRule:
         violations = rule.check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "promptfoo-prompt" in violations[0].message
+
+    def test_path_token_regex_linear_on_large_slash_free_input(self, temp_dir):
+        """A multi-KB slash-free token must not cause quadratic backtracking
+        in _PATH_TOKEN_RE (regression guard for the ReDoS fixed in this PR)."""
+        import time
+
+        blob = "a" * 32_000
+        skill = self._write_skill(temp_dir, extra=f"\n{blob}\n", files=("ref.md",))
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        start = time.monotonic()
+        rule.check(RepositoryContext(temp_dir))
+        elapsed = time.monotonic() - start
+        assert elapsed < 5.0, f"scan took {elapsed:.1f}s — likely quadratic regex"

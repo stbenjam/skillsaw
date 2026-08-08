@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **73** built-in rules organized into the following categories:
+skillsaw includes **74** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
