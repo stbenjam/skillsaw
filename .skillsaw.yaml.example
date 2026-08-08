@@ -440,6 +440,12 @@ rules:
     enabled: auto
     severity: error
 
+  # Require an allowlist for dynamic context commands that execute shell code while loading agent context
+  security-dynamic-context:
+    enabled: auto
+    severity: warning
+    # allowlist: []
+
   # Detect long high-entropy base64/hex blobs that can smuggle encoded payloads
   security-encoded-payload:
     enabled: auto
