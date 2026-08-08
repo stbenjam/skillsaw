@@ -1246,6 +1246,16 @@ class TestCursorRules:
         (alone / ".cursorrules").write_text("Use tabs in Makefiles.\n")
         assert "cursor-rules-valid" not in rule_ids(run_lint(alone))
 
+        # A nested package's rules govern that package; they say nothing
+        # about whether the root .cursorrules is displaced.
+        nested = tmp_path / "nested-only"
+        (nested / "apps" / "web" / ".cursor" / "rules").mkdir(parents=True)
+        (nested / "apps" / "web" / ".cursor" / "rules" / "web.mdc").write_text(
+            "---\ndescription: Web rules\n---\n\nUse Tailwind utilities.\n"
+        )
+        (nested / ".cursorrules").write_text("Use tabs in Makefiles.\n")
+        assert "cursor-rules-valid" not in rule_ids(run_lint(nested))
+
     def test_quoted_always_apply_is_fixed_in_place(self, tmp_path):
         repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
         target = repo / ".cursor" / "rules" / "quoted-bool.mdc"

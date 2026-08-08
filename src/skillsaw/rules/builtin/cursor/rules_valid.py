@@ -10,6 +10,7 @@ from skillsaw.context import HAS_CURSOR, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import AutofixConfidence, AutofixResult, Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CursorRuleBlock, InstructionBlock
+from skillsaw.paths import safe_resolve
 from skillsaw.rules.builtin.utils import read_text
 from skillsaw.utils import replace_frontmatter_field
 
@@ -65,11 +66,18 @@ class CursorRulesValidRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
-        mdc_blocks = context.lint_tree.find(CursorRuleBlock)
-        for block in mdc_blocks:
+        root_rules_dir = safe_resolve(context.root_path / ".cursor" / "rules")
+        has_root_rules = False
+        for block in context.lint_tree.find(CursorRuleBlock):
             violations.extend(self._check_mdc(block))
+            # Only a rules directory at the repository root displaces the
+            # root .cursorrules. A nested package's .cursor/rules governs
+            # that package, and says nothing about the root file.
+            resolved = safe_resolve(block.path)
+            if root_rules_dir is not None and resolved is not None:
+                has_root_rules = has_root_rules or resolved.is_relative_to(root_rules_dir)
 
-        violations.extend(self._check_legacy_cursorrules(context, bool(mdc_blocks)))
+        violations.extend(self._check_legacy_cursorrules(context, has_root_rules))
         return violations
 
     def _check_mdc(self, block: CursorRuleBlock) -> List[RuleViolation]:
@@ -231,10 +239,10 @@ class CursorRulesValidRule(Rule):
         return kept, violations
 
     def _check_legacy_cursorrules(
-        self, context: RepositoryContext, has_mdc: bool
+        self, context: RepositoryContext, has_root_rules: bool
     ) -> List[RuleViolation]:
         """A legacy .cursorrules is dead weight once .cursor/rules/ exists."""
-        if not has_mdc:
+        if not has_root_rules:
             return []
         legacy = context.root_path / ".cursorrules"
         for block in context.lint_tree.find(InstructionBlock):
