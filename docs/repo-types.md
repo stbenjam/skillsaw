@@ -238,13 +238,16 @@ wherever a tool's own metadata can fail silently — see
 
 skillsaw finds `.cursor/`, `.github/` and `.clinerules/` anywhere in the
 tree, so a monorepo package that carries its own set is linted alongside the
-root's. How much each tool actually reads from a nested directory varies:
-Cursor documents nested `.cursor/rules/` and `.cursor/skills/` explicitly;
-VS Code walks from the workspace folder up to the repository root; Cline and
-`.github/copilot-instructions.md` resolve one path relative to the workspace
-directory, so a nested copy is only read when that directory is the
-workspace. skillsaw lints all of them either way — a committed instruction
-file is worth checking wherever a teammate might open it.
+root's. How much each tool actually reads from a nested directory varies,
+and not every case is settled: Cursor documents nested `AGENTS.md` and
+`.cursor/skills/`, but steers rules toward a single root `.cursor/rules/`
+scoped with `globs`, and reports on whether nested rule directories load
+disagree across versions. VS Code walks from the workspace folder up to the
+repository root. Cline and `.github/copilot-instructions.md` resolve one
+path relative to the workspace directory, so a nested copy is read only when
+that directory is the workspace. skillsaw lints all of them either way — a
+committed instruction file is worth checking wherever a teammate might open
+it, and a rule that turns out not to load is worth knowing about too.
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and

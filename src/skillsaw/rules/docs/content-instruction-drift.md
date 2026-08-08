@@ -2,11 +2,10 @@
 
 Teams often copy a section between instruction files — CLAUDE.md,
 AGENTS.md, GEMINI.md, QWEN.md, `.github/copilot-instructions.md`,
-`.cursor/rules/**/*.mdc`, `.clinerules/*.md`, `.claude/rules/*.md` — so
+`.cursor/rules/**/*.mdc`, `.clinerules/**/*.md`, `.claude/rules/*.md` — so
 every assistant gets the same guidance. Then someone edits one copy and
-forgets the others.
-The copies silently disagree, and different agents follow different
-rules for the same task.
+forgets the others. The copies silently disagree, and different agents
+follow different rules for the same task.
 
 Exactly identical sections are fine: that is intentional sync.
 Near-identical sections (similar but not equal after normalization) are
