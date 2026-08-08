@@ -90,6 +90,23 @@ def copy_fixture(name, tmp_path):
     return dst
 
 
+def assert_only_line_changed(before: str, after: str, contains: str) -> None:
+    """Assert the fix rewrote exactly one line, and that it is the right one.
+
+    Autofix tests must pin *scope*, not just outcome. Comparing a suffix
+    (``lines[5:]``) leaves everything above the slice free to be mangled —
+    including the rest of the frontmatter, which is exactly where a
+    mis-targeted splice lands.
+    """
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    assert len(after_lines) == len(before_lines), "fix changed the line count"
+    changed = [i for i, (a, b) in enumerate(zip(after_lines, before_lines)) if a != b]
+    assert len(changed) == 1, f"expected one changed line, got {changed}"
+    assert contains in before_lines[changed[0]]
+    assert contains in after_lines[changed[0]]
+
+
 # ── Assert-directive infrastructure ──────────────────────────────
 
 
@@ -1275,9 +1292,8 @@ class TestCursorRules:
 
         assert "alwaysApply: true" in after
         assert '"true"' not in after
-        # Scope: only the one frontmatter line changes.
-        assert len(after.splitlines()) == len(before.splitlines())
-        assert after.splitlines()[5:] == before.splitlines()[5:]
+        # Scope: the alwaysApply line changes and nothing else does.
+        assert_only_line_changed(before, after, "alwaysApply")
 
         _run_fix(repo)
         assert target.read_text() == after
@@ -1345,7 +1361,8 @@ class TestCursorRules:
         after = target.read_text()
 
         assert "alwaysApply: true" in after
-        assert len(after.splitlines()) == len(before.splitlines())
+        assert_only_line_changed(before, after, "alwaysApply")
+        # Cursor's documented globs syntax survives the rewrite untouched.
         assert "globs: **/*.ts" in after
         _run_fix(repo)
         assert target.read_text() == after
@@ -1438,7 +1455,7 @@ class TestCursorRules:
         after = target.read_text()
 
         assert "alwaysApply: true" in after
-        assert len(after.splitlines()) == len(before.splitlines())
+        assert_only_line_changed(before, after, "alwaysApply")
         assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
 
     def test_an_unrepairable_value_is_not_advertised_as_fixable(self, tmp_path):
