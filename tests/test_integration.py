@@ -1326,6 +1326,23 @@ class TestCursorRules:
         )
         return repo
 
+    def test_a_flow_style_globs_list_keeps_its_structure(self, tmp_path):
+        """A YAML flow list is structure PyYAML got right, not a mistyped scalar.
+
+        Trading it for the dialect reader's raw `[/etc/**, src/**]` left the
+        pattern splitter looking at `[/etc/**`, whose leading bracket hid
+        the absolute path — reported in every other spelling, silent here.
+        """
+        repo = self._lenient_repo(tmp_path, "flowglobs", "globs: [/etc/**, src/**]")
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]]
+        assert messages == ["globs[0]: '/etc/**' must be repository-relative, not absolute"]
+
+    def test_a_flow_style_globs_list_of_relative_patterns_passes(self, tmp_path):
+        repo = self._lenient_repo(tmp_path, "flowok", "globs: [src/**, tests/**]")
+
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+
     def test_lenient_mdc_frontmatter_with_a_list_does_not_crash(self, tmp_path):
         """A bare `key:` opening a list must not be appended to as if it were one."""
         repo = self._lenient_repo(
@@ -1609,6 +1626,34 @@ class TestCursorRules:
 
         messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
         assert messages == ["Invalid JSON: NaN is not valid JSON"]
+
+    def test_an_enormous_integer_timeout_does_not_kill_the_rule(self, tmp_path):
+        """JSON puts no bound on integer literals; `math.isfinite` does.
+
+        A 400-digit timeout passed the `int` check and then raised
+        `OverflowError` converting to float. The guard caught it, so the
+        run survived — but the rule died, taking every other finding it
+        would have reported across the whole repository with it.
+        """
+        repo = tmp_path / "bigint"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        big = "9" * 400
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterFileEdit": '
+            '[{"command": "echo ok", "timeout": ' + big + "}]}}"
+        )
+        (repo / ".mcp.json").write_text(
+            '{"mcpServers": {"x": {"command": "node", "timeout": ' + big + "}}}"
+        )
+
+        found = by_rule(run_lint(repo))
+
+        assert found.get("rule-execution-error", []) == []
+        # An enormous integer is still a number, so neither rule reports the
+        # field — only the crash was the defect.
+        assert found.get("cursor-hooks-valid", []) == []
+        assert found.get("mcp-valid-json", []) == []
 
     def test_a_non_numeric_hook_timeout_is_still_reported_per_field(self, tmp_path):
         """A string timeout is valid JSON, so the field check is what catches it."""

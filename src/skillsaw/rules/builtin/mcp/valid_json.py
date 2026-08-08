@@ -2,13 +2,13 @@
 Rule: mcp-valid-json
 """
 
-import math
 from typing import List, Dict, Any
 from pathlib import Path
 
 from skillsaw.blocks import AgentPluginMcpBlock
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
+from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import McpBlock
@@ -378,13 +378,11 @@ class McpValidJsonRule(Rule):
             for timeout_field in ("startupTimeout", "timeout"):
                 if timeout_field in server_config:
                     val = server_config[timeout_field]
-                    is_valid_number = (
-                        isinstance(val, (int, float))
-                        and not isinstance(val, bool)
-                        # Python's json accepts NaN/Infinity; strict JSON does
-                        # not, and neither is a duration in any case.
-                        and math.isfinite(val)
-                    )
+                    # NaN/Infinity (which Python's json accepts and strict
+                    # JSON does not) and bools are rejected; a huge integer
+                    # literal is answered without a float conversion that
+                    # would raise OverflowError and kill the rule.
+                    is_valid_number = is_finite_number(val)
                     if not is_valid_number:
                         violations.append(
                             self.violation(

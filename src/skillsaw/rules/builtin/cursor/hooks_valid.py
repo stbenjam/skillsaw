@@ -2,13 +2,13 @@
 Rule: cursor-hooks-valid
 """
 
-import math
 from typing import Any, Dict, List, Set
 
 from skillsaw.context import HAS_CURSOR, RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import CursorHooksBlock
+from skillsaw.utils import is_finite_number
 
 #: The only value Cursor's hooks schema accepts today.
 _SUPPORTED_VERSION = 1
@@ -280,15 +280,12 @@ class CursorHooksValidRule(Rule):
         timeout = entry.get("timeout")
         # ``bool`` is an ``int`` subclass, and ``timeout: true`` is not a
         # duration however permissively you read it.
-        if timeout is not None and (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            # Normally unreachable: the block parses strictly, so a file
-            # carrying NaN/Infinity fails above as invalid JSON. Kept
-            # because this rule's correctness should not depend on a flag
-            # set on a class in another module.
-            or not math.isfinite(timeout)
-        ):
+        # The NaN/Infinity half of this is normally unreachable — the block
+        # parses strictly, so such a file fails above as invalid JSON — but
+        # this rule's correctness should not depend on a flag set on a class
+        # in another module. A huge integer literal is finite and stays
+        # accepted, without the float conversion that would kill the rule.
+        if timeout is not None and not is_finite_number(timeout):
             violations.append(
                 self.violation(
                     f"{where} 'timeout' must be a number, got {type(timeout).__name__}",

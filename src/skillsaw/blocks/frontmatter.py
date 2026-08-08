@@ -461,8 +461,17 @@ class CursorRuleBlock(FrontmatteredBlock):
         Only a value the readers disagree about is replaced, and only in one
         direction: strict YAML typed it, the Cursor dialect kept it a string.
         A list is compared element-wise for the same reason.
+
+        A *collection* is never traded for the dialect's scalar. The
+        correction is for mistyped scalars — ``yes`` read as a bool — and a
+        strict list is structure PyYAML got right. Flow style is where this
+        bites: ``globs: [/etc/**, src/**]`` parses to a real list, while the
+        line-oriented dialect reader returns the raw ``[/etc/**, src/**]``.
+        Taking that string left the pattern splitter looking at ``[/etc/**``,
+        whose leading bracket hid the absolute path the rule exists to
+        report.
         """
-        if isinstance(dialect, str) and not isinstance(strict, str):
+        if isinstance(dialect, str) and not isinstance(strict, (str, list, dict)):
             return dialect
         if isinstance(strict, list) and isinstance(dialect, list) and len(strict) == len(dialect):
             return [

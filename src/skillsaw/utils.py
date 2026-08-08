@@ -1,6 +1,7 @@
 """Shared utilities for builtin rules."""
 
 import json
+import math
 import re
 import threading
 from pathlib import Path
@@ -243,6 +244,26 @@ _GENERATED_MARKER = re.compile(
 def has_generated_marker(text: Optional[str]) -> bool:
     """Whether *text* declares itself a compiled output."""
     return bool(text) and _GENERATED_MARKER.search(text) is not None
+
+
+def is_finite_number(value: Any) -> bool:
+    """Whether *value* is a real, finite JSON number.
+
+    ``bool`` is excluded — it is an ``int`` subclass, and ``timeout: true``
+    is not a duration however permissively you read it.
+
+    ``int`` is answered without touching ``math.isfinite``: a Python int is
+    always finite, and handing a big one to a function that takes a float
+    raises ``OverflowError``. JSON has no bound on integer literals, so a
+    400-digit ``timeout`` is a document any host will parse — and it used
+    to take down every check in the rule that met it, losing that rule's
+    findings for the whole repository.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if isinstance(value, int):
+        return True
+    return math.isfinite(value)
 
 
 def _reject_non_finite(token: str) -> NoReturn:
