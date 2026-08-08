@@ -22,6 +22,7 @@ DEFAULT_LIMITS: Dict[str, Dict[str, int]] = {
     "agents-md": {"warn": 6000, "error": 12000},
     "claude-md": {"warn": 6000, "error": 12000},
     "gemini-md": {"warn": 6000, "error": 12000},
+    "qwen-md": {"warn": 6000, "error": 12000},
     "instruction": {"warn": 4000, "error": 8000},
     "skill": {"warn": 3000, "error": 6000},
     "command": {"warn": 2000, "error": 4000},

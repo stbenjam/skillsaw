@@ -23,7 +23,10 @@ class InstructionFileValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md) must be valid and non-empty"
+        return (
+            "Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) "
+            "must be valid and non-empty"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING

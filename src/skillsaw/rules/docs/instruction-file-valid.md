@@ -1,6 +1,6 @@
 ## Why
 
-An instruction file (AGENTS.md, CLAUDE.md, GEMINI.md) that is empty
+An instruction file (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) that is empty
 or unreadable provides no value — the agent loads it, spends overhead
 processing it, and gets nothing. This usually indicates a file that
 was created as a placeholder but never filled in.

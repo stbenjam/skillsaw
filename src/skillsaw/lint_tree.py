@@ -15,11 +15,15 @@ from .blocks import (
     AgentsMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
+    ClineWorkflowBlock,
     CodeRabbitContentBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
     CommandBlock,
     ContextFileBlock,
+    CopilotAgentBlock,
+    CopilotPromptBlock,
+    CursorCommandBlock,
     CursorRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
@@ -30,10 +34,12 @@ from .blocks import (
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
+    QwenMdBlock,
     ReadmeBlock,
     SettingsBlock,
     SkillBlock,
     SkillRefBlock,
+    VsCodeMcpBlock,
 )
 from .formats.codex import (
     codex_declared_hook_files,
@@ -76,6 +82,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
         "GEMINI.md": GeminiMdBlock,
+        "QWEN.md": QwenMdBlock,
     }
 
     root = LintTarget(path=context.root_path)
@@ -299,13 +306,54 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
         _add_block(root, root_native_mcp, McpBlock)
 
-    _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
+    # --- Editor-owned content directories (Cursor, Copilot/VS Code, Cline) ---
+    # These tools read AGENTS.md for portable instructions — already attached
+    # above — so nothing here re-implements an instruction format. What is
+    # attached is the prose each tool keeps in its own directory and that
+    # therefore ships in the repository: rules, slash commands, prompt files
+    # and custom agents. Every one of them lands in an agent's context
+    # window, so every one gets the content rules.
+    #
+    # All three resolve their configuration from the nearest enclosing
+    # directory as well as the repository root, so a monorepo package can
+    # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
+    # root-anchored lookup.
+    def _add_glob(parent: LintTarget, directory: Path, pattern: str, block_cls: type) -> None:
+        """Attach every file matching *pattern* under *directory*."""
+        if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
+            return
+        try:
+            matches = sorted(directory.glob(pattern))
+        except OSError:
+            return
+        for match in matches:
+            if safe_is_file(match):
+                _add_block(parent, match, block_cls)
+
     _add_block(root, context.root_path / ".cursorrules", InstructionBlock)
 
-    cursor_rules_dir = context.root_path / ".cursor" / "rules"
-    if cursor_rules_dir.is_dir() and not _is_in_compiled_dir(cursor_rules_dir):
-        for mdc in sorted(cursor_rules_dir.glob("*.mdc")):
-            _add_block(root, mdc, CursorRuleBlock)
+    for cursor_dir in context.agent_tool_dirs(".cursor"):
+        if _is_in_compiled_dir(cursor_dir):
+            # APM generates the whole of .cursor/ — lint the sources instead.
+            continue
+        # ``rules/`` nests: Cursor walks it recursively, so category
+        # subdirectories are ordinary rule files, not decoration.
+        _add_glob(root, cursor_dir / "rules", "**/*.mdc", CursorRuleBlock)
+        _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
+        _add_parser_block(root, cursor_dir / "mcp.json", McpBlock)
+
+    for github_dir in context.agent_tool_dirs(".github"):
+        _add_block(root, github_dir / "copilot-instructions.md", InstructionBlock)
+        # ``.github/instructions/**/*.instructions.md`` needs no entry: the
+        # repository scan collects every ``*.instructions.md`` wherever it
+        # lives, and they are attached with the root instruction files above.
+        _add_glob(root, github_dir / "prompts", "**/*.prompt.md", CopilotPromptBlock)
+        _add_glob(root, github_dir / "agents", "**/*.agent.md", CopilotAgentBlock)
+        # Chat modes are the pre-2026 spelling of custom agents. VS Code
+        # still loads them, so they are still shipped prose.
+        _add_glob(root, github_dir / "chatmodes", "**/*.chatmode.md", CopilotAgentBlock)
+
+    _add_parser_block(root, context.root_path / ".vscode" / "mcp.json", VsCodeMcpBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
@@ -314,12 +362,17 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     _add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
-    clinerules = context.root_path / ".clinerules"
-    if clinerules.is_file():
-        _add_block(root, clinerules, InstructionBlock)
-    elif clinerules.is_dir():
-        for md in sorted(clinerules.glob("*.md")):
-            _add_block(root, md, InstructionBlock)
+    clinerules_file = context.root_path / ".clinerules"
+    if safe_is_file(clinerules_file):
+        _add_block(root, clinerules_file, InstructionBlock)
+    for clinerules_dir in context.agent_tool_dirs(".clinerules"):
+        # Cline concatenates every .md and .txt under .clinerules/ into the
+        # system prompt, and loads workflows/ on demand instead. Claim the
+        # workflows first: ``_add_block`` keeps the first role a path gets,
+        # and the sweep below would otherwise budget them as always-on.
+        _add_glob(root, clinerules_dir / "workflows", "**/*.md", ClineWorkflowBlock)
+        for pattern in ("**/*.md", "**/*.txt"):
+            _add_glob(root, clinerules_dir, pattern, InstructionBlock)
 
     # --- Marketplace config ---
     marketplace_json = context.root_path / ".claude-plugin" / "marketplace.json"

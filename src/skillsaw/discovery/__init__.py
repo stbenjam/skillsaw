@@ -13,6 +13,21 @@ from typing import Dict, Iterable, List
 
 from skillsaw.paths import safe_resolve
 
+# Repository-relative directories that host Agent Skills by convention.
+# The ``SKILL.md`` spec is portable, so every path added here earns the
+# full skill rule set for another tool at no rule-authoring cost:
+# ``.agents/skills`` is the vendor-neutral location every tool below also
+# honours, and the rest are each tool's own default.
+CONVENTIONAL_SKILL_DIRS = (
+    ".agents/skills",  # portable — Cursor, Cline, Copilot, Codex, Claude Code
+    ".apm/skills",
+    ".claude/skills",
+    ".github/skills",  # Copilot
+    ".cursor/skills",  # Cursor
+    ".cline/skills",  # Cline
+    ".qwen/skills",  # Qwen Code
+)
+
 
 def merge_plugin_dirs(*plugin_groups: Iterable[Path]) -> List[Path]:
     """Plugin directories from every ecosystem, deduplicated by resolved path.

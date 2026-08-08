@@ -206,3 +206,43 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 ## APM (Agent Package Manager)
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
+
+## Editor and CLI tool files
+
+These are not repository types — skillsaw picks them up in any repository,
+whatever its type, because they ship in the checkout and land in an agent's
+context window. Every file listed here gets the full `content-*` rule set
+(weak language, contradictions, attention dead zones, secrets, and the rest)
+plus the security rules.
+
+Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
+— Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md
+beats four per-vendor copies that drift apart. skillsaw does not reimplement a
+per-vendor instruction format on top of it; what it adds is coverage of the
+prose each tool keeps in its own directory.
+
+| Tool | Files linted |
+| --- | --- |
+| **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
+| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, legacy `.cursorrules` |
+| **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.agent.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
+| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt`, `.clinerules/workflows/**/*.md`, `.cline/skills/*/SKILL.md` |
+| **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
+| **Kiro** | `.kiro/steering/*.md` |
+| **Windsurf** | `.windsurfrules` |
+
+Cursor, Copilot and Cline all resolve their configuration from the nearest
+enclosing directory as well as the repository root, so skillsaw finds
+`.cursor/`, `.github/` and `.clinerules/` anywhere in the tree — a monorepo
+package that carries its own set is linted alongside the root's.
+
+MCP configuration is read for its servers wherever it lives, so
+`mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and
+`.vscode/mcp.json` as well as `.mcp.json`. VS Code spells the server map
+`servers` and adds a sibling `inputs` array for prompted variables; skillsaw
+reads the former and ignores the latter.
+
+Files that are on-demand rather than always-on — Cursor commands, Copilot
+prompt files, Cline workflows — are budgeted by
+[`context-budget`](rules/context-budget.md) as commands, not as instruction
+files, because they enter the context window only when invoked.

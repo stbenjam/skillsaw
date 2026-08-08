@@ -302,9 +302,30 @@ ParsedFrontmatterBlock = FrontmatteredBlock
 
 @dataclass(eq=False)
 class CursorRuleBlock(FrontmatteredBlock):
-    """.cursor/rules/*.mdc files."""
+    """.cursor/rules/**/*.mdc files."""
 
     category: str = "instruction"
+
+
+@dataclass(eq=False)
+class CursorCommandBlock(FrontmatteredBlock):
+    """.cursor/commands/**/*.md — Cursor slash commands."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class CopilotPromptBlock(FrontmatteredBlock):
+    """.github/prompts/**/*.prompt.md — Copilot prompt files."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class CopilotAgentBlock(FrontmatteredBlock):
+    """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
+
+    category: str = "agent"
 
 
 @dataclass(eq=False)

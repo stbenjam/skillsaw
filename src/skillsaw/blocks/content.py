@@ -43,6 +43,24 @@ class GeminiMdBlock(InstructionBlock):
 
 
 @dataclass(eq=False)
+class QwenMdBlock(InstructionBlock):
+    """QWEN.md instruction file."""
+
+    category: str = "qwen-md"
+
+
+@dataclass(eq=False)
+class ClineWorkflowBlock(FileContentBlock):
+    """.clinerules/workflows/*.md — Cline workflows, invoked on demand.
+
+    Budgeted as a ``command`` rather than an ``instruction``: workflows are
+    pulled into context when the user types ``/name``, not on every turn.
+    """
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
 class SkillRefBlock(FileContentBlock):
     """references/*.md in skills."""
 

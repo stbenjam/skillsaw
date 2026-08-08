@@ -15,7 +15,14 @@ from skillsaw.paths import safe_resolve
 
 # Categories of instruction files that get copied between assistants
 # (CLAUDE.md <-> AGENTS.md <-> copilot-instructions.md <-> rules files).
-_INSTRUCTION_CATEGORIES = ("claude-md", "agents-md", "gemini-md", "instruction", "rule")
+_INSTRUCTION_CATEGORIES = (
+    "claude-md",
+    "agents-md",
+    "gemini-md",
+    "qwen-md",
+    "instruction",
+    "rule",
+)
 
 # Files carrying a generated-file marker are compiled outputs (e.g. apm
 # compiles one source into CLAUDE.md, copilot-instructions.md, ...).

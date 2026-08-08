@@ -1,9 +1,10 @@
 ## Why
 
 Teams often copy a section between instruction files — CLAUDE.md,
-AGENTS.md, GEMINI.md, `.github/copilot-instructions.md`,
-`.cursor/rules/*.mdc`, `.claude/rules/*.md` — so every assistant gets
-the same guidance. Then someone edits one copy and forgets the others.
+AGENTS.md, GEMINI.md, QWEN.md, `.github/copilot-instructions.md`,
+`.cursor/rules/**/*.mdc`, `.clinerules/*.md`, `.claude/rules/*.md` — so
+every assistant gets the same guidance. Then someone edits one copy and
+forgets the others.
 The copies silently disagree, and different agents follow different
 rules for the same task.
 

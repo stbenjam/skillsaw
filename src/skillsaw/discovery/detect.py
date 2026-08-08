@@ -6,10 +6,12 @@ This module deliberately returns string labels rather than importing
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import os
-from typing import Callable, Iterable, List, Set
+from typing import Callable, Dict, Iterable, List, Set, Tuple
 
+from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.utils import read_yaml
 
@@ -17,16 +19,46 @@ WALK_SKIP_DIRS = frozenset(
     {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache"}
 )
 
+# Editor-owned directories whose contents ship in a repository. Cursor,
+# Copilot/VS Code and Cline all read these from the nearest enclosing
+# folder as well as the repository root, so a monorepo package can carry
+# its own set — hence a walk rather than a root-anchored lookup.
+AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github"})
+
+
+@dataclass(frozen=True)
+class RepositoryScan:
+    """Everything one filesystem walk of the repository yields.
+
+    Discovery walks are the dominant cost of building a context on a large
+    checkout, so the instruction-file sweep and the editor-directory sweep
+    share a single pass instead of one each.
+    """
+
+    instruction_files: Tuple[Path, ...]
+    tool_dirs: Dict[str, Tuple[Path, ...]]
+
+
+def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
+    """Walk *root* once, collecting instruction files and editor directories."""
+    found = [root / name for name in root_names if (root / name).exists()]
+    tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
+        here = Path(dirpath)
+        found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
+        for name in dirnames:
+            if name in AGENT_TOOL_DIR_NAMES:
+                tool_dirs[name].append(here / name)
+    return RepositoryScan(
+        instruction_files=tuple(sorted(found)),
+        tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
+    )
+
 
 def instruction_files(root: Path, root_names: Iterable[str]) -> List[Path]:
     """Find root instruction files and named Copilot instructions."""
-    found = [root / name for name in root_names if (root / name).exists()]
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
-        found.extend(
-            Path(dirpath) / name for name in filenames if name.endswith(".instructions.md")
-        )
-    return sorted(found)
+    return list(scan_repository(root, root_names).instruction_files)
 
 
 def instruction_formats(
@@ -43,13 +75,26 @@ def instruction_formats(
 
     found: Set[str] = set()
     checks = (
-        ("HAS_CURSOR", marker(".cursor", "rules", is_dir=True) or marker(".cursorrules")),
+        (
+            "HAS_CURSOR",
+            marker(".cursor", "rules", is_dir=True)
+            or marker(".cursor", "commands", is_dir=True)
+            or marker(".cursorrules"),
+        ),
         (
             "HAS_COPILOT",
             marker(".github", "copilot-instructions.md")
+            or marker(".github", "instructions", is_dir=True)
+            or marker(".github", "prompts", is_dir=True)
+            or marker(".github", "agents", is_dir=True)
+            or marker(".github", "chatmodes", is_dir=True)
             or any(path.name.endswith(".instructions.md") for path in files),
         ),
+        # .clinerules is a file in the original convention and a directory in
+        # the current one; ``marker`` without ``is_dir`` accepts either.
+        ("HAS_CLINE", marker(".clinerules")),
         ("HAS_GEMINI", marker("GEMINI.md")),
+        ("HAS_QWEN", marker("QWEN.md")),
         ("HAS_AGENTS_MD", marker("AGENTS.md")),
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
         ("HAS_CLAUDE_MD", marker("CLAUDE.md")),
@@ -83,7 +128,7 @@ def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool
     """Return whether the repository contains an Agent Skill entrypoint."""
     if (root / "SKILL.md").exists():
         return True
-    for rel in (".apm/skills", ".claude/skills", ".github/skills", ".agents/skills"):
+    for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
         if path.is_dir() and has_skill_md_recursive(path, should_skip):
             return True

@@ -92,18 +92,19 @@ class McpValidJsonRule(Rule):
             # non-empty-string checks apply only inside Codex-ONLY plugins,
             # so dual-manifest plugins keep their established Claude results.
             require_usable = context.in_codex_only_plugin(block.path)
-            if "mcpServers" in data:
-                violations.extend(
-                    self._validate_mcp_structure(data, block.path, require_usable=require_usable)
+            # Hosts spell the wrapper key differently (VS Code uses
+            # ``servers``); the block knows its own. A file that omits the
+            # wrapper entirely is a bare server map, which every host accepts.
+            servers_key = block.servers_key
+            payload = data[servers_key] if servers_key in data else data
+            violations.extend(
+                self._validate_mcp_structure(
+                    {"mcpServers": payload},
+                    block.path,
+                    require_usable=require_usable,
+                    servers_key=servers_key,
                 )
-            else:
-                violations.extend(
-                    self._validate_mcp_structure(
-                        {"mcpServers": data},
-                        block.path,
-                        require_usable=require_usable,
-                    )
-                )
+            )
 
         # Also check mcpServers embedded in plugin.json (not a separate file node)
         for plugin_node in context.lint_tree.find(PluginNode):
@@ -146,6 +147,7 @@ class McpValidJsonRule(Rule):
         file_path: Path,
         *,
         require_usable: bool = False,
+        servers_key: str = "mcpServers",
     ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
@@ -159,7 +161,7 @@ class McpValidJsonRule(Rule):
         if "mcpServers" not in data:
             violations.append(
                 self.violation(
-                    "MCP configuration must contain 'mcpServers' key",
+                    f"MCP configuration must contain '{servers_key}' key",
                     file_path=file_path,
                 )
             )
@@ -168,7 +170,7 @@ class McpValidJsonRule(Rule):
         mcp_servers = data["mcpServers"]
         if not isinstance(mcp_servers, dict):
             violations.append(
-                self.violation("'mcpServers' must be a JSON object", file_path=file_path)
+                self.violation(f"'{servers_key}' must be a JSON object", file_path=file_path)
             )
             return violations
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from skillsaw.lint_target import LintTarget
 from skillsaw.utils import read_text, read_json
@@ -300,16 +300,20 @@ class McpServerConfig:
 
 @dataclass(eq=False)
 class McpBlock(JsonConfigBlock):
-    """.mcp.json at the project root or inside a plugin."""
+    """.mcp.json at the project root, inside a plugin, or in ``.cursor/``."""
 
     category: str = "mcp"
+
+    #: Top-level key holding the server map. Every host but VS Code spells
+    #: it ``mcpServers``; see :class:`VsCodeMcpBlock`.
+    servers_key: ClassVar[str] = "mcpServers"
 
     @property
     def servers(self) -> List[McpServerConfig]:
         data = self.raw_data
         if data is None:
             return []
-        servers_dict = data.get("mcpServers", data)
+        servers_dict = data.get(self.servers_key, data)
         if not isinstance(servers_dict, dict):
             return []
         return [
@@ -329,6 +333,21 @@ class AgentPluginMcpBlock(McpBlock):
 
     def tree_label(self) -> str:
         return "mcp.json (agent plugin MCP)"
+
+
+@dataclass(eq=False)
+class VsCodeMcpBlock(McpBlock):
+    """``.vscode/mcp.json`` — the Copilot/VS Code MCP configuration.
+
+    Same server shape as every other host, under a different key: VS Code
+    spells the map ``servers`` and adds a sibling ``inputs`` array for
+    prompted variables, which is not a server and must not be read as one.
+    """
+
+    servers_key: ClassVar[str] = "servers"
+
+    def tree_label(self) -> str:
+        return "mcp.json (VS Code MCP)"
 
 
 @dataclass(eq=False)

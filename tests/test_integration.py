@@ -1196,6 +1196,69 @@ class TestCursorRules:
 
 
 @pytest.mark.integration
+class TestEditorTools:
+    """Cursor, Copilot/VS Code and Cline content that ships in a repository."""
+
+    def test_every_editor_content_file_reaches_the_content_rules(self, tmp_path):
+        repo = copy_fixture("editor-tools/monorepo", tmp_path)
+        r = run_lint(repo)
+
+        flagged = {v["file_path"] for v in violations(r) if v["rule_id"] == "content-weak-language"}
+        assert flagged == {
+            "QWEN.md",
+            ".cursor/rules/backend/api.mdc",
+            ".cursor/commands/review.md",
+            "apps/web/.cursor/rules/web.mdc",
+            ".github/prompts/changelog.prompt.md",
+            ".github/agents/security.agent.md",
+            ".github/chatmodes/planner.chatmode.md",
+            ".clinerules/style.md",
+            ".clinerules/policy.txt",
+            ".clinerules/workflows/release.md",
+        }
+
+    def test_frontmattered_editor_files_report_file_line_numbers(self, tmp_path):
+        """Prompt and agent bodies are offset by their frontmatter."""
+        repo = copy_fixture("editor-tools/monorepo", tmp_path)
+        r = run_lint(repo)
+
+        lines = {
+            v["file_path"]: v["line"]
+            for v in violations(r)
+            if v["rule_id"] == "content-weak-language"
+        }
+        assert lines[".github/prompts/changelog.prompt.md"] == 13
+        assert lines[".github/agents/security.agent.md"] == 15
+        assert lines[".cursor/rules/backend/api.mdc"] == 13
+
+    def test_editor_tool_formats_are_detected(self, tmp_path):
+        repo = copy_fixture("editor-tools/monorepo", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0
+        assert summary(r)["errors"] == 0
+        assert summary(r)["warnings"] == 0
+
+    def test_mcp_rules_reach_cursor_and_vscode_configs(self, tmp_path):
+        repo = copy_fixture("editor-tools/broken-mcp", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        mcp = {(v["file_path"], v["message"]) for v in by_rule(r)["mcp-valid-json"]}
+        assert (
+            ".cursor/mcp.json",
+            "MCP server 'search' with type 'stdio' must have a 'command' field",
+        ) in mcp
+        # ``inputs`` is a VS Code prompt-variable array, not a server: reading
+        # it as one would report a bogus second failure here.
+        assert (
+            ".vscode/mcp.json",
+            "MCP server 'fetch' with type 'http' must have a 'url' field",
+        ) in mcp
+        assert len(mcp) == 2
+
+
+@pytest.mark.integration
 class TestDotClaude:
 
     def test_clean_dot_claude_passes(self, tmp_path):

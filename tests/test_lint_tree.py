@@ -4,6 +4,16 @@ Tests for the lint tree data structure and tree builder.
 
 from pathlib import Path
 
+from skillsaw.blocks import (
+    ClineWorkflowBlock,
+    CopilotAgentBlock,
+    CopilotPromptBlock,
+    CursorCommandBlock,
+    CursorRuleBlock,
+    InstructionBlock,
+    QwenMdBlock,
+    VsCodeMcpBlock,
+)
 from skillsaw.config import LinterConfig
 from skillsaw.lint_target import (
     LintTarget,
@@ -225,6 +235,84 @@ def test_tree_contains_coderabbit_node(temp_dir):
     tree = context.lint_tree
 
     assert len(tree.find(CodeRabbitNode)) == 1
+
+
+def test_tree_contains_editor_tool_blocks(temp_dir):
+    """Cursor, Copilot and Cline content files each get their own block type."""
+    (temp_dir / ".cursor" / "rules" / "backend").mkdir(parents=True)
+    (temp_dir / ".cursor" / "rules" / "backend" / "api.mdc").write_text(
+        "---\ndescription: API rules\n---\n\nReturn Pydantic models.\n"
+    )
+    (temp_dir / ".cursor" / "commands").mkdir()
+    (temp_dir / ".cursor" / "commands" / "review.md").write_text("# Review\n\nRead the diff.\n")
+    (temp_dir / ".github" / "prompts").mkdir(parents=True)
+    (temp_dir / ".github" / "prompts" / "log.prompt.md").write_text(
+        "---\ndescription: Draft a changelog\n---\n\nGroup the merged pull requests.\n"
+    )
+    (temp_dir / ".github" / "agents").mkdir()
+    (temp_dir / ".github" / "agents" / "sec.agent.md").write_text(
+        "---\ndescription: Security reviewer\n---\n\nReport auth defects.\n"
+    )
+    (temp_dir / ".github" / "chatmodes").mkdir()
+    (temp_dir / ".github" / "chatmodes" / "plan.chatmode.md").write_text(
+        "---\ndescription: Planner\n---\n\nProduce a plan.\n"
+    )
+    (temp_dir / ".clinerules" / "workflows").mkdir(parents=True)
+    (temp_dir / ".clinerules" / "style.md").write_text("# Style\n\nPrefer small commits.\n")
+    (temp_dir / ".clinerules" / "policy.txt").write_text("Never force push to main.\n")
+    (temp_dir / ".clinerules" / "workflows" / "release.md").write_text("# Release\n\nTag it.\n")
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    def names(block_cls):
+        return {b.path.name for b in tree.find(block_cls)}
+
+    # Nested rule directories are ordinary rule files, not decoration.
+    assert names(CursorRuleBlock) == {"api.mdc"}
+    assert names(CursorCommandBlock) == {"review.md"}
+    assert names(CopilotPromptBlock) == {"log.prompt.md"}
+    assert names(CopilotAgentBlock) == {"sec.agent.md", "plan.chatmode.md"}
+    # Workflows are claimed before the always-on sweep, so they are budgeted
+    # as on-demand commands rather than as system-prompt instructions.
+    assert names(ClineWorkflowBlock) == {"release.md"}
+    assert {"style.md", "policy.txt"} <= names(InstructionBlock)
+
+
+def test_tree_finds_editor_tool_dirs_in_subpackages(temp_dir):
+    """Cursor reads the nearest .cursor directory, so a monorepo package keeps its own."""
+    nested = temp_dir / "apps" / "web" / ".cursor" / "rules"
+    nested.mkdir(parents=True)
+    (nested / "web.mdc").write_text("---\ndescription: Web rules\n---\n\nUse Tailwind.\n")
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(CursorRuleBlock)] == ["web.mdc"]
+
+
+def test_tree_reads_vscode_mcp_servers_key(temp_dir):
+    """VS Code spells the server map ``servers`` and adds a non-server ``inputs``."""
+    (temp_dir / ".vscode").mkdir()
+    (temp_dir / ".vscode" / "mcp.json").write_text(
+        '{"inputs": [{"id": "tok", "type": "promptString"}], '
+        '"servers": {"fetch": {"type": "http", "url": "https://example.com/mcp"}}}'
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    blocks = tree.find(VsCodeMcpBlock)
+    assert len(blocks) == 1
+    assert blocks[0].server_names == {"fetch"}
+
+
+def test_tree_contains_qwen_md_block(temp_dir):
+    """QWEN.md is an instruction file in its own right, like GEMINI.md."""
+    (temp_dir / "QWEN.md").write_text("# Qwen\n\nActivate the virtualenv first.\n")
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    blocks = tree.find(QwenMdBlock)
+    assert len(blocks) == 1
+    assert blocks[0].category == "qwen-md"
 
 
 def test_tree_rejects_instruction_symlink_outside_repo(tmp_path):

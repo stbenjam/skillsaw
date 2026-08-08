@@ -1,0 +1,10 @@
+---
+description: Repository-wide conventions for every file
+alwaysApply: true
+---
+
+# Repository conventions
+
+Commit messages use the imperative mood and stay under 72 characters.
+
+Never commit generated files under `dist/` — they are rebuilt by CI.

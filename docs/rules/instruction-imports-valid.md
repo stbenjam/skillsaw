@@ -3,7 +3,7 @@
 
 # instruction-imports-valid
 
-Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files
+Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files
 
 | | |
 |---|---|
