@@ -135,9 +135,11 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# IDEs
-.vscode/
-.idea/
+# IDEs — a contributor's own editor config, at the repository root only.
+# Anchored: skillsaw lints .vscode/mcp.json, so test fixtures ship one, and
+# an unanchored pattern silently drops those files from every commit.
+/.vscode/
+/.idea/
 *.swp
 *.swo
 *~

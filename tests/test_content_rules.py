@@ -1240,6 +1240,28 @@ class TestContentInstructionDriftRule:
         context = RepositoryContext(temp_dir)
         assert ContentInstructionDriftRule().check(context) == []
 
+    def test_detects_drift_against_qwen_md(self, temp_dir):
+        """QWEN.md is a peer of the other root instruction files, not a bystander."""
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        qwen_content = _DRIFT_PREAMBLE + _DRIFT_SECTION_EDITED
+        (temp_dir / "QWEN.md").write_text(qwen_content)
+        context = RepositoryContext(temp_dir)
+
+        violations = ContentInstructionDriftRule().check(context)
+
+        assert len(violations) == 1
+        v = violations[0]
+        # QWEN.md sorts after AGENTS.md, so it carries the finding.
+        assert v.file_path.name == "QWEN.md"
+        assert v.file_line == qwen_content.splitlines().index("## Testing workflow") + 1
+        assert "AGENTS.md:5" in v.message
+
+    def test_identical_qwen_section_passes(self, temp_dir):
+        (temp_dir / "AGENTS.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        (temp_dir / "QWEN.md").write_text(_DRIFT_PREAMBLE + _DRIFT_SECTION)
+        context = RepositoryContext(temp_dir)
+        assert ContentInstructionDriftRule().check(context) == []
+
     def test_html_comment_and_whitespace_add_no_drift_distance(self, temp_dir):
         # A suppression directive (or any comment) plus extra blank lines in
         # one copy of an otherwise-identical section must not create drift.
