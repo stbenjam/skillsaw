@@ -32,10 +32,7 @@ format: prose files are routinely cross-loaded into surfaces that do expand
 the syntax, and other clients can adopt the same mechanism.
 
 This rule treats dynamic context as prohibited unless the exact command has
-been reviewed and added to an explicit allowlist. It is enabled automatically
-so every repository gets this supply-chain check, and reports at `warning`
-severity by default so adopting a new skillsaw release does not fail
-previously-clean CI runs; raise it to `error` for a hard gate.
+been reviewed and added to an explicit allowlist.
 
 ## Examples
 
@@ -69,10 +66,10 @@ rules:
         git status --short
 ```
 
-Ordinary inline code is not dynamic context. The established inline form is
-recognized only when `!` is at the start of a line or immediately follows
-whitespace. An exclamation marker immediately after `KEY=` is left literal by
-clients following the documented convention.
+Ordinary inline code is not dynamic context. The inline form is recognized
+only when the `!` marker is at the start of a line or immediately follows
+whitespace. A marker glued to preceding text — for example
+`` KEY=!`command` `` — is not executed, so it is not reported.
 
 ## How to fix
 
