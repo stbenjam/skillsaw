@@ -238,17 +238,30 @@ class LintTarget:
                 return _COLORS["ContentBlock"]
             return _COLORS.get(type(node).__name__, _COLORS["LintTarget"])
 
+        def _dot_escape(text: str) -> str:
+            """Make author text safe inside a DOT quoted string.
+
+            Backslash first, then quote: the other order turns an authored
+            ``\\"`` into ``\\\\"``, which DOT reads as one escaped backslash
+            followed by a quote that closes the string — everything after it
+            becomes graph syntax, so an event key ending
+            ``\\" ]; evil [label=PWN]; }`` injects a node. Applied to the
+            author-controlled name only, never to the whole label: the
+            ``\\n`` separator below is DOT's line break and must stay one.
+            """
+            return text.replace("\\", "\\\\").replace('"', '\\"')
+
         def _dot_label(node: "LintTarget") -> str:
             if root_path and node.path == root_path:
                 name = f"{node.path.name}/"
             else:
                 name = safe_display(node.tree_label())
             tokens = node.estimate_tokens()
-            return f"{name}\\n({node._format_tokens(tokens)} tokens)"
+            return f"{_dot_escape(name)}\\n({node._format_tokens(tokens)} tokens)"
 
         def _emit(node: "LintTarget", parent_id: str | None) -> None:
             nid = _node_id(node)
-            label = _dot_label(node).replace('"', '\\"')
+            label = _dot_label(node)
             color = _color(node)
             lines.append(f'    {nid} [label="{label}" style=filled fillcolor="{color}"];')
             if parent_id:

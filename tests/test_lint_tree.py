@@ -589,6 +589,57 @@ def test_a_nested_clinerules_file_is_linted(temp_dir):
     assert "HAS_CLINE" in context.detected_formats
 
 
+def test_prompt_identity_is_injective_across_the_separator():
+    """Both identity components come from decoded JSON, so either can
+    contain the NUL separator; concatenation alone let two different
+    (path, line) pairs collide, and baselining one finding would then
+    suppress the other."""
+    a = CursorPromptHookBlock(
+        path=Path("/r/h.json"), json_path="hooks.x", body="foo[0].prompt\x00zap"
+    )
+    b = CursorPromptHookBlock(
+        path=Path("/r/h.json"), json_path="hooks.x\x00foo[0].prompt", body="zap"
+    )
+
+    assert a.fingerprint_identity(1) != b.fingerprint_identity(1)
+
+
+def test_dot_labels_cannot_be_escaped_by_author_text(temp_dir):
+    """A quoted DOT string must not be terminable by author text.
+
+    `safe_display()` leaves a backslash alone, so quote-only escaping turned
+    an authored `\\"` into `\\\\"` — one escaped backslash, then a quote that
+    closes the label early. Everything after it became live graph syntax.
+    The check walks each label string honouring escapes and asserts it
+    closes exactly where the emitter's own attributes resume.
+    """
+    (temp_dir / ".cursor").mkdir()
+    evil = 'x\\" ]; evil [label=PWN]; } //'
+    (temp_dir / ".cursor" / "hooks.json").write_text(
+        json.dumps({"version": 1, "hooks": {evil: [{"type": "prompt", "prompt": "Check."}]}})
+    )
+
+    dot = RepositoryContext(temp_dir).lint_tree.print_dot(root_path=temp_dir)
+
+    label_lines = [ln for ln in dot.splitlines() if "[label=" in ln and "node [" not in ln]
+    assert label_lines, dot
+    for line in label_lines:
+        start = line.index('[label="') + len('[label="')
+        index = start
+        while index < len(line):
+            if line[index] == "\\":
+                index += 2  # escaped character, whatever it is
+                continue
+            if line[index] == '"':
+                break
+            index += 1
+        else:
+            raise AssertionError(f"label never closes: {line}")
+        # The string must close at the emitter's own attribute list — if
+        # author text closed it early, graph syntax sits here instead.
+        assert line[index:].startswith('" style=filled fillcolor='), line
+
+
 def test_a_nested_cursorrules_is_linted(temp_dir):
     """Cursor reads the legacy file from the nearest enclosing directory."""
     nested = temp_dir / "apps" / "web"

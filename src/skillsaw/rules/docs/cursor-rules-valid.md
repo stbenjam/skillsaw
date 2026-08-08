@@ -20,8 +20,10 @@ activation modes:
 Manual is legitimate, so a rule with none of the three is reported at `info`,
 not as an error.
 
-This rule also flags a `.cursorrules` file that survives alongside a root
-`.cursor/rules/`. Cursor no longer documents `.cursorrules` at all, and
+This rule also flags a `.cursorrules` file that survives beside a
+`.cursor/rules/` in the same workspace — at the repository root, or in a
+monorepo package that carries its own pair (Cursor resolves both from the
+directory opened as the workspace). Cursor no longer documents `.cursorrules` at all, and
 community reports disagree on how the two interact — which is the point:
 you cannot tell from the repository which instructions the agent is
 following.

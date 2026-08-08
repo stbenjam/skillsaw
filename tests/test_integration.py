@@ -4149,7 +4149,7 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 7,
         "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
-        "cursor-rules-valid": 2,
+        "cursor-rules-valid": 3,
     }
 
     def test_fixture_violation_counts(self, tmp_path):

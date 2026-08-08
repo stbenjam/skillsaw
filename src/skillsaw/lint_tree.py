@@ -50,7 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
-from .utils import has_apm_generated_header, read_text, read_yaml
+from .utils import has_apm_generated_header, read_text
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,

@@ -810,11 +810,17 @@ class Linter:
             checked.extend(rule_violations)
             visible = self._filter_violations(rule_violations, record_baseline=False)
 
-            if visible and rule.supports_autofix:
+            # Diagnostic-only blocks never reach a fixer at all. Clearing
+            # their fixability metadata is presentation; a third-party rule's
+            # ``fix()`` does not read it, so handing the violation over would
+            # still invite a rewrite of text that has no honest span in the
+            # file that holds it (a prompt decoded out of JSON, say).
+            fixable_input = [v for v in visible if v.block is None or not v.block.diagnostic_only]
+            if fixable_input and rule.supports_autofix:
                 try:
                     fixes = [
                         f
-                        for f in rule.fix(self.context, visible)
+                        for f in rule.fix(self.context, fixable_input)
                         if not self._is_vendor_managed(f.file_path)
                     ]
                     all_fixes.extend(fixes)

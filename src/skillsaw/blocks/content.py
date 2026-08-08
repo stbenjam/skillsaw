@@ -121,7 +121,12 @@ class CursorPromptHookBlock(ContentBlock):
         line_content = ""
         if body_line is not None and 1 <= body_line <= len(lines):
             line_content = lines[body_line - 1].strip()
-        return f"{self.json_path}\0{line_content}"
+        # Length-prefixed so the identity is injective: both components can
+        # legitimately contain the NUL separator (they come from decoded
+        # JSON strings), and plain concatenation lets two different
+        # (path, line) pairs collide — which would let baselining one
+        # finding suppress a different one.
+        return f"{len(self.json_path)}:{self.json_path}\0{line_content}"
 
     def tree_label(self) -> str:
         return f"{self.json_path} ({self.category})"

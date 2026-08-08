@@ -102,7 +102,12 @@ def _replace_key_line(original: str, line: Optional[int], replacement: str) -> O
         return None
     # Preserve a CRLF ending: splitting on "\n" leaves the "\r" on the line.
     suffix = "\r" if target.endswith("\r") else ""
-    lines[line - 1] = replacement + _trailing_comment(target) + suffix
+    # Preserve the line's own indentation: a uniformly indented top-level
+    # mapping is valid YAML, and rewriting one key at column zero leaves the
+    # siblings indented under a scalar — invalid to the strict parser and
+    # invisible to the lenient one, which reads keys at column zero only.
+    indent = target[: len(target) - len(target.lstrip())]
+    lines[line - 1] = indent + replacement + _trailing_comment(target) + suffix
     return "\n".join(lines)
 
 
@@ -227,12 +232,10 @@ class CursorRulesValidRule(Rule):
                 file_path=block.path,
                 line=field.field_line,
                 block=block,
-                # Asked of the fix rather than guessed alongside it. Three
-                # separate spellings have now been advertised as fixable and
-                # then declined by ``fix()`` — a lenient-frontmatter file, a
-                # diagnostic-only block, a quoted key — because the predicate
-                # and the repair reasoned independently. They cannot diverge
-                # if the predicate *is* the repair.
+                # Fixability is derived from the repair itself, never
+                # guessed alongside it: an independent predicate can (and
+                # did) advertise fixes the repair then declines. When the
+                # predicate *is* the repair, they cannot diverge.
                 fixable=self._repair_always_apply(block.path) is not None,
             )
         ]
