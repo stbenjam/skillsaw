@@ -391,6 +391,24 @@ def test_editor_dirs_claim_instructions_md_only_where_their_glob_matches(temp_di
     ]
 
 
+def test_only_top_level_cline_dirs_are_reserved(temp_dir):
+    """Cline reserves workflows/hooks/skills at the top of .clinerules, not below.
+
+    A rule filed under ``backend/hooks/`` is ordinary prose Cline does
+    concatenate; matching the name at any depth dropped it from the tree.
+    """
+    (temp_dir / ".clinerules" / "backend" / "hooks").mkdir(parents=True)
+    (temp_dir / ".clinerules" / "backend" / "hooks" / "policy.md").write_text(
+        "# Policy\n\nNever bypass the ledger check.\n"
+    )
+    (temp_dir / ".clinerules" / "hooks").mkdir()
+    (temp_dir / ".clinerules" / "hooks" / "pre.md").write_text("# Real hook dir\n\nSkip me.\n")
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(InstructionBlock)] == ["policy.md"]
+
+
 def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
     """APM writes .github/agents from .apm/agents; linting both reports twice."""
     (temp_dir / ".apm" / "agents").mkdir(parents=True)

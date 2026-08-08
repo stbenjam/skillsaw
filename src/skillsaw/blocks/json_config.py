@@ -410,6 +410,11 @@ class McpBlock(JsonConfigBlock):
     #: server-less rather than mis-keyed. Empty for hosts that document no
     #: such sibling, where any other key is a mistake.
     non_server_keys: ClassVar[frozenset] = frozenset()
+    #: Whether Claude Code's built-in server names are reserved in this
+    #: file. True for the Claude-family locations Claude Code actually
+    #: reads; an editor that loads its own MCP config has no such built-ins,
+    #: so shadowing is not a thing that can happen there.
+    claude_builtins_reserved: ClassVar[bool] = True
 
     @property
     def servers(self) -> List[McpServerConfig]:
@@ -453,6 +458,7 @@ class CursorMcpBlock(McpBlock):
     """
 
     allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return "mcp.json (Cursor MCP)"
@@ -472,6 +478,7 @@ class VsCodeMcpBlock(McpBlock):
     servers_key: ClassVar[str] = "servers"
     allow_bare_server_map: ClassVar[bool] = False
     non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
+    claude_builtins_reserved: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"

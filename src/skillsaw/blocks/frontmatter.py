@@ -428,7 +428,7 @@ class CursorRuleBlock(FrontmatteredBlock):
         parsed = _parse_file_frontmatter(self.path)
         frontmatter, error, _error_line, _body, _fm_lines = parsed
         if frontmatter is not None:
-            return self._undo_yaml_11_booleans(parsed)
+            return self._apply_cursor_scalars(parsed)
         if error is None:
             return parsed
 
@@ -448,27 +448,53 @@ class CursorRuleBlock(FrontmatteredBlock):
         self._mdc_key_lines = key_lines
         return data, None, None, body, fm_line_count
 
-    def _undo_yaml_11_booleans(
+    @staticmethod
+    def _cursor_scalar(strict: Any, dialect: Any) -> Any:
+        """Whichever of the two readings Cursor would actually see.
+
+        Only a value the readers disagree about is replaced, and only in one
+        direction: strict YAML typed it, the Cursor dialect kept it a string.
+        A list is compared element-wise for the same reason.
+        """
+        if isinstance(dialect, str) and not isinstance(strict, str):
+            return dialect
+        if isinstance(strict, list) and isinstance(dialect, list) and len(strict) == len(dialect):
+            return [
+                (
+                    item_dialect
+                    if isinstance(item_dialect, str) and not isinstance(item_strict, str)
+                    else item_strict
+                )
+                for item_strict, item_dialect in zip(strict, dialect)
+            ]
+        return strict
+
+    def _apply_cursor_scalars(
         self,
         parsed: Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int],
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
-        """Restore ``yes``/``no``/``on``/``off`` to the strings Cursor sees.
+        """Re-read strict-YAML scalars the way Cursor's ``.mdc`` reader does.
 
-        PyYAML implements YAML 1.1, where those four words are booleans.
-        Cursor's ``.mdc`` reader is not a YAML parser at all, so it sees the
-        literal text — which means ``alwaysApply: yes`` does *not* turn the
-        rule on, and ``description: no`` is a perfectly good routing string.
-        Trusting the coercion inverts both: the inert rule is reported clean
-        (the exact failure ``cursor-rules-valid`` exists to catch, and why
-        ``_BOOLEAN_STRINGS`` lists ``yes``/``on`` as repairable), and the
-        valid description is rejected as a bool.
+        Cursor does not parse ``.mdc`` frontmatter as YAML, so it sees the
+        literal text where PyYAML sees a type. PyYAML also implements YAML
+        1.1, where ``yes``/``no``/``on``/``off`` are booleans. Trusting
+        either coercion produces findings that are backwards:
 
-        Only values the two readers genuinely disagree about are touched:
-        strict YAML says bool, the Cursor dialect says string. ``true`` and
-        ``false`` are booleans to both and pass through untouched.
+        - ``alwaysApply: yes`` becomes ``True``, so an inert rule is
+          reported as always-on — the exact failure this rule exists to
+          catch, and why ``_BOOLEAN_STRINGS`` lists ``yes``/``on`` as
+          repairable spellings it could otherwise never receive.
+        - ``description: no`` becomes ``False`` and ``description: 123``
+          becomes an int, so valid routing text is rejected as the wrong
+          type.
+        - A ``globs`` item of ``- yes`` becomes ``True``, failing the
+          list-of-strings check on a pattern Cursor reads fine.
+
+        ``true`` and ``false`` are booleans to both readers and pass
+        through untouched, as does anything the dialect also typed.
         """
         frontmatter = parsed[0]
-        if not frontmatter or not any(isinstance(v, bool) for v in frontmatter.values()):
+        if not frontmatter:
             return parsed
         content = read_text(self.path)
         if content is None:
@@ -477,10 +503,9 @@ class CursorRuleBlock(FrontmatteredBlock):
         if split is None:
             return parsed
         dialect, _lines = _parse_mdc_frontmatter(split[0])
-        corrected = dict(frontmatter)
-        for key, value in frontmatter.items():
-            if isinstance(value, bool) and isinstance(dialect.get(key), str):
-                corrected[key] = dialect[key]
+        corrected = {
+            key: self._cursor_scalar(value, dialect.get(key)) for key, value in frontmatter.items()
+        }
         if corrected == frontmatter:
             return parsed
         return (corrected,) + parsed[1:]

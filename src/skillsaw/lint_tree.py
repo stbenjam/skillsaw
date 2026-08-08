@@ -167,6 +167,23 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
                         return True
         return False
 
+    # APM's Copilot target compiles `.apm/<kind>/` into the root
+    # `.github/<kind>/`. Attaching both would report every finding twice and
+    # point half of them at a generated file the author must not edit. The
+    # matching `.apm/` source is the evidence — a `.github/prompts/` in a
+    # repository with no `.apm/prompts/` is authored content and stays.
+    apm_compiled_github: Set[Path] = set()
+    if context.has_apm:
+        root_github = safe_resolve(context.root_path / ".github")
+        for kind in ("agents", "prompts", "chatmodes", "instructions"):
+            if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
+                apm_compiled_github.add(root_github / kind)
+
+    def _is_apm_compiled_github(directory: Path) -> bool:
+        """Whether *directory* is APM output rather than authored content."""
+        resolved = safe_resolve(directory)
+        return resolved is not None and resolved in apm_compiled_github
+
     def _add_block(
         parent: LintTarget,
         p: Path,
@@ -335,6 +352,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
+        if _is_apm_compiled_github(f.parent):
+            # APM writes .apm/instructions/ out to .github/instructions/.
+            # The authored source attaches below; taking the copy too would
+            # double every finding and point half at generated output.
+            continue
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
         _add_block(root, f, block_cls)
 
@@ -396,7 +418,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             logger.warning(message)
             return
         for match in matches:
-            if skip_dirs and skip_dirs.intersection(match.relative_to(directory).parts[:-1]):
+            # First component only: Cline reserves ``workflows``, ``hooks``
+            # and ``skills`` at the top of .clinerules, not everywhere. A
+            # rule filed under ``backend/hooks/`` is ordinary prose that
+            # Cline does concatenate, and matching at any depth dropped it
+            # from the tree entirely rather than merely misfiling it.
+            relative = match.relative_to(directory).parts[:-1]
+            if skip_dirs and relative and relative[0] in skip_dirs:
                 continue
             if safe_is_file(match):
                 _add_block(parent, match, block_cls)
@@ -413,23 +441,6 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
-
-    # APM's Copilot target compiles `.apm/<kind>/` into the root
-    # `.github/<kind>/`. Attaching both would report every finding twice and
-    # point half of them at a generated file the author must not edit. The
-    # matching `.apm/` source is the evidence — a `.github/prompts/` in a
-    # repository with no `.apm/prompts/` is authored content and stays.
-    apm_compiled_github: Set[Path] = set()
-    if context.has_apm:
-        root_github = safe_resolve(context.root_path / ".github")
-        for kind in ("agents", "prompts", "chatmodes"):
-            if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
-                apm_compiled_github.add(root_github / kind)
-
-    def _is_apm_compiled_github(directory: Path) -> bool:
-        """Whether *directory* is APM output rather than authored content."""
-        resolved = safe_resolve(directory)
-        return resolved is not None and resolved in apm_compiled_github
 
     for github_dir in context.agent_tool_dirs(".github"):
         _add_block(root, github_dir / "copilot-instructions.md", InstructionBlock)

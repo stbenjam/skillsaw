@@ -1216,9 +1216,11 @@ class TestCursorRules:
         # A quoted boolean is the headline defect: truthy to a human, a
         # plain string to the parser, so the rule silently never applies.
         assert (".cursor/rules/quoted-bool.mdc", 3, "error") in found
+        # Only a collection is genuinely the wrong shape: Cursor's reader is
+        # not a YAML parser, so any scalar it finds is a string to it.
         assert (".cursor/rules/bad-types.mdc", 2, "error") in found
-        assert (".cursor/rules/bad-types.mdc", 3, "error") in found
-        assert (".cursor/rules/bad-types.mdc", 4, "error") in found
+        assert (".cursor/rules/bad-types.mdc", 5, "error") in found
+        assert (".cursor/rules/bad-types.mdc", 7, "error") in found
         assert (".cursor/rules/backend/absolute.mdc", 3, "error") in found
         # Manual-only is a legitimate Cursor mode, so it stays advisory —
         # both when the frontmatter declares nothing and when it is empty.
@@ -1390,6 +1392,19 @@ class TestCursorRules:
         # earns the legitimate "never activates" info, which is not the point.
         typed = [v for v in found if "must be a boolean" in v["message"]]
         assert bool(typed) is reported
+
+    @pytest.mark.parametrize(
+        "frontmatter",
+        [
+            # Strict YAML types these; Cursor reads the literal text.
+            "description: 123",
+            'globs:\n  - yes\n  - "**/*.ts"',
+        ],
+    )
+    def test_strictly_typed_scalars_are_re_read_as_cursor_reads_them(self, tmp_path, frontmatter):
+        repo = self._lenient_repo(tmp_path, f"scalar{abs(hash(frontmatter)) % 97}", frontmatter)
+
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
 
     def test_a_description_of_no_is_a_string_not_a_bool(self, tmp_path):
         """`no` is a routing description to Cursor, whatever YAML 1.1 says."""
@@ -1779,6 +1794,28 @@ class TestEditorTools:
         )
 
         assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+
+    def test_claude_reserved_server_names_do_not_apply_to_cursor(self, tmp_path):
+        """Cursor does not load through Claude Code, so nothing shadows a builtin."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "cursorreserved",
+            ".cursor/mcp.json",
+            {"mcpServers": {"workspace": {"command": "node"}}},
+        )
+
+        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+
+    def test_claude_reserved_server_names_still_apply_to_mcp_json(self, tmp_path):
+        repo = self._mcp_repo(
+            tmp_path,
+            "claudereserved",
+            ".mcp.json",
+            {"mcpServers": {"workspace": {"command": "node"}}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert any("reserved for a Claude Code built-in" in m for m in messages)
 
     def test_a_vscode_config_declaring_only_inputs_has_no_servers(self, tmp_path):
         """`inputs` is a prompt-variable array; a file holding only that is complete."""

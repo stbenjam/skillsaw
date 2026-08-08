@@ -169,6 +169,7 @@ class McpValidJsonRule(Rule):
                     block.path,
                     require_usable=require_usable,
                     servers_key=servers_key,
+                    check_reserved=block.claude_builtins_reserved,
                 )
             )
 
@@ -214,6 +215,7 @@ class McpValidJsonRule(Rule):
         *,
         require_usable: bool = False,
         servers_key: str = "mcpServers",
+        check_reserved: bool = True,
     ) -> List[RuleViolation]:
         """Validate MCP configuration structure"""
         violations = []
@@ -250,7 +252,7 @@ class McpValidJsonRule(Rule):
                 )
                 continue
 
-            if server_name in self.RESERVED_SERVER_NAMES:
+            if check_reserved and server_name in self.RESERVED_SERVER_NAMES:
                 violations.append(
                     self.violation(
                         f"MCP server name '{server_name}' is reserved "
