@@ -1845,6 +1845,7 @@ BROKEN_FIXTURES = [
     "content/instruction-drift",
     "content/repeated-directive",
     "content/emphasis-density",
+    "content/progressive-disclosure",
     "security/malicious-skill",
     "codex/broken",
 ]
@@ -2239,6 +2240,64 @@ class TestContentEmphasisDensity:
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         assert "content-emphasis-density" not in rule_ids(r)
+
+
+@pytest.mark.integration
+class TestContentProgressiveDisclosure:
+    """End-to-end tests for content-progressive-disclosure.
+
+    The fixture has a CLAUDE.md and a deploy skill over their (fixture-
+    lowered) thresholds with no local file references, and a release
+    skill that is also over threshold but links references/checklist.md
+    — the split the rule recommends — so it must stay silent.
+    """
+
+    FIXTURE = "content/progressive-disclosure"
+
+    def test_monoliths_reported_split_skill_clean(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-progressive-disclosure", [])
+        assert len(vs) == 2
+        files = {v["file_path"] for v in vs}
+        assert any(f.endswith("CLAUDE.md") for f in files)
+        assert any(f.endswith("deploy/SKILL.md") for f in files)
+        assert not any(f.endswith("release/SKILL.md") for f in files)
+        claude = next(v for v in vs if v["file_path"].endswith("CLAUDE.md"))
+        assert "loads on demand" in claude["message"]
+        skill = next(v for v in vs if v["file_path"].endswith("deploy/SKILL.md"))
+        assert "references/*.md" in skill["message"]
+
+    def test_raised_limits_silence_findings(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-progressive-disclosure:\n"
+            "    limits:\n"
+            "      claude-md: 6000\n"
+            "      skill: 3000\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-progressive-disclosure" not in rule_ids(r)
+
+    def test_adding_a_reference_silences_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / "docs").mkdir()
+        (repo / "docs" / "deploying.md").write_text("# Deploying\n\nDetail lives here.\n")
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text() + "\nFull deploy procedure: [docs/deploying.md](docs/deploying.md)\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-progressive-disclosure", [])
+        assert not any(v["file_path"].endswith("CLAUDE.md") for v in vs)
+        # The untouched monolith skill must still fire — the rule as a whole
+        # didn't go quiet, only the file that gained a reference.
+        assert any(v["file_path"].endswith("deploy/SKILL.md") for v in vs)
 
 
 @pytest.mark.integration

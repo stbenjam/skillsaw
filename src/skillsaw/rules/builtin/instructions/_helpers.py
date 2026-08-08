@@ -6,4 +6,6 @@ import re
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 
-_IMPORT_RE = re.compile(r"(?<![\w./-])@([^\s`<>'\"(){}\[\],;:]+)")
+# Shared across rule packages so the ``@path`` import grammar has exactly
+# one definition.
+IMPORT_RE = re.compile(r"(?<![\w./-])@([^\s`<>'\"(){}\[\],;:]+)")
