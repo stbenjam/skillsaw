@@ -430,6 +430,13 @@ class TestMarketplace:
         assert r["rc"] == 1
         assert "claude-marketplace-json-valid" in rule_ids(r)
 
+    def test_archive_source_entries_pass(self, tmp_path):
+        """`archive` is a documented source type, not an unknown one."""
+        repo = copy_fixture("marketplace/archive-source", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "claude-marketplace-json-valid" not in rule_ids(r)
+
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)
         r = run_lint(repo)
@@ -1846,6 +1853,7 @@ BROKEN_FIXTURES = [
 CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
+    "marketplace/archive-source",
     "marketplace/plugin-root",
     "marketplace/plugin-root-prefixed",
     "agentskills/clean",
