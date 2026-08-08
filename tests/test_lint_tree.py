@@ -335,6 +335,26 @@ def test_cursor_prompt_hook_text_is_a_content_block(temp_dir):
     assert len(prompts) == 1
 
 
+def test_a_copilot_agent_named_instructions_md_stays_an_agent(temp_dir):
+    """The repo-wide *.instructions.md sweep must not outrank a Copilot directory.
+
+    VS Code reads any .md under .github/agents as a custom agent. The sweep
+    runs first and claims paths globally, so without a carve-out the file
+    would attach as an InstructionBlock — frontmatter linted as prose, and
+    the instruction budget instead of the agent one.
+    """
+    agents = temp_dir / ".github" / "agents"
+    agents.mkdir(parents=True)
+    (agents / "reviewer.instructions.md").write_text(
+        "---\ndescription: Security reviewer\n---\n\nCheck all inputs.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(CopilotAgentBlock)] == ["reviewer.instructions.md"]
+    assert tree.find(InstructionBlock) == []
+
+
 def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
     """APM writes .github/agents from .apm/agents; linting both reports twice."""
     (temp_dir / ".apm" / "agents").mkdir(parents=True)

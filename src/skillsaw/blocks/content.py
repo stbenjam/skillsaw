@@ -8,7 +8,7 @@ and ``category`` is kept for backward compat (context_budget limits key on it).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from skillsaw.lint_target import LintTarget
 
@@ -79,6 +79,10 @@ class CursorPromptHookBlock(ContentBlock):
     """
 
     json_path: str = ""
+    #: Read, never rewritten: a fix computed against the extracted prompt
+    #: has no honest span in the JSON that holds it (the body is a decoded
+    #: string literal, and every body line maps to file-level).
+    diagnostic_only: ClassVar[bool] = True
     #: Deliberately outside ``DEFAULT_LIMITS``: ``context-budget`` measures a
     #: whole file, and the file here is JSON config shared by every prompt in
     #: it. Charging one embedded string for the whole document — once per

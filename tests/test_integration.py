@@ -1514,6 +1514,36 @@ class TestCursorRules:
         assert any("prompt hooks are prohibited" in m for m in messages)
         assert any("gofmt-check.sh" in m for m in messages)
 
+    def test_prompt_hook_findings_are_never_advertised_as_fixable(self, tmp_path):
+        """A prompt is a decoded JSON string — no span exists to splice a fix into."""
+        repo = tmp_path / "promptfix"
+        (repo / ".cursor" / "references").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "references" / "policy.md").write_text("# Policy\n\nDetails.\n")
+        hooks = repo / ".cursor" / "hooks.json"
+        hooks.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeShellExecution": [
+                            {"type": "prompt", "prompt": "Consult references/policy.md first."}
+                        ]
+                    },
+                }
+            )
+        )
+        before = hooks.read_text()
+
+        found = by_rule(run_lint(repo, "-v"))["content-unlinked-internal-reference"]
+        assert [v["fixable"] for v in found] == [False]
+        assert "autofixable" not in found[0]["message"]
+
+        # And the fix really does stand down rather than rewriting the JSON.
+        _run_fix(repo)
+        assert hooks.read_text() == before
+        json.loads(hooks.read_text())
+
     def test_hooks_dangerous_does_not_read_a_prompt_as_a_command(self, tmp_path):
         """A prompt hook spawns nothing, so the command scanner must skip it."""
         repo = tmp_path / "promptonly"
@@ -1666,6 +1696,28 @@ class TestEditorTools:
             "MCP configuration uses 'mcpServers' but this host reads 'servers' — "
             "the servers are not loaded"
         ]
+
+    def test_a_bare_map_in_a_cursor_config_loads_nothing(self, tmp_path):
+        """Cursor documents only the mcpServers wrapper — a bare map is a mistake."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "cursorbare",
+            ".cursor/mcp.json",
+            {"search": {"command": "node", "args": ["s.js"]}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == ["MCP configuration has no 'mcpServers' key — no servers are loaded"]
+
+    def test_the_documented_cursor_shape_passes(self, tmp_path):
+        repo = self._mcp_repo(
+            tmp_path,
+            "cursorok",
+            ".cursor/mcp.json",
+            {"mcpServers": {"search": {"command": "node", "args": ["s.js"]}}},
+        )
+
+        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
 
     def test_a_vscode_config_declaring_only_inputs_has_no_servers(self, tmp_path):
         """`inputs` is a prompt-variable array; a file holding only that is complete."""

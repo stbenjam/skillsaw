@@ -25,6 +25,7 @@ from .blocks import (
     CopilotPromptBlock,
     CursorCommandBlock,
     CursorHooksBlock,
+    CursorMcpBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
     ExtraBlock,
@@ -127,6 +128,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             return False
         resolved = safe_resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
+
+    # Copilot directories whose files have a more specific owner than the
+    # repository-wide ``*.instructions.md`` sweep. That sweep runs first and
+    # claims paths in the global ``seen`` set, so a custom agent named
+    # ``reviewer.instructions.md`` would otherwise attach as an
+    # InstructionBlock — frontmatter linted as prose, and the 4k/8k
+    # instruction budget instead of the 2k/4k agent one.
+    _COPILOT_OWNED_SUBDIRS = ("agents", "prompts", "chatmodes")
+
+    def _claimed_by_a_copilot_dir(p: Path) -> bool:
+        """Whether *p* sits in a ``.github`` subdirectory with its own block type."""
+        parent = p.parent
+        return (
+            parent.name in _COPILOT_OWNED_SUBDIRS or parent.parent.name in _COPILOT_OWNED_SUBDIRS
+        ) and ".github" in p.parts
 
     def _add_block(
         parent: LintTarget,
@@ -294,7 +310,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
-        if _is_in_apm_source(f):
+        if _is_in_apm_source(f) or _claimed_by_a_copilot_dir(f):
             continue
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
         _add_block(root, f, block_cls)
@@ -372,7 +388,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # subdirectories are ordinary rule files, not decoration.
         _add_glob(root, cursor_dir / "rules", "**/*.mdc", CursorRuleBlock)
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
-        _add_parser_block(root, cursor_dir / "mcp.json", McpBlock)
+        _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     # APM's Copilot target compiles `.apm/<kind>/` into the root

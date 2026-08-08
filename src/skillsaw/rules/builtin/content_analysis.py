@@ -41,6 +41,7 @@ from skillsaw.blocks import (  # noqa: F401
     CopilotPromptBlock,
     CursorCommandBlock,
     CursorHooksBlock,
+    CursorMcpBlock,
     CursorPromptHookBlock,
     CursorRuleBlock,
     ExtraBlock,

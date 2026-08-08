@@ -674,11 +674,16 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
-            elif self._is_vendor_managed(v.file_path):
+            elif self._is_vendor_managed(v.file_path) or (
+                v.block is not None and v.block.diagnostic_only
+            ):
                 # Still reported — a hostile third-party skill is worth
                 # knowing about — but never advertised as fixable, because
                 # fix() is about to stand down on it. Confidence goes with
                 # fixability, or JSON/SARIF would still claim SAFE/SUGGEST.
+                # Same reasoning for a diagnostic-only block: its body is
+                # extracted from a document of another format, so a fix
+                # computed against it has no span to splice back into.
                 v.fixable = False
                 v.fix_confidence = None
                 kept.append(v)

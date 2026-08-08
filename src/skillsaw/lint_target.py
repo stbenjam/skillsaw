@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
+from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
 from skillsaw.paths import safe_resolve
 
 T = TypeVar("T", bound="LintTarget")
@@ -25,6 +25,15 @@ class LintTarget:
     # ``skillsaw docs``, never re-derived by path matching. ``None`` for
     # nodes no plugin owns.
     plugin_owner: Optional[Path] = field(default=None, repr=False)
+
+    #: Content this linter reads but must never rewrite. Set on node types
+    #: whose text is embedded in a document of another format — a prompt
+    #: string inside JSON, say — where a fix computed against the extracted
+    #: body has no honest span in the file that holds it. The linter clears
+    #: fixability on their violations, the same stand-down vendor-managed
+    #: content gets, so nothing is advertised as fixable that ``fix`` will
+    #: then decline.
+    diagnostic_only: ClassVar[bool] = False
 
     @property
     def resolved_path(self) -> Path:

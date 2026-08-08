@@ -405,6 +405,11 @@ class McpBlock(JsonConfigBlock):
     #: either way. A host with other documented top-level keys must set this
     #: False, or those siblings get read as servers.
     allow_bare_server_map: ClassVar[bool] = True
+    #: Top-level keys a host documents alongside its server map. Their
+    #: presence means a document without the wrapper is deliberately
+    #: server-less rather than mis-keyed. Empty for hosts that document no
+    #: such sibling, where any other key is a mistake.
+    non_server_keys: ClassVar[frozenset] = frozenset()
 
     @property
     def servers(self) -> List[McpServerConfig]:
@@ -439,6 +444,21 @@ class AgentPluginMcpBlock(McpBlock):
 
 
 @dataclass(eq=False)
+class CursorMcpBlock(McpBlock):
+    """``.cursor/mcp.json`` — Cursor's MCP configuration.
+
+    Cursor documents exactly one shape, ``{"mcpServers": {...}}``, and no
+    bare-map form. Inheriting the Claude-family fallback would read a bare
+    map as valid while Cursor loads nothing from it.
+    """
+
+    allow_bare_server_map: ClassVar[bool] = False
+
+    def tree_label(self) -> str:
+        return "mcp.json (Cursor MCP)"
+
+
+@dataclass(eq=False)
 class VsCodeMcpBlock(McpBlock):
     """``.vscode/mcp.json`` — the Copilot/VS Code MCP configuration.
 
@@ -451,6 +471,7 @@ class VsCodeMcpBlock(McpBlock):
 
     servers_key: ClassVar[str] = "servers"
     allow_bare_server_map: ClassVar[bool] = False
+    non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"
