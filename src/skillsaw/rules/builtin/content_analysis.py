@@ -39,7 +39,6 @@ from skillsaw.blocks import (  # noqa: F401
     ContextFileBlock,
     CopilotAgentBlock,
     CopilotPromptBlock,
-    CURSOR_HOOK_EVENTS,
     CursorCommandBlock,
     CursorHooksBlock,
     CursorRuleBlock,

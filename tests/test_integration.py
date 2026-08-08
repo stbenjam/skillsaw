@@ -1318,6 +1318,91 @@ class TestCursorRules:
         assert dangerous[0]["file_path"] == ".cursor/hooks.json"
         assert "downloads and executes remote code" in dangerous[0]["message"]
 
+    @pytest.mark.parametrize(
+        "body,expected",
+        [
+            ("{not json", "Invalid JSON"),
+            ("[]", "hooks.json must be a JSON object"),
+            ('{"hooks": {"stop": [{"command": "x"}]}}', "Missing 'version'"),
+            ('{"version": 1}', "Missing 'hooks' object"),
+            ('{"version": 1, "hooks": []}', "'hooks' must be a JSON object"),
+            ('{"version": 1, "hooks": {}}', "'hooks' is empty"),
+            ('{"version": "1", "hooks": {"stop": [{"command": "x"}]}}', "must be the number 1"),
+            (
+                '{"version": 1, "hooks": {"stop": [{"type": "nope", "command": "x"}]}}',
+                "unknown 'type'",
+            ),
+            (
+                '{"version": 1, "hooks": {"stop": [{"type": "prompt"}]}}',
+                "is missing 'prompt'",
+            ),
+        ],
+    )
+    def test_cursor_hooks_error_paths(self, tmp_path, body, expected):
+        repo = tmp_path / f"hooks-{abs(hash(body))}"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(body)
+
+        messages = [v["message"] for v in by_rule(run_lint(repo)).get("cursor-hooks-valid", [])]
+        assert any(expected in m for m in messages), messages
+
+    def test_cursor_prompt_hooks_are_valid(self, tmp_path):
+        """A documented prompt hook carries `prompt`, not `command`."""
+        repo = tmp_path / "prompt-hooks"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"beforeShellExecution": ['
+            '{"type": "prompt", "prompt": "Is this command safe?", "timeout": 10}]}}'
+        )
+
+        assert by_rule(run_lint(repo)).get("cursor-hooks-valid", []) == []
+
+    def test_post_launch_cursor_hook_events_are_accepted(self, tmp_path):
+        """The event list is current, not the Cursor 1.7 launch set."""
+        repo = tmp_path / "modern-events"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {'
+            '"sessionStart": [{"command": "./init.sh"}],'
+            '"preToolUse": [{"command": "./audit.sh"}],'
+            '"afterAgentResponse": [{"command": "./log.sh"}],'
+            '"workspaceOpen": [{"command": "./open.sh"}]}}'
+        )
+
+        assert by_rule(run_lint(repo)).get("cursor-hooks-valid", []) == []
+
+    def test_unknown_hook_event_can_be_allowed_by_config(self, tmp_path):
+        """Cursor ships events faster than skillsaw releases."""
+        repo = tmp_path / "future-event"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterTimeTravel": [{"command": "./x.sh"}]}}'
+        )
+        assert by_rule(run_lint(repo)).get("cursor-hooks-valid", []) != []
+
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  cursor-hooks-valid:\n    extra-events:\n      - afterTimeTravel\n"
+        )
+        assert by_rule(run_lint(repo, config=config)).get("cursor-hooks-valid", []) == []
+
+    def test_hooks_prohibited_scans_cursor_hooks(self, tmp_path):
+        repo = tmp_path / "prohibited"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterFileEdit": [{"command": "./format.sh"}]}}'
+        )
+        config = repo / ".skillsaw.yaml"
+        config.write_text("rules:\n  hooks-prohibited:\n    enabled: true\n")
+
+        found = by_rule(run_lint(repo, config=config)).get("hooks-prohibited", [])
+        assert [v["file_path"] for v in found] == [".cursor/hooks.json"]
+
     def test_claude_hooks_rule_ignores_cursor_hooks_schema(self, tmp_path):
         """Cursor's flatter shape must not be judged against the Claude schema."""
         repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
@@ -1364,13 +1449,26 @@ class TestEditorTools:
         assert lines[".github/agents/security.agent.md"] == 15
         assert lines[".cursor/rules/backend/api.mdc"] == 13
 
-    def test_editor_tool_formats_are_detected(self, tmp_path):
-        repo = copy_fixture("editor-tools/monorepo", tmp_path)
-        r = run_lint(repo)
+    def test_all_fixture_files_are_tracked_by_git(self):
+        """A fixture .gitignore swallows is invisible locally and red in CI.
 
-        assert r["rc"] == 0
-        assert summary(r)["errors"] == 0
-        assert summary(r)["warnings"] == 0
+        ``.vscode/`` did exactly that to the VS Code MCP fixtures: the suite
+        passed on untracked files sitting on disk and failed on a fresh clone.
+        """
+        tracked = subprocess.run(
+            ["git", "ls-files", "tests/fixtures"],
+            capture_output=True,
+            text=True,
+            cwd=FIXTURES.parent.parent,
+            timeout=60,
+        )
+        on_disk = {
+            str(p.relative_to(FIXTURES.parent.parent))
+            for p in FIXTURES.rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts
+        }
+        untracked = sorted(on_disk - set(tracked.stdout.splitlines()))
+        assert not untracked, f"fixture files missing from git: {untracked}"
 
     def test_mcp_rules_reach_cursor_and_vscode_configs(self, tmp_path):
         repo = copy_fixture("editor-tools/broken-mcp", tmp_path)

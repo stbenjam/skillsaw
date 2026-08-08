@@ -118,8 +118,8 @@ per-file against category-specific thresholds.
 
 | Category | Warn | Error |
 |----------|------|-------|
-| CLAUDE.md, AGENTS.md, GEMINI.md | 6,000 | 12,000 |
-| Instruction files (Cursor, Copilot, Kiro) | 4,000 | 8,000 |
+| CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md | 6,000 | 12,000 |
+| Instruction files (Cursor, Copilot, Cline, Kiro) | 4,000 | 8,000 |
 | Skills | 3,000 | 6,000 |
 | Commands, agents, rules | 2,000 | 4,000 |
 

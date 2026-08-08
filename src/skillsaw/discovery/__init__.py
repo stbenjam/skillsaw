@@ -24,6 +24,7 @@ CONVENTIONAL_SKILL_DIRS = (
     ".claude/skills",
     ".github/skills",  # Copilot
     ".cursor/skills",  # Cursor
+    ".clinerules/skills",  # Cline — first in its own resolution order
     ".cline/skills",  # Cline
     ".qwen/skills",  # Qwen Code
 )

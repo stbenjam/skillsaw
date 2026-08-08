@@ -1,7 +1,5 @@
 # Qwen Code instructions
 
-Qwen Code reads this file on every turn in this repository.
-
 ## Environment
 
 Activate the project virtualenv at `.venv` before running any Python command.

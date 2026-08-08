@@ -75,11 +75,14 @@ HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
+# Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
+# is deliberately absent: the instruction-file rules only ever look at
+# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a .clinerules-only repository
+# would auto-enable two rules structurally incapable of finding anything.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
         HAS_COPILOT,
-        HAS_CLINE,
         HAS_GEMINI,
         HAS_QWEN,
         HAS_AGENTS_MD,
@@ -431,7 +434,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
-            self.root_path, self.instruction_files, self.is_path_excluded
+            self.root_path,
+            self.instruction_files,
+            self.is_path_excluded,
+            self._repository_scan().tool_dirs,
         )
 
     _WALK_SKIP_DIRS = frozenset(

@@ -261,28 +261,14 @@ class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
         return f"{self.path.name} (inline hooks)"
 
 
-#: The six lifecycle events Cursor dispatches hooks on. A name outside this
-#: set never fires — Cursor reads the file, finds no matching event, and runs
-#: nothing, with no diagnostic.
-CURSOR_HOOK_EVENTS = frozenset(
-    {
-        "beforeShellExecution",
-        "beforeMCPExecution",
-        "beforeReadFile",
-        "beforeSubmitPrompt",
-        "afterFileEdit",
-        "stop",
-    }
-)
-
-
 @dataclass(eq=False)
 class CursorHooksBlock(JsonConfigBlock):
     """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
 
     Cursor's shape is flatter than Claude's: ``{version, hooks: {event:
-    [{command}]}}``, with no ``matcher`` and no handler ``type`` — every
-    entry is a command. :attr:`events` renders it as the shared
+    [{command | prompt, type?, matcher?, timeout?}]}}``. There is no
+    per-event ``matcher`` wrapper, and ``type`` defaults to ``"command"``
+    rather than being required. :attr:`events` renders it as the shared
     :class:`HookEventConfig` structure so ``hooks-dangerous`` and
     ``hooks-prohibited`` scan Cursor hooks with no per-ecosystem branch;
     ``cursor-hooks-valid`` reads ``raw_data`` for the shape itself.
@@ -305,17 +291,32 @@ class CursorHooksBlock(JsonConfigBlock):
         for event_type, entries in hooks_obj.items():
             if not isinstance(entries, list):
                 continue
-            handlers = [
-                # Cursor has no handler ``type`` — a hook entry *is* a
-                # command. Say so explicitly: the shared security rules skip
-                # any handler whose type is not "command", so leaving it
-                # empty would silently exempt every Cursor hook.
-                HookHandler(type="command", command=_as_str(entry.get("command")))
-                for entry in entries
-                if isinstance(entry, dict) and _as_str(entry.get("command"))
-            ]
-            if handlers:
-                result[event_type] = [HookEventConfig(handlers=handlers)]
+            configs: List[HookEventConfig] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                # ``type`` is optional and defaults to a command hook. Set it
+                # explicitly either way: the shared security rules skip any
+                # handler whose type is not "command", so leaving it empty
+                # would silently exempt every Cursor hook.
+                entry_type = _as_str(entry.get("type")) or "command"
+                if entry_type != "command":
+                    # A prompt hook asks the model a question; it spawns no
+                    # process, so the command scanners have nothing to read.
+                    continue
+                command = _as_str(entry.get("command"))
+                if not command:
+                    continue
+                # One config per entry: Cursor puts ``matcher`` on the hook
+                # itself, not on a wrapper shared by several handlers.
+                configs.append(
+                    HookEventConfig(
+                        matcher=_as_str(entry.get("matcher")) or ".*",
+                        handlers=[HookHandler(type="command", command=command)],
+                    )
+                )
+            if configs:
+                result[event_type] = configs
         return result
 
 
@@ -366,12 +367,23 @@ class McpBlock(JsonConfigBlock):
     #: it ``mcpServers``; see :class:`VsCodeMcpBlock`.
     servers_key: ClassVar[str] = "mcpServers"
 
+    #: Whether a document with no wrapper key is itself the server map.
+    #: True for the Claude-family files, where ``.mcp.json`` may be written
+    #: either way. A host with other documented top-level keys must set this
+    #: False, or those siblings get read as servers.
+    allow_bare_server_map: ClassVar[bool] = True
+
     @property
     def servers(self) -> List[McpServerConfig]:
         data = self.raw_data
         if data is None:
             return []
-        servers_dict = data.get(self.servers_key, data)
+        if self.servers_key in data:
+            servers_dict = data[self.servers_key]
+        elif self.allow_bare_server_map:
+            servers_dict = data
+        else:
+            return []
         if not isinstance(servers_dict, dict):
             return []
         return [
@@ -398,11 +410,14 @@ class VsCodeMcpBlock(McpBlock):
     """``.vscode/mcp.json`` — the Copilot/VS Code MCP configuration.
 
     Same server shape as every other host, under a different key: VS Code
-    spells the map ``servers`` and adds a sibling ``inputs`` array for
-    prompted variables, which is not a server and must not be read as one.
+    spells the map ``servers``, and documents two siblings — ``inputs``
+    (prompted variables) and ``sandbox``. Neither is a server, and there is
+    no bare-map form here, so a document without ``servers`` declares no
+    servers rather than being one.
     """
 
     servers_key: ClassVar[str] = "servers"
+    allow_bare_server_map: ClassVar[bool] = False
 
     def tree_label(self) -> str:
         return "mcp.json (VS Code MCP)"

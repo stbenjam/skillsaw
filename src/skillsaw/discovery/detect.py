@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import os
-from typing import Callable, Dict, Iterable, List, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS
 from skillsaw.formats.promptfoo import is_promptfoo_config
@@ -26,7 +26,7 @@ WALK_SKIP_DIRS = frozenset(
 AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github"})
 
 
-@dataclass(frozen=True)
+@dataclass
 class RepositoryScan:
     """Everything one filesystem walk of the repository yields.
 
@@ -56,15 +56,47 @@ def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
     )
 
 
-def instruction_files(root: Path, root_names: Iterable[str]) -> List[Path]:
-    """Find root instruction files and named Copilot instructions."""
-    return list(scan_repository(root, root_names).instruction_files)
+#: Per-editor evidence inside a discovered tool directory. Any one of these
+#: means the tool is configured here, so a repository whose only Cursor
+#: artifact is ``hooks.json`` still activates the Cursor rules.
+_EDITOR_EVIDENCE = {
+    "HAS_CURSOR": (
+        ".cursor",
+        (
+            ("rules", True),
+            ("commands", True),
+            ("skills", True),
+            ("mcp.json", False),
+            ("hooks.json", False),
+        ),
+    ),
+    "HAS_COPILOT": (
+        ".github",
+        (
+            ("copilot-instructions.md", False),
+            ("instructions", True),
+            ("prompts", True),
+            ("agents", True),
+            ("chatmodes", True),
+            ("skills", True),
+        ),
+    ),
+}
 
 
 def instruction_formats(
-    root: Path, files: Iterable[Path], is_excluded: Callable[[Path], bool]
+    root: Path,
+    files: Iterable[Path],
+    is_excluded: Callable[[Path], bool],
+    tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> Set[str]:
-    """Return instruction-format evidence labels from non-excluded markers."""
+    """Return instruction-format evidence labels from non-excluded markers.
+
+    Detection reads the same walk that drives attachment. A tool directory
+    found in a monorepo subpackage is evidence just as the root one is —
+    otherwise the lint tree grows blocks that no format-gated rule ever
+    looks at, which is the silent-no-op this linter exists to catch.
+    """
 
     def marker(*parts: str, is_dir: bool = False) -> bool:
         """Test one non-excluded repository marker."""
@@ -73,26 +105,40 @@ def instruction_formats(
             return False
         return path.is_dir() if is_dir else path.exists()
 
+    dirs: Mapping[str, Iterable[Path]] = tool_dirs or {}
+
+    def editor_marker(label: str) -> bool:
+        """Whether any discovered directory holds this editor's evidence."""
+        dir_name, entries = _EDITOR_EVIDENCE[label]
+        candidates = list(dirs.get(dir_name) or ())
+        if not candidates:
+            candidates = [root / dir_name]
+        for base in candidates:
+            if is_excluded(base):
+                continue
+            for name, is_dir in entries:
+                path = base / name
+                if is_excluded(path):
+                    continue
+                if path.is_dir() if is_dir else path.exists():
+                    return True
+        return False
+
+    def cline_marker() -> bool:
+        """``.clinerules`` is a file in the old convention, a directory in the new."""
+        if marker(".clinerules"):
+            return True
+        return any(not is_excluded(path) for path in (dirs.get(".clinerules") or ()))
+
     found: Set[str] = set()
     checks = (
-        (
-            "HAS_CURSOR",
-            marker(".cursor", "rules", is_dir=True)
-            or marker(".cursor", "commands", is_dir=True)
-            or marker(".cursorrules"),
-        ),
+        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or marker(".cursorrules")),
         (
             "HAS_COPILOT",
-            marker(".github", "copilot-instructions.md")
-            or marker(".github", "instructions", is_dir=True)
-            or marker(".github", "prompts", is_dir=True)
-            or marker(".github", "agents", is_dir=True)
-            or marker(".github", "chatmodes", is_dir=True)
+            editor_marker("HAS_COPILOT")
             or any(path.name.endswith(".instructions.md") for path in files),
         ),
-        # .clinerules is a file in the original convention and a directory in
-        # the current one; ``marker`` without ``is_dir`` accepts either.
-        ("HAS_CLINE", marker(".clinerules")),
+        ("HAS_CLINE", cline_marker()),
         ("HAS_GEMINI", marker("GEMINI.md")),
         ("HAS_QWEN", marker("QWEN.md")),
         ("HAS_AGENTS_MD", marker("AGENTS.md")),

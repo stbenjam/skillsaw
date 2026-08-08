@@ -20,6 +20,8 @@ _ALWAYS_APPLY_FIX_PREFIX = "'alwaysApply' must be a boolean"
 #: ``alwaysApply: "true"`` is the single most common way a Cursor rule ends
 #: up never applying, because the value is truthy to a human and a plain
 #: string to the parser.
+#: Deliberately excludes "1"/"0": those are a guess about what the author
+#: meant, not a spelling of a boolean, and a SAFE fix may not infer intent.
 _BOOLEAN_STRINGS = {
     "true": "true",
     "false": "false",
@@ -27,8 +29,6 @@ _BOOLEAN_STRINGS = {
     "no": "false",
     "on": "true",
     "off": "false",
-    "1": "true",
-    "0": "false",
 }
 
 
@@ -41,6 +41,24 @@ def _as_glob_list(value: Any) -> Optional[List[str]]:
             return None
         return list(value)
     return None
+
+
+def _has_separator_comma(pattern: str) -> bool:
+    """Whether *pattern* has a comma outside brace expansion.
+
+    ``src/**/*.{ts,tsx}`` is one pattern whose comma belongs to the brace
+    group — every reading of it agrees. Only a comma at brace depth zero is
+    the ambiguous "one pattern or several?" case.
+    """
+    depth = 0
+    for char in pattern:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            return True
+    return False
 
 
 class CursorRulesValidRule(Rule):
@@ -131,11 +149,14 @@ class CursorRulesValidRule(Rule):
         value = field.value
         if isinstance(value, bool):
             return value, []
+        detail = (
+            "a quoted value is a string, and the rule is treated as not always-applied"
+            if isinstance(value, str)
+            else "only true or false select the always-apply mode"
+        )
         return False, [
             self.violation(
-                f"{_ALWAYS_APPLY_FIX_PREFIX}, got "
-                f"{safe_display(repr(value))} — a quoted value is a string, "
-                "and the rule is treated as not always-applied",
+                f"{_ALWAYS_APPLY_FIX_PREFIX}, got {safe_display(repr(value))} — {detail}",
                 file_path=block.path,
                 line=field.field_line,
                 block=block,
@@ -188,6 +209,11 @@ class CursorRulesValidRule(Rule):
                 )
             ]
 
+        # The comma question only arises for the string form. A YAML list has
+        # already said how many patterns it holds, so telling its author to
+        # "write a YAML list" would prescribe the state the file is in.
+        written_as_string = isinstance(field.value, str)
+
         violations: List[RuleViolation] = []
         kept: List[str] = []
         for index, pattern in enumerate(patterns):
@@ -204,7 +230,7 @@ class CursorRulesValidRule(Rule):
                     )
                 )
                 continue
-            if "," in stripped:
+            if written_as_string and _has_separator_comma(stripped):
                 # Cursor documents a comma-separated string, but whether the
                 # parser splits it or keeps one literal pattern has changed
                 # between releases. A YAML list means the same thing under
@@ -250,8 +276,9 @@ class CursorRulesValidRule(Rule):
                 continue
             return [
                 self.violation(
-                    ".cursorrules is ignored when .cursor/rules/ is present — "
-                    "move its content into a .mdc rule or AGENTS.md",
+                    ".cursorrules is deprecated and its precedence against "
+                    ".cursor/rules/ is undefined — move its content into a .mdc "
+                    "rule or AGENTS.md so what the agent reads is unambiguous",
                     file_path=block.path,
                     severity=Severity.WARNING,
                     fixable=False,

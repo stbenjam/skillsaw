@@ -202,6 +202,31 @@ per-ecosystem attach paths and loses its content silently.
   dual-manifest plugins keep their established Claude results
   (`TestDualManifestBackwardCompat` pins this).
 
+**Ecosystems and editor tools are different problems.** An *ecosystem*
+packages and installs content (Claude plugins, Codex, Agent Plugins), so it
+needs provenance: two of them can claim the same directory, and the format
+rules must stay out of each other's trees. An *editor tool* (Cursor,
+Copilot, Cline, Qwen) only reads files out of its own directory — nothing
+else claims `.cursor/` — so it needs no provenance machinery at all. Pick
+the recipe that matches; following the ecosystem one for an editor tool
+builds machinery that design does not need.
+
+**Adding an editor tool** (Cursor is the worked example): add its directory
+name to `AGENT_TOOL_DIR_NAMES` in the `detect.py` discovery module if it reads a
+directory rather than a single root file, so one walk finds it anywhere in
+the tree; add its skill directory to `CONVENTIONAL_SKILL_DIRS` in the
+`discovery` package; add its evidence to `_EDITOR_EVIDENCE` (or a
+`marker()` check) in `instruction_formats()` — **detection must agree with
+attachment**, or the lint tree grows blocks no format-gated rule ever looks
+at; add block classes whose `category` encodes the budget role (`command`
+for on-demand prompts, `instruction` for always-on prose, `agent` for
+subagents); attach them in the editor-directory loop in `build_lint_tree`.
+Structural rules for the tool declare `formats = frozenset({HAS_<TOOL>})`
+and iterate their own block type — never `provenance_scope`, which is for
+shared node types only. Prefer subclassing a shared block
+(`VsCodeMcpBlock(McpBlock)`) over editing existing rule files, so the
+security rules pick the tool up without a visit.
+
 **Adding an ecosystem** (Codex and Agent Plugins are the worked examples):
 put its discovery leg — the
 state-free plugin/manifest walks, catalog enumeration, local-source

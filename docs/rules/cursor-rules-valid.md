@@ -34,15 +34,28 @@ activation modes:
 Manual is legitimate, so a rule with none of the three is reported at `info`,
 not as an error.
 
-This rule also flags a `.cursorrules` file that survives alongside
-`.cursor/rules/`. Cursor ignores the legacy file in Agent mode, which is the
-default, so its content is silently dropped.
+This rule also flags a `.cursorrules` file that survives alongside a root
+`.cursor/rules/`. Cursor no longer documents `.cursorrules` at all, and
+community reports disagree on how the two interact — which is the point:
+you cannot tell from the repository which instructions the agent is
+following.
 
 Whether a `globs` pattern *matches* anything is deliberately not checked: it
 would cost a repository walk per pattern, and a rule written for files that
 do not exist yet is a reasonable thing to commit. `cursor-rules-valid`
 validates the shape of the declaration, the same scope `claude-rules-valid`
-applies to `paths`.
+applies to `paths`. It also rejects an empty pattern and an absolute one
+(`globs` are repository-relative), and requires `description` to be a string.
+
+## Severity
+
+Type and shape defects are errors: malformed frontmatter, a non-boolean
+`alwaysApply`, a non-string `description`, a `globs` value that is neither a
+string nor a list of strings, and empty or absolute patterns.
+
+An ambiguous comma in a `globs` string and a superseded `.cursorrules` are
+warnings. A rule that only loads via `@name` is `info`, because Manual is a
+legitimate mode.
 
 ## Examples
 
@@ -80,7 +93,8 @@ Components export a default function.
 ## How to fix
 
 - `skillsaw fix` converts a boolean-looking quoted `alwaysApply` value
-  (`"true"`, `"yes"`, `"1"`) into a YAML boolean.
+  (`"true"`, `"yes"`, `"on"`) into a YAML boolean. `"1"` is left alone —
+  reading it as `true` would infer intent rather than repair a spelling.
 - Replace a comma-containing `globs` string with a YAML list.
 - Malformed frontmatter needs a human: fix the YAML, or delete the
   frontmatter block if the rule is meant to be manual-only.

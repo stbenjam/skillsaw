@@ -373,6 +373,7 @@ rules:
   cursor-hooks-valid:
     enabled: auto
     severity: error
+    # extra-events: []
 
   # Cursor .mdc rules must have frontmatter that lets the rule activate
   cursor-rules-valid:

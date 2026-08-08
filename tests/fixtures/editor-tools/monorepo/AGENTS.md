@@ -1,7 +1,7 @@
 # Contributing agent instructions
 
 This is a small monorepo: `apps/web` is the front end, `services/api` is the
-Python backend. Every AI coding tool in this repository reads this file.
+Python backend.
 
 ## Build and test
 

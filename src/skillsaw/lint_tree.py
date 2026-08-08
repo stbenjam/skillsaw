@@ -73,6 +73,12 @@ from .lint_target import (
 
 logger = logging.getLogger(__name__)
 
+# Subdirectories Cline's rules loader skips when concatenating .clinerules/
+# into the system prompt. Mirrors the exclusion list in cline/cline's
+# cline-rules.ts: workflows/ and skills/ load on demand, hooks/ are
+# executables.
+_CLINE_EXCLUDED_DIRS = frozenset({"workflows", "hooks", "skills"})
+
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
@@ -319,15 +325,33 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     # directory as well as the repository root, so a monorepo package can
     # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
     # root-anchored lookup.
-    def _add_glob(parent: LintTarget, directory: Path, pattern: str, block_cls: type) -> None:
-        """Attach every file matching *pattern* under *directory*."""
+    def _add_glob(
+        parent: LintTarget,
+        directory: Path,
+        pattern: str,
+        block_cls: type,
+        skip_dirs: frozenset[str] = frozenset(),
+    ) -> None:
+        """Attach every file matching *pattern* under *directory*.
+
+        *skip_dirs* names immediate subdirectories the owning tool does not
+        read, so their contents are not swept in under this block type.
+        """
         if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
             return
         try:
             matches = sorted(directory.glob(pattern))
-        except OSError:
+        except OSError as exc:
+            # A directory that cannot be read drops silently otherwise, and
+            # "no findings" is indistinguishable from "nothing to find".
+            message = f"Could not read {directory}: {exc}"
+            if message not in context.lint_tree_errors:
+                context.lint_tree_errors.append(message)
+            logger.warning(message)
             return
         for match in matches:
+            if skip_dirs and skip_dirs.intersection(match.relative_to(directory).parts[:-1]):
+                continue
             if safe_is_file(match):
                 _add_block(parent, match, block_cls)
 
@@ -350,7 +374,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # repository scan collects every ``*.instructions.md`` wherever it
         # lives, and they are attached with the root instruction files above.
         _add_glob(root, github_dir / "prompts", "**/*.prompt.md", CopilotPromptBlock)
-        _add_glob(root, github_dir / "agents", "**/*.agent.md", CopilotAgentBlock)
+        # VS Code detects *any* .md in .github/agents as a custom agent;
+        # .agent.md is the recommended convention, not the detection rule.
+        _add_glob(root, github_dir / "agents", "**/*.md", CopilotAgentBlock)
         # Chat modes are the pre-2026 spelling of custom agents. VS Code
         # still loads them, so they are still shipped prose.
         _add_glob(root, github_dir / "chatmodes", "**/*.chatmode.md", CopilotAgentBlock)
@@ -369,12 +395,21 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_block(root, clinerules_file, InstructionBlock)
     for clinerules_dir in context.agent_tool_dirs(".clinerules"):
         # Cline concatenates every .md and .txt under .clinerules/ into the
-        # system prompt, and loads workflows/ on demand instead. Claim the
-        # workflows first: ``_add_block`` keeps the first role a path gets,
-        # and the sweep below would otherwise budget them as always-on.
+        # system prompt, but its loader excludes three subdirectories:
+        # workflows/ (on demand), skills/ (on demand, and discovered as
+        # skills), and hooks/ (executables, not prose). Sweeping them in
+        # would budget content Cline never loads as always-on context.
+        # Claim the workflows first: ``_add_block`` keeps the first role a
+        # path gets.
         _add_glob(root, clinerules_dir / "workflows", "**/*.md", ClineWorkflowBlock)
         for pattern in ("**/*.md", "**/*.txt"):
-            _add_glob(root, clinerules_dir, pattern, InstructionBlock)
+            _add_glob(
+                root,
+                clinerules_dir,
+                pattern,
+                InstructionBlock,
+                skip_dirs=_CLINE_EXCLUDED_DIRS,
+            )
 
     # --- Marketplace config ---
     marketplace_json = context.root_path / ".claude-plugin" / "marketplace.json"

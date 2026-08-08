@@ -175,7 +175,8 @@ RULE_GROUPS = [
         "frontmatter (the fields that decide whether a rule ever activates) and "
         "`.cursor/hooks.json` structure. Cursor reads AGENTS.md for portable "
         "instructions, so no Cursor-specific instruction format is validated. "
-        "Enabled automatically when Cursor configuration is detected.",
+        "Enabled automatically wherever a `.cursor/` directory or a `.cursorrules` "
+        "file is found, including in a monorepo subpackage.",
     ),
     (
         "Instruction Files",

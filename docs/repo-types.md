@@ -210,10 +210,12 @@ Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependenci
 ## Editor and CLI tool files
 
 These are not repository types — skillsaw picks them up in any repository,
-whatever its type, because they ship in the checkout and land in an agent's
-context window. Every file listed here gets the full `content-*` rule set
-(weak language, contradictions, attention dead zones, secrets, and the rest)
-plus the security rules.
+whatever its type, because they ship in the checkout. Every **prose** file
+listed below gets the full `content-*` rule set (weak language,
+contradictions, attention dead zones, secrets, and the rest) plus the
+security rules, because its text lands in an agent's context window. The
+JSON configuration files — `mcp.json`, `hooks.json` — are machine config,
+never linted as prose; they get the MCP and hook rules instead.
 
 Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md
@@ -234,10 +236,15 @@ wherever a tool's own metadata can fail silently — see
 | **Kiro** | `.kiro/steering/*.md` |
 | **Windsurf** | `.windsurfrules` |
 
-Cursor, Copilot and Cline all resolve their configuration from the nearest
-enclosing directory as well as the repository root, so skillsaw finds
-`.cursor/`, `.github/` and `.clinerules/` anywhere in the tree — a monorepo
-package that carries its own set is linted alongside the root's.
+skillsaw finds `.cursor/`, `.github/` and `.clinerules/` anywhere in the
+tree, so a monorepo package that carries its own set is linted alongside the
+root's. How much each tool actually reads from a nested directory varies:
+Cursor documents nested `.cursor/rules/` and `.cursor/skills/` explicitly;
+VS Code walks from the workspace folder up to the repository root; Cline and
+`.github/copilot-instructions.md` resolve one path relative to the workspace
+directory, so a nested copy is only read when that directory is the
+workspace. skillsaw lints all of them either way — a committed instruction
+file is worth checking wherever a teammate might open it.
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and
@@ -254,6 +261,8 @@ files, because they enter the context window only when invoked.
 repository, so its commands are scanned by
 [`hooks-dangerous`](rules/hooks-dangerous.md) and
 [`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
-and settings. Cursor's schema is flatter than Claude's — no `matcher`, no
-handler `type` — so `hooks-json-valid` leaves the file alone and
-`cursor-hooks-valid` validates the shape instead.
+and settings. Cursor's schema is flatter than Claude's — hooks hang directly
+off the event name rather than off a matcher group — so `hooks-json-valid`
+leaves the file alone and `cursor-hooks-valid` validates the shape instead.
+A `type: "prompt"` hook asks the model a question rather than spawning a
+process, so the command scanners skip it.

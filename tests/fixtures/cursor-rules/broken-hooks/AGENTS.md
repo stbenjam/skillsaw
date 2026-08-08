@@ -1,3 +1,3 @@
 # Agent instructions
 
-Hooks in this repository audit shell commands before they run.
+Shell commands are audited before they run. Run `make check` before pushing.

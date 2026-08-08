@@ -130,11 +130,11 @@ nav:
     - Agent Plugins: rules/agent-plugins.md
     - Claude Code: rules/claude.md
     - OpenAI Codex: rules/codex.md
-    - Cursor: rules/cursor.md
     - Hooks: rules/hooks.md
     - Security: rules/security.md
     - MCP: rules/mcp.md
     - OpenClaw: rules/openclaw.md
+    - Cursor: rules/cursor.md
     - Instruction Files: rules/instruction-files.md
     - Context Budget: rules/context-budget.md
     - Content Intelligence: rules/content-intelligence.md

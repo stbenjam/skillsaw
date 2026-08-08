@@ -7,9 +7,10 @@ the 2025 Shai-Hulud npm compromise used exactly this pattern, hiding
 download-and-execute payloads in lifecycle hooks.
 
 Hooks can be declared in plugin `hooks/hooks.json`, in `.claude/settings*.json`,
-and in **skill and agent frontmatter** (the `hooks:` YAML key, same schema as
-settings hooks). This rule scans all three — a `curl | sh` hook hidden in
-SKILL.md frontmatter is just as dangerous as one in `hooks.json`.
+in **skill and agent frontmatter** (the `hooks:` YAML key, same schema as
+settings hooks), and in Cursor's `.cursor/hooks.json`. This rule scans every
+one of them — a `curl | sh` hook hidden in SKILL.md frontmatter or in a
+Cursor lifecycle hook is just as dangerous as one in `hooks.json`.
 
 This rule flags hook commands that:
 

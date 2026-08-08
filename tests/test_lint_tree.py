@@ -275,7 +275,9 @@ def test_tree_contains_editor_tool_blocks(temp_dir):
     # Workflows are claimed before the always-on sweep, so they are budgeted
     # as on-demand commands rather than as system-prompt instructions.
     assert names(ClineWorkflowBlock) == {"release.md"}
-    assert {"style.md", "policy.txt"} <= names(InstructionBlock)
+    # Exact, not a subset: if the dedup regressed, release.md would land in
+    # both sets and be double-budgeted as always-on system-prompt text.
+    assert names(InstructionBlock) == {"style.md", "policy.txt"}
 
 
 def test_tree_finds_editor_tool_dirs_in_subpackages(temp_dir):

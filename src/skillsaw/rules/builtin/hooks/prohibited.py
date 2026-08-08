@@ -92,9 +92,7 @@ class HooksProhibitedRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        # CursorHooksBlock renders Cursor's flatter shape as the same
-        # HookEventConfig structure, so both ecosystems' hooks are scanned
-        # by one pass rather than a per-ecosystem branch here.
+        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
         hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
         for block in hook_blocks:
             if block.parse_error:

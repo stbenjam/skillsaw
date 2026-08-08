@@ -25,6 +25,11 @@ class McpValidJsonRule(Rule):
     default_enabled = True
 
     VALID_MCP_TYPES = ("stdio", "http", "sse", "streamable-http", "ws")
+
+    # Every spelling of the server-map wrapper across hosts. Used to tell
+    # "this file names its servers under another host's key" apart from
+    # "this file declares no servers".
+    FOREIGN_SERVER_KEYS = frozenset({"mcpServers", "servers"})
     REQUIRED_FIELDS_BY_TYPE = {
         "stdio": "command",
         "http": "url",
@@ -93,10 +98,30 @@ class McpValidJsonRule(Rule):
             # so dual-manifest plugins keep their established Claude results.
             require_usable = context.in_codex_only_plugin(block.path)
             # Hosts spell the wrapper key differently (VS Code uses
-            # ``servers``); the block knows its own. A file that omits the
-            # wrapper entirely is a bare server map, which every host accepts.
+            # ``servers``); the block knows its own.
             servers_key = block.servers_key
-            payload = data[servers_key] if servers_key in data else data
+            if servers_key in data:
+                payload: Any = data[servers_key]
+            elif block.allow_bare_server_map:
+                # The Claude-family files may be written as a bare map.
+                payload = data
+            elif any(key in data for key in self.FOREIGN_SERVER_KEYS - {servers_key}):
+                # Another host's wrapper key: the servers are really there,
+                # this host just will not find them. Name the right key
+                # rather than reading the foreign wrapper as a server.
+                wrong = sorted(self.FOREIGN_SERVER_KEYS & set(data) - {servers_key})
+                violations.append(
+                    self.violation(
+                        f"MCP configuration uses '{wrong[0]}' but this host reads "
+                        f"'{servers_key}' — the servers are not loaded",
+                        file_path=block.path,
+                    )
+                )
+                continue
+            else:
+                # No wrapper and no foreign key: the file declares no servers.
+                # Legal while only ``inputs``/``sandbox`` are filled in.
+                continue
             violations.extend(
                 self._validate_mcp_structure(
                     {"mcpServers": payload},
@@ -194,7 +219,16 @@ class McpValidJsonRule(Rule):
                     )
                 )
 
-            server_type = server_config.get("type", "stdio")
+            # Transport is only defaulted when the server does not say. Every
+            # host infers it from the connection field, so a remote server
+            # written as ``{"url": "..."}`` — the most common remote form —
+            # is not a stdio server missing its ``command``.
+            server_type = server_config.get("type")
+            if server_type is None:
+                if "url" in server_config and "command" not in server_config:
+                    server_type = "http"
+                else:
+                    server_type = "stdio"
 
             if server_type not in self.VALID_MCP_TYPES:
                 violations.append(
