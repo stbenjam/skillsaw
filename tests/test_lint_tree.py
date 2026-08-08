@@ -540,6 +540,21 @@ def test_apm_leaves_a_cursor_dir_alone_when_it_targets_only_claude(temp_dir):
     assert [b.path.name for b in tree.find(CursorRuleBlock)] == ["hand.mdc"]
 
 
+def test_an_explicitly_empty_targets_list_suppresses_nothing(temp_dir):
+    """`targets: []` parsed fine and means "compile nothing" — it is not the
+    unreadable-manifest fallback, so no editor directory is APM output."""
+    (temp_dir / "apm.yml").write_text("name: t\nversion: 1.0.0\ntargets: []\n")
+    (temp_dir / ".apm" / "instructions").mkdir(parents=True)
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    (temp_dir / ".cursor" / "rules" / "hand.mdc").write_text(
+        "---\ndescription: Hand written\n---\n\nUse the client.\n"
+    )
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(CursorRuleBlock)] == ["hand.mdc"]
+
+
 def test_apm_still_suppresses_a_cursor_dir_it_compiles(temp_dir):
     (temp_dir / "apm.yml").write_text(
         "name: t\nversion: 1.0.0\ndescription: Test\ntargets:\n  - cursor\n"

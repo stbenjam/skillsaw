@@ -1358,6 +1358,24 @@ class TestCursorRules:
         _run_fix(repo)
         assert target.read_text() == after
 
+    def test_an_inline_comment_on_a_valid_boolean_is_not_a_type_error(self, tmp_path):
+        """The dialect reader honours YAML's comment rule, so the two agree.
+
+        Without that, `alwaysApply: true # applies globally` read as a
+        string on the dialect side and the correction replaced strict
+        YAML's correct boolean — a type error on a perfectly valid file.
+        """
+        repo = self._lenient_repo(tmp_path, "validcomment", "alwaysApply: true # applies globally")
+
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+
+    def test_a_hash_inside_a_quoted_value_is_data(self, tmp_path):
+        repo = self._lenient_repo(
+            tmp_path, "hashdesc", 'description: "Use #hashtags in commits"\nglobs: **/*.ts'
+        )
+
+        assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
+
     def test_a_quoted_key_is_read_on_the_lenient_path(self, tmp_path):
         """The lenient reader must accept every key spelling the fixer does.
 

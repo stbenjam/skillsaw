@@ -169,7 +169,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self.has_apm = self._detect_apm()
         self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
-        self._apm_targets: Optional[frozenset] = None
+        self._apm_targets: Any = _UNSET  # frozenset once read; None = unknown
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
@@ -305,19 +305,20 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Whether ``apm.yml`` lists *target* among its compile targets.
 
         An unreadable or target-less manifest answers True for everything,
-        which keeps the established de-duplication rather than doubling
-        every finding on a misparse.
+        keeping the de-duplication on a misparse — a sentinel distinct from
+        an empty set, because ``targets: []`` means "compile nothing" and
+        answering True for it would drop hand-authored editor directories.
         """
-        if self._apm_targets is None:
+        if self._apm_targets is _UNSET:
             data, error = read_yaml(self.root_path / "apm.yml")
             declared = data.get("targets") if isinstance(data, dict) else None
             if error or not isinstance(declared, list):
-                self._apm_targets = frozenset()  # empty means "unknown"
+                self._apm_targets = None  # unknown: keep the de-duplication
             else:
                 self._apm_targets = frozenset(
                     t.strip().lower() for t in declared if isinstance(t, str)
                 )
-        return not self._apm_targets or target in self._apm_targets
+        return self._apm_targets is None or target in self._apm_targets
 
     def apm_compiled_roots(self) -> Set[Path]:
         """Resolved compiled-output directories to skip when APM is present.

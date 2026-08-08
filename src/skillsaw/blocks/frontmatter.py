@@ -312,18 +312,40 @@ ParsedFrontmatterBlock = FrontmatteredBlock
 
 
 # A key may be quoted: ``"alwaysApply": "true"`` declares the same field as
-# the bare spelling, YAML allows it and Cursor's reader tolerates it. Missing
-# that here meant the field was never created at all on the lenient path, so
-# a rule pairing a quoted key with Cursor-valid syntax that strict YAML
-# rejects — ``globs: **/*.ts`` — went unvalidated. ``_replace_key_line``
-# already accepted the quoted form, so the two disagreed.
+# the bare spelling, YAML allows it and Cursor's reader tolerates it.
+# Rejecting it here would leave the field uncreated on the lenient path —
+# unvalidated whenever Cursor-valid syntax like ``globs: **/*.ts`` forces
+# that path — while ``_replace_key_line`` accepts the quoted form, and the
+# reader and the fixer must agree on what declares a key.
 _MDC_KEY_RE = re.compile(r"""^["']?([A-Za-z][A-Za-z0-9_-]*)["']?:[ \t]*(.*)$""")
 _MDC_LIST_ITEM_RE = re.compile(r"^[ \t]*-[ \t]+(.*)$")
 
 
+def _strip_inline_comment(value: str) -> str:
+    """Drop a whitespace-preceded ``# ...`` suffix, honouring quotes.
+
+    Mirrors YAML's comment rule so the two readers agree on commented
+    lines: otherwise ``alwaysApply: true # applies globally`` reads as a
+    string here while strict YAML reads the boolean, and the dialect
+    correction would replace the correct boolean with the string —
+    a type error on a valid file. A ``#`` inside quotes, or not preceded
+    by whitespace, is data.
+    """
+    quote = ""
+    for index, char in enumerate(value):
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and index > 0 and value[index - 1] in " \t":
+            return value[:index]
+    return value
+
+
 def _unquote(value: str) -> Tuple[Any, bool]:
     """Return (python value, was_quoted) for one raw ``.mdc`` scalar."""
-    stripped = value.strip()
+    stripped = _strip_inline_comment(value).strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
         return stripped[1:-1], True
     lowered = stripped.lower()
@@ -473,8 +495,8 @@ class CursorRuleBlock(FrontmatteredBlock):
         strict list is structure PyYAML got right. Flow style is where this
         bites: ``globs: [/etc/**, src/**]`` parses to a real list, while the
         line-oriented dialect reader returns the raw ``[/etc/**, src/**]``.
-        Taking that string left the pattern splitter looking at ``[/etc/**``,
-        whose leading bracket hid the absolute path the rule exists to
+        Taking that string would hand the pattern splitter ``[/etc/**``,
+        whose leading bracket hides the absolute path the rule exists to
         report.
         """
         if isinstance(dialect, str) and not isinstance(strict, (str, list, dict)):

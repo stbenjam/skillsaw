@@ -93,10 +93,10 @@ class CursorHooksValidRule(Rule):
         """Built-in event names plus any the project declares.
 
         The declared type is not enforced when the config loads, so
-        ``extra-events: 42`` arrives here as an int. Iterating it raised
-        ``TypeError``, which cost the whole rule — every structural finding
-        in every Cursor hooks file, over one bad config line. A value of the
-        wrong shape simply contributes no extra events.
+        ``extra-events: 42`` arrives here as an int. Iterating it would
+        raise ``TypeError`` and cost the whole rule — every structural
+        finding in every Cursor hooks file, over one bad config line. A
+        value of the wrong shape simply contributes no extra events.
         """
         extra = self.config.get("extra-events") or []
         if not isinstance(extra, (list, tuple, set, frozenset)):
@@ -197,7 +197,7 @@ class CursorHooksValidRule(Rule):
                 # Fall through rather than skipping. The warning already says
                 # the name may be a real event this release has not heard of;
                 # if it is, its entries are live configuration and deserve the
-                # same shape checks. Skipping them made a malformed hook
+                # same shape checks. Skipping them would leave a malformed hook
                 # invisible until the author found and set ``extra-events``.
             violations.extend(self._check_entries(event, entries, block))
 

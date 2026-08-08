@@ -44,8 +44,9 @@ explicitly overrides the inference, and an unknown value is reported.
 ```
 
 An empty `command` is a narrower case: the key is present, so the
-presence-only check passes it in a Claude-family file. Only a Codex-only
-plugin requires the value to name something spawnable.
+presence-only check passes it in a Claude-family file. Codex-only plugins
+and the editor files (`.cursor/mcp.json`, `.vscode/mcp.json`) require the
+value to name something spawnable — a non-empty `command` string or `url`.
 
 **Good:**
 

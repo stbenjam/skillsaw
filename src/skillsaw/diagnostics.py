@@ -134,7 +134,7 @@ def safe_display(value: object) -> str:
     raw = str(value)
     truncated = len(raw) > _MAX_DISPLAY
     # Truncate before scanning so the display cap bounds the *work*, not
-    # just the output — redaction over the full value really is superlinear
+    # just the output — redaction over the full value is superlinear
     # on adversarial input (a megabyte of "a:b@" costs seconds), and one
     # diagnostic must not buy minutes of CPU.
     text = raw[:_MAX_DISPLAY]

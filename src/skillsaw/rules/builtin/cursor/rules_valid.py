@@ -114,10 +114,10 @@ def _replace_key_line(original: str, line: Optional[int], replacement: str) -> O
 def _trailing_comment(line: str) -> str:
     """The ``# ...`` suffix of *line*, with the spacing before it, or ``""``.
 
-    Only the scalar needs rewriting, so an authored note beside it survives:
-    replacing the whole line deleted ``# why this is global`` on every fix.
-    A ``#`` inside quotes is part of the value, not a comment, so the scan
-    tracks quoting rather than taking the first ``#`` it sees.
+    Only the scalar needs rewriting, so an authored note beside it survives —
+    replacing the whole line would silently delete it on every fix. A ``#``
+    inside quotes is part of the value, not a comment, so the scan tracks
+    quoting rather than taking the first ``#`` it sees.
     """
     body = line.rstrip("\r")
     quote = ""
@@ -233,8 +233,8 @@ class CursorRulesValidRule(Rule):
                 line=field.field_line,
                 block=block,
                 # Fixability is derived from the repair itself, never
-                # guessed alongside it: an independent predicate can (and
-                # did) advertise fixes the repair then declines. When the
+                # guessed alongside it: an independent predicate can
+                # advertise fixes the repair then declines. When the
                 # predicate *is* the repair, they cannot diverge.
                 fixable=self._repair_always_apply(block.path) is not None,
             )
@@ -392,13 +392,8 @@ class CursorRulesValidRule(Rule):
         field = block.field("alwaysApply")
         if field is None or not isinstance(field.value, str):
             return None
-        # A value carrying a newline came from a folded or literal block
-        # scalar — ``alwaysApply: >`` over an indented ``true``. Its source
-        # spans more lines than the key line, so neither a one-line rewrite
-        # (which orphans the continuation) nor a whole-field rewrite (which
-        # deletes it, shifting every later diagnostic) is correct. Decline;
-        # check() asks this same function, so the violation stops
-        # advertising a fix with it.
+        # A newline in the value marks a block scalar — declined early;
+        # the line-count invariant below explains why no rewrite is correct.
         if "\n" in field.value:
             return None
         boolean = _BOOLEAN_STRINGS.get(field.value.strip().lower())

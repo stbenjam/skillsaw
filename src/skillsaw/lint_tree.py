@@ -176,8 +176,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         * the editor directory must be one the loops below will walk.
           Discovery keeps ``vendor/pkg/.github`` out of ``agent_tool_dirs``
           while the sweep still collects instruction files from it, so
-          matching on the directory *name* alone silently discarded
-          vendored content the linter used to report.
+          matching on the directory *name* alone would silently discard
+          vendored content the linter reports.
 
         All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
         the two halves cannot drift apart.
@@ -209,9 +209,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         # `.apm/instructions/` compiles to two places, not one: the
         # per-glob copies under `.github/instructions/` *and* the whole
         # concatenation as the root `copilot-instructions.md`. Guarding
-        # only the directory left the root file attached beside its own
-        # sources — the duplication this set exists to prevent, which is
-        # why skillsaw's own config had to exclude that path by hand.
+        # only the directory would leave the root file attached beside its
+        # own sources — the duplication this set exists to prevent.
         #
         # A file, unlike a directory, can say for itself whether it is
         # output, so require the stamp too. A source directory proves APM
@@ -449,11 +448,11 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         """
         if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
             return
-        # An excluded directory is not walked. Testing only each match let
-        # `exclude: [".cursor/rules"]` through, because the pattern names the
-        # directory and the matches are its children — so the files stayed in
+        # An excluded directory is not walked. Testing only each match would
+        # let `exclude: [".cursor/rules"]` through — the pattern names the
+        # directory and the matches are its children — leaving the files in
         # every content and security rule while format detection, which does
-        # honour the directory, disagreed.
+        # honour the directory, disagrees.
         if _is_excluded(directory):
             return
         # Contain the glob *base*, not just each match: pathlib follows a
@@ -476,8 +475,8 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             # First component only: Cline reserves ``workflows``, ``hooks``
             # and ``skills`` at the top of .clinerules, not everywhere. A
             # rule filed under ``backend/hooks/`` is ordinary prose that
-            # Cline does concatenate, and matching at any depth dropped it
-            # from the tree entirely rather than merely misfiling it.
+            # Cline does concatenate, and matching at any depth would drop
+            # it from the tree entirely rather than merely misfiling it.
             relative = match.relative_to(directory).parts[:-1]
             if skip_dirs and relative and relative[0] in skip_dirs:
                 continue
