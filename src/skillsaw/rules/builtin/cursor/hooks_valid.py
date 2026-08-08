@@ -2,6 +2,7 @@
 Rule: cursor-hooks-valid
 """
 
+import math
 from typing import Any, Dict, List, Set
 
 from skillsaw.context import HAS_CURSOR, RepositoryContext
@@ -213,7 +214,7 @@ class CursorHooksValidRule(Rule):
 
         violations: List[RuleViolation] = []
         for index, entry in enumerate(entries):
-            where = f"Hook {event}[{index}]"
+            where = f"Hook {safe_display(event)}[{index}]"
             if not isinstance(entry, dict):
                 violations.append(
                     self.violation(f"{where} must be an object", file_path=block.path)
@@ -280,7 +281,11 @@ class CursorHooksValidRule(Rule):
         # ``bool`` is an ``int`` subclass, and ``timeout: true`` is not a
         # duration however permissively you read it.
         if timeout is not None and (
-            isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            # Python's json accepts NaN/Infinity; a strict reader does not,
+            # so treating them as numbers would call an unloadable file clean.
+            or not math.isfinite(timeout)
         ):
             violations.append(
                 self.violation(

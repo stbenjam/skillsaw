@@ -11,6 +11,8 @@ from skillsaw.rules.builtin.content_analysis import (
     gather_all_content_blocks,
     SkillBlock,
     CommandBlock,
+    CopilotPromptBlock,
+    CursorCommandBlock,
 )
 
 # Anthropic recommends keeping instruction files under ~5k tokens to avoid
@@ -132,9 +134,16 @@ class ContextBudgetRule(Rule):
         limits: Dict[str, Tuple[Optional[int], Optional[int]]],
         violations: List[RuleViolation],
     ) -> None:
+        # Keyed by block type, not by ``category``: an editor's on-demand
+        # prompt is budgeted as a ``command`` for its whole-file limit, but
+        # it is a sibling FrontmatteredBlock rather than a CommandBlock, so
+        # finding it by category would miss it and its routing description
+        # would face no limit at all.
         desc_categories = {
             SkillBlock: "skill-description",
             CommandBlock: "command-description",
+            CursorCommandBlock: "command-description",
+            CopilotPromptBlock: "command-description",
         }
         for block_type, category in desc_categories.items():
             warn_limit, error_limit = limits.get(category, (None, None))

@@ -1412,6 +1412,18 @@ class TestCursorRules:
 
         assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
 
+    def test_a_four_dash_opener_is_prose_not_broken_frontmatter(self, tmp_path):
+        """Cursor sees no frontmatter here, so claiming it skips the rule is false."""
+        repo = tmp_path / "fourdash"
+        (repo / ".cursor" / "rules").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "rules" / "dashes.mdc").write_text(
+            "----\n\nOrdinary prose, no frontmatter.\n"
+        )
+
+        found = by_rule(run_lint(repo)).get("cursor-rules-valid", [])
+        assert not [v for v in found if "Cursor skips the rule" in v["message"]]
+
     def test_a_windows_absolute_glob_is_absolute_everywhere(self, tmp_path):
         """The repository it cannot match is the same whatever OS lints it."""
         repo = self._lenient_repo(tmp_path, "winglob", 'globs: "C:/repo/**/*.py"')
@@ -1541,6 +1553,19 @@ class TestCursorRules:
         assert any("'matcher' must be a string" in m for m in messages)
         assert any("'timeout' must be a number" in m for m in messages)
         assert any("empty array" in m for m in messages)
+
+    def test_a_non_finite_hook_timeout_is_rejected(self, tmp_path):
+        """Python's json accepts NaN/Infinity; a strict JSON reader does not."""
+        repo = tmp_path / "nanhook"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterFileEdit": '
+            '[{"command": "echo ok", "timeout": NaN}]}}'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
+        assert any("'timeout' must be a number" in m for m in messages)
 
     def test_hooks_prohibited_scans_cursor_hooks(self, tmp_path):
         repo = tmp_path / "prohibited"
@@ -1677,6 +1702,19 @@ class TestCursorRules:
 @pytest.mark.integration
 class TestEditorTools:
     """Cursor, Copilot/VS Code and Cline content that ships in a repository."""
+
+    def test_an_editor_command_description_faces_the_command_budget(self, tmp_path):
+        """A Cursor command is budgeted as a command, description included."""
+        repo = tmp_path / "cmddesc"
+        (repo / ".cursor" / "commands").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        description = "Use this command when you need to review the diff carefully " * 40
+        (repo / ".cursor" / "commands" / "review.md").write_text(
+            f"---\ndescription: {description}\n---\n\nShort body.\n"
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["context-budget"]]
+        assert any("command-description limit" in m for m in messages)
 
     def test_every_editor_content_file_reaches_the_content_rules(self, tmp_path):
         repo = copy_fixture("editor-tools/monorepo", tmp_path)

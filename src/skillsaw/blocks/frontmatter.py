@@ -435,6 +435,12 @@ class CursorRuleBlock(FrontmatteredBlock):
         content = read_text(self.path)
         if content is None:
             return parsed
+        if content.split("\n", 1)[0].strip() != "---":
+            # The generic parser treats any ``---`` prefix as an opener, so a
+            # setext rule like ``----`` arrives here as a malformed-frontmatter
+            # error. Cursor sees a file with no frontmatter and reads the whole
+            # thing as prose; reporting that it skips the rule is false.
+            return None, None, None, content, 0
         split = _split_mdc_frontmatter(content)
         if split is None:
             # No closing delimiter: Cursor cannot find the body either, so

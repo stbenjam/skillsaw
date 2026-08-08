@@ -29,11 +29,18 @@ the same path they use for Claude Code hooks and settings.
 
 Structural defects that stop a hook running are errors: a missing or
 non-integer `version`, a missing `hooks` object, an event whose value is not
-an array, an entry that is not an object, an unknown `type`, and a missing
-or empty `command`/`prompt`.
+an array, an entry that is not an object, an unknown `type`, a missing or
+empty `command`/`prompt`, a non-string `matcher`, and a `timeout` that is
+not a finite number.
 
-Two checks are warnings, because the file still loads and the rest of it
-still runs: an unrecognised event name, and an empty `hooks` object.
+A bad `matcher` is worth the error even though the hook still runs: skillsaw
+falls back to the `.*` wildcard so the security rules keep seeing the
+command, which means the hook fires on everything and nothing else would
+tell you.
+
+Three checks are warnings, because the file still loads and the rest of it
+still runs: an unrecognised event name, an empty `hooks` object, and an
+event whose array is empty and so configures nothing.
 
 ## Examples
 
