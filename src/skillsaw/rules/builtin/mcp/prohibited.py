@@ -4,6 +4,7 @@ Rule: mcp-prohibited
 
 from typing import List
 
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import PluginNode
@@ -35,6 +36,17 @@ class McpProhibitedRule(Rule):
     def default_severity(self) -> Severity:
         return Severity.ERROR
 
+    @staticmethod
+    def _named(prohibited: set) -> str:
+        """The prohibited names, sorted on the real text but shown sanitized.
+
+        A server key is author-controlled and lands in terminal, JSON and
+        SARIF output, so it gets the same treatment here as in
+        mcp-valid-json: userinfo redacted, control characters and lone
+        surrogates replaced.
+        """
+        return ", ".join(safe_display(name) for name in sorted(prohibited))
+
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
         allowlist = set(self.config.get("allowlist", []))
@@ -46,7 +58,7 @@ class McpProhibitedRule(Rule):
             if allowlist:
                 violations.append(
                     self.violation(
-                        f"non-allowlisted MCP servers defined: {', '.join(sorted(prohibited))}",
+                        f"non-allowlisted MCP servers defined: {self._named(prohibited)}",
                         file_path=block.path,
                     )
                 )
@@ -78,7 +90,7 @@ class McpProhibitedRule(Rule):
             if allowlist:
                 violations.append(
                     self.violation(
-                        f"non-allowlisted MCP servers defined: {', '.join(sorted(prohibited))}",
+                        f"non-allowlisted MCP servers defined: {self._named(prohibited)}",
                         file_path=plugin_json_path,
                     )
                 )

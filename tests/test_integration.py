@@ -1745,6 +1745,46 @@ class TestCursorRules:
         # And the baseline it wrote actually suppresses the finding.
         assert by_rule(run_lint(repo)).get("security-invisible-unicode", []) == []
 
+    def test_a_report_renders_when_a_prompt_holds_an_unencodable_character(self, tmp_path):
+        """One bad codepoint must not cost the whole report.
+
+        A rule cannot know that a value it quotes came from JSON holding an
+        escaped lone surrogate. `content-hook-candidate` interpolated the
+        matching prompt line verbatim, and every text-rendering sink —
+        stdout and each `--output` file — died on the encode.
+        """
+        repo = tmp_path / "unencodable"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"beforeSubmitPrompt": [{"type": "prompt", '
+            '"prompt": "\\ud800 Always run the tests before every commit."}]}}',
+            encoding="utf-8",
+        )
+        report = tmp_path / "report.html"
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "lint",
+                str(repo),
+                "-v",
+                "--output",
+                str(report),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert "UnicodeEncodeError" not in proc.stderr
+        assert report.exists()
+        # The codepoint stays legible rather than being dropped, and the
+        # finding it belongs to still reaches the report.
+        assert "\\ud800" in proc.stdout
+        assert "content-hook-candidate" in proc.stdout
+
     def test_hooks_dangerous_does_not_read_a_prompt_as_a_command(self, tmp_path):
         """A prompt hook spawns nothing, so the command scanner must skip it."""
         repo = tmp_path / "promptonly"
@@ -2059,6 +2099,27 @@ class TestEditorTools:
         )
 
         assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+
+    def test_mcp_prohibited_sanitizes_the_names_it_lists(self, tmp_path):
+        """The policy rule is a second sink for the same author-controlled text."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "prohibname",
+            ".cursor/mcp.json",
+            {
+                "mcpServers": {
+                    "https://user:sup3rsecret@example.com": {"command": "node"},
+                    "allowed": {"command": "node"},
+                }
+            },
+        )
+        config = repo / ".skillsaw.yaml"
+        config.write_text(
+            "rules:\n  mcp-prohibited:\n    enabled: true\n    allowlist:\n      - allowed\n"
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo, config=config))["mcp-prohibited"]]
+        assert messages == ["non-allowlisted MCP servers defined: https://[redacted]@example.com"]
 
     def test_a_server_name_is_sanitized_before_it_reaches_a_diagnostic(self, tmp_path):
         """Server keys are author text that lands in terminal, JSON and SARIF output."""

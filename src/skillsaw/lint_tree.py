@@ -162,6 +162,19 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
 
+    # Editor directories the loops below will actually walk. Discovery drops
+    # vendored and excluded ones, so this is narrower than "any directory
+    # with the right name" — and the sweep must use the same set, or it
+    # yields to an owner that never arrives.
+    eligible_tool_dirs = {
+        editor: {
+            resolved
+            for directory in context.agent_tool_dirs(editor)
+            if (resolved := safe_resolve(directory)) is not None
+        }
+        for editor in {editor for editor, _sub, _pattern, _cls in _EDITOR_GLOBS}
+    }
+
     def _claimed_by_an_editor_dir(p: Path) -> bool:
         """Whether an editor-directory glob below will claim *p* itself.
 
@@ -172,19 +185,33 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         the agent one. The sweep stands aside here so the specific owner
         wins, at whatever depth the file sits.
 
-        Standing aside is conditional on that owner's pattern actually
-        matching. ``.github/prompts`` takes ``*.prompt.md``, so an
-        ``*.instructions.md`` there belongs to the sweep after all, and
-        yielding would drop the file from the tree entirely. Both facts read
-        from ``_EDITOR_GLOBS``, so they cannot drift apart.
+        Standing aside is conditional on that owner actually turning up, in
+        two ways, because yielding to an owner that never runs drops the
+        file from the tree entirely rather than merely misfiling it:
+
+        * the pattern must match — ``.github/prompts`` takes
+          ``*.prompt.md``, so an ``*.instructions.md`` there belongs to the
+          sweep after all; and
+        * the editor directory must be one the loops below will walk.
+          Discovery keeps ``vendor/pkg/.github`` out of ``agent_tool_dirs``
+          while the sweep still collects instruction files from it, so
+          matching on the directory *name* alone silently discarded
+          vendored content the linter used to report.
+
+        All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
+        the two halves cannot drift apart.
         """
         parts = p.parts
         # Stop before the filename: the pair must be ancestor directories.
         for index in range(len(parts) - 2):
             for editor, sub, pattern, _cls in _EDITOR_GLOBS:
-                if parts[index] == editor and parts[index + 1] == sub:
-                    if fnmatch.fnmatch(p.name, pattern.rsplit("/", 1)[-1]):
-                        return True
+                if parts[index] != editor or parts[index + 1] != sub:
+                    continue
+                if not fnmatch.fnmatch(p.name, pattern.rsplit("/", 1)[-1]):
+                    continue
+                editor_dir = safe_resolve(Path(*parts[: index + 1]))
+                if editor_dir is not None and editor_dir in eligible_tool_dirs[editor]:
+                    return True
         return False
 
     # APM's Copilot target compiles `.apm/<kind>/` into the root

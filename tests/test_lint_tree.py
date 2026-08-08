@@ -453,6 +453,49 @@ def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
     assert [b.path.name for b in tree.find(CopilotPromptBlock)] == ["log.prompt.md"]
 
 
+def test_vendored_instruction_file_keeps_attaching(temp_dir):
+    """Yielding to an editor loop that never runs drops the file entirely.
+
+    Discovery keeps a vendored ``.github`` out of ``agent_tool_dirs`` while
+    the repository-wide sweep still collects instruction files from it. A
+    claim test that matched on the directory *name* alone therefore stood
+    aside for an owner that never arrived, and the file left the tree —
+    invisible to every content and security rule.
+    """
+    body = "---\ndescription: Security reviewer\n---\n\nCheck every input.\n"
+    vendored = temp_dir / "vendor" / "pkg" / ".github" / "agents"
+    vendored.mkdir(parents=True)
+    (vendored / "reviewer.instructions.md").write_text(body)
+    owned = temp_dir / ".github" / "agents"
+    owned.mkdir(parents=True)
+    (owned / "reviewer.instructions.md").write_text(body)
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    # The vendored copy has no editor owner, so the sweep keeps it as prose.
+    instruction_paths = {b.path for b in tree.find(InstructionBlock)}
+    assert vendored / "reviewer.instructions.md" in instruction_paths
+    # The owned copy still goes to its specific owner rather than the sweep.
+    assert [b.path for b in tree.find(CopilotAgentBlock)] == [owned / "reviewer.instructions.md"]
+    assert owned / "reviewer.instructions.md" not in instruction_paths
+
+
+def test_excluded_editor_dir_leaves_its_instruction_file_to_the_sweep(temp_dir):
+    """An excluded `.github` is not walked either, so the sweep must keep the file."""
+    nested = temp_dir / "packages" / ".github" / "agents"
+    nested.mkdir(parents=True)
+    (nested / "reviewer.instructions.md").write_text(
+        "---\ndescription: Security reviewer\n---\n\nCheck every input.\n"
+    )
+
+    tree = RepositoryContext(temp_dir, exclude_patterns=["packages/*"]).lint_tree
+
+    # Excluded means excluded — but it must be the exclusion that drops it,
+    # not a claim handed to a loop that skips it for a different reason.
+    assert tree.find(CopilotAgentBlock) == []
+    assert [b.path for b in tree.find(InstructionBlock)] == []
+
+
 def test_apm_compiled_root_copilot_instructions_is_not_linted(temp_dir):
     """`.apm/instructions/` compiles to the root Copilot file as well as the directory.
 
