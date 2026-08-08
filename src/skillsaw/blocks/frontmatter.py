@@ -7,6 +7,7 @@ key is exposed as a :class:`FrontmatterField` child.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -143,9 +144,19 @@ class FrontmatteredBlock(LintTarget):
         self._ensure_parsed()
         yield from super().walk()
 
+    def _parse_frontmatter_file(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """Parse this file's frontmatter.
+
+        The seam a format with its own frontmatter dialect overrides; see
+        :class:`CursorRuleBlock`.
+        """
+        return _parse_file_frontmatter(self.path)
+
     def _ensure_parsed(self) -> None:
         if self._fm_parsed is None:
-            self._fm_parsed = _parse_file_frontmatter(self.path)
+            self._fm_parsed = self._parse_frontmatter_file()
             self._build_children()
 
     def _build_children(self) -> None:
@@ -300,11 +311,238 @@ class FrontmatteredBlock(LintTarget):
 ParsedFrontmatterBlock = FrontmatteredBlock
 
 
+_MDC_KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$")
+_MDC_LIST_ITEM_RE = re.compile(r"^[ \t]*-[ \t]+(.*)$")
+
+
+def _unquote(value: str) -> Tuple[Any, bool]:
+    """Return (python value, was_quoted) for one raw ``.mdc`` scalar."""
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
+        return stripped[1:-1], True
+    lowered = stripped.lower()
+    if lowered in ("true", "false"):
+        return lowered == "true", False
+    return stripped, False
+
+
+def _split_mdc_frontmatter(content: str) -> Optional[Tuple[str, str]]:
+    """Split ``.mdc`` content into (frontmatter text, body), or ``None``.
+
+    Deliberately independent of the shared YAML helpers: those decline an
+    empty block (``---\\n---``), which Cursor reads perfectly well as a rule
+    with no metadata.
+    """
+    lines = content.split("\n")
+    # The opening delimiter must be exactly ``---``. ``----`` is a setext
+    # heading rule, and treating it as an opener would swallow the prose up
+    # to the next thematic break — hiding it from every content rule.
+    if not lines or lines[0].strip() != "---":
+        return None
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "\n".join(lines[1:index]), "\n".join(lines[index + 1 :])
+    return None
+
+
+def _parse_mdc_frontmatter(
+    text: str, line_offset: int = 0
+) -> Tuple[Dict[str, Any], Dict[str, int]]:
+    """Read ``.mdc`` frontmatter the permissive way Cursor does.
+
+    Cursor's rule reader is not a YAML parser, and its own documentation
+    ships frontmatter that ``yaml.safe_load`` rejects — ``globs: **/*.ts``
+    starts with the YAML alias indicator, and an unquoted ``description``
+    routinely contains a bare colon. Treating those as malformed produced a
+    hard error asserting Cursor skips the file, which is untrue.
+
+    Only the scalar and simple-list shapes Cursor documents are recognised;
+    quoting is preserved so a quoted ``"true"`` stays the string that makes
+    ``alwaysApply`` silently inert.
+
+    Returns the parsed mapping and a key-to-file-line map. The line map is
+    the whole reason this parser tracks positions: the strict YAML line
+    mapper cannot read a file strict YAML rejected, so without one every
+    violation on Cursor's own documented syntax would lose its line.
+    """
+    data: Dict[str, Any] = {}
+    key_lines: Dict[str, int] = {}
+    pending_list_key: Optional[str] = None
+    for index, raw_line in enumerate(text.splitlines()):
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        item = _MDC_LIST_ITEM_RE.match(raw_line)
+        if item is not None and pending_list_key is not None:
+            value, _ = _unquote(item.group(1))
+            # The bare ``key:`` above stored ``None`` to mark "declared, no
+            # scalar". The first item is what proves it was a list header,
+            # so the list is created here rather than there — ``setdefault``
+            # would hand back that ``None`` and append to it.
+            existing = data.get(pending_list_key)
+            if isinstance(existing, list):
+                existing.append(value)
+            else:
+                data[pending_list_key] = [value]
+            continue
+        match = _MDC_KEY_RE.match(raw_line)
+        if match is None:
+            continue
+        key, rest = match.group(1), match.group(2)
+        key_lines[key] = index + line_offset
+        if not rest.strip():
+            # A bare ``key:`` opens a list block or declares an empty value.
+            # Which one it is only becomes clear at the next line.
+            pending_list_key = key
+            data[key] = None
+            continue
+        pending_list_key = None
+        value, _ = _unquote(rest)
+        data[key] = value
+    # Null values are kept: ``alwaysApply:`` with no value is a defect the
+    # strict parser reports, and dropping the key here would make the
+    # lenient path silently more permissive than the one it stands in for.
+    return data, key_lines
+
+
 @dataclass(eq=False)
 class CursorRuleBlock(FrontmatteredBlock):
-    """.cursor/rules/*.mdc files."""
+    """.cursor/rules/**/*.mdc files."""
 
     category: str = "instruction"
+
+    #: Key-to-line map from the lenient reader, populated only when the
+    #: lenient reader actually ran. Empty means the strict YAML line mapper
+    #: is authoritative, as it is for every well-formed file.
+    _mdc_key_lines: Optional[Dict[str, int]] = field(default=None, repr=False)
+
+    def _parse_frontmatter_file(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """Fall back to Cursor's permissive dialect when strict YAML fails.
+
+        Strict YAML runs first, so a well-formed file keeps exactly the
+        types it has always had. Only a file YAML rejects — which Cursor
+        itself accepts — reaches the lenient reader, and a file with no
+        closing ``---`` still fails, because Cursor cannot read that either.
+        """
+        parsed = _parse_file_frontmatter(self.path)
+        frontmatter, error, _error_line, _body, _fm_lines = parsed
+        if frontmatter is not None:
+            return self._apply_cursor_scalars(parsed)
+        if error is None:
+            return parsed
+
+        content = read_text(self.path)
+        if content is None:
+            return parsed
+        if content.split("\n", 1)[0].strip() != "---":
+            # The generic parser treats any ``---`` prefix as an opener, so a
+            # setext rule like ``----`` arrives here as a malformed-frontmatter
+            # error. Cursor sees a file with no frontmatter and reads the whole
+            # thing as prose; reporting that it skips the rule is false.
+            return None, None, None, content, 0
+        split = _split_mdc_frontmatter(content)
+        if split is None:
+            # No closing delimiter: Cursor cannot find the body either, so
+            # this really is unreadable and keeps the strict error.
+            return parsed
+        fm_text, body = split
+        fm_line_count = content[: len(content) - len(body)].count("\n")
+        # Frontmatter text starts on file line 2, after the opening ``---``,
+        # and the parser counts its own lines from 0.
+        data, key_lines = _parse_mdc_frontmatter(fm_text, line_offset=2)
+        self._mdc_key_lines = key_lines
+        return data, None, None, body, fm_line_count
+
+    @staticmethod
+    def _cursor_scalar(strict: Any, dialect: Any) -> Any:
+        """Whichever of the two readings Cursor would actually see.
+
+        Only a value the readers disagree about is replaced, and only in one
+        direction: strict YAML typed it, the Cursor dialect kept it a string.
+        A list is compared element-wise for the same reason.
+        """
+        if isinstance(dialect, str) and not isinstance(strict, str):
+            return dialect
+        if isinstance(strict, list) and isinstance(dialect, list) and len(strict) == len(dialect):
+            return [
+                (
+                    item_dialect
+                    if isinstance(item_dialect, str) and not isinstance(item_strict, str)
+                    else item_strict
+                )
+                for item_strict, item_dialect in zip(strict, dialect)
+            ]
+        return strict
+
+    def _apply_cursor_scalars(
+        self,
+        parsed: Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """Re-read strict-YAML scalars the way Cursor's ``.mdc`` reader does.
+
+        Cursor does not parse ``.mdc`` frontmatter as YAML, so it sees the
+        literal text where PyYAML sees a type. PyYAML also implements YAML
+        1.1, where ``yes``/``no``/``on``/``off`` are booleans. Trusting
+        either coercion produces findings that are backwards:
+
+        - ``alwaysApply: yes`` becomes ``True``, so an inert rule is
+          reported as always-on — the exact failure this rule exists to
+          catch, and why ``_BOOLEAN_STRINGS`` lists ``yes``/``on`` as
+          repairable spellings it could otherwise never receive.
+        - ``description: no`` becomes ``False`` and ``description: 123``
+          becomes an int, so valid routing text is rejected as the wrong
+          type.
+        - A ``globs`` item of ``- yes`` becomes ``True``, failing the
+          list-of-strings check on a pattern Cursor reads fine.
+
+        ``true`` and ``false`` are booleans to both readers and pass
+        through untouched, as does anything the dialect also typed.
+        """
+        frontmatter = parsed[0]
+        if not frontmatter:
+            return parsed
+        content = read_text(self.path)
+        if content is None:
+            return parsed
+        split = _split_mdc_frontmatter(content)
+        if split is None:
+            return parsed
+        dialect, _lines = _parse_mdc_frontmatter(split[0])
+        corrected = {
+            key: self._cursor_scalar(value, dialect.get(key)) for key, value in frontmatter.items()
+        }
+        if corrected == frontmatter:
+            return parsed
+        return (corrected,) + parsed[1:]
+
+    def key_line(self, key: str) -> Optional[int]:
+        """Prefer the lenient reader's line map when it did the parsing."""
+        self._ensure_parsed()
+        if self._mdc_key_lines is not None:
+            return self._mdc_key_lines.get(key)
+        return super().key_line(key)
+
+
+@dataclass(eq=False)
+class CursorCommandBlock(FrontmatteredBlock):
+    """.cursor/commands/**/*.md — Cursor slash commands."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class CopilotPromptBlock(FrontmatteredBlock):
+    """.github/prompts/**/*.prompt.md — Copilot prompt files."""
+
+    category: str = "command"
+
+
+@dataclass(eq=False)
+class CopilotAgentBlock(FrontmatteredBlock):
+    """.github/agents/**/*.agent.md and legacy .github/chatmodes/**/*.chatmode.md."""
+
+    category: str = "agent"
 
 
 @dataclass(eq=False)

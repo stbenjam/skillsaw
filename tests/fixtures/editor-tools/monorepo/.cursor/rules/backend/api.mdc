@@ -1,0 +1,13 @@
+---
+description: Conventions for the Python API service
+globs: "services/api/**/*.py"
+alwaysApply: false
+---
+
+# API service rules
+
+Every endpoint returns a Pydantic model, never a bare dict.
+
+Database sessions are opened with the `session_scope()` context manager.
+
+You should probably keep the request handlers thin.

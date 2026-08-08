@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-from skillsaw.discovery import agent_plugins as agent_plugins_discovery
+from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, agent_plugins as agent_plugins_discovery
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
@@ -296,7 +296,7 @@ def discover_skills(
             discovered.add(root)
         else:
             walk(root)
-        for rel in (".apm/skills", ".claude/skills", ".github/skills", ".agents/skills"):
+        for rel in CONVENTIONAL_SKILL_DIRS:
             path = root / rel
             if path.is_dir() and not in_apm_compiled_dir(path):
                 walk(path)

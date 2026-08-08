@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
+from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
 from skillsaw.paths import safe_resolve
 
 T = TypeVar("T", bound="LintTarget")
@@ -25,6 +25,15 @@ class LintTarget:
     # ``skillsaw docs``, never re-derived by path matching. ``None`` for
     # nodes no plugin owns.
     plugin_owner: Optional[Path] = field(default=None, repr=False)
+
+    #: Content this linter reads but must never rewrite. Set on node types
+    #: whose text is embedded in a document of another format — a prompt
+    #: string inside JSON, say — where a fix computed against the extracted
+    #: body has no honest span in the file that holds it. The linter clears
+    #: fixability on their violations, the same stand-down vendor-managed
+    #: content gets, so nothing is advertised as fixable that ``fix`` will
+    #: then decline.
+    diagnostic_only: ClassVar[bool] = False
 
     @property
     def resolved_path(self) -> Path:
@@ -137,6 +146,20 @@ class LintTarget:
     def file_line(self, line: int) -> int:
         """Translate a line number to a file line number. Default is identity."""
         return line
+
+    def fingerprint_identity(self, body_line: Optional[int]) -> Optional[str]:
+        """Content identifying a finding when the file line cannot.
+
+        A baseline fingerprint normally hashes the source line, so editing
+        the offending text produces a new fingerprint and the finding
+        resurfaces. Content extracted from a document of another format has
+        no file line to hash — the fallback is the rule ID, path and
+        message, and two different payloads that produce the same message
+        then share a fingerprint, so baselining the first silently
+        suppresses the second. Node types in that position return something
+        that distinguishes them; ``None`` keeps the established hashing.
+        """
+        return None
 
     def tree_label(self) -> str:
         return self.path.name

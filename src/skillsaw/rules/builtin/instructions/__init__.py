@@ -1,6 +1,6 @@
 """
 Rules for validating AI coding assistant instruction files
-(AGENTS.md, CLAUDE.md, GEMINI.md)
+(AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md)
 """
 
 from .file_valid import InstructionFileValidRule

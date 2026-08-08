@@ -9,10 +9,12 @@ runtimes or network access.
 import re
 from typing import Dict, List
 
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CursorHooksBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
@@ -143,7 +145,8 @@ class HooksDangerousRule(Rule):
                     for message in _check_dangerous(command):
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: {message} — " f"command: {command!r}",
+                                f"Hook {safe_display(event_type)}: {message} — "
+                                f"command: {safe_display(command)!r}",
                                 file_path=file_path,
                                 line=line,
                             )
@@ -153,7 +156,9 @@ class HooksDangerousRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(HooksBlock):
+        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
+        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        for block in hook_blocks:
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.events, block.path))

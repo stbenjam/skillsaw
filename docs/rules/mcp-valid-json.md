@@ -14,18 +14,38 @@ MCP configuration must be valid JSON with proper mcpServers structure
 
 ## Why
 
-MCP (Model Context Protocol) configuration files must be valid JSON
-with a proper `mcpServers` structure. Invalid JSON or missing
-structure means no MCP servers will be loaded, and tools that depend
-on them will silently fail.
+MCP (Model Context Protocol) configuration files must be valid JSON with a
+server map the host can actually read. Invalid JSON or the wrong structure
+means no MCP servers load, and tools that depend on them silently fail.
+
+## Which key, which file
+
+The server map has two spellings, and each host reads exactly one:
+
+| File | Key |
+| --- | --- |
+| `.mcp.json`, `.cursor/mcp.json`, plugin manifests | `mcpServers` |
+| `.vscode/mcp.json` | `servers` |
+
+A file using the other host's key is reported as such — the servers are
+present but will not load. VS Code's documented siblings `inputs` and
+`sandbox` are not servers and are left alone.
+
+Transport is inferred when a server does not declare `type`: a `command`
+means stdio, and a bare `url` means a remote server. Declaring `type`
+explicitly overrides the inference, and an unknown value is reported.
 
 ## Examples
 
-**Bad:**
+**Bad** — an unknown transport, which no host can connect over:
 
 ```json
-{"servers": {"my-server": {"command": "npx my-server"}}}
+{"mcpServers": {"my-server": {"type": "gopher", "command": "x"}}}
 ```
+
+An empty `command` is a narrower case: the key is present, so the
+presence-only check passes it in a Claude-family file. Only a Codex-only
+plugin requires the value to name something spawnable.
 
 **Good:**
 
@@ -42,10 +62,10 @@ on them will silently fail.
 
 ## How to fix
 
-Fix the JSON syntax error or restructure the file to use the
-`mcpServers` top-level key with properly configured server entries.
-Each stdio server needs a `command` field and each remote server a
-`url` field matching its declared `type`.
+Fix the JSON syntax error, or move the servers under the key this file's
+host reads (see the table above). Each stdio server needs a `command` and
+each remote server a `url`; when `type` is declared, the field must match
+it.
 
 Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a
 `.claude-plugin` marker nor a Claude marketplace listing — either one

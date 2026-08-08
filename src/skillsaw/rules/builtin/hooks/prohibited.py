@@ -7,10 +7,12 @@ Mirrors the mcp-prohibited pattern.
 
 from typing import Dict, List
 
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CursorHooksBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
@@ -71,8 +73,8 @@ class HooksProhibitedRule(Rule):
                     if allowlist:
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: non-allowlisted command — "
-                                f"{handler.command!r}",
+                                f"Hook {safe_display(event_type)}: non-allowlisted command — "
+                                f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
                                 line=line,
                             )
@@ -80,8 +82,8 @@ class HooksProhibitedRule(Rule):
                     else:
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: hooks are prohibited — "
-                                f"{handler.command!r}",
+                                f"Hook {safe_display(event_type)}: hooks are prohibited — "
+                                f"{safe_display(handler.command)!r}",
                                 file_path=file_path,
                                 line=line,
                             )
@@ -91,10 +93,29 @@ class HooksProhibitedRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(HooksBlock):
+        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
+        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        for block in hook_blocks:
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.events, block.path))
+
+        # A Cursor prompt hook runs no command, so it carries nothing an
+        # allowlist of commands could match — but this rule is a policy gate
+        # over what fires on a lifecycle event, not a command scanner, and a
+        # hook that injects text is still a hook the project did not have
+        # before.
+        for block in context.lint_tree.find(CursorHooksBlock):
+            if block.parse_error:
+                continue
+            for event_type, _index, prompt in block.prompt_hooks():
+                violations.append(
+                    self.violation(
+                        f"Hook {safe_display(event_type)}: prompt hooks are prohibited — "
+                        f"{safe_display(prompt)!r}",
+                        file_path=block.path,
+                    )
+                )
 
         for block in context.lint_tree.find(SettingsBlock):
             if block.parse_error:

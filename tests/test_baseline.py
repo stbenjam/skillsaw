@@ -158,6 +158,29 @@ class TestFingerprint:
 
         assert fingerprint_violation(violation, tmp_path) == legacy
 
+    def test_hashes_text_no_codec_can_encode(self, tmp_path):
+        """An escaped lone surrogate in JSON must not abort the baseline.
+
+        ``"\\ud800"`` is plain ASCII on disk, so the file reads fine, but
+        ``json`` decodes it to an unpaired surrogate that ``str.encode``
+        refuses. It used to escape as ``UnicodeEncodeError`` and take the
+        whole run with it.
+        """
+        violation = _make_violation(message="Unknown hook event 'beforeSubmit\ud800'")
+
+        fingerprint = fingerprint_violation(violation, tmp_path)
+
+        assert len(fingerprint) == 16
+
+    def test_surrogate_tolerance_leaves_ordinary_hashes_alone(self, tmp_path):
+        """The encode-error handler must be inert for encodable text."""
+        src = tmp_path / "CLAUDE.md"
+        src.write_text("line one\nline two\n")
+        violation = _make_violation(rule_id="weak", file_path=src, line=2)
+        legacy = hashlib.sha256(b"weak\0CLAUDE.md\0line two").hexdigest()[:16]
+
+        assert fingerprint_violation(violation, tmp_path) == legacy
+
 
 class TestBaselineIO:
     def test_save_and_load_roundtrip(self, tmp_path):

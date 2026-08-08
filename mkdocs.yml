@@ -134,6 +134,7 @@ nav:
     - Security: rules/security.md
     - MCP: rules/mcp.md
     - OpenClaw: rules/openclaw.md
+    - Cursor: rules/cursor.md
     - Instruction Files: rules/instruction-files.md
     - Context Budget: rules/context-budget.md
     - Content Intelligence: rules/content-intelligence.md

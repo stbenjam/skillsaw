@@ -1,0 +1,13 @@
+---
+description:
+  - Repository conventions
+  - Applies to the whole backend
+globs:
+  src: "**/*.ts"
+alwaysApply: "maybe"
+---
+
+# Broken types
+
+A scalar is always a string to Cursor's reader, so only a collection is
+genuinely the wrong shape here.

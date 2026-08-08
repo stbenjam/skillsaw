@@ -1,6 +1,6 @@
 ---
 name: skillsaw-lint
-description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, Cursor, Copilot, Cline, or Kiro rules). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
+description: "Use when modifying agentic contextual building blocks like skills (SKILL.md), slash commands, agents, hooks, plugins, marketplaces, and instruction files (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md, Cursor, Copilot, Cline, or Kiro rules). Run skillsaw on the files you touched, apply autofixes, resolve remaining violations with `skillsaw explain` guidance, and re-lint until clean before considering the work complete."
 compatibility: "Requires skillsaw CLI. Check the project's Makefile, pyproject.toml, or .venv for the pinned version before installing."
 license: Apache-2.0
 metadata:

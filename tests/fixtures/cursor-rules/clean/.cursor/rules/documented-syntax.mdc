@@ -1,0 +1,10 @@
+---
+description: Documentation conventions
+globs: docs/**/*.md, docs/**/*.mdx
+alwaysApply: false
+---
+
+# Documentation
+
+Every page opens with a one-sentence summary of what the reader will be able
+to do afterwards.

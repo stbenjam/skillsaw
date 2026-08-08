@@ -2,7 +2,7 @@
 Shared content analyzers for instruction file intelligence rules.
 
 These analyzers are called by content-* rules to detect quality issues
-in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md,
+in instruction files across all formats (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md,
 .cursorrules, copilot-instructions.md, .cursor/rules/*.mdc, .coderabbit.yaml).
 
 The lint-tree block hierarchy (``ContentBlock``, ``FrontmatteredBlock``,
@@ -31,11 +31,18 @@ from skillsaw.blocks import (  # noqa: F401
     BodyContent,
     ChatmodeBlock,
     ClaudeMdBlock,
+    ClineWorkflowBlock,
     CodeRabbitContentBlock,
     CommandBlock,
     ContentBlock,
     ContentFile,
     ContextFileBlock,
+    CopilotAgentBlock,
+    CopilotPromptBlock,
+    CursorCommandBlock,
+    CursorHooksBlock,
+    CursorMcpBlock,
+    CursorPromptHookBlock,
     CursorRuleBlock,
     ExtraBlock,
     FileContentBlock,
@@ -53,10 +60,12 @@ from skillsaw.blocks import (  # noqa: F401
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
+    QwenMdBlock,
     ReadmeBlock,
     SettingsBlock,
     SkillBlock,
     SkillRefBlock,
+    VsCodeMcpBlock,
     _CODERABBIT_FILENAME,
     _extract_instructions,
     _find_nth_key_line,
@@ -176,6 +185,7 @@ _INSTRUCTION_FILE_CATEGORIES = {
     "AGENTS.md": "agents-md",
     "CLAUDE.md": "claude-md",
     "GEMINI.md": "gemini-md",
+    "QWEN.md": "qwen-md",
 }
 
 

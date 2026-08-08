@@ -7,6 +7,7 @@ Supported formats: text, json, sarif, html, code-climate (alias: gitlab).
 from pathlib import Path
 from typing import List, Optional
 
+from ..diagnostics import encodable
 from ..rule import Rule, RuleViolation
 
 FORMATS = ("text", "json", "sarif", "html", "code-climate", "gitlab")
@@ -126,6 +127,44 @@ def format_report(
             via ``color_enabled()``; file outputs stay plain)
         hyperlinks: Emit OSC 8 terminal hyperlinks (text format only)
     """
+    # Normalized once here, at the single point every format and every sink
+    # — stdout and each --output file — passes through. A rule cannot know
+    # that a value it quotes came from JSON holding an escaped lone
+    # surrogate, and the encode that follows would otherwise lose the whole
+    # report to one character.
+    return encodable(
+        _render_report(
+            fmt,
+            violations,
+            context,
+            rules,
+            version,
+            verbose=verbose,
+            baseline_suppressed=baseline_suppressed,
+            duration=duration,
+            grade=grade,
+            fail_level=fail_level,
+            color=color,
+            hyperlinks=hyperlinks,
+        )
+    )
+
+
+def _render_report(
+    fmt: str,
+    violations: List[RuleViolation],
+    context,
+    rules: List[Rule],
+    version: str,
+    verbose: bool = False,
+    baseline_suppressed: int = 0,
+    duration: Optional[float] = None,
+    grade=None,
+    fail_level: str = "error",
+    color: bool = False,
+    hyperlinks: bool = False,
+) -> str:
+    """Dispatch to the per-format renderer. See :func:`format_report`."""
     if fmt == "text":
         from .text import format_text
 

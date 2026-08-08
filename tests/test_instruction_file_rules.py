@@ -52,6 +52,19 @@ class TestInstructionFileValidRule:
         violations = InstructionFileValidRule().check(context)
         assert len(violations) == 0
 
+    def test_valid_qwen_md_passes(self, temp_dir):
+        (temp_dir / "QWEN.md").write_text("# Qwen\nInstructions here.\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionFileValidRule().check(context)
+        assert len(violations) == 0
+
+    def test_empty_qwen_md_fails(self, temp_dir):
+        (temp_dir / "QWEN.md").write_text("")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionFileValidRule().check(context)
+        assert len(violations) == 1
+        assert "QWEN.md is empty" in violations[0].message
+
     def test_all_three_valid_passes(self, temp_dir):
         (temp_dir / "AGENTS.md").write_text("# Agents\n")
         (temp_dir / "CLAUDE.md").write_text("# Claude\n")
@@ -237,6 +250,12 @@ class TestInstructionImportsValidRule:
 
     def test_gemini_md_imports_checked(self, temp_dir):
         (temp_dir / "GEMINI.md").write_text("@missing-file.md\n")
+        context = RepositoryContext(temp_dir)
+        violations = InstructionImportsValidRule().check(context)
+        assert len(violations) == 1
+
+    def test_qwen_md_imports_checked(self, temp_dir):
+        (temp_dir / "QWEN.md").write_text("@missing-file.md\n")
         context = RepositoryContext(temp_dir)
         violations = InstructionImportsValidRule().check(context)
         assert len(violations) == 1

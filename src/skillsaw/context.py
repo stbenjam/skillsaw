@@ -68,16 +68,23 @@ SKILL_REPO_TYPES = {
 
 HAS_CURSOR = "HAS_CURSOR"
 HAS_COPILOT = "HAS_COPILOT"
+HAS_CLINE = "HAS_CLINE"
 HAS_GEMINI = "HAS_GEMINI"
+HAS_QWEN = "HAS_QWEN"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
+# Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
+# is deliberately absent: the instruction-file rules only ever look at
+# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a .clinerules-only repository
+# would auto-enable two rules structurally incapable of finding anything.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
         HAS_COPILOT,
         HAS_GEMINI,
+        HAS_QWEN,
         HAS_AGENTS_MD,
         HAS_KIRO,
         HAS_CLAUDE_MD,
@@ -100,7 +107,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
     Automatically detects repository type and gathers relevant metadata.
     """
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -148,6 +155,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
+        self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
@@ -394,15 +402,42 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Discover instruction files at the repo root and named .instructions.md files.
 
         Finds:
-        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md
+        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md
         - Any ``*.instructions.md`` files anywhere in the repo tree (Copilot
           named instruction files such as ``coding.instructions.md``)
+
+        Shares one filesystem walk with :meth:`agent_tool_dirs`.
         """
-        return detect_discovery.instruction_files(self.root_path, self._INSTRUCTION_FILENAMES)
+        return list(self._repository_scan().instruction_files)
+
+    def _repository_scan(self) -> detect_discovery.RepositoryScan:
+        """Return the cached single-pass walk of the repository."""
+        if self._scan is None:
+            self._scan = detect_discovery.scan_repository(
+                self.root_path, self._INSTRUCTION_FILENAMES
+            )
+        return self._scan
+
+    def agent_tool_dirs(self, name: str) -> List[Path]:
+        """Return every non-excluded directory called *name* in the repository.
+
+        Cursor (``.cursor``), Copilot/VS Code (``.github``) and Cline
+        (``.clinerules``) all read their customizations from the nearest
+        enclosing directory, so a monorepo package may carry its own
+        alongside the repository root's.
+        """
+        return [
+            path
+            for path in self._repository_scan().tool_dirs.get(name, ())
+            if not self.is_path_excluded(path)
+        ]
 
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
-            self.root_path, self.instruction_files, self.is_path_excluded
+            self.root_path,
+            self.instruction_files,
+            self.is_path_excluded,
+            self._repository_scan().tool_dirs,
         )
 
     _WALK_SKIP_DIRS = frozenset(

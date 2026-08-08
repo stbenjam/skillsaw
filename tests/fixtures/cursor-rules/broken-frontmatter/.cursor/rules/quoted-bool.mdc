@@ -1,0 +1,8 @@
+---
+description: Repository-wide commit conventions
+alwaysApply: "true"
+---
+
+# Commit conventions
+
+Commit messages use the imperative mood.

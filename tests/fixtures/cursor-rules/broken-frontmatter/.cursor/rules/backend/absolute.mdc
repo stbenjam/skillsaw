@@ -1,0 +1,10 @@
+---
+description: API service conventions
+globs:
+  - "/services/api/**/*.py"
+  - ""
+---
+
+# API service
+
+Endpoints return Pydantic models.

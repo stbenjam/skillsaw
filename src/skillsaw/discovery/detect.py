@@ -6,10 +6,12 @@ This module deliberately returns string labels rather than importing
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import os
-from typing import Callable, Iterable, List, Set
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
+from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.utils import read_yaml
 
@@ -17,22 +19,100 @@ WALK_SKIP_DIRS = frozenset(
     {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache"}
 )
 
+# Directories holding code this repository did not author. Their editor
+# configuration belongs to whoever vendored it, and reporting on it would
+# turn a green CI run red on upgrade over a file the maintainer cannot fix.
+# Override with ``content-paths`` to lint a vendored tree deliberately.
+VENDOR_DIR_NAMES = frozenset(
+    {"vendor", "vendored", "third_party", "thirdparty", "bower_components"}
+)
 
-def instruction_files(root: Path, root_names: Iterable[str]) -> List[Path]:
-    """Find root instruction files and named Copilot instructions."""
+# Editor-owned directories whose contents ship in a repository. Cursor,
+# Copilot/VS Code and Cline all read these from the nearest enclosing
+# folder as well as the repository root, so a monorepo package can carry
+# its own set — hence a walk rather than a root-anchored lookup.
+AGENT_TOOL_DIR_NAMES = frozenset({".cursor", ".clinerules", ".github", ".vscode"})
+
+
+@dataclass
+class RepositoryScan:
+    """Everything one filesystem walk of the repository yields.
+
+    Discovery walks are the dominant cost of building a context on a large
+    checkout, so the instruction-file sweep and the editor-directory sweep
+    share a single pass instead of one each.
+    """
+
+    instruction_files: Tuple[Path, ...]
+    tool_dirs: Dict[str, Tuple[Path, ...]]
+
+
+def scan_repository(root: Path, root_names: Iterable[str]) -> RepositoryScan:
+    """Walk *root* once, collecting instruction files and editor directories."""
     found = [root / name for name in root_names if (root / name).exists()]
+    tool_dirs: Dict[str, List[Path]] = {name: [] for name in AGENT_TOOL_DIR_NAMES}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in WALK_SKIP_DIRS]
-        found.extend(
-            Path(dirpath) / name for name in filenames if name.endswith(".instructions.md")
-        )
-    return sorted(found)
+        here = Path(dirpath)
+        found.extend(here / name for name in filenames if name.endswith(".instructions.md"))
+        for name in dirnames:
+            # Instruction files keep the historical behaviour — the sweep
+            # above already collected them — but a tool directory is a new
+            # claim, so vendored trees stay out of it.
+            if name in AGENT_TOOL_DIR_NAMES and not VENDOR_DIR_NAMES.intersection(
+                here.relative_to(root).parts
+            ):
+                tool_dirs[name].append(here / name)
+    return RepositoryScan(
+        instruction_files=tuple(sorted(found)),
+        tool_dirs={name: tuple(sorted(paths)) for name, paths in tool_dirs.items()},
+    )
+
+
+#: Per-editor evidence inside a discovered tool directory. Any one of these
+#: means the tool is configured here, so a repository whose only Cursor
+#: artifact is ``hooks.json`` still activates the Cursor rules.
+_EDITOR_EVIDENCE = {
+    "HAS_CURSOR": (
+        ".cursor",
+        (
+            ("rules", True),
+            ("commands", True),
+            ("skills", True),
+            ("mcp.json", False),
+            ("hooks.json", False),
+        ),
+    ),
+    # ``.vscode`` is walked for attachment but contributes no format label:
+    # the only thing skillsaw reads there is ``mcp.json``, and the MCP rules
+    # are ungated, so there is no format-gated rule left looking at nothing.
+    "HAS_COPILOT": (
+        ".github",
+        (
+            ("copilot-instructions.md", False),
+            ("instructions", True),
+            ("prompts", True),
+            ("agents", True),
+            ("chatmodes", True),
+            ("skills", True),
+        ),
+    ),
+}
 
 
 def instruction_formats(
-    root: Path, files: Iterable[Path], is_excluded: Callable[[Path], bool]
+    root: Path,
+    files: Iterable[Path],
+    is_excluded: Callable[[Path], bool],
+    tool_dirs: Optional[Mapping[str, Iterable[Path]]] = None,
 ) -> Set[str]:
-    """Return instruction-format evidence labels from non-excluded markers."""
+    """Return instruction-format evidence labels from non-excluded markers.
+
+    Detection reads the same walk that drives attachment. A tool directory
+    found in a monorepo subpackage is evidence just as the root one is —
+    otherwise the lint tree grows blocks that no format-gated rule ever
+    looks at, which is the silent-no-op this linter exists to catch.
+    """
 
     def marker(*parts: str, is_dir: bool = False) -> bool:
         """Test one non-excluded repository marker."""
@@ -41,15 +121,42 @@ def instruction_formats(
             return False
         return path.is_dir() if is_dir else path.exists()
 
+    dirs: Mapping[str, Iterable[Path]] = tool_dirs or {}
+
+    def editor_marker(label: str) -> bool:
+        """Whether any discovered directory holds this editor's evidence."""
+        dir_name, entries = _EDITOR_EVIDENCE[label]
+        candidates = list(dirs.get(dir_name) or ())
+        if not candidates:
+            candidates = [root / dir_name]
+        for base in candidates:
+            if is_excluded(base):
+                continue
+            for name, is_dir in entries:
+                path = base / name
+                if is_excluded(path):
+                    continue
+                if path.is_dir() if is_dir else path.exists():
+                    return True
+        return False
+
+    def cline_marker() -> bool:
+        """``.clinerules`` is a file in the old convention, a directory in the new."""
+        if marker(".clinerules"):
+            return True
+        return any(not is_excluded(path) for path in (dirs.get(".clinerules") or ()))
+
     found: Set[str] = set()
     checks = (
-        ("HAS_CURSOR", marker(".cursor", "rules", is_dir=True) or marker(".cursorrules")),
+        ("HAS_CURSOR", editor_marker("HAS_CURSOR") or marker(".cursorrules")),
         (
             "HAS_COPILOT",
-            marker(".github", "copilot-instructions.md")
+            editor_marker("HAS_COPILOT")
             or any(path.name.endswith(".instructions.md") for path in files),
         ),
+        ("HAS_CLINE", cline_marker()),
         ("HAS_GEMINI", marker("GEMINI.md")),
+        ("HAS_QWEN", marker("QWEN.md")),
         ("HAS_AGENTS_MD", marker("AGENTS.md")),
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
         ("HAS_CLAUDE_MD", marker("CLAUDE.md")),
@@ -83,7 +190,7 @@ def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool
     """Return whether the repository contains an Agent Skill entrypoint."""
     if (root / "SKILL.md").exists():
         return True
-    for rel in (".apm/skills", ".claude/skills", ".github/skills", ".agents/skills"):
+    for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
         if path.is_dir() and has_skill_md_recursive(path, should_skip):
             return True

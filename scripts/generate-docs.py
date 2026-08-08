@@ -95,8 +95,8 @@ RULE_GROUPS = [
             "hooks-prohibited",
         ],
         "Validates hook configuration. The security rules scan hooks in "
-        "`hooks.json`, `.claude/settings*.json`, and skill/agent "
-        "frontmatter (`hooks:` key) for supply-chain "
+        "`hooks.json`, `.cursor/hooks.json`, `.claude/settings*.json`, and "
+        "skill/agent frontmatter (`hooks:` key) for supply-chain "
         "attack patterns (inspired by the "
         "[Shai-Hulud attack](https://safedep.io/mini-shai-hulud-strikes-again-314-npm-packages-compromised/)).",
     ),
@@ -127,11 +127,25 @@ RULE_GROUPS = [
         "when `metadata.openclaw` is present.",
     ),
     (
+        "Cursor",
+        ["cursor-rules-valid", "cursor-hooks-valid"],
+        "Validates Cursor's repository-shipped configuration under every `.cursor/` "
+        "directory in the repository, the root one and any in a monorepo "
+        "subpackage: `rules/**/*.mdc` "
+        "frontmatter (the fields that decide whether a rule ever activates) and "
+        "`.cursor/hooks.json` structure. Cursor reads AGENTS.md for portable "
+        "instructions, so no Cursor-specific instruction format is validated. "
+        "Enabled automatically wherever a `.cursorrules` file exists, or a "
+        "`.cursor/` directory holds Cursor content — `rules/`, `commands/`, "
+        "`skills/`, `mcp.json` or `hooks.json`. A `.cursor/` holding only "
+        "unrelated files does not activate them.",
+    ),
+    (
         "Instruction Files",
         ["instruction-file-valid", "instruction-imports-valid"],
         "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
-        "GEMINI.md) at the repository root. Checks encoding, non-emptiness, and "
-        "that `@import` references resolve to existing files. Disabled by default.",
+        "GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, "
+        "and that `@import` references resolve to existing files. Disabled by default.",
     ),
     (
         "Context Budget",

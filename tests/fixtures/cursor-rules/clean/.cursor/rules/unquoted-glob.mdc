@@ -1,0 +1,9 @@
+---
+description: TypeScript conventions for files Cursor is editing
+globs: **/*.ts
+alwaysApply: false
+---
+
+# TypeScript
+
+Run the type checker before committing.

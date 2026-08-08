@@ -13,6 +13,7 @@ from skillsaw.rules.builtin.content_analysis import (
     AgentsMdBlock,
     ClaudeMdBlock,
     GeminiMdBlock,
+    QwenMdBlock,
 )
 from skillsaw.rules.builtin.utils import read_text
 
@@ -51,7 +52,10 @@ class InstructionImportsValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Import references (@path) in AGENTS.md, CLAUDE.md, and GEMINI.md must point to existing files"
+        return (
+            "Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md "
+            "must point to existing files"
+        )
 
     def default_severity(self) -> Severity:
         return Severity.WARNING
@@ -69,6 +73,7 @@ class InstructionImportsValidRule(Rule):
             context.lint_tree.find(AgentsMdBlock)
             + context.lint_tree.find(ClaudeMdBlock)
             + context.lint_tree.find(GeminiMdBlock)
+            + context.lint_tree.find(QwenMdBlock)
         )
         for block in import_blocks:
             file_path = block.path

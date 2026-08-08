@@ -75,6 +75,24 @@ def _redact_userinfo(text: str) -> str:
         search_from = at + 1
 
 
+def encodable(text: str) -> str:
+    """*text* with anything UTF-8 cannot encode written as an escape.
+
+    The last line of defence for a whole rendered report, not a substitute
+    for :func:`safe_display` on individual values — it neither truncates
+    nor redacts, because a report is not an untrusted scalar and must come
+    out whole.
+
+    A rule can only sanitize a value it knows is hostile. JSON decodes
+    ``"\\ud800"`` to an unpaired surrogate, which any rule may then quote
+    into a message from a source it has no reason to distrust — and the
+    encode that follows raises ``UnicodeEncodeError``, losing the entire
+    report over one character. ``backslashreplace`` keeps the codepoint
+    legible rather than dropping it.
+    """
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def safe_display(value: object) -> str:
     """A manifest value made safe to echo into a violation message.
 
