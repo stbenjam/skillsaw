@@ -10,8 +10,11 @@ The conventional MCP files are inventoried wherever the host that reads
 them keeps one: `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, and a
 plugin's `mcp.json`. Servers written inline in a manifest are covered too.
 A Claude manifest that names its servers by *path* — `"mcpServers":
-"./servers.json"` — is not followed, so that file is not inventoried;
-list it under `content-paths` if you gate on this rule.
+"./servers.json"` — is not followed, so that file is not inventoried. There
+is no configuration that closes this: `content-paths` attaches a file as
+prose for the content rules, which does not make it an MCP configuration.
+Inline the servers in the manifest, or move them to a conventional
+location, if you gate on this rule.
 
 ## Examples
 

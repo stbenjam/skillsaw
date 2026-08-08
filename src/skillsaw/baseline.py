@@ -94,12 +94,17 @@ def fingerprint_violation(
     # same file (e.g. whole-file vs description tokens) from colliding.  When no
     # metric is set the fingerprint is unchanged, so existing baselines for
     # single-metric ratchet rules keep matching.
+    # Embedded content shares its file path with every sibling in the same
+    # document, so a ratchet keyed on rule+path alone keeps one threshold for
+    # all of them and lets one prompt's baseline mask another's regression.
+    embedded = violation.block.fingerprint_identity(None) if violation.block is not None else None
     if violation.value is not None and rel_path is not None:
+        parts = [rule_id, rel_path]
+        if embedded is not None:
+            parts.append(embedded)
         if violation.metric:
-            raw = f"{rule_id}\0{rel_path}\0{violation.metric}"
-        else:
-            raw = f"{rule_id}\0{rel_path}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+            parts.append(violation.metric)
+        return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:16]
 
     discriminator_suffix = (
         f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""

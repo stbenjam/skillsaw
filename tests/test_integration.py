@@ -1412,6 +1412,13 @@ class TestCursorRules:
 
         assert by_rule(run_lint(repo)).get("cursor-rules-valid", []) == []
 
+    def test_a_windows_absolute_glob_is_absolute_everywhere(self, tmp_path):
+        """The repository it cannot match is the same whatever OS lints it."""
+        repo = self._lenient_repo(tmp_path, "winglob", 'globs: "C:/repo/**/*.py"')
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-rules-valid"]]
+        assert messages == ["globs: 'C:/repo/**/*.py' must be repository-relative, not absolute"]
+
     def test_cursor_hooks_structure_is_validated(self, tmp_path):
         repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
         r = run_lint(repo)
@@ -1511,6 +1518,29 @@ class TestCursorRules:
             "rules:\n  cursor-hooks-valid:\n    extra-events:\n      - afterTimeTravel\n"
         )
         assert by_rule(run_lint(repo, config=config)).get("cursor-hooks-valid", []) == []
+
+    def test_optional_cursor_hook_fields_are_type_checked(self, tmp_path):
+        """A list matcher is coerced to the wildcard, so nothing else reports it."""
+        repo = tmp_path / "optfields"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "afterFileEdit": [{"command": "echo ok", "matcher": [], "timeout": "ten"}],
+                        # A configured event that configures nothing.
+                        "beforeSubmitPrompt": [],
+                    },
+                }
+            )
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["cursor-hooks-valid"]]
+        assert any("'matcher' must be a string" in m for m in messages)
+        assert any("'timeout' must be a number" in m for m in messages)
+        assert any("empty array" in m for m in messages)
 
     def test_hooks_prohibited_scans_cursor_hooks(self, tmp_path):
         repo = tmp_path / "prohibited"
@@ -1816,6 +1846,18 @@ class TestEditorTools:
 
         messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
         assert any("reserved for a Claude Code built-in" in m for m in messages)
+
+    def test_an_unwrapped_vscode_server_beside_inputs_is_flagged(self, tmp_path):
+        """One documented sibling must not wave through a server outside the wrapper."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "vsxsibling",
+            ".vscode/mcp.json",
+            {"inputs": [], "search": {"command": "node"}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == ["MCP configuration has no 'servers' key — no servers are loaded"]
 
     def test_a_vscode_config_declaring_only_inputs_has_no_servers(self, tmp_path):
         """`inputs` is a prompt-variable array; a file holding only that is complete."""

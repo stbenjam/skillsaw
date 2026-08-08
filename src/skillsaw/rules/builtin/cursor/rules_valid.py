@@ -255,7 +255,11 @@ class CursorRulesValidRule(Rule):
                     )
                 )
                 continue
-            if stripped.startswith("/") or stripped.startswith("\\"):
+            # A Windows drive letter is absolute wherever skillsaw runs —
+            # the repository it cannot match is the same either way, so this
+            # must not depend on the linting host's OS.
+            drive_absolute = len(stripped) > 2 and stripped[0].isalpha() and stripped[1] == ":"
+            if stripped.startswith("/") or stripped.startswith("\\") or drive_absolute:
                 violations.append(
                     self.violation(
                         f"{where}: {safe_display(stripped)!r} must be repository-relative, "

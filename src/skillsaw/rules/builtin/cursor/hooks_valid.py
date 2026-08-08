@@ -196,8 +196,18 @@ class CursorHooksValidRule(Rule):
         if not isinstance(entries, list):
             return [
                 self.violation(
-                    f"Hook event '{event}' must be an array of hook objects",
+                    f"Hook event '{safe_display(event)}' must be an array of hook objects",
                     file_path=block.path,
+                )
+            ]
+
+        if not entries:
+            return [
+                self.violation(
+                    f"Hook event '{safe_display(event)}' has an empty array — "
+                    "it configures no hook",
+                    file_path=block.path,
+                    severity=Severity.WARNING,
                 )
             ]
 
@@ -244,4 +254,38 @@ class CursorHooksValidRule(Rule):
                     file_path=block.path,
                 )
             ]
-        return []
+        return self._check_optional_fields(where, entry, block)
+
+    def _check_optional_fields(
+        self, where: str, entry: Dict[str, Any], block: CursorHooksBlock
+    ) -> List[RuleViolation]:
+        """Check the optional fields a valid payload can still get wrong.
+
+        A malformed ``matcher`` is the one that matters: the block coerces it
+        to the ``.*`` wildcard so the security scanners still see the hook,
+        which means an author who wrote a list gets a hook that fires on
+        *everything* and no indication of it from anywhere else.
+        """
+        violations: List[RuleViolation] = []
+        matcher = entry.get("matcher")
+        if matcher is not None and not isinstance(matcher, str):
+            violations.append(
+                self.violation(
+                    f"{where} 'matcher' must be a string, got "
+                    f"{type(matcher).__name__} — Cursor falls back to matching everything",
+                    file_path=block.path,
+                )
+            )
+        timeout = entry.get("timeout")
+        # ``bool`` is an ``int`` subclass, and ``timeout: true`` is not a
+        # duration however permissively you read it.
+        if timeout is not None and (
+            isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+        ):
+            violations.append(
+                self.violation(
+                    f"{where} 'timeout' must be a number, got {type(timeout).__name__}",
+                    file_path=block.path,
+                )
+            )
+        return violations

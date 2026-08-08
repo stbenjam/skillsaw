@@ -146,12 +146,14 @@ class McpValidJsonRule(Rule):
             elif block.allow_bare_server_map:
                 # The Claude-family files may be written as a bare map.
                 payload = data
-            elif data and block.non_server_keys.isdisjoint(data):
-                # Every key is unaccounted for and this host has no
-                # bare-map form, so the author wrote servers the host will
-                # not load. VS Code is the exception the check reads around:
-                # an ``inputs``/``sandbox``-only file declares no servers on
-                # purpose and is complete as written.
+            elif data and not set(data) <= block.non_server_keys:
+                # Some key is unaccounted for and this host has no bare-map
+                # form, so the author wrote servers the host will not load.
+                # Only a file whose keys are *all* documented siblings —
+                # VS Code's ``inputs``/``sandbox`` — declares no servers on
+                # purpose and is complete as written. Testing for any such
+                # sibling instead would let one ``inputs`` key wave through
+                # an unwrapped server sitting beside it.
                 violations.append(
                     self.violation(
                         f"MCP configuration has no '{servers_key}' key — " "no servers are loaded",
