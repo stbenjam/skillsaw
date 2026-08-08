@@ -3,4 +3,4 @@ rules:
   content-progressive-disclosure:
     limits:
       claude-md: 300
-      skill: 200
+      skill: 150

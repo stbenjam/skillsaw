@@ -62,11 +62,11 @@ _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
 # lookbehind keeps a match from restarting mid-path: `/scripts/run.py`
 # and `C:/scripts/run.py` are absolute/foreign paths whose suffix must
 # not be mistaken for the bundled relative path `scripts/run.py`.
-_PATH_TOKEN_RE = re.compile(r"(?<![\w./\\-])((?:\./)?[\w.-]+(?:/[\w.-]+)+)")
+_PATH_TOKEN_RE = re.compile(r"(?<![\w./\\-])((?:\./)?[\w.-]+(?:[/\\][\w.-]+)+)")
 
 # Quoted path forms may contain spaces (`cat "references/setup guide.md"`);
 # the quotes delimit the token where whitespace otherwise would.
-_QUOTED_PATH_RE = re.compile(r"""["']((?:\./)?[^"'\n/]+(?:/[^"'\n/]+)+)["']""")
+_QUOTED_PATH_RE = re.compile(r"""["']((?:\./)?[^"'\n/\\]+(?:[/\\][^"'\n/\\]+)+)["']""")
 
 # Bare-filename mentions must sit on token boundaries: `run.py` must not
 # match inside `myrun.py` or `run.pyc` (same after-boundary as
@@ -205,6 +205,7 @@ class ContentProgressiveDisclosureRule(Rule):
                     "markdown links or @imports (where your tool supports "
                     "them) so it loads on demand"
                 )
+            metric = getattr(cf, "yaml_path", None) or None
             violations.append(
                 self.violation(
                     f"Estimated {tokens:,} tokens exceeds the {limit:,}-token "
@@ -212,6 +213,7 @@ class ContentProgressiveDisclosureRule(Rule):
                     f"file references no other local file — {advice}",
                     block=cf,
                     value=tokens,
+                    metric=metric,
                 )
             )
         return violations
@@ -235,7 +237,9 @@ class ContentProgressiveDisclosureRule(Rule):
             return True
         if inventory is None:
             return False
-        return self._has_bundled_mention(self._mask_image_destinations(cf, body), *inventory)
+        masked = self._mask_image_destinations(cf, body)
+        masked = self._mask_html_comments(cf, masked)
+        return self._has_bundled_mention(masked, *inventory)
 
     def _has_local_link(
         self,
@@ -338,6 +342,7 @@ class ContentProgressiveDisclosureRule(Rule):
                 token = match.group(1).rstrip(".")
                 if token.startswith("./"):
                     token = token[2:]
+                token = token.replace("\\", "/")
                 if token in rel_paths:
                     return True
         for name in names:
@@ -356,13 +361,27 @@ class ContentProgressiveDisclosureRule(Rule):
         diagram is rendered, not loaded on demand; the raw-body mention
         scan must not re-credit the same ``![x](assets/arch.png)``
         destination as a bundled path mention.
+
+        Reference-style images (``![a][ref]``) resolve through
+        reference definitions whose destination line may lack a
+        ``has_dest_span``; those definition lines are blanked entirely
+        so the destination path cannot leak through.
         """
-        spans = [
-            (link.dest_body_line, link.dest_col_start, link.dest_col_end)
-            for link in cf.markdown.links()
-            if link.is_image and link.has_dest_span
-        ]
-        if not spans:
+        image_hrefs: set = set()
+        spans = []
+        for link in cf.markdown.links():
+            if not link.is_image:
+                continue
+            if link.has_dest_span:
+                spans.append((link.dest_body_line, link.dest_col_start, link.dest_col_end))
+            image_hrefs.add(link.href)
+        ref_def_lines: set = set()
+        if image_hrefs:
+            for ref_def in cf.markdown.reference_definitions():
+                if ref_def.href in image_hrefs:
+                    for ln in range(ref_def.body_line_start, ref_def.body_line_end + 1):
+                        ref_def_lines.add(ln)
+        if not spans and not ref_def_lines:
             return body
         lines = body.split("\n")
         for line_no, start, end in spans:
@@ -370,6 +389,29 @@ class ContentProgressiveDisclosureRule(Rule):
             if 0 <= idx < len(lines):
                 line = lines[idx]
                 lines[idx] = line[:start] + " " * (end - start) + line[end:]
+        for line_no in ref_def_lines:
+            idx = line_no - 1
+            if 0 <= idx < len(lines):
+                lines[idx] = " " * len(lines[idx])
+        return "\n".join(lines)
+
+    @staticmethod
+    def _mask_html_comments(cf: ContentBlock, body: str) -> str:
+        """*body* with HTML comment spans blanked out.
+
+        A commented-out path (``<!-- old: scripts/deploy.py -->``) is not
+        a visible disclosure reference; the raw-body mention scan must
+        not credit it.
+        """
+        comments = cf.markdown.html_comments()
+        if not comments:
+            return body
+        lines = body.split("\n")
+        for comment in comments:
+            for line_no in range(comment.body_line_start, comment.body_line_end + 1):
+                idx = line_no - 1
+                if 0 <= idx < len(lines):
+                    lines[idx] = " " * len(lines[idx])
         return "\n".join(lines)
 
     def _mention_pattern(self, needle: str) -> re.Pattern:

@@ -3610,3 +3610,47 @@ class TestContentProgressiveDisclosureRule:
         rule.check(RepositoryContext(temp_dir))
         elapsed = time.monotonic() - start
         assert elapsed < 5.0, f"scan took {elapsed:.1f}s — likely quadratic regex"
+
+    def test_skill_html_comment_mention_does_not_count(self, temp_dir):
+        """A bundled path inside an HTML comment is not a disclosure reference."""
+        skill = self._write_skill(
+            temp_dir,
+            extra="\n<!-- old: scripts/deploy.py -->\n",
+            files=("scripts/deploy.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_windows_backslash_path_counts(self, temp_dir):
+        """A bundled path written with Windows separators still counts."""
+        skill = self._write_skill(
+            temp_dir,
+            extra="\nRun `scripts\\deploy.py` to release.\n",
+            files=("scripts/deploy.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 0
+
+    def test_skill_reference_image_does_not_count(self, temp_dir):
+        """A reference-style image whose definition shares a bundled path
+        must not credit the skill with disclosure."""
+        skill = self._write_skill(
+            temp_dir,
+            extra="\n![diagram][arch]\n\n[arch]: assets/arch.png\n",
+            files=("assets/arch.png",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_promptfoo_blocks_get_distinct_metrics(self, temp_dir):
+        """Each promptfoo prompt block in the same file gets a distinct
+        metric so baseline ratcheting doesn't collide."""
+        long = "".join("    " + line + "\n" for line in (self._PARA * 6).splitlines())
+        (temp_dir / "promptfooconfig.yaml").write_text(
+            "prompts:\n  - |\n" + long + "  - |\n" + long
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"promptfoo-prompt": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 2
+        metrics = [v.metric for v in violations]
+        assert metrics[0] != metrics[1], "same-file blocks need distinct metrics"
