@@ -1194,6 +1194,129 @@ class TestCursorRules:
                 f"(off by {12 - v['line']} due to missing frontmatter offset)"
             )
 
+    def test_clean_cursor_repo_passes(self, tmp_path):
+        repo = copy_fixture("cursor-rules/clean", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert violations(r) == []
+
+    def test_mdc_frontmatter_defects_are_reported_with_lines(self, tmp_path):
+        repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
+        r = run_lint(repo)
+
+        found = {
+            (v["file_path"], v["line"], v["severity"]) for v in by_rule(r)["cursor-rules-valid"]
+        }
+        # A quoted boolean is the headline defect: truthy to a human, a
+        # plain string to the parser, so the rule silently never applies.
+        assert (".cursor/rules/quoted-bool.mdc", 3, "error") in found
+        assert (".cursor/rules/bad-types.mdc", 2, "error") in found
+        assert (".cursor/rules/bad-types.mdc", 3, "error") in found
+        assert (".cursor/rules/bad-types.mdc", 4, "error") in found
+        assert (".cursor/rules/backend/absolute.mdc", 3, "error") in found
+        assert (".cursor/rules/comma-globs.mdc", 3, "warning") in found
+        # Manual-only is a legitimate Cursor mode, so it stays advisory.
+        assert (".cursor/rules/manual-only.mdc", None, "info") in found
+
+    def test_unterminated_mdc_frontmatter_is_not_autofixable(self, tmp_path):
+        repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
+        r = run_lint(repo)
+
+        broken = [
+            v
+            for v in by_rule(r)["cursor-rules-valid"]
+            if v["file_path"] == ".cursor/rules/unterminated.mdc"
+        ]
+        assert len(broken) == 1
+        assert not broken[0]["fixable"]
+
+    def test_legacy_cursorrules_flagged_only_beside_mdc_rules(self, tmp_path):
+        with_mdc = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
+        flagged = [
+            v
+            for v in by_rule(run_lint(with_mdc))["cursor-rules-valid"]
+            if v["file_path"] == ".cursorrules"
+        ]
+        assert len(flagged) == 1
+        assert flagged[0]["severity"] == "warning"
+
+        # On its own, .cursorrules is still the supported legacy format.
+        alone = tmp_path / "legacy-only"
+        alone.mkdir()
+        (alone / ".cursorrules").write_text("Use tabs in Makefiles.\n")
+        assert "cursor-rules-valid" not in rule_ids(run_lint(alone))
+
+    def test_quoted_always_apply_is_fixed_in_place(self, tmp_path):
+        repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
+        target = repo / ".cursor" / "rules" / "quoted-bool.mdc"
+        before = target.read_text()
+
+        _run_fix(repo)
+        after = target.read_text()
+
+        assert "alwaysApply: true" in after
+        assert '"true"' not in after
+        # Scope: only the one frontmatter line changes.
+        assert len(after.splitlines()) == len(before.splitlines())
+        assert after.splitlines()[5:] == before.splitlines()[5:]
+
+        _run_fix(repo)
+        assert target.read_text() == after
+
+        remaining = [
+            v
+            for v in by_rule(run_lint(repo)).get("cursor-rules-valid", [])
+            if v["file_path"] == ".cursor/rules/quoted-bool.mdc"
+        ]
+        assert remaining == []
+
+    def test_unrecognised_always_apply_value_is_left_alone(self, tmp_path):
+        """'maybe' is not a boolean spelling — repairing it would be a guess."""
+        repo = copy_fixture("cursor-rules/broken-frontmatter", tmp_path)
+        target = repo / ".cursor" / "rules" / "bad-types.mdc"
+        before = target.read_text()
+
+        _run_fix(repo)
+
+        assert target.read_text() == before
+
+    def test_cursor_hooks_structure_is_validated(self, tmp_path):
+        repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
+        r = run_lint(repo)
+
+        messages = {v["message"] for v in by_rule(r)["cursor-hooks-valid"]}
+        assert "'version' must be 1, got 2" in messages
+        assert "Hook afterFileEdit[0] 'command' must be a non-empty string" in messages
+        assert "Hook afterFileEdit[2] must be an object" in messages
+        assert "Hook event 'beforeReadFile' must be an array of hook objects" in messages
+        assert "Hook beforeSubmitPrompt[0] is missing 'command'" in messages
+        # An event Cursor does not dispatch never fires, but the file still
+        # loads — so it is a warning, not an error.
+        unknown = [
+            v for v in by_rule(r)["cursor-hooks-valid"] if "Unknown hook event" in v["message"]
+        ]
+        assert len(unknown) == 1
+        assert unknown[0]["severity"] == "warning"
+
+    def test_hooks_dangerous_scans_cursor_hooks(self, tmp_path):
+        """A curl|bash in .cursor/hooks.json is the same risk as in hooks.json."""
+        repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
+        r = run_lint(repo)
+
+        dangerous = by_rule(r)["hooks-dangerous"]
+        assert len(dangerous) == 1
+        assert dangerous[0]["file_path"] == ".cursor/hooks.json"
+        assert "downloads and executes remote code" in dangerous[0]["message"]
+
+    def test_claude_hooks_rule_ignores_cursor_hooks_schema(self, tmp_path):
+        """Cursor's flatter shape must not be judged against the Claude schema."""
+        repo = copy_fixture("cursor-rules/broken-hooks", tmp_path)
+        r = run_lint(repo)
+
+        assert not [
+            v for v in violations(r) if v["rule_id"] == "hooks-json-valid"
+        ], "hooks-json-valid must leave .cursor/hooks.json to cursor-hooks-valid"
+
 
 @pytest.mark.integration
 class TestEditorTools:
@@ -1910,6 +2033,8 @@ BROKEN_FIXTURES = [
     "content/emphasis-density",
     "security/malicious-skill",
     "codex/broken",
+    "cursor-rules/broken-frontmatter",
+    "cursor-rules/broken-hooks",
 ]
 
 CLEAN_FIXTURES = [
@@ -1929,6 +2054,8 @@ CLEAN_FIXTURES = [
     "root-mcp/clean",
     "agent-plugins/clean",
     "codex/clean",
+    "cursor-rules/clean",
+    "editor-tools/monorepo",
 ]
 
 OPT_IN_RULES = {
@@ -3034,6 +3161,7 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 7,
         "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
+        "cursor-rules-valid": 2,
     }
 
     def test_fixture_violation_counts(self, tmp_path):

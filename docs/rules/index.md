@@ -3,7 +3,7 @@
 
 # Rules Reference
 
-skillsaw includes **72** built-in rules organized into the following categories:
+skillsaw includes **74** built-in rules organized into the following categories:
 
 - [agentskills.io](agentskills.md) (8 rules)
 - [Agent Plugins](agent-plugins.md) (3 rules)
@@ -13,6 +13,7 @@ skillsaw includes **72** built-in rules organized into the following categories:
 - [Security](security.md) (3 rules)
 - [MCP (Model Context Protocol)](mcp.md) (2 rules)
 - [OpenClaw](openclaw.md) (1 rule)
+- [Cursor](cursor.md) (2 rules)
 - [Instruction Files](instruction-files.md) (2 rules)
 - [Context Budget](context-budget.md) (1 rule)
 - [Content Intelligence](content-intelligence.md) (21 rules)
@@ -63,6 +64,8 @@ skillsaw includes **72** built-in rules organized into the following categories:
 | [`mcp-valid-json`](mcp-valid-json.md) | MCP configuration must be valid JSON with proper mcpServers structure | error | - | MCP (Model Context Protocol) |
 | [`mcp-prohibited`](mcp-prohibited.md) | Repository should not enable non-allowlisted MCP servers | error (disabled) | - | MCP (Model Context Protocol) |
 | [`openclaw-metadata`](openclaw-metadata.md) | Validate metadata.openclaw fields against the OpenClaw spec | warning (auto) | - | OpenClaw |
+| [`cursor-rules-valid`](cursor-rules-valid.md) | Cursor .mdc rules must have frontmatter that lets the rule activate | error (auto) | auto | Cursor |
+| [`cursor-hooks-valid`](cursor-hooks-valid.md) | .cursor/hooks.json must declare version 1 and known hook events with commands | error (auto) | - | Cursor |
 | [`instruction-file-valid`](instruction-file-valid.md) | Instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md) must be valid and non-empty | warning (auto) | - | Instruction Files |
 | [`instruction-imports-valid`](instruction-imports-valid.md) | Import references (@path) in AGENTS.md, CLAUDE.md, GEMINI.md and QWEN.md must point to existing files | warning (auto) | - | Instruction Files |
 | [`context-budget`](context-budget.md) | Warn when instruction or config files exceed recommended token limits | warning (auto) | - | Context Budget |

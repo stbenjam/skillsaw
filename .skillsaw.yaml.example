@@ -1,7 +1,7 @@
 # skillsaw configuration
 # https://github.com/stbenjam/skillsaw
 
-version: "0.18.0"
+version: "0.19.0"
 
 rules:
 
@@ -368,6 +368,16 @@ rules:
     #   command-description:
     #     warn: 200
     #     error: 500
+
+  # .cursor/hooks.json must declare version 1 and known hook events with commands
+  cursor-hooks-valid:
+    enabled: auto
+    severity: error
+
+  # Cursor .mdc rules must have frontmatter that lets the rule activate
+  cursor-rules-valid:
+    enabled: auto
+    severity: error
 
   # Flags hook commands that execute scripts from dotfile directories, download-and-execute chains (curl|sh), obfuscation (eval/base64), or perform network requests
   hooks-dangerous:

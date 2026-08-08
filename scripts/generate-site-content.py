@@ -166,6 +166,16 @@ RULE_GROUPS = [
         "when `metadata.openclaw` is present.",
     ),
     (
+        "Cursor",
+        "cursor",
+        ["cursor-rules-valid", "cursor-hooks-valid"],
+        "Validates Cursor's repository-shipped configuration: `.cursor/rules/**/*.mdc` "
+        "frontmatter (the fields that decide whether a rule ever activates) and "
+        "`.cursor/hooks.json` structure. Cursor reads AGENTS.md for portable "
+        "instructions, so no Cursor-specific instruction format is validated. "
+        "Enabled automatically when Cursor configuration is detected.",
+    ),
+    (
         "Instruction Files",
         "instruction-files",
         ["instruction-file-valid", "instruction-imports-valid"],

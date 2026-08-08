@@ -261,6 +261,64 @@ class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
         return f"{self.path.name} (inline hooks)"
 
 
+#: The six lifecycle events Cursor dispatches hooks on. A name outside this
+#: set never fires — Cursor reads the file, finds no matching event, and runs
+#: nothing, with no diagnostic.
+CURSOR_HOOK_EVENTS = frozenset(
+    {
+        "beforeShellExecution",
+        "beforeMCPExecution",
+        "beforeReadFile",
+        "beforeSubmitPrompt",
+        "afterFileEdit",
+        "stop",
+    }
+)
+
+
+@dataclass(eq=False)
+class CursorHooksBlock(JsonConfigBlock):
+    """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
+
+    Cursor's shape is flatter than Claude's: ``{version, hooks: {event:
+    [{command}]}}``, with no ``matcher`` and no handler ``type`` — every
+    entry is a command. :attr:`events` renders it as the shared
+    :class:`HookEventConfig` structure so ``hooks-dangerous`` and
+    ``hooks-prohibited`` scan Cursor hooks with no per-ecosystem branch;
+    ``cursor-hooks-valid`` reads ``raw_data`` for the shape itself.
+    """
+
+    category: str = "hooks"
+
+    def tree_label(self) -> str:
+        return "hooks.json (cursor hooks)"
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if data is None:
+            return {}
+        hooks_obj = data.get("hooks")
+        if not isinstance(hooks_obj, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for event_type, entries in hooks_obj.items():
+            if not isinstance(entries, list):
+                continue
+            handlers = [
+                # Cursor has no handler ``type`` — a hook entry *is* a
+                # command. Say so explicitly: the shared security rules skip
+                # any handler whose type is not "command", so leaving it
+                # empty would silently exempt every Cursor hook.
+                HookHandler(type="command", command=_as_str(entry.get("command")))
+                for entry in entries
+                if isinstance(entry, dict) and _as_str(entry.get("command"))
+            ]
+            if handlers:
+                result[event_type] = [HookEventConfig(handlers=handlers)]
+        return result
+
+
 @dataclass
 class McpServerConfig:
     """A single MCP server configuration."""

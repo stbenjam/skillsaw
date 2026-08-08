@@ -1,0 +1,6 @@
+---
+description: Never parses
+
+# Unterminated
+
+The frontmatter block is missing its closing delimiter.

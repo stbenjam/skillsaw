@@ -1,0 +1,9 @@
+---
+description: TypeScript conventions
+globs: "**/*.ts, **/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript
+
+Run the type checker before committing.

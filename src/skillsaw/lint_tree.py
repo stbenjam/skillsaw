@@ -24,6 +24,7 @@ from .blocks import (
     CopilotAgentBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
+    CursorHooksBlock,
     CursorRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
@@ -341,6 +342,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_glob(root, cursor_dir / "rules", "**/*.mdc", CursorRuleBlock)
         _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         _add_parser_block(root, cursor_dir / "mcp.json", McpBlock)
+        _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
         _add_block(root, github_dir / "copilot-instructions.md", InstructionBlock)

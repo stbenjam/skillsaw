@@ -1,0 +1,9 @@
+---
+description: 42
+globs: 17
+alwaysApply: "maybe"
+---
+
+# Broken types
+
+Nothing in this frontmatter has a usable type.

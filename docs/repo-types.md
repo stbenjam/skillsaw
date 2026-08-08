@@ -219,12 +219,15 @@ Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
 — Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md
 beats four per-vendor copies that drift apart. skillsaw does not reimplement a
 per-vendor instruction format on top of it; what it adds is coverage of the
-prose each tool keeps in its own directory.
+prose each tool keeps in its own directory, plus structural validation
+wherever a tool's own metadata can fail silently — see
+[`cursor-rules-valid`](rules/cursor-rules-valid.md) and
+[`cursor-hooks-valid`](rules/cursor-hooks-valid.md).
 
 | Tool | Files linted |
 | --- | --- |
 | **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
-| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, legacy `.cursorrules` |
+| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
 | **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.agent.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
 | **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt`, `.clinerules/workflows/**/*.md`, `.cline/skills/*/SKILL.md` |
 | **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
@@ -246,3 +249,11 @@ Files that are on-demand rather than always-on — Cursor commands, Copilot
 prompt files, Cline workflows — are budgeted by
 [`context-budget`](rules/context-budget.md) as commands, not as instruction
 files, because they enter the context window only when invoked.
+
+`.cursor/hooks.json` is a command-execution surface that ships in the
+repository, so its commands are scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
+and settings. Cursor's schema is flatter than Claude's — no `matcher`, no
+handler `type` — so `hooks-json-valid` leaves the file alone and
+`cursor-hooks-valid` validates the shape instead.

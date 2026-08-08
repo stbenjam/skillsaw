@@ -1,0 +1,74 @@
+## Why
+
+A Cursor rule declares *when* it applies in its frontmatter, and Cursor
+reports nothing when that declaration is wrong. A rule with malformed
+frontmatter is skipped; a rule whose `alwaysApply` is the string `"true"`
+rather than the boolean `true` is treated as not always-applied. In both
+cases the file sits in the repository looking authoritative while the agent
+never reads it.
+
+`.mdc` frontmatter has three fields, and between them they pick one of four
+activation modes:
+
+| Mode | Frontmatter |
+| --- | --- |
+| Always | `alwaysApply: true` |
+| Auto Attached | `globs` matching the files you are editing |
+| Agent Requested | `description` the agent reads to decide |
+| Manual | none of the above — you type `@rule-name` |
+
+Manual is legitimate, so a rule with none of the three is reported at `info`,
+not as an error.
+
+This rule also flags a `.cursorrules` file that survives alongside
+`.cursor/rules/`. Cursor ignores the legacy file in Agent mode, which is the
+default, so its content is silently dropped.
+
+Whether a `globs` pattern *matches* anything is deliberately not checked: it
+would cost a repository walk per pattern, and a rule written for files that
+do not exist yet is a reasonable thing to commit. `cursor-rules-valid`
+validates the shape of the declaration, the same scope `claude-rules-valid`
+applies to `paths`.
+
+## Examples
+
+**Bad** — the value is a string, so the rule never applies:
+
+```markdown
+---
+description: Repository conventions
+alwaysApply: "true"
+---
+```
+
+**Bad** — one pattern or two, depending on the Cursor version:
+
+```markdown
+---
+globs: "**/*.ts, **/*.tsx"
+---
+```
+
+**Good** — a real boolean, and a list that reads the same everywhere:
+
+```markdown
+---
+description: TypeScript conventions for the web app
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+alwaysApply: false
+---
+
+Components export a default function.
+```
+
+## How to fix
+
+- `skillsaw fix` converts a boolean-looking quoted `alwaysApply` value
+  (`"true"`, `"yes"`, `"1"`) into a YAML boolean.
+- Replace a comma-containing `globs` string with a YAML list.
+- Malformed frontmatter needs a human: fix the YAML, or delete the
+  frontmatter block if the rule is meant to be manual-only.
+- For a rule that never activates, decide which mode you meant and add the
+  matching field — or leave it if you invoke it with `@rule-name`.

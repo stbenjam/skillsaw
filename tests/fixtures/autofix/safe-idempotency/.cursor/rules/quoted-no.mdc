@@ -1,0 +1,8 @@
+---
+description: Notes the agent may request when working on releases
+alwaysApply: "no"
+---
+
+# Release notes
+
+Releases are cut from the default branch after the test suite passes.

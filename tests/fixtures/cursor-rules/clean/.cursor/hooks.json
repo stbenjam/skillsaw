@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "./scripts/audit-shell.sh" }
+    ],
+    "afterFileEdit": [
+      { "command": "./scripts/format.sh" }
+    ]
+  }
+}
