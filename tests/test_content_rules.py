@@ -3163,7 +3163,7 @@ class TestContentProgressiveDisclosureRule:
     def test_rule_metadata(self):
         rule = ContentProgressiveDisclosureRule()
         assert rule.rule_id == "content-progressive-disclosure"
-        assert rule.default_severity() == Severity.INFO
+        assert rule.default_severity() == Severity.WARNING
         assert rule.default_enabled == "auto"
         assert "progressive disclosure" in rule.description
 
@@ -3172,7 +3172,7 @@ class TestContentProgressiveDisclosureRule:
         violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
         assert len(violations) == 1
         assert "claude-md" in violations[0].message
-        assert violations[0].severity == Severity.INFO
+        assert violations[0].severity == Severity.WARNING
 
     def test_under_threshold_silent(self, temp_dir):
         self._write_claude(temp_dir)
@@ -3505,3 +3505,95 @@ class TestContentProgressiveDisclosureRule:
 
         invalidate_read_caches()
         assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_percent_escaped_link_counts(self, temp_dir):
+        """A link to a bundled file with a space works both percent-encoded
+        and when the file's literal name contains the %XX sequence (the
+        same fallback as content-broken-internal-reference)."""
+        self._write_skill(
+            temp_dir,
+            extra="\nFollow [the guide](references/setup%20guide.md) first.\n",
+            files=("references/setup guide.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_literal_percent_link_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra="\nFollow [the guide](references/setup%20guide.md) first.\n",
+            files=("references/setup%20guide.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_skill_test_scaffolding_mention_does_not_count(self, temp_dir):
+        """Test/eval scaffolding is consumed by external harnesses, not
+        loaded on demand — mentioning it is not disclosure."""
+        self._write_skill(
+            temp_dir,
+            extra=(
+                "\nRun tests/cases.json through the harness, then\n"
+                "scripts/test_validate.py against scripts/testdata/fixture.json.\n"
+            ),
+            files=(
+                "tests/cases.json",
+                "scripts/test_validate.py",
+                "scripts/testdata/fixture.json",
+            ),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_bundled_image_embed_does_not_count(self, temp_dir):
+        """An embedded bundled image must not be re-credited by the
+        raw-body mention scan after the link scan refused it."""
+        self._write_skill(
+            temp_dir,
+            extra="\n![architecture](assets/arch.png)\n",
+            files=("assets/arch.png",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_skill_quoted_path_with_spaces_counts(self, temp_dir):
+        self._write_skill(
+            temp_dir,
+            extra='\n```bash\ncat "references/setup guide.md"\n```\n',
+            files=("references/setup guide.md",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_absolute_path_suffix_does_not_count(self, temp_dir):
+        """/scripts/run.py and C:/scripts/run.py are foreign absolute paths,
+        not mentions of the bundled scripts/run.py."""
+        self._write_skill(
+            temp_dir,
+            extra="\nThe host installs its own /scripts/run.py and C:/scripts/run.py.\n",
+            files=("scripts/run.py",),
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"skill": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_root_directory_import_does_not_count(self, temp_dir):
+        """@./ resolves to the repository boundary itself and discloses
+        nothing, like the [.](.) link it mirrors."""
+        self._write_claude(temp_dir, extra="\n@./\n")
+        rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert len(rule.check(RepositoryContext(temp_dir))) == 1
+
+    def test_config_block_categories_measure_block_not_file(self, temp_dir):
+        """A promptfoo config holds one block per prompt in a single YAML
+        file: the threshold applies to each prompt's own body, so many
+        short prompts must not each inherit the whole file's token count."""
+        short = "Answer tersely and cite the schema version in every reply."
+        prompts = "".join(f"  - {short} Prompt {i}.\n" for i in range(20))
+        long_prompt = "".join("    " + line + "\n" for line in (self._PARA * 6).splitlines())
+        (temp_dir / "promptfooconfig.yaml").write_text(
+            "prompts:\n" + prompts + "  - |\n" + long_prompt
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"promptfoo-prompt": 100}})
+        violations = rule.check(RepositoryContext(temp_dir))
+        assert len(violations) == 1
+        assert "promptfoo-prompt" in violations[0].message

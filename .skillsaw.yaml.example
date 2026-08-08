@@ -286,10 +286,10 @@ rules:
     enabled: auto
     severity: warning
 
-  # Long skills and instruction files should use progressive disclosure: split detail into referenced files that load on demand
+  # Large skills and instruction files should use progressive disclosure: split detail into referenced files that load on demand
   content-progressive-disclosure:
     enabled: auto
-    severity: info
+    severity: warning
     # limits:
     #   skill: 3000
     #   claude-md: 6000

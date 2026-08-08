@@ -1,12 +1,12 @@
 """Content progressive disclosure rule.
 
 ``context-budget`` says a file is too big; this rule says what to do about
-it.  Anthropic's Claude 5 context-engineering guidance is to divide long
+it.  Anthropic's Claude 5 context-engineering guidance is to divide large
 skills into many files loaded on demand ("progressive disclosure") and to
-keep CLAUDE.md lightweight, deferring detail to skills and imports.  A file
-that is over its token budget *and* references no other local file has not
-even started that split, so the two findings deserve different advice:
-"trim this" versus "split this and link the pieces".
+keep instruction files lightweight, deferring detail to skills and imports.
+A file that is over its token budget *and* references no other local file
+has not even started that split, so the two findings deserve different
+advice: "trim this" versus "split this and link the pieces".
 
 What counts as a disclosure reference differs by surface:
 
@@ -16,14 +16,15 @@ What counts as a disclosure reference differs by surface:
   ``scripts/run.py``) that name a file bundled with the skill —
   including inside fenced code blocks, where bundled scripts are
   typically invoked — and bare filename mentions of bundled files ("run
-  helper.py").  Image embeds, scaffolding (README.md), and nested
-  skills' files never count.
-* **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends)
-  disclose through explicit markdown links to local files and ``@path``
-  imports (files or imported directories).  Bare path mentions and
-  directory links deliberately do not count: "``src/api/`` contains the
-  handlers" and "see [src](src/)" are structure narration, not an
-  instruction to load a file on demand.
+  helper.py").  Image embeds, scaffolding (README.md), test/eval
+  scaffolding, and nested skills' files never count.
+* **Instruction files** disclose through explicit markdown links to
+  local files, and — only for hosts that actually load imports
+  (CLAUDE.md, AGENTS.md, GEMINI.md) — ``@path`` imports (files or
+  imported directories).  Bare path mentions and directory links
+  deliberately do not count: "``src/api/`` contains the handlers" and
+  "see [src](src/)" are structure narration, not an instruction to load
+  a file on demand.
 
 The rule only inspects files already over a budget threshold, so its
 scans run on a handful of files per repository at most.
@@ -42,7 +43,6 @@ from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS, _estimate_tokens
 from skillsaw.rules.builtin.instructions._helpers import IMPORT_RE
-from skillsaw.rules.builtin.utils import read_text
 
 # Thresholds default to the context-budget warn limits so the two rules
 # agree on when a file is "long".  Users can raise/lower per category or
@@ -58,8 +58,15 @@ DEFAULT_THRESHOLDS: Dict[str, int] = {
 _URI_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")
 
 # Slash or ./ path forms mentioned anywhere in a skill body, fences
-# included — bundled scripts are usually invoked, not linked.
-_PATH_TOKEN_RE = re.compile(r"(?:\./)?[\w.-]+(?:/[\w.-]+)+")
+# included — bundled scripts are usually invoked, not linked.  The
+# lookbehind keeps a match from restarting mid-path: `/scripts/run.py`
+# and `C:/scripts/run.py` are absolute/foreign paths whose suffix must
+# not be mistaken for the bundled relative path `scripts/run.py`.
+_PATH_TOKEN_RE = re.compile(r"(?<![\w./\\-])((?:\./)?[\w.-]+(?:/[\w.-]+)+)")
+
+# Quoted path forms may contain spaces (`cat "references/setup guide.md"`);
+# the quotes delimit the token where whitespace otherwise would.
+_QUOTED_PATH_RE = re.compile(r"""["']((?:\./)?[^"'\n/]+(?:/[^"'\n/]+)+)["']""")
 
 # Bare-filename mentions must sit on token boundaries: `run.py` must not
 # match inside `myrun.py` or `run.pyc` (same after-boundary as
@@ -83,7 +90,7 @@ _IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md"})
 
 
 class ContentProgressiveDisclosureRule(Rule):
-    """Long files should split detail into referenced files that load on demand"""
+    """Large files should split detail into referenced files that load on demand"""
 
     formats = None
     repo_types = None
@@ -157,12 +164,12 @@ class ContentProgressiveDisclosureRule(Rule):
     @property
     def description(self) -> str:
         return (
-            "Long skills and instruction files should use progressive disclosure: "
+            "Large skills and instruction files should use progressive disclosure: "
             "split detail into referenced files that load on demand"
         )
 
     def default_severity(self) -> Severity:
-        return Severity.INFO
+        return Severity.WARNING
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         # Per-run cache: bare-name mention patterns repeat across skills
@@ -174,13 +181,17 @@ class ContentProgressiveDisclosureRule(Rule):
             limit = self._limits.get(cf.category)
             if limit is None:
                 continue
-            content = read_text(cf.path)
-            if content is None:
+            # Measure the block's own body, not its file: configured extra
+            # categories can put several blocks in one file (a promptfoo
+            # config holds one block per prompt), and measurement must
+            # cover the same prose unit reference detection scans.
+            body = cf.read_body(strip_code_blocks=False)
+            if body is None:
                 continue
-            tokens = _estimate_tokens(content)
+            tokens = _estimate_tokens(body)
             if tokens <= limit:
                 continue
-            if self._has_disclosure_reference(cf, root):
+            if self._has_disclosure_reference(cf, body, root):
                 continue
             if cf.category == "skill":
                 advice = (
@@ -207,7 +218,7 @@ class ContentProgressiveDisclosureRule(Rule):
 
     # -- reference detection -------------------------------------------------
 
-    def _has_disclosure_reference(self, cf: ContentBlock, root: Path) -> bool:
+    def _has_disclosure_reference(self, cf: ContentBlock, body: str, root: Path) -> bool:
         self_path = safe_resolve(cf.path) or cf.path
         # A skill's disclosure surface is its own bundle: links and imports
         # must land inside the skill directory (the same containment as
@@ -218,14 +229,13 @@ class ContentProgressiveDisclosureRule(Rule):
         inventory = self._bundled_inventory(self_path.parent) if is_skill else None
         if self._has_local_link(cf, boundary, self_path, inventory=inventory):
             return True
-        body = cf.read_body(strip_code_blocks=False) or ""
         if cf.category in _IMPORT_CATEGORIES and self._has_import_reference(
             cf, body, boundary, self_path
         ):
             return True
         if inventory is None:
             return False
-        return self._has_bundled_mention(body, *inventory)
+        return self._has_bundled_mention(self._mask_image_destinations(cf, body), *inventory)
 
     def _has_local_link(
         self,
@@ -252,24 +262,33 @@ class ContentProgressiveDisclosureRule(Rule):
             target = link.href.strip()
             if not target or target.startswith(("#", "//")) or _URI_SCHEME.match(target):
                 continue
-            target = unquote(target.split("#")[0])
+            target = target.split("#")[0]
             if not target:
                 continue
-            resolved = safe_resolve(cf.path.parent / target)
-            if resolved is None or resolved == self_path or resolved == boundary:
-                continue
-            if not resolved.is_relative_to(boundary):
-                continue
-            if inventory is None:
-                if safe_is_file(resolved):
+            # Decode percent-escapes for the lookup, but keep accepting a
+            # file whose literal name contains %XX and is linked verbatim
+            # (the same fallback as content-broken-internal-reference).
+            candidates = [unquote(target)]
+            if candidates[0] != target:
+                candidates.append(target)
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                resolved = safe_resolve(cf.path.parent / candidate)
+                if resolved is None or resolved == self_path or resolved == boundary:
+                    continue
+                if not resolved.is_relative_to(boundary):
+                    continue
+                if inventory is None:
+                    if safe_is_file(resolved):
+                        return True
+                    continue
+                rel_paths, _names = inventory
+                rel = resolved.relative_to(boundary).as_posix().lower()
+                if rel in rel_paths:
                     return True
-                continue
-            rel_paths, _names = inventory
-            rel = resolved.relative_to(boundary).as_posix().lower()
-            if rel in rel_paths:
-                return True
-            if any(bundled.startswith(rel + "/") for bundled in rel_paths):
-                return True
+                if any(bundled.startswith(rel + "/") for bundled in rel_paths):
+                    return True
         return False
 
     def _has_import_reference(
@@ -294,7 +313,7 @@ class ContentProgressiveDisclosureRule(Rule):
                 if not import_path or import_path.startswith("~"):
                     continue
                 resolved = safe_resolve(cf.path.parent / import_path)
-                if resolved is None or resolved == self_path:
+                if resolved is None or resolved == self_path or resolved == boundary:
                     continue
                 if not resolved.is_relative_to(boundary):
                     continue
@@ -314,12 +333,13 @@ class ContentProgressiveDisclosureRule(Rule):
         if not rel_paths:
             return False
         body_lower = body.lower()
-        for match in _PATH_TOKEN_RE.finditer(body_lower):
-            token = match.group(0).rstrip(".")
-            if token.startswith("./"):
-                token = token[2:]
-            if token in rel_paths:
-                return True
+        for pattern in (_PATH_TOKEN_RE, _QUOTED_PATH_RE):
+            for match in pattern.finditer(body_lower):
+                token = match.group(1).rstrip(".")
+                if token.startswith("./"):
+                    token = token[2:]
+                if token in rel_paths:
+                    return True
         for name in names:
             if name not in body_lower:
                 continue
@@ -327,6 +347,30 @@ class ContentProgressiveDisclosureRule(Rule):
             if pattern.search(body_lower):
                 return True
         return False
+
+    @staticmethod
+    def _mask_image_destinations(cf: ContentBlock, body: str) -> str:
+        """*body* with image destination spans blanked out.
+
+        ``_has_local_link`` refuses image links because an embedded
+        diagram is rendered, not loaded on demand; the raw-body mention
+        scan must not re-credit the same ``![x](assets/arch.png)``
+        destination as a bundled path mention.
+        """
+        spans = [
+            (link.dest_body_line, link.dest_col_start, link.dest_col_end)
+            for link in cf.markdown.links()
+            if link.is_image and link.has_dest_span
+        ]
+        if not spans:
+            return body
+        lines = body.split("\n")
+        for line_no, start, end in spans:
+            idx = line_no - 1
+            if 0 <= idx < len(lines):
+                line = lines[idx]
+                lines[idx] = line[:start] + " " * (end - start) + line[end:]
+        return "\n".join(lines)
 
     def _mention_pattern(self, needle: str) -> re.Pattern:
         pattern = self._pattern_cache.get(needle)
@@ -340,21 +384,28 @@ class ContentProgressiveDisclosureRule(Rule):
         """(relative posix paths, bare names) of disclosure-eligible bundled
         files, lowercased.
 
-        Hidden entries, symlinks, nested skills, and packaging scaffolding
-        (SKILL.md, README.md, licenses) are skipped.  Extensionless files
-        (``scripts/deploy``) stay matchable by relative path, but only
-        names carrying an extension become bare-name candidates — a
-        mention of "deploy" alone is a word, not unambiguously a file.
+        Hidden entries, symlinks, nested skills, packaging scaffolding
+        (SKILL.md, README.md, licenses), and test/eval scaffolding
+        (``evals/``, ``tests/``, ``test_*.py``, ``testdata/`` — the same
+        exclusions as agentskill-unreferenced-files) are skipped: those
+        files are consumed by external harnesses, not loaded on demand
+        as skill procedure.  Extensionless files (``scripts/deploy``)
+        stay matchable by relative path, but only names carrying an
+        extension become bare-name candidates — a mention of "deploy"
+        alone is a word, not unambiguously a file.
         """
         rel_paths: Set[str] = set()
         names: Set[str] = set()
         try:
             for dirpath, dirnames, filenames in os.walk(skill_dir):
                 base = Path(dirpath)
+                at_root = base == skill_dir
                 dirnames[:] = sorted(
                     d
                     for d in dirnames
                     if not d.startswith(".")
+                    and d != "testdata"
+                    and not (at_root and d in ("evals", "tests"))
                     and not (base / d).is_symlink()
                     and not (base / d / "SKILL.md").is_file()
                 )
@@ -362,6 +413,8 @@ class ContentProgressiveDisclosureRule(Rule):
                     if name.startswith("."):
                         continue
                     if name in _SCAFFOLDING_NAMES or name.startswith(_SCAFFOLDING_PREFIXES):
+                        continue
+                    if name.startswith("test_") and name.endswith(".py"):
                         continue
                     if (base / name).is_symlink():
                         continue

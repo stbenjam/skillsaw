@@ -3,11 +3,11 @@
 
 # content-progressive-disclosure
 
-Long skills and instruction files should use progressive disclosure: split detail into referenced files that load on demand
+Large skills and instruction files should use progressive disclosure: split detail into referenced files that load on demand
 
 | | |
 |---|---|
-| **Severity** | info (auto) |
+| **Severity** | warning (auto) |
 | **Autofix** | - |
 | **Since** | v0.19.0 |
 | **Category** | [Content Intelligence](content-intelligence.md) |
@@ -16,12 +16,12 @@ Long skills and instruction files should use progressive disclosure: split detai
 
 `context-budget` tells you a file is too big; this rule tells you what
 to do about it. Anthropic's Claude 5 context-engineering guidance is to
-divide long skills into many files and split detail out so it doesn't
+divide large skills into many files and split detail out so it doesn't
 take up context until it's needed ("progressive disclosure"), and to
-keep CLAUDE.md lightweight, deferring detail to skills and imports. A
-file that is over its token budget *and* references no other local file
-has not even started that split — every token it holds loads on every
-use, needed or not.
+keep instruction files lightweight, deferring detail to skills and
+imports. A file that is over its token budget *and* references no other
+local file has not even started that split — every token it holds loads
+on every use, needed or not.
 
 The rule fires only on files already over a threshold (by default the
 `context-budget` warn limits), and only when it finds zero disclosure
@@ -32,16 +32,19 @@ references. What counts as a reference differs by surface:
   `scripts/run.py` — including inside fenced code blocks, where bundled
   scripts are typically invoked), and bare filename mentions of bundled
   files ("run `helper.py`"). References outside the bundle, image
-  embeds, packaging scaffolding (README.md), and nested skills' files
-  do not count: a skill is distributed as its directory, so only
-  instructional material that ships with it can be disclosed
-  progressively.
-- **Instruction files** (CLAUDE.md, AGENTS.md, GEMINI.md, and friends):
-  explicit markdown links to local files and `@path` imports (files or
-  imported directories). Bare path mentions and directory links
-  deliberately do not count — "`src/api/` contains the handlers" and
-  "see [src](src/)" are structure narration, not an instruction to load
-  a file on demand.
+  embeds, packaging scaffolding (README.md), test/eval scaffolding
+  (`tests/`, `evals/`), and nested skills' files do not count: a skill
+  is distributed as its directory, so only instructional material that
+  ships with it can be disclosed progressively.
+- **Instruction files**: explicit markdown links to local files.
+  `@path` imports (files or imported directories) also count, but only
+  in files whose host actually loads them — CLAUDE.md, AGENTS.md, and
+  GEMINI.md; in other instruction files (`.cursorrules`,
+  `copilot-instructions.md`, …) an `@path` token is just prose, so
+  those files disclose through markdown links. Bare path mentions and
+  directory links deliberately do not count — "`src/api/` contains the
+  handlers" and "see [src](src/)" are structure narration, not an
+  instruction to load a file on demand.
 
 ## Examples
 
@@ -77,14 +80,14 @@ description: Cut a release. Use when publishing a new version.
 4. Publish with `python scripts/publish.py`.
 ```
 
-The same applies to a CLAUDE.md: keep it a lightweight map of gotchas,
+The same applies to an AGENTS.md: keep it a lightweight map of gotchas,
 and move deep procedure into skills, rule files, or `@imported` docs.
 
 ## How to fix
 
 1. Group the file's detail by topic and move each topic into its own
    file — `references/*.md` and `scripts/` for a skill; a skill, a
-   `.claude/rules/` file, or an `@import`ed doc for a CLAUDE.md.
+   rules file, or an `@import`ed doc for an instruction file.
 2. Replace each moved section with a one-line pointer that says when to
    read the split-out file.
 3. Keep in the main file only what every session needs: the map, the
@@ -96,7 +99,7 @@ and adding a category extends the rule to it:
 ```yaml
 rules:
   content-progressive-disclosure:
-    severity: info
+    severity: warning
     limits:
       skill: 3000        # flag skills over ~3k tokens with no references
       claude-md: 6000
@@ -112,7 +115,7 @@ models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-
 rules:
   content-progressive-disclosure:
     enabled: auto  # true | false | auto
-    severity: info
+    severity: warning
 ```
 
 | Parameter | Description | Default |
