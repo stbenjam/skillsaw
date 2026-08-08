@@ -107,6 +107,22 @@ class CursorPromptHookBlock(ContentBlock):
         # bare path, which is the file-level reporting JSON rules use.
         return 0
 
+    def fingerprint_identity(self, body_line: Optional[int]) -> Optional[str]:
+        """Which prompt, and which line of it — the file cannot say either.
+
+        ``file_line`` is 0 here, so a baseline would otherwise fall back to
+        hashing the rule, the path and the message. Two prompts carrying
+        different payloads that happen to produce the same message (say the
+        same invisible codepoint) would then share a fingerprint, and
+        baselining one would suppress the other.
+        """
+        body = self.body or ""
+        lines = body.split("\n")
+        line_content = ""
+        if body_line is not None and 1 <= body_line <= len(lines):
+            line_content = lines[body_line - 1].strip()
+        return f"{self.json_path}\0{line_content}"
+
     def tree_label(self) -> str:
         return f"{self.json_path} ({self.category})"
 

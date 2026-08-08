@@ -249,9 +249,15 @@ scoped with `globs`, and reports on whether nested rule directories load
 disagree across versions. VS Code walks from the workspace folder up to the
 repository root. Cline and `.github/copilot-instructions.md` resolve one
 path relative to the workspace directory, so a nested copy is read only when
-that directory is the workspace. skillsaw lints all of them either way — a
-committed instruction file is worth checking wherever a teammate might open
-it, and a rule that turns out not to load is worth knowing about too.
+that directory is the workspace. skillsaw lints every nested tool directory
+either way — committed instructions are worth checking wherever a teammate
+might open them, and a rule that turns out not to load is worth knowing
+about too.
+
+The plain instruction files are the exception: `AGENTS.md`, `CLAUDE.md`,
+`GEMINI.md` and `QWEN.md` are read at the repository root only, so a nested
+`apps/web/AGENTS.md` is not linted even though Cursor and Codex read one.
+Point `content-paths` at it to include it.
 
 MCP configuration is read for its servers wherever it lives, so
 `mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and

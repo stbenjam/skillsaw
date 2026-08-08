@@ -37,12 +37,15 @@ explicitly overrides the inference, and an unknown value is reported.
 
 ## Examples
 
-**Bad** — invalid everywhere: no server map at all, and a stdio server with
-nothing to spawn:
+**Bad** — an unknown transport, which no host can connect over:
 
 ```json
-{"my-server": {"command": ""}}
+{"mcpServers": {"my-server": {"type": "gopher", "command": "x"}}}
 ```
+
+An empty `command` is a narrower case: the key is present, so the
+presence-only check passes it in a Claude-family file. Only a Codex-only
+plugin requires the value to name something spawnable.
 
 **Good:**
 

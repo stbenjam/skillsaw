@@ -75,22 +75,22 @@ alwaysApply: "true"
 ---
 ```
 
-**Bad** — one pattern or two, depending on the Cursor version:
+**Bad** — `globs` are repository-relative, so an absolute pattern matches
+nothing:
 
 ```markdown
 ---
-globs: "**/*.ts, **/*.tsx"
+globs: "src/**, /etc/hosts"
 ---
 ```
 
-**Good** — a real boolean, and a list that reads the same everywhere:
+**Good** — a real boolean, and Cursor's documented comma-separated form.
+Each pattern is checked on its own, so a stray `, ,` is still reported:
 
 ```markdown
 ---
 description: TypeScript conventions for the web app
-globs:
-  - "**/*.ts"
-  - "**/*.tsx"
+globs: "**/*.ts, **/*.tsx"
 alwaysApply: false
 ---
 

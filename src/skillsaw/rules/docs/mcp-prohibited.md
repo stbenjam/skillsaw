@@ -6,9 +6,12 @@ non-allowlisted MCP server can execute arbitrary code when a
 contributor opens the repository — this is a supply-chain attack
 vector analogous to malicious npm lifecycle scripts.
 
-Every project-scoped MCP configuration is inventoried, wherever the host
-that reads it keeps one: `.mcp.json`, `.cursor/mcp.json`,
-`.vscode/mcp.json`, and the MCP files a plugin manifest declares.
+The conventional MCP files are inventoried wherever the host that reads
+them keeps one: `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, and a
+plugin's `mcp.json`. Servers written inline in a manifest are covered too.
+A Claude manifest that names its servers by *path* — `"mcpServers":
+"./servers.json"` — is not followed, so that file is not inventoried;
+list it under `content-paths` if you gate on this rule.
 
 ## Examples
 

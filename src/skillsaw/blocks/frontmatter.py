@@ -427,7 +427,9 @@ class CursorRuleBlock(FrontmatteredBlock):
         """
         parsed = _parse_file_frontmatter(self.path)
         frontmatter, error, _error_line, _body, _fm_lines = parsed
-        if frontmatter is not None or error is None:
+        if frontmatter is not None:
+            return self._undo_yaml_11_booleans(parsed)
+        if error is None:
             return parsed
 
         content = read_text(self.path)
@@ -445,6 +447,43 @@ class CursorRuleBlock(FrontmatteredBlock):
         data, key_lines = _parse_mdc_frontmatter(fm_text, line_offset=2)
         self._mdc_key_lines = key_lines
         return data, None, None, body, fm_line_count
+
+    def _undo_yaml_11_booleans(
+        self,
+        parsed: Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[int], str, int]:
+        """Restore ``yes``/``no``/``on``/``off`` to the strings Cursor sees.
+
+        PyYAML implements YAML 1.1, where those four words are booleans.
+        Cursor's ``.mdc`` reader is not a YAML parser at all, so it sees the
+        literal text — which means ``alwaysApply: yes`` does *not* turn the
+        rule on, and ``description: no`` is a perfectly good routing string.
+        Trusting the coercion inverts both: the inert rule is reported clean
+        (the exact failure ``cursor-rules-valid`` exists to catch, and why
+        ``_BOOLEAN_STRINGS`` lists ``yes``/``on`` as repairable), and the
+        valid description is rejected as a bool.
+
+        Only values the two readers genuinely disagree about are touched:
+        strict YAML says bool, the Cursor dialect says string. ``true`` and
+        ``false`` are booleans to both and pass through untouched.
+        """
+        frontmatter = parsed[0]
+        if not frontmatter or not any(isinstance(v, bool) for v in frontmatter.values()):
+            return parsed
+        content = read_text(self.path)
+        if content is None:
+            return parsed
+        split = _split_mdc_frontmatter(content)
+        if split is None:
+            return parsed
+        dialect, _lines = _parse_mdc_frontmatter(split[0])
+        corrected = dict(frontmatter)
+        for key, value in frontmatter.items():
+            if isinstance(value, bool) and isinstance(dialect.get(key), str):
+                corrected[key] = dialect[key]
+        if corrected == frontmatter:
+            return parsed
+        return (corrected,) + parsed[1:]
 
     def key_line(self, key: str) -> Optional[int]:
         """Prefer the lenient reader's line map when it did the parsing."""

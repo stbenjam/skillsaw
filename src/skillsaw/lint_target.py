@@ -147,6 +147,20 @@ class LintTarget:
         """Translate a line number to a file line number. Default is identity."""
         return line
 
+    def fingerprint_identity(self, body_line: Optional[int]) -> Optional[str]:
+        """Content identifying a finding when the file line cannot.
+
+        A baseline fingerprint normally hashes the source line, so editing
+        the offending text produces a new fingerprint and the finding
+        resurfaces. Content extracted from a document of another format has
+        no file line to hash — the fallback is the rule ID, path and
+        message, and two different payloads that produce the same message
+        then share a fingerprint, so baselining the first silently
+        suppresses the second. Node types in that position return something
+        that distinguishes them; ``None`` keeps the established hashing.
+        """
+        return None
+
     def tree_label(self) -> str:
         return self.path.name
 

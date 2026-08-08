@@ -355,6 +355,42 @@ def test_a_copilot_agent_named_instructions_md_stays_an_agent(temp_dir):
     assert tree.find(InstructionBlock) == []
 
 
+def test_editor_dirs_claim_instructions_md_only_where_their_glob_matches(temp_dir):
+    """Ownership and the sweep read one table, so no file falls between them.
+
+    Standing aside where the owner's glob does not match would drop the file
+    from the tree entirely — worse than the misclassification it prevents.
+    """
+    for rel, text in {
+        ".cursor/commands/review.instructions.md": "---\ndescription: Review\n---\n\nGo.\n",
+        ".clinerules/workflows/release.instructions.md": "# Release\n\nTag it.\n",
+        # Three levels deep: depth must not decide ownership.
+        ".github/agents/team/backend/rev.instructions.md": (
+            "---\ndescription: Backend\n---\n\nCheck handlers.\n"
+        ),
+        # These globs take *.prompt.md / *.chatmode.md, so the sweep keeps them.
+        ".github/prompts/notes.instructions.md": "# Notes\n\nProse.\n",
+        ".github/chatmodes/modes.instructions.md": "# Modes\n\nProse.\n",
+        # .github/instructions is the sweep's own home.
+        ".github/instructions/style.instructions.md": "# Style\n\nProse.\n",
+    }.items():
+        target = temp_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+
+    tree = RepositoryContext(temp_dir).lint_tree
+
+    assert [b.path.name for b in tree.find(CursorCommandBlock)] == ["review.instructions.md"]
+    assert [b.path.name for b in tree.find(ClineWorkflowBlock)] == ["release.instructions.md"]
+    assert [b.path.name for b in tree.find(CopilotAgentBlock)] == ["rev.instructions.md"]
+    # Nothing dropped: the three the editor globs decline stay instructions.
+    assert sorted(b.path.name for b in tree.find(InstructionBlock)) == [
+        "modes.instructions.md",
+        "notes.instructions.md",
+        "style.instructions.md",
+    ]
+
+
 def test_apm_compiled_copilot_output_is_not_linted(temp_dir):
     """APM writes .github/agents from .apm/agents; linting both reports twice."""
     (temp_dir / ".apm" / "agents").mkdir(parents=True)

@@ -81,6 +81,19 @@ logger = logging.getLogger(__name__)
 # executables.
 _CLINE_EXCLUDED_DIRS = frozenset({"workflows", "hooks", "skills"})
 
+# Editor-directory content globs, as (editor dir, subdirectory, pattern,
+# block-class name). The ``*.instructions.md`` sweep consults this to decide
+# where to stand aside, so "which loop owns this file" has one answer rather
+# than two that can disagree — and disagreeing drops the file from the tree.
+_EDITOR_GLOBS = (
+    (".cursor", "rules", "**/*.mdc", "CursorRuleBlock"),
+    (".cursor", "commands", "**/*.md", "CursorCommandBlock"),
+    (".github", "agents", "**/*.md", "CopilotAgentBlock"),
+    (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
+    (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
+    (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
+)
+
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
@@ -129,20 +142,30 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
 
-    # Copilot directories whose files have a more specific owner than the
-    # repository-wide ``*.instructions.md`` sweep. That sweep runs first and
-    # claims paths in the global ``seen`` set, so a custom agent named
-    # ``reviewer.instructions.md`` would otherwise attach as an
-    # InstructionBlock — frontmatter linted as prose, and the 4k/8k
-    # instruction budget instead of the 2k/4k agent one.
-    _COPILOT_OWNED_SUBDIRS = ("agents", "prompts", "chatmodes")
+    def _claimed_by_an_editor_dir(p: Path) -> bool:
+        """Whether an editor-directory glob below will claim *p* itself.
 
-    def _claimed_by_a_copilot_dir(p: Path) -> bool:
-        """Whether *p* sits in a ``.github`` subdirectory with its own block type."""
-        parent = p.parent
-        return (
-            parent.name in _COPILOT_OWNED_SUBDIRS or parent.parent.name in _COPILOT_OWNED_SUBDIRS
-        ) and ".github" in p.parts
+        The repository-wide ``*.instructions.md`` sweep runs first and
+        reserves paths in the global ``seen`` set, so a custom agent named
+        ``reviewer.instructions.md`` would attach as an InstructionBlock —
+        frontmatter linted as prose, and the instruction budget instead of
+        the agent one. The sweep stands aside here so the specific owner
+        wins, at whatever depth the file sits.
+
+        Standing aside is conditional on that owner's pattern actually
+        matching. ``.github/prompts`` takes ``*.prompt.md``, so an
+        ``*.instructions.md`` there belongs to the sweep after all, and
+        yielding would drop the file from the tree entirely. Both facts read
+        from ``_EDITOR_GLOBS``, so they cannot drift apart.
+        """
+        parts = p.parts
+        # Stop before the filename: the pair must be ancestor directories.
+        for index in range(len(parts) - 2):
+            for editor, sub, pattern, _cls in _EDITOR_GLOBS:
+                if parts[index] == editor and parts[index + 1] == sub:
+                    if fnmatch.fnmatch(p.name, pattern.rsplit("/", 1)[-1]):
+                        return True
+        return False
 
     def _add_block(
         parent: LintTarget,
@@ -310,7 +333,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
-        if _is_in_apm_source(f) or _claimed_by_a_copilot_dir(f):
+        if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
         _add_block(root, f, block_cls)

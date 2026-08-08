@@ -104,6 +104,19 @@ def fingerprint_violation(
     discriminator_suffix = (
         f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""
     )
+    # A block whose text is embedded in another format has no file line to
+    # hash; it supplies its own identity instead. Checked before the
+    # source-line branch because ``file_line`` there is a placeholder, not a
+    # real position. Every other node type returns None and hashes as before.
+    identity = (
+        violation.block.fingerprint_identity(violation.line)
+        if violation.block is not None
+        else None
+    )
+    if identity is not None and rel_path is not None:
+        raw = f"{rule_id}\0{rel_path}\0{identity}{discriminator_suffix}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
         if not file_path.is_absolute():
