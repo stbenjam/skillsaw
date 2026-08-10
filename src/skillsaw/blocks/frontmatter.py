@@ -497,7 +497,12 @@ class CursorRuleBlock(FrontmatteredBlock):
         line-oriented dialect reader returns the raw ``[/etc/**, src/**]``.
         Taking that string would hand the pattern splitter ``[/etc/**``,
         whose leading bracket hides the absolute path the rule exists to
-        report.
+        report. The same reasoning holds for a flow *mapping*: ``globs:
+        {/etc/passwd,src}`` parses to a dict, but the dialect string
+        ``{/etc/passwd,src}`` is kept whole by the pattern splitter (a comma
+        inside braces is deliberately not split — the ambiguity is the
+        finding), so its leading brace would likewise hide the absolute path.
+        A mapping is reported as the wrong type instead.
         """
         if isinstance(dialect, str) and not isinstance(strict, (str, list, dict)):
             return dialect
