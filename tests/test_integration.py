@@ -2209,6 +2209,34 @@ class TestEditorTools:
         messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
         assert messages == ["MCP configuration has no 'servers' key — no servers are loaded"]
 
+    def test_schema_hint_beside_a_documented_sibling_is_not_flagged(self, tmp_path):
+        """Editors add a schemastore ``$schema`` hint to any JSON file.
+
+        Beside a legitimately server-less config (VS Code's ``inputs``), the
+        hint must not, on its own, read as "no servers loaded".
+        """
+        repo = self._mcp_repo(
+            tmp_path,
+            "vsxschema",
+            ".vscode/mcp.json",
+            {"$schema": "https://json.schemastore.org/mcp.json", "inputs": []},
+        )
+
+        assert by_rule(run_lint(repo)).get("mcp-valid-json", []) == []
+
+    def test_schema_hint_does_not_wave_through_an_unwrapped_server(self, tmp_path):
+        """The always-ignored ``$schema`` is metadata, not a free pass: a real
+        server sitting outside the wrapper beside it is still flagged."""
+        repo = self._mcp_repo(
+            tmp_path,
+            "vsxschemasrv",
+            ".vscode/mcp.json",
+            {"$schema": "https://x.example/mcp.json", "search": {"command": "node"}},
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["mcp-valid-json"]]
+        assert messages == ["MCP configuration has no 'servers' key — no servers are loaded"]
+
     def test_a_populated_foreign_wrapper_is_reported_beside_the_right_one(self, tmp_path):
         """The host reads its own key, so the other one's servers never load."""
         repo = self._mcp_repo(

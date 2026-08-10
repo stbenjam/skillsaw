@@ -27,6 +27,16 @@ class LintTarget:
     # nodes no plugin owns.
     plugin_owner: Optional[Path] = field(default=None, repr=False)
 
+    #: Whether this node is a compiled copy of a source the linter reads
+    #: elsewhere (an APM prose primitive rendered into ``.github/`` or
+    #: ``.cursor/``). Set at attach time. Content and duplication findings on
+    #: a copy would double the source's, so the linter drops them — but
+    #: security findings are kept, because the copy is what actually ships
+    #: and a contributor can edit it without touching the source. Suppressing
+    #: the whole file from the tree is what let a hand-edited compiled file
+    #: smuggle instructions past every security rule.
+    content_suppressed: bool = field(default=False, repr=False)
+
     #: Content this linter reads but must never rewrite. Set on node types
     #: whose text is embedded in a document of another format — a prompt
     #: string inside JSON, say — where a fix computed against the extracted
@@ -103,6 +113,22 @@ class LintTarget:
         while node is not None:
             node.__dict__.pop("_find_cache", None)
             node = node.parent
+
+    @property
+    def in_suppressed_content(self) -> bool:
+        """Whether this node or any ancestor is a compiled-copy node.
+
+        ``content_suppressed`` is set on the attached file/container; a
+        content finding attaches to a body/field child, and the token
+        metrics walk the ``ContentBlock`` children, so both read the flag by
+        climbing to the container. Populated by ``set_parents()``.
+        """
+        node: Optional["LintTarget"] = self
+        while node is not None:
+            if node.content_suppressed:
+                return True
+            node = node.parent
+        return False
 
     def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
         """Find the nearest ancestor of ``target`` that is ``parent_type``."""

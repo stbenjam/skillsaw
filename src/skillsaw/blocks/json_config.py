@@ -417,6 +417,11 @@ class McpBlock(JsonConfigBlock):
     #: server-less rather than mis-keyed. Empty for hosts that document no
     #: such sibling, where any other key is a mistake.
     non_server_keys: ClassVar[frozenset] = frozenset()
+    #: Editor-agnostic metadata keys that are never a server and never a sign
+    #: of a mis-keyed document. ``$schema`` is the schemastore hint editors
+    #: add to any JSON file; it must not, on its own, read as "no servers
+    #: loaded" beside a legitimately server-less config.
+    always_ignored_keys: ClassVar[frozenset] = frozenset({"$schema"})
     #: Whether Claude Code's built-in server names are reserved in this
     #: file. True for the Claude-family locations Claude Code actually
     #: reads; an editor that loads its own MCP config has no such built-ins,

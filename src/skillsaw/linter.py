@@ -33,6 +33,44 @@ if TYPE_CHECKING:
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 
+# Rules that keep running on a content-suppressed node (an APM-compiled copy).
+# A compiled file duplicates a source the linter reads elsewhere, so its
+# content and duplication findings are dropped — but these fire on what the
+# file *is*, not on how well it reads, and the copy is what ships. Dropping
+# them was how a hand-edited compiled file hid a payload from the whole scan.
+# ``TestSuppressionKeepsSecurityRules`` pins that every security/supply-chain
+# rule is listed; a new one added outside this set silently loses coverage on
+# compiled files, so the test fails loudly instead.
+SECURITY_RULE_IDS = frozenset(
+    {
+        "security-dynamic-context",
+        "security-encoded-payload",
+        "security-hidden-instructions",
+        "security-invisible-unicode",
+        "hooks-dangerous",
+        "hooks-prohibited",
+        "mcp-prohibited",
+        "claude-settings-dangerous",
+    }
+)
+
+
+def _node_content_suppressed(block) -> bool:
+    """Whether *block* or any ancestor is a compiled-copy node.
+
+    A content violation attaches to a body/field child, so the flag set on
+    the attached container is read by walking parents (populated by
+    ``set_parents()`` after the tree is built).
+    """
+    getter = getattr(block, "in_suppressed_content", None)
+    if getter is not None:
+        return bool(getter)
+    # A rule may report against a freshly built ``FileContentBlock`` keyed
+    # only by path (``self.violation(file_path=...)``); it has no parent
+    # chain, so it is never in suppressed content by this route — the
+    # linter's path-based check catches those.
+    return False
+
 
 class CustomRuleWarning(UserWarning):
     """Emitted just before skillsaw executes a custom rule file from the repo.
@@ -624,6 +662,39 @@ class Linter:
             return False
         return smap.is_suppressed(violation.rule_id, file_line)
 
+    def _compiled_copy_paths(self) -> Set[Path]:
+        """Resolved paths of every content-suppressed (compiled-copy) file.
+
+        A content rule may report against a freshly built
+        ``FileContentBlock`` keyed only by ``file_path`` (context-budget is
+        one), so the block has no parent chain to climb. Matching the path
+        against this set suppresses those the same way the block-chain check
+        suppresses rules that attach the real tree node. Computed once per
+        run from the built tree.
+        """
+        cached = getattr(self, "_compiled_copy_path_cache", None)
+        if cached is None:
+            cached = {
+                node.resolved_path
+                for node in self.context.lint_tree.walk()
+                if node.content_suppressed
+            }
+            self._compiled_copy_path_cache = cached
+        return cached
+
+    def _is_on_compiled_copy(self, violation: RuleViolation) -> bool:
+        """Whether *violation* sits on an APM-compiled copy (block or path)."""
+        if violation.block is not None and _node_content_suppressed(violation.block):
+            return True
+        path = violation.file_path
+        if path is None:
+            return False
+        # ``safe_resolve`` matches how ``LintTarget.resolved_path`` normalizes
+        # the node paths in the set, and never raises on a symlink loop or an
+        # unreadable parent the way ``Path.resolve()`` would.
+        resolved = safe_resolve(path) or path
+        return resolved in self._compiled_copy_paths()
+
     def _is_vendor_managed(self, file_path: Optional[Path]) -> bool:
         """Whether *file_path* belongs to a plugin installed into this checkout.
 
@@ -673,6 +744,16 @@ class Linter:
                     v.rule_id,
                     v.file_path or "(no file)",
                     v.file_line or "?",
+                )
+            elif v.rule_id not in SECURITY_RULE_IDS and self._is_on_compiled_copy(v):
+                # A compiled copy of a source read elsewhere: its content and
+                # duplication findings would double the source's, so drop
+                # them. Security findings (kept above) still fire, so a
+                # hand-edited copy cannot smuggle a payload past the scan.
+                logger.info(
+                    "Suppressed %-30s %s (APM-compiled copy)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
                 )
             elif self._is_vendor_managed(v.file_path) or (
                 v.block is not None and v.block.diagnostic_only

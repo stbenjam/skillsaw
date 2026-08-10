@@ -1343,17 +1343,22 @@ scenario touches in the fixture header comment block.
         in the file.  The stamped copy must not drift-compare against its
         own .apm/ source (regression: the marker regex previously required
         'do not edit' on the same line)."""
+        from skillsaw.linter import _node_content_suppressed
+
         repo = copy_content_fixture("instruction-drift-apm-generated", temp_dir)
         _activate_apm_source(repo)
         context = RepositoryContext(repo)
         assert ContentInstructionDriftRule().check(context) == []
         # The pair HAS drifted (the source gained a clause after the last
-        # compile), and the stamped copy is APM's own output beside its own
-        # `.apm/instructions/` source — so the lint tree drops it before any
-        # rule runs, and turning the marker check off finds nothing left to
-        # compare. `test_apm_compiled_root_copilot_instructions_is_not_linted`
-        # in test_lint_tree.py is the guard for that.
-        assert ContentInstructionDriftRule({"ignore-generated": False}).check(context) == []
+        # compile). The stamped copy is APM's own output beside its own
+        # `.apm/instructions/` source, so it now attaches content-suppressed
+        # rather than being dropped — the raw rule still computes a drift
+        # finding on it when the marker check is off, but that finding lands
+        # on a content-suppressed block, so the linter filters it out of the
+        # final report (`_filter_violations`).
+        raw = ContentInstructionDriftRule({"ignore-generated": False}).check(context)
+        assert raw, "raw check still sees the attached compiled copy"
+        assert all(_node_content_suppressed(v.block) for v in raw)
 
     def test_generated_marker_still_silences_a_file_the_tree_keeps(self, temp_dir):
         """`ignore-generated` covers every compiled output, not only APM's.

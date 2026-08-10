@@ -162,7 +162,7 @@ class McpValidJsonRule(Rule):
             elif block.allow_bare_server_map:
                 # The Claude-family files may be written as a bare map.
                 payload = data
-            elif data and not set(data) <= block.non_server_keys:
+            elif data and not set(data) <= (block.non_server_keys | block.always_ignored_keys):
                 # Some key is unaccounted for and this host has no bare-map
                 # form, so the author wrote servers the host will not load.
                 # Only a file whose keys are *all* documented siblings —

@@ -236,6 +236,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         p: Path,
         block_cls: type,
         owner: Path | None = None,
+        content_suppressed: bool = False,
     ) -> None:
         """Add one safely resolved block unless its role is already present."""
         resolved = _resolve_repo_path(p)
@@ -245,6 +246,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_roles.add((resolved, block_cls))
         block = block_cls(path=p)
         block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
         parent.children.append(block)
 
     def _add_parser_block(
@@ -252,6 +254,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         p: Path,
         block_cls: type,
         owner: Path | None = None,
+        content_suppressed: bool = False,
     ) -> None:
         """Attach a structured document once for each parser role.
 
@@ -273,6 +276,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_roles.add(role)
         block = block_cls(path=p)
         block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
         parent.children.append(block)
 
     # Nearest package ownership, with the roots resolved once per context.
@@ -399,13 +403,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     for f in context.instruction_files:
         if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
-        if _is_apm_compiled_github(f.parent):
-            # APM writes .apm/instructions/ out to .github/instructions/.
-            # The authored source attaches below; taking the copy too would
-            # double every finding and point half at generated output.
-            continue
+        # APM writes .apm/instructions/ out to .github/instructions/. The
+        # authored source attaches below; the copy attaches content-suppressed
+        # so its content findings don't double the source's, while the
+        # security rules still scan the copy that ships.
+        compiled = _is_apm_compiled_github(f.parent)
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
-        _add_block(root, f, block_cls)
+        _add_block(root, f, block_cls, content_suppressed=compiled)
 
     # --- .claude/settings.json (supply-chain attack surface) ---
     _add_block(root, context.root_path / ".claude" / "settings.json", SettingsBlock)
@@ -440,13 +444,14 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         pattern: str,
         block_cls: type,
         skip_dirs: frozenset[str] = frozenset(),
+        content_suppressed: bool = False,
     ) -> None:
         """Attach every file matching *pattern* under *directory*.
 
         *skip_dirs* names immediate subdirectories the owning tool does not
         read, so their contents are not swept in under this block type.
         """
-        if not safe_is_dir(directory) or _is_in_compiled_dir(directory):
+        if not safe_is_dir(directory):
             return
         # An excluded directory is not walked. Testing only each match would
         # let `exclude: [".cursor/rules"]` through — the pattern names the
@@ -481,7 +486,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             if skip_dirs and relative and relative[0] in skip_dirs:
                 continue
             if safe_is_file(match):
-                _add_block(parent, match, block_cls)
+                _add_block(parent, match, block_cls, content_suppressed=content_suppressed)
 
     # Cursor reads the legacy file from the nearest enclosing directory too,
     # so a monorepo package keeps its own — discovered in the same walk that
@@ -490,20 +495,44 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_block(root, legacy_cursor, InstructionBlock)
 
     for cursor_dir in context.agent_tool_dirs(".cursor"):
-        if _is_in_compiled_dir(cursor_dir):
-            # APM generates the whole of .cursor/ — lint the sources instead.
-            continue
+        # APM compiles prose primitives into ``.cursor/rules/``; a compiled
+        # rule duplicates its ``.apm/`` source, so its content findings are
+        # dropped — but it is attached, not skipped, so the security rules
+        # still see a copy that could have been hand-edited.
+        prose_suppressed = _is_in_compiled_dir(cursor_dir)
         # ``rules/`` nests: Cursor walks it recursively, so category
         # subdirectories are ordinary rule files, not decoration.
-        _add_glob(root, cursor_dir / "rules", "**/*.mdc", CursorRuleBlock)
-        _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
+        _add_glob(
+            root,
+            cursor_dir / "rules",
+            "**/*.mdc",
+            CursorRuleBlock,
+            content_suppressed=prose_suppressed,
+        )
+        _add_glob(
+            root,
+            cursor_dir / "commands",
+            "**/*.md",
+            CursorCommandBlock,
+            content_suppressed=prose_suppressed,
+        )
+        # APM never writes hooks.json or mcp.json — they are the files Cursor
+        # executes, hand-authored even in an APM repo, so they attach in full
+        # regardless of the compiled-dir status.
         _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 
     for github_dir in context.agent_tool_dirs(".github"):
+        # A compiled Copilot copy duplicates its ``.apm/`` source for the
+        # content rules, so those findings are dropped — but it is attached,
+        # not removed, so the security rules still scan what actually ships.
         copilot_instructions = github_dir / "copilot-instructions.md"
-        if not _is_apm_compiled_github(copilot_instructions):
-            _add_block(root, copilot_instructions, InstructionBlock)
+        _add_block(
+            root,
+            copilot_instructions,
+            InstructionBlock,
+            content_suppressed=_is_apm_compiled_github(copilot_instructions),
+        )
         # ``.github/instructions/**/*.instructions.md`` needs no entry: the
         # repository scan collects every ``*.instructions.md`` wherever it
         # lives, and they are attached with the root instruction files above.
@@ -518,9 +547,13 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             ("chatmodes", "**/*.chatmode.md", CopilotAgentBlock),
         ):
             directory = github_dir / sub
-            if _is_apm_compiled_github(directory):
-                continue
-            _add_glob(root, directory, pattern, block_cls)
+            _add_glob(
+                root,
+                directory,
+                pattern,
+                block_cls,
+                content_suppressed=_is_apm_compiled_github(directory),
+            )
 
     for vscode_dir in context.agent_tool_dirs(".vscode"):
         _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)

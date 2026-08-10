@@ -729,18 +729,30 @@ class TestGatherAllContentFiles:
         assert "chatmode" in categories
         assert "context" in categories
 
-    def test_apm_skips_compiled_cursor_rules(self, temp_dir):
-        """When APM is present, .cursor/rules/ should be skipped."""
+    def test_apm_compiled_cursor_rules_are_content_suppressed(self, temp_dir):
+        """A compiled `.cursor/rules/` file stays in the tree but is content-suppressed.
+
+        Dropping it entirely blinded the security rules to it (a forged or
+        hand-edited compiled dir could smuggle a payload past every check).
+        It now attaches with ``content_suppressed`` set, so security rules
+        still scan it while content/dedup findings are filtered downstream.
+        """
         apm_dir = temp_dir / ".apm"
         apm_dir.mkdir()
-        (temp_dir / "apm.yml").write_text("name: test\nversion: '1.0.0'\ndescription: Test\n")
+        (temp_dir / "apm.yml").write_text(
+            "name: test\nversion: '1.0.0'\ndescription: Test\ntargets:\n  - cursor\n"
+        )
         # Create compiled cursor rules
         cursor_rules = temp_dir / ".cursor" / "rules"
         cursor_rules.mkdir(parents=True)
         (cursor_rules / "generated.mdc").write_text("---\ndescription: gen\n---\nContent\n")
+        from skillsaw.linter import _node_content_suppressed
+
         context = RepositoryContext(temp_dir)
         cfs = gather_all_content_files(context)
-        assert not any(cf.path.name == "generated.mdc" for cf in cfs)
+        compiled = [cf for cf in cfs if cf.path.name == "generated.mdc"]
+        assert compiled, "compiled cursor rule must stay in the tree for security scanning"
+        assert all(_node_content_suppressed(cf) for cf in compiled)
 
     def test_apm_skips_compiled_plugin_content(self, temp_dir):
         """When APM is present, plugin content in .claude/ should be skipped."""

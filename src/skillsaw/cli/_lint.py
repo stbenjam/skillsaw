@@ -214,8 +214,15 @@ def _run_lint(args):
     from ..grade import compute_grade
     from ..linter import ADVISORY_RULE_IDS
 
+    # A compiled copy (an APM primitive rendered into `.github/`/`.cursor/`)
+    # duplicates its source's tokens; counting both would inflate the budget
+    # denominator and the report card, so the copy is excluded here while it
+    # stays in the tree for the security rules.
     content_tokens = sum(
-        block.estimate_tokens() for ctx in contexts for block in ctx.lint_tree.content_blocks()
+        block.estimate_tokens()
+        for ctx in contexts
+        for block in ctx.lint_tree.content_blocks()
+        if not block.in_suppressed_content
     )
     # Advisory notices (deprecation warnings) are about the config, not the
     # repository's content — they don't count toward the content grade.

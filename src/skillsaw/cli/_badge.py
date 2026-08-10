@@ -108,7 +108,13 @@ def _run_badge(args):
     # like the lint command does.
     violations = [v for v in violations if v.rule_id not in ADVISORY_RULE_IDS]
 
-    content_tokens = sum(b.estimate_tokens() for b in context.lint_tree.content_blocks())
+    # Exclude compiled copies (APM output) — they duplicate their source's
+    # tokens and would inflate the card; they stay in the tree for security.
+    content_tokens = sum(
+        b.estimate_tokens()
+        for b in context.lint_tree.content_blocks()
+        if not b.in_suppressed_content
+    )
     grade = compute_grade(violations, content_tokens)
 
     badge_path = args.output or (context.root_path / _BADGE_FILENAME)
