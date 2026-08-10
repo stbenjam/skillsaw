@@ -495,11 +495,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         _add_block(root, legacy_cursor, InstructionBlock)
 
     for cursor_dir in context.agent_tool_dirs(".cursor"):
-        # APM compiles prose primitives into ``.cursor/rules/``; a compiled
-        # rule duplicates its ``.apm/`` source, so its content findings are
-        # dropped — but it is attached, not skipped, so the security rules
-        # still see a copy that could have been hand-edited.
-        prose_suppressed = _is_in_compiled_dir(cursor_dir)
+        # APM's cursor target compiles ``.apm/instructions/`` into
+        # ``.cursor/rules/`` only (docs/repo-types.md) — not commands, mcp.json
+        # or hooks.json, which are authored even in an APM repo. So the compiled
+        # flag scopes to ``rules/``: a compiled rule's prose duplicates its
+        # ``.apm/`` source and is dropped, but it is attached (not skipped) so
+        # the security and structural rules still see a copy that could have
+        # been hand-edited. Everything else under ``.cursor/`` is authored and
+        # linted in full.
+        rules_suppressed = _is_in_compiled_dir(cursor_dir)
         # ``rules/`` nests: Cursor walks it recursively, so category
         # subdirectories are ordinary rule files, not decoration.
         _add_glob(
@@ -507,18 +511,9 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             cursor_dir / "rules",
             "**/*.mdc",
             CursorRuleBlock,
-            content_suppressed=prose_suppressed,
+            content_suppressed=rules_suppressed,
         )
-        _add_glob(
-            root,
-            cursor_dir / "commands",
-            "**/*.md",
-            CursorCommandBlock,
-            content_suppressed=prose_suppressed,
-        )
-        # APM never writes hooks.json or mcp.json — they are the files Cursor
-        # executes, hand-authored even in an APM repo, so they attach in full
-        # regardless of the compiled-dir status.
+        _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
         _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
         _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
 

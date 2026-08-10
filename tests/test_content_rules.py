@@ -1478,6 +1478,52 @@ class TestContentBrokenInternalReferenceRule:
         violations = ContentBrokenInternalReferenceRule().check(context)
         assert len(violations) == 0
 
+    def test_prompt_hook_link_resolves_from_workspace_not_dot_cursor(self, temp_dir):
+        """A Cursor prompt hook runs from the workspace, so its relative links
+        resolve from the repo root — not the `.cursor/` dir the JSON lives in."""
+        import json
+
+        (temp_dir / ".cursor").mkdir()
+        (temp_dir / ".cursor" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeSubmitPrompt": [
+                            {"type": "prompt", "prompt": "See [setup](docs/setup.md) first."}
+                        ]
+                    },
+                }
+            )
+        )
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Setup\n")
+        context = RepositoryContext(temp_dir)
+        # `<workspace>/docs/setup.md` exists, so no broken-link finding — the
+        # old base (`.cursor/docs/setup.md`) reported a false positive.
+        assert ContentBrokenInternalReferenceRule().check(context) == []
+
+    def test_prompt_hook_link_to_missing_workspace_file_is_still_caught(self, temp_dir):
+        import json
+
+        (temp_dir / ".cursor").mkdir()
+        (temp_dir / ".cursor" / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeSubmitPrompt": [
+                            {"type": "prompt", "prompt": "See [gone](docs/missing.md)."}
+                        ]
+                    },
+                }
+            )
+        )
+        context = RepositoryContext(temp_dir)
+        violations = ContentBrokenInternalReferenceRule().check(context)
+        assert len(violations) == 1
+        assert "docs/missing.md" in violations[0].message
+
     def test_anchor_links_skipped(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("See [section](#overview) for details.\n")
         context = RepositoryContext(temp_dir)

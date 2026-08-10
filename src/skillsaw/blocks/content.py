@@ -8,11 +8,14 @@ and ``category`` is kept for backward compat (context_budget limits key on it).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, List, Optional
+from typing import TYPE_CHECKING, ClassVar, List, Optional
 
 from skillsaw.lint_target import LintTarget
 
 from .base import ContentBlock, FileContentBlock
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(eq=False)
@@ -94,6 +97,13 @@ class CursorPromptHookBlock(ContentBlock):
         if strip_code_blocks:
             return self._stripped_body()
         return self.body if self.body is not None else ""
+
+    def link_base_dir(self, repo_root: "Path") -> "Path":
+        # Cursor injects this prompt into an agent running in the workspace,
+        # not from the ``.cursor/`` directory the JSON file lives in — so a
+        # relative link like ``docs/setup.md`` names ``<workspace>/docs`` and
+        # must resolve from the repo root, not ``.cursor/``.
+        return repo_root
 
     def write_body(self, new_body: str) -> None:
         # Writing back would mean re-encoding a JSON string literal in place.

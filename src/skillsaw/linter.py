@@ -33,14 +33,12 @@ if TYPE_CHECKING:
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 
-# Rules that keep running on a content-suppressed node (an APM-compiled copy).
-# A compiled file duplicates a source the linter reads elsewhere, so its
-# content and duplication findings are dropped — but these fire on what the
-# file *is*, not on how well it reads, and the copy is what ships. Dropping
-# them was how a hand-edited compiled file hid a payload from the whole scan.
-# ``TestSuppressionKeepsSecurityRules`` pins that every security/supply-chain
-# rule is listed; a new one added outside this set silently loses coverage on
-# compiled files, so the test fails loudly instead.
+# The security/supply-chain surface. Not a suppression gate — every one of
+# these fires on a compiled copy because none is a prose-duplicate rule (see
+# ``_is_prose_duplicate_rule``). Enumerated here so ``test_content_suppression``
+# can pin that the security surface stays disjoint from what suppression drops:
+# a security rule that ever started being suppressed on compiled copies is how
+# a hand-edited compiled file would hide a payload from the whole scan.
 SECURITY_RULE_IDS = frozenset(
     {
         "security-dynamic-context",
@@ -53,6 +51,26 @@ SECURITY_RULE_IDS = frozenset(
         "claude-settings-dangerous",
     }
 )
+
+
+def _is_prose_duplicate_rule(rule_id: str) -> bool:
+    """Whether *rule_id*'s findings on a compiled copy merely echo its source.
+
+    A file APM compiles into an editor location (``.github/``, ``.cursor/``)
+    carries the same prose as its ``.apm/`` source, so prose-quality findings
+    (``content-*``) and the token budget double what the source already
+    reports — those are dropped on the copy. Everything else stays: a
+    structural-validity rule checks the compiled artifact's *own* shape
+    (a compiled ``.mdc``'s frontmatter, an import that only resolves after
+    compilation, the MCP JSON layout) which has no equivalent on the source,
+    and every security rule fires on what actually ships. Suppressing those
+    was over-broad — it hid unique, real findings on the compiled file.
+
+    Naming the *narrow* set to drop (rather than an allowlist to keep) fails
+    toward reporting: a prose rule that ever falls outside this predicate
+    merely double-reports, it never hides a structural or security defect.
+    """
+    return rule_id.startswith("content-") or rule_id == "context-budget"
 
 
 def _node_content_suppressed(block) -> bool:
@@ -745,13 +763,15 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
-            elif v.rule_id not in SECURITY_RULE_IDS and self._is_on_compiled_copy(v):
-                # A compiled copy of a source read elsewhere: its content and
-                # duplication findings would double the source's, so drop
-                # them. Security findings (kept above) still fire, so a
-                # hand-edited copy cannot smuggle a payload past the scan.
+            elif _is_prose_duplicate_rule(v.rule_id) and self._is_on_compiled_copy(v):
+                # A compiled copy of a source read elsewhere: its prose-quality
+                # and budget findings would double the source's, so drop them.
+                # Structural-validity findings (a malformed compiled .mdc, a
+                # broken post-compile import) and every security finding still
+                # fire — they are unique to the artifact that ships, so a
+                # hand-edited copy cannot hide a defect or a payload from them.
                 logger.info(
-                    "Suppressed %-30s %s (APM-compiled copy)",
+                    "Suppressed %-30s %s (APM-compiled copy, prose duplicate)",
                     v.rule_id,
                     v.file_path or "(no file)",
                 )
