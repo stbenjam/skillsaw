@@ -49,6 +49,12 @@ SECURITY_RULE_IDS = frozenset(
         "hooks-prohibited",
         "mcp-prohibited",
         "claude-settings-dangerous",
+        # A ``content-`` rule by id, but a secret scanner by purpose: a
+        # credential in the artifact that ships is real even when it echoes the
+        # source, and compilation or a hand-edit can introduce one the source
+        # never had. Listed here so the prose-duplicate predicate never drops
+        # it on a compiled copy.
+        "content-embedded-secrets",
     }
 )
 
@@ -69,7 +75,13 @@ def _is_prose_duplicate_rule(rule_id: str) -> bool:
     Naming the *narrow* set to drop (rather than an allowlist to keep) fails
     toward reporting: a prose rule that ever falls outside this predicate
     merely double-reports, it never hides a structural or security defect.
+
+    A security rule is never a prose duplicate even when its id starts with
+    ``content-`` (``content-embedded-secrets`` scans for credentials): the
+    ``SECURITY_RULE_IDS`` guard keeps it firing on the artifact that ships.
     """
+    if rule_id in SECURITY_RULE_IDS:
+        return False
     return rule_id.startswith("content-") or rule_id == "context-budget"
 
 

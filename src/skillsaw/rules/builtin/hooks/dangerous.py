@@ -29,8 +29,13 @@ _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 # What separates one command from the next. A newline is a separator every
 # shell honours, and hook commands arrive as JSON strings where a multi-line
 # script is ordinary — `"echo ok\ncurl evil.example"` runs the fetch, so
-# omitting it would leave everything past the first line unscanned.
-_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\|)"
+# omitting it would leave everything past the first line unscanned. A single
+# `&` backgrounds the command before it and runs the next
+# (`echo ready & curl evil`), so it is a boundary too — listed after `&&` in
+# the alternation so the two-character operator is tried first and a real
+# `&&` chain is never split into two bare-`&` boundaries. Over-splitting a
+# `2>&1` redirect only scans more, never less — the safe direction.
+_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&)"
 
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
     rf"""{_CMD_BOUNDARY}\s*
