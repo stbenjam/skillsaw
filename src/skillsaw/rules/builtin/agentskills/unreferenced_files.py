@@ -129,6 +129,10 @@ _DIR_AFTER = r"(?![A-Za-z0-9_.-])"
 # assets/fonts.
 _DIR_BARE_AFTER = r"(?![A-Za-z0-9_./-])"
 
+# Matched against a case-folded href: URI schemes are case-insensitive
+# (RFC 3986 §3.1), so `DATA:image/png;base64,...` and `HTTPS://host/x` are
+# every bit as external as their lowercase spellings.  Keep these entries
+# lowercase — the fold happens on the href, not on the prefixes.
 _EXTERNAL_LINK_PREFIXES = ("http://", "https://", "#", "mailto:", "data:")
 
 # Referenced files above this size never become traversal sources — a
@@ -432,7 +436,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         dirs: Set[str] = set()
         for link in doc.links():
             target = link.href.strip()
-            if not target or target.startswith(_EXTERNAL_LINK_PREFIXES):
+            if not target or target.casefold().startswith(_EXTERNAL_LINK_PREFIXES):
                 continue
             target = target.split("#")[0]
             if not target:
