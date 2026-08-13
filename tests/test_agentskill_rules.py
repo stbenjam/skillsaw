@@ -1758,6 +1758,25 @@ def test_markdown_link_reference(temp_dir):
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
 
 
+def test_data_uri_image_link_does_not_crash(temp_dir):
+    """A base64 data: URI image link must not abort the rule.
+
+    ``resolve()`` does not stat the final path component, so
+    ``base_dir / "data:image/png;base64,<~1KB>"`` resolves fine; the raw
+    ``is_dir()`` / ``is_file()`` that follows then raises ``ENAMETOOLONG``,
+    which would surface as a rule-execution-error and discard every finding
+    for the repository.  The data URI is external, so it references nothing
+    and the genuinely-orphaned file is still flagged.
+    """
+    data_uri = "data:image/png;base64," + ("iVBORw0KGgo" * 120)
+    skill = _make_skill(temp_dir, body=f"Logo: ![logo]({data_uri})")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("print('never mentioned')\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "scripts" / "orphan.py"]
+
+
 def test_bare_filename_mention_counts(temp_dir):
     skill = _make_skill(temp_dir, body="Run helper.py from the scripts directory.")
     (skill / "scripts").mkdir()

@@ -108,7 +108,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
 
@@ -129,7 +129,7 @@ _DIR_AFTER = r"(?![A-Za-z0-9_.-])"
 # assets/fonts.
 _DIR_BARE_AFTER = r"(?![A-Za-z0-9_./-])"
 
-_EXTERNAL_LINK_PREFIXES = ("http://", "https://", "#", "mailto:")
+_EXTERNAL_LINK_PREFIXES = ("http://", "https://", "#", "mailto:", "data:")
 
 # Referenced files above this size never become traversal sources — a
 # multi-megabyte data blob mentioning a filename is not documentation.
@@ -447,9 +447,17 @@ class AgentSkillUnreferencedFilesRule(Rule):
                 continue
             if not resolved.is_relative_to(skill_resolved) or resolved == skill_resolved:
                 continue
-            if resolved.is_dir():
+            # ``safe_is_dir`` / ``safe_is_file`` rather than the raw
+            # predicates: ``resolve()`` does not stat the final component, so
+            # a link href like a ``data:image/png;base64,...`` URI (which is
+            # not caught by _EXTERNAL_LINK_PREFIXES if a new scheme appears)
+            # resolves to a path whose final component is thousands of
+            # characters long, and ``is_dir()`` / ``is_file()`` then raise
+            # ``ENAMETOOLONG`` — a raw OSError that turns the rule into a
+            # rule-execution-error and discards every finding for the repo.
+            if safe_is_dir(resolved):
                 dirs.add(resolved.relative_to(skill_resolved).as_posix())
-            elif resolved.is_file():
+            elif safe_is_file(resolved):
                 files.add(resolved)
         return files, dirs
 
