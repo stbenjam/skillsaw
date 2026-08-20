@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsaw.markdown_doc import MarkdownDoc, splice
+from skillsaw.markdown_doc import MarkdownDoc, MarkdownFence, splice
 from skillsaw.markdown_doc import _ContentMap
 
 
@@ -265,6 +265,7 @@ class TestFences:
         body = "before\n\n```yaml\nkey: val\n```\n\nafter\n"
         (fence,) = _doc(body).fences()
         assert fence.info == "yaml"
+        assert fence.content == "key: val\n"
         assert fence.body_line_start == 3
         assert fence.body_line_end == 5
         assert not fence.indented
@@ -299,6 +300,16 @@ class TestFences:
     def test_list_fence_nested(self):
         (fence,) = _doc("- item\n  ```\n  code\n  ```\n").fences()
         assert fence.nested
+
+    def test_constructor_keeps_pre_content_positional_shape(self):
+        # MarkdownFence is exported; plugins constructed it positionally
+        # before `content` existed, so `content` must stay a defaulted
+        # trailing field.
+        fence = MarkdownFence("yaml", 3, 5, 3, 5)
+        assert fence.info == "yaml"
+        assert fence.body_line_start == 3
+        assert fence.file_line_end == 5
+        assert fence.content == ""
 
 
 class TestProseLines:

@@ -1,0 +1,29 @@
+{
+  "description": "Install a newly added service directory's dependencies",
+  "hooks": {
+    "DirectoryAdded": [
+      {
+        "matcher": "slash_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/install-deps.sh",
+            "statusMessage": "Installing dependencies for the added directory",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "direnv export bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

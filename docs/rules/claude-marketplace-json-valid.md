@@ -49,9 +49,10 @@ Plugin entries are also validated: every entry needs a unique `name`
 and a `source`. A string source is a path relative to the marketplace
 root — it should start with `./` and must not be an absolute path or
 escape the repository with `..`. An object source declares its type via the `source` field
-(`github`, `url`, `git-subdir`, or `npm`) and must carry that type's
-required fields (`repo`, `url`, `url` + `path`, or `package`
-respectively).
+(`github`, `url`, `git-subdir`, `npm`, or `archive`) and must carry
+that type's required fields (`repo`, `url`, `url` + `path`, `package`,
+or `url` respectively). An `archive` source may also pin the download
+with an optional `sha256` digest.
 
 When `metadata.pluginRoot` is set, it is prepended to relative
 sources, so bare names like `"formatter"` are valid and the `./`

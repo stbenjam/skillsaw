@@ -133,6 +133,11 @@ class MarkdownFence:
     indented: bool = False
     markup: str = ""  # opening fence run ("```", "~~~~", …); empty for indented blocks
     nested: bool = False  # inside a container (blockquote, list item)
+    # Parser-normalized body: container prefixes (blockquote "> ", list
+    # indentation) are stripped, and the final line is included even when the
+    # fence is unterminated at EOF. Trailing defaulted field so pre-existing
+    # positional constructor calls keep their meaning.
+    content: str = ""
 
 
 @dataclass
@@ -879,6 +884,7 @@ class MarkdownDoc:
                 result.append(
                     MarkdownFence(
                         info=(token.info or "").strip(),
+                        content=token.content or "",
                         body_line_start=start + 1,
                         body_line_end=end,
                         file_line_start=self.file_line(start + 1),

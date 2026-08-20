@@ -241,6 +241,14 @@ class TestHooksJson:
         assert r["rc"] == 0
         assert "content-cognitive-chunks" not in rule_ids(r)
 
+    def test_directory_added_event_accepted(self, tmp_path):
+        """DirectoryAdded is a documented hook event, not an unknown one."""
+        repo = copy_fixture("hooks-directory-added", tmp_path)
+        r = run_lint(repo)
+        assert r["out"] is not None
+        assert r["rc"] == 0
+        assert "hooks-json-valid" not in rule_ids(r)
+
 
 # ── Supply Chain Hooks ──────────────────────────────────────────
 
@@ -421,6 +429,13 @@ class TestMarketplace:
         r = run_lint(repo)
         assert r["rc"] == 1
         assert "claude-marketplace-json-valid" in rule_ids(r)
+
+    def test_archive_source_entries_pass(self, tmp_path):
+        """`archive` is a documented source type, not an unknown one."""
+        repo = copy_fixture("marketplace/archive-source", tmp_path)
+        r = run_lint(repo)
+        assert r["rc"] == 0
+        assert "claude-marketplace-json-valid" not in rule_ids(r)
 
     def test_marketplace_stats(self, tmp_path):
         repo = copy_fixture("marketplace/clean", tmp_path)
@@ -1837,6 +1852,7 @@ BROKEN_FIXTURES = [
 CLEAN_FIXTURES = [
     "single-plugin/clean",
     "marketplace/clean",
+    "marketplace/archive-source",
     "marketplace/plugin-root",
     "marketplace/plugin-root-prefixed",
     "agentskills/clean",
@@ -1914,6 +1930,7 @@ EXPECTED_MALICIOUS_RULES = {
     "security-invisible-unicode",
     "security-hidden-instructions",
     "security-encoded-payload",
+    "security-dynamic-context",
 }
 
 
@@ -1928,6 +1945,34 @@ class TestMaliciousSkillDetection:
         ids = rule_ids(r)
         missing = EXPECTED_MALICIOUS_RULES - ids
         assert not missing, f"Expected rules did not fire on malicious fixture: {sorted(missing)}"
+
+
+@pytest.mark.integration
+class TestDynamicContextAllowlist:
+    """End-to-end tests for the security-dynamic-context allowlist via .skillsaw.yaml.
+
+    The fixture SKILL.md uses two allowlisted commands (an inline `git diff
+    HEAD` and a fenced block configured with the documented `|-` block
+    scalar) plus one inline command that is not allowlisted.
+    """
+
+    FIXTURE = "security/dynamic-context-allowlist"
+
+    def test_allowlist_travels_through_config(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 1
+        assert "git log --oneline -5" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert all("git diff HEAD" not in v["message"] for v in vs)
+
+    def test_without_config_every_command_is_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 3
 
 
 # ── Opt-In Rules ────────────────────────────────────────────────

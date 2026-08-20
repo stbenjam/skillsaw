@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "skillsaw",
+  "version": "1.0.0",
+  "description": "A configurable linter for agent skills, plugins, and AI coding assistant context",
+  "author": {
+    "name": "stbenjam"
+  }
+}
