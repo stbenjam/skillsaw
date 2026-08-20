@@ -44,8 +44,10 @@ _STRIPE_RK = "rk" + "_live_" + "TESTFAKEKEYDONOTUSE00000"
 
 @pytest.fixture
 def temp_dir():
+    # Resolve symlinks (macOS /var -> /private/var) so path assertions match
+    # the resolved paths rules report for discovered files.
     tmp = tempfile.mkdtemp()
-    yield Path(tmp)
+    yield Path(tmp).resolve()
     shutil.rmtree(tmp)
 
 
@@ -3174,6 +3176,24 @@ class TestContentProgressiveDisclosureRule:
         assert "claude-md" in violations[0].message
         assert violations[0].severity == Severity.WARNING
 
+    def test_default_skill_threshold_is_6000(self, temp_dir):
+        # The skill default is deliberately looser than context-budget's
+        # 3k warn: mid-size single-file skills work fine and should not
+        # be pushed into a split.
+        for name, repeats in (("midsize", 120), ("monolith", 200)):
+            skill = temp_dir / ".claude" / "skills" / name
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: Deploy the service. Use when releasing.\n---\n\n"
+                f"# {name}\n\n" + self._PARA * repeats
+            )
+        violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
+        # midsize (~4k tokens) is over context-budget's 3k warn but under
+        # this rule's 6k default; only monolith (~6.6k) fires.
+        assert len(violations) == 1
+        assert violations[0].file_path.parent.name == "monolith"
+        assert "6,000-token" in violations[0].message
+
     def test_under_threshold_silent(self, temp_dir):
         self._write_claude(temp_dir)
         violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
@@ -3336,15 +3356,16 @@ class TestContentProgressiveDisclosureRule:
         assert len(rule.check(RepositoryContext(temp_dir))) == 1
 
     def test_extra_category_via_config(self, temp_dir):
-        commands = temp_dir / ".claude" / "commands"
-        commands.mkdir(parents=True)
-        (commands / "ship.md").write_text(
-            "---\ndescription: Ship the release\n---\n\n# Ship\n\n" + self._PARA * 6
+        agents = temp_dir / ".claude" / "agents"
+        agents.mkdir(parents=True)
+        (agents / "shipper.md").write_text(
+            "---\nname: shipper\ndescription: Ship the release\n---\n\n"
+            "# Shipper\n\n" + self._PARA * 6
         )
-        rule = ContentProgressiveDisclosureRule({"limits": {"command": 100}})
+        rule = ContentProgressiveDisclosureRule({"limits": {"agent": 100}})
         violations = rule.check(RepositoryContext(temp_dir))
         assert len(violations) == 1
-        assert "command" in violations[0].message
+        assert "agent" in violations[0].message
 
     def test_config_validation(self):
         with pytest.raises(ValueError, match="must be integers"):

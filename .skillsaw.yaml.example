@@ -291,7 +291,7 @@ rules:
     enabled: auto
     severity: warning
     # limits:
-    #   skill: 3000
+    #   skill: 6000
     #   claude-md: 6000
     #   agents-md: 6000
     #   gemini-md: 6000

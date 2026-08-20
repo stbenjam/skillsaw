@@ -10,8 +10,9 @@ local file has not even started that split — every token it holds loads
 on every use, needed or not.
 
 The rule fires only on files already over a threshold (by default the
-`context-budget` warn limits), and only when it finds zero disclosure
-references. What counts as a reference differs by surface:
+`context-budget` warn limits, except skills, whose threshold is raised
+to 6,000 tokens — smaller skills routinely work fine as a single file),
+and only when it finds zero disclosure references. What counts as a reference differs by surface:
 
 - **Skills**: markdown links to bundled files (or directories holding
   them), path-like mentions of bundled files (`references/guide.md`,
@@ -34,7 +35,7 @@ references. What counts as a reference differs by surface:
 
 ## Examples
 
-**Bad (a 4,000-token SKILL.md that inlines everything):**
+**Bad (an 8,000-token SKILL.md that inlines everything):**
 
 ```markdown
 ---
@@ -87,9 +88,9 @@ rules:
   content-progressive-disclosure:
     severity: warning
     limits:
-      skill: 3000        # flag skills over ~3k tokens with no references
+      skill: 6000        # flag skills over ~6k tokens with no references
       claude-md: 6000
-      command: 2000      # not checked by default; adding it enables it
+      agent: 2000        # not checked by default; adding it enables it
 ```
 
 Ref: [The new rules of context engineering for Claude 5 generation

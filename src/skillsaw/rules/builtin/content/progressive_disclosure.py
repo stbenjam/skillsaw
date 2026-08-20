@@ -45,13 +45,17 @@ from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS, _estima
 from skillsaw.rules.builtin.instructions._helpers import IMPORT_RE
 
 # Thresholds default to the context-budget warn limits so the two rules
-# agree on when a file is "long".  Users can raise/lower per category or
-# extend the rule to other categories (e.g. ``command: 2000``) via the
-# ``limits`` config option.
+# agree on when a file is "long" — except skills, whose threshold is
+# raised to 6k: real-world skills in the 3-6k range routinely work fine
+# as a single file, and the split-and-link advice only pays for itself
+# above that.  Users can raise/lower per category or extend the rule to
+# other categories (e.g. ``agent: 2000``) via the ``limits`` config
+# option.
 _DEFAULT_CATEGORIES = ("skill", "claude-md", "agents-md", "gemini-md", "instruction")
 DEFAULT_THRESHOLDS: Dict[str, int] = {
     category: DEFAULT_LIMITS[category]["warn"] for category in _DEFAULT_CATEGORIES
 }
+DEFAULT_THRESHOLDS["skill"] = 6000
 
 # Same scheme/anchor skip set as content-broken-internal-reference: two-plus
 # characters before the colon so a Windows drive path stays a file path.
@@ -105,7 +109,7 @@ class ContentProgressiveDisclosureRule(Rule):
             "description": (
                 "Token thresholds per file category above which a file with "
                 "no local file references is flagged; add a category "
-                "(e.g. command) to extend the rule to it, set one higher to "
+                "(e.g. agent) to extend the rule to it, set one higher to "
                 "relax it, or set one to null to opt the category out. "
                 "context-budget's {warn: N} shape is accepted (warn is used)"
             ),
