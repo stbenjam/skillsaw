@@ -52,10 +52,10 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
 
 # Words that may sit between a command boundary and the executable without
 # changing which program runs: POSIX wrappers (`command`, `exec`, `time`,
-# `nohup`, …), and sudo with one option/value pair (`sudo -u nobody curl …`).
-# Heuristic coverage, not shell semantics.
+# `nohup`, …) and sudo with any number of option/value pairs
+# (`sudo -n -u nobody curl …`). Heuristic coverage, not shell semantics.
 _CMD_WRAPPERS = (
-    r"(?:(?:sudo(?:\s+-{1,2}[A-Za-z][\w-]*(?:\s+\S+)?)?"
+    r"(?:(?:sudo(?:\s+-{1,2}[A-Za-z][\w-]*(?:\s+[A-Za-z_][\w.+-]*)?)*"
     r"|command|exec|builtin|time|nice|nohup|ionice|stdbuf"
     r"|timeout(?:\s+\S+)?)\s+)*"
 )
@@ -129,7 +129,12 @@ def _mask_quoted_separators(line: str) -> str:
     Separators inside a double-quoted command substitution stay live —
     `"$(curl x; sh y)"` executes both — so once `$(` or a backtick appears
     inside the current double-quoted span, masking stops for its remainder.
-    Single quotes never execute, so their contents stay masked.
+    Single quotes never execute, so their contents stay masked throughout.
+
+    Substitution markers (`$`, `<`, backtick) are masked inside quoted spans
+    too: `'$(python .claude/x.sh)'` only ever echoes its literal. A `$(` or
+    backtick in double quotes flips the span live before it can be masked,
+    because there those forms really do execute.
     """
     if "'" not in line and '"' not in line:
         return line
@@ -138,15 +143,15 @@ def _mask_quoted_separators(line: str) -> str:
     live = False
     for index, char in enumerate(line):
         if quote and not live:
-            if char in "&|;":
+            # The live trigger must win over masking: in double quotes a $(
+            # or backtick executes, so it is never masked.
+            if quote == '"' and (char == "`" or (char == "$" and line.startswith("(", index + 1))):
+                live = True
+            elif char in "&|;$<`":
                 out.append("\x00")
                 continue
-            if char == quote:
+            elif char == quote:
                 quote = None
-            elif quote == '"' and (
-                char == "`" or (char == "$" and line.startswith("(", index + 1))
-            ):
-                live = True
         elif not quote and char in "\"'":
             quote = char
             live = False
