@@ -10,7 +10,12 @@ from urllib.parse import urlsplit
 
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.agent_plugins import MCP_SCHEMA_ID, agent_plugin_schema_version
+from skillsaw.formats.agent_plugins import (
+    SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
+    agent_plugin_schema_id,
+    agent_plugin_schema_version,
+    supported_agent_plugin_schema_version,
+)
 from skillsaw.lint_target import AgentPluginConfigNode
 from skillsaw.paths import (
     contained_resolve,
@@ -29,8 +34,8 @@ from skillsaw.rules.builtin.secret_detection import (
 
 from ._helpers import (
     AGENT_PLUGIN_REPO_TYPES,
-    MCP_SCHEMA,
-    MCP_VALIDATOR,
+    MCP_SCHEMAS,
+    MCP_VALIDATORS,
     schema_error_summary,
     stable_key,
     strict_json,
@@ -43,9 +48,15 @@ _SERVER_SCHEMA_NAMES = {
     "sse": "sseServer",
 }
 _SERVER_VALIDATORS = {
-    server_type: MCP_VALIDATOR.evolve(schema=MCP_SCHEMA["$defs"][schema_name])
-    for server_type, schema_name in _SERVER_SCHEMA_NAMES.items()
+    version: {
+        server_type: MCP_VALIDATORS[version].evolve(
+            schema=MCP_SCHEMAS[version]["$defs"][schema_name]
+        )
+        for server_type, schema_name in _SERVER_SCHEMA_NAMES.items()
+    }
+    for version in SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS
 }
+_SUPPORTED_VERSIONS_TEXT = " and ".join(SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS)
 
 
 def _is_control_character(char: str) -> bool:
@@ -80,7 +91,7 @@ class AgentPluginMcpValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics"
+        return "Agent Plugins mcp.json must conform to a supported schema and semantics"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -149,20 +160,22 @@ class AgentPluginMcpValidRule(Rule):
             top_view["mcpServers"] = {}
         version_problem: Optional[str] = None
         declared_schema = top_view.get("$schema")
-        if "$schema" in top_view and declared_schema != MCP_SCHEMA_ID:
+        schema_version = supported_agent_plugin_schema_version(declared_schema, "mcp")
+        if "$schema" in top_view and schema_version is None:
             declared_version = agent_plugin_schema_version(declared_schema, "mcp")
             version_problem = (
                 f"unsupported Agent Plugins MCP schema version "
-                f"'{safe_display(declared_version)}'; this skillsaw release supports 1.0.0"
+                f"'{safe_display(declared_version)}'; this skillsaw release supports "
+                f"{_SUPPORTED_VERSIONS_TEXT}"
                 if declared_version is not None
-                else (
-                    "'$schema' must be the canonical Agent Plugins 1.0.0 " "MCP schema identifier"
-                )
+                else ("'$schema' must be a canonical supported Agent Plugins MCP schema identifier")
             )
             # The friendly diagnostic replaces the schema's duplicate const
             # error without weakening any other top-level validation.
-            top_view["$schema"] = MCP_SCHEMA_ID
-        top_errors = list(MCP_VALIDATOR.iter_errors(top_view))
+            schema_version = SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
+            top_view["$schema"] = agent_plugin_schema_id(schema_version, "mcp")
+        validator = MCP_VALIDATORS[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
+        top_errors = list(validator.iter_errors(top_view))
 
         resolved_manifest = contained_resolve(node.path, plugin_root)
         plugin_data, plugin_error = (
@@ -199,12 +212,15 @@ class AgentPluginMcpValidRule(Rule):
             ]
 
         # The schema guarantees this after the top-level validation above.
+        assert schema_version is not None
         assert isinstance(servers, dict)
         violations: List[RuleViolation] = []
         for server_name, server in servers.items():
             server_type = server.get("type") if isinstance(server, dict) else None
             validator = (
-                _SERVER_VALIDATORS.get(server_type) if isinstance(server_type, str) else None
+                _SERVER_VALIDATORS[schema_version].get(server_type)
+                if isinstance(server_type, str)
+                else None
             )
             if validator is None:
                 schema_errors = []

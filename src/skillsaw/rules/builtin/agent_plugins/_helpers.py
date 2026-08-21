@@ -1,4 +1,4 @@
-"""Shared helpers for Agent Plugins 1.0.0 validation."""
+"""Shared helpers for versioned Agent Plugins validation."""
 
 from __future__ import annotations
 
@@ -9,17 +9,31 @@ from jsonschema.exceptions import ValidationError
 
 from skillsaw.context import RepositoryType
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.agent_plugins import load_agent_plugin_schema
+from skillsaw.formats.agent_plugins import (
+    SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
+    load_agent_plugin_schema,
+)
 from skillsaw.rules.builtin.utils import (  # noqa: F401  — re-exported for rule modules
     strict_json,
 )
 
 AGENT_PLUGIN_REPO_TYPES = {RepositoryType.AGENT_PLUGIN}
 
-PLUGIN_SCHEMA = load_agent_plugin_schema("plugin.schema.json")
-MCP_SCHEMA = load_agent_plugin_schema("mcp.schema.json")
-PLUGIN_VALIDATOR = Draft202012Validator(PLUGIN_SCHEMA)
-MCP_VALIDATOR = Draft202012Validator(MCP_SCHEMA)
+PLUGIN_SCHEMAS = {
+    version: load_agent_plugin_schema("plugin.schema.json", version)
+    for version in SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS
+}
+MCP_SCHEMAS = {
+    version: load_agent_plugin_schema("mcp.schema.json", version)
+    for version in SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS
+}
+PLUGIN_VALIDATORS = {
+    version: Draft202012Validator(schema) for version, schema in PLUGIN_SCHEMAS.items()
+}
+MCP_VALIDATORS = {version: Draft202012Validator(schema) for version, schema in MCP_SCHEMAS.items()}
+
+# The portable fields are currently identical across supported schema versions.
+MANIFEST_FIELDS = frozenset().union(*(schema["properties"] for schema in PLUGIN_SCHEMAS.values()))
 
 
 def format_schema_error(error: ValidationError) -> str:

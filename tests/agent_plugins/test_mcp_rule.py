@@ -59,6 +59,41 @@ class TestMcpDocument:
         repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
         assert lint_rules(repo, MCP_RULE) == []
 
+    @pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
+    def test_supported_schema_versions_pass(self, tmp_path, version):
+        schema_base = f"https://agent-plugins.org/schemas/{version}"
+        manifest = {
+            "$schema": f"{schema_base}/plugin.schema.json",
+            "name": "versioned-plugin",
+        }
+        mcp = {
+            "$schema": f"{schema_base}/mcp.schema.json",
+            "mcpServers": {"server": {"type": "stdio", "command": "uvx"}},
+        }
+        (tmp_path / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (tmp_path / "mcp.json").write_text(json.dumps(mcp), encoding="utf-8")
+
+        assert lint_rules(tmp_path, MCP_RULE) == []
+
+    @pytest.mark.parametrize(
+        ("plugin_version", "mcp_version"), [("1.0.0", "1.1.0"), ("1.1.0", "1.0.0")]
+    )
+    def test_supported_versions_must_not_be_mixed(self, tmp_path, plugin_version, mcp_version):
+        manifest = {
+            "$schema": (f"https://agent-plugins.org/schemas/{plugin_version}/plugin.schema.json"),
+            "name": "mixed-version-plugin",
+        }
+        mcp = {
+            "$schema": f"https://agent-plugins.org/schemas/{mcp_version}/mcp.schema.json",
+            "mcpServers": {},
+        }
+        (tmp_path / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (tmp_path / "mcp.json").write_text(json.dumps(mcp), encoding="utf-8")
+
+        findings = lint_rules(tmp_path, MCP_RULE)
+
+        assert _contains(findings, "does not match"), messages_lower(findings)
+
     def test_invalid_json_is_reported_at_component_boundary(self, tmp_path):
         repo = copy_fixture("agent-plugins/invalid-mcp-json", tmp_path)
         findings = lint_rules(repo, MCP_RULE)

@@ -142,12 +142,14 @@ RULE_GROUPS = [
             "security-invisible-unicode",
             "security-hidden-instructions",
             "security-encoded-payload",
+            "security-dynamic-context",
         ],
         "Content-validation rules that catch payloads and instructions "
         "invisible to human review: invisible/bidi unicode smuggling (ASCII "
         "smuggling, Trojan Source), agent directives hidden in HTML comments "
         "or Markdown link labels, and long high-entropy base64/hex blobs that "
-        "can smuggle encoded payloads. They complement `hooks-dangerous`, "
+        "can smuggle encoded payloads, plus unallowlisted dynamic-context "
+        "commands in agent content. They complement `hooks-dangerous`, "
         "`claude-settings-dangerous`, and `content-embedded-secrets`, which cover the "
         "executable and credential sides of the same threat.",
     ),
@@ -207,6 +209,7 @@ RULE_GROUPS = [
             "content-emphasis-density",
             "content-missing-stop-condition",
             "content-inline-tool-examples",
+            "content-progressive-disclosure",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "
         "instruction files. Built on attention research "

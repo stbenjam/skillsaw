@@ -1,0 +1,8 @@
+rules:
+  security-dynamic-context:
+    enabled: auto
+    allowlist:
+      - "git diff HEAD"
+      - |-
+        node --version
+        git status --short

@@ -133,7 +133,11 @@ class MarkdownFence:
     indented: bool = False
     markup: str = ""  # opening fence run ("```", "~~~~", …); empty for indented blocks
     nested: bool = False  # inside a container (blockquote, list item)
-    content: str = ""  # normalized code content (container markers/indent removed)
+    # Parser-normalized body: container prefixes (blockquote "> ", list
+    # indentation) are stripped, and the final line is included even when the
+    # fence is unterminated at EOF. Trailing defaulted field so pre-existing
+    # positional constructor calls keep their meaning.
+    content: str = ""
 
 
 @dataclass

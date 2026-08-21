@@ -328,6 +328,15 @@ class TestAgentPlugins:
         assert "agent-plugin-json-valid" not in rule_ids(r)
         assert "agent-plugin-mcp-valid" not in rule_ids(r)
 
+    def test_clean_1_1_draft_plugin_passes_end_to_end(self, tmp_path):
+        repo = copy_fixture("agent-plugins/clean-1.1", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "agent-plugin" in r["out"]["stats"]["repo_types"]
+        assert "agent-plugin-json-valid" not in rule_ids(r)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
     def test_broken_manifest_reports_errors_and_spec_warnings(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
         r = run_lint(repo)
@@ -1845,6 +1854,7 @@ BROKEN_FIXTURES = [
     "content/instruction-drift",
     "content/repeated-directive",
     "content/emphasis-density",
+    "content/progressive-disclosure",
     "security/malicious-skill",
     "codex/broken",
 ]
@@ -1931,6 +1941,7 @@ EXPECTED_MALICIOUS_RULES = {
     "security-invisible-unicode",
     "security-hidden-instructions",
     "security-encoded-payload",
+    "security-dynamic-context",
 }
 
 
@@ -1945,6 +1956,34 @@ class TestMaliciousSkillDetection:
         ids = rule_ids(r)
         missing = EXPECTED_MALICIOUS_RULES - ids
         assert not missing, f"Expected rules did not fire on malicious fixture: {sorted(missing)}"
+
+
+@pytest.mark.integration
+class TestDynamicContextAllowlist:
+    """End-to-end tests for the security-dynamic-context allowlist via .skillsaw.yaml.
+
+    The fixture SKILL.md uses two allowlisted commands (an inline `git diff
+    HEAD` and a fenced block configured with the documented `|-` block
+    scalar) plus one inline command that is not allowlisted.
+    """
+
+    FIXTURE = "security/dynamic-context-allowlist"
+
+    def test_allowlist_travels_through_config(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 1
+        assert "git log --oneline -5" in vs[0]["message"]
+        assert vs[0]["severity"] == "warning"
+        assert all("git diff HEAD" not in v["message"] for v in vs)
+
+    def test_without_config_every_command_is_reported(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").unlink()
+        r = run_lint(repo)
+        vs = by_rule(r).get("security-dynamic-context", [])
+        assert len(vs) == 3
 
 
 # ── Opt-In Rules ────────────────────────────────────────────────
@@ -2211,6 +2250,64 @@ class TestContentEmphasisDensity:
         r = run_lint(repo, config=repo / ".skillsaw.yaml")
         assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
         assert "content-emphasis-density" not in rule_ids(r)
+
+
+@pytest.mark.integration
+class TestContentProgressiveDisclosure:
+    """End-to-end tests for content-progressive-disclosure.
+
+    The fixture has a CLAUDE.md and a deploy skill over their (fixture-
+    lowered) thresholds with no local file references, and a release
+    skill that is also over threshold but links references/checklist.md
+    — the split the rule recommends — so it must stay silent.
+    """
+
+    FIXTURE = "content/progressive-disclosure"
+
+    def test_monoliths_reported_split_skill_clean(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-progressive-disclosure", [])
+        assert len(vs) == 2
+        files = {v["file_path"] for v in vs}
+        assert any(f.endswith("CLAUDE.md") for f in files)
+        assert any(f.endswith("deploy/SKILL.md") for f in files)
+        assert not any(f.endswith("release/SKILL.md") for f in files)
+        claude = next(v for v in vs if v["file_path"].endswith("CLAUDE.md"))
+        assert "loads on demand" in claude["message"]
+        skill = next(v for v in vs if v["file_path"].endswith("deploy/SKILL.md"))
+        assert "references/*.md" in skill["message"]
+
+    def test_raised_limits_silence_findings(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / ".skillsaw.yaml").write_text(
+            'version: "99.0.0"\n'
+            "rules:\n"
+            "  content-progressive-disclosure:\n"
+            "    limits:\n"
+            "      claude-md: 6000\n"
+            "      skill: 3000\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        assert "content-progressive-disclosure" not in rule_ids(r)
+
+    def test_adding_a_reference_silences_finding(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        (repo / "docs").mkdir()
+        (repo / "docs" / "deploying.md").write_text("# Deploying\n\nDetail lives here.\n")
+        claude = repo / "CLAUDE.md"
+        claude.write_text(
+            claude.read_text() + "\nFull deploy procedure: [docs/deploying.md](docs/deploying.md)\n"
+        )
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+        assert r["out"] is not None, f"Expected JSON output, got rc={r['rc']} stderr={r['stderr']}"
+        vs = by_rule(r).get("content-progressive-disclosure", [])
+        assert not any(v["file_path"].endswith("CLAUDE.md") for v in vs)
+        # The untouched monolith skill must still fire — the rule as a whole
+        # didn't go quiet, only the file that gained a reference.
+        assert any(v["file_path"].endswith("deploy/SKILL.md") for v in vs)
 
 
 @pytest.mark.integration

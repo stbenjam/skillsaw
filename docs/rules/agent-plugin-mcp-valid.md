@@ -3,7 +3,7 @@
 
 # agent-plugin-mcp-valid
 
-Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics
+Agent Plugins mcp.json must conform to a supported schema and semantics
 
 | | |
 |---|---|
@@ -16,7 +16,9 @@ Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics
 Agent Plugins define a portable `mcp.json` format at the plugin root. This
 rule validates that format against the
 [Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification)
-while preserving its component and per-server failure boundaries.
+and the
+[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/ff8ab5e392cc87bd88d87c060815a87490e51003/spec/1.1.0.md)
+while preserving their component and per-server failure boundaries.
 
 The file is optional. When present, it must be a regular file contained by
 the plugin root and contain:
@@ -29,7 +31,7 @@ the plugin root and contain:
 ```
 
 The MCP schema version must match the manifest schema version declared by
-`plugin.json`.
+`plugin.json`. Skillsaw supports the 1.0.0 and 1.1.0 schema pairs.
 Invalid JSON, an unsupported or mismatched schema, and invalid top-level
 structure disable MCP for that plugin but do not invalidate its skills. An
 invalid server entry is reported independently so valid sibling servers

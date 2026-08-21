@@ -33,3 +33,7 @@ A third example, searching text:
 ```
 search(query="torque limit", type="text")
 ```
+
+## Reviewing changes
+
+Show the current changes with !`git diff HEAD` before reviewing the pull request.

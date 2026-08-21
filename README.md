@@ -70,7 +70,8 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 - **Structure and compatibility:** invalid frontmatter, manifests, commands,
   skills, agents, hooks, marketplaces, and tool-specific configuration.
 - **Security risks:** embedded secrets, invisible Unicode, encoded payloads,
-  hidden instructions, dangerous hooks, and prohibited MCP servers.
+  hidden instructions, unallowlisted dynamic context, dangerous hooks, and
+  prohibited MCP servers.
 - **Repository drift:** broken references, unreferenced files, inconsistent
   terminology, stale baselines, and context-budget regressions.
 
