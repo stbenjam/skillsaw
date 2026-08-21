@@ -29,7 +29,11 @@ skills-repo/
     └── SKILL.md
 ```
 
-Standard discovery paths (`.claude/skills/`, `.github/skills/`, `.agents/skills/`) are checked automatically.
+Standard discovery paths are checked automatically: `.agents/skills/`,
+`.apm/skills/`, `.claude/skills/`, `.github/skills/`, `.cursor/skills/`,
+`.clinerules/skills/`, `.cline/skills/` and `.qwen/skills/`. A `SKILL.md`
+under any of them makes the repository an Agent Skills repository, which
+turns on the `agentskill-*` rules.
 
 ## Agent Plugins
 
@@ -206,3 +210,90 @@ Repositories with promptfoo eval configs (`promptfooconfig*.yaml` or YAML files 
 ## APM (Agent Package Manager)
 
 Repositories with an `.apm/` directory or `apm.yml` file. APM manages dependencies and compiles instruction files for all supported agents (`.claude/`, `.cursor/rules/`, `.github/instructions/`, etc.). When APM is present it is the authoritative source — `.claude/` is treated as compiled output.
+
+## Editor and CLI tool files
+
+These are not repository types — skillsaw picks them up in any repository,
+whatever its type, because they ship in the checkout. Every **prose** file
+listed below gets the `content-*` rules that apply to it (weak language,
+contradictions, attention dead zones, secrets, and the rest) plus the
+security rules, because its text lands in an agent's context window. A few
+content rules are scoped to a role rather than to all prose —
+`content-instruction-drift` compares always-on instruction files, so it
+does not look at on-demand commands, prompts, agents or workflows. The JSON
+configuration files — `mcp.json`, `hooks.json` — are machine config, never
+linted as prose; they get the MCP and hook rules instead.
+
+Where a tool reads `AGENTS.md`, that is the file skillsaw expects you to write
+— Cursor, Copilot, Cline and Codex all read it, and one well-linted AGENTS.md
+beats four per-vendor copies that drift apart. skillsaw does not reimplement a
+per-vendor instruction format on top of it; what it adds is coverage of the
+prose each tool keeps in its own directory, plus structural validation
+wherever a tool's own metadata can fail silently — see
+[`cursor-rules-valid`](rules/cursor-rules-valid.md) and
+[`cursor-hooks-valid`](rules/cursor-hooks-valid.md).
+
+| Tool | Files linted |
+| --- | --- |
+| **Portable** | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `.agents/skills/*/SKILL.md` |
+| **Cursor** | `.cursor/rules/**/*.mdc`, `.cursor/commands/**/*.md`, `.cursor/skills/*/SKILL.md`, `.cursor/mcp.json`, `.cursor/hooks.json`, legacy `.cursorrules` |
+| **Copilot / VS Code** | `.github/copilot-instructions.md`, `**/*.instructions.md`, `.github/prompts/**/*.prompt.md`, `.github/agents/**/*.md`, legacy `.github/chatmodes/**/*.chatmode.md`, `.github/skills/*/SKILL.md`, `.vscode/mcp.json` |
+| **Cline** | `.clinerules` (file), `.clinerules/**/*.md`, `.clinerules/**/*.txt` (excluding `workflows/`, `hooks/`, `skills/`), `.clinerules/workflows/**/*.md`, `.clinerules/skills/*/SKILL.md`, `.cline/skills/*/SKILL.md` |
+| **Qwen Code** | `QWEN.md`, `.qwen/skills/*/SKILL.md` |
+| **Kiro** | `.kiro/steering/*.md` |
+| **Windsurf** | `.windsurfrules` |
+
+skillsaw finds `.cursor/`, `.github/` and `.clinerules/` anywhere in the
+tree, so a monorepo package that carries its own set is linted alongside the
+root's. How much each tool actually reads from a nested directory varies,
+and not every case is settled: Cursor documents nested `AGENTS.md` and
+`.cursor/skills/`, but steers rules toward a single root `.cursor/rules/`
+scoped with `globs`, and reports on whether nested rule directories load
+disagree across versions. VS Code walks from the workspace folder up to the
+repository root. Cline and `.github/copilot-instructions.md` resolve one
+path relative to the workspace directory, so a nested copy is read only when
+that directory is the workspace. skillsaw lints every nested tool directory
+either way — committed instructions are worth checking wherever a teammate
+might open them, and a rule that turns out not to load is worth knowing
+about too.
+
+Two things are the exception, and both are root-only today.
+
+The plain instruction files — `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and
+`QWEN.md` — are read at the repository root only, so a nested
+`apps/web/AGENTS.md` is not linted even though Cursor and Codex read one.
+Point `content-paths` at it to include it.
+
+Skills are the other: the conventional skill directories in the table above
+(`.cursor/skills/`, `.clinerules/skills/`, `.github/skills/` and the rest)
+are discovered under the repository root only. A skill in a nested
+workspace — `apps/web/.cursor/skills/review/SKILL.md` — is not discovered
+and gets no `agentskill-*`, content or security checks. Point
+`content-paths` at it for the content and security rules in the meantime.
+
+MCP configuration is read for its servers wherever it lives, so
+`mcp-valid-json` and `mcp-prohibited` cover `.cursor/mcp.json` and
+`.vscode/mcp.json` as well as `.mcp.json`. VS Code spells the server map
+`servers` and adds a sibling `inputs` array for prompted variables; skillsaw
+reads the former and ignores the latter.
+
+Files that are on-demand rather than always-on — Cursor commands, Copilot
+prompt files, Cline workflows — are budgeted by
+[`context-budget`](rules/context-budget.md) as commands, not as instruction
+files, because they enter the context window only when invoked.
+
+`.cursor/hooks.json` is a command-execution surface that ships in the
+repository, so its commands are scanned by
+[`hooks-dangerous`](rules/hooks-dangerous.md) and
+[`hooks-prohibited`](rules/hooks-prohibited.md) alongside Claude Code hooks
+and settings. Cursor's schema is flatter than Claude's — hooks hang directly
+off the event name rather than off a matcher group — so `hooks-json-valid`
+leaves the file alone and `cursor-hooks-valid` validates the shape instead.
+A `type: "prompt"` hook injects text rather than spawning a process, so the
+command scanners skip it — but Cursor puts that text into the agent's
+context every time the event fires, which makes it shipped instruction
+prose. Its `prompt` string is linted as content, so
+[`security-hidden-instructions`](rules/security-hidden-instructions.md) and
+the other injection scanners read it, and `hooks-prohibited` counts it as a
+hook. JSON carries no line numbers, so those findings name the file without
+a line.

@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple
 
 from skillsaw.lint_target import LintTarget
-from skillsaw.utils import read_text, read_json
+from skillsaw.utils import read_text, read_json, read_json_strict
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -148,8 +148,8 @@ def parse_hooks_events(hooks_obj: Any) -> Dict[str, List[HookEventConfig]]:
     return result
 
 
-def _parse_json_file(path: Path) -> Tuple[Optional[Any], Optional[str]]:
-    data, error = read_json(path)
+def _parse_json_file(path: Path, *, strict: bool = False) -> Tuple[Optional[Any], Optional[str]]:
+    data, error = (read_json_strict if strict else read_json)(path)
     return data, error
 
 
@@ -164,13 +164,19 @@ class JsonConfigBlock(LintTarget):
     """
 
     category: str = ""
+    #: Whether to reject ``NaN``/``Infinity`` — tokens ``json.loads`` accepts
+    #: and no JSON host does, so the file is unreadable to the tool it
+    #: configures. Off by default: the pre-existing block types have shipped
+    #: results that a tightened parser would turn into "Invalid JSON" on
+    #: upgrade. The locations added since opt in, having no such history.
+    strict_json: ClassVar[bool] = False
     _parsed: Optional[Tuple[Optional[Any], Optional[str]]] = field(
         default=None, init=False, repr=False
     )
 
     def _ensure_parsed(self) -> None:
         if self._parsed is None:
-            self._parsed = _parse_json_file(self.path)
+            self._parsed = _parse_json_file(self.path, strict=self.strict_json)
 
     @property
     def parse_error(self) -> Optional[str]:
@@ -261,6 +267,99 @@ class CodexInlineHooksBlock(_InlineJsonPayload, HooksBlock):
         return f"{self.path.name} (inline hooks)"
 
 
+@dataclass(eq=False)
+class CursorHooksBlock(JsonConfigBlock):
+    """``.cursor/hooks.json`` — Cursor's agent-lifecycle hooks.
+
+    Cursor's shape is flatter than Claude's: ``{version, hooks: {event:
+    [{command | prompt, type?, matcher?, timeout?}]}}``. There is no
+    per-event ``matcher`` wrapper, and ``type`` defaults to ``"command"``
+    rather than being required. :attr:`events` renders it as the shared
+    :class:`HookEventConfig` structure so ``hooks-dangerous`` and
+    ``hooks-prohibited`` scan Cursor hooks with no per-ecosystem branch;
+    ``cursor-hooks-valid`` reads ``raw_data`` for the shape itself.
+    """
+
+    category: str = "hooks"
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "hooks.json (cursor hooks)"
+
+    @property
+    def events(self) -> Dict[str, List[HookEventConfig]]:
+        data = self.raw_data
+        if data is None:
+            return {}
+        hooks_obj = data.get("hooks")
+        if not isinstance(hooks_obj, dict):
+            return {}
+        result: Dict[str, List[HookEventConfig]] = {}
+        for event_type, entries in hooks_obj.items():
+            if not isinstance(entries, list):
+                continue
+            configs: List[HookEventConfig] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                # ``type`` is optional and defaults to a command hook. Set it
+                # explicitly either way: the shared security rules skip any
+                # handler whose type is not "command", so leaving it empty
+                # would silently exempt every Cursor hook.
+                entry_type = _as_str(entry.get("type")) or "command"
+                if entry_type != "command":
+                    # A prompt hook injects text instead of spawning a
+                    # process, so the command scanners have nothing to read.
+                    # ``prompt_hooks()`` surfaces its prose separately.
+                    continue
+                command = _as_str(entry.get("command"))
+                if not command:
+                    continue
+                # One config per entry: Cursor puts ``matcher`` on the hook
+                # itself, not on a wrapper shared by several handlers.
+                configs.append(
+                    HookEventConfig(
+                        matcher=_as_str(entry.get("matcher")) or ".*",
+                        handlers=[HookHandler(type="command", command=command)],
+                    )
+                )
+            if configs:
+                result[event_type] = configs
+        return result
+
+    def prompt_hooks(self) -> List[Tuple[str, int, str]]:
+        """Return ``(event_type, index, prompt)`` for every prompt hook.
+
+        The complement of :attr:`events`, which covers only the handlers
+        that run a command. A prompt hook is still a hook — it fires on the
+        same lifecycle events and ships in the same file — but what it
+        delivers is text for the model, so it belongs to the content rules
+        rather than the command scanners.
+
+        The index is the entry's position in its event's list, which is how
+        a violation names one prompt among several on the same event.
+        """
+        data = self.raw_data
+        if data is None:
+            return []
+        hooks_obj = data.get("hooks")
+        if not isinstance(hooks_obj, dict):
+            return []
+        found: List[Tuple[str, int, str]] = []
+        for event_type, entries in hooks_obj.items():
+            if not isinstance(entries, list):
+                continue
+            for index, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    continue
+                if _as_str(entry.get("type")) != "prompt":
+                    continue
+                prompt = _as_str(entry.get("prompt"))
+                if prompt:
+                    found.append((event_type, index, prompt))
+        return found
+
+
 @dataclass
 class McpServerConfig:
     """A single MCP server configuration."""
@@ -300,16 +399,53 @@ class McpServerConfig:
 
 @dataclass(eq=False)
 class McpBlock(JsonConfigBlock):
-    """.mcp.json at the project root or inside a plugin."""
+    """.mcp.json at the project root, inside a plugin, or in ``.cursor/``."""
 
     category: str = "mcp"
+
+    #: Top-level key holding the server map. Every host but VS Code spells
+    #: it ``mcpServers``; see :class:`VsCodeMcpBlock`.
+    servers_key: ClassVar[str] = "mcpServers"
+
+    #: Whether a document with no wrapper key is itself the server map.
+    #: True for the Claude-family files, where ``.mcp.json`` may be written
+    #: either way. A host with other documented top-level keys must set this
+    #: False, or those siblings get read as servers.
+    allow_bare_server_map: ClassVar[bool] = True
+    #: Top-level keys a host documents alongside its server map. Their
+    #: presence means a document without the wrapper is deliberately
+    #: server-less rather than mis-keyed. Empty for hosts that document no
+    #: such sibling, where any other key is a mistake.
+    non_server_keys: ClassVar[frozenset] = frozenset()
+    #: Editor-agnostic metadata keys that are never a server and never a sign
+    #: of a mis-keyed document. ``$schema`` is the schemastore hint editors
+    #: add to any JSON file; it must not, on its own, read as "no servers
+    #: loaded" beside a legitimately server-less config.
+    always_ignored_keys: ClassVar[frozenset] = frozenset({"$schema"})
+    #: Whether Claude Code's built-in server names are reserved in this
+    #: file. True for the Claude-family locations Claude Code actually
+    #: reads; an editor that loads its own MCP config has no such built-ins,
+    #: so shadowing is not a thing that can happen there.
+    claude_builtins_reserved: ClassVar[bool] = True
+    #: Whether the connection field must be *usable* and not merely present.
+    #: ``{"command": []}`` names nothing a host can spawn, so the server
+    #: never starts. Left False for the Claude-family files, whose results
+    #: predate the check and are held stable (a Codex-only plugin opts in
+    #: separately, per-path); the editor locations are new surfaces with no
+    #: established results to preserve, so they require it from the start.
+    require_usable_connection: ClassVar[bool] = False
 
     @property
     def servers(self) -> List[McpServerConfig]:
         data = self.raw_data
         if data is None:
             return []
-        servers_dict = data.get("mcpServers", data)
+        if self.servers_key in data:
+            servers_dict = data[self.servers_key]
+        elif self.allow_bare_server_map:
+            servers_dict = data
+        else:
+            return []
         if not isinstance(servers_dict, dict):
             return []
         return [
@@ -329,6 +465,46 @@ class AgentPluginMcpBlock(McpBlock):
 
     def tree_label(self) -> str:
         return "mcp.json (agent plugin MCP)"
+
+
+@dataclass(eq=False)
+class CursorMcpBlock(McpBlock):
+    """``.cursor/mcp.json`` — Cursor's MCP configuration.
+
+    Cursor documents exactly one shape, ``{"mcpServers": {...}}``, and no
+    bare-map form. Inheriting the Claude-family fallback would read a bare
+    map as valid while Cursor loads nothing from it.
+    """
+
+    allow_bare_server_map: ClassVar[bool] = False
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "mcp.json (Cursor MCP)"
+
+
+@dataclass(eq=False)
+class VsCodeMcpBlock(McpBlock):
+    """``.vscode/mcp.json`` — the Copilot/VS Code MCP configuration.
+
+    Same server shape as every other host, under a different key: VS Code
+    spells the map ``servers``, and documents two siblings — ``inputs``
+    (prompted variables) and ``sandbox``. Neither is a server, and there is
+    no bare-map form here, so a document without ``servers`` declares no
+    servers rather than being one.
+    """
+
+    servers_key: ClassVar[str] = "servers"
+    allow_bare_server_map: ClassVar[bool] = False
+    non_server_keys: ClassVar[frozenset] = frozenset({"inputs", "sandbox"})
+    claude_builtins_reserved: ClassVar[bool] = False
+    require_usable_connection: ClassVar[bool] = True
+    strict_json: ClassVar[bool] = True
+
+    def tree_label(self) -> str:
+        return "mcp.json (VS Code MCP)"
 
 
 @dataclass(eq=False)

@@ -4,9 +4,14 @@ import re
 from pathlib import Path
 from typing import List, Set
 
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.context import HAS_COPILOT, RepositoryContext, RepositoryType
 from skillsaw.rule import Rule, RuleViolation, Severity
-from skillsaw.rules.builtin.content_analysis import AgentBlock, CommandBlock, SkillBlock
+from skillsaw.rules.builtin.content_analysis import (
+    AgentBlock,
+    CommandBlock,
+    CopilotAgentBlock,
+    SkillBlock,
+)
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _USE_THIS_TRIGGER_RE = re.compile(
@@ -48,6 +53,11 @@ class DescriptionRoutingRule(Rule):
         RepositoryType.CODEX_PLUGIN,
         RepositoryType.CODEX_MARKETPLACE,
     }
+    # A Copilot repository is often none of the above repo types (a bare
+    # ``.github/agents/`` tree is ``UNKNOWN``), so ``enabled: auto`` also fires
+    # on the Copilot format — a Copilot agent's description is what routes it,
+    # exactly the metadata this rule checks on a Claude agent.
+    formats = frozenset({HAS_COPILOT})
 
     config_schema = {
         "require-trigger-phrasing": {
@@ -87,7 +97,7 @@ class DescriptionRoutingRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         """Find weak descriptions across discovered skills, agents, and commands."""
         violations: List[RuleViolation] = []
-        for block_type in (SkillBlock, AgentBlock, CommandBlock):
+        for block_type in (SkillBlock, AgentBlock, CopilotAgentBlock, CommandBlock):
             for block in context.lint_tree.find(block_type):
                 if block.frontmatter_error:
                     continue
@@ -131,8 +141,14 @@ class DescriptionRoutingRule(Rule):
                     continue
 
                 text = description.strip()
+                # Skills and Claude agents are routed by trigger phrasing, so
+                # it is required of them. Commands and Copilot agents/chatmodes
+                # carry a capability blurb their host surfaces to the user, not
+                # a proactive "Use when ..." selector — they still must have a
+                # meaningful, non-name-restating description (checked below),
+                # but the trigger-phrasing style is not imposed on them.
                 if (
-                    block_type is not CommandBlock
+                    block_type not in (CommandBlock, CopilotAgentBlock)
                     and self.config.get("require-trigger-phrasing", True)
                     and not self._has_trigger_phrase(text)
                 ):

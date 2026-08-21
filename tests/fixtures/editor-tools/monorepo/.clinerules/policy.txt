@@ -1,0 +1,3 @@
+Never force push to main.
+
+You should probably run the linter before you commit.

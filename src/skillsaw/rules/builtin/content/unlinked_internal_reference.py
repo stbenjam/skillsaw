@@ -138,13 +138,14 @@ class ContentUnlinkedInternalReferenceRule(Rule):
                         file_exists = safe_exists(resolved)
                     except ValueError:
                         pass
+                # fix() only wraps references whose target exists on disk,
+                # and never rewrites a body extracted from another format —
+                # there is no span in the enclosing file to splice into.
+                fixable = file_exists and not cf.diagnostic_only
                 msg = f"Unlinked path reference: '{path_str}' — consider wrapping in link syntax [{path_str}]({path_str})"
-                if file_exists:
+                if fixable:
                     msg += " (file exists, autofixable)"
-                # fix() only wraps references whose target exists on disk.
-                violations.append(
-                    self.violation(msg, block=cf, line=body_line, fixable=file_exists)
-                )
+                violations.append(self.violation(msg, block=cf, line=body_line, fixable=fixable))
         return violations
 
     def fix(

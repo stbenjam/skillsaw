@@ -1,0 +1,8 @@
+---
+  description: API conventions for the backend service
+  alwaysApply: "yes" # applies everywhere, see ADR-12
+---
+
+# API conventions
+
+Handlers validate their input before touching the database.

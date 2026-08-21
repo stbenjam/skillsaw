@@ -13,7 +13,9 @@ from skillsaw.context import (
     path_matches_patterns,
     HAS_CURSOR,
     HAS_COPILOT,
+    HAS_CLINE,
     HAS_GEMINI,
+    HAS_QWEN,
     HAS_AGENTS_MD,
     HAS_KIRO,
     HAS_CLAUDE_MD,
@@ -676,11 +678,77 @@ def test_named_instructions_md_content_analysis(temp_dir):
     assert github_dir / "coding.instructions.md" in paths
 
 
+def test_detected_formats_copilot_prompt_and_agent_dirs(temp_dir):
+    """Prompt files and custom agents are Copilot evidence on their own"""
+    (temp_dir / ".github" / "prompts").mkdir(parents=True)
+    assert HAS_COPILOT in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".github" / "agents").mkdir()
+    assert HAS_COPILOT in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_cursor_commands_dir(temp_dir):
+    """A repo may ship Cursor commands without shipping Cursor rules"""
+    (temp_dir / ".cursor" / "commands").mkdir(parents=True)
+    context = RepositoryContext(temp_dir)
+    assert HAS_CURSOR in context.detected_formats
+
+
+def test_detected_formats_cline_file_and_dir(temp_dir):
+    """Detect .clinerules in both of its shapes"""
+    (temp_dir / ".clinerules").write_text("Never force push.\n")
+    assert HAS_CLINE in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".clinerules").unlink()
+    (temp_dir / ".clinerules").mkdir()
+    assert HAS_CLINE in RepositoryContext(temp_dir).detected_formats
+
+
 def test_detected_formats_gemini(temp_dir):
     """Detect GEMINI.md at root"""
     (temp_dir / "GEMINI.md").write_text("# Gemini instructions")
     context = RepositoryContext(temp_dir)
     assert HAS_GEMINI in context.detected_formats
+
+
+def test_detected_formats_qwen(temp_dir):
+    """Detect QWEN.md at root"""
+    (temp_dir / "QWEN.md").write_text("# Qwen instructions")
+    context = RepositoryContext(temp_dir)
+    assert HAS_QWEN in context.detected_formats
+
+
+def test_qwen_md_in_instruction_files(temp_dir):
+    """QWEN.md is discovered alongside the other root instruction files"""
+    (temp_dir / "QWEN.md").write_text("# Qwen instructions")
+    context = RepositoryContext(temp_dir)
+    assert [f.name for f in context.instruction_files] == ["QWEN.md"]
+
+
+def test_agent_tool_dirs_finds_nested_and_root(temp_dir):
+    """Editor directories are found wherever they sit in the tree"""
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    (temp_dir / "apps" / "web" / ".cursor").mkdir(parents=True)
+    (temp_dir / "node_modules" / "pkg" / ".cursor").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir)
+
+    # node_modules is skipped by the walk — a dependency's editor config is
+    # not this repository's to lint.
+    assert context.agent_tool_dirs(".cursor") == [
+        temp_dir / ".cursor",
+        temp_dir / "apps" / "web" / ".cursor",
+    ]
+
+
+def test_agent_tool_dirs_honours_excludes(temp_dir):
+    """An excluded directory is not handed to the tree builder"""
+    (temp_dir / ".cursor" / "rules").mkdir(parents=True)
+    (temp_dir / "vendor" / ".cursor").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=["vendor/*"])
+
+    assert context.agent_tool_dirs(".cursor") == [temp_dir / ".cursor"]
 
 
 def test_detected_formats_agents_md(temp_dir):

@@ -1,0 +1,13 @@
+---
+description: Conventions for the web front end
+globs: "apps/web/**/*.tsx"
+alwaysApply: false
+---
+
+# Web front-end rules
+
+Components live in `apps/web/src/components` and export a default function.
+
+Styling uses Tailwind utility classes; do not add new CSS modules.
+
+Try to keep component files under 200 lines.

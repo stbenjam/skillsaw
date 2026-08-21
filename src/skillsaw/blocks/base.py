@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from skillsaw.markdown_doc import MarkdownDoc
 
 from skillsaw.lint_target import LintTarget
@@ -70,6 +72,17 @@ class ContentBlock(LintTarget):
     def estimate_tokens(self) -> int:
         body = self.read_body()
         return len(body) // 4 if body else 0
+
+    def link_base_dir(self, repo_root: "Path") -> "Path":
+        """Directory a relative markdown link in this body resolves against.
+
+        For an ordinary file the base is the file's own directory. A block
+        whose body is *injected* somewhere other than where its file lives —
+        a Cursor prompt hook, whose text Cursor feeds to an agent running in
+        the workspace — overrides this so its links resolve from that base
+        instead of the JSON file's directory.
+        """
+        return self.path.parent
 
     def tree_label(self) -> str:
         return f"{self.path.name} ({self.category})"

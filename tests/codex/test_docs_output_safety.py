@@ -372,6 +372,27 @@ class TestSafeDisplay:
         assert "SSSS" not in out
         assert "[redacted]" in out
 
+    def test_truncation_does_not_leak_a_colon_free_token(self):
+        """A bearer token has no ``user:pass`` shape to match on.
+
+        Testing the visible tail for a colon waves it straight through, so
+        the cut edge is also resolved by looking past it for the ``@``.
+        """
+        from skillsaw.diagnostics import safe_display
+
+        out = safe_display("https://" + "T" * 600 + "@example.com")
+
+        assert "TTTT" not in out
+        assert out.startswith("https://[redacted]")
+
+    def test_an_ordinary_long_value_is_not_redacted(self):
+        """Over-redaction is the safe direction, not the default one."""
+        from skillsaw.diagnostics import safe_display
+
+        assert "[redacted]" not in safe_display("/" + "a" * 600 + "/b/c")
+        assert "[redacted]" not in safe_display("x" * 600)
+        assert "[redacted]" not in safe_display("word " * 200)
+
     def test_a_long_delimiterless_credential_is_fully_redacted(self):
         """A >512-char userinfo must not have its head emitted when the
         backward search window is clipped."""

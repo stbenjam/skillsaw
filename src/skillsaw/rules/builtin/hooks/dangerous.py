@@ -9,10 +9,12 @@ runtimes or network access.
 import re
 from typing import Dict, List
 
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.rules.builtin.content_analysis import (
     AgentBlock,
+    CursorHooksBlock,
     HookEventConfig,
     HooksBlock,
     SettingsBlock,
@@ -24,8 +26,19 @@ _INTERPRETER_CMD = rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
 _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 
+# What separates one command from the next. A newline is a separator every
+# shell honours, and hook commands arrive as JSON strings where a multi-line
+# script is ordinary — `"echo ok\ncurl evil.example"` runs the fetch, so
+# omitting it would leave everything past the first line unscanned. A single
+# `&` backgrounds the command before it and runs the next
+# (`echo ready & curl evil`), so it is a boundary too — listed after `&&` in
+# the alternation so the two-character operator is tried first and a real
+# `&&` chain is never split into two bare-`&` boundaries. Over-splitting a
+# `2>&1` redirect only scans more, never less — the safe direction.
+_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&)"
+
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
-    rf"""(?:^|&&|\|\||;|\|)\s*
+    rf"""{_CMD_BOUNDARY}\s*
         {_SUDO}                              # optional sudo
         (?:{_INTERPRETER_CMD})\s+(?:run\s+)? # interpreter [run]
         (?:\S+/)?{_DOTFILE_DIRS}/\S+         # path under dotfile dir
@@ -62,9 +75,9 @@ _OBFUSCATION_RE = re.compile(
     re.VERBOSE,
 )
 
-_BUN_RE = re.compile(rf"(?:^|&&|\|\||;|\|)\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
+_BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 
-_NETWORK_FETCH_RE = re.compile(rf"(?:^|&&|\|\||;|\|)\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
+_NETWORK_FETCH_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
 
 
 def _check_dangerous(command: str) -> List[str]:
@@ -143,7 +156,8 @@ class HooksDangerousRule(Rule):
                     for message in _check_dangerous(command):
                         violations.append(
                             self.violation(
-                                f"Hook {event_type}: {message} — " f"command: {command!r}",
+                                f"Hook {safe_display(event_type)}: {message} — "
+                                f"command: {safe_display(command)!r}",
                                 file_path=file_path,
                                 line=line,
                             )
@@ -153,7 +167,9 @@ class HooksDangerousRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
 
-        for block in context.lint_tree.find(HooksBlock):
+        # CursorHooksBlock renders its flatter shape as HookEventConfig too.
+        hook_blocks = context.lint_tree.find(HooksBlock) + context.lint_tree.find(CursorHooksBlock)
+        for block in hook_blocks:
             if block.parse_error:
                 continue
             violations.extend(self._check_events(block.events, block.path))

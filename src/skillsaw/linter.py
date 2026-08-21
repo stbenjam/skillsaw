@@ -33,6 +33,74 @@ if TYPE_CHECKING:
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 
+# The security/supply-chain surface. Not a suppression gate — every one of
+# these fires on a compiled copy because none is a prose-duplicate rule (see
+# ``_is_prose_duplicate_rule``). Enumerated here so ``test_content_suppression``
+# can pin that the security surface stays disjoint from what suppression drops:
+# a security rule that ever started being suppressed on compiled copies is how
+# a hand-edited compiled file would hide a payload from the whole scan.
+SECURITY_RULE_IDS = frozenset(
+    {
+        "security-dynamic-context",
+        "security-encoded-payload",
+        "security-hidden-instructions",
+        "security-invisible-unicode",
+        "hooks-dangerous",
+        "hooks-prohibited",
+        "mcp-prohibited",
+        "claude-settings-dangerous",
+        # A ``content-`` rule by id, but a secret scanner by purpose: a
+        # credential in the artifact that ships is real even when it echoes the
+        # source, and compilation or a hand-edit can introduce one the source
+        # never had. Listed here so the prose-duplicate predicate never drops
+        # it on a compiled copy.
+        "content-embedded-secrets",
+    }
+)
+
+
+def _is_prose_duplicate_rule(rule_id: str) -> bool:
+    """Whether *rule_id*'s findings on a compiled copy merely echo its source.
+
+    A file APM compiles into an editor location (``.github/``, ``.cursor/``)
+    carries the same prose as its ``.apm/`` source, so prose-quality findings
+    (``content-*``) and the token budget double what the source already
+    reports — those are dropped on the copy. Everything else stays: a
+    structural-validity rule checks the compiled artifact's *own* shape
+    (a compiled ``.mdc``'s frontmatter, an import that only resolves after
+    compilation, the MCP JSON layout) which has no equivalent on the source,
+    and every security rule fires on what actually ships. Suppressing those
+    was over-broad — it hid unique, real findings on the compiled file.
+
+    Naming the *narrow* set to drop (rather than an allowlist to keep) fails
+    toward reporting: a prose rule that ever falls outside this predicate
+    merely double-reports, it never hides a structural or security defect.
+
+    A security rule is never a prose duplicate even when its id starts with
+    ``content-`` (``content-embedded-secrets`` scans for credentials): the
+    ``SECURITY_RULE_IDS`` guard keeps it firing on the artifact that ships.
+    """
+    if rule_id in SECURITY_RULE_IDS:
+        return False
+    return rule_id.startswith("content-") or rule_id == "context-budget"
+
+
+def _node_content_suppressed(block) -> bool:
+    """Whether *block* or any ancestor is a compiled-copy node.
+
+    A content violation attaches to a body/field child, so the flag set on
+    the attached container is read by walking parents (populated by
+    ``set_parents()`` after the tree is built).
+    """
+    getter = getattr(block, "in_suppressed_content", None)
+    if getter is not None:
+        return bool(getter)
+    # A rule may report against a freshly built ``FileContentBlock`` keyed
+    # only by path (``self.violation(file_path=...)``); it has no parent
+    # chain, so it is never in suppressed content by this route — the
+    # linter's path-based check catches those.
+    return False
+
 
 class CustomRuleWarning(UserWarning):
     """Emitted just before skillsaw executes a custom rule file from the repo.
@@ -624,6 +692,39 @@ class Linter:
             return False
         return smap.is_suppressed(violation.rule_id, file_line)
 
+    def _compiled_copy_paths(self) -> Set[Path]:
+        """Resolved paths of every content-suppressed (compiled-copy) file.
+
+        A content rule may report against a freshly built
+        ``FileContentBlock`` keyed only by ``file_path`` (context-budget is
+        one), so the block has no parent chain to climb. Matching the path
+        against this set suppresses those the same way the block-chain check
+        suppresses rules that attach the real tree node. Computed once per
+        run from the built tree.
+        """
+        cached = getattr(self, "_compiled_copy_path_cache", None)
+        if cached is None:
+            cached = {
+                node.resolved_path
+                for node in self.context.lint_tree.walk()
+                if node.content_suppressed
+            }
+            self._compiled_copy_path_cache = cached
+        return cached
+
+    def _is_on_compiled_copy(self, violation: RuleViolation) -> bool:
+        """Whether *violation* sits on an APM-compiled copy (block or path)."""
+        if violation.block is not None and _node_content_suppressed(violation.block):
+            return True
+        path = violation.file_path
+        if path is None:
+            return False
+        # ``safe_resolve`` matches how ``LintTarget.resolved_path`` normalizes
+        # the node paths in the set, and never raises on a symlink loop or an
+        # unreadable parent the way ``Path.resolve()`` would.
+        resolved = safe_resolve(path) or path
+        return resolved in self._compiled_copy_paths()
+
     def _is_vendor_managed(self, file_path: Optional[Path]) -> bool:
         """Whether *file_path* belongs to a plugin installed into this checkout.
 
@@ -674,11 +775,28 @@ class Linter:
                     v.file_path or "(no file)",
                     v.file_line or "?",
                 )
-            elif self._is_vendor_managed(v.file_path):
+            elif _is_prose_duplicate_rule(v.rule_id) and self._is_on_compiled_copy(v):
+                # A compiled copy of a source read elsewhere: its prose-quality
+                # and budget findings would double the source's, so drop them.
+                # Structural-validity findings (a malformed compiled .mdc, a
+                # broken post-compile import) and every security finding still
+                # fire — they are unique to the artifact that ships, so a
+                # hand-edited copy cannot hide a defect or a payload from them.
+                logger.info(
+                    "Suppressed %-30s %s (APM-compiled copy, prose duplicate)",
+                    v.rule_id,
+                    v.file_path or "(no file)",
+                )
+            elif self._is_vendor_managed(v.file_path) or (
+                v.block is not None and v.block.diagnostic_only
+            ):
                 # Still reported — a hostile third-party skill is worth
                 # knowing about — but never advertised as fixable, because
                 # fix() is about to stand down on it. Confidence goes with
                 # fixability, or JSON/SARIF would still claim SAFE/SUGGEST.
+                # Same reasoning for a diagnostic-only block: its body is
+                # extracted from a document of another format, so a fix
+                # computed against it has no span to splice back into.
                 v.fixable = False
                 v.fix_confidence = None
                 kept.append(v)
@@ -805,11 +923,17 @@ class Linter:
             checked.extend(rule_violations)
             visible = self._filter_violations(rule_violations, record_baseline=False)
 
-            if visible and rule.supports_autofix:
+            # Diagnostic-only blocks never reach a fixer at all. Clearing
+            # their fixability metadata is presentation; a third-party rule's
+            # ``fix()`` does not read it, so handing the violation over would
+            # still invite a rewrite of text that has no honest span in the
+            # file that holds it (a prompt decoded out of JSON, say).
+            fixable_input = [v for v in visible if v.block is None or not v.block.diagnostic_only]
+            if fixable_input and rule.supports_autofix:
                 try:
                     fixes = [
                         f
-                        for f in rule.fix(self.context, visible)
+                        for f in rule.fix(self.context, fixable_input)
                         if not self._is_vendor_managed(f.file_path)
                     ]
                     all_fixes.extend(fixes)

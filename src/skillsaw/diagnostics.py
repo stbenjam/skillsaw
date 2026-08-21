@@ -19,6 +19,10 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\ud800-\udfff\u202a-\u202e\u206
 # diagnostic in a CI artifact.
 _MAX_DISPLAY = 500
 
+# How far past a cut or an ``@`` the scanners will look before giving up
+# and erring toward redaction. Bounds the work on adversarial input.
+_LOOKAHEAD = 512
+
 
 def _redact_userinfo(text: str) -> str:
     """Strip credential-shaped userinfo before every ``@`` in *text*.
@@ -75,6 +79,48 @@ def _redact_userinfo(text: str) -> str:
         search_from = at + 1
 
 
+def _cut_severed_userinfo(raw: str, cut: int) -> bool:
+    """Whether truncating *raw* at *cut* split a credential before its ``@``.
+
+    A colon-free token — ``https://<600 chars of token>@host`` — leaves a
+    displayed tail with nothing credential-shaped about it, so the
+    colon test alone waves the token straight through. Looking past the
+    cut settles it: an ``@`` reached before any delimiter means the
+    visible tail is the head of some userinfo.
+
+    The lookahead is capped for the same reason the caller truncates at
+    all. Running past the cap without resolving it means the segment is
+    longer than any real path component, which is treated as
+    credential-shaped — the safe direction, matching the host-length cap
+    in :func:`_redact_userinfo`.
+    """
+    window = raw[cut : cut + _LOOKAHEAD]
+    for char in window:
+        if char == "@":
+            return True
+        if char in "/ \t\n":
+            return False
+    return len(raw) > cut + _LOOKAHEAD
+
+
+def encodable(text: str) -> str:
+    """*text* with anything UTF-8 cannot encode written as an escape.
+
+    The last line of defence for a whole rendered report, not a substitute
+    for :func:`safe_display` on individual values — it neither truncates
+    nor redacts, because a report is not an untrusted scalar and must come
+    out whole.
+
+    A rule can only sanitize a value it knows is hostile. JSON decodes
+    ``"\\ud800"`` to an unpaired surrogate, which any rule may then quote
+    into a message from a source it has no reason to distrust — and the
+    encode that follows raises ``UnicodeEncodeError``, losing the entire
+    report over one character. ``backslashreplace`` keeps the codepoint
+    legible rather than dropping it.
+    """
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def safe_display(value: object) -> str:
     """A manifest value made safe to echo into a violation message.
 
@@ -88,17 +134,18 @@ def safe_display(value: object) -> str:
     raw = str(value)
     truncated = len(raw) > _MAX_DISPLAY
     # Truncate before scanning so the display cap bounds the *work*, not
-    # just the output — redaction over the full value is quadratic-ish in
-    # the worst case, and a multi-megabyte manifest value must not buy
-    # minutes of CPU for one diagnostic.
+    # just the output — redaction over the full value is superlinear
+    # on adversarial input (a megabyte of "a:b@" costs seconds), and one
+    # diagnostic must not buy minutes of CPU.
     text = raw[:_MAX_DISPLAY]
     if truncated:
-        # The cut can sever a credential ahead of its ``@`` — the window
-        # then holds a bare colon-bearing segment redaction would never
-        # match. Treat the cut like an ``@``: redact a colon-bearing tail
-        # segment. Over-redacting a truncated tail is the safe direction.
+        # The cut can sever a credential ahead of its ``@``, leaving a
+        # window that redaction would never match. Two ways to tell:
+        # the visible tail is colon-bearing (``user:token`` shape), or the
+        # ``@`` itself sits just past the cut. Over-redacting a truncated
+        # tail is the safe direction.
         start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
-        if ":" in text[start:]:
+        if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
             text = text[:start] + "[redacted]"
     text = _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", text)
     text = _redact_userinfo(text)

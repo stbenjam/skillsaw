@@ -15,11 +15,18 @@ from .blocks import (
     AgentsMdBlock,
     ChatmodeBlock,
     ClaudeMdBlock,
+    ClineWorkflowBlock,
     CodeRabbitContentBlock,
     CodexInlineHooksBlock,
     CodexInlineMcpBlock,
     CommandBlock,
     ContextFileBlock,
+    CopilotAgentBlock,
+    CopilotPromptBlock,
+    CursorCommandBlock,
+    CursorHooksBlock,
+    CursorMcpBlock,
+    CursorPromptHookBlock,
     CursorRuleBlock,
     ExtraBlock,
     GeminiMdBlock,
@@ -30,10 +37,12 @@ from .blocks import (
     PluginRuleBlock,
     PromptBlock,
     PromptfooPromptBlock,
+    QwenMdBlock,
     ReadmeBlock,
     SettingsBlock,
     SkillBlock,
     SkillRefBlock,
+    VsCodeMcpBlock,
 )
 from .formats.codex import (
     codex_declared_hook_files,
@@ -41,6 +50,7 @@ from .formats.codex import (
     codex_inline_hooks,
     codex_inline_mcp_servers,
 )
+from .utils import has_apm_generated_header, read_text
 from .paths import contained_resolve, safe_exists, safe_is_dir, safe_is_file, safe_resolve
 from .formats.promptfoo import (
     extract_file_refs,
@@ -66,6 +76,25 @@ from .lint_target import (
 
 logger = logging.getLogger(__name__)
 
+# Subdirectories Cline's rules loader skips when concatenating .clinerules/
+# into the system prompt. Mirrors the exclusion list in cline/cline's
+# cline-rules.ts: workflows/ and skills/ load on demand, hooks/ are
+# executables.
+_CLINE_EXCLUDED_DIRS = frozenset({"workflows", "hooks", "skills"})
+
+# Editor-directory content globs, as (editor dir, subdirectory, pattern,
+# block-class name). The ``*.instructions.md`` sweep consults this to decide
+# where to stand aside, so "which loop owns this file" has one answer rather
+# than two that can disagree — and disagreeing drops the file from the tree.
+_EDITOR_GLOBS = (
+    (".cursor", "rules", "**/*.mdc", "CursorRuleBlock"),
+    (".cursor", "commands", "**/*.md", "CursorCommandBlock"),
+    (".github", "agents", "**/*.md", "CopilotAgentBlock"),
+    (".github", "prompts", "**/*.prompt.md", "CopilotPromptBlock"),
+    (".github", "chatmodes", "**/*.chatmode.md", "CopilotAgentBlock"),
+    (".clinerules", "workflows", "**/*.md", "ClineWorkflowBlock"),
+)
+
 if TYPE_CHECKING:
     from .context import RepositoryContext
 
@@ -76,6 +105,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         "AGENTS.md": AgentsMdBlock,
         "CLAUDE.md": ClaudeMdBlock,
         "GEMINI.md": GeminiMdBlock,
+        "QWEN.md": QwenMdBlock,
     }
 
     root = LintTarget(path=context.root_path)
@@ -113,11 +143,100 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         resolved = safe_resolve(p) or p
         return resolved == apm_source_root or resolved.is_relative_to(apm_source_root)
 
+    # Editor directories the loops below will actually walk. Discovery drops
+    # vendored and excluded ones, so this is narrower than "any directory
+    # with the right name" — and the sweep must use the same set, or it
+    # yields to an owner that never arrives.
+    eligible_tool_dirs = {
+        editor: {
+            resolved
+            for directory in context.agent_tool_dirs(editor)
+            if (resolved := safe_resolve(directory)) is not None
+        }
+        for editor in {editor for editor, _sub, _pattern, _cls in _EDITOR_GLOBS}
+    }
+
+    def _claimed_by_an_editor_dir(p: Path) -> bool:
+        """Whether an editor-directory glob below will claim *p* itself.
+
+        The repository-wide ``*.instructions.md`` sweep runs first and
+        reserves paths in the global ``seen`` set, so a custom agent named
+        ``reviewer.instructions.md`` would attach as an InstructionBlock —
+        frontmatter linted as prose, and the instruction budget instead of
+        the agent one. The sweep stands aside here so the specific owner
+        wins, at whatever depth the file sits.
+
+        Standing aside is conditional on that owner actually turning up, in
+        two ways, because yielding to an owner that never runs drops the
+        file from the tree entirely rather than merely misfiling it:
+
+        * the pattern must match — ``.github/prompts`` takes
+          ``*.prompt.md``, so an ``*.instructions.md`` there belongs to the
+          sweep after all; and
+        * the editor directory must be one the loops below will walk.
+          Discovery keeps ``vendor/pkg/.github`` out of ``agent_tool_dirs``
+          while the sweep still collects instruction files from it, so
+          matching on the directory *name* alone would silently discard
+          vendored content the linter reports.
+
+        All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
+        the two halves cannot drift apart.
+        """
+        parts = p.parts
+        # Stop before the filename: the pair must be ancestor directories.
+        for index in range(len(parts) - 2):
+            for editor, sub, pattern, _cls in _EDITOR_GLOBS:
+                if parts[index] != editor or parts[index + 1] != sub:
+                    continue
+                if not fnmatch.fnmatch(p.name, pattern.rsplit("/", 1)[-1]):
+                    continue
+                editor_dir = safe_resolve(Path(*parts[: index + 1]))
+                if editor_dir is not None and editor_dir in eligible_tool_dirs[editor]:
+                    return True
+        return False
+
+    # APM's Copilot target compiles `.apm/<kind>/` into the root
+    # `.github/<kind>/`. Attaching both would report every finding twice and
+    # point half of them at a generated file the author must not edit. The
+    # matching `.apm/` source is the evidence — a `.github/prompts/` in a
+    # repository with no `.apm/prompts/` is authored content and stays.
+    apm_compiled_github: Set[Path] = set()
+    if context.has_apm and context.apm_targets("copilot"):
+        root_github = safe_resolve(context.root_path / ".github")
+        for kind in ("agents", "prompts", "chatmodes", "instructions"):
+            if root_github is not None and (context.root_path / ".apm" / kind).is_dir():
+                apm_compiled_github.add(root_github / kind)
+        # `.apm/instructions/` compiles to two places, not one: the
+        # per-glob copies under `.github/instructions/` *and* the whole
+        # concatenation as the root `copilot-instructions.md`. Guarding
+        # only the directory would leave the root file attached beside its
+        # own sources — the duplication this set exists to prevent.
+        #
+        # A file, unlike a directory, can say for itself whether it is
+        # output, so require the stamp too. A source directory proves APM
+        # *would* write here; the stamp proves it did. Demanding both keeps
+        # a hand-written Copilot file linted — including one a user wrote
+        # before adopting APM, and one written by an APM version that
+        # compiles only the directory.
+        root_copilot = context.root_path / ".github" / "copilot-instructions.md"
+        if (
+            root_github is not None
+            and (context.root_path / ".apm" / "instructions").is_dir()
+            and has_apm_generated_header(read_text(root_copilot))
+        ):
+            apm_compiled_github.add(root_github / "copilot-instructions.md")
+
+    def _is_apm_compiled_github(path: Path) -> bool:
+        """Whether *path* is APM output rather than authored content."""
+        resolved = safe_resolve(path)
+        return resolved is not None and resolved in apm_compiled_github
+
     def _add_block(
         parent: LintTarget,
         p: Path,
         block_cls: type,
         owner: Path | None = None,
+        content_suppressed: bool = False,
     ) -> None:
         """Add one safely resolved block unless its role is already present."""
         resolved = _resolve_repo_path(p)
@@ -127,6 +246,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_roles.add((resolved, block_cls))
         block = block_cls(path=p)
         block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
         parent.children.append(block)
 
     def _add_parser_block(
@@ -134,6 +254,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         p: Path,
         block_cls: type,
         owner: Path | None = None,
+        content_suppressed: bool = False,
     ) -> None:
         """Attach a structured document once for each parser role.
 
@@ -155,6 +276,7 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         seen_roles.add(role)
         block = block_cls(path=p)
         block.plugin_owner = owner
+        block.content_suppressed = content_suppressed
         parent.children.append(block)
 
     # Nearest package ownership, with the roots resolved once per context.
@@ -279,10 +401,15 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Root-level instruction files (skip .apm/ — handled in APM section) ---
     for f in context.instruction_files:
-        if _is_in_apm_source(f):
+        if _is_in_apm_source(f) or _claimed_by_an_editor_dir(f):
             continue
+        # APM writes .apm/instructions/ out to .github/instructions/. The
+        # authored source attaches below; the copy attaches content-suppressed
+        # so its content findings don't double the source's, while the
+        # security rules still scan the copy that ships.
+        compiled = _is_apm_compiled_github(f.parent)
         block_cls = _INSTRUCTION_FILE_BLOCK_TYPES.get(f.name, InstructionBlock)
-        _add_block(root, f, block_cls)
+        _add_block(root, f, block_cls, content_suppressed=compiled)
 
     # --- .claude/settings.json (supply-chain attack surface) ---
     _add_block(root, context.root_path / ".claude" / "settings.json", SettingsBlock)
@@ -299,13 +426,132 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     if not _shadowed_by_agent_plugin_mcp(root_native_mcp, root_agent_plugin_mcp):
         _add_block(root, root_native_mcp, McpBlock)
 
-    _add_block(root, context.root_path / ".github" / "copilot-instructions.md", InstructionBlock)
-    _add_block(root, context.root_path / ".cursorrules", InstructionBlock)
+    # --- Editor-owned content directories (Cursor, Copilot/VS Code, Cline) ---
+    # These tools read AGENTS.md for portable instructions — already attached
+    # above — so nothing here re-implements an instruction format. What is
+    # attached is the prose each tool keeps in its own directory and that
+    # therefore ships in the repository: rules, slash commands, prompt files
+    # and custom agents. Every one of them lands in an agent's context
+    # window, so every one gets the content rules.
+    #
+    # All three resolve their configuration from the nearest enclosing
+    # directory as well as the repository root, so a monorepo package can
+    # carry its own — hence the walk-backed ``agent_tool_dirs`` rather than a
+    # root-anchored lookup.
+    def _add_glob(
+        parent: LintTarget,
+        directory: Path,
+        pattern: str,
+        block_cls: type,
+        skip_dirs: frozenset[str] = frozenset(),
+        content_suppressed: bool = False,
+    ) -> None:
+        """Attach every file matching *pattern* under *directory*.
 
-    cursor_rules_dir = context.root_path / ".cursor" / "rules"
-    if cursor_rules_dir.is_dir() and not _is_in_compiled_dir(cursor_rules_dir):
-        for mdc in sorted(cursor_rules_dir.glob("*.mdc")):
-            _add_block(root, mdc, CursorRuleBlock)
+        *skip_dirs* names immediate subdirectories the owning tool does not
+        read, so their contents are not swept in under this block type.
+        """
+        if not safe_is_dir(directory):
+            return
+        # An excluded directory is not walked. Testing only each match would
+        # let `exclude: [".cursor/rules"]` through — the pattern names the
+        # directory and the matches are its children — leaving the files in
+        # every content and security rule while format detection, which does
+        # honour the directory, disagrees.
+        if _is_excluded(directory):
+            return
+        # Contain the glob *base*, not just each match: pathlib follows a
+        # symlink at the base even though it will not follow one during
+        # ``**`` descent, so a ``.clinerules -> /`` symlink would walk the
+        # filesystem before a single match was rejected.
+        if _resolve_repo_path(directory) is None:
+            return
+        try:
+            matches = sorted(directory.glob(pattern))
+        except OSError as exc:
+            # A directory that cannot be read drops silently otherwise, and
+            # "no findings" is indistinguishable from "nothing to find".
+            message = f"Could not read {directory}: {exc}"
+            if message not in context.lint_tree_errors:
+                context.lint_tree_errors.append(message)
+            logger.warning(message)
+            return
+        for match in matches:
+            # First component only: Cline reserves ``workflows``, ``hooks``
+            # and ``skills`` at the top of .clinerules, not everywhere. A
+            # rule filed under ``backend/hooks/`` is ordinary prose that
+            # Cline does concatenate, and matching at any depth would drop
+            # it from the tree entirely rather than merely misfiling it.
+            relative = match.relative_to(directory).parts[:-1]
+            if skip_dirs and relative and relative[0] in skip_dirs:
+                continue
+            if safe_is_file(match):
+                _add_block(parent, match, block_cls, content_suppressed=content_suppressed)
+
+    # Cursor reads the legacy file from the nearest enclosing directory too,
+    # so a monorepo package keeps its own — discovered in the same walk that
+    # finds `.cursor/`, which is what keeps detection and attachment agreeing.
+    for legacy_cursor in context.legacy_editor_files(".cursorrules"):
+        _add_block(root, legacy_cursor, InstructionBlock)
+
+    for cursor_dir in context.agent_tool_dirs(".cursor"):
+        # APM's cursor target compiles ``.apm/instructions/`` into
+        # ``.cursor/rules/`` only (docs/repo-types.md) — not commands, mcp.json
+        # or hooks.json, which are authored even in an APM repo. So the compiled
+        # flag scopes to ``rules/``: a compiled rule's prose duplicates its
+        # ``.apm/`` source and is dropped, but it is attached (not skipped) so
+        # the security and structural rules still see a copy that could have
+        # been hand-edited. Everything else under ``.cursor/`` is authored and
+        # linted in full.
+        rules_suppressed = _is_in_compiled_dir(cursor_dir)
+        # ``rules/`` nests: Cursor walks it recursively, so category
+        # subdirectories are ordinary rule files, not decoration.
+        _add_glob(
+            root,
+            cursor_dir / "rules",
+            "**/*.mdc",
+            CursorRuleBlock,
+            content_suppressed=rules_suppressed,
+        )
+        _add_glob(root, cursor_dir / "commands", "**/*.md", CursorCommandBlock)
+        _add_parser_block(root, cursor_dir / "mcp.json", CursorMcpBlock)
+        _add_parser_block(root, cursor_dir / "hooks.json", CursorHooksBlock)
+
+    for github_dir in context.agent_tool_dirs(".github"):
+        # A compiled Copilot copy duplicates its ``.apm/`` source for the
+        # content rules, so those findings are dropped — but it is attached,
+        # not removed, so the security rules still scan what actually ships.
+        copilot_instructions = github_dir / "copilot-instructions.md"
+        _add_block(
+            root,
+            copilot_instructions,
+            InstructionBlock,
+            content_suppressed=_is_apm_compiled_github(copilot_instructions),
+        )
+        # ``.github/instructions/**/*.instructions.md`` needs no entry: the
+        # repository scan collects every ``*.instructions.md`` wherever it
+        # lives, and they are attached with the root instruction files above.
+        for sub, pattern, block_cls in (
+            ("prompts", "**/*.prompt.md", CopilotPromptBlock),
+            # VS Code detects *any* .md in .github/agents as a custom agent;
+            # .agent.md is the recommended convention, not the detection rule.
+            ("agents", "**/*.md", CopilotAgentBlock),
+            # Chat modes are the pre-2026 spelling of custom agents. VS Code
+            # documents renaming them to .agent.md; still linted because the
+            # prose ships in the repository either way.
+            ("chatmodes", "**/*.chatmode.md", CopilotAgentBlock),
+        ):
+            directory = github_dir / sub
+            _add_glob(
+                root,
+                directory,
+                pattern,
+                block_cls,
+                content_suppressed=_is_apm_compiled_github(directory),
+            )
+
+    for vscode_dir in context.agent_tool_dirs(".vscode"):
+        _add_parser_block(root, vscode_dir / "mcp.json", VsCodeMcpBlock)
 
     kiro_steering = context.root_path / ".kiro" / "steering"
     if kiro_steering.is_dir():
@@ -314,12 +560,28 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     _add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
 
-    clinerules = context.root_path / ".clinerules"
-    if clinerules.is_file():
-        _add_block(root, clinerules, InstructionBlock)
-    elif clinerules.is_dir():
-        for md in sorted(clinerules.glob("*.md")):
-            _add_block(root, md, InstructionBlock)
+    # Same story as `.cursorrules`: the file form of `.clinerules` is read
+    # from the workspace directory, so a package that carries its own is
+    # linted alongside the root's.
+    for clinerules_file in context.legacy_editor_files(".clinerules"):
+        _add_block(root, clinerules_file, InstructionBlock)
+    for clinerules_dir in context.agent_tool_dirs(".clinerules"):
+        # Cline concatenates every .md and .txt under .clinerules/ into the
+        # system prompt, but its loader excludes three subdirectories:
+        # workflows/ (on demand), skills/ (on demand, and discovered as
+        # skills), and hooks/ (executables, not prose). Sweeping them in
+        # would budget content Cline never loads as always-on context.
+        # Claim the workflows first: ``_add_block`` keeps the first role a
+        # path gets.
+        _add_glob(root, clinerules_dir / "workflows", "**/*.md", ClineWorkflowBlock)
+        for pattern in ("**/*.md", "**/*.txt"):
+            _add_glob(
+                root,
+                clinerules_dir,
+                pattern,
+                InstructionBlock,
+                skip_dirs=_CLINE_EXCLUDED_DIRS,
+            )
 
     # --- Marketplace config ---
     marketplace_json = context.root_path / ".claude-plugin" / "marketplace.json"
@@ -590,6 +852,12 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
 
     # --- Promptfoo eval configs ---
     _build_promptfoo_nodes(context, root, plugin_nodes, seen, _is_excluded)
+
+    # --- Cursor prompt-hook content blocks ---
+    # Attached to the root rather than to the hooks block: a JsonConfigBlock
+    # is a leaf, and hanging prose off it would put content blocks inside the
+    # config half of the hierarchy.
+    root.children.extend(CursorPromptHookBlock.gather_from_tree(root))
 
     # --- Promptfoo prompt content blocks ---
     for block in PromptfooPromptBlock.gather_from_tree(root):

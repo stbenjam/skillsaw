@@ -26,6 +26,7 @@ from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
+from .utils import read_yaml
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 
 if TYPE_CHECKING:
@@ -68,16 +69,23 @@ SKILL_REPO_TYPES = {
 
 HAS_CURSOR = "HAS_CURSOR"
 HAS_COPILOT = "HAS_COPILOT"
+HAS_CLINE = "HAS_CLINE"
 HAS_GEMINI = "HAS_GEMINI"
+HAS_QWEN = "HAS_QWEN"
 HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
+# Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
+# is deliberately absent: the instruction-file rules only ever look at
+# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a .clinerules-only repository
+# would auto-enable two rules structurally incapable of finding anything.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
         HAS_COPILOT,
         HAS_GEMINI,
+        HAS_QWEN,
         HAS_AGENTS_MD,
         HAS_KIRO,
         HAS_CLAUDE_MD,
@@ -100,7 +108,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
     Automatically detects repository type and gathers relevant metadata.
     """
 
-    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
+    _INSTRUCTION_FILENAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
 
     _TYPE_PRIORITY = [
         RepositoryType.MARKETPLACE,
@@ -121,7 +129,18 @@ class RepositoryContext(RepositoryProvenanceMixin):
 
     # Compiled output directories that APM generates from .apm/ sources.
     # When .apm/ is present these are generated artifacts and should not be linted.
-    APM_COMPILED_DIRS = frozenset((".claude", ".cursor", ".gemini", ".opencode", ".agents"))
+    # Compiled-output directory -> the ``targets:`` entry that produces it.
+    # APM only writes a directory when its target is listed, so a project
+    # with ``targets: [claude]`` and a hand-authored ``.cursor/`` has
+    # authored content there, not generated output.
+    APM_COMPILED_DIR_TARGETS = {
+        ".claude": "claude",
+        ".cursor": "cursor",
+        ".gemini": "gemini",
+        ".opencode": "opencode",
+        ".agents": "codex",
+    }
+    APM_COMPILED_DIRS = frozenset(APM_COMPILED_DIR_TARGETS)
 
     def __init__(
         self,
@@ -148,7 +167,9 @@ class RepositoryContext(RepositoryProvenanceMixin):
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []
         self._pattern_variants_cache: Dict[str, Tuple[str, ...]] = {}
         self.has_apm = self._detect_apm()
+        self._scan: Optional[detect_discovery.RepositoryScan] = None
         self._apm_compiled_roots: Optional[Set[Path]] = None
+        self._apm_targets: Any = _UNSET  # frozenset once read; None = unknown
         self._codex_marketplace_paths: Optional[List[Path]] = None
         self._codex_install_root: Any = _UNSET
         self._codex_roots: Optional[List[Path]] = None
@@ -280,6 +301,25 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Match a path with pattern variants cached by this context."""
         return path_matches_patterns(path, self.root_path, patterns, self.pattern_variants)
 
+    def apm_targets(self, target: str) -> bool:
+        """Whether ``apm.yml`` lists *target* among its compile targets.
+
+        An unreadable or target-less manifest answers True for everything,
+        keeping the de-duplication on a misparse — a sentinel distinct from
+        an empty set, because ``targets: []`` means "compile nothing" and
+        answering True for it would drop hand-authored editor directories.
+        """
+        if self._apm_targets is _UNSET:
+            data, error = read_yaml(self.root_path / "apm.yml")
+            declared = data.get("targets") if isinstance(data, dict) else None
+            if error or not isinstance(declared, list):
+                self._apm_targets = None  # unknown: keep the de-duplication
+            else:
+                self._apm_targets = frozenset(
+                    t.strip().lower() for t in declared if isinstance(t, str)
+                )
+        return self._apm_targets is None or target in self._apm_targets
+
     def apm_compiled_roots(self) -> Set[Path]:
         """Resolved compiled-output directories to skip when APM is present.
 
@@ -290,7 +330,13 @@ class RepositoryContext(RepositoryProvenanceMixin):
         if self._apm_compiled_roots is None:
             roots: Set[Path] = set()
             if self.has_apm:
-                for compiled_dir_name in self.APM_COMPILED_DIRS:
+                for compiled_dir_name, target in self.APM_COMPILED_DIR_TARGETS.items():
+                    # A source tree alone does not make the directory
+                    # generated. Suppressing one APM never writes hides
+                    # hand-authored content from every rule — the same
+                    # mistake the `.github` guard already avoids.
+                    if not self.apm_targets(target):
+                        continue
                     compiled_path = self.root_path / compiled_dir_name
                     compiled_path = safe_resolve(compiled_path) or compiled_path
                     if compiled_path.is_dir():
@@ -394,15 +440,57 @@ class RepositoryContext(RepositoryProvenanceMixin):
         """Discover instruction files at the repo root and named .instructions.md files.
 
         Finds:
-        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md
+        - Root-level AGENTS.md, CLAUDE.md, GEMINI.md, QWEN.md
         - Any ``*.instructions.md`` files anywhere in the repo tree (Copilot
           named instruction files such as ``coding.instructions.md``)
+
+        Shares one filesystem walk with :meth:`agent_tool_dirs`.
         """
-        return detect_discovery.instruction_files(self.root_path, self._INSTRUCTION_FILENAMES)
+        return list(self._repository_scan().instruction_files)
+
+    def _repository_scan(self) -> detect_discovery.RepositoryScan:
+        """Return the cached single-pass walk of the repository."""
+        if self._scan is None:
+            self._scan = detect_discovery.scan_repository(
+                self.root_path, self._INSTRUCTION_FILENAMES
+            )
+        return self._scan
+
+    def agent_tool_dirs(self, name: str) -> List[Path]:
+        """Return every non-excluded directory called *name* in the repository.
+
+        Cursor (``.cursor``), Copilot/VS Code (``.github``) and Cline
+        (``.clinerules``) all read their customizations from the nearest
+        enclosing directory, so a monorepo package may carry its own
+        alongside the repository root's.
+        """
+        return [
+            path
+            for path in self._repository_scan().tool_dirs.get(name, ())
+            if not self.is_path_excluded(path)
+        ]
+
+    def legacy_editor_files(self, name: str) -> List[Path]:
+        """Every non-excluded *name* file in the repository.
+
+        Cursor and Cline read their pre-directory instruction file from the
+        nearest enclosing directory, exactly as they read `.cursor/` and
+        `.clinerules/`, so a monorepo package carries its own. Detection and
+        attachment both read this, so they cannot disagree about a nested one.
+        """
+        return [
+            path
+            for path in self._repository_scan().legacy_editor_files.get(name, ())
+            if not self.is_path_excluded(path)
+        ]
 
     def _detect_formats(self) -> Set[str]:
         return detect_discovery.instruction_formats(
-            self.root_path, self.instruction_files, self.is_path_excluded
+            self.root_path,
+            self.instruction_files,
+            self.is_path_excluded,
+            self._repository_scan().tool_dirs,
+            self._repository_scan().legacy_editor_files,
         )
 
     _WALK_SKIP_DIRS = frozenset(

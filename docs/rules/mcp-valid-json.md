@@ -14,18 +14,53 @@ MCP configuration must be valid JSON with proper mcpServers structure
 
 ## Why
 
-MCP (Model Context Protocol) configuration files must be valid JSON
-with a proper `mcpServers` structure. Invalid JSON or missing
-structure means no MCP servers will be loaded, and tools that depend
-on them will silently fail.
+MCP (Model Context Protocol) configuration files must be valid JSON with a
+server map the host can actually read. Invalid JSON or the wrong structure
+means no MCP servers load, and tools that depend on them silently fail.
+
+## Which key, which file
+
+The server map has two spellings, and each host reads exactly one:
+
+| File | Key | Wrapper required? |
+| --- | --- | --- |
+| `.mcp.json` | `mcpServers` | No — see below |
+| plugin manifests | `mcpServers` | Yes |
+| `.cursor/mcp.json` | `mcpServers` | Yes |
+| `.vscode/mcp.json` | `servers` | Yes |
+
+A file using the other host's key is reported as such — the servers are
+present but will not load. VS Code's documented siblings `inputs` and
+`sandbox` are not servers and are left alone.
+
+A standalone `.mcp.json` accepts a **wrapperless** map as well: a file
+whose top level is the server map itself, with no `mcpServers` key, is
+valid and is not reported. Everywhere else the wrapper is the only form.
+Cursor and VS Code document one shape each, so a bare map there loads
+nothing and is reported; in a plugin manifest the servers live under the
+manifest's own `mcpServers` field, and bare keys beside it are ordinary
+manifest data that neither the host nor this rule reads as servers.
+
+```json
+{"my-server": {"command": "node", "args": ["server.js"]}}
+```
+
+Transport is inferred when a server does not declare `type`: a `command`
+means stdio, and a bare `url` means a remote server. Declaring `type`
+explicitly overrides the inference, and an unknown value is reported.
 
 ## Examples
 
-**Bad:**
+**Bad** — an unknown transport, which no host can connect over:
 
 ```json
-{"servers": {"my-server": {"command": "npx my-server"}}}
+{"mcpServers": {"my-server": {"type": "gopher", "command": "x"}}}
 ```
+
+An empty `command` is a narrower case: the key is present, so the
+presence-only check passes it in a Claude-family file. Codex-only plugins
+and the editor files (`.cursor/mcp.json`, `.vscode/mcp.json`) require the
+value to name something spawnable — a non-empty `command` string or `url`.
 
 **Good:**
 
@@ -42,10 +77,10 @@ on them will silently fail.
 
 ## How to fix
 
-Fix the JSON syntax error or restructure the file to use the
-`mcpServers` top-level key with properly configured server entries.
-Each stdio server needs a `command` field and each remote server a
-`url` field matching its declared `type`.
+Fix the JSON syntax error, or move the servers under the key this file's
+host reads (see the table above). Each stdio server needs a `command` and
+each remote server a `url`; when `type` is declared, the field must match
+it.
 
 Inside an OpenAI Codex-only plugin (Codex-claimed, with neither a
 `.claude-plugin` marker nor a Claude marketplace listing — either one

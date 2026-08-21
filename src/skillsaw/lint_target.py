@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Hashable, Iterator, List, Optional, Type, TypeVar
+from typing import Callable, ClassVar, Hashable, Iterator, List, Optional, Type, TypeVar
+from skillsaw.diagnostics import safe_display
 from skillsaw.paths import safe_resolve
 
 T = TypeVar("T", bound="LintTarget")
@@ -25,6 +26,25 @@ class LintTarget:
     # ``skillsaw docs``, never re-derived by path matching. ``None`` for
     # nodes no plugin owns.
     plugin_owner: Optional[Path] = field(default=None, repr=False)
+
+    #: Whether this node is a compiled copy of a source the linter reads
+    #: elsewhere (an APM prose primitive rendered into ``.github/`` or
+    #: ``.cursor/``). Set at attach time. Content and duplication findings on
+    #: a copy would double the source's, so the linter drops them — but
+    #: security findings are kept, because the copy is what actually ships
+    #: and a contributor can edit it without touching the source. Suppressing
+    #: the whole file from the tree is what let a hand-edited compiled file
+    #: smuggle instructions past every security rule.
+    content_suppressed: bool = field(default=False, repr=False)
+
+    #: Content this linter reads but must never rewrite. Set on node types
+    #: whose text is embedded in a document of another format — a prompt
+    #: string inside JSON, say — where a fix computed against the extracted
+    #: body has no honest span in the file that holds it. The linter clears
+    #: fixability on their violations, the same stand-down vendor-managed
+    #: content gets, so nothing is advertised as fixable that ``fix`` will
+    #: then decline.
+    diagnostic_only: ClassVar[bool] = False
 
     @property
     def resolved_path(self) -> Path:
@@ -94,6 +114,22 @@ class LintTarget:
             node.__dict__.pop("_find_cache", None)
             node = node.parent
 
+    @property
+    def in_suppressed_content(self) -> bool:
+        """Whether this node or any ancestor is a compiled-copy node.
+
+        ``content_suppressed`` is set on the attached file/container; a
+        content finding attaches to a body/field child, and the token
+        metrics walk the ``ContentBlock`` children, so both read the flag by
+        climbing to the container. Populated by ``set_parents()``.
+        """
+        node: Optional["LintTarget"] = self
+        while node is not None:
+            if node.content_suppressed:
+                return True
+            node = node.parent
+        return False
+
     def find_parent(self, target: "LintTarget", parent_type: Type[T]) -> Optional[T]:
         """Find the nearest ancestor of ``target`` that is ``parent_type``."""
         node = target.parent
@@ -138,6 +174,20 @@ class LintTarget:
         """Translate a line number to a file line number. Default is identity."""
         return line
 
+    def fingerprint_identity(self, body_line: Optional[int]) -> Optional[str]:
+        """Content identifying a finding when the file line cannot.
+
+        A baseline fingerprint normally hashes the source line, so editing
+        the offending text produces a new fingerprint and the finding
+        resurfaces. Content extracted from a document of another format has
+        no file line to hash — the fallback is the rule ID, path and
+        message, and two different payloads that produce the same message
+        then share a fingerprint, so baselining the first silently
+        suppresses the second. Node types in that position return something
+        that distinguishes them; ``None`` keeps the established hashing.
+        """
+        return None
+
     def tree_label(self) -> str:
         return self.path.name
 
@@ -158,7 +208,12 @@ class LintTarget:
         if root_path and self.path == root_path:
             label = f"{self.path.name}/{token_str}"
         else:
-            label = f"{self.tree_label()}{token_str}"
+            # A label can carry author text — a Cursor hook event key becomes
+            # part of its prompt block's label. `skillsaw tree` prints this
+            # straight to the terminal, with none of the report pipeline's
+            # sanitizing in front of it, so an escape sequence would execute
+            # and a lone surrogate would abort the command outright.
+            label = f"{safe_display(self.tree_label())}{token_str}"
 
         if _prefix or not root_path:
             connector = "└── " if _last else "├── "
@@ -209,17 +264,30 @@ class LintTarget:
                 return _COLORS["ContentBlock"]
             return _COLORS.get(type(node).__name__, _COLORS["LintTarget"])
 
+        def _dot_escape(text: str) -> str:
+            """Make author text safe inside a DOT quoted string.
+
+            Backslash first, then quote: the other order turns an authored
+            ``\\"`` into ``\\\\"``, which DOT reads as one escaped backslash
+            followed by a quote that closes the string — everything after it
+            becomes graph syntax, so an event key ending
+            ``\\" ]; evil [label=PWN]; }`` injects a node. Applied to the
+            author-controlled name only, never to the whole label: the
+            ``\\n`` separator below is DOT's line break and must stay one.
+            """
+            return text.replace("\\", "\\\\").replace('"', '\\"')
+
         def _dot_label(node: "LintTarget") -> str:
             if root_path and node.path == root_path:
                 name = f"{node.path.name}/"
             else:
-                name = node.tree_label()
+                name = safe_display(node.tree_label())
             tokens = node.estimate_tokens()
-            return f"{name}\\n({node._format_tokens(tokens)} tokens)"
+            return f"{_dot_escape(name)}\\n({node._format_tokens(tokens)} tokens)"
 
         def _emit(node: "LintTarget", parent_id: str | None) -> None:
             nid = _node_id(node)
-            label = _dot_label(node).replace('"', '\\"')
+            label = _dot_label(node)
             color = _color(node)
             lines.append(f'    {nid} [label="{label}" style=filled fillcolor="{color}"];')
             if parent_id:

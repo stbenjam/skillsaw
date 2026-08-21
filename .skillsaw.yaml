@@ -12,8 +12,9 @@ exclude:
   # Only .agents/skills/ is APM-compiled — .agents/plugins/marketplace.json is
   # our hand-authored Codex marketplace and must stay linted.
   - ".agents/skills/*"
-  - ".github/instructions/*"
-  - ".github/copilot-instructions.md"
+  # `.github/instructions/*` and `.github/copilot-instructions.md` are not
+  # listed: skillsaw recognises them as APM output on its own, and dead
+  # config here would hide a regression in that guard.
   # Templates
   - "src/skillsaw/marketplace/templates/*"
   # Testing fixtures with intentional errors

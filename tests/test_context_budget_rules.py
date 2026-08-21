@@ -97,6 +97,17 @@ class TestContextBudgetRule:
         assert violations[0].severity == Severity.ERROR
         assert "error" in violations[0].message.lower()
 
+    def test_qwen_md_uses_the_instruction_file_budget(self, temp_dir):
+        """QWEN.md is budgeted like its GEMINI.md/CLAUDE.md peers, not as generic prose."""
+        (temp_dir / "QWEN.md").write_text(_make_text(7000))
+        context = RepositoryContext(temp_dir)
+        violations = ContextBudgetRule().check(context)
+        assert len(violations) == 1
+        assert violations[0].severity == Severity.WARNING
+        # Keyed on its own category, not the tighter generic "instruction"
+        # limit — that one is 4000/8000 and would have errored here.
+        assert "qwen-md warn limit of 6,000" in violations[0].message
+
     def test_custom_warn_limit(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text(_make_text(150))
         context = RepositoryContext(temp_dir)

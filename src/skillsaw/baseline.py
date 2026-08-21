@@ -64,6 +64,20 @@ def _read_file_lines(path: Path, cache: Dict[Path, Optional[List[str]]]) -> Opti
     return cache[resolved]
 
 
+def _hash(raw: str) -> str:
+    """Hash one fingerprint input, tolerating text no codec can encode.
+
+    A JSON config may carry an escaped lone surrogate (``"\\ud800"``) — pure
+    ASCII on disk, so the file reads back fine, but ``json`` decodes it to an
+    unpaired surrogate. It reaches here through a block's embedded identity or
+    a rule's message, and a plain ``str.encode`` raises ``UnicodeEncodeError``
+    on it, aborting the entire baseline rather than one entry.
+    ``surrogatepass`` is byte-identical for every string that *can* be
+    encoded, so no existing fingerprint changes.
+    """
+    return hashlib.sha256(raw.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
 def fingerprint_violation(
     violation: RuleViolation,
     root_path: Path,
@@ -94,16 +108,34 @@ def fingerprint_violation(
     # same file (e.g. whole-file vs description tokens) from colliding.  When no
     # metric is set the fingerprint is unchanged, so existing baselines for
     # single-metric ratchet rules keep matching.
+    # Embedded content shares its file path with every sibling in the same
+    # document, so a ratchet keyed on rule+path alone keeps one threshold for
+    # all of them and lets one prompt's baseline mask another's regression.
+    embedded = violation.block.fingerprint_identity(None) if violation.block is not None else None
     if violation.value is not None and rel_path is not None:
+        parts = [rule_id, rel_path]
+        if embedded is not None:
+            parts.append(embedded)
         if violation.metric:
-            raw = f"{rule_id}\0{rel_path}\0{violation.metric}"
-        else:
-            raw = f"{rule_id}\0{rel_path}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+            parts.append(violation.metric)
+        return _hash("\0".join(parts))
 
     discriminator_suffix = (
         f"\0{violation.fingerprint_discriminator}" if violation.fingerprint_discriminator else ""
     )
+    # A block whose text is embedded in another format has no file line to
+    # hash; it supplies its own identity instead. Checked before the
+    # source-line branch because ``file_line`` there is a placeholder, not a
+    # real position. Every other node type returns None and hashes as before.
+    identity = (
+        violation.block.fingerprint_identity(violation.line)
+        if violation.block is not None
+        else None
+    )
+    if identity is not None and rel_path is not None:
+        raw = f"{rule_id}\0{rel_path}\0{identity}{discriminator_suffix}"
+        return _hash(raw)
+
     if rel_path is not None and file_line is not None and violation.file_path is not None:
         file_path = violation.file_path
         if not file_path.is_absolute():
@@ -112,14 +144,14 @@ def fingerprint_violation(
         if lines is not None and 1 <= file_line <= len(lines):
             line_content = lines[file_line - 1].strip()
             raw = f"{rule_id}\0{rel_path}\0{line_content}{discriminator_suffix}"
-            return hashlib.sha256(raw.encode()).hexdigest()[:16]
+            return _hash(raw)
 
     if rel_path is not None:
         raw = f"{rule_id}\0{rel_path}\0{violation.message}{discriminator_suffix}"
     else:
         raw = f"{rule_id}\0{violation.message}{discriminator_suffix}"
 
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return _hash(raw)
 
 
 def build_baseline(

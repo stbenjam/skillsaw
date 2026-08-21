@@ -61,6 +61,10 @@ class ContentBrokenInternalReferenceRule(Rule):
         for cf in gather_all_content_blocks(context):
             if self._is_in_template_dir(cf.path):
                 continue
+            # Usually the file's own directory, but a block whose body is
+            # injected elsewhere (a Cursor prompt hook, run from the
+            # workspace) resolves its relative links from a different base.
+            link_dir = cf.link_base_dir(root)
             for link in cf.markdown.links():
                 target = link.href.strip()
                 # Skip anchors and anything with a URI scheme — not just
@@ -84,12 +88,10 @@ class ContentBrokenInternalReferenceRule(Rule):
                 # A file whose literal name contains %XX sequences and is
                 # linked verbatim (e.g. `refs/x%20y.md` exists on disk)
                 # linted clean before decoding existed — keep accepting it.
-                if fs_path != target_path and self._exists_in_repo(
-                    root, cf.path.parent, target_path
-                ):
+                if fs_path != target_path and self._exists_in_repo(root, link_dir, target_path):
                     continue
-                # Resolve relative to the file containing the link
-                resolved = safe_resolve(cf.path.parent / fs_path)
+                # Resolve relative to the link's base directory
+                resolved = safe_resolve(link_dir / fs_path)
                 if resolved is None:
                     # Undecodable path (e.g. an embedded %00) cannot exist;
                     # circular symlinks and unreadable parents are likewise
@@ -117,7 +119,7 @@ class ContentBrokenInternalReferenceRule(Rule):
                     )
                     continue
                 if not safe_exists(resolved):
-                    suggestion = self._find_similar(root, cf.path.parent, fs_path)
+                    suggestion = self._find_similar(root, link_dir, fs_path)
                     msg = f"Broken internal link: [{link.text}]({target}) — target does not exist"
                     if suggestion:
                         msg += f" (did you mean '{suggestion}'?)"

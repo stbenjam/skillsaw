@@ -1,0 +1,7 @@
+---
+---
+
+# Schema migration reference
+
+The full column mapping for the 2024 schema migration, pulled in by name when
+a migration needs it.

@@ -1,0 +1,13 @@
+{
+  "inputs": [
+    {
+      "id": "token",
+      "type": "promptString"
+    }
+  ],
+  "servers": {
+    "fetch": {
+      "type": "http"
+    }
+  }
+}

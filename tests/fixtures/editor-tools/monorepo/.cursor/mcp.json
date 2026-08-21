@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "gh-mcp-server",
+      "args": ["--stdio"]
+    }
+  }
+}
