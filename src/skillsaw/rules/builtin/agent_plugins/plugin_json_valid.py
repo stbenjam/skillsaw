@@ -7,7 +7,12 @@ from typing import List
 
 from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
-from skillsaw.formats.agent_plugins import PLUGIN_SCHEMA_ID, agent_plugin_schema_version
+from skillsaw.formats.agent_plugins import (
+    SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS,
+    agent_plugin_schema_id,
+    agent_plugin_schema_version,
+    supported_agent_plugin_schema_version,
+)
 from skillsaw.lint_target import AgentPluginConfigNode
 from skillsaw.paths import (
     contained_resolve,
@@ -21,14 +26,14 @@ from skillsaw.rule import Rule, RuleViolation, Severity
 
 from ._helpers import (
     AGENT_PLUGIN_REPO_TYPES,
-    PLUGIN_SCHEMA,
-    PLUGIN_VALIDATOR,
+    MANIFEST_FIELDS,
+    PLUGIN_VALIDATORS,
     schema_error_summary,
     stable_key,
     strict_json,
 )
 
-_MANIFEST_FIELDS = frozenset(PLUGIN_SCHEMA["properties"])
+_SUPPORTED_VERSIONS_TEXT = " and ".join(SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS)
 
 
 class AgentPluginJsonValidRule(Rule):
@@ -43,7 +48,7 @@ class AgentPluginJsonValidRule(Rule):
 
     @property
     def description(self) -> str:
-        return "Agent Plugins plugin.json and skills location must conform to 1.0.0"
+        return "Agent Plugins plugin.json and skills location must conform to a supported schema"
 
     def default_severity(self) -> Severity:
         return Severity.ERROR
@@ -124,7 +129,7 @@ class AgentPluginJsonValidRule(Rule):
             ]
 
         violations: List[RuleViolation] = []
-        unknown = sorted(set(data) - _MANIFEST_FIELDS)
+        unknown = sorted(set(data) - MANIFEST_FIELDS)
         for field in unknown:
             violations.append(
                 self.violation(
@@ -138,16 +143,18 @@ class AgentPluginJsonValidRule(Rule):
         # The spec makes these two schema failures non-fatal. Validate a
         # sanitized view so they are reported once at warning severity while
         # all other schema failures remain fatal errors.
-        checked = {key: value for key, value in data.items() if key in _MANIFEST_FIELDS}
+        checked = {key: value for key, value in data.items() if key in MANIFEST_FIELDS}
         declared_schema = checked.get("$schema")
-        if "$schema" in checked and declared_schema != PLUGIN_SCHEMA_ID:
+        schema_version = supported_agent_plugin_schema_version(declared_schema, "plugin")
+        if "$schema" in checked and schema_version is None:
             version = agent_plugin_schema_version(declared_schema, "plugin")
             message = (
                 f"Unsupported Agent Plugins manifest schema version "
-                f"'{safe_display(version)}'; this skillsaw release supports 1.0.0"
+                f"'{safe_display(version)}'; this skillsaw release supports "
+                f"{_SUPPORTED_VERSIONS_TEXT}"
                 if version is not None
                 else (
-                    "'$schema' must be the canonical Agent Plugins 1.0.0 "
+                    "'$schema' must be a canonical supported Agent Plugins "
                     "plugin schema identifier"
                 )
             )
@@ -160,7 +167,8 @@ class AgentPluginJsonValidRule(Rule):
             )
             # Suppress the schema's duplicate const error. The dedicated
             # diagnostic above remains fatal and is clearer about support.
-            checked["$schema"] = PLUGIN_SCHEMA_ID
+            schema_version = SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]
+            checked["$schema"] = agent_plugin_schema_id(schema_version, "plugin")
         if "extensions" in checked and not isinstance(checked["extensions"], dict):
             violations.append(
                 self.violation(
@@ -172,11 +180,13 @@ class AgentPluginJsonValidRule(Rule):
             )
             checked.pop("extensions")
 
-        schema_errors = list(PLUGIN_VALIDATOR.iter_errors(checked))
+        validator = PLUGIN_VALIDATORS[schema_version or SUPPORTED_AGENT_PLUGIN_SCHEMA_VERSIONS[0]]
+        schema_errors = list(validator.iter_errors(checked))
         if schema_errors:
             violations.append(
                 self.violation(
-                    f"plugin.json does not conform to Agent Plugins 1.0.0: "
+                    f"plugin.json does not conform to Agent Plugins "
+                    f"{schema_version or _SUPPORTED_VERSIONS_TEXT}: "
                     f"{schema_error_summary(schema_errors)}",
                     file_path=manifest,
                     fingerprint_discriminator="manifest:schema",

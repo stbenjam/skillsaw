@@ -5,12 +5,12 @@ version: "0.19.0"
 
 rules:
 
-  # Agent Plugins plugin.json and skills location must conform to 1.0.0
+  # Agent Plugins plugin.json and skills location must conform to a supported schema
   agent-plugin-json-valid:
     enabled: auto
     severity: error
 
-  # Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics
+  # Agent Plugins mcp.json must conform to a supported schema and semantics
   agent-plugin-mcp-valid:
     enabled: auto
     severity: error
