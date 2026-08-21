@@ -157,11 +157,26 @@ def _truncate_for_display(raw: str) -> str:
     that redaction would never match. Two ways to tell: the visible tail
     is colon-bearing (``user:token`` shape), or the ``@`` itself sits just
     past the cut. Over-redacting a truncated tail is the safe direction.
+
+    The backward boundary walk skips backslash-newline pairs, exactly as
+    the redaction scan does: a continuation joins the words around it, so
+    a credential severed mid-token *after* a continuation must redact the
+    fragment before the split too — stopping at the newline would leave
+    ``user:token`` visible ahead of it.
     """
     text = raw[:_MAX_DISPLAY]
     if len(text) == len(raw):
         return text
-    start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
+    end = len(text)
+    while True:
+        found = max(text.rfind(ch, 0, end) for ch in ("/", " ", "\t", "\n", "@"))
+        if found == -1:
+            break
+        if text[found] == "\n" and found > 0 and text[found - 1] == "\\":
+            end = found - 1
+            continue
+        break
+    start = found + 1
     if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
         text = text[:start] + "[redacted]"
     return text

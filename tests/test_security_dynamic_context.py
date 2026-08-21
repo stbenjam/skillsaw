@@ -323,6 +323,22 @@ class TestSecurityDynamicContextRule:
         assert "TTT" not in message
         assert "[redacted]" in message
 
+    def test_credential_severed_after_a_continuation_is_fully_redacted(self, temp_dir):
+        # The cut lands past a backslash-newline that joins the credential's
+        # words: the backward boundary must skip the pair like the redaction
+        # scan does, or only the fragment after the split is replaced and
+        # ``user:SECRET`` stays visible ahead of it.
+        command = "curl https://user:SECRET\\" + "\n" + "T" * 480 + "@example.invalid/x"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert "SECRET" not in message
+        assert "TTT" not in message
+        assert "[redacted]" in message
+
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML
         # comment is not expanded by clients and is not reported here —

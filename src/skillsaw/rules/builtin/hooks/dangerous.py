@@ -137,10 +137,11 @@ _SUBSTITUTION_FETCH_RE = re.compile(
 # Where a download segment writes its payload — curl/wget `-o`/`-O`,
 # `--output[=] `, or a shell redirect — quoted paths included. A later
 # segment that invokes one of these paths pairs the download with it even
-# when intermediate commands (chmod, mv) sit between them.
-_ARTIFACT_TARGET_RE = re.compile(
-    r"""(?:-o|-O|--output)[=\s]+(?:"[^"]*"|'[^']*'|\S+)""" r"""|>{1,2}\s*(?:"[^"]*"|'[^']*'|\S+)"""
-)
+# when intermediate commands (chmod, mv) sit between them. The target is
+# the pattern's only capture group, so findall() yields paths — an
+# ungrouped pattern yields whole matches, and iterating those yields
+# characters that substring-match nearly every later segment.
+_ARTIFACT_TARGET_RE = re.compile(r"""(?:(?:-o|-O|--output)[=\s]+|>{1,2}\s*)("[^"]*"|'[^']*'|\S+)""")
 # The same boundary set as _CMD_BOUNDARY, so the tokenizer and the anchored
 # patterns in this module cannot drift: `||` is one operator (splitting on
 # bare `|` alone used to leave an empty middle segment that masqueraded as a
@@ -263,14 +264,21 @@ def _downloads_and_executes(command: str) -> bool:
     # ``||``: its right side runs only when the download failed. The pairing
     # survives intermediate non-interpreter commands when they name a path
     # the download wrote (`curl -o x url && chmod +x x && sh x`), tracked by
-    # the per-line artifact set.
-    for line in command.split("\n"):
-        pieces = _SHELL_SEPARATOR_RE.split(_mask_quoted_separators(line))
-        piped_download = False
+    # the per-line artifact set. A pipeline also survives the physical line
+    # break bash allows right after ``|``, so a line ending in one carries
+    # the piped state into the next; a backslash-newline pair joins words,
+    # so continued lines are one logical line.
+    carry_pipe = False
+    for line in command.replace("\\\n", " ").split("\n"):
+        masked = _mask_quoted_separators(line)
+        pieces = _SHELL_SEPARATOR_RE.split(masked)
+        piped_download = carry_pipe
         chained_download = False
         artifact_paths: Set[str] = set()
         for index in range(0, len(pieces), 2):
-            via_pipe = False
+            # A line continued from a trailing ``|`` has no separator piece
+            # before its first segment — the pipe lives on the prior line.
+            via_pipe = carry_pipe and index == 0
             via_chain = False
             if index:
                 separator = pieces[index - 1]
@@ -293,10 +301,7 @@ def _downloads_and_executes(command: str) -> bool:
                 # word-split comparison cannot reassemble the quoted word,
                 # but a substring test on the segment can.
                 artifact_paths.update(
-                    path.strip("\"'")
-                    for pair in _ARTIFACT_TARGET_RE.findall(segment)
-                    for path in pair
-                    if path
+                    path.strip("\"'") for path in _ARTIFACT_TARGET_RE.findall(segment) if path
                 )
                 if substitution_fetch and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
                     return True  # self-contained: bash <(curl …), bash -c "$(curl …)"
@@ -312,6 +317,8 @@ def _downloads_and_executes(command: str) -> bool:
                 return True  # interpreter consumes a downloaded path
             piped_download = via_pipe or segment_downloads
             chained_download = segment_downloads
+        stripped = masked.rstrip()
+        carry_pipe = stripped.endswith("|") and not stripped.endswith("||")
     return False
 
 
