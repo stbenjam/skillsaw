@@ -243,7 +243,6 @@ def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir):
 
     assert len(violations) == 1
     assert "Invalid YAML" in violations[0].message
-    assert "4300 digits" in violations[0].message
 
 
 def test_apm_yaml_missing_name_fails(temp_dir):

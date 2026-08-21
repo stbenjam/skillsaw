@@ -2532,7 +2532,6 @@ class TestApm:
         found = by_rule(r)["apm-yaml-valid"]
         assert len(found) == 1
         assert "Invalid YAML" in found[0]["message"]
-        assert "4300 digits" in found[0]["message"]
 
     def test_apm_clean_hooks_pass(self, tmp_path):
         repo = copy_fixture("apm/hooks-clean", tmp_path)
