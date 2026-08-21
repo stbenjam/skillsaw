@@ -1,0 +1,97 @@
+## Why
+
+`context-budget` tells you a file is too big; this rule tells you what
+to do about it. Anthropic's Claude 5 context-engineering guidance is to
+divide large skills into many files and split detail out so it doesn't
+take up context until it's needed ("progressive disclosure"), and to
+keep instruction files lightweight, deferring detail to skills and
+imports. A file that is over its token budget *and* references no other
+local file has not even started that split — every token it holds loads
+on every use, needed or not.
+
+The rule fires only on files already over a threshold (by default the
+`context-budget` warn limits, except skills, whose threshold is raised
+to 6,000 tokens — smaller skills routinely work fine as a single file),
+and only when it finds zero disclosure references. What counts as a reference differs by surface:
+
+- **Skills**: markdown links to bundled files (or directories holding
+  them), path-like mentions of bundled files (`references/guide.md`,
+  `scripts/run.py` — including inside fenced code blocks, where bundled
+  scripts are typically invoked), and bare filename mentions of bundled
+  files ("run `helper.py`"). References outside the bundle, image
+  embeds, packaging scaffolding (README.md), test/eval scaffolding
+  (`tests/`, `evals/`), and nested skills' files do not count: a skill
+  is distributed as its directory, so only instructional material that
+  ships with it can be disclosed progressively.
+- **Instruction files**: explicit markdown links to local files.
+  `@path` imports (files or imported directories) also count, but only
+  in files whose host actually loads them — CLAUDE.md, AGENTS.md, and
+  GEMINI.md; in other instruction files (`.cursorrules`,
+  `copilot-instructions.md`, …) an `@path` token is just prose, so
+  those files disclose through markdown links. Bare path mentions and
+  directory links deliberately do not count — "`src/api/` contains the
+  handlers" and "see [src](src/)" are structure narration, not an
+  instruction to load a file on demand.
+
+## Examples
+
+**Bad (an 8,000-token SKILL.md that inlines everything):**
+
+```markdown
+---
+name: release
+description: Cut a release. Use when publishing a new version.
+---
+
+# Release
+
+## Step 1: version bump
+...600 lines of stage-by-stage detail, edge cases, and rollback
+procedures, all loaded into context every time the skill fires...
+```
+
+**Good (a lean SKILL.md that discloses detail progressively):**
+
+```markdown
+---
+name: release
+description: Cut a release. Use when publishing a new version.
+---
+
+# Release
+
+1. Bump the version and regenerate metadata.
+2. Follow [references/checklist.md](references/checklist.md) for the
+   stage-by-stage procedure.
+3. If anything fails, see [references/rollback.md](references/rollback.md).
+4. Publish with `python scripts/publish.py`.
+```
+
+The same applies to an AGENTS.md: keep it a lightweight map of gotchas,
+and move deep procedure into skills, rule files, or `@imported` docs.
+
+## How to fix
+
+1. Group the file's detail by topic and move each topic into its own
+   file — `references/*.md` and `scripts/` for a skill; a skill, a
+   rules file, or an `@import`ed doc for an instruction file.
+2. Replace each moved section with a one-line pointer that says when to
+   read the split-out file.
+3. Keep in the main file only what every session needs: the map, the
+   gotchas, and the pointers.
+
+Tune the rule in `.skillsaw.yaml` — thresholds are per file category,
+and adding a category extends the rule to it:
+
+```yaml
+rules:
+  content-progressive-disclosure:
+    severity: warning
+    limits:
+      skill: 6000        # flag skills over ~6k tokens with no references
+      claude-md: 6000
+      agent: 2000        # not checked by default; adding it enables it
+```
+
+Ref: [The new rules of context engineering for Claude 5 generation
+models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models)

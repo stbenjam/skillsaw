@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
+  "name": "acme.release-tools-draft",
+  "version": "1.5.0-beta.1",
+  "description": "Review release evidence with the Agent Plugins 1.1.0 draft.",
+  "author": {
+    "name": "Acme Release Engineering",
+    "email": "release-eng@example.com",
+    "url": "https://example.com/release-engineering"
+  },
+  "homepage": "https://example.com/plugins/release-tools",
+  "repository": "https://example.com/source/release-tools",
+  "license": "Apache-2.0",
+  "keywords": ["release", "audit"],
+  "extensions": {
+    "com.example.release": {
+      "releaseChannel": "preview"
+    }
+  }
+}

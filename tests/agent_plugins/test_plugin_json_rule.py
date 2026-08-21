@@ -52,6 +52,17 @@ class TestManifestSchema:
         repo = copy_fixture("agent-plugins/metadata-lax", tmp_path)
         assert lint_rules(repo, PLUGIN_JSON_RULE) == []
 
+    @pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
+    def test_supported_schema_versions_pass(self, tmp_path, version):
+        manifest = {
+            "$schema": f"https://agent-plugins.org/schemas/{version}/plugin.schema.json",
+            "name": "versioned-plugin",
+            "extensions": {"com.example.client": {"enabled": True}},
+        }
+        (tmp_path / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        assert lint_rules(tmp_path, PLUGIN_JSON_RULE) == []
+
     def test_schema_types_and_name_constraints_are_reported(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
         findings = lint_rules(repo, PLUGIN_JSON_RULE)
@@ -114,7 +125,8 @@ class TestManifestSchema:
         assert findings
         combined = "\n".join(messages_lower(findings))
         assert "schema" in combined
-        assert "unsupported" in combined or "1.0.0" in combined
+        assert "unsupported" in combined
+        assert "1.0.0" in combined and "1.1.0" in combined
 
     def test_unknown_fields_are_warnings_not_plugin_fatal(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)

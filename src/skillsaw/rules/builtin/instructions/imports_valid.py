@@ -16,7 +16,7 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 from skillsaw.rules.builtin.utils import read_text
 
-from ._helpers import _IMPORT_RE
+from ._helpers import IMPORT_RE
 from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 
 _MAX_IMPORT_HOPS = 4
@@ -179,7 +179,7 @@ class InstructionImportsValidRule(Rule):
 
 
 def _iter_import_paths(line: str) -> Iterable[Tuple[str, bool]]:
-    for match in _IMPORT_RE.finditer(line):
+    for match in IMPORT_RE.finditer(line):
         import_path = match.group(1).rstrip(".!?")
         if not import_path:
             continue

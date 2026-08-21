@@ -5,12 +5,12 @@ version: "0.19.0"
 
 rules:
 
-  # Agent Plugins plugin.json and skills location must conform to 1.0.0
+  # Agent Plugins plugin.json and skills location must conform to a supported schema
   agent-plugin-json-valid:
     enabled: auto
     severity: error
 
-  # Agent Plugins mcp.json must conform to the 1.0.0 schema and semantics
+  # Agent Plugins mcp.json must conform to a supported schema and semantics
   agent-plugin-mcp-valid:
     enabled: auto
     severity: error
@@ -285,6 +285,17 @@ rules:
   content-placeholder-text:
     enabled: auto
     severity: warning
+
+  # Large skills and instruction files should use progressive disclosure: split detail into referenced files that load on demand
+  content-progressive-disclosure:
+    enabled: auto
+    severity: warning
+    # limits:
+    #   skill: 6000
+    #   claude-md: 6000
+    #   agents-md: 6000
+    #   gemini-md: 6000
+    #   instruction: 4000
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings
   content-redundant-with-tooling:
