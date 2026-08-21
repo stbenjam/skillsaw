@@ -38,6 +38,11 @@ into `@`-imported files or `.claude/rules/` scoped rule files that
 only load when relevant. For skill and command descriptions, shorten
 the frontmatter `description` to a concise trigger phrase.
 
+`content-progressive-disclosure` is the companion rule: it flags
+over-budget files that haven't started this split (no references to
+other local files) and recommends the split-and-link refactor
+specifically.
+
 ## Tuning
 
 Override per-category token limits:
