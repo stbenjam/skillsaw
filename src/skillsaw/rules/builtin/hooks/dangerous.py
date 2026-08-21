@@ -22,7 +22,11 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 _INTERPRETERS = r"(?:node|bun|deno|python[23]?|ruby|perl|php|bash|sh|zsh|dash)"
-_INTERPRETER_CMD = rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?{_INTERPRETERS}"
+# `env` — optionally behind a path, with flags and NAME=value assignments —
+# may prefix any command without changing which program runs
+# (`env FOO=1 curl …`, `/usr/bin/env -i sh …`).
+_ENV_PREFIX = r"(?:(?:\S+/)?env(?:\s+-{1,2}[A-Za-z]+|\s+[A-Za-z_][A-Za-z0-9_]*=\S*)*\s+)?"
+_INTERPRETER_CMD = rf"{_ENV_PREFIX}(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
 _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 
@@ -70,7 +74,7 @@ _DOWNLOAD_CMD_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*"
     rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}"
-    rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?"
+    rf"{_ENV_PREFIX}(?:\S+/)?"
     rf"(?:curl|wget)\b"
     rf"|(?:^|\n|\r|&&|\|\||;|\||&)\s*"  # command position, then…
     rf"{_CMD_WRAPPERS}(?:{_INTERPRETER_CMD})\s+"  # an interpreter…
@@ -113,7 +117,7 @@ _BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*"
     rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
-    rf"{_CMD_WRAPPERS}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
+    rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
 
 

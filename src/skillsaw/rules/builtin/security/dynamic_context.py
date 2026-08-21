@@ -11,7 +11,7 @@ be explicitly allowlisted.
 from typing import Dict, List, Set, Tuple
 
 from skillsaw.context import RepositoryContext
-from skillsaw.diagnostics import safe_display
+from skillsaw.diagnostics import _MAX_DISPLAY, _redact_userinfo, safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
@@ -24,17 +24,20 @@ _MAX_COMMAND_DISPLAY = 60
 
 
 def _display_command(command: str) -> str:
-    # Preserve newlines as structural separators so repr() renders readable
-    # ``\n`` escapes, while still sanitizing every untrusted command line.
-    # Sanitization can rescale a line, so accumulate until the cap is
-    # exceeded instead of projecting the unsanitized length — and walk lines
-    # by index so an oversized command never materializes all of its splits.
+    # Redact credentials on the whole command before per-line sanitizing: a
+    # credential split across a backslash-newline continuation is one
+    # logical token to the shell, and line-local redaction would leak the
+    # fragment before the split. The redaction scan is line-aware (newlines
+    # are delimiters) and bounded to the diagnostics display cap. Control-
+    # character replacement stays per line so newlines survive as readable
+    # repr escapes, and the walk stops once the display cap is exceeded.
+    head = _redact_userinfo(command[:_MAX_DISPLAY])
     pieces = []
     total = 0
     start = 0
     while True:
-        end = command.find("\n", start)
-        line = command[start:] if end == -1 else command[start:end]
+        end = head.find("\n", start)
+        line = head[start:] if end == -1 else head[start:end]
         pieces.append(safe_display(line))
         total += len(pieces[-1]) + 1  # +1 for the joining newline
         if end == -1 or total > _MAX_COMMAND_DISPLAY + 1:

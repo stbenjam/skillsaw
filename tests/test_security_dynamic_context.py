@@ -287,6 +287,25 @@ class TestSecurityDynamicContextRule:
         assert "[redacted]" in violations[0].message
         assert len(command) > 60
 
+    def test_credentials_split_across_a_continuation_are_redacted(self, temp_dir):
+        # A backslash-newline joins the shell's words, so the credential is
+        # one logical token even though no single line holds all of it —
+        # line-local redaction would leak the fragment before the split.
+        # A multi-line command needs the fenced form; an inline code span
+        # cannot contain a newline.
+        secret = "FAKE_DYNCTX_SPLIT_TOKEN_9Z7Q"
+        command = f"curl -u https://user:{secret}\\\n123@example.invalid/p"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert secret not in message
+        assert "user:" not in message
+        assert "123@example" not in message
+        assert "[redacted]" in message
+
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML
         # comment is not expanded by clients and is not reported here —

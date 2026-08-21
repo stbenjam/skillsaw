@@ -35,7 +35,9 @@ def _redact_userinfo(text: str) -> str:
     whitespace). Over-redacting an email-shaped value in a path field is
     the safe direction. A linear right-to-left scan — no regex, so there
     is nothing to backtrack, and no length cap for a long token to slip
-    past.
+    past. A backslash-newline pair is skipped rather than treated as a
+    boundary: the shell joins continuation lines into one word, so
+    splitting a credential across one must not end the scan.
     """
     if "@" not in text:
         return text
@@ -56,6 +58,13 @@ def _redact_userinfo(text: str) -> str:
         # into the middle of a secret and emit its head.
         floor = max(emitted, at - 512)
         found = max(text.rfind(ch, floor, at) for ch in ("/", " ", "\t", "\n", "@"))
+        # A backslash-newline is a line continuation, not a token boundary:
+        # the shell joins the lines into one word, so a credential split
+        # across one ("user:tok\<newline>123@host") is a single userinfo
+        # segment. Skip the pair and keep scanning; each round strictly
+        # lowers the bound, so the loop terminates.
+        while found > 0 and text[found] == "\n" and text[found - 1] == "\\":
+            found = max(text.rfind(ch, floor, found - 1) for ch in ("/", " ", "\t", "\n", "@"))
         start = found + 1 if found != -1 else emitted
         userinfo = text[start:at]
         if not userinfo:
@@ -66,7 +75,20 @@ def _redact_userinfo(text: str) -> str:
         # redaction — the safe direction.
         head_limit = min(at + 1 + 512, length)
         host_head = text[at + 1 : head_limit]
-        ws = next((i for i, ch in enumerate(host_head) if ch.isspace()), None)
+        # Same continuation rule looking forward: "tok@exa\<newline>mple.com"
+        # is one host word, and stopping at the newline would hide the dot
+        # that makes it host-like.
+        ws = None
+        index = 0
+        while index < len(host_head):
+            char = host_head[index]
+            if char == "\\" and host_head.startswith("\n", index + 1):
+                index += 2
+                continue
+            if char.isspace():
+                ws = index
+                break
+            index += 1
         if ws is not None:
             host_head = host_head[:ws]
             host_like = "." in host_head or ":" in host_head
@@ -92,14 +114,21 @@ def _cut_severed_userinfo(raw: str, cut: int) -> bool:
     all. Running past the cap without resolving it means the segment is
     longer than any real path component, which is treated as
     credential-shaped — the safe direction, matching the host-length cap
-    in :func:`_redact_userinfo`.
+    in :func:`_redact_userinfo`. Backslash-newline pairs are skipped, not
+    boundaries: a continuation joins the tail to the head before the cut.
     """
     window = raw[cut : cut + _LOOKAHEAD]
-    for char in window:
+    index = 0
+    while index < len(window):
+        char = window[index]
+        if char == "\\" and window.startswith("\n", index + 1):
+            index += 2
+            continue
         if char == "@":
             return True
         if char in "/ \t\n":
             return False
+        index += 1
     return len(raw) > cut + _LOOKAHEAD
 
 
