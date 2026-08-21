@@ -22,10 +22,16 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 _INTERPRETERS = r"(?:node|bun|deno|python[23]?|ruby|perl|php|bash|sh|zsh|dash)"
+# A variable assignment's value: unquoted or quoted — `FOO="a b" curl …` is
+# one shell word pair, and `\S*` alone stops at the space.
+_ASSIGN_VALUE = r"""(?:"[^"]*"|'[^']*'|\S*)"""
+_VAR_ASSIGN = rf"[A-Za-z_][A-Za-z0-9_]*={_ASSIGN_VALUE}"
 # `env` — optionally behind a path, with flags and NAME=value assignments —
 # may prefix any command without changing which program runs
 # (`env FOO=1 curl …`, `/usr/bin/env -i sh …`).
-_ENV_PREFIX = r"(?:(?:\S+/)?env(?:\s+-{1,2}[A-Za-z]+|\s+[A-Za-z_][A-Za-z0-9_]*=\S*)*\s+)?"
+_ENV_PREFIX = (
+    r"(?:(?:\S+/)?env(?:\s+-{1,2}[A-Za-z]+|\s+[A-Za-z_][A-Za-z0-9_]*=" rf"{_ASSIGN_VALUE})*\s+)?"
+)
 _INTERPRETER_CMD = rf"{_ENV_PREFIX}(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
 _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
@@ -56,13 +62,23 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
 
 # Words that may sit between a command boundary and the executable without
 # changing which program runs: POSIX wrappers (`command`, `exec`, `time`,
-# `nohup`, …) and sudo with any number of option/value pairs
-# (`sudo -n -u nobody curl …`). Heuristic coverage, not shell semantics.
-_CMD_WRAPPERS = (
-    r"(?:(?:sudo(?:\s+-{1,2}[A-Za-z][\w-]*(?:\s+[A-Za-z_][\w.+-]*)?)*"
-    r"|command|exec|builtin|time|nice|nohup|ionice|stdbuf"
-    r"|timeout(?:\s+\S+)?)\s+)*"
+# `nohup`, …) with their option words (`sudo -n -u nobody curl …`,
+# `timeout 30 curl …`). Heuristic coverage, not shell semantics. The value
+# word after an option is excluded from starting anything else — a wrapper
+# verb, an option, or a command head — so exactly one parse is viable at
+# every position; letting an option's optional value compete with a fresh
+# wrapper word made the scan exponential (`'sudo -u ' * 22 + 'notfetch'`
+# cost five seconds of backtracking).
+_WRAPPER_VERBS = r"(?:sudo|command|exec|builtin|time|nice|nohup|ionice|stdbuf|timeout)"
+_WRAPPER_OPT = r"-{1,2}[A-Za-z][\w-]*(?:=\S+)?"
+_WRAPPER_VAL = (
+    r"(?!-)"
+    r"(?!sudo\b|command\b|exec\b|builtin\b|time\b|nice\b|nohup\b|ionice\b"
+    r"|stdbuf\b|timeout\b|curl\b|wget\b|ncat?\b|node\b|bun\b|deno\b"
+    r"|python[23]?\b|ruby\b|perl\b|php\b|bash\b|sh\b|zsh\b|dash\b|env\b)"
+    r"[\w+=.-]+"
 )
+_CMD_WRAPPERS = rf"(?:(?:{_WRAPPER_VERBS}|{_WRAPPER_OPT})\s+(?:{_WRAPPER_VAL}\s+)?)*"
 # A download tool in command position — optionally behind wrappers,
 # VAR=value assignments, an env wrapper, or a path prefix (`FOO=1 curl …`,
 # `command curl …`, `/usr/bin/curl …`) — or as the string an interpreter is
@@ -72,7 +88,7 @@ _CMD_WRAPPERS = (
 # signal while every real invocation still anchors to a boundary.
 _DOWNLOAD_CMD_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*"
-    rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
+    rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}"
     rf"{_ENV_PREFIX}(?:\S+/)?"
     rf"(?:curl|wget)\b"
@@ -116,7 +132,7 @@ _BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 
 _NETWORK_FETCH_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*"
-    rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
+    rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
 
@@ -135,6 +151,12 @@ def _mask_quoted_separators(line: str) -> str:
     inside the current double-quoted span, masking stops for its remainder.
     Single quotes never execute, so their contents stay masked throughout.
 
+    Inside double quotes a backslash escapes the next character — the span
+    `"escaped quote: \""` ends at the final mark, not at the escaped one —
+    so an escape pair passes through untouched and cannot close the span,
+    flip it live, or mask what follows. Single quotes treat backslashes as
+    literal.
+
     Substitution markers (`$`, `<`, backtick) are masked inside quoted spans
     too: `'$(python .claude/x.sh)'` only ever echoes its literal. A `$(` or
     backtick in double quotes flips the span live before it can be masked,
@@ -145,7 +167,17 @@ def _mask_quoted_separators(line: str) -> str:
     out = []
     quote = None
     live = False
-    for index, char in enumerate(line):
+    index = 0
+    length = len(line)
+    while index < length:
+        char = line[index]
+        if quote == '"' and char == "\\" and index + 1 < length:
+            # An escape pair is data: append both characters verbatim so
+            # the escaped one can neither close nor open a quoted span.
+            out.append(char)
+            out.append(line[index + 1])
+            index += 2
+            continue
         if quote and not live:
             # The live trigger must win over masking: in double quotes a $(
             # or backtick executes, so it is never masked.
@@ -153,6 +185,7 @@ def _mask_quoted_separators(line: str) -> str:
                 live = True
             elif char in "&|;$<`":
                 out.append("\x00")
+                index += 1
                 continue
             elif char == quote:
                 quote = None
@@ -160,6 +193,7 @@ def _mask_quoted_separators(line: str) -> str:
             quote = char
             live = False
         out.append(char)
+        index += 1
     return "".join(out)
 
 

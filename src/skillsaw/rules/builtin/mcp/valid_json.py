@@ -30,19 +30,41 @@ def _is_usable(value: Any) -> bool:
 # embedded user information.
 _URL_USERINFO_RE = re.compile(r"://[^/?#]*@")
 
+# WHATWG URL parsing — every browser and Node runtime — is lenient about the
+# ``//`` after a special scheme: it accepts any slash run (backslashes too),
+# so a JS client reads ``https:user:pass@example.com/mcp`` as user
+# information for example.com while RFC 3986, and urlsplit with it, see one
+# opaque path. Such spellings are retried in their normalized form.
+_WHATWG_SPECIAL_SCHEME_RE = re.compile(r"^(https?|wss?|ftp|file):", re.IGNORECASE)
+
 
 def _url_has_userinfo(url: str) -> bool:
     """Whether a URL carries user information, even when malformed.
 
     urlsplit raises ValueError on some malformed URLs; the conservative
     fallback scans for the userinfo shape so an unparseable URL cannot
-    smuggle embedded credentials past the check.
+    smuggle embedded credentials past the check. Slashless special-scheme
+    spellings are additionally retried the way a WHATWG client would
+    normalize them.
     """
-    try:
-        parsed = urlsplit(url)
-    except ValueError:
-        return _URL_USERINFO_RE.search(url) is not None
-    return parsed.username is not None or parsed.password is not None
+
+    def carries(candidate: str) -> bool:
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            return _URL_USERINFO_RE.search(candidate) is not None
+        return parsed.username is not None or parsed.password is not None
+
+    if carries(url):
+        return True
+    match = _WHATWG_SPECIAL_SCHEME_RE.match(url)
+    if not match:
+        return False
+    rest = url[match.end() :]
+    if rest.startswith("//"):
+        # Already in authority form — the first parse was authoritative.
+        return False
+    return carries(f"{match.group(0)}//{rest.lstrip('/\\')}".replace("\\", "/"))
 
 
 #: Fields that appear on one server, never on a map of them.

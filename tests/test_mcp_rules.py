@@ -714,6 +714,12 @@ def test_editor_mcp_credentials_are_reported_without_echoing_values(temp_dir):
         # fallback must still surface the embedded user information.
         "https://user:pass@[::1",
         "https://user@[fe80::1%25eth0",
+        # WHATWG clients (browsers, Node) tolerate a missing or short slash
+        # run after a special scheme and parse these as user information for
+        # example.com; RFC 3986 — and urlsplit — see only an opaque path.
+        "https:user:pass@example.com/mcp",
+        "https:/user:pass@example.com/mcp",
+        "https:\\user:pass@example.com/mcp",
     ],
 )
 def test_malformed_url_with_user_information_is_still_reported(temp_dir, url):
