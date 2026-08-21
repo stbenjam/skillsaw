@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.rule import AutofixConfidence, Severity
 from skillsaw.utils import invalidate_read_caches
 from skillsaw.rules.builtin.agentskills import (
@@ -1756,6 +1757,51 @@ def test_markdown_link_reference(temp_dir):
     (skill / "references" / "guide.md").write_text("# Guide\n")
 
     assert AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill)) == []
+
+
+def test_data_uri_image_link_does_not_crash(temp_dir):
+    """A base64 data: URI image link must not abort the rule.
+
+    ``resolve()`` does not stat the final path component, so
+    ``base_dir / "data:image/png;base64,<~1KB>"`` resolves fine; the raw
+    ``is_dir()`` / ``is_file()`` that follows then raises ``ENAMETOOLONG``,
+    which would surface as a rule-execution-error and discard every finding
+    for the repository.  The data URI is external, so it references nothing
+    and the genuinely-orphaned file is still flagged.
+    """
+    payload = "iVBORw0KGgo" * 120
+    body = "\n\n".join(
+        f"Logo {i}: ![logo]({scheme}image/png;base64,{payload})"
+        for i, scheme in enumerate(("data:", "DATA:", "Data:"))
+    )
+    skill = _make_skill(temp_dir, body=body)
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "orphan.py").write_text("print('never mentioned')\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    assert [v.file_path for v in violations] == [skill / "scripts" / "orphan.py"]
+
+
+def test_mixed_case_uri_scheme_link_is_treated_as_external(temp_dir):
+    """URI schemes are case-insensitive (RFC 3986 §3.1), so `DATA:` is external.
+
+    ``safe_is_dir`` / ``safe_is_file`` already keep a mixed-case data URI
+    from crashing the lint, so this guards the prefix check itself:
+    ``_link_targets`` must not resolve such an href as a local path even
+    when something does exist where it would resolve to.  Planting that
+    file is what makes the distinction observable — an unresolvable href
+    yields an empty result either way.
+    """
+    skill = temp_dir / "demo-skill"
+    planted = skill / "DATA:image"
+    planted.mkdir(parents=True)
+    (planted / "png;base64,AAAA").write_text("not really a png\n")
+
+    doc = MarkdownDoc("![logo](DATA:image/png;base64,AAAA)")
+    assert [link.href for link in doc.links()] == ["DATA:image/png;base64,AAAA"]
+
+    files, dirs = AgentSkillUnreferencedFilesRule._link_targets(doc, skill, skill.resolve())
+    assert (files, dirs) == (set(), set())
 
 
 def test_bare_filename_mention_counts(temp_dir):
