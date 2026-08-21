@@ -22,15 +22,30 @@ from skillsaw.rules.builtin.content_analysis import (
 )
 
 _INTERPRETERS = r"(?:node|bun|deno|python[23]?|ruby|perl|php|bash|sh|zsh|dash)"
-# A variable assignment's value: unquoted or quoted — `FOO="a b" curl …` is
-# one shell word pair, and `\S*` alone stops at the space.
-_ASSIGN_VALUE = r"""(?:"[^"]*"|'[^']*'|\S*)"""
+# A variable assignment's value: quoted or unquoted. The branches are
+# mutually exclusive — an unquoted run may not contain quote characters —
+# because `\S*` also matches quoted strings, and inside a repeated
+# assignment prefix that ambiguity is exponential again (every `A="x"`
+# doubles the parses). The cost is exotic glued forms like `FOO=a"b"`.
+_ASSIGN_VALUE = r"""(?:"[^"]*"|'[^']*'|[^\s"']*)"""
 _VAR_ASSIGN = rf"[A-Za-z_][A-Za-z0-9_]*={_ASSIGN_VALUE}"
 # `env` — optionally behind a path, with flags and NAME=value assignments —
 # may prefix any command without changing which program runs
-# (`env FOO=1 curl …`, `/usr/bin/env -i sh …`).
+# (`env FOO=1 curl …`, `/usr/bin/env -i sh …`). Options that take a separate
+# operand (`-u NAME`, `--chdir DIR`, …) consume it, so their operand is not
+# mistaken for the wrapped command (`env --unset curl echo ok` runs `echo`,
+# not `curl`); the operand may not start with `-`, which keeps one parse.
+# The valueless-flag branch must refuse exactly those spellings, or a
+# failing operand parse backtracks into the valueless one and the freed
+# operand lands in command position anyway.
+_ENV_OPERAND_FLAGS = r"u|unset|chdir|C|S|split-string"
 _ENV_PREFIX = (
-    r"(?:(?:\S+/)?env(?:\s+-{1,2}[A-Za-z]+|\s+[A-Za-z_][A-Za-z0-9_]*=" rf"{_ASSIGN_VALUE})*\s+)?"
+    r"(?:(?:\S+/)?env(?:"
+    r"\s+-{1,2}(?:" + _ENV_OPERAND_FLAGS + r")(?:="
+    rf"{_ASSIGN_VALUE}|\s+(?!-)\S+)"
+    r"|\s+(?!-{1,2}(?:" + _ENV_OPERAND_FLAGS + r")\b)-{1,2}[A-Za-z][\w-]*"
+    rf"|\s+[A-Za-z_][A-Za-z0-9_]*={_ASSIGN_VALUE}"
+    r")*\s+)?"
 )
 _INTERPRETER_CMD = rf"{_ENV_PREFIX}(?:\S+/)?{_INTERPRETERS}"
 _SUDO = r"(?:sudo\s+)?"
@@ -51,8 +66,19 @@ _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 # never less — the safe direction.
 _CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&|(?:\$\(|<\())"
 
+# Leading redirections are not commands: `2>/dev/null curl … | sh`,
+# `> build.log wget …`, `2>&1 curl …`. File redirects take exactly one
+# target word, glued or spaced; fd-duplication (`2>&1`) takes none. The
+# operator alternation is maximal-munch (`>>` before `>`) and the target
+# may not begin with another redirect operator — otherwise `>>x` parses
+# both as `>>`+`x` and as `>`+`>x`, and inside the repeated group every
+# extra occurrence doubles the viable parses (the same ambiguity that made
+# the wrapper scan exponential). A target starting with `<`/`>` is a shell
+# syntax error anyway, so refusing it loses nothing real.
+_REDIRECTION = r"(?:\d*(?:>>|<<|[><])\s*(?![<>])\S+\s+|\d*&\d*\s+)*"
+
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
-    rf"""{_CMD_BOUNDARY}\s*
+    rf"""{_CMD_BOUNDARY}\s*{_REDIRECTION}
         {_SUDO}                              # optional sudo
         (?:{_INTERPRETER_CMD})\s+(?:run\s+)? # interpreter [run]
         (?:\S+/)?{_DOTFILE_DIRS}/\S+         # path under dotfile dir
@@ -72,11 +98,12 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
 _WRAPPER_VERBS = r"(?:sudo|command|exec|builtin|time|nice|nohup|ionice|stdbuf|timeout)"
 _WRAPPER_OPT = r"-{1,2}[A-Za-z][\w-]*(?:=\S+)?"
 _WRAPPER_VAL = (
+    r"""(?:"[^"]*"|'[^']*'|"""
     r"(?!-)"
     r"(?!sudo\b|command\b|exec\b|builtin\b|time\b|nice\b|nohup\b|ionice\b"
     r"|stdbuf\b|timeout\b|curl\b|wget\b|ncat?\b|node\b|bun\b|deno\b"
     r"|python[23]?\b|ruby\b|perl\b|php\b|bash\b|sh\b|zsh\b|dash\b|env\b)"
-    r"[\w+=.-]+"
+    r"[\w+=.-]+)"
 )
 _CMD_WRAPPERS = rf"(?:(?:{_WRAPPER_VERBS}|{_WRAPPER_OPT})\s+(?:{_WRAPPER_VAL}\s+)?)*"
 # A download tool in command position — optionally behind wrappers,
@@ -87,7 +114,7 @@ _CMD_WRAPPERS = rf"(?:(?:{_WRAPPER_VERBS}|{_WRAPPER_OPT})\s+(?:{_WRAPPER_VAL}\s+
 # quoted prose like `echo "use curl to fetch"` from acting as a download
 # signal while every real invocation still anchors to a boundary.
 _DOWNLOAD_CMD_RE = re.compile(
-    rf"{_CMD_BOUNDARY}\s*"
+    rf"{_CMD_BOUNDARY}\s*{_REDIRECTION}"
     rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}"
     rf"{_ENV_PREFIX}(?:\S+/)?"
@@ -108,10 +135,12 @@ _SUBSTITUTION_FETCH_RE = re.compile(
     re.VERBOSE,
 )
 # Where a download segment writes its payload — curl/wget `-o`/`-O`,
-# `--output[=] `, or a shell redirect. A later segment that invokes one of
-# these paths pairs the download with it even when intermediate commands
-# (chmod, mv) sit between them.
-_ARTIFACT_TARGET_RE = re.compile(r"(?:-o|-O|--output)[=\s]+(\S+)|>{1,2}\s*(\S+)")
+# `--output[=] `, or a shell redirect — quoted paths included. A later
+# segment that invokes one of these paths pairs the download with it even
+# when intermediate commands (chmod, mv) sit between them.
+_ARTIFACT_TARGET_RE = re.compile(
+    r"""(?:-o|-O|--output)[=\s]+(?:"[^"]*"|'[^']*'|\S+)""" r"""|>{1,2}\s*(?:"[^"]*"|'[^']*'|\S+)"""
+)
 # The same boundary set as _CMD_BOUNDARY, so the tokenizer and the anchored
 # patterns in this module cannot drift: `||` is one operator (splitting on
 # bare `|` alone used to leave an empty middle segment that masqueraded as a
@@ -131,7 +160,7 @@ _OBFUSCATION_RE = re.compile(
 _BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 
 _NETWORK_FETCH_RE = re.compile(
-    rf"{_CMD_BOUNDARY}\s*"
+    rf"{_CMD_BOUNDARY}\s*{_REDIRECTION}"
     rf"(?:{_VAR_ASSIGN}\s+)*"  # VAR=value assignment prefixes
     rf"{_CMD_WRAPPERS}{_ENV_PREFIX}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
 )
@@ -148,8 +177,12 @@ def _mask_quoted_separators(line: str) -> str:
 
     Separators inside a double-quoted command substitution stay live —
     `"$(curl x; sh y)"` executes both — so once `$(` or a backtick appears
-    inside the current double-quoted span, masking stops for its remainder.
-    Single quotes never execute, so their contents stay masked throughout.
+    inside the current double-quoted span, masking stops while it runs.
+    The substitution ends where the shell's does: a backtick form at the
+    closing backtick, a `$(` form when its parentheses balance — after
+    which separators are data again (`echo "$(printf ok); notes"` only
+    ever echoes). Single quotes never execute, so their contents stay
+    masked throughout.
 
     Inside double quotes a backslash escapes the next character — the span
     `"escaped quote: \""` ends at the final mark, not at the escaped one —
@@ -167,6 +200,8 @@ def _mask_quoted_separators(line: str) -> str:
     out = []
     quote = None
     live = False
+    sub_depth = 0  # $( depth of the live double-quoted substitution
+    backtick_live = False
     index = 0
     length = len(line)
     while index < length:
@@ -183,12 +218,28 @@ def _mask_quoted_separators(line: str) -> str:
             # or backtick executes, so it is never masked.
             if quote == '"' and (char == "`" or (char == "$" and line.startswith("(", index + 1))):
                 live = True
+                backtick_live = char == "`"
+                sub_depth = 0  # the opening "(" is counted below
             elif char in "&|;$<`":
                 out.append("\x00")
                 index += 1
                 continue
             elif char == quote:
                 quote = None
+        elif quote and live:
+            # Track the live substitution so it can end: a backtick form
+            # closes at the next backtick, a $( form when its parentheses
+            # balance again.
+            if backtick_live:
+                if char == "`":
+                    live = False
+                    backtick_live = False
+            elif char == "(":
+                sub_depth += 1
+            elif char == ")":
+                sub_depth -= 1
+                if sub_depth <= 0:
+                    live = False
         elif not quote and char in "\"'":
             quote = char
             live = False
@@ -237,8 +288,15 @@ def _downloads_and_executes(command: str) -> bool:
             substitution_fetch = _SUBSTITUTION_FETCH_RE.search(segment) is not None
             segment_downloads = _DOWNLOAD_CMD_RE.search(segment) is not None or substitution_fetch
             if segment_downloads:
+                # Paths are unquoted here: `curl -o "/tmp/a b"` writes one
+                # file, and a later `sh "/tmp/a b"` must pair with it — a
+                # word-split comparison cannot reassemble the quoted word,
+                # but a substring test on the segment can.
                 artifact_paths.update(
-                    path for pair in _ARTIFACT_TARGET_RE.findall(segment) for path in pair if path
+                    path.strip("\"'")
+                    for pair in _ARTIFACT_TARGET_RE.findall(segment)
+                    for path in pair
+                    if path
                 )
                 if substitution_fetch and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
                     return True  # self-contained: bash <(curl …), bash -c "$(curl …)"
@@ -249,7 +307,7 @@ def _downloads_and_executes(command: str) -> bool:
             if (
                 artifact_paths
                 and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment)
-                and {word.strip("\"'") for word in segment.split()} & artifact_paths
+                and any(path in segment for path in artifact_paths)
             ):
                 return True  # interpreter consumes a downloaded path
             piped_download = via_pipe or segment_downloads

@@ -306,6 +306,23 @@ class TestSecurityDynamicContextRule:
         assert "123@example" not in message
         assert "[redacted]" in message
 
+    def test_truncated_credential_is_redacted_from_command_display(self, temp_dir):
+        # A colon-free credential longer than the display cap leaves a tail
+        # with nothing credential-shaped about it — truncating before
+        # redacting must still look past the cut for the ``@`` that names
+        # the tail userinfo, or the token rides into the message verbatim.
+        secret = "T" * 600
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert secret not in message
+        assert "TTT" not in message
+        assert "[redacted]" in message
+
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML
         # comment is not expanded by clients and is not reported here —

@@ -432,17 +432,30 @@ class TestSafeDisplay:
         assert "[redacted]" in out
 
     def test_redaction_stays_bounded_with_many_continuations(self):
-        """Continuation skipping must not reopen a quadratic scan."""
+        """Continuation skipping must not reopen a quadratic scan.
+
+        A scaling ratio, not a wall-clock bound — absolute timings are
+        instrumentation-dependent: coverage tracing on Python <=3.11
+        has no sys.monitoring backend and multiplies per-line cost.
+        """
         import time
 
         from skillsaw.diagnostics import _redact_userinfo
 
-        evil = "a" * 200 + "\\\n" * 250 + "b:c@h.example"
-        start = time.perf_counter()
-        out = _redact_userinfo(evil)
-        elapsed = time.perf_counter() - start
-        assert "b:c" not in out
-        assert elapsed < 0.1
+        def cost(continuations: int) -> float:
+            evil = "a" * 200 + "\\\n" * continuations + "b:c@h.example"
+            best = float("inf")
+            for _ in range(3):
+                start = time.perf_counter()
+                out = _redact_userinfo(evil)
+                best = min(best, time.perf_counter() - start)
+            assert "b:c" not in out
+            return best
+
+        t1, t4 = cost(250), cost(1000)
+        # Linear in the continuation count (ratio ~4); a quadratic
+        # rescan would land near 16. 8 leaves headroom for noise.
+        assert t4 < 8 * max(t1, 1e-5), (t1, t4)
 
 
 class TestRendererHardening:

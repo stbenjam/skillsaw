@@ -11,7 +11,12 @@ be explicitly allowlisted.
 from typing import Dict, List, Set, Tuple
 
 from skillsaw.context import RepositoryContext
-from skillsaw.diagnostics import _MAX_DISPLAY, _redact_userinfo, safe_display
+from skillsaw.diagnostics import (
+    _MAX_DISPLAY,
+    _redact_userinfo,
+    _truncate_for_display,
+    safe_display,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
@@ -31,7 +36,11 @@ def _display_command(command: str) -> str:
     # are delimiters) and bounded to the diagnostics display cap. Control-
     # character replacement stays per line so newlines survive as readable
     # repr escapes, and the walk stops once the display cap is exceeded.
-    head = _redact_userinfo(command[:_MAX_DISPLAY])
+    #
+    # Truncation goes through the shared severed-credential path — cutting
+    # a long credential mid-token leaves a colon-free tail in view that
+    # only looking past the cut reveals as userinfo.
+    head = _redact_userinfo(_truncate_for_display(command))
     pieces = []
     total = 0
     start = 0

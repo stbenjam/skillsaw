@@ -150,6 +150,23 @@ def encodable(text: str) -> str:
     return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
+def _truncate_for_display(raw: str) -> str:
+    """*raw* cut to the display cap, with a severed credential redacted.
+
+    The cut can sever a credential ahead of its ``@``, leaving a window
+    that redaction would never match. Two ways to tell: the visible tail
+    is colon-bearing (``user:token`` shape), or the ``@`` itself sits just
+    past the cut. Over-redacting a truncated tail is the safe direction.
+    """
+    text = raw[:_MAX_DISPLAY]
+    if len(text) == len(raw):
+        return text
+    start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
+    if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
+        text = text[:start] + "[redacted]"
+    return text
+
+
 def safe_display(value: object) -> str:
     """A manifest value made safe to echo into a violation message.
 
@@ -166,16 +183,7 @@ def safe_display(value: object) -> str:
     # just the output — redaction over the full value is superlinear
     # on adversarial input (a megabyte of "a:b@" costs seconds), and one
     # diagnostic must not buy minutes of CPU.
-    text = raw[:_MAX_DISPLAY]
-    if truncated:
-        # The cut can sever a credential ahead of its ``@``, leaving a
-        # window that redaction would never match. Two ways to tell:
-        # the visible tail is colon-bearing (``user:token`` shape), or the
-        # ``@`` itself sits just past the cut. Over-redacting a truncated
-        # tail is the safe direction.
-        start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
-        if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
-            text = text[:start] + "[redacted]"
+    text = _truncate_for_display(raw)
     text = _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", text)
     text = _redact_userinfo(text)
     if truncated or len(text) > _MAX_DISPLAY:

@@ -404,10 +404,20 @@ class MarketplaceJsonValidRule(Rule):
 
             if command_valid:
                 for description in dangerous_command_descriptions(command):
+                    # The bun note is a "verify intent" heads-up, not a
+                    # defect — bun is a legitimate runtime for install
+                    # commands — so it reports at warning severity while
+                    # the execution findings keep the rule's default.
+                    severity = (
+                        Severity.WARNING
+                        if description.startswith("uses bun runtime")
+                        else self.default_severity()
+                    )
                     violations.append(
                         self.violation(
                             f"plugins[{idx}].source command {description}",
                             file_path=marketplace_file,
+                            severity=severity,
                         )
                     )
 
