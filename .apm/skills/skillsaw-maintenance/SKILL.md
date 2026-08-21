@@ -34,6 +34,7 @@ to check, the rules that map, and sync notes (hand-copied values that can drift)
 | Spec | Reference | Rules (dir) |
 |---|---|---|
 | Agent Skills (agentskills.io) | [references/agentskills.md](references/agentskills.md) | `agentskills/` |
+| Agent Plugins | [references/agent-plugins.md](references/agent-plugins.md) | `agent_plugins/` |
 | Claude Code (plugins, marketplace, .claude, hooks, mcp, skills, agents) | [references/claude.md](references/claude.md) | `plugins/`, `commands/`, `marketplace/`, `hooks/`, `mcp/`, `skills/`, `agents/` |
 | OpenAI Codex (plugins, marketplaces, `agents/openai.yaml` skill metadata) | [references/codex.md](references/codex.md) | `codex/` |
 | OpenClaw | [references/openclaw.md](references/openclaw.md) | `openclaw/` |

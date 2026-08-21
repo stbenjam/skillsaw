@@ -1,12 +1,14 @@
 An Agent Plugin is a self-contained package rooted at a directory with a
 canonical `plugin.json`. This rule validates the portable manifest and the
 fixed component locations defined by the
-[Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification).
+[Agent Plugins 1.0.0 specification](https://agent-plugins.org/specification)
+and the
+[1.1.0 working draft](https://github.com/agentplugins/agent-plugins-spec/blob/ff8ab5e392cc87bd88d87c060815a87490e51003/spec/1.1.0.md).
 
 ## What is checked
 
-- `plugin.json` is a JSON object with the exact 1.0.0 `$schema` identifier and
-  a valid `name`.
+- `plugin.json` is a JSON object with an exact supported 1.0.0 or 1.1.0
+  `$schema` identifier and a valid `name`.
 - The optional metadata fields have the types defined by the specification.
   Semantic Versioning, SPDX, email, and URL syntax are recommendations rather
   than manifest validity requirements.
@@ -53,6 +55,9 @@ Start with the minimal portable manifest:
   "name": "my-plugin"
 }
 ```
+
+The example targets the published 1.0.0 release. Use the matching 1.1.0
+identifier when intentionally targeting that working draft.
 
 Keep portable skills under `skills/<skill-name>/SKILL.md`. Do not replace the
 fixed locations with manifest path fields. Resolve symlinks and other package

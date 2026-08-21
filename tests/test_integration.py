@@ -328,6 +328,15 @@ class TestAgentPlugins:
         assert "agent-plugin-json-valid" not in rule_ids(r)
         assert "agent-plugin-mcp-valid" not in rule_ids(r)
 
+    def test_clean_1_1_draft_plugin_passes_end_to_end(self, tmp_path):
+        repo = copy_fixture("agent-plugins/clean-1.1", tmp_path)
+        r = run_lint(repo)
+
+        assert r["rc"] == 0, violations(r)
+        assert "agent-plugin" in r["out"]["stats"]["repo_types"]
+        assert "agent-plugin-json-valid" not in rule_ids(r)
+        assert "agent-plugin-mcp-valid" not in rule_ids(r)
+
     def test_broken_manifest_reports_errors_and_spec_warnings(self, tmp_path):
         repo = copy_fixture("agent-plugins/broken-manifest", tmp_path)
         r = run_lint(repo)
