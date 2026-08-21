@@ -110,5 +110,9 @@ rules:
     severity: error
 ```
 
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `additional-placeholders` | Extra case-insensitive substrings that mark a generic credential value as a placeholder (suppressing the violation) | `[]` |
+
 
 *Run `skillsaw explain mcp-valid-json` to see this documentation and the rule's effective configuration in your terminal.*

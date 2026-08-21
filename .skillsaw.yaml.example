@@ -436,6 +436,7 @@ rules:
   mcp-valid-json:
     enabled: true
     severity: error
+    # additional-placeholders: []
 
   # Validate metadata.openclaw fields against the OpenClaw spec
   openclaw-metadata:

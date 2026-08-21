@@ -2,7 +2,8 @@
 Rule: mcp-valid-json
 """
 
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Tuple
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -23,6 +24,25 @@ from skillsaw.rules.builtin.utils import read_json
 def _is_usable(value: Any) -> bool:
     """Whether a required connection field names something spawnable."""
     return isinstance(value, str) and bool(value.strip())
+
+
+# ``scheme://…@`` ahead of any path/query/fragment — the structural shape of
+# embedded user information.
+_URL_USERINFO_RE = re.compile(r"://[^/?#]*@")
+
+
+def _url_has_userinfo(url: str) -> bool:
+    """Whether a URL carries user information, even when malformed.
+
+    urlsplit raises ValueError on some malformed URLs; the conservative
+    fallback scans for the userinfo shape so an unparseable URL cannot
+    smuggle embedded credentials past the check.
+    """
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return _URL_USERINFO_RE.search(url) is not None
+    return parsed.username is not None or parsed.password is not None
 
 
 #: Fields that appear on one server, never on a map of them.
@@ -47,6 +67,20 @@ class McpValidJsonRule(Rule):
     """Check that MCP configuration is valid JSON with proper structure"""
 
     default_enabled = True
+
+    # Mirrors ``agent-plugin-mcp-valid`` and ``content-embedded-secrets``: a
+    # project that allowlisted its own placeholder convention must not be told
+    # its mcp.json embeds a credential for the same value.
+    config_schema = {
+        "additional-placeholders": {
+            "type": "list",
+            "default": [],
+            "description": (
+                "Extra case-insensitive substrings that mark a generic "
+                "credential value as a placeholder (suppressing the violation)"
+            ),
+        },
+    }
 
     VALID_MCP_TYPES = ("stdio", "http", "sse", "streamable-http", "ws")
 
@@ -381,13 +415,7 @@ class McpValidJsonRule(Rule):
                     )
                 )
             elif isinstance(server_config.get("url"), str):
-                try:
-                    parsed_url = urlsplit(server_config["url"])
-                except ValueError:
-                    parsed_url = None
-                if parsed_url is not None and (
-                    parsed_url.username is not None or parsed_url.password is not None
-                ):
+                if _url_has_userinfo(server_config["url"]):
                     violations.append(
                         self.violation(
                             f"MCP server '{shown}' 'url' must not contain user information",
@@ -460,6 +488,13 @@ class McpValidJsonRule(Rule):
 
         return violations
 
+    def _placeholder_markers(self) -> Tuple[str, ...]:
+        """The placeholder allowlist, extended by this rule's configuration."""
+        extra = self.config.get("additional-placeholders", [])
+        if not isinstance(extra, list):
+            return DEFAULT_PLACEHOLDER_MARKERS
+        return DEFAULT_PLACEHOLDER_MARKERS + tuple(str(m).lower() for m in extra if str(m))
+
     def _mapped_secret_violations(
         self,
         values: Dict[Any, Any],
@@ -477,7 +512,7 @@ class McpValidJsonRule(Rule):
                 name,
                 value,
                 header=header,
-                markers=DEFAULT_PLACEHOLDER_MARKERS,
+                markers=self._placeholder_markers(),
             )
             if description is None:
                 continue

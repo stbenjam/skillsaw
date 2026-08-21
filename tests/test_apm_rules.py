@@ -223,8 +223,10 @@ def test_apm_yaml_invalid_yaml_fails(temp_dir):
     assert "Invalid YAML" in violations[0].message
 
 
-def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir):
+def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir, oversized_integer_digits):
     """A parser ValueError must remain an ordinary invalid-YAML finding."""
+    if oversized_integer_digits is None:
+        pytest.skip("this Python does not limit integer string conversion")
     repo = temp_dir / "apm-repo"
     repo.mkdir()
     _make_apm_repo(
@@ -234,7 +236,7 @@ def test_apm_yaml_oversized_integer_is_reported_not_raised(temp_dir):
             "name: test\n"
             "version: 1.0.0\n"
             "targets: [cursor]\n"
-            f"unrelated_integer: {'9' * 5000}\n"
+            f"unrelated_integer: {oversized_integer_digits}\n"
         ),
     )
 

@@ -4,6 +4,7 @@ Pytest fixtures and configuration
 
 import json
 import os
+import sys
 import pytest
 from pathlib import Path
 import tempfile
@@ -30,6 +31,21 @@ def _load_dotenv():
 
 
 _load_dotenv()
+
+
+@pytest.fixture(scope="session")
+def oversized_integer_digits():
+    """An integer literal that trips the interpreter's int-parse limit.
+
+    Python < 3.11 sets no limit, in which case the fixture is None and
+    tests relying on the limit skip instead of asserting a ValueError that
+    cannot happen.
+    """
+    getter = getattr(sys, "get_int_max_str_digits", None)
+    if getter is None or getter() <= 0:
+        return None
+    # Parsing raises only when the digit count strictly exceeds the limit.
+    return "9" * (getter() + 1)
 
 
 @pytest.fixture

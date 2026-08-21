@@ -26,7 +26,17 @@ _MAX_COMMAND_DISPLAY = 60
 def _display_command(command: str) -> str:
     # Preserve newlines as structural separators so repr() renders readable
     # ``\n`` escapes, while still sanitizing every untrusted command line.
-    display = "\n".join(safe_display(line) for line in command.split("\n"))
+    # Sanitization can rescale a line, so accumulate until the cap is
+    # exceeded instead of projecting the unsanitized length — a huge command
+    # then costs the cap, not its own size.
+    pieces = []
+    total = 0
+    for line in command.split("\n"):
+        pieces.append(safe_display(line))
+        total += len(pieces[-1]) + 1  # +1 for the joining newline
+        if total > _MAX_COMMAND_DISPLAY + 1:
+            break
+    display = "\n".join(pieces)
     if len(display) <= _MAX_COMMAND_DISPLAY:
         return repr(display)
     return repr(display[:_MAX_COMMAND_DISPLAY] + "…")

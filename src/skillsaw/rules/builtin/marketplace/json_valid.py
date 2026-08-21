@@ -368,7 +368,8 @@ class MarketplaceJsonValidRule(Rule):
                         file_path=marketplace_file,
                     )
                 )
-            elif not command:
+            elif not command.strip():
+                # Whitespace-only is empty as far as a shell is concerned.
                 command_valid = False
                 violations.append(
                     self.violation(

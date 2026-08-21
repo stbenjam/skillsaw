@@ -672,6 +672,7 @@ def test_marketplace_command_source_substitution_is_an_error(temp_dir, command):
         # of skipping validation entirely.
         ("command", None, "command must be a string"),
         ("command", "", "command must not be empty"),
+        ("command", "   ", "command must not be empty"),
         ("command", "x" * 501, "at most 500 characters"),
         ("command", "echo    path", "four consecutive spaces"),
         ("timeout", 0, "whole number from 1 to 600"),

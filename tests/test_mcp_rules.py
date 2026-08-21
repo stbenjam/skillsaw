@@ -707,6 +707,71 @@ def test_editor_mcp_credentials_are_reported_without_echoing_values(temp_dir):
         assert vscode_secret not in report
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        # urlsplit raises on the unclosed IPv6 literal; the conservative
+        # fallback must still surface the embedded user information.
+        "https://user:pass@[::1",
+        "https://user@[fe80::1%25eth0",
+    ],
+)
+def test_malformed_url_with_user_information_is_still_reported(temp_dir, url):
+    mcp_config = {"mcpServers": {"remote": {"type": "http", "url": url}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    violations = McpValidJsonRule().check(context)
+
+    messages = [violation.message for violation in violations]
+    assert any("must not contain user information" in message for message in messages)
+
+
+def test_well_formed_url_query_values_are_not_user_information(temp_dir):
+    """An @ in a query value is data, not userinfo."""
+    mcp_config = {
+        "servers": {
+            "remote": {
+                "type": "http",
+                "url": "https://api.example.com/mcp?owner=team@example.com",
+            }
+        }
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    context = RepositoryContext(plugin_dir)
+    violations = McpValidJsonRule().check(context)
+
+    assert not any(
+        "must not contain user information" in violation.message for violation in violations
+    )
+
+
+def test_additional_placeholders_suppress_structured_credential(temp_dir):
+    secret = "corp-vault-ref:team/prod/db"
+    mcp_config = {"mcpServers": {"local": {"command": "srv", "env": {"API_KEY": secret}}}}
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+
+    unconfigured = McpValidJsonRule().check(RepositoryContext(plugin_dir))
+    assert any("embeds" in violation.message for violation in unconfigured)
+
+    configured = McpValidJsonRule({"additional-placeholders": ["corp-vault-"]}).check(
+        RepositoryContext(plugin_dir)
+    )
+    assert not any("embeds" in violation.message for violation in configured)
+
+
+def test_additional_placeholders_do_not_mask_real_tokens(temp_dir):
+    token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"
+    mcp_config = {
+        "mcpServers": {"local": {"command": "srv", "env": {"API_KEY": f"corp-vault-{token}"}}}
+    }
+    plugin_dir = _create_plugin_with_mcp(temp_dir, mcp_config)
+    rule = McpValidJsonRule({"additional-placeholders": ["corp-vault-"]})
+    violations = rule.check(RepositoryContext(plugin_dir))
+
+    assert any("github" in violation.message.lower() for violation in violations)
+    assert all(token not in violation.message for violation in violations)
+
+
 def test_invalid_headers_type(temp_dir):
     """Test that invalid headers type is detected"""
     mcp_config = {

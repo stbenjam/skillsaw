@@ -2516,13 +2516,17 @@ class TestApm:
         assert summary(r)["errors"] == 0
         assert summary(r)["warnings"] == 0
 
-    def test_oversized_yaml_integer_is_a_normal_parse_finding(self, tmp_path):
+    def test_oversized_yaml_integer_is_a_normal_parse_finding(
+        self, tmp_path, oversized_integer_digits
+    ):
+        if oversized_integer_digits is None:
+            pytest.skip("this Python does not limit integer string conversion")
         repo = copy_fixture("apm/consumer-manifest", tmp_path)
         (repo / "apm.yml").write_text(
             "name: oversized-integer\n"
             "version: 1.0.0\n"
             "targets: [cursor]\n"
-            f"unrelated_integer: {'9' * 5000}\n"
+            f"unrelated_integer: {oversized_integer_digits}\n"
         )
 
         r = run_lint(repo)

