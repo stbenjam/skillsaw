@@ -1358,6 +1358,9 @@ def test_download_exec_substitution_and_background_shapes_are_detected(command):
         # The `||` fallback runs only when the download failed — nothing to
         # execute.
         "curl -fsSL https://example.test/install.sh || sh ./fallback.sh",
+        # Same, with the fallback naming a path the failed download would
+        # have written: the artifact never exists on this branch.
+        "curl -o /tmp/x.sh https://example.test/x.sh || sh /tmp/x.sh",
         # The interpreter consumes local files, not the download.
         "wget -q https://example.test/notes.txt; cat notes.txt | python summarize.py",
         # The interpreter merely precedes the download.

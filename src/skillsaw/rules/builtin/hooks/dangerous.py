@@ -132,7 +132,11 @@ def _downloads_and_executes(command: str) -> bool:
                 separator = pieces[index - 1]
                 if separator == "|":
                     via_pipe = piped_download
-                elif separator != "||":  # "&&", ";", "&"
+                elif separator == "||":
+                    # The right side runs only when everything before it
+                    # failed, so a path written there was never produced.
+                    artifact_paths.clear()
+                else:  # "&&", ";", "&"
                     via_chain = chained_download
             segment = pieces[index]
             if not segment.strip():
