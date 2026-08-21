@@ -50,21 +50,30 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
     re.VERBOSE,
 )
 
-# A download tool in command position — optionally behind sudo, an env
-# wrapper, a path prefix, or VAR=value assignments (`FOO=1 curl …`) — or as
-# the string an interpreter is told to run (`bash -c curl …`, `node -e
-# "…wget…"`, the exec-form hook join). Matching the command position instead
-# of any word occurrence keeps quoted prose like `echo "use curl to fetch"`
-# from acting as a download signal while every real invocation still anchors
-# to a boundary.
+# Words that may sit between a command boundary and the executable without
+# changing which program runs: POSIX wrappers (`command`, `exec`, `time`,
+# `nohup`, …), and sudo with one option/value pair (`sudo -u nobody curl …`).
+# Heuristic coverage, not shell semantics.
+_CMD_WRAPPERS = (
+    r"(?:(?:sudo(?:\s+-{1,2}[A-Za-z][\w-]*(?:\s+\S+)?)?"
+    r"|command|exec|builtin|time|nice|nohup|ionice|stdbuf"
+    r"|timeout(?:\s+\S+)?)\s+)*"
+)
+# A download tool in command position — optionally behind wrappers,
+# VAR=value assignments, an env wrapper, or a path prefix (`FOO=1 curl …`,
+# `command curl …`, `/usr/bin/curl …`) — or as the string an interpreter is
+# told to run (`bash -c curl …`, `node -e "…wget…"`, the exec-form hook
+# join). Matching the command position instead of any word occurrence keeps
+# quoted prose like `echo "use curl to fetch"` from acting as a download
+# signal while every real invocation still anchors to a boundary.
 _DOWNLOAD_CMD_RE = re.compile(
     rf"{_CMD_BOUNDARY}\s*"
     rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
-    rf"{_SUDO}"
+    rf"{_CMD_WRAPPERS}"
     rf"(?:(?:\S+/)?env\s+)?(?:\S+/)?"
     rf"(?:curl|wget)\b"
     rf"|(?:^|\n|\r|&&|\|\||;|\||&)\s*"  # command position, then…
-    rf"{_SUDO}(?:{_INTERPRETER_CMD})\s+"  # an interpreter…
+    rf"{_CMD_WRAPPERS}(?:{_INTERPRETER_CMD})\s+"  # an interpreter…
     rf"-{{1,2}}(?:command|eval|lc|c|e)\s+[\"']?"  # running a string (maybe quoted)…
     rf"(?:sudo\s+)?(?:\S+/)?(?:curl|wget)\b"  # …that invokes a download
 )
@@ -101,7 +110,48 @@ _OBFUSCATION_RE = re.compile(
 
 _BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 
-_NETWORK_FETCH_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
+_NETWORK_FETCH_RE = re.compile(
+    rf"{_CMD_BOUNDARY}\s*"
+    rf"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"  # VAR=value assignment prefixes
+    rf"{_CMD_WRAPPERS}(?:\S+/)?(?:curl|wget|nc|ncat)\b"
+)
+
+
+def _mask_quoted_separators(line: str) -> str:
+    """Blank `&`, `|`, `;` inside single/double quotes before tokenizing.
+
+    The tokenizer splits on shell separators, but a separator inside quotes
+    is data — `'https://x.test/p?a=1&b=2'` is one argument, and the split
+    would otherwise clear the download carry mid-URL. Unquoted lines pass
+    through untouched; an unmatched quote degrades to more splitting, which
+    only ever loses pairing (never invents it).
+
+    Separators inside a double-quoted command substitution stay live —
+    `"$(curl x; sh y)"` executes both — so once `$(` or a backtick appears
+    inside the current double-quoted span, masking stops for its remainder.
+    Single quotes never execute, so their contents stay masked.
+    """
+    if "'" not in line and '"' not in line:
+        return line
+    out = []
+    quote = None
+    live = False
+    for index, char in enumerate(line):
+        if quote and not live:
+            if char in "&|;":
+                out.append("\x00")
+                continue
+            if char == quote:
+                quote = None
+            elif quote == '"' and (
+                char == "`" or (char == "$" and line.startswith("(", index + 1))
+            ):
+                live = True
+        elif not quote and char in "\"'":
+            quote = char
+            live = False
+        out.append(char)
+    return "".join(out)
 
 
 def _downloads_and_executes(command: str) -> bool:
@@ -121,7 +171,7 @@ def _downloads_and_executes(command: str) -> bool:
     # the download wrote (`curl -o x url && chmod +x x && sh x`), tracked by
     # the per-line artifact set.
     for line in command.split("\n"):
-        pieces = _SHELL_SEPARATOR_RE.split(line)
+        pieces = _SHELL_SEPARATOR_RE.split(_mask_quoted_separators(line))
         piped_download = False
         chained_download = False
         artifact_paths: Set[str] = set()
@@ -166,6 +216,10 @@ def _downloads_and_executes(command: str) -> bool:
 
 def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
+    # Quote-aware view: separators inside quotes are argument data, so the
+    # anchored patterns must not treat them as command boundaries. Masking
+    # is idempotent, and _downloads_and_executes masks again per line.
+    command = _mask_quoted_separators(command)
     findings: List[str] = []
 
     if _SCRIPT_FROM_DOTFILES_RE.search(command):
