@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.1.0/mcp.schema.json",
+  "mcpServers": {
+    "local-auditor": {
+      "type": "stdio",
+      "command": "./bin/release-auditor",
+      "args": ["--cache", "${PLUGIN_DATA}/audit"],
+      "env": {
+        "CONFIG_PATH": "${PLUGIN_ROOT}/config/audit.json"
+      },
+      "cwd": "${PLUGIN_ROOT}/work"
+    },
+    "release-api": {
+      "type": "streamable-http",
+      "url": "https://release.example.com/mcp",
+      "headers": {
+        "X-Tenant": "public-release"
+      }
+    }
+  }
+}
