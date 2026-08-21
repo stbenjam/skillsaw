@@ -65,7 +65,8 @@ uvx skillsaw baseline  # Accept existing findings and fail only on new ones
 ## What it catches
 
 - **Instruction quality:** weak language, contradictions, tautologies,
-  attention dead zones, missing stop conditions, and bloated context.
+  attention dead zones, missing stop conditions, repetitive tool-call
+  examples, and bloated context.
 - **Structure and compatibility:** invalid frontmatter, manifests, commands,
   skills, agents, hooks, marketplaces, and tool-specific configuration.
 - **Security risks:** embedded secrets, invisible Unicode, encoded payloads,

@@ -208,6 +208,7 @@ RULE_GROUPS = [
             "content-repeated-directive",
             "content-emphasis-density",
             "content-missing-stop-condition",
+            "content-inline-tool-examples",
             "content-progressive-disclosure",
         ],
         "Rules that go beyond structural validation to analyze the *quality* of "

@@ -884,7 +884,6 @@ class MarkdownDoc:
                 result.append(
                     MarkdownFence(
                         info=(token.info or "").strip(),
-                        content=token.content or "",
                         body_line_start=start + 1,
                         body_line_end=end,
                         file_line_start=self.file_line(start + 1),
@@ -892,6 +891,7 @@ class MarkdownDoc:
                         indented=token.type == "code_block",
                         markup=token.markup or "",
                         nested=token.level > 0,
+                        content=token.content or "",
                     )
                 )
         return result

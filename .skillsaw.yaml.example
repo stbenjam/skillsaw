@@ -255,6 +255,13 @@ rules:
     severity: info
     # groups: {}
 
+  # Detect consecutive code-block examples that all invoke the same tool
+  content-inline-tool-examples:
+    enabled: false
+    severity: info
+    # min-consecutive: 3
+    # max-lines-between: 2
+
   # Check if instruction count in a file exceeds LLM instruction budget (~150)
   content-instruction-budget:
     enabled: auto
