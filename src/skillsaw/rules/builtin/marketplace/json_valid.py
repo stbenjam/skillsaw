@@ -357,7 +357,9 @@ class MarketplaceJsonValidRule(Rule):
         violations = []
         command = source.get("command")
         command_valid = True
-        if command is not None:
+        # Guard on key presence, not value presence — a null command must
+        # reach the type check below instead of silently skipping validation.
+        if "command" in source:
             if not isinstance(command, str):
                 command_valid = False
                 violations.append(

