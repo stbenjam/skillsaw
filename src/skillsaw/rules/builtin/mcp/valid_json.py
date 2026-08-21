@@ -64,7 +64,10 @@ def _url_has_userinfo(url: str) -> bool:
     if rest.startswith("//"):
         # Already in authority form — the first parse was authoritative.
         return False
-    return carries(f"{match.group(0)}//{rest.lstrip('/\\')}".replace("\\", "/"))
+    # The lstrip lives outside the f-string: a backslash in an expression
+    # is a SyntaxError on the 3.9–3.11 interpreters this package supports.
+    stripped = rest.lstrip("/\\")
+    return carries(f"{match.group(0)}//{stripped}".replace("\\", "/"))
 
 
 #: Fields that appear on one server, never on a map of them.
