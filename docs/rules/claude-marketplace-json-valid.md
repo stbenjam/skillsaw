@@ -49,10 +49,16 @@ Plugin entries are also validated: every entry needs a unique `name`
 and a `source`. A string source is a path relative to the marketplace
 root — it should start with `./` and must not be an absolute path or
 escape the repository with `..`. An object source declares its type via the `source` field
-(`github`, `url`, `git-subdir`, `npm`, or `archive`) and must carry
+(`github`, `url`, `git-subdir`, `npm`, `archive`, or `command`) and must carry
 that type's required fields (`repo`, `url`, `url` + `path`, `package`,
-or `url` respectively). An `archive` source may also pin the download
+`url`, or `command` respectively). An `archive` source may also pin the download
 with an optional `sha256` digest.
+
+A `command` source runs through the platform shell and must satisfy Claude
+Code's reviewability constraints: printable ASCII, at most 500 characters,
+and no run of four spaces. Its optional `timeout` is a whole number from 1
+through 600 and `mode` is `copy` or `link`. Download-and-execute,
+obfuscation, and other dangerous command patterns are errors.
 
 When `metadata.pluginRoot` is set, it is prepended to relative
 sources, so bare names like `"formatter"` are valid and the `./`

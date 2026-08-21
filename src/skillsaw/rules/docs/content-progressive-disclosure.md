@@ -25,8 +25,8 @@ and only when it finds zero disclosure references. What counts as a reference di
   ships with it can be disclosed progressively.
 - **Instruction files**: explicit markdown links to local files.
   `@path` imports (files or imported directories) also count, but only
-  in files whose host actually loads them — CLAUDE.md, AGENTS.md, and
-  GEMINI.md; in other instruction files (`.cursorrules`,
+  in files whose host actually loads them — CLAUDE.md, AGENTS.md,
+  GEMINI.md, and QWEN.md; in other instruction files (`.cursorrules`,
   `copilot-instructions.md`, …) an `@path` token is just prose, so
   those files disclose through markdown links. Bare path mentions and
   directory links deliberately do not count — "`src/api/` contains the
@@ -90,6 +90,7 @@ rules:
     limits:
       skill: 6000        # flag skills over ~6k tokens with no references
       claude-md: 6000
+      qwen-md: 6000
       agent: 2000        # not checked by default; adding it enables it
 ```
 

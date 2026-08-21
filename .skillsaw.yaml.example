@@ -302,6 +302,7 @@ rules:
     #   claude-md: 6000
     #   agents-md: 6000
     #   gemini-md: 6000
+    #   qwen-md: 6000
     #   instruction: 4000
 
   # Detect instructions that duplicate .editorconfig, ESLint, Prettier, or tsconfig settings

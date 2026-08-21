@@ -4,6 +4,7 @@ Rule: mcp-valid-json
 
 from typing import List, Dict, Any
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from skillsaw.blocks import AgentPluginMcpBlock
 from skillsaw.context import RepositoryContext, RepositoryType
@@ -12,6 +13,10 @@ from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import McpBlock
+from skillsaw.rules.builtin.secret_detection import (
+    DEFAULT_PLACEHOLDER_MARKERS,
+    mapped_secret_description,
+)
 from skillsaw.rules.builtin.utils import read_json
 
 
@@ -350,6 +355,15 @@ class McpValidJsonRule(Rule):
                         file_path=file_path,
                     )
                 )
+            elif isinstance(server_config.get("env"), dict):
+                violations.extend(
+                    self._mapped_secret_violations(
+                        server_config["env"],
+                        server_name=shown,
+                        file_path=file_path,
+                        header=False,
+                    )
+                )
 
             if "cwd" in server_config and not isinstance(server_config["cwd"], str):
                 violations.append(
@@ -366,12 +380,35 @@ class McpValidJsonRule(Rule):
                         file_path=file_path,
                     )
                 )
+            elif isinstance(server_config.get("url"), str):
+                try:
+                    parsed_url = urlsplit(server_config["url"])
+                except ValueError:
+                    parsed_url = None
+                if parsed_url is not None and (
+                    parsed_url.username is not None or parsed_url.password is not None
+                ):
+                    violations.append(
+                        self.violation(
+                            f"MCP server '{shown}' 'url' must not contain user information",
+                            file_path=file_path,
+                        )
+                    )
 
             if "headers" in server_config and not isinstance(server_config["headers"], dict):
                 violations.append(
                     self.violation(
                         f"MCP server '{shown}' 'headers' must be an object",
                         file_path=file_path,
+                    )
+                )
+            elif isinstance(server_config.get("headers"), dict):
+                violations.extend(
+                    self._mapped_secret_violations(
+                        server_config["headers"],
+                        server_name=shown,
+                        file_path=file_path,
+                        header=True,
                     )
                 )
 
@@ -421,4 +458,36 @@ class McpValidJsonRule(Rule):
                         )
                     )
 
+        return violations
+
+    def _mapped_secret_violations(
+        self,
+        values: Dict[Any, Any],
+        *,
+        server_name: str,
+        file_path: Path,
+        header: bool,
+    ) -> List[RuleViolation]:
+        """Report structured credentials without copying their values."""
+        violations = []
+        for name, value in values.items():
+            if not isinstance(name, str) or not isinstance(value, str):
+                continue
+            description = mapped_secret_description(
+                name,
+                value,
+                header=header,
+                markers=DEFAULT_PLACEHOLDER_MARKERS,
+            )
+            if description is None:
+                continue
+            location = "HTTP header" if header else "environment variable"
+            violations.append(
+                self.violation(
+                    f"MCP server '{server_name}' {location} "
+                    f"'{safe_display(name)}' embeds {description}; use a placeholder "
+                    "or environment substitution instead of a credential value",
+                    file_path=file_path,
+                )
+            )
         return violations

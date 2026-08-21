@@ -32,6 +32,7 @@ from skillsaw.lint_target import (
 )
 from skillsaw.context import RepositoryContext
 from skillsaw.linter import Linter
+from skillsaw.rules.builtin.cursor import CursorRulesValidRule
 
 # --- LintTarget.walk() ---
 
@@ -779,6 +780,24 @@ def test_tree_finds_editor_tool_dirs_in_subpackages(temp_dir):
     tree = RepositoryContext(temp_dir).lint_tree
 
     assert [b.path.name for b in tree.find(CursorRuleBlock)] == ["web.mdc"]
+
+
+def test_cursor_rule_role_wins_over_generic_instruction_symlink(temp_dir):
+    """A generic alias must not suppress the target's specific parser role."""
+    rules = temp_dir / ".cursor" / "rules"
+    rules.mkdir(parents=True)
+    target = rules / "unterminated.mdc"
+    target.write_text("---\ndescription: Never parses\n\n# Unterminated\n")
+    (temp_dir / "policy.instructions.md").symlink_to(target)
+
+    context = RepositoryContext(temp_dir)
+    tree = context.lint_tree
+
+    assert [block.path for block in tree.find(CursorRuleBlock)] == [target]
+    assert tree.find(InstructionBlock) == []
+    violations = CursorRulesValidRule().check(context)
+    assert len(violations) == 1
+    assert "missing closing ---" in violations[0].message
 
 
 def test_tree_reads_vscode_mcp_servers_key(temp_dir):

@@ -2,8 +2,9 @@
 
 import pytest
 
-from skillsaw.baseline import fingerprint_violation
+from skillsaw.baseline import build_baseline, fingerprint_violation, save_baseline
 from skillsaw.context import RepositoryContext
+from skillsaw.formatters import format_report
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.security.dynamic_context import SecurityDynamicContextRule
 
@@ -226,6 +227,65 @@ class TestSecurityDynamicContextRule:
         assert command not in violations[0].message
         assert "…" in violations[0].message
         assert _check(temp_dir, {"allowlist": [command]}) == []
+
+    def test_command_url_credentials_are_redacted_from_message(self, temp_dir):
+        secret = "FAKE_DYNCTX_TOKEN_9Z7Q"
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, f"!`{command}`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert secret not in violations[0].message
+        assert "https://[redacted]@example.invalid/x" in violations[0].message
+        assert _check(temp_dir, {"allowlist": [command]}) == []
+
+    @pytest.mark.parametrize("output_format", ["text", "json", "sarif", "html"])
+    def test_command_url_credentials_are_redacted_from_reports(self, temp_dir, output_format):
+        secret = "FAKE_DYNCTX_REPORT_TOKEN_9Z7Q"
+        _write_skill(
+            temp_dir,
+            f"!`curl https://user:{secret}@example.invalid/report`\n",
+        )
+        context = RepositoryContext(temp_dir)
+        rule = SecurityDynamicContextRule()
+        violations = rule.check(context)
+
+        output = format_report(output_format, violations, context, [rule], "0.19.0")
+
+        assert secret not in output
+        assert "[redacted]" in output
+
+    def test_command_url_credentials_are_redacted_from_baseline(self, temp_dir):
+        secret = "FAKE_DYNCTX_BASELINE_TOKEN_9Z7Q"
+        _write_skill(
+            temp_dir,
+            f"!`curl https://user:{secret}@example.invalid/baseline`\n",
+        )
+        violations = _check(temp_dir)
+        baseline_path = temp_dir / ".skillsaw-baseline.json"
+
+        save_baseline(
+            baseline_path,
+            build_baseline(violations, temp_dir, "0.19.0"),
+        )
+
+        baseline_text = baseline_path.read_text()
+        assert secret not in baseline_text
+        assert "[redacted]" in baseline_text
+
+    def test_credentials_are_redacted_before_command_display_truncation(self, temp_dir):
+        secret = "S" * 80
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, f"!`{command}`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert secret not in violations[0].message
+        assert "user:" not in violations[0].message
+        assert "[redacted]" in violations[0].message
+        assert len(command) > 60
 
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML

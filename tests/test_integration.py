@@ -2516,6 +2516,24 @@ class TestApm:
         assert summary(r)["errors"] == 0
         assert summary(r)["warnings"] == 0
 
+    def test_oversized_yaml_integer_is_a_normal_parse_finding(self, tmp_path):
+        repo = copy_fixture("apm/consumer-manifest", tmp_path)
+        (repo / "apm.yml").write_text(
+            "name: oversized-integer\n"
+            "version: 1.0.0\n"
+            "targets: [cursor]\n"
+            f"unrelated_integer: {'9' * 5000}\n"
+        )
+
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        assert r["out"] is not None
+        found = by_rule(r)["apm-yaml-valid"]
+        assert len(found) == 1
+        assert "Invalid YAML" in found[0]["message"]
+        assert "4300 digits" in found[0]["message"]
+
     def test_apm_clean_hooks_pass(self, tmp_path):
         repo = copy_fixture("apm/hooks-clean", tmp_path)
         r = run_lint(repo)

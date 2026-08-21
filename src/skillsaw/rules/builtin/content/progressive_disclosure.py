@@ -20,7 +20,7 @@ What counts as a disclosure reference differs by surface:
   scaffolding, and nested skills' files never count.
 * **Instruction files** disclose through explicit markdown links to
   local files, and — only for hosts that actually load imports
-  (CLAUDE.md, AGENTS.md, GEMINI.md) — ``@path`` imports (files or
+  (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md) — ``@path`` imports (files or
   imported directories).  Bare path mentions and directory links
   deliberately do not count: "``src/api/`` contains the handlers" and
   "see [src](src/)" are structure narration, not an instruction to load
@@ -51,7 +51,14 @@ from skillsaw.rules.builtin.instructions._helpers import IMPORT_RE
 # above that.  Users can raise/lower per category or extend the rule to
 # other categories (e.g. ``agent: 2000``) via the ``limits`` config
 # option.
-_DEFAULT_CATEGORIES = ("skill", "claude-md", "agents-md", "gemini-md", "instruction")
+_DEFAULT_CATEGORIES = (
+    "skill",
+    "claude-md",
+    "agents-md",
+    "gemini-md",
+    "qwen-md",
+    "instruction",
+)
 DEFAULT_THRESHOLDS: Dict[str, int] = {
     category: DEFAULT_LIMITS[category]["warn"] for category in _DEFAULT_CATEGORIES
 }
@@ -90,7 +97,7 @@ _SCAFFOLDING_PREFIXES = ("LICENSE", "NOTICE")
 # surface instruction-imports-valid validates.  In a generic instruction
 # file (.cursorrules, copilot-instructions.md) an ``@docs`` token is
 # just prose, so it must not count as disclosure there.
-_IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md"})
+_IMPORT_CATEGORIES = frozenset({"claude-md", "agents-md", "gemini-md", "qwen-md"})
 
 
 class ContentProgressiveDisclosureRule(Rule):

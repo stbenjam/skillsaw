@@ -11,6 +11,7 @@ be explicitly allowlisted.
 from typing import Dict, List, Set, Tuple
 
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import safe_display
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
@@ -23,9 +24,12 @@ _MAX_COMMAND_DISPLAY = 60
 
 
 def _display_command(command: str) -> str:
-    if len(command) <= _MAX_COMMAND_DISPLAY:
-        return repr(command)
-    return repr(command[:_MAX_COMMAND_DISPLAY] + "…")
+    # Preserve newlines as structural separators so repr() renders readable
+    # ``\n`` escapes, while still sanitizing every untrusted command line.
+    display = "\n".join(safe_display(line) for line in command.split("\n"))
+    if len(display) <= _MAX_COMMAND_DISPLAY:
+        return repr(display)
+    return repr(display[:_MAX_COMMAND_DISPLAY] + "…")
 
 
 class SecurityDynamicContextRule(Rule):

@@ -49,6 +49,12 @@ Transport is inferred when a server does not declare `type`: a `command`
 means stdio, and a bare `url` means a remote server. Declaring `type`
 explicitly overrides the inference, and an unknown value is reported.
 
+Credential values do not belong in committed MCP configuration. The rule
+reports structured secrets in `env` and `headers` mappings and rejects URL
+userinfo such as `https://user:token@example.com` without copying the
+credential into its diagnostic. Use host-supported environment substitution
+or a clearly recognizable placeholder instead.
+
 ## Examples
 
 **Bad** — an unknown transport, which no host can connect over:

@@ -94,7 +94,7 @@ jobs:
 | Input | Description | Default |
 |-------|-------------|---------|
 | `path` | Path to lint | `.` |
-| `version` | Specific skillsaw version to install | `0.18.0` |
+| `version` | Specific skillsaw version to install | `0.19.0` |
 | `strict` | Treat warnings as errors | `false` |
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |

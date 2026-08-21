@@ -46,31 +46,15 @@ _SCRIPT_FROM_DOTFILES_RE = re.compile(
     re.VERBOSE,
 )
 
-_DOWNLOAD_EXEC_RE = re.compile(
-    rf"""
-        (?:curl|wget)\b[^|;]*       # download tool with args
-        \|\s*                        # piped to
-        {_SUDO}                      # optional sudo
-        (?:{_INTERPRETER_CMD})       # interpreter
-    """,
-    re.VERBOSE,
-)
-
-_DOWNLOAD_CHAIN_RE = re.compile(
-    rf"""
-        (?:curl|wget)\b.*            # download tool
-        (?:&&|;)\s*                  # chained
-        {_SUDO}                      # optional sudo
-        (?:{_INTERPRETER_CMD})\s+\S+ # interpreter + file
-    """,
-    re.VERBOSE,
-)
+_DOWNLOAD_TOOL_RE = re.compile(r"\b(?:curl|wget)\b")
+_SHELL_SEPARATOR_RE = re.compile(r"(&&|;|\|)")
+_PIPE_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\b")
+_CHAIN_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\s+\S+")
 
 _OBFUSCATION_RE = re.compile(
     r"""
         \beval\s+["\$(\`]                      # eval with expansion
         |base64\s+(?:-d|--decode)              # base64 decode
-        |\becho\b.*\|\s*base64\s+(?:-d|--decode)  # piping to base64 decode
     """,
     re.VERBOSE,
 )
@@ -80,14 +64,42 @@ _BUN_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:\S+/)?bun\s+(?:run\s+)?\S+")
 _NETWORK_FETCH_RE = re.compile(rf"{_CMD_BOUNDARY}\s*{_SUDO}(?:curl|wget|nc|ncat)\b")
 
 
-def _check_dangerous(command: str) -> List[str]:
+def _downloads_and_executes(command: str) -> bool:
+    """Whether a download feeds or precedes an interpreter, in linear time."""
+    # The former unanchored ``curl.*`` patterns restarted a suffix scan at
+    # every repeated token. Tokenize shell separators once instead. Newlines
+    # reset the chain because the original regex deliberately did not span
+    # them; each line is still scanned independently by the network rule.
+    for line in command.split("\n"):
+        pieces = _SHELL_SEPARATOR_RE.split(line)
+        seen_download = False
+        for index in range(0, len(pieces), 2):
+            segment = pieces[index]
+            segment_downloads = _DOWNLOAD_TOOL_RE.search(segment) is not None
+            seen_download = seen_download or segment_downloads
+            if index + 2 >= len(pieces):
+                continue
+            separator = pieces[index + 1]
+            following = pieces[index + 2]
+            if separator == "|" and seen_download and _PIPE_INTERPRETER_SEGMENT_RE.match(following):
+                return True
+            if (
+                separator in {"&&", ";"}
+                and seen_download
+                and _CHAIN_INTERPRETER_SEGMENT_RE.match(following)
+            ):
+                return True
+    return False
+
+
+def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
     findings: List[str] = []
 
     if _SCRIPT_FROM_DOTFILES_RE.search(command):
         findings.append("executes a script from a dotfile directory")
 
-    if _DOWNLOAD_EXEC_RE.search(command) or _DOWNLOAD_CHAIN_RE.search(command):
+    if _downloads_and_executes(command):
         findings.append("downloads and executes remote code")
 
     if _OBFUSCATION_RE.search(command):
@@ -153,7 +165,7 @@ class HooksDangerousRule(Rule):
                         command = " ".join([command, *(str(a) for a in handler.args)])
                     if self._is_allowed(handler.command) or self._is_allowed(command):
                         continue
-                    for message in _check_dangerous(command):
+                    for message in dangerous_command_descriptions(command):
                         violations.append(
                             self.violation(
                                 f"Hook {safe_display(event_type)}: {message} — "

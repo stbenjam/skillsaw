@@ -1528,6 +1528,54 @@ class TestContentBrokenInternalReferenceRule:
         assert len(violations) == 1
         assert "docs/missing.md" in violations[0].message
 
+    def test_nested_prompt_hook_link_resolves_from_nested_workspace(self, temp_dir):
+        import json
+
+        workspace = temp_dir / "apps" / "web"
+        cursor = workspace / ".cursor"
+        cursor.mkdir(parents=True)
+        (cursor / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeSubmitPrompt": [
+                            {"type": "prompt", "prompt": "See [setup](docs/setup.md)."}
+                        ]
+                    },
+                }
+            )
+        )
+        (workspace / "docs").mkdir()
+        (workspace / "docs" / "setup.md").write_text("# Setup\n")
+
+        assert ContentBrokenInternalReferenceRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_root_file_does_not_satisfy_nested_prompt_hook_link(self, temp_dir):
+        import json
+
+        cursor = temp_dir / "apps" / "web" / ".cursor"
+        cursor.mkdir(parents=True)
+        (cursor / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "beforeSubmitPrompt": [
+                            {"type": "prompt", "prompt": "See [setup](docs/setup.md)."}
+                        ]
+                    },
+                }
+            )
+        )
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "setup.md").write_text("# Root-only setup\n")
+
+        violations = ContentBrokenInternalReferenceRule().check(RepositoryContext(temp_dir))
+
+        assert len(violations) == 1
+        assert "docs/setup.md" in violations[0].message
+
     def test_anchor_links_skipped(self, temp_dir):
         (temp_dir / "CLAUDE.md").write_text("See [section](#overview) for details.\n")
         context = RepositoryContext(temp_dir)
@@ -4450,6 +4498,15 @@ class TestContentProgressiveDisclosureRule:
         assert "claude-md" in violations[0].message
         assert violations[0].severity == Severity.WARNING
 
+    def test_default_qwen_limit_over_budget_fires(self, temp_dir):
+        (temp_dir / "QWEN.md").write_text("# Project notes\n\n" + self._PARA * 200)
+
+        violations = ContentProgressiveDisclosureRule().check(RepositoryContext(temp_dir))
+
+        assert len(violations) == 1
+        assert violations[0].file_path.name == "QWEN.md"
+        assert "qwen-md" in violations[0].message
+
     def test_default_skill_threshold_is_6000(self, temp_dir):
         # The skill default is deliberately looser than context-budget's
         # 3k warn: mid-size single-file skills work fine and should not
@@ -4492,6 +4549,16 @@ class TestContentProgressiveDisclosureRule:
         (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
         self._write_claude(temp_dir, extra="\n@docs/testing.md\n")
         rule = ContentProgressiveDisclosureRule({"limits": {"claude-md": 100}})
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_qwen_import_counts(self, temp_dir):
+        (temp_dir / "docs").mkdir()
+        (temp_dir / "docs" / "testing.md").write_text("# Testing\n")
+        (temp_dir / "QWEN.md").write_text(
+            "# Project notes\n\n" + self._PARA * 6 + "\n@docs/testing.md\n"
+        )
+        rule = ContentProgressiveDisclosureRule({"limits": {"qwen-md": 100}})
+
         assert rule.check(RepositoryContext(temp_dir)) == []
 
     def test_directory_import_counts(self, temp_dir):

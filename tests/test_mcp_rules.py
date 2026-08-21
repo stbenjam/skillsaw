@@ -7,8 +7,9 @@ import json
 from pathlib import Path
 
 from skillsaw.blocks import McpBlock
-from skillsaw.rules.builtin.mcp import McpValidJsonRule, McpProhibitedRule
 from skillsaw.context import RepositoryContext
+from skillsaw.formatters import format_report
+from skillsaw.rules.builtin.mcp import McpProhibitedRule, McpValidJsonRule
 
 
 def _create_plugin_with_mcp(temp_dir, mcp_config):
@@ -646,6 +647,64 @@ def test_valid_headers_on_http_server(temp_dir):
     rule = McpValidJsonRule()
     violations = rule.check(context)
     assert len(violations) == 0
+
+
+def test_editor_mcp_credentials_are_reported_without_echoing_values(temp_dir):
+    cursor_secret = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    vscode_secret = "AKIAQRSTUVWXYZABCDEF"
+    cursor = temp_dir / ".cursor"
+    vscode = temp_dir / ".vscode"
+    cursor.mkdir()
+    vscode.mkdir()
+    (cursor / "mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "remote": {
+                        "type": "http",
+                        "url": f"https://user:{cursor_secret}@example.invalid/mcp",
+                        "headers": {"Authorization": f"Bearer {cursor_secret}"},
+                    }
+                }
+            }
+        )
+    )
+    (vscode / "mcp.json").write_text(
+        json.dumps(
+            {
+                "servers": {
+                    "local": {
+                        "type": "stdio",
+                        "command": "never-executed",
+                        "env": {"API_KEY": vscode_secret},
+                    }
+                }
+            }
+        )
+    )
+
+    context = RepositoryContext(temp_dir)
+    rule = McpValidJsonRule()
+    violations = rule.check(context)
+    messages = [violation.message for violation in violations]
+
+    assert len(violations) == 3
+    assert any("must not contain user information" in message for message in messages)
+    assert any("HTTP header 'Authorization' embeds" in message for message in messages)
+    assert any("environment variable 'API_KEY' embeds" in message for message in messages)
+    assert all(cursor_secret not in message for message in messages)
+    assert all(vscode_secret not in message for message in messages)
+
+    for output_format in ("text", "json", "sarif", "html"):
+        report = format_report(
+            output_format,
+            violations,
+            context,
+            [rule],
+            "0.19.0",
+        )
+        assert cursor_secret not in report
+        assert vscode_secret not in report
 
 
 def test_invalid_headers_type(temp_dir):

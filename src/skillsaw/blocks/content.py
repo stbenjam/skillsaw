@@ -102,8 +102,10 @@ class CursorPromptHookBlock(ContentBlock):
         # Cursor injects this prompt into an agent running in the workspace,
         # not from the ``.cursor/`` directory the JSON file lives in — so a
         # relative link like ``docs/setup.md`` names ``<workspace>/docs`` and
-        # must resolve from the repo root, not ``.cursor/``.
-        return repo_root
+        # must resolve from the directory that owns this ``.cursor/``. At the
+        # repository root those are the same; in a monorepo the nearest
+        # enclosing package is the workspace.
+        return self.path.parent.parent
 
     def write_body(self, new_body: str) -> None:
         # Writing back would mean re-encoding a JSON string literal in place.

@@ -182,18 +182,27 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
         All of it reads from ``_EDITOR_GLOBS`` and ``agent_tool_dirs``, so
         the two halves cannot drift apart.
         """
-        parts = p.parts
-        # Stop before the filename: the pair must be ancestor directories.
-        for index in range(len(parts) - 2):
-            for editor, sub, pattern, _cls in _EDITOR_GLOBS:
-                if parts[index] != editor or parts[index + 1] != sub:
-                    continue
-                if not fnmatch.fnmatch(p.name, pattern.rsplit("/", 1)[-1]):
-                    continue
-                editor_dir = safe_resolve(Path(*parts[: index + 1]))
-                if editor_dir is not None and editor_dir in eligible_tool_dirs[editor]:
-                    return True
-        return False
+
+        def _lexically_claimed(candidate: Path) -> bool:
+            parts = candidate.parts
+            # Stop before the filename: the pair must be ancestor directories.
+            for index in range(len(parts) - 2):
+                for editor, sub, pattern, _cls in _EDITOR_GLOBS:
+                    if parts[index] != editor or parts[index + 1] != sub:
+                        continue
+                    if not fnmatch.fnmatch(candidate.name, pattern.rsplit("/", 1)[-1]):
+                        continue
+                    editor_dir = safe_resolve(Path(*parts[: index + 1]))
+                    if editor_dir is not None and editor_dir in eligible_tool_dirs[editor]:
+                        return True
+            return False
+
+        # A generic-looking symlink can point at a specifically parsed editor
+        # file. Let the canonical target's owner win too, or the early
+        # instruction sweep claims the resolved path and suppresses structural
+        # validation when the editor loop arrives later.
+        resolved = safe_resolve(p)
+        return _lexically_claimed(p) or (resolved is not None and _lexically_claimed(resolved))
 
     # APM's Copilot target compiles `.apm/<kind>/` into the root
     # `.github/<kind>/`. Attaching both would report every finding twice and
