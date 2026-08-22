@@ -11,6 +11,12 @@ be explicitly allowlisted.
 from typing import Dict, List, Set, Tuple
 
 from skillsaw.context import RepositoryContext
+from skillsaw.diagnostics import (
+    _MAX_DISPLAY,
+    _redact_userinfo,
+    _truncate_for_display,
+    safe_display,
+)
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
@@ -23,9 +29,35 @@ _MAX_COMMAND_DISPLAY = 60
 
 
 def _display_command(command: str) -> str:
-    if len(command) <= _MAX_COMMAND_DISPLAY:
-        return repr(command)
-    return repr(command[:_MAX_COMMAND_DISPLAY] + "…")
+    # Redact credentials on the whole command before per-line sanitizing: a
+    # credential split across a backslash-newline continuation is one
+    # logical token to the shell, and line-local redaction would leak the
+    # fragment before the split. The redaction scan is line-aware (newlines
+    # are delimiters) and bounded to the diagnostics display cap. Control-
+    # character replacement stays per line so newlines survive as readable
+    # repr escapes, and the walk stops once the display cap is exceeded.
+    #
+    # Truncation goes through the shared severed-credential path — cutting
+    # a long credential mid-token leaves a colon-free tail in view that
+    # only looking past the cut reveals as userinfo.
+    head = _redact_userinfo(_truncate_for_display(command))
+    pieces = []
+    total = 0
+    start = 0
+    while True:
+        end = head.find("\n", start)
+        line = head[start:] if end == -1 else head[start:end]
+        pieces.append(safe_display(line))
+        total += len(pieces[-1]) + 1  # +1 for the joining newline
+        if end == -1 or total > _MAX_COMMAND_DISPLAY + 1:
+            return _render_display("\n".join(pieces))
+        start = end + 1
+
+
+def _render_display(display: str) -> str:
+    if len(display) <= _MAX_COMMAND_DISPLAY:
+        return repr(display)
+    return repr(display[:_MAX_COMMAND_DISPLAY] + "…")
 
 
 class SecurityDynamicContextRule(Rule):

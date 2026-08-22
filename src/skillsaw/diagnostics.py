@@ -35,7 +35,9 @@ def _redact_userinfo(text: str) -> str:
     whitespace). Over-redacting an email-shaped value in a path field is
     the safe direction. A linear right-to-left scan — no regex, so there
     is nothing to backtrack, and no length cap for a long token to slip
-    past.
+    past. A backslash-newline pair is skipped rather than treated as a
+    boundary: the shell joins continuation lines into one word, so
+    splitting a credential across one must not end the scan.
     """
     if "@" not in text:
         return text
@@ -56,6 +58,13 @@ def _redact_userinfo(text: str) -> str:
         # into the middle of a secret and emit its head.
         floor = max(emitted, at - 512)
         found = max(text.rfind(ch, floor, at) for ch in ("/", " ", "\t", "\n", "@"))
+        # A backslash-newline is a line continuation, not a token boundary:
+        # the shell joins the lines into one word, so a credential split
+        # across one ("user:tok\<newline>123@host") is a single userinfo
+        # segment. Skip the pair and keep scanning; each round strictly
+        # lowers the bound, so the loop terminates.
+        while found > 0 and text[found] == "\n" and text[found - 1] == "\\":
+            found = max(text.rfind(ch, floor, found - 1) for ch in ("/", " ", "\t", "\n", "@"))
         start = found + 1 if found != -1 else emitted
         userinfo = text[start:at]
         if not userinfo:
@@ -66,7 +75,20 @@ def _redact_userinfo(text: str) -> str:
         # redaction — the safe direction.
         head_limit = min(at + 1 + 512, length)
         host_head = text[at + 1 : head_limit]
-        ws = next((i for i, ch in enumerate(host_head) if ch.isspace()), None)
+        # Same continuation rule looking forward: "tok@exa\<newline>mple.com"
+        # is one host word, and stopping at the newline would hide the dot
+        # that makes it host-like.
+        ws = None
+        index = 0
+        while index < len(host_head):
+            char = host_head[index]
+            if char == "\\" and host_head.startswith("\n", index + 1):
+                index += 2
+                continue
+            if char.isspace():
+                ws = index
+                break
+            index += 1
         if ws is not None:
             host_head = host_head[:ws]
             host_like = "." in host_head or ":" in host_head
@@ -92,14 +114,21 @@ def _cut_severed_userinfo(raw: str, cut: int) -> bool:
     all. Running past the cap without resolving it means the segment is
     longer than any real path component, which is treated as
     credential-shaped — the safe direction, matching the host-length cap
-    in :func:`_redact_userinfo`.
+    in :func:`_redact_userinfo`. Backslash-newline pairs are skipped, not
+    boundaries: a continuation joins the tail to the head before the cut.
     """
     window = raw[cut : cut + _LOOKAHEAD]
-    for char in window:
+    index = 0
+    while index < len(window):
+        char = window[index]
+        if char == "\\" and window.startswith("\n", index + 1):
+            index += 2
+            continue
         if char == "@":
             return True
         if char in "/ \t\n":
             return False
+        index += 1
     return len(raw) > cut + _LOOKAHEAD
 
 
@@ -121,6 +150,38 @@ def encodable(text: str) -> str:
     return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
+def _truncate_for_display(raw: str) -> str:
+    """*raw* cut to the display cap, with a severed credential redacted.
+
+    The cut can sever a credential ahead of its ``@``, leaving a window
+    that redaction would never match. Two ways to tell: the visible tail
+    is colon-bearing (``user:token`` shape), or the ``@`` itself sits just
+    past the cut. Over-redacting a truncated tail is the safe direction.
+
+    The backward boundary walk skips backslash-newline pairs, exactly as
+    the redaction scan does: a continuation joins the words around it, so
+    a credential severed mid-token *after* a continuation must redact the
+    fragment before the split too — stopping at the newline would leave
+    ``user:token`` visible ahead of it.
+    """
+    text = raw[:_MAX_DISPLAY]
+    if len(text) == len(raw):
+        return text
+    end = len(text)
+    while True:
+        found = max(text.rfind(ch, 0, end) for ch in ("/", " ", "\t", "\n", "@"))
+        if found == -1:
+            break
+        if text[found] == "\n" and found > 0 and text[found - 1] == "\\":
+            end = found - 1
+            continue
+        break
+    start = found + 1
+    if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
+        text = text[:start] + "[redacted]"
+    return text
+
+
 def safe_display(value: object) -> str:
     """A manifest value made safe to echo into a violation message.
 
@@ -137,16 +198,7 @@ def safe_display(value: object) -> str:
     # just the output — redaction over the full value is superlinear
     # on adversarial input (a megabyte of "a:b@" costs seconds), and one
     # diagnostic must not buy minutes of CPU.
-    text = raw[:_MAX_DISPLAY]
-    if truncated:
-        # The cut can sever a credential ahead of its ``@``, leaving a
-        # window that redaction would never match. Two ways to tell:
-        # the visible tail is colon-bearing (``user:token`` shape), or the
-        # ``@`` itself sits just past the cut. Over-redacting a truncated
-        # tail is the safe direction.
-        start = max(text.rfind(ch) for ch in ("/", " ", "\t", "\n", "@")) + 1
-        if ":" in text[start:] or _cut_severed_userinfo(raw, _MAX_DISPLAY):
-            text = text[:start] + "[redacted]"
+    text = _truncate_for_display(raw)
     text = _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", text)
     text = _redact_userinfo(text)
     if truncated or len(text) > _MAX_DISPLAY:

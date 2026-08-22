@@ -4,14 +4,10 @@ Rule: apm-yaml-valid
 
 from typing import List
 
-import yaml
-
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import ApmConfigNode
-from skillsaw.rules.builtin.utils import read_text
-
-from ._helpers import _yaml_key_line
+from skillsaw.rules.builtin.utils import commented_key_line, read_yaml_commented
 
 
 class ApmYamlValidRule(Rule):
@@ -47,23 +43,13 @@ class ApmYamlValidRule(Rule):
         violations = []
         apm_yml = config_nodes[0].path
 
-        content = read_text(apm_yml)
-        if content is None:
+        data, error, error_line = read_yaml_commented(apm_yml)
+        if error:
             violations.append(
                 self.violation(
-                    "Failed to read apm.yml (invalid encoding or I/O error)",
+                    f"Invalid YAML in apm.yml: {error}",
                     file_path=apm_yml,
-                )
-            )
-            return violations
-
-        try:
-            data = yaml.safe_load(content)
-        except yaml.YAMLError as e:
-            violations.append(
-                self.violation(
-                    f"Invalid YAML in apm.yml: {e}",
-                    file_path=apm_yml,
+                    line=error_line,
                 )
             )
             return violations
@@ -96,7 +82,7 @@ class ApmYamlValidRule(Rule):
                     self.violation(
                         f"Field '{field}' must be a string in apm.yml",
                         file_path=apm_yml,
-                        line=_yaml_key_line(apm_yml, field),
+                        line=commented_key_line(data, field),
                     )
                 )
 
@@ -107,7 +93,7 @@ class ApmYamlValidRule(Rule):
                     self.violation(
                         f"Field '{field}' must be a string in apm.yml",
                         file_path=apm_yml,
-                        line=_yaml_key_line(apm_yml, field),
+                        line=commented_key_line(data, field),
                     )
                 )
 

@@ -84,7 +84,8 @@ event whose array is empty and so configures nothing.
   ```
 
 - Give every command hook a non-empty `command`: an absolute path, a path
-  relative to `hooks.json`, or a shell snippet. Give every prompt hook a
-  non-empty `prompt`.
+  relative to the project root, or a shell snippet. For a script stored
+  beside the manifest, use `.cursor/hooks/script.sh`, not
+  `./hooks/script.sh`. Give every prompt hook a non-empty `prompt`.
 - Set `"version": 1` — it is required, and `1` is the only value Cursor
   accepts today. Write it unquoted; `"1"` is a string.

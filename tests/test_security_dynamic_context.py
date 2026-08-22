@@ -2,8 +2,9 @@
 
 import pytest
 
-from skillsaw.baseline import fingerprint_violation
+from skillsaw.baseline import build_baseline, fingerprint_violation, save_baseline
 from skillsaw.context import RepositoryContext
+from skillsaw.formatters import format_report
 from skillsaw.rule import Severity
 from skillsaw.rules.builtin.security.dynamic_context import SecurityDynamicContextRule
 
@@ -226,6 +227,117 @@ class TestSecurityDynamicContextRule:
         assert command not in violations[0].message
         assert "…" in violations[0].message
         assert _check(temp_dir, {"allowlist": [command]}) == []
+
+    def test_command_url_credentials_are_redacted_from_message(self, temp_dir):
+        secret = "FAKE_DYNCTX_TOKEN_9Z7Q"
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, f"!`{command}`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert secret not in violations[0].message
+        assert "https://[redacted]@example.invalid/x" in violations[0].message
+        assert _check(temp_dir, {"allowlist": [command]}) == []
+
+    @pytest.mark.parametrize("output_format", ["text", "json", "sarif", "html"])
+    def test_command_url_credentials_are_redacted_from_reports(self, temp_dir, output_format):
+        secret = "FAKE_DYNCTX_REPORT_TOKEN_9Z7Q"
+        _write_skill(
+            temp_dir,
+            f"!`curl https://user:{secret}@example.invalid/report`\n",
+        )
+        context = RepositoryContext(temp_dir)
+        rule = SecurityDynamicContextRule()
+        violations = rule.check(context)
+
+        output = format_report(output_format, violations, context, [rule], "0.19.0")
+
+        assert secret not in output
+        assert "[redacted]" in output
+
+    def test_command_url_credentials_are_redacted_from_baseline(self, temp_dir):
+        secret = "FAKE_DYNCTX_BASELINE_TOKEN_9Z7Q"
+        _write_skill(
+            temp_dir,
+            f"!`curl https://user:{secret}@example.invalid/baseline`\n",
+        )
+        violations = _check(temp_dir)
+        baseline_path = temp_dir / ".skillsaw-baseline.json"
+
+        save_baseline(
+            baseline_path,
+            build_baseline(violations, temp_dir, "0.19.0"),
+        )
+
+        baseline_text = baseline_path.read_text()
+        assert secret not in baseline_text
+        assert "[redacted]" in baseline_text
+
+    def test_credentials_are_redacted_before_command_display_truncation(self, temp_dir):
+        secret = "S" * 80
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, f"!`{command}`\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        assert secret not in violations[0].message
+        assert "user:" not in violations[0].message
+        assert "[redacted]" in violations[0].message
+        assert len(command) > 60
+
+    def test_credentials_split_across_a_continuation_are_redacted(self, temp_dir):
+        # A backslash-newline joins the shell's words, so the credential is
+        # one logical token even though no single line holds all of it —
+        # line-local redaction would leak the fragment before the split.
+        # A multi-line command needs the fenced form; an inline code span
+        # cannot contain a newline.
+        secret = "FAKE_DYNCTX_SPLIT_TOKEN_9Z7Q"
+        command = f"curl -u https://user:{secret}\\\n123@example.invalid/p"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert secret not in message
+        assert "user:" not in message
+        assert "123@example" not in message
+        assert "[redacted]" in message
+
+    def test_truncated_credential_is_redacted_from_command_display(self, temp_dir):
+        # A colon-free credential longer than the display cap leaves a tail
+        # with nothing credential-shaped about it — truncating before
+        # redacting must still look past the cut for the ``@`` that names
+        # the tail userinfo, or the token rides into the message verbatim.
+        secret = "T" * 600
+        command = f"curl https://user:{secret}@example.invalid/x"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert secret not in message
+        assert "TTT" not in message
+        assert "[redacted]" in message
+
+    def test_credential_severed_after_a_continuation_is_fully_redacted(self, temp_dir):
+        # The cut lands past a backslash-newline that joins the credential's
+        # words: the backward boundary must skip the pair like the redaction
+        # scan does, or only the fragment after the split is replaced and
+        # ``user:SECRET`` stays visible ahead of it.
+        command = "curl https://user:SECRET\\" + "\n" + "T" * 480 + "@example.invalid/x"
+        _write_skill(temp_dir, "```!\n" + command + "\n```\n")
+
+        violations = _check(temp_dir)
+
+        assert len(violations) == 1
+        message = violations[0].message
+        assert "SECRET" not in message
+        assert "TTT" not in message
+        assert "[redacted]" in message
 
     def test_html_comment_content_is_not_classified(self, temp_dir):
         # Pins the recorded boundary: dynamic-context syntax inside an HTML

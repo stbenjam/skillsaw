@@ -9,6 +9,7 @@ from skillsaw.paths import has_parent_traversal, is_absolute_path, safe_is_dir, 
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext, RepositoryType
 from skillsaw.lint_target import MarketplaceConfigNode, PluginNode
+from skillsaw.rules.builtin.hooks.dangerous import dangerous_command_descriptions
 from skillsaw.rules.builtin.utils import read_json
 
 _KEBAB_CASE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -35,6 +36,9 @@ _SOURCE_REQUIRED_FIELDS = {
     # Zip archive downloaded over HTTPS; `sha256` is optional. Claude Code
     # v2.1.224 or later is required to install one.
     "archive": ("url",),
+    # Shell command that prints the plugin directory. Claude Code runs it
+    # once per session after the user accepts the exact string.
+    "command": ("command",),
 }
 
 
@@ -339,6 +343,100 @@ class MarketplaceJsonValidRule(Rule):
                     self.violation(
                         f"plugins[{idx}].source of type '{source_type}' requires "
                         f"a '{required}' field",
+                        file_path=marketplace_file,
+                    )
+                )
+
+        if source_type == "command":
+            violations.extend(self._check_command_source(source, idx, marketplace_file))
+
+        return violations
+
+    def _check_command_source(self, source, idx: int, marketplace_file) -> List[RuleViolation]:
+        """Validate the shell-executing command source shape and payload."""
+        violations = []
+        command = source.get("command")
+        command_valid = True
+        # Guard on key presence, not value presence — a null command must
+        # reach the type check below instead of silently skipping validation.
+        if "command" in source:
+            if not isinstance(command, str):
+                command_valid = False
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source command must be a string",
+                        file_path=marketplace_file,
+                    )
+                )
+            elif not command.strip():
+                # Whitespace-only is empty as far as a shell is concerned.
+                command_valid = False
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source command must not be empty",
+                        file_path=marketplace_file,
+                    )
+                )
+            elif len(command) > 500:
+                command_valid = False
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source command must be at most 500 characters",
+                        file_path=marketplace_file,
+                    )
+                )
+            elif not command.isascii() or not command.isprintable():
+                command_valid = False
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source command must contain printable ASCII only",
+                        file_path=marketplace_file,
+                    )
+                )
+            elif "    " in command:
+                command_valid = False
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source command must not contain four consecutive spaces",
+                        file_path=marketplace_file,
+                    )
+                )
+
+            if command_valid:
+                for description in dangerous_command_descriptions(command):
+                    # The bun note is a "verify intent" heads-up, not a
+                    # defect — bun is a legitimate runtime for install
+                    # commands — so it reports at warning severity while
+                    # the execution findings keep the rule's default.
+                    severity = (
+                        Severity.WARNING
+                        if description.startswith("uses bun runtime")
+                        else self.default_severity()
+                    )
+                    violations.append(
+                        self.violation(
+                            f"plugins[{idx}].source command {description}",
+                            file_path=marketplace_file,
+                            severity=severity,
+                        )
+                    )
+
+        if "timeout" in source:
+            timeout = source["timeout"]
+            if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 600:
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source timeout must be a whole number from 1 to 600",
+                        file_path=marketplace_file,
+                    )
+                )
+
+        if "mode" in source:
+            mode = source["mode"]
+            if not isinstance(mode, str) or mode not in {"copy", "link"}:
+                violations.append(
+                    self.violation(
+                        f"plugins[{idx}].source mode must be 'copy' or 'link'",
                         file_path=marketplace_file,
                     )
                 )

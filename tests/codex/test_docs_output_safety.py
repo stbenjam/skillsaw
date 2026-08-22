@@ -402,6 +402,61 @@ class TestSafeDisplay:
         assert "TTTT" not in out
         assert out == "[redacted]@h.example"
 
+    def test_a_credential_split_across_a_continuation_is_redacted(self):
+        """A backslash-newline joins the shell's words, so a credential
+        written across one is a single userinfo segment — the newline must
+        not end the backward scan and leak the head fragment."""
+        from skillsaw.diagnostics import _redact_userinfo
+
+        out = _redact_userinfo("curl -u https://user:secretpass\\\n123@example.test/p")
+        assert "secretpass" not in out
+        assert "123@example" not in out
+        assert out == "curl -u https://[redacted]@example.test/p"
+
+    def test_a_split_host_is_still_host_like(self):
+        """The forward scan must look past a continuation too, or a colon-
+        free token hides behind a host whose dot sits after the split."""
+        from skillsaw.diagnostics import _redact_userinfo
+
+        out = _redact_userinfo("curl https://tok\\\nen@example.com/x")
+        assert "tok" not in out
+        assert out == "curl https://[redacted]@example.com/x"
+
+    def test_a_plain_newline_still_ends_the_credential_scan(self):
+        """Without the backslash the lines are separate words — no
+        over-redaction may reach across a real line boundary."""
+        from skillsaw.diagnostics import _redact_userinfo
+
+        out = _redact_userinfo("echo done\ncurl https://a@b.example")
+        assert out.startswith("echo done\n")
+        assert "[redacted]" in out
+
+    def test_redaction_stays_bounded_with_many_continuations(self):
+        """Continuation skipping must not reopen a quadratic scan.
+
+        A scaling ratio, not a wall-clock bound — absolute timings are
+        instrumentation-dependent: coverage tracing on Python <=3.11
+        has no sys.monitoring backend and multiplies per-line cost.
+        """
+        import time
+
+        from skillsaw.diagnostics import _redact_userinfo
+
+        def cost(continuations: int) -> float:
+            evil = "a" * 200 + "\\\n" * continuations + "b:c@h.example"
+            best = float("inf")
+            for _ in range(3):
+                start = time.perf_counter()
+                out = _redact_userinfo(evil)
+                best = min(best, time.perf_counter() - start)
+            assert "b:c" not in out
+            return best
+
+        t1, t4 = cost(250), cost(1000)
+        # Linear in the continuation count (ratio ~4); a quadratic
+        # rescan would land near 16. 8 leaves headroom for noise.
+        assert t4 < 8 * max(t1, 1e-5), (t1, t4)
+
 
 class TestRendererHardening:
     def test_unsafe_urls_are_neutralized_on_both_extraction_paths(self, tmp_path):

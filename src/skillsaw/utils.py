@@ -349,6 +349,11 @@ def read_yaml(file_path: Path) -> Tuple[Optional[object], Optional[str]]:
         return yaml.safe_load(content), None
     except yaml.YAMLError as e:
         return None, str(e)
+    except ValueError as e:
+        # PyYAML can surface parser-adjacent failures as a bare ValueError;
+        # Python's integer-string digit limit is one example. Treat it like
+        # every other invalid document instead of aborting tree construction.
+        return None, str(e)
     except RecursionError:
         # Same hazard as read_json — see the note there.
         return None, _TOO_DEEP
@@ -377,6 +382,8 @@ def read_yaml_commented(
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             line = e.problem_mark.line + 1
         return None, str(e), line
+    except ValueError as e:
+        return None, str(e), None
     except RecursionError:
         return None, _TOO_DEEP, None
 
@@ -639,7 +646,7 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
         return None, content, None
     try:
         data = yaml.safe_load(m.group(1))
-    except yaml.YAMLError as e:
+    except (yaml.YAMLError, ValueError) as e:
         error_line = None
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             error_line = e.problem_mark.line + 2  # +1 for 0-indexed, +1 for opening ---

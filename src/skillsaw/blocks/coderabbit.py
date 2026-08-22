@@ -125,7 +125,7 @@ class CodeRabbitContentBlock(ContentBlock):
             return []
         try:
             cr_data = yaml.safe_load(cr_raw)
-        except yaml.YAMLError:
+        except (yaml.YAMLError, ValueError):
             return []
         except RecursionError:
             # Runs during lint-tree construction, so an escaping exception
