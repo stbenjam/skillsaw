@@ -29,7 +29,7 @@ def _parse_frontmatter(content: str):
     raw = (match.group(1) or "").rstrip("\n")
     try:
         data = yaml.safe_load(raw) if raw else None
-    except yaml.YAMLError as e:
+    except (yaml.YAMLError, ValueError) as e:
         return None, f"Invalid YAML in frontmatter: {e}"
 
     if data is None:

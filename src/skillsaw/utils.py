@@ -646,7 +646,7 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
         return None, content, None
     try:
         data = yaml.safe_load(m.group(1))
-    except yaml.YAMLError as e:
+    except (yaml.YAMLError, ValueError) as e:
         error_line = None
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             error_line = e.problem_mark.line + 2  # +1 for 0-indexed, +1 for opening ---

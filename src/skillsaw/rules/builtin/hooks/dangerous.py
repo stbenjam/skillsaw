@@ -7,6 +7,7 @@ runtimes or network access.
 """
 
 import re
+import shlex
 from typing import Dict, List, Set
 
 from skillsaw.diagnostics import safe_display
@@ -149,6 +150,11 @@ _ARTIFACT_TARGET_RE = re.compile(r"""(?:(?:-o|-O|--output)[=\s]+|>{1,2}\s*)("[^"
 _SHELL_SEPARATOR_RE = re.compile(r"(&&|\|\||;|\||&)")
 _PIPE_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\b")
 _CHAIN_INTERPRETER_SEGMENT_RE = re.compile(rf"^\s*{_SUDO}(?:{_INTERPRETER_CMD})\s+\S+")
+_FETCH_WORD_RE = re.compile(r"(?:^|[^A-Za-z0-9_])(?:curl|wget)(?:$|[^A-Za-z0-9_])")
+_INTERPRETER_WORD_RE = re.compile(
+    r"(?:^|[^A-Za-z0-9_])(?:node|bun|deno|python[23]?|ruby|perl|php|bash|sh|zsh|dash)"
+    r"(?:$|[^A-Za-z0-9_])"
+)
 
 _OBFUSCATION_RE = re.compile(
     r"""
@@ -203,10 +209,19 @@ def _mask_quoted_separators(line: str) -> str:
     live = False
     sub_depth = 0  # $( depth of the live double-quoted substitution
     backtick_live = False
+    live_quote = None
     index = 0
     length = len(line)
     while index < length:
         char = line[index]
+        if not quote and char == "\\" and index + 1 < length:
+            # Outside quotes a backslash makes the following quote literal;
+            # it must not open a phantom span that hides the rest of the
+            # command's separators.
+            out.append(char)
+            out.append(line[index + 1])
+            index += 2
+            continue
         if quote == '"' and char == "\\" and index + 1 < length:
             # An escape pair is data: append both characters verbatim so
             # the escaped one can neither close nor open a quoted span.
@@ -231,7 +246,19 @@ def _mask_quoted_separators(line: str) -> str:
             # Track the live substitution so it can end: a backtick form
             # closes at the next backtick, a $( form when its parentheses
             # balance again.
-            if backtick_live:
+            if live_quote:
+                if live_quote == '"' and char == "\\" and index + 1 < length:
+                    out.append(char)
+                    out.append(line[index + 1])
+                    index += 2
+                    continue
+                if char == live_quote:
+                    live_quote = None
+            elif char in "\"'":
+                # Parentheses inside a nested quoted word are data, not the
+                # end of the surrounding $(...) substitution.
+                live_quote = char
+            elif backtick_live:
                 if char == "`":
                     live = False
                     backtick_live = False
@@ -249,8 +276,104 @@ def _mask_quoted_separators(line: str) -> str:
     return "".join(out)
 
 
+def _shell_words(text: str) -> List[str]:
+    """Return shell-like words and grouping punctuation, or no words."""
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars="(){}")
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        # An incomplete command should still be lintable by the regex path;
+        # shlex uses ValueError for unmatched quotes.
+        return []
+
+
+def _segment_downloads(segment: str) -> bool:
+    """Whether one tokenizer segment invokes curl/wget in command position."""
+    if _DOWNLOAD_CMD_RE.search(segment):
+        return True
+
+    # Cover shell grouping/reserved words and executable spellings that the
+    # deliberately strict regex grammar cannot express without making every
+    # quote or parenthesis a false command boundary. shlex resolves `\curl`
+    # and `"curl"` to their actual executable word while preserving quoted
+    # prose such as `"use curl"` as one non-matching argument.
+    words = _shell_words(segment.replace("\x00", " "))
+    command_prefixes = {
+        "(",
+        "{",
+        "!",
+        "then",
+        "do",
+        "else",
+        "eval",
+        "xargs",
+        "busybox",
+    }
+    for index, word in enumerate(words):
+        executable = word.rsplit("/", 1)[-1]
+        if executable not in {"curl", "wget"}:
+            continue
+        if index == 0 or words[index - 1] in command_prefixes:
+            return True
+    return False
+
+
+def _embedded_download_executes(payload: str) -> bool:
+    """Detect a download pipeline inside an already-executable code string."""
+    pieces = _SHELL_SEPARATOR_RE.split(payload)
+    piped_download = False
+    for index in range(0, len(pieces), 2):
+        if index and pieces[index - 1] != "|":
+            piped_download = False
+        segment = pieces[index]
+        if piped_download and _INTERPRETER_WORD_RE.search(segment):
+            return True
+        piped_download = _FETCH_WORD_RE.search(segment) is not None
+    return False
+
+
+def _interpreter_payload_downloads_and_executes(command: str) -> bool:
+    """Inspect shell/code strings passed to interpreters, ssh, or docker."""
+    words = _shell_words(command)
+    if not words:
+        return False
+
+    interpreter_seen = False
+    remote_runner_seen = False
+    for index, word in enumerate(words):
+        executable = word.rsplit("/", 1)[-1]
+        if executable in {"ssh", "docker"}:
+            remote_runner_seen = True
+        if executable in {
+            "node",
+            "bun",
+            "deno",
+            "python",
+            "python2",
+            "python3",
+            "ruby",
+            "perl",
+            "php",
+            "bash",
+            "sh",
+            "zsh",
+            "dash",
+        }:
+            interpreter_seen = True
+            continue
+        if interpreter_seen and word in {"-c", "--command", "-lc", "-e", "--eval"}:
+            if index + 1 < len(words) and _embedded_download_executes(words[index + 1]):
+                return True
+        if remote_runner_seen and "|" in word and _embedded_download_executes(word):
+            return True
+    return False
+
+
 def _downloads_and_executes(command: str) -> bool:
     """Whether a download feeds or precedes an interpreter, in linear time."""
+    if _interpreter_payload_downloads_and_executes(command):
+        return True
     # The former unanchored ``curl.*`` patterns restarted a suffix scan at
     # every repeated token. Tokenize shell separators once instead. Newlines
     # reset the chain because the original regex deliberately did not span
@@ -294,7 +417,7 @@ def _downloads_and_executes(command: str) -> bool:
             if not segment.strip():
                 continue
             substitution_fetch = _SUBSTITUTION_FETCH_RE.search(segment) is not None
-            segment_downloads = _DOWNLOAD_CMD_RE.search(segment) is not None or substitution_fetch
+            segment_downloads = _segment_downloads(segment) or substitution_fetch
             if segment_downloads:
                 # Paths are unquoted here: `curl -o "/tmp/a b"` writes one
                 # file, and a later `sh "/tmp/a b"` must pair with it — a
@@ -324,16 +447,38 @@ def _downloads_and_executes(command: str) -> bool:
 
 def dangerous_command_descriptions(command: str) -> List[str]:
     """Return messages for dangerous patterns in a command."""
+    lower_command = command.lower()
+    relevant = (
+        ".claude",
+        ".vscode",
+        ".cursor",
+        ".codex",
+        ".github",
+        ".windsurf",
+        "curl",
+        "wget",
+        "ncat",
+        "nc ",
+        "eval",
+        "base64",
+        "bun",
+    )
+    if not any(token in lower_command for token in relevant):
+        return []
+
     # Quote-aware view: separators inside quotes are argument data, so the
     # anchored patterns must not treat them as command boundaries. Masking
     # is idempotent, and _downloads_and_executes masks again per line.
-    command = _mask_quoted_separators(command)
+    raw_command = command
+    command = _mask_quoted_separators(raw_command)
     findings: List[str] = []
 
     if _SCRIPT_FROM_DOTFILES_RE.search(command):
         findings.append("executes a script from a dotfile directory")
 
-    if _downloads_and_executes(command):
+    if ("curl" in lower_command or "wget" in lower_command) and _downloads_and_executes(
+        raw_command
+    ):
         findings.append("downloads and executes remote code")
 
     if _OBFUSCATION_RE.search(command):

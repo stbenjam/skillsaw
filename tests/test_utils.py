@@ -610,6 +610,16 @@ def test_parse_frontmatter_malformed_yaml_reports_error_line():
     assert error_line == 5  # --- closing line where parser fails
 
 
+def test_parse_frontmatter_invalid_timestamp_is_a_parse_error():
+    content = "---\ndate: 2026-02-30\n---\nBody\n"
+
+    fm, body, error_line = parse_frontmatter(content)
+
+    assert fm is None
+    assert body == content
+    assert error_line is None
+
+
 def test_parse_frontmatter_no_frontmatter():
     content = "# Just a heading\nSome text\n"
     fm, body, error_line = parse_frontmatter(content)

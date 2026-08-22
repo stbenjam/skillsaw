@@ -267,7 +267,7 @@ class FrontmatteredBlock(LintTarget):
         """
         try:
             data = yaml.safe_load(new_fm_text)
-        except yaml.YAMLError as e:
+        except (yaml.YAMLError, ValueError) as e:
             raise ValueError(f"Invalid YAML: {e}") from e
         if not isinstance(data, dict):
             raise ValueError("Frontmatter must be a YAML mapping")

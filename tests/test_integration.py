@@ -197,6 +197,28 @@ class TestSinglePlugin:
         assert summary(r)["errors"] == 0
         assert summary(r)["warnings"] == 0
 
+    def test_invalid_frontmatter_timestamp_is_reported_without_aborting_rules(self, tmp_path):
+        repo = tmp_path / "frontmatter-invalid-date"
+        (repo / ".claude" / "agents").mkdir(parents=True)
+        (repo / "CLAUDE.md").write_text(
+            "# Project instructions\n\nUse the helper agent for focused repository analysis.\n"
+        )
+        (repo / ".claude" / "agents" / "helper.md").write_text(
+            "---\n"
+            "name: helper\n"
+            "description: Analyze a focused repository question and report evidence.\n"
+            "date: 2026-02-30\n"
+            "---\n\n"
+            "Inspect the relevant implementation and tests, then report the conclusion.\n"
+        )
+
+        r = run_lint(repo)
+
+        assert r["rc"] == 1
+        assert r["out"] is not None
+        assert "Error running rule" not in r["stderr"]
+        assert "claude-agent-frontmatter" in rule_ids(r)
+
     def test_broken_plugin_detects_violations(self, tmp_path):
         repo = copy_fixture("single-plugin/broken", tmp_path)
         r = run_lint(repo)

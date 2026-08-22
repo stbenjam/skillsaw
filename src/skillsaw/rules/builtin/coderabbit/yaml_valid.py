@@ -67,7 +67,7 @@ class CoderabbitYamlValidRule(Rule):
                 )
             )
             return violations
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, ValueError) as exc:
             line: Optional[int] = None
             if hasattr(exc, "problem_mark") and exc.problem_mark is not None:
                 line = exc.problem_mark.line + 1
