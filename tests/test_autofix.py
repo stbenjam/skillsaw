@@ -819,6 +819,39 @@ class TestCommandRenameFix:
         assert src.read_text() == "old content"
         assert dst.read_text() == "existing content"
 
+    def test_apply_rename_rejects_symlinked_destination_parent(self, temp_dir):
+        """A target parent swapped to a symlink cannot move a file outside root."""
+        root = temp_dir / "repo"
+        source_dir = root / "commands"
+        source_dir.mkdir(parents=True)
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        src = source_dir / "BadName.md"
+        src.write_text("content")
+        redirected = root / "redirected"
+        redirected.symlink_to(outside, target_is_directory=True)
+        dst = redirected / "bad-name.md"
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="content",
+            fixed_content="content",
+            description="rename",
+            rename_from=src,
+        )
+
+        applied = Linter.apply_fixes(
+            [fix],
+            confidence=AutofixConfidence.SUGGEST,
+            root_path=root,
+        )
+
+        assert applied == []
+        assert src.read_text() == "content"
+        assert not (outside / "bad-name.md").exists()
+
     def test_rename_from_defaults_to_none(self):
         """AutofixResult.rename_from defaults to None for non-rename fixes."""
         fix = AutofixResult(

@@ -344,6 +344,24 @@ class TestMalformedViolations:
         assert "`content-banned_references`" in posted_body
         assert "message\\_with\\_emphasis" in posted_body
 
+    def test_summary_rejects_non_integer_line_markup(self):
+        violations = [
+            {
+                "severity": "warning",
+                "file_path": "docs/safe.md",
+                "line": "1`\n| injected | row |",
+                "rule_id": "rule-id",
+                "message": "message",
+            }
+        ]
+        with mock.patch.object(review, "github_api") as api:
+            api.return_value = []
+            review.upsert_summary_comment("o/r", "1", violations)
+
+        posted_body = api.call_args[0][2]["body"]
+        assert "`docs/safe.md`" in posted_body
+        assert "injected" not in posted_body
+
 
 class TestCommentIntegrity:
     def test_fingerprint_includes_line(self):

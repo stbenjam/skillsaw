@@ -992,15 +992,17 @@ class MarkdownDoc:
         """CommonMark reference definitions, including hidden-comment idioms."""
         result = []
         destination_spans = self._ref_def_dest_spans()
+        spans_by_destination_line: Dict[Tuple[str, int], List[Tuple[int, int, int]]] = {}
+        for href, spans in destination_spans.items():
+            for span in spans:
+                spans_by_destination_line.setdefault((href, span[0]), []).append(span)
         definitions = list(self._references.items()) + [
             (data["label"], data) for data in self._duplicate_references
         ]
         definitions.sort(key=lambda item: item[1]["map"][0])
         for label, data in definitions:
             start, end = data["map"]
-            matching_spans = [
-                span for span in destination_spans.get(data["href"], []) if span[0] == start + 1
-            ]
+            matching_spans = spans_by_destination_line.get((data["href"], start + 1), [])
             destination_span = matching_spans[0] if len(matching_spans) == 1 else None
             result.append(
                 MarkdownReferenceDefinition(

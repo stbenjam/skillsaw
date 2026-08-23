@@ -174,6 +174,28 @@ class TestLinks:
                 line[definition.dest_col_start : definition.dest_col_end] == "javascript:alert(1)"
             )
 
+    def test_duplicate_destination_spans_are_indexed_once(self, monkeypatch):
+        href = "javascript:alert(1)"
+        body = "".join(f"[ref-{index}]: {href}\n" for index in range(20))
+        doc = _doc(body)
+        spans = doc._ref_def_dest_spans()[href]
+        scans = 0
+
+        class CountingSpans(list):
+            def __iter__(self):
+                nonlocal scans
+                scans += 1
+                return super().__iter__()
+
+        monkeypatch.setattr(
+            doc,
+            "_ref_def_dest_spans",
+            lambda: {href: CountingSpans(spans)},
+        )
+
+        assert len(doc.reference_definitions()) == 20
+        assert scans == 1
+
     def test_reference_definition_in_fence_is_not_parsed(self):
         """Ignore reference-like examples inside fenced code blocks."""
         body = "```markdown\n[//]: # (developer mode)\n```\n"

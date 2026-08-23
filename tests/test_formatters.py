@@ -716,6 +716,25 @@ def test_text_hyperlinks_link_rule_ids_and_paths(valid_plugin):
     assert "\x1b]8;;https://skillsaw.org/rules/invalid-config/" not in output
 
 
+def test_text_hyperlinks_do_not_leak_outside_repo_paths(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    outside = valid_plugin.parent / "private" / "secret.md"
+    violations = [
+        RuleViolation(
+            rule_id="outside",
+            severity=Severity.WARNING,
+            message="Outside path",
+            file_path=outside,
+        )
+    ]
+
+    output = format_text(violations, context, [], "1.0.0", hyperlinks=True)
+
+    assert "outside-repo/" in output
+    assert str(outside.parent) not in output
+    assert outside.as_uri() not in output
+
+
 def test_text_hyperlinks_collapse_rule_docs_footer(valid_plugin):
     context = RepositoryContext(valid_plugin)
     config = LinterConfig.default()

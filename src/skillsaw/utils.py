@@ -69,6 +69,53 @@ def _open_atomic_parent(path: Path, root: Path) -> Tuple[int, str]:
     return directory_fd, relative.name
 
 
+def rename_path_anchored(source: Path, destination: Path, *, root: Path) -> None:
+    """Rename a repository file without following source or destination parents.
+
+    Both parent directories stay pinned by descriptors for the rename, closing
+    the gap where a repository-controlled directory can be replaced by a
+    symlink after a lexical containment check. Existing destinations are only
+    accepted for case-only renames of the same inode.
+    """
+    if not _supports_anchored_atomic_write():
+        raise OSError("Anchored rename is not supported on this platform")
+
+    source_fd, source_name = _open_atomic_parent(source, root)
+    destination_fd = -1
+    try:
+        destination_fd, destination_name = _open_atomic_parent(destination, root)
+        source_stat = os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+        if stat.S_ISLNK(source_stat.st_mode):
+            raise OSError(f"Refusing to rename symlink: {source}")
+
+        try:
+            destination_stat = os.stat(
+                destination_name,
+                dir_fd=destination_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISLNK(destination_stat.st_mode):
+                raise OSError(f"Refusing to rename over symlink: {destination}")
+            source_identity = (source_stat.st_dev, source_stat.st_ino)
+            destination_identity = (destination_stat.st_dev, destination_stat.st_ino)
+            if destination_identity != source_identity:
+                raise FileExistsError(f"Rename destination already exists: {destination}")
+
+        os.rename(
+            source_name,
+            destination_name,
+            src_dir_fd=source_fd,
+            dst_dir_fd=destination_fd,
+        )
+    finally:
+        if destination_fd >= 0:
+            os.close(destination_fd)
+        os.close(source_fd)
+
+
 def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = None) -> None:
     """Atomically replace *path* without following a file-level symlink.
 

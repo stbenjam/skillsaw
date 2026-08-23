@@ -21,7 +21,7 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
-from .utils import write_text_preserving
+from .utils import rename_path_anchored, write_text_preserving
 
 if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
@@ -1115,8 +1115,10 @@ class Linter:
                     same_file = (safe_resolve(src) or src) == (safe_resolve(dst) or dst)
                     if dst.exists() and not same_file:
                         continue
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    src.rename(dst)
+                    if root_path is None:
+                        src.rename(dst)
+                    else:
+                        rename_path_anchored(src, dst, root=root_path)
                     # If the content also changed, write the updated content.
                     # write_text_preserving restores the file's original BOM
                     # and CRLF/LF line endings (see utils) so an autofix only

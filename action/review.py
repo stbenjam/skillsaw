@@ -207,7 +207,8 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
         icon = SEVERITY_ICONS.get(severity, "")
         path = markdown_code_text(v.get("file_path", ""))
         line = v.get("line")
-        loc = f"`{path}:{line}`" if line else f"`{path}`"
+        valid_line = isinstance(line, int) and not isinstance(line, bool) and line > 0
+        loc = f"`{path}:{line}`" if valid_line else f"`{path}`"
         rule_id = markdown_code_text(v.get("rule_id", "unknown"))
         message = markdown_text(v.get("message", ""))
         lines.append(f"| {icon} {severity} | `{rule_id}` | {loc} | {message} |")

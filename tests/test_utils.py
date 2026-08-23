@@ -9,7 +9,7 @@ import stat
 
 import pytest
 
-from skillsaw.utils import write_bytes_atomic
+from skillsaw.utils import rename_path_anchored, write_bytes_atomic
 
 from skillsaw.rules.builtin.utils import (
     read_text,
@@ -74,10 +74,23 @@ def test_atomic_write_rejects_symlinked_parent_outside_root(tmp_path):
     redirected = root / "redirected"
     redirected.symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(OSError, match="symlinked directory|escapes root"):
+    with pytest.raises(OSError, match=r"symlinked directory|escapes root"):
         write_bytes_atomic(redirected / "artifact.json", b"new", root=root)
 
     assert not (outside / "artifact.json").exists()
+
+
+def test_anchored_rename_rejects_unsupported_platform(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(OSError, match=r"Anchored rename is not supported"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "content"
+    assert not destination.exists()
 
 
 def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
