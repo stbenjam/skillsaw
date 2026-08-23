@@ -34,8 +34,8 @@ jobs:
       - name: Install package and dependencies
         run: make venv VENV_EXTRAS=test
 
-      - name: Run tests
-        run: make test VENV_EXTRAS=test
+      - name: Run compatibility tests without coverage
+        run: .venv/bin/pytest tests/ -v
 
   coverage:
     name: test (3.11)

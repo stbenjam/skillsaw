@@ -1247,6 +1247,30 @@ class TestDocsCLI:
         assert result.returncode == 0, result.stderr
         assert (outside / "docs.md").exists()
 
+    def test_docs_relative_single_file_output_may_leave_cwd(self, valid_plugin, temp_dir):
+        work_dir = temp_dir / "work"
+        work_dir.mkdir()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+                "--output",
+                "../site/docs.md",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=work_dir,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (temp_dir / "site" / "docs.md").exists()
+
     def test_docs_marketplace_single_page(self, marketplace_repo, temp_dir):
         """Marketplace generates a single index.html."""
         out_dir = temp_dir / "out"

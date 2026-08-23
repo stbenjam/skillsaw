@@ -10,7 +10,7 @@ import stat
 import pytest
 
 from skillsaw import utils as skillsaw_utils
-from skillsaw.utils import rename_path_anchored, write_bytes_atomic
+from skillsaw.utils import mkdir_parents_anchored, rename_path_anchored, write_bytes_atomic
 
 from skillsaw.rules.builtin.utils import (
     read_text,
@@ -152,6 +152,35 @@ def test_anchored_rename_allows_same_inode_destination(tmp_path):
     assert source.samefile(destination)
     assert source.read_text(encoding="utf-8") == "content"
     assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_anchored_mkdir_creates_missing_directory_tree(tmp_path):
+    destination = tmp_path / "nested" / "deeper"
+
+    mkdir_parents_anchored(destination, root=tmp_path)
+
+    assert destination.is_dir()
+
+
+def test_anchored_mkdir_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    redirected = tmp_path / "redirected"
+    redirected.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError, match=r"symlinked directory|escapes root"):
+        mkdir_parents_anchored(redirected / "nested", root=tmp_path)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_anchored_mkdir_fallback_creates_missing_tree(tmp_path, monkeypatch):
+    destination = tmp_path / "nested" / "deeper"
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    mkdir_parents_anchored(destination, root=tmp_path)
+
+    assert destination.is_dir()
 
 
 def test_anchored_rename_uses_validated_fallback_on_unsupported_platform(tmp_path, monkeypatch):

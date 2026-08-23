@@ -852,6 +852,32 @@ class TestCommandRenameFix:
         assert src.read_text() == "content"
         assert not (outside / "bad-name.md").exists()
 
+    def test_apply_rename_creates_missing_destination_parent(self, temp_dir):
+        root = temp_dir / "repo"
+        root.mkdir()
+        src = root / "BadName.md"
+        src.write_text("content")
+        dst = root / "commands" / "nested" / "bad-name.md"
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="content",
+            fixed_content="content",
+            description="rename",
+            rename_from=src,
+        )
+
+        applied = Linter.apply_fixes(
+            [fix],
+            confidence=AutofixConfidence.SUGGEST,
+            root_path=root,
+        )
+
+        assert applied == [fix]
+        assert dst.read_text() == "content"
+        assert not src.exists()
+
     def test_rename_from_defaults_to_none(self):
         """AutofixResult.rename_from defaults to None for non-rename fixes."""
         fix = AutofixResult(

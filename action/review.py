@@ -71,7 +71,8 @@ def markdown_code_text(value):
 def owned_comment(comment):
     """Whether a comment was authored by this action's GitHub token."""
     expected = os.environ.get("SKILLSAW_COMMENT_AUTHOR", DEFAULT_COMMENT_AUTHOR)
-    return comment.get("user", {}).get("login") == expected
+    user = comment.get("user")
+    return isinstance(user, dict) and user.get("login") == expected
 
 
 def get_diff_info(repo, pr_number):

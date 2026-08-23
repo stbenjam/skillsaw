@@ -57,6 +57,9 @@ def test_review_action_resolves_fork_pr_from_workflow_run_head_sha():
 def test_issue_solver_uses_graphql_content_edit_history():
     workflow = _read(".github/workflows/skillsaw-issue-solver.yml")
 
+    assert "--paginate --slurp" in workflow
+    assert "[.[][] | select" in workflow
+    assert "current agent label has no resolvable label event" in workflow
     assert "userContentEdits(last:1)" in workflow
     assert "nodes{editedAt}" in workflow
     assert 'select(.event == "edited")' not in workflow
@@ -213,6 +216,11 @@ def test_codecov_uses_oidc_without_a_repository_secret():
     assert "CODECOV_TOKEN" not in workflow
     assert test_job["permissions"] == {"contents": "read"}
     assert "3.11" not in test_job["strategy"]["matrix"]["python-version"]
+    matrix_test_step = next(
+        step for step in test_job["steps"] if step.get("name", "").startswith("Run ")
+    )
+    assert matrix_test_step["run"] == ".venv/bin/pytest tests/ -v"
+    assert "--cov" not in matrix_test_step["run"]
     assert coverage_job["name"] == "test (3.11)"
     assert coverage_job["permissions"] == {
         "contents": "read",

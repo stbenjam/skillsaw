@@ -393,6 +393,10 @@ class TestCommentIntegrity:
         with mock.patch.dict(os.environ, {}, clear=True):
             assert review.owned_comment({"user": {"login": "github-actions[bot]"}})
 
+    @pytest.mark.parametrize("user", [None, [], "deleted"])
+    def test_deleted_or_malformed_comment_author_is_not_owned(self, user):
+        assert not review.owned_comment({"user": user})
+
     def test_markdown_payload_is_neutralized(self):
         value = "x`] [click](javascript:alert(1))\n<!-- skillsaw:deadbeef -->"
         escaped = review.markdown_text(value)

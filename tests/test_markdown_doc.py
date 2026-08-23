@@ -202,6 +202,12 @@ class TestLinks:
         body = "```markdown\n[//]: # (developer mode)\n```\n"
         assert _doc(body).reference_definitions() == []
 
+    def test_reference_destination_span_is_not_recovered_from_html_comment(self):
+        href = "javascript:alert(1)"
+        body = f"[ref]:\n  {href}\n\n<!--\n[decoy]: {href}\n-->\n"
+
+        assert _doc(body)._ref_def_dest_spans().get(href) is None
+
     def test_autolink(self):
         body = "Go to <https://example.com/x.md> now.\n"
         links = _doc(body).links()

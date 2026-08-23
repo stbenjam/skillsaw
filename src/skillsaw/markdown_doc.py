@@ -833,16 +833,29 @@ class MarkdownDoc:
 
         Returns a dict mapping raw destination text to a list of
         ``(body_line_1based, col_start, col_end)`` tuples.  Lines inside
-        fenced/indented code blocks are excluded.
+        fenced/indented code blocks and HTML comments are excluded.
         """
-        fence_lines: set = set()
+        excluded_lines: set = set()
         for f in self.fences():
             for bl in range(f.body_line_start, f.body_line_end + 1):
-                fence_lines.add(bl)
+                excluded_lines.add(bl)
+        for token in self._tokens:
+            if token.type not in {"html_block", "inline"} or not token.map:
+                continue
+            region = (
+                "\n".join(self._lines[token.map[0] : token.map[1]])
+                if token.type == "html_block"
+                else token.content
+            )
+            for _start, _end, _text, line_delta_start, line_delta_end in _html_comment_spans(
+                region
+            ):
+                for line_delta in range(line_delta_start, line_delta_end + 1):
+                    excluded_lines.add(token.map[0] + line_delta + 1)
         result: Dict[str, List[Tuple[int, int, int]]] = {}
         for i, line in enumerate(self._lines):
             body_line = i + 1
-            if body_line in fence_lines:
+            if body_line in excluded_lines:
                 continue
             m = _REF_DEF_RE.match(line)
             if m is None:

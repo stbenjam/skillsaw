@@ -21,7 +21,7 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
-from .utils import rename_path_anchored, write_text_preserving
+from .utils import mkdir_parents_anchored, rename_path_anchored, write_text_preserving
 
 if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
@@ -1108,6 +1108,10 @@ class Linter:
                     dst = fix.file_path
                     if not src.exists():
                         continue
+                    if root_path is None:
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                    else:
+                        mkdir_parents_anchored(dst.parent, root=root_path)
                     # On case-insensitive filesystems src and dst may resolve to
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip

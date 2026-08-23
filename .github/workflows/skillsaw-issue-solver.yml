@@ -46,11 +46,13 @@ jobs:
             NUM=$(echo "$issue" | jq -r '.number')
 
             # Find when agent label was added
-            LABEL_TIME=$(gh api "repos/${{ github.repository }}/issues/$NUM/events" \
-              --jq '[.[] | select(.event == "labeled" and .label.name == "agent")] | last | .created_at')
+            LABEL_TIME=$(gh api "repos/${{ github.repository }}/issues/$NUM/events?per_page=100" \
+              --paginate --slurp \
+              --jq '[.[][] | select(.event == "labeled" and .label.name == "agent")] | last | .created_at')
 
             if [ -z "$LABEL_TIME" ] || [ "$LABEL_TIME" = "null" ]; then
-              echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
+              echo "Skipping issue #$NUM: current agent label has no resolvable label event" >&2
+              continue
             else
               REPO_OWNER=${GITHUB_REPOSITORY%%/*}
               REPO_NAME=${GITHUB_REPOSITORY#*/}

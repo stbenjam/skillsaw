@@ -69,6 +69,53 @@ def _open_atomic_parent(path: Path, root: Path) -> Tuple[int, str]:
     return directory_fd, relative.name
 
 
+def mkdir_parents_anchored(directory: Path, *, root: Path) -> None:
+    """Create a contained directory tree without following symlinked parents.
+
+    Descriptor-capable platforms pin each existing or newly created component
+    before descending into it. Other platforms validate containment and reject
+    symlinks immediately before and after their native ``mkdir`` operation.
+    """
+    anchor = directory / ".skillsaw-directory-anchor"
+    resolved_root, anchor_relative = _atomic_destination(anchor, root)
+    relative = anchor_relative.parent
+    if not relative.parts:
+        return
+
+    supports_anchored_mkdir = (
+        _supports_anchored_atomic_write()
+        and os.mkdir in os.supports_dir_fd
+        and os.open in os.supports_dir_fd
+    )
+    if not supports_anchored_mkdir:
+        directory.mkdir(parents=True, exist_ok=True)
+        _atomic_destination(anchor, root)
+        if safe_is_symlink(directory) or not directory.is_dir():
+            raise OSError(f"Refusing to use symlinked directory: {directory}")
+        return
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    directory_fd = os.open(resolved_root, flags)
+    try:
+        for component in relative.parts:
+            try:
+                child_fd = os.open(component, flags, dir_fd=directory_fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, mode=0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    # Another process created the component after our open.
+                    # The no-follow open below still validates what won.
+                    pass
+                child_fd = os.open(component, flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+    finally:
+        os.close(directory_fd)
+
+
 def rename_path_anchored(source: Path, destination: Path, *, root: Path) -> None:
     """Rename a repository file without following source or destination parents.
 
