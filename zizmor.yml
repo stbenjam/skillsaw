@@ -1,0 +1,5 @@
+rules:
+  template-injection:
+    ignore:
+      # gh-aw generates a JSON value from its trusted lockdown setup step.
+      - issue-triage.lock.yml:760

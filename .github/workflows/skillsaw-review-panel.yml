@@ -1,6 +1,6 @@
 name: Skillsaw Review Panel
 
-on:
+on: # zizmor: ignore[dangerous-triggers] maintainer-applied label gates a base-only checkout
   pull_request_target:
     types: [labeled]
 

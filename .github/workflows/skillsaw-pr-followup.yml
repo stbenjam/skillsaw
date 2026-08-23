@@ -9,18 +9,13 @@ concurrency:
   group: skillsaw-agent
   cancel-in-progress: false
 
-permissions:
-  actions: read
-  contents: write
-  pull-requests: write
-  issues: write
-  # Required: claude-code-action exchanges a GitHub OIDC token for its
-  # app token at startup. Without this the action aborts immediately.
-  id-token: write
-
 jobs:
   discover:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     outputs:
       prs: ${{ steps.activity.outputs.prs }}
     steps:
@@ -130,6 +125,14 @@ jobs:
     needs: discover
     if: needs.discover.outputs.prs != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      issues: write
+      # Required: claude-code-action exchanges a GitHub OIDC token for its
+      # app token at startup. Without this the action aborts immediately.
+      id-token: write
     strategy:
       matrix:
         pr: ${{ fromJson(needs.discover.outputs.prs) }}

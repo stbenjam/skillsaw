@@ -78,6 +78,8 @@ def test_pr_followup_restricts_bot_comments_and_broad_pr_commands():
     workflow = _read(".github/workflows/skillsaw-pr-followup.yml")
     parsed = _yaml(".github/workflows/skillsaw-pr-followup.yml")
     steps = parsed["jobs"]["follow-up"]["steps"]
+    discover_permissions = parsed["jobs"]["discover"]["permissions"]
+    follow_up_permissions = parsed["jobs"]["follow-up"]["permissions"]
     record_step = next(step for step in steps if step.get("id") == "before")
     verify_step = next(step for step in steps if step.get("name", "").startswith("Verify "))
 
@@ -99,7 +101,19 @@ def test_pr_followup_restricts_bot_comments_and_broad_pr_commands():
     assert "was not pushed to PR head" in workflow
     assert "Agent did not push a new PR head; nothing to verify" in workflow
     assert "No unprivileged Tests run started" in workflow
-    assert parsed["permissions"]["actions"] == "read"
+    assert "permissions" not in parsed
+    assert discover_permissions == {
+        "contents": "read",
+        "pull-requests": "read",
+        "issues": "read",
+    }
+    assert follow_up_permissions == {
+        "actions": "read",
+        "contents": "write",
+        "pull-requests": "write",
+        "issues": "write",
+        "id-token": "write",
+    }
     assert record_step["name"] == "Record Git state before follow-up"
     assert verify_step["env"]["BEFORE_SHA"] == "${{ steps.before.outputs.head_sha }}"
     assert verify_step["env"]["CHECKOUT_SHA"] == "${{ steps.before.outputs.checkout_sha }}"
