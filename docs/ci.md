@@ -145,7 +145,7 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 - Comments are deduplicated across re-runs using fingerprints that include
   the source line. Upgrading from an older action may repost existing comments
   once as the new fingerprints take effect.
-- When a violation is fixed, its comment thread is automatically resolved
+- When a violation is fixed, its unreplied review comment is deleted
 - Comments with human replies are preserved
 
 The repository's privileged PR follow-up agent does not reply to or resolve

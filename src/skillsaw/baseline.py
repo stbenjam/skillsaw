@@ -209,7 +209,11 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
             {k: v for k, v in e.__dict__.items() if v is not None} for e in baseline.violations
         ],
     }
-    write_bytes_atomic(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
+    write_bytes_atomic(
+        path,
+        (json.dumps(data, indent=2) + "\n").encode("utf-8"),
+        root=baseline.root_path or path.parent,
+    )
 
 
 def load_baseline(path: Path) -> BaselineFile:

@@ -46,14 +46,14 @@ def test_atomic_write_preserves_existing_mode(tmp_path):
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
 
-def test_atomic_write_new_file_honors_umask(tmp_path):
+def test_atomic_write_new_file_remains_private_with_restrictive_umask(tmp_path):
     target = tmp_path / "artifact.json"
     previous_umask = os.umask(0o027)
     try:
         write_bytes_atomic(target, b"new")
     finally:
         os.umask(previous_umask)
-    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
 def test_atomic_write_new_file_is_not_world_writable_with_permissive_umask(tmp_path):
@@ -63,7 +63,21 @@ def test_atomic_write_new_file_is_not_world_writable_with_permissive_umask(tmp_p
         write_bytes_atomic(target, b"new")
     finally:
         os.umask(previous_umask)
-    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_atomic_write_rejects_symlinked_parent_outside_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    redirected = root / "redirected"
+    redirected.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError, match="symlinked directory|escapes root"):
+        write_bytes_atomic(redirected / "artifact.json", b"new", root=root)
+
+    assert not (outside / "artifact.json").exists()
 
 
 def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
@@ -186,6 +200,20 @@ def test_write_text_preserving_new_file_defaults_to_lf(temp_dir):
     f = temp_dir / "new.md"
     write_text_preserving(f, "hello\nworld\n")
     assert f.read_bytes() == b"hello\nworld\n"
+
+
+def test_write_text_preserving_refuses_symlink_target(temp_dir):
+    from skillsaw.utils import write_text_preserving
+
+    victim = temp_dir / "victim.md"
+    victim.write_text("original\n")
+    target = temp_dir / "target.md"
+    target.symlink_to(victim)
+
+    with pytest.raises(OSError, match="Refusing to write through symlink"):
+        write_text_preserving(target, "changed\n", root=temp_dir)
+
+    assert victim.read_text() == "original\n"
 
 
 def test_write_text_preserving_no_double_bom(temp_dir):

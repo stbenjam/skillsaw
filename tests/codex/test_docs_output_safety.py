@@ -635,6 +635,7 @@ class TestSafeUrlEntityDecoding:
         from skillsaw.docs.extractor import _safe_url
 
         assert _safe_url("//evil.example/path") == ""
+        assert _safe_url("&amp;#47;&amp;#47;evil.example/path") == ""
 
     @pytest.mark.parametrize(
         "description",

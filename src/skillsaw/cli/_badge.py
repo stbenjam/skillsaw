@@ -133,6 +133,7 @@ def _run_badge(args):
         write_bytes_atomic(
             badge_path,
             (json.dumps(grade.badge_json(), indent=2) + "\n").encode("utf-8"),
+            root=context.root_path if args.output is None else badge_path.parent,
         )
     except OSError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -159,6 +160,7 @@ def _run_badge(args):
                     top_rules=Counter(v.rule_id for v in violations).most_common(3),
                     theme=getattr(args, "theme", "dark"),
                 ).encode("utf-8"),
+                root=context.root_path if args.output is None else badge_path.parent,
             )
         except OSError as exc:
             print(f"Error: {exc}", file=sys.stderr)

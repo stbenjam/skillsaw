@@ -52,7 +52,6 @@ jobs:
             if [ -z "$LABEL_TIME" ] || [ "$LABEL_TIME" = "null" ]; then
               echo "$issue" | jq '. + {label_added_at: "", trusted_comments: []}'
             else
-              RAW_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/$NUM/comments")
               REPO_OWNER=${GITHUB_REPOSITORY%%/*}
               REPO_NAME=${GITHUB_REPOSITORY#*/}
               LAST_EDIT_TIME=$(gh api graphql \
@@ -62,19 +61,15 @@ jobs:
                 -F number="$NUM" \
                 --jq '.data.repository.issue.userContentEdits.nodes[0].editedAt // ""')
 
-              # A label approves the body as it existed at label time. If the
-              # body was edited later, require a fresh collaborator comment
-              # after that edit before exposing the new text to the agent.
+              # A label approves the body as it existed at label time. Any
+              # later edit invalidates that approval; require the label to be
+              # removed and reapplied before exposing the new text.
               if [ -n "$LAST_EDIT_TIME" ] && [[ "$LAST_EDIT_TIME" > "$LABEL_TIME" ]]; then
-                AUTH_COUNT=$(echo "$RAW_COMMENTS" \
-                  | jq --arg edited "$LAST_EDIT_TIME" --argjson collabs "$COLLABS" \
-                    '[.[] | select(.created_at > $edited) | select(.user.login as $u | $collabs | index($u))] | length')
-                if [ "$AUTH_COUNT" = "0" ]; then
-                  echo "Skipping issue #$NUM: body changed after agent label without fresh collaborator approval" >&2
-                  continue
-                fi
+                echo "Skipping issue #$NUM: body changed after agent label; reapply the label to approve it" >&2
+                continue
               fi
 
+              RAW_COMMENTS=$(gh api "repos/${{ github.repository }}/issues/$NUM/comments")
               COMMENTS=$(echo "$RAW_COMMENTS" \
                 | jq --arg lt "$LABEL_TIME" --argjson collabs "$COLLABS" \
                 '[.[] | select(

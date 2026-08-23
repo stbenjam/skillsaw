@@ -1040,7 +1040,11 @@ class Linter:
                 all_applied.extend(independent)
                 break
 
-            applied = self.apply_fixes(independent, confidence)
+            applied = self.apply_fixes(
+                independent,
+                confidence,
+                root_path=self.context.root_path,
+            )
             all_applied.extend(applied)
 
             # An on_apply side effect (e.g. recording a rename in the
@@ -1061,6 +1065,7 @@ class Linter:
     def apply_fixes(
         fixes: List[AutofixResult],
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
+        root_path: Optional[Path] = None,
     ) -> List[AutofixResult]:
         """
         Write fix results to disk.
@@ -1070,6 +1075,7 @@ class Linter:
             confidence: Minimum confidence level to apply
                         (SAFE = only safe,
                          SUGGEST = safe + suggest)
+            root_path: Trusted repository boundary for atomic writes
 
         Returns:
             List of fixes that were actually applied
@@ -1116,9 +1122,13 @@ class Linter:
                     # and CRLF/LF line endings (see utils) so an autofix only
                     # changes the span it targeted, not the whole file.
                     if fix.fixed_content != fix.original_content:
-                        write_text_preserving(dst, fix.fixed_content)
+                        write_text_preserving(dst, fix.fixed_content, root=root_path)
                 else:
-                    write_text_preserving(fix.file_path, fix.fixed_content)
+                    write_text_preserving(
+                        fix.file_path,
+                        fix.fixed_content,
+                        root=root_path,
+                    )
             except OSError as exc:
                 logger.warning(
                     "Failed to apply fix for %s on %s: %s",

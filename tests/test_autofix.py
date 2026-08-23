@@ -378,6 +378,28 @@ class TestApplyFixes:
         assert victim.read_text() == "original"
         assert "Skipping autofix for symlinked path" in caplog.text
 
+    def test_apply_refuses_symlinked_parent_outside_root(self, tmp_path, caplog):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        target_dir = repo / "redirected"
+        target_dir.symlink_to(outside, target_is_directory=True)
+        target = target_dir / "test.txt"
+        target.write_text("original")
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.SAFE,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        assert Linter.apply_fixes([fix], root_path=repo) == []
+        assert target.read_text() == "original"
+        assert "Refusing to write through symlinked directory" in caplog.text
+
     def test_apply_skips_suggest_by_default(self, temp_dir):
         target = temp_dir / "test.txt"
         target.write_text("original")

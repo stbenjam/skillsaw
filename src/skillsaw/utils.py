@@ -17,19 +17,140 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from skillsaw.paths import safe_is_symlink, safe_resolve
 
 
-def write_bytes_atomic(path: Path, content: bytes) -> None:
+def _atomic_destination(path: Path, root: Path) -> Tuple[Path, Path]:
+    """Return a resolved root and lexical relative destination, or fail closed."""
+    resolved_root = safe_resolve(root)
+    lexical_path = Path(os.path.abspath(path))
+    if resolved_root is None:
+        raise OSError(f"Could not resolve atomic-write root: {root}")
+    try:
+        relative = lexical_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise OSError(f"Atomic-write destination escapes root: {path}") from exc
+    if not relative.name:
+        raise OSError(f"Atomic-write destination is not a file: {path}")
+
+    current = resolved_root
+    for component in relative.parent.parts:
+        current /= component
+        if safe_is_symlink(current):
+            raise OSError(f"Refusing to write through symlinked directory: {current}")
+    resolved_path = safe_resolve(lexical_path)
+    if resolved_path is None or not resolved_path.is_relative_to(resolved_root):
+        raise OSError(f"Atomic-write destination escapes root: {path}")
+    return resolved_root, relative
+
+
+def _supports_anchored_atomic_write() -> bool:
+    required = (os.open, os.rename, os.stat, os.unlink)
+    return (
+        hasattr(os, "O_DIRECTORY")
+        and hasattr(os, "O_NOFOLLOW")
+        and all(function in os.supports_dir_fd for function in required)
+    )
+
+
+def _open_atomic_parent(path: Path, root: Path) -> Tuple[int, str]:
+    """Open the destination parent without following repository symlinks."""
+    resolved_root, relative = _atomic_destination(path, root)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+
+    directory_fd = os.open(resolved_root, flags)
+    try:
+        for component in relative.parent.parts:
+            child_fd = os.open(component, flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+    except BaseException:
+        os.close(directory_fd)
+        raise
+    return directory_fd, relative.name
+
+
+def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = None) -> None:
     """Atomically replace *path* without following a file-level symlink.
 
     Generated artifacts use predictable names inside repositories being
     inspected. A checked-in symlink at one of those names must never turn a
     lint command into an arbitrary-file overwrite. The explicit refusal gives
-    callers a useful error; ``os.replace`` closes the check/write race by
+    callers a useful error; atomic replacement closes the check/write race by
     replacing a link that appears after the check instead of following it.
-    Existing permissions are preserved; new files use at most ``0644``,
-    further restricted by the process umask.
+    Existing permissions are preserved; new files use private mode ``0600``.
+    When *root* is provided, every destination parent is opened relative to an
+    anchored root directory without following symlinks.
     """
     if safe_is_symlink(path):
         raise OSError(f"Refusing to write through symlink: {path}")
+
+    if root is not None and _supports_anchored_atomic_write():
+        parent_fd, destination_name = _open_atomic_parent(path, root)
+        temporary_name = ""
+        fd = -1
+        try:
+            existing_mode = None
+            try:
+                destination_stat = os.stat(
+                    destination_name, dir_fd=parent_fd, follow_symlinks=False
+                )
+                if stat.S_ISLNK(destination_stat.st_mode):
+                    raise OSError(f"Refusing to write through symlink: {path}")
+                existing_mode = stat.S_IMODE(destination_stat.st_mode)
+            except FileNotFoundError:
+                pass
+
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_CLOEXEC"):
+                flags |= os.O_CLOEXEC
+            for _attempt in range(100):
+                temporary_name = f".{destination_name}.{secrets.token_hex(8)}"
+                try:
+                    fd = os.open(temporary_name, flags, 0o600, dir_fd=parent_fd)
+                    break
+                except FileExistsError:
+                    continue
+            else:
+                raise FileExistsError(f"Could not allocate temporary file beside {path}")
+
+            if existing_mode is not None:
+                os.fchmod(fd, existing_mode)
+            stream = os.fdopen(fd, "wb")
+            fd = -1
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+                opened_stat = os.fstat(stream.fileno())
+            temporary_stat = os.stat(temporary_name, dir_fd=parent_fd, follow_symlinks=False)
+            if (temporary_stat.st_dev, temporary_stat.st_ino) != (
+                opened_stat.st_dev,
+                opened_stat.st_ino,
+            ):
+                raise OSError(f"Atomic-write temporary file was replaced: {path}")
+            os.rename(
+                temporary_name,
+                destination_name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+            temporary_name = ""
+            return
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if temporary_name:
+                try:
+                    os.unlink(temporary_name, dir_fd=parent_fd)
+                except OSError:
+                    pass
+            os.close(parent_fd)
+
+    if root is not None:
+        _atomic_destination(path, root)
 
     existing_mode = None
     try:
@@ -43,7 +164,7 @@ def write_bytes_atomic(path: Path, content: bytes) -> None:
     for _attempt in range(100):
         temporary = path.parent / f".{path.name}.{secrets.token_hex(8)}"
         try:
-            fd = os.open(temporary, flags, 0o644)
+            fd = os.open(temporary, flags, 0o600)
             break
         except FileExistsError:
             continue
@@ -61,6 +182,8 @@ def write_bytes_atomic(path: Path, content: bytes) -> None:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+        if root is not None:
+            _atomic_destination(path, root)
         os.replace(temporary, path)
     except BaseException:
         if fd >= 0:
@@ -227,7 +350,7 @@ def read_text(file_path: Path) -> Optional[str]:
         return None
 
 
-def write_text_preserving(file_path: Path, content: str) -> None:
+def write_text_preserving(file_path: Path, content: str, *, root: Optional[Path] = None) -> None:
     """Write *content*, restoring the file's original BOM and line endings.
 
     ``read_text`` normalizes a file to BOM-free, ``\\n``-delimited text for
@@ -262,7 +385,7 @@ def write_text_preserving(file_path: Path, content: str) -> None:
     data = normalized.encode("utf-8")
     if has_bom:
         data = b"\xef\xbb\xbf" + data
-    file_path.write_bytes(data)
+    write_bytes_atomic(file_path, data, root=root)
 
 
 # Reported instead of the traceback when a document nests past the

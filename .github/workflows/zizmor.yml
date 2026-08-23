@@ -22,10 +22,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout trusted zizmor policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: .trusted-zizmor
+          sparse-checkout: zizmor.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
         with:
           version: v1.29.0
-          config: zizmor.yml
+          config: .trusted-zizmor/zizmor.yml
           advanced-security: false
           annotations: true

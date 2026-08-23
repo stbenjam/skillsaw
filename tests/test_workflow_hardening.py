@@ -58,6 +58,8 @@ def test_issue_solver_uses_graphql_content_edit_history():
     assert "userContentEdits(last:1)" in workflow
     assert "nodes{editedAt}" in workflow
     assert 'select(.event == "edited")' not in workflow
+    assert "AUTH_COUNT" not in workflow
+    assert "reapply the label to approve it" in workflow
 
 
 def test_claude_workflows_use_auto_permission_mode():
@@ -198,13 +200,24 @@ def test_pr_followup_distinguishes_unpushed_commit_from_no_change(tmp_path, monk
 def test_codecov_uses_oidc_without_a_repository_secret():
     workflow = _read(".github/workflows/test.yml")
     parsed = _yaml(".github/workflows/test.yml")
+    test_job = parsed["jobs"]["test"]
+    coverage_job = parsed["jobs"]["coverage"]
 
     assert "use_oidc: true" in workflow
     assert "CODECOV_TOKEN" not in workflow
-    assert parsed["jobs"]["test"]["permissions"] == {
+    assert test_job["permissions"] == {"contents": "read"}
+    assert "3.11" not in test_job["strategy"]["matrix"]["python-version"]
+    assert coverage_job["name"] == "test (3.11)"
+    assert coverage_job["permissions"] == {
         "contents": "read",
         "id-token": "write",
     }
+    assert not any(
+        "codecov/codecov-action@" in str(step.get("uses", "")) for step in test_job["steps"]
+    )
+    assert any(
+        "codecov/codecov-action@" in str(step.get("uses", "")) for step in coverage_job["steps"]
+    )
 
 
 def test_dependabot_tracks_the_digest_pinned_docker_base():
@@ -217,16 +230,27 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
     workflow = _yaml(".github/workflows/zizmor.yml")
     steps = workflow["jobs"]["zizmor"]["steps"]
     checkout = next(step for step in steps if step["name"] == "Checkout repository")
+    policy_checkout = next(
+        step for step in steps if step["name"] == "Checkout trusted zizmor policy"
+    )
     scan = next(step for step in steps if step["name"] == "Run zizmor")
 
     assert workflow["permissions"] == {}
     assert "permissions" not in workflow["jobs"]["zizmor"]
     assert checkout["uses"] == ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
     assert checkout["with"]["persist-credentials"] is False
+    assert policy_checkout["uses"] == checkout["uses"]
+    assert policy_checkout["with"] == {
+        "ref": "main",
+        "path": ".trusted-zizmor",
+        "sparse-checkout": "zizmor.yml",
+        "sparse-checkout-cone-mode": False,
+        "persist-credentials": False,
+    }
     assert scan["uses"] == ("zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054")
     assert scan["with"] == {
         "version": "v1.29.0",
-        "config": "zizmor.yml",
+        "config": ".trusted-zizmor/zizmor.yml",
         "advanced-security": False,
         "annotations": True,
     }
