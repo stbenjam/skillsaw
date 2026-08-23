@@ -22,10 +22,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout trusted zizmor policy
+      - name: Checkout immutable zizmor policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          # Pin the policy independently from the pull request being scanned.
+          ref: eecf9836c88b3c73103e94c6b0a8e935508af689
           path: .trusted-zizmor
           sparse-checkout: zizmor.yml
           sparse-checkout-cone-mode: false

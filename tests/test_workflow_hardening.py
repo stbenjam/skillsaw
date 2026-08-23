@@ -231,7 +231,7 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
     steps = workflow["jobs"]["zizmor"]["steps"]
     checkout = next(step for step in steps if step["name"] == "Checkout repository")
     policy_checkout = next(
-        step for step in steps if step["name"] == "Checkout trusted zizmor policy"
+        step for step in steps if step["name"] == "Checkout immutable zizmor policy"
     )
     scan = next(step for step in steps if step["name"] == "Run zizmor")
 
@@ -241,7 +241,7 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
     assert checkout["with"]["persist-credentials"] is False
     assert policy_checkout["uses"] == checkout["uses"]
     assert policy_checkout["with"] == {
-        "ref": "main",
+        "ref": "eecf9836c88b3c73103e94c6b0a8e935508af689",
         "path": ".trusted-zizmor",
         "sparse-checkout": "zizmor.yml",
         "sparse-checkout-cone-mode": False,
