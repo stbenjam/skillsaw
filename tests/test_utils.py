@@ -145,7 +145,7 @@ def test_anchored_rename_allows_same_inode_destination(tmp_path):
     source = tmp_path / "source.md"
     destination = tmp_path / "destination.md"
     source.write_text("content", encoding="utf-8")
-    destination.hardlink_to(source)
+    os.link(source, destination)
 
     rename_path_anchored(source, destination, root=tmp_path)
 
@@ -215,7 +215,7 @@ def test_anchored_rename_fallback_allows_same_inode_destination(tmp_path, monkey
     source = tmp_path / "source.md"
     destination = tmp_path / "destination.md"
     source.write_text("content", encoding="utf-8")
-    destination.hardlink_to(source)
+    os.link(source, destination)
     monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
 
     rename_path_anchored(source, destination, root=tmp_path)
