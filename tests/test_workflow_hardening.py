@@ -73,10 +73,12 @@ def test_claude_workflows_use_auto_permission_mode():
 
     assert invocations
     for path, step in invocations:
-        assert "--permission-mode auto" in step.get("with", {}).get("claude_args", ""), path
+        claude_args = step.get("with", {}).get("claude_args", "")
+        assert "--permission-mode auto" in claude_args, path
+        assert "--allowedTools" not in claude_args, path
 
 
-def test_pr_followup_restricts_bot_comments_and_broad_pr_commands():
+def test_pr_followup_restricts_bot_comments_and_validates_agent_results():
     workflow = _read(".github/workflows/skillsaw-pr-followup.yml")
     parsed = _yaml(".github/workflows/skillsaw-pr-followup.yml")
     steps = parsed["jobs"]["follow-up"]["steps"]
@@ -93,10 +95,6 @@ def test_pr_followup_restricts_bot_comments_and_broad_pr_commands():
         "devin-ai-integration[bot]",
         "chatgpt-codex-connector[bot]",
     }
-    assert "Bash(gh pr:*)" not in workflow
-    assert "Bash(gh pr view:*)" in workflow
-    assert "Bash(gh pr checks:*)" in workflow
-    assert "Bash(gh api" not in workflow
     assert "gh auth setup-git" not in workflow
     assert "Agent left uncommitted changes" in workflow
     assert "Agent left local HEAD" in workflow

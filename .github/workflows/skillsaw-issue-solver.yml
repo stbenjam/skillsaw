@@ -155,7 +155,6 @@ jobs:
           show_full_output: true
           claude_args: |
             --permission-mode auto
-            --allowedTools Read,Edit,Write,Glob,Grep,Skill,TaskCreate,TaskUpdate,TaskList,TaskGet,Bash
             --model ${{ matrix.issue.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.issue.ultracode && '--effort ultracode' || '' }}
 
