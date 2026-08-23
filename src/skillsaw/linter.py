@@ -13,7 +13,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -1081,6 +1081,15 @@ class Linter:
 
         for fix in fixes:
             if fix.confidence not in allowed:
+                continue
+
+            # A target may be swapped for a symlink after discovery or
+            # between fixed-point passes. Re-check at the write boundary so
+            # autofix never follows it outside the repository.
+            if safe_is_symlink(fix.file_path) or (
+                fix.rename_from is not None and safe_is_symlink(fix.rename_from)
+            ):
+                logger.warning("Skipping autofix for symlinked path: %s", fix.file_path)
                 continue
 
             try:

@@ -24,6 +24,13 @@ The first match wins. Use `--config PATH` to point at a specific file and
 skip discovery entirely. If no config is found, all rules run with their
 defaults at the latest version.
 
+!!! warning "Parent configurations are trusted code settings"
+    Discovery continues above the nearest Git repository and can select a
+    config from a shared workspace or filesystem parent. Such a config can
+    name Python files under `custom-rules`. In CI and when inspecting an
+    unfamiliar checkout, pass `--config` explicitly and use
+    `--no-custom-rules --no-plugins`.
+
 ## Example Configuration
 
 ```yaml

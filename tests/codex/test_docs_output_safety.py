@@ -631,6 +631,37 @@ class TestSafeUrlEntityDecoding:
         assert _safe_url("https://ok.example/?a=1&amp;b=2") == "https://ok.example/?a=1&b=2"
         assert _safe_url("https://ok.example/path") == "https://ok.example/path"
 
+    def test_protocol_relative_url_is_rejected(self):
+        from skillsaw.docs.extractor import _safe_url
+
+        assert _safe_url("//evil.example/path") == ""
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "See [click](javascript:alert(1)) now.",
+            "See [click](data:text/html,payload) now.",
+            "See [click](//evil.example/path) now.",
+            "See <javascript:alert(1)> now.",
+        ],
+    )
+    def test_markdown_description_links_are_neutralized(self, description):
+        from skillsaw.docs.markdown_renderer import _safe_markdown_prose
+
+        rendered = _safe_markdown_prose(description)
+        assert "javascript:" not in rendered
+        assert "data:" not in rendered
+        assert "//evil.example" not in rendered
+        assert "#" in rendered
+
+    def test_line_initial_unsafe_autolink_does_not_become_a_heading(self):
+        from skillsaw.docs.markdown_renderer import _safe_markdown_prose
+        from skillsaw.markdown_doc import MarkdownDoc
+
+        rendered = _safe_markdown_prose("<javascript:alert(1)> is bad")
+        assert rendered == "[link](#) is bad"
+        assert MarkdownDoc(rendered).headings() == []
+
 
 class TestCodeSpanBreakout:
     def test_backticks_in_metadata_cannot_escape_code_spans(self, tmp_path):

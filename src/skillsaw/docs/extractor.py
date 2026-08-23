@@ -496,6 +496,8 @@ def _safe_url(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         return ""
     candidate = value.strip()
+    if candidate.startswith("//"):
+        return ""
     # CommonMark decodes character references in link destinations, so
     # ``javascript&colon;alert(1)`` carries no literal colon here yet
     # renders as a script-executing link. Validate and emit the decoded

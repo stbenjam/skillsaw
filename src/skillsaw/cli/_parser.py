@@ -415,6 +415,18 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         type=Path,
         help="Path to .skillsaw.yaml config file",
     )
+    baseline_parser.add_argument(
+        "--no-custom-rules",
+        action="store_true",
+        dest="no_custom_rules",
+        help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
+    )
+    baseline_parser.add_argument(
+        "--no-plugins",
+        action="store_true",
+        dest="no_plugins",
+        help="Skip rules from installed plugin packages (skillsaw.plugins entry points)",
+    )
     # --- badge ---
     badge_parser = subparsers.add_parser(
         "badge",
@@ -455,6 +467,18 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         choices=["light", "dark"],
         default="dark",
         help="Report card color theme, used with --large (default: dark)",
+    )
+    badge_parser.add_argument(
+        "--no-custom-rules",
+        action="store_true",
+        dest="no_custom_rules",
+        help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
+    )
+    badge_parser.add_argument(
+        "--no-plugins",
+        action="store_true",
+        dest="no_plugins",
+        help="Skip rules from installed plugin packages (skillsaw.plugins entry points)",
     )
     _add_color_flag(badge_parser)
 

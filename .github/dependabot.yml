@@ -5,8 +5,12 @@ updates:
     schedule:
       interval: monthly
     groups:
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
       actions:
-        patterns: ["*"]        # all action bumps in ONE PR
+        applies-to: version-updates
+        patterns: ["*"]
     commit-message:
       prefix: ci
     open-pull-requests-limit: 5
@@ -16,5 +20,16 @@ updates:
     schedule:
       interval: monthly
     groups:
-      python:
+      security-updates:
+        applies-to: security-updates
         patterns: ["*"]
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: docker

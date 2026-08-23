@@ -20,13 +20,21 @@ from typing import Dict, List, Optional, Tuple
 from .formatters import relative_path
 from .rule import RuleViolation
 from skillsaw.paths import safe_resolve
+from skillsaw.utils import write_bytes_atomic
 
 BASELINE_FILENAME = ".skillsaw-baseline.json"
 _BASELINE_VERSION = "1"
 # "deprecated-rule" mirrors linter.ADVISORY_RULE_IDS (kept literal to avoid
 # a module cycle; pinned by a test): baselining a deprecation notice would
 # permanently hide the removal warning it exists to deliver.
-_UNBASELINABLE_RULE_IDS = frozenset({"repository-path-error", "deprecated-rule"})
+_UNBASELINABLE_RULE_IDS = frozenset(
+    {
+        "repository-path-error",
+        "rule-execution-error",
+        "plugin-load-error",
+        "deprecated-rule",
+    }
+)
 
 
 @dataclass
@@ -201,7 +209,7 @@ def save_baseline(path: Path, baseline: BaselineFile) -> None:
             {k: v for k, v in e.__dict__.items() if v is not None} for e in baseline.violations
         ],
     }
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    write_bytes_atomic(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
 
 
 def load_baseline(path: Path) -> BaselineFile:

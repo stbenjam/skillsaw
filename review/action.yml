@@ -9,12 +9,16 @@ inputs:
     description: 'GitHub token with pull-requests: write permission'
     required: false
     default: ${{ github.token }}
+  comment-author:
+    description: 'Login that the token posts as; used to identify comments owned by this action'
+    required: false
+    default: 'github-actions[bot]'
 
 runs:
   using: 'composite'
   steps:
     - name: Download report artifact
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: skillsaw-report
         path: /tmp/skillsaw-review
@@ -22,7 +26,7 @@ runs:
         github-token: ${{ inputs.token }}
 
     - name: Download PR metadata
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: skillsaw-pr-metadata
         path: /tmp/skillsaw-review
@@ -30,7 +34,7 @@ runs:
         github-token: ${{ inputs.token }}
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.11'
 
@@ -46,9 +50,37 @@ runs:
         if [ -f /tmp/skillsaw-review/skillsaw-head-sha ]; then
           HEAD_SHA=$(cat /tmp/skillsaw-review/skillsaw-head-sha)
         fi
-        if [ -z "$REPORT_FILE" ] || [ -z "$PR_NUMBER" ] || [ -z "$HEAD_SHA" ]; then
-          echo "Missing report or PR metadata, skipping review."
-          exit 0
+        if [ -z "$REPORT_FILE" ] || [ -z "$PR_NUMBER" ] || [ -z "$HEAD_SHA" ] || \
+           [ -z "$EVENT_HEAD_SHA" ]; then
+          echo "Missing report, artifact metadata, or workflow_run head SHA; refusing to post."
+          exit 1
+        fi
+        if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "Artifact PR metadata has an invalid format; refusing to post."
+          exit 1
+        fi
+        if ! [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "workflow_run head SHA has an invalid format; refusing to post."
+          exit 1
+        fi
+        # workflow_run.pull_requests is empty for fork PRs. Resolve the PR
+        # from the event-supplied commit SHA instead of trusting the artifact.
+        PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EVENT_HEAD_SHA}/pulls")
+        EVENT_PR_NUMBER=$(echo "$PR_DATA" \
+          | jq -r --arg sha "$EVENT_HEAD_SHA" \
+            '[.[] | select(.head.sha == $sha)][0].number // empty')
+        if ! [[ "$EVENT_PR_NUMBER" =~ ^[0-9]+$ ]]; then
+          ASSOCIATED_PR_NUMBER=$(echo "$PR_DATA" | jq -r '.[0].number // empty')
+          if [[ "$ASSOCIATED_PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "workflow_run commit belongs to superseded PR #${ASSOCIATED_PR_NUMBER}; nothing to post."
+            exit 0
+          fi
+          echo "Could not resolve a PR from the workflow_run head SHA; refusing to post."
+          exit 1
+        fi
+        if [ "$PR_NUMBER" != "$EVENT_PR_NUMBER" ] || [ "$HEAD_SHA" != "$EVENT_HEAD_SHA" ]; then
+          echo "Artifact PR metadata does not match workflow_run; refusing to post."
+          exit 1
         fi
         export SKILLSAW_REPORT_FILE="$REPORT_FILE"
         export PR_NUMBER
@@ -56,4 +88,7 @@ runs:
         python3 "${{ github.action_path }}/../action/review.py"
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
+        GH_TOKEN: ${{ inputs.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
+        EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        SKILLSAW_COMMENT_AUTHOR: ${{ inputs.comment-author }}

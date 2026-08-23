@@ -150,6 +150,20 @@ def encodable(text: str) -> str:
     return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
+def terminal_safe(value: object) -> str:
+    """Return complete text with terminal control characters neutralized.
+
+    Unlike :func:`safe_display`, this last-line formatter guard does not
+    truncate or redact a complete diagnostic. It only prevents repository
+    content from injecting terminal controls, bidi overrides, or unencodable
+    surrogate code points into human-readable output.
+    """
+    # Preserve lone surrogates as their visible ``\\ud800`` spelling, matching
+    # the report-wide encoding guard, while replacing executable terminal
+    # controls and bidi overrides with a single harmless glyph.
+    return _CONTROL_CHARS.sub("\N{REPLACEMENT CHARACTER}", encodable(str(value)))
+
+
 def _truncate_for_display(raw: str) -> str:
     """*raw* cut to the display cap, with a severed credential redacted.
 

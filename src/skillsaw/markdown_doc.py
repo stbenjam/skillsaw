@@ -59,13 +59,36 @@ def _make_parser() -> MarkdownIt:
     # every ``text`` child is a verbatim slice of the source, which is what
     # makes exact column recovery possible.
     md.disable("text_join", ignoreInvalid=True)
+    # This facade describes source structure; it must not silently turn a
+    # syntactically valid link into plain text because its destination has an
+    # unsafe scheme. Renderers and security rules need the token in order to
+    # diagnose or neutralize it at the sink.
+    md.validateLink = lambda _url: True
     return md
 
 
 _PARSER = _make_parser()
 
-_HTML_COMMENT_RE = re.compile(r"<!--(.*?)-->", re.DOTALL)
 _REF_DEF_RE = re.compile(r"^[ \t]{0,3}\[([^\]]+)\]:[ \t]+")
+
+
+def _html_comment_spans(text: str):
+    """Yield closed HTML-comment spans and line offsets in one linear pass."""
+    cursor = 0
+    line = 0
+    while True:
+        start = text.find("<!--", cursor)
+        if start < 0:
+            return
+        line += text.count("\n", cursor, start)
+        start_line = line
+        end_marker = text.find("-->", start + 4)
+        if end_marker < 0:
+            return
+        end = end_marker + 3
+        line += text.count("\n", start, end)
+        yield start, end, text[start + 4 : end_marker], start_line, line
+        cursor = end
 
 
 @lru_cache(maxsize=128)
@@ -101,6 +124,9 @@ class MarkdownLink:
     is_image: bool = False
     is_autolink: bool = False
     is_reference: bool = False
+    source_file_line: Optional[int] = None
+    source_col_start: Optional[int] = None
+    source_col_end: Optional[int] = None
 
     @property
     def has_dest_span(self) -> bool:
@@ -523,14 +549,17 @@ class _InlineWalker:
         if start is None:
             return
         end = start + len(token.content)
-        match = _HTML_COMMENT_RE.fullmatch(token.content)
-        if match:
+        if (
+            len(token.content) >= 7
+            and token.content.startswith("<!--")
+            and token.content.endswith("-->")
+        ):
             self.verbatim_spans.append((start, end))
             start_line0, _ = self.cmap.locate(start)
             end_line0, _ = self.cmap.locate(max(start, end - 1))
             self.html_comments.append(
                 MarkdownHtmlComment(
-                    text=match.group(1),
+                    text=token.content[4:-3],
                     body_line_start=start_line0 + 1,
                     body_line_end=end_line0 + 1,
                     file_line_start=self.doc.file_line(start_line0 + 1),
@@ -691,8 +720,15 @@ class _InlineWalker:
 
     def _emit_autolink(self, info: Dict, close: Optional[int]) -> None:
         start = info.get("start")
+        source_file_line = source_col_start = source_col_end = None
         if start is not None:
-            body_line0, _ = self._position(start)
+            body_line0, start_col = self._position(start)
+            if close is not None:
+                close_line0, close_col = self._position(close)
+                if start_col is not None and close_col is not None and body_line0 == close_line0:
+                    source_file_line = self.doc.file_line(body_line0 + 1)
+                    source_col_start = start_col
+                    source_col_end = close_col + 1
         else:
             body_line0 = self.map_start
         self.links.append(
@@ -703,6 +739,9 @@ class _InlineWalker:
                 body_line=body_line0 + 1,
                 file_line=self.doc.file_line(body_line0 + 1),
                 is_autolink=True,
+                source_file_line=source_file_line,
+                source_col_start=source_col_start,
+                source_col_end=source_col_end,
             )
         )
 
@@ -762,6 +801,7 @@ class MarkdownDoc:
         self._inline_comments: List[MarkdownHtmlComment] = []
         self._inline_verbatim: List[Tuple[int, int, int]] = []  # (map_start, start, end)
         self._inline_maps: List[Tuple[int, str, List[Tuple[int, int]]]] = []
+        self._html_comments: Optional[List[MarkdownHtmlComment]] = None
         self._prose: Optional[List[str]] = None
         self._prose_text: Optional[str] = None
 
@@ -921,6 +961,8 @@ class MarkdownDoc:
 
     def html_comments(self) -> List[MarkdownHtmlComment]:
         """HTML comments from block-level HTML and inline HTML."""
+        if self._html_comments is not None:
+            return list(self._html_comments)
         self._ensure_walked()
         result: List[MarkdownHtmlComment] = []
         for token in self._tokens:
@@ -928,12 +970,10 @@ class MarkdownDoc:
                 continue
             start_line0 = token.map[0]
             region = "\n".join(self._lines[token.map[0] : token.map[1]])
-            for match in _HTML_COMMENT_RE.finditer(region):
-                line_delta_start = region.count("\n", 0, match.start())
-                line_delta_end = region.count("\n", 0, match.end())
+            for _start, _end, text, line_delta_start, line_delta_end in _html_comment_spans(region):
                 result.append(
                     MarkdownHtmlComment(
-                        text=match.group(1),
+                        text=text,
                         body_line_start=start_line0 + line_delta_start + 1,
                         body_line_end=start_line0 + line_delta_end + 1,
                         file_line_start=self.file_line(start_line0 + line_delta_start + 1),
@@ -942,7 +982,8 @@ class MarkdownDoc:
                 )
         result.extend(self._inline_comments)
         result.sort(key=lambda c: c.body_line_start)
-        return result
+        self._html_comments = result
+        return list(result)
 
     def reference_definitions(self) -> List[MarkdownReferenceDefinition]:
         """CommonMark reference definitions, including hidden-comment idioms."""
@@ -1002,8 +1043,8 @@ class MarkdownDoc:
             start0, end0 = token.map
             region_lines = lines[start0:end0]
             region = "\n".join(self._lines[start0:end0])
-            for match in _HTML_COMMENT_RE.finditer(region):
-                self._blank_region(region_lines, region, match.start(), match.end())
+            for start, end, _text, _start_line, _end_line in _html_comment_spans(region):
+                self._blank_region(region_lines, region, start, end)
             lines[start0:end0] = region_lines
 
         # Inline verbatim spans (code spans, inline HTML comments): blank

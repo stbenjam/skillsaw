@@ -360,6 +360,24 @@ class TestApplyFixes:
         assert len(applied) == 1
         assert target.read_text() == "fixed"
 
+    def test_apply_refuses_symlink_target(self, temp_dir, caplog):
+        victim = temp_dir / "victim.txt"
+        victim.write_text("original")
+        target = temp_dir / "target.txt"
+        target.symlink_to(victim)
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.SAFE,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        assert Linter.apply_fixes([fix]) == []
+        assert victim.read_text() == "original"
+        assert "Skipping autofix for symlinked path" in caplog.text
+
     def test_apply_skips_suggest_by_default(self, temp_dir):
         target = temp_dir / "test.txt"
         target.write_text("original")

@@ -6,7 +6,7 @@ from typing import List
 
 from ..rule import Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
-from . import should_show_info
+from . import relative_path, should_show_info
 
 _SEVERITY_MAP = {
     "error": "error",
@@ -67,8 +67,9 @@ def format_sarif(
             # SARIF URIs must use forward slashes; only paths under the repo
             # root are root-relative (and may carry uriBaseId).  A relative path
             # is already root-relative; an absolute path is root-relative only
-            # when it lives under root, otherwise it is emitted as-is without a
-            # misleading %SRCROOT% base.
+            # when it lives under root. Outside paths use the non-disclosing,
+            # URI-safe marker from relative_path() without a misleading
+            # %SRCROOT% base.
             if not v.file_path.is_absolute():
                 uri = PurePath(str(v.file_path)).as_posix()
                 under_root = True
@@ -77,7 +78,7 @@ def format_sarif(
                     uri = v.file_path.relative_to(context.root_path).as_posix()
                     under_root = True
                 except (ValueError, TypeError):
-                    uri = PurePath(str(v.file_path)).as_posix()
+                    uri = PurePath(relative_path(v.file_path, context.root_path) or "").as_posix()
                     under_root = False
             artifact_location = {"uri": uri}
             if under_root:

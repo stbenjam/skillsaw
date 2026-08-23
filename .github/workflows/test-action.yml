@@ -21,6 +21,6 @@ jobs:
       - uses: ./
         with:
           strict: true
-          no-custom-rules: false
+          no-custom-rules: ${{ github.event_name == 'pull_request' }}
           plugins: |
             skillsaw-runbooks==0.1.0

@@ -243,6 +243,30 @@ class TestBaselineIO:
         assert data["generated_by"] == "skillsaw 0.10.1"
         assert data["violations"] == []
 
+    def test_save_refuses_symlink(self, tmp_path):
+        victim = tmp_path / "victim.json"
+        victim.write_text("original")
+        path = tmp_path / BASELINE_FILENAME
+        path.symlink_to(victim)
+        baseline = BaselineFile("1", "skillsaw test", "now", [])
+
+        with pytest.raises(OSError, match="Refusing to write through symlink"):
+            save_baseline(path, baseline)
+
+        assert victim.read_text() == "original"
+
+
+@pytest.mark.parametrize(
+    "rule_id", ["repository-path-error", "rule-execution-error", "plugin-load-error"]
+)
+def test_synthetic_fail_closed_violations_are_not_baselined(tmp_path, rule_id):
+    baseline = build_baseline(
+        [_make_violation(rule_id=rule_id, severity=Severity.ERROR)],
+        tmp_path,
+        "test",
+    )
+    assert baseline.violations == []
+
 
 class TestFilterBaselinedViolations:
     def _baseline_with(self, entries):

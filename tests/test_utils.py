@@ -3,7 +3,13 @@ Tests for builtin rule utilities (read_text, read_json, frontmatter_key_line, he
 and centralized YAML line number functions).
 """
 
+import os
 from pathlib import Path
+import stat
+
+import pytest
+
+from skillsaw.utils import write_bytes_atomic
 
 from skillsaw.rules.builtin.utils import (
     read_text,
@@ -27,6 +33,74 @@ from skillsaw.rules.builtin.utils import (
 def test_extract_section_lf():
     content = "# T\n\n## Build\nrun make\n\n## Other\nx\n"
     assert extract_section(content, "Build") == "run make"
+
+
+def test_atomic_write_preserves_existing_mode(tmp_path):
+    target = tmp_path / "artifact.json"
+    target.write_bytes(b"old")
+    target.chmod(0o640)
+
+    write_bytes_atomic(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_atomic_write_new_file_honors_umask(tmp_path):
+    target = tmp_path / "artifact.json"
+    previous_umask = os.umask(0o027)
+    try:
+        write_bytes_atomic(target, b"new")
+    finally:
+        os.umask(previous_umask)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
+    target = tmp_path / "artifact.json"
+    target.write_bytes(b"old")
+    target.chmod(0o640)
+    monkeypatch.delattr(os, "fchmod", raising=False)
+
+    write_bytes_atomic(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_atomic_write_does_not_close_reused_fd_after_replace_failure(tmp_path, monkeypatch):
+    target = tmp_path / "artifact.json"
+    replacement = tmp_path / "replacement.txt"
+    temporary_fd = None
+    reused_fd = None
+    real_fdopen = os.fdopen
+
+    def track_temporary_fd(fd, *args, **kwargs):
+        nonlocal temporary_fd
+        temporary_fd = fd
+        return real_fdopen(fd, *args, **kwargs)
+
+    def fail_after_reusing_fd(_source, _destination):
+        nonlocal reused_fd
+        assert temporary_fd is not None
+        candidate_fd = os.open(replacement, os.O_WRONLY | os.O_CREAT, 0o600)
+        if candidate_fd != temporary_fd:
+            os.dup2(candidate_fd, temporary_fd)
+            os.close(candidate_fd)
+        reused_fd = temporary_fd
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(os, "fdopen", track_temporary_fd)
+    monkeypatch.setattr(os, "replace", fail_after_reusing_fd)
+
+    with pytest.raises(OSError, match="replace failed"):
+        write_bytes_atomic(target, b"new")
+
+    assert reused_fd is not None
+    try:
+        os.write(reused_fd, b"still open")
+    finally:
+        os.close(reused_fd)
 
 
 def test_extract_section_crlf():
@@ -608,6 +682,16 @@ def test_parse_frontmatter_malformed_yaml_reports_error_line():
     assert fm is None
     assert error_line is not None
     assert error_line == 5  # --- closing line where parser fails
+
+
+def test_parse_frontmatter_recursion_is_reported_as_invalid():
+    nested = "[" * 1200 + "0" + "]" * 1200
+    content = f"---\nextra: {nested}\n---\nbody\n"
+    frontmatter, body, error_line = parse_frontmatter(content)
+
+    assert frontmatter is None
+    assert body == content
+    assert error_line is None
 
 
 def test_parse_frontmatter_invalid_timestamp_is_a_parse_error():

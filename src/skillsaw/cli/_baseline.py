@@ -25,7 +25,12 @@ def _run_baseline(args):
     )
 
     try:
-        linter = Linter(context, config)
+        linter = Linter(
+            context,
+            config,
+            no_custom_rules=args.no_custom_rules,
+            no_plugins=args.no_plugins,
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -46,6 +51,10 @@ def _run_baseline(args):
         violations, (safe_resolve(output_path) or output_path).parent, cli_version, baseline_modes
     )
 
-    save_baseline(output_path, baseline)
+    try:
+        save_baseline(output_path, baseline)
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
     sys.exit(0)

@@ -4,8 +4,10 @@ Output formatters for skillsaw lint results.
 Supported formats: text, json, sarif, html, code-climate (alias: gitlab).
 """
 
+import hashlib
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote
 
 from ..diagnostics import encodable
 from ..rule import Rule, RuleViolation
@@ -14,13 +16,24 @@ FORMATS = ("text", "json", "sarif", "html", "code-climate", "gitlab")
 
 
 def relative_path(file_path: Optional[Path], root: Path) -> Optional[str]:
-    """Relativize a file path to the repo root. Falls back to str() if not under root."""
+    """Relativize a file path without exposing an absolute host path."""
     if file_path is None:
         return None
+    if not file_path.is_absolute():
+        return str(file_path)
     try:
         return str(file_path.relative_to(root))
     except (ValueError, TypeError):
-        return str(file_path)
+        # Avoid leaking the host path while retaining a discriminator for
+        # same-named outside-root files. The digest intentionally remains
+        # host-specific, as outside-root baselines already were before paths
+        # were redacted. Percent-encode the basename because this value also
+        # reaches URI fields in machine-readable reports.
+        digest = hashlib.sha256(str(file_path).encode("utf-8", "surrogatepass")).hexdigest()[:12]
+        name = (
+            quote(file_path.name, safe="._-", encoding="utf-8", errors="surrogatepass") or "unnamed"
+        )
+        return f"outside-repo/{digest}-{name}"
 
 
 EXTENSION_MAP = {

@@ -2,7 +2,10 @@
 
 import json
 import math
+import os
 import re
+import secrets
+import stat
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple
@@ -11,7 +14,65 @@ import yaml
 from ruamel.yaml import YAML as _RuamelYAML
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_is_symlink, safe_resolve
+
+
+def write_bytes_atomic(path: Path, content: bytes) -> None:
+    """Atomically replace *path* without following a file-level symlink.
+
+    Generated artifacts use predictable names inside repositories being
+    inspected. A checked-in symlink at one of those names must never turn a
+    lint command into an arbitrary-file overwrite. The explicit refusal gives
+    callers a useful error; ``os.replace`` closes the check/write race by
+    replacing a link that appears after the check instead of following it.
+    Existing permissions are preserved; new files use ``0666`` filtered by the
+    process umask, matching ordinary ``Path.write_bytes`` behavior.
+    """
+    if safe_is_symlink(path):
+        raise OSError(f"Refusing to write through symlink: {path}")
+
+    existing_mode = None
+    try:
+        existing_mode = stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        pass
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    for _attempt in range(100):
+        temporary = path.parent / f".{path.name}.{secrets.token_hex(8)}"
+        try:
+            fd = os.open(temporary, flags, 0o666)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise FileExistsError(f"Could not allocate temporary file beside {path}")
+    try:
+        if existing_mode is not None:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, existing_mode)
+            else:  # Python < 3.13 on Windows
+                os.chmod(temporary, existing_mode)
+        stream = os.fdopen(fd, "wb")
+        fd = -1  # os.fdopen transferred ownership to stream.
+        with stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise
 
 
 class FileCache:
@@ -646,7 +707,7 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, Opti
         return None, content, None
     try:
         data = yaml.safe_load(m.group(1))
-    except (yaml.YAMLError, ValueError) as e:
+    except (yaml.YAMLError, ValueError, RecursionError) as e:
         error_line = None
         if hasattr(e, "problem_mark") and e.problem_mark is not None:
             error_line = e.problem_mark.line + 2  # +1 for 0-indexed, +1 for opening ---

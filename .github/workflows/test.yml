@@ -15,6 +15,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -53,8 +56,8 @@ jobs:
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: matrix.python-version == '3.11'
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+          use_oidc: true
 
   lint:
     runs-on: ubuntu-latest

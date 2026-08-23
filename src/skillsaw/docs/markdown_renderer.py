@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 from typing import Dict, List
 
@@ -17,6 +18,7 @@ from skillsaw.docs.models import (
     SkillDoc,
     name_str,
 )
+from skillsaw.markdown_doc import MarkdownDoc, splice
 
 
 def render_markdown(docs: DocsOutput) -> Dict[str, str]:
@@ -149,12 +151,65 @@ def _link_dest(url: str) -> str:
     return url.replace("&", "&amp;")
 
 
+def _safe_markdown_prose(value: object) -> str:
+    """Neutralize unsafe link destinations while preserving author prose.
+
+    Description fields intentionally support Markdown, so scalar escaping
+    would destroy their formatting. Parse them with the shared Markdown AST
+    and surgically replace only unsafe destinations with an inert anchor.
+    """
+    text = str(value)
+    edits = []
+    unsafe_autolink_without_span = False
+    for link in MarkdownDoc(text).links():
+        candidate = link.href.strip()
+        for _ in range(5):
+            decoded = html.unescape(candidate)
+            if decoded == candidate:
+                break
+            candidate = decoded
+        scheme, sep, _rest = candidate.partition(":")
+        unsafe = candidate.startswith("//") or (
+            sep and scheme.lower() not in {"http", "https", "mailto"}
+        )
+        if not unsafe:
+            continue
+        if (
+            link.is_autolink
+            and link.source_file_line is not None
+            and link.source_col_start is not None
+            and link.source_col_end is not None
+        ):
+            edits.append(
+                (
+                    link.source_file_line,
+                    link.source_col_start,
+                    link.source_col_end,
+                    "[link](#)",
+                )
+            )
+        elif link.is_autolink:
+            # CommonMark autolinks cannot span lines, so this is only a
+            # degraded-position fallback. Escape all markup rather than let an
+            # unsafe destination through when its exact source span is unknown.
+            unsafe_autolink_without_span = True
+        elif (
+            link.dest_file_line is not None
+            and link.dest_col_start is not None
+            and link.dest_col_end is not None
+        ):
+            edits.append((link.dest_file_line, link.dest_col_start, link.dest_col_end, "#"))
+    if unsafe_autolink_without_span:
+        return html.escape(text)
+    return splice(text, edits)
+
+
 # -- Plugin content --
 
 
 def _append_plugin_meta(lines: List[str], plugin: PluginDoc) -> None:
     if plugin.description:
-        lines.append(f"> {plugin.description}")
+        lines.append(f"> {_safe_markdown_prose(plugin.description)}")
         lines.append("")
     # Structured scalar fields fold through _table_cell: a remote catalog
     # entry controls these strings, and a newline in ``version`` would end
@@ -231,7 +286,7 @@ def _append_command(lines: List[str], cmd: CommandDoc) -> None:
     lines.append(title)
     lines.append("")
     if cmd.description:
-        lines.append(cmd.description)
+        lines.append(_safe_markdown_prose(cmd.description))
         lines.append("")
     if cmd.synopsis:
         lines.append("```")
@@ -250,7 +305,7 @@ def _append_skills_section(lines: List[str], skills: List[SkillDoc]) -> None:
         lines.append(f"### {_table_cell(skill.name)}")
         lines.append("")
         if skill.description:
-            lines.append(skill.description)
+            lines.append(_safe_markdown_prose(skill.description))
             lines.append("")
         meta = []
         if skill.license:
@@ -269,7 +324,7 @@ def _append_agent(lines: List[str], agent: AgentDoc) -> None:
     lines.append(f"### {_table_cell(agent.name)}")
     lines.append("")
     if agent.description:
-        lines.append(agent.description)
+        lines.append(_safe_markdown_prose(agent.description))
         lines.append("")
 
 
@@ -310,7 +365,7 @@ def _append_rule(lines: List[str], rule: RuleFileDoc) -> None:
     lines.append("")
     desc = rule.description or (rule.body[:200] if rule.body else "")
     if desc:
-        lines.append(desc)
+        lines.append(_safe_markdown_prose(desc))
         lines.append("")
     if rule.globs:
         globs = ", ".join(f"`{_table_cell(g)}`" for g in rule.globs)

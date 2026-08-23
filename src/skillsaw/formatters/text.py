@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
+from ..diagnostics import terminal_safe
 from . import get_counts, relative_path, should_show_info
 from skillsaw.paths import safe_resolve
 
@@ -77,7 +78,7 @@ def format_text(
 
     def fmt_violation(v: RuleViolation) -> str:
         icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[v.severity.value]
-        rel = relative_path(v.file_path, context.root_path)
+        rel = terminal_safe(relative_path(v.file_path, context.root_path) or "")
         location = ""
         if rel:
             loc_text = f"{rel}:{v.file_line}" if v.file_line else rel
@@ -86,11 +87,13 @@ def format_text(
                 if uri:
                     loc_text = _osc8(uri, loc_text)
             location = f" [{loc_text}]"
-        rule_ref = v.rule_id
+        safe_rule_id = terminal_safe(v.rule_id)
+        rule_ref = safe_rule_id
         if hyperlinks and v.rule_id in builtin_ids:
-            rule_ref = _osc8(rule_doc_url(v.rule_id), v.rule_id)
+            rule_ref = _osc8(rule_doc_url(v.rule_id), safe_rule_id)
         return (
-            f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: {v.message}"
+            f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: "
+            f"{terminal_safe(v.message)}"
         )
 
     output = []

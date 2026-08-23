@@ -171,6 +171,9 @@ class TestLinks:
         assert len(links) == 1
         assert links[0].is_autolink
         assert links[0].href == "https://example.com/x.md"
+        assert body[links[0].source_col_start : links[0].source_col_end] == (
+            "<https://example.com/x.md>"
+        )
 
     def test_link_text_concatenated(self):
         body = "A [two *em* words](docs/a.md) link.\n"
@@ -258,6 +261,23 @@ class TestHtmlComments:
     def test_comment_inside_fence_not_reported(self):
         body = "```markdown\n<!-- skillsaw-disable foo -->\n```\n"
         assert _doc(body).html_comments() == []
+
+    @pytest.mark.parametrize("body", ["x <!--> y\n", "x <!---> y\n"])
+    def test_overlapping_comment_delimiters_are_not_comments(self, body):
+        assert _doc(body).html_comments() == []
+
+    def test_many_unclosed_openers_are_ignored(self):
+        body = "\n".join(["<!-- unclosed"] * 20_000)
+        assert _doc(body).html_comments() == []
+
+    def test_comments_are_memoized(self, monkeypatch):
+        doc = _doc("<!-- one -->\n")
+        assert len(doc.html_comments()) == 1
+        monkeypatch.setattr(
+            "skillsaw.markdown_doc._html_comment_spans",
+            lambda _text: (_ for _ in ()).throw(AssertionError("rescanned")),
+        )
+        assert len(doc.html_comments()) == 1
 
 
 class TestFences:

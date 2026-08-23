@@ -100,8 +100,11 @@ fingerprinting works and configuration options.
 
     ```bash
     docker pull ghcr.io/stbenjam/skillsaw:latest
-    docker run -v $(pwd):/workspace ghcr.io/stbenjam/skillsaw
+    docker run --user "$(id -u):$(id -g)" -v "$(pwd):/workspace" ghcr.io/stbenjam/skillsaw
     ```
+
+    The image runs as a non-root user. Mapping your host UID/GID keeps
+    `fix`, `badge`, and `baseline` able to write to the bind-mounted checkout.
 
 === "GitHub Action"
 
