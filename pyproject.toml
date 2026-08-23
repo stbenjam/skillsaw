@@ -39,6 +39,11 @@ docs = [
     "mkdocs-material>=9.0",
     "mkdocs-redirects>=1.2,<1.2.4",
 ]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=7.0",
+    "coverage[toml]>=7.10",  # needed for [tool.coverage.run] patch = ["subprocess"]
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=7.0",

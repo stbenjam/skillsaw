@@ -1,5 +1,6 @@
 APM_VERSION := 0.24.0
 VENV := .venv
+VENV_EXTRAS ?= dev,docs
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
@@ -24,7 +25,7 @@ help:
 
 $(VENV)/bin/activate: pyproject.toml
 	test -d $(VENV) || python3 -m venv $(VENV)
-	$(PIP) install -e '.[dev,docs]'
+	$(PIP) install -e '.[$(VENV_EXTRAS)]'
 	touch $(VENV)/bin/activate
 
 venv: $(VENV)/bin/activate
