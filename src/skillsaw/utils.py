@@ -25,8 +25,8 @@ def write_bytes_atomic(path: Path, content: bytes) -> None:
     lint command into an arbitrary-file overwrite. The explicit refusal gives
     callers a useful error; ``os.replace`` closes the check/write race by
     replacing a link that appears after the check instead of following it.
-    Existing permissions are preserved; new files use ``0666`` filtered by the
-    process umask, matching ordinary ``Path.write_bytes`` behavior.
+    Existing permissions are preserved; new files use at most ``0644``,
+    further restricted by the process umask.
     """
     if safe_is_symlink(path):
         raise OSError(f"Refusing to write through symlink: {path}")
@@ -43,7 +43,7 @@ def write_bytes_atomic(path: Path, content: bytes) -> None:
     for _attempt in range(100):
         temporary = path.parent / f".{path.name}.{secrets.token_hex(8)}"
         try:
-            fd = os.open(temporary, flags, 0o666)
+            fd = os.open(temporary, flags, 0o644)
             break
         except FileExistsError:
             continue

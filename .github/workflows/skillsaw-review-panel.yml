@@ -39,7 +39,7 @@ jobs:
           gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json number,title,body,baseRefName,headRefName,comments > /tmp/skillsaw-panel-pr.json
           gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}" > /tmp/skillsaw-panel-pr.diff
 
-      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           prompt: |
             Use the skillsaw-review-panel skill. Follow every step in the skill.

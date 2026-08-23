@@ -211,3 +211,22 @@ def test_dependabot_tracks_the_digest_pinned_docker_base():
     config = _yaml(".github/dependabot.yml")
     ecosystems = {update["package-ecosystem"] for update in config["updates"]}
     assert "docker" in ecosystems
+
+
+def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
+    workflow = _yaml(".github/workflows/zizmor.yml")
+    steps = workflow["jobs"]["zizmor"]["steps"]
+    checkout = next(step for step in steps if step["name"] == "Checkout repository")
+    scan = next(step for step in steps if step["name"] == "Run zizmor")
+
+    assert workflow["permissions"] == {}
+    assert "permissions" not in workflow["jobs"]["zizmor"]
+    assert checkout["uses"] == ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+    assert checkout["with"]["persist-credentials"] is False
+    assert scan["uses"] == ("zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054")
+    assert scan["with"] == {
+        "version": "v1.29.0",
+        "config": "zizmor.yml",
+        "advanced-security": False,
+        "annotations": True,
+    }

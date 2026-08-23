@@ -56,6 +56,16 @@ def test_atomic_write_new_file_honors_umask(tmp_path):
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
 
+def test_atomic_write_new_file_is_not_world_writable_with_permissive_umask(tmp_path):
+    target = tmp_path / "artifact.json"
+    previous_umask = os.umask(0)
+    try:
+        write_bytes_atomic(target, b"new")
+    finally:
+        os.umask(previous_umask)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
 def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
     target = tmp_path / "artifact.json"
     target.write_bytes(b"old")

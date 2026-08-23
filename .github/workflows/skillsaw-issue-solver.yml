@@ -142,7 +142,7 @@ jobs:
           name: issue-data
           path: /tmp
 
-      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           prompt: |
             Use the skillsaw-issue-solver skill. Follow every step in the skill.
