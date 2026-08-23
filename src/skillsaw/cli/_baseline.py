@@ -25,12 +25,21 @@ def _run_baseline(args):
     )
 
     try:
-        linter = Linter(context, config)
+        linter = Linter(
+            context,
+            config,
+            no_custom_rules=args.no_custom_rules,
+            no_plugins=args.no_plugins,
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     violations = [v for v in linter.run() if v.severity != Severity.INFO]
+    if context.lint_tree_errors:
+        for message in context.lint_tree_errors:
+            print(f"Error: {message}", file=sys.stderr)
+        sys.exit(1)
 
     from ..baseline import build_baseline, save_baseline, BASELINE_FILENAME
 
@@ -42,10 +51,21 @@ def _run_baseline(args):
     else:
         output_path = args.path / BASELINE_FILENAME
 
-    baseline = build_baseline(
-        violations, (safe_resolve(output_path) or output_path).parent, cli_version, baseline_modes
-    )
+    output_parent = safe_resolve(output_path.parent)
+    if output_parent is None:
+        print(
+            f"Error: Could not resolve baseline output directory: {output_path.parent}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    write_path = output_parent / output_path.name
 
-    save_baseline(output_path, baseline)
+    baseline = build_baseline(violations, output_parent, cli_version, baseline_modes)
+
+    try:
+        save_baseline(write_path, baseline)
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"Baselined {len(baseline.violations)} violation(s) to {output_path}")
     sys.exit(0)

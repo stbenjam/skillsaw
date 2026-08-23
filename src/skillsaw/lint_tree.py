@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import Set, TYPE_CHECKING, Tuple
 
+from .diagnostics import safe_display
+
 from .blocks import (
     AgentBlock,
     AgentPluginMcpBlock,
@@ -1010,6 +1012,20 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
     nodes = list(root.walk())
     logger.info("Built lint tree: %d nodes", len(nodes))
     return root
+
+
+def build_lint_tree_safe(context: "RepositoryContext") -> LintTarget:
+    """Build once, converting a fatal tree failure into a cached diagnostic."""
+    try:
+        return build_lint_tree(context)
+    except Exception as exc:
+        context.lint_tree_errors.append(
+            "Failed to build repository lint tree: "
+            f"{exc.__class__.__name__}: {safe_display(exc)}"
+        )
+        root = LintTarget(context.root_path)
+        root.set_parents()
+        return root
 
 
 def _build_promptfoo_nodes(

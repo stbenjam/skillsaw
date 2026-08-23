@@ -13,7 +13,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ from .rule import Rule, RuleViolation, Severity, AutofixResult, AutofixConfidenc
 from .context import RepositoryContext
 from .config import LinterConfig
 from .suppression import build_suppression_map_for_file, SuppressionMap
-from .utils import write_text_preserving
+from .utils import mkdir_parents_anchored, rename_path_anchored, write_text_preserving
 
 if TYPE_CHECKING:
     from .baseline import BaselineFile, BaselineEntry
@@ -1040,7 +1040,11 @@ class Linter:
                 all_applied.extend(independent)
                 break
 
-            applied = self.apply_fixes(independent, confidence)
+            applied = self.apply_fixes(
+                independent,
+                confidence,
+                root_path=self.context.root_path,
+            )
             all_applied.extend(applied)
 
             # An on_apply side effect (e.g. recording a rename in the
@@ -1061,6 +1065,7 @@ class Linter:
     def apply_fixes(
         fixes: List[AutofixResult],
         confidence: AutofixConfidence = AutofixConfidence.SAFE,
+        root_path: Optional[Path] = None,
     ) -> List[AutofixResult]:
         """
         Write fix results to disk.
@@ -1070,6 +1075,7 @@ class Linter:
             confidence: Minimum confidence level to apply
                         (SAFE = only safe,
                          SUGGEST = safe + suggest)
+            root_path: Trusted repository boundary for atomic writes
 
         Returns:
             List of fixes that were actually applied
@@ -1083,6 +1089,15 @@ class Linter:
             if fix.confidence not in allowed:
                 continue
 
+            # A target may be swapped for a symlink after discovery or
+            # between fixed-point passes. Re-check at the write boundary so
+            # autofix never follows it outside the repository.
+            if safe_is_symlink(fix.file_path) or (
+                fix.rename_from is not None and safe_is_symlink(fix.rename_from)
+            ):
+                logger.warning("Skipping autofix for symlinked path: %s", fix.file_path)
+                continue
+
             try:
                 if fix.rename_from is not None:
                     # Rename operation: use Path.rename() for atomicity and
@@ -1093,6 +1108,10 @@ class Linter:
                     dst = fix.file_path
                     if not src.exists():
                         continue
+                    if root_path is None:
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                    else:
+                        mkdir_parents_anchored(dst.parent, root=root_path)
                     # On case-insensitive filesystems src and dst may resolve to
                     # the same inode even when their names differ in casing.
                     # Path.rename() handles this correctly, but we must not skip
@@ -1100,16 +1119,22 @@ class Linter:
                     same_file = (safe_resolve(src) or src) == (safe_resolve(dst) or dst)
                     if dst.exists() and not same_file:
                         continue
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    src.rename(dst)
+                    if root_path is None:
+                        src.rename(dst)
+                    else:
+                        rename_path_anchored(src, dst, root=root_path)
                     # If the content also changed, write the updated content.
                     # write_text_preserving restores the file's original BOM
                     # and CRLF/LF line endings (see utils) so an autofix only
                     # changes the span it targeted, not the whole file.
                     if fix.fixed_content != fix.original_content:
-                        write_text_preserving(dst, fix.fixed_content)
+                        write_text_preserving(dst, fix.fixed_content, root=root_path)
                 else:
-                    write_text_preserving(fix.file_path, fix.fixed_content)
+                    write_text_preserving(
+                        fix.file_path,
+                        fix.fixed_content,
+                        root=root_path,
+                    )
             except OSError as exc:
                 logger.warning(
                     "Failed to apply fix for %s on %s: %s",

@@ -89,6 +89,17 @@ jobs:
       - uses: stbenjam/skillsaw/review@v0
 ```
 
+The review action assumes its token posts as `github-actions[bot]`. When using
+a GitHub App or PAT, set `comment-author` to that token's login so subsequent
+runs can update and remove only the comments they own:
+
+```yaml
+- uses: stbenjam/skillsaw/review@v0
+  with:
+    token: ${{ secrets.REVIEW_APP_TOKEN }}
+    comment-author: skillsaw-reviewer[bot]
+```
+
 ### Inputs
 
 | Input | Description | Default |
@@ -99,7 +110,7 @@ jobs:
 | `fail-on` | Fail on violations at this severity or above (`error`, `warning`, `info`); `strict: true` is equivalent to `fail-on: warning`, and combining `strict` with a contradictory `fail-on` fails the run | `''` |
 | `verbose` | Include info-level violations | `false` |
 | `no-custom-rules` | Skip custom rules defined in `.skillsaw.yaml` | `true` |
-| `plugins` | Newline-separated list of plugin packages to install | `''` |
+| `plugins` | Trusted newline-separated pip requirements to install as rule plugins; values can select indexes or URLs | `''` |
 
 ### Outputs
 
@@ -131,9 +142,15 @@ git ls-remote --tags https://github.com/stbenjam/skillsaw.git v0
 ### PR comment behavior
 
 - Each violation gets its own inline comment on the relevant line or file
-- Comments are deduplicated across re-runs using content fingerprinting
-- When a violation is fixed, its comment thread is automatically resolved
+- Comments are deduplicated across re-runs using fingerprints that include
+  the source line. Upgrading from an older action may repost existing comments
+  once as the new fingerprints take effect.
+- When a violation is fixed, its unreplied review comment is deleted
 - Comments with human replies are preserved
+
+The repository's privileged PR follow-up agent does not reply to or resolve
+inline review threads directly. It posts at most one PR-level summary naming
+the inline comments it handled, leaving thread resolution to a collaborator.
 
 ## Badge and report card
 

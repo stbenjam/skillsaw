@@ -1172,6 +1172,105 @@ class TestDocsCLI:
         assert result.returncode == 0
         assert (out_dir / "README.md").exists()
 
+    def test_docs_default_output_refuses_symlinked_page(self, valid_plugin, temp_dir):
+        output_dir = temp_dir / "skillsaw-docs"
+        output_dir.mkdir()
+        victim = temp_dir / "victim.md"
+        victim.write_text("do not replace", encoding="utf-8")
+        (output_dir / "README.md").symlink_to(victim)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=temp_dir,
+        )
+
+        assert result.returncode != 0
+        assert "Refusing to write through symlink" in result.stderr
+        assert victim.read_text(encoding="utf-8") == "do not replace"
+
+    def test_docs_default_output_refuses_symlinked_directory(self, valid_plugin, temp_dir):
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        (temp_dir / "skillsaw-docs").symlink_to(outside, target_is_directory=True)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=temp_dir,
+        )
+
+        assert result.returncode != 0
+        assert "symlinked directory" in result.stderr or "escapes root" in result.stderr
+        assert list(outside.iterdir()) == []
+
+    def test_docs_single_file_resolves_symlinked_parent(self, valid_plugin, temp_dir):
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        (temp_dir / "redirected").symlink_to(outside, target_is_directory=True)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+                "--output",
+                "redirected/docs.md",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=temp_dir,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (outside / "docs.md").exists()
+
+    def test_docs_relative_single_file_output_may_leave_cwd(self, valid_plugin, temp_dir):
+        work_dir = temp_dir / "work"
+        work_dir.mkdir()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+                "--output",
+                "../site/docs.md",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=work_dir,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (temp_dir / "site" / "docs.md").exists()
+
     def test_docs_marketplace_single_page(self, marketplace_repo, temp_dir):
         """Marketplace generates a single index.html."""
         out_dir = temp_dir / "out"

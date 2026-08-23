@@ -115,6 +115,8 @@ Generate or update the baseline file from current violations
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-c`, `--config` | Path to .skillsaw.yaml config file |  |
+| `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories) |  |
+| `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 
 ## `skillsaw badge`
 
@@ -126,6 +128,8 @@ Grade the repository and write a shields.io badge JSON file
 | `-o`, `--output` | Badge JSON output path (default: .skillsaw-badge.json in the repository root) |  |
 | `--large` | Also render a self-contained SVG report card (.skillsaw-card.svg) next to the badge JSON |  |
 | `--theme` | Report card color theme, used with --large (default: dark) (choices: light, dark) | `dark` |
+| `--no-custom-rules` | Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories) |  |
+| `--no-plugins` | Skip rules from installed plugin packages (skillsaw.plugins entry points) |  |
 | `--color`, `--no-color` | Force ANSI colors and terminal hyperlinks on (--color) or off (--no-color). Default: color only when stdout is a terminal; FORCE_COLOR and NO_COLOR are also honored. |  |
 
 ## `skillsaw add`

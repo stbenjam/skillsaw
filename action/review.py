@@ -8,8 +8,9 @@ import sys
 import urllib.error
 import urllib.request
 
-FINGERPRINT_RE = re.compile(r"<!-- skillsaw:([a-f0-9]+) -->")
+FINGERPRINT_RE = re.compile(r"<!-- skillsaw:([a-f0-9]+) -->\s*\Z")
 SUMMARY_MARKER = "<!-- skillsaw:summary -->"
+DEFAULT_COMMENT_AUTHOR = "github-actions[bot]"
 SEVERITY_ICONS = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
 API = "https://api.github.com"
 
@@ -40,9 +41,38 @@ def github_api(method, path, body=None):
         raise
 
 
-def fingerprint(rule_id, file_path, message):
-    key = f"{rule_id}:{file_path}:{message}"
+def fingerprint(rule_id, file_path, line, message):
+    key = f"{rule_id}:{file_path}:{line or ''}:{message}"
     return hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+def markdown_text(value):
+    """Fold an untrusted scalar into inert, single-line Markdown text."""
+    text = " ".join(str(value).splitlines())
+    # Callers embed this folded text inside table cells or prose, so block
+    # prefixes such as '#', '>', and '-' can never occur at the start of a line.
+    text = text.replace("&", "&amp;")
+    text = text.replace("`", "&#96;").replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("\\", "\\\\")
+    for character in "[]|*_~":
+        text = text.replace(character, f"\\{character}")
+    return text
+
+
+def markdown_code_text(value):
+    """Fold a scalar for a backtick-delimited GFM table cell."""
+    text = " ".join(str(value).splitlines())
+    # Backslashes for ordinary Markdown punctuation render literally inside a
+    # code span. Only a pipe still needs escaping to stay within its table cell.
+    # The entity remains literal by design so an embedded backtick stays inert.
+    return text.replace("`", "&#96;").replace("|", "\\|")
+
+
+def owned_comment(comment):
+    """Whether a comment was authored by this action's GitHub token."""
+    expected = os.environ.get("SKILLSAW_COMMENT_AUTHOR", DEFAULT_COMMENT_AUTHOR)
+    user = comment.get("user")
+    return isinstance(user, dict) and user.get("login") == expected
 
 
 def get_diff_info(repo, pr_number):
@@ -100,6 +130,8 @@ def sync_comments(repo, pr_number, new_comments):
 
     existing = {}
     for c in all_comments:
+        if not owned_comment(c):
+            continue
         m = FINGERPRINT_RE.search(c.get("body", ""))
         if m:
             existing[m.group(1)] = c
@@ -136,7 +168,9 @@ def sync_comments(repo, pr_number, new_comments):
     if deleted:
         print(f"Deleted {deleted} comment(s) for fixed/moved issues.")
 
-    return [c for c in new_comments if c["fingerprint"] not in existing or c["fingerprint"] in moved_fps]
+    return [
+        c for c in new_comments if c["fingerprint"] not in existing or c["fingerprint"] in moved_fps
+    ]
 
 
 def upsert_summary_comment(repo, pr_number, non_diff_violations):
@@ -150,7 +184,7 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
         if not comments:
             break
         for c in comments:
-            if SUMMARY_MARKER in c.get("body", ""):
+            if owned_comment(c) and c.get("body", "").rstrip().endswith(SUMMARY_MARKER):
                 existing_id = c["id"]
                 break
         if existing_id:
@@ -170,13 +204,14 @@ def upsert_summary_comment(repo, pr_number, non_diff_violations):
     for v in non_diff_violations:
         if not isinstance(v, dict):
             continue
-        severity = v.get("severity", "warning")
+        severity = markdown_text(v.get("severity", "warning"))
         icon = SEVERITY_ICONS.get(severity, "")
-        path = v.get("file_path", "").replace("|", "\\|")
+        path = markdown_code_text(v.get("file_path", ""))
         line = v.get("line")
-        loc = f"`{path}:{line}`" if line else f"`{path}`"
-        rule_id = v.get("rule_id", "unknown").replace("|", "\\|")
-        message = v.get("message", "").replace("|", "\\|")
+        valid_line = isinstance(line, int) and not isinstance(line, bool) and line > 0
+        loc = f"`{path}:{line}`" if valid_line else f"`{path}`"
+        rule_id = markdown_code_text(v.get("rule_id", "unknown"))
+        message = markdown_text(v.get("message", ""))
         lines.append(f"| {icon} {severity} | `{rule_id}` | {loc} | {message} |")
     lines.append(f"\n{SUMMARY_MARKER}")
     body = "\n".join(lines)
@@ -261,10 +296,11 @@ def main():
         rule_id = v.get("rule_id", "unknown")
         message = v.get("message", "")
         severity = v.get("severity", "warning")
-        fp = fingerprint(rule_id, path, message)
+        fp = fingerprint(rule_id, path, line, message)
         icon = SEVERITY_ICONS.get(severity, "")
         body = (
-            f"{icon} **{severity}** (`{rule_id}`): {message}\n"
+            f"{icon} **{markdown_text(severity)}** ({markdown_text(rule_id)}): "
+            f"{markdown_text(message)}\n"
             f"<!-- skillsaw:{fp} -->"
         )
 
@@ -280,7 +316,9 @@ def main():
     try:
         upsert_summary_comment(repo, pr_number, non_diff_violations)
         if non_diff_violations:
-            print(f"Posted summary comment with {len(non_diff_violations)} violation(s) outside the diff.")
+            print(
+                f"Posted summary comment with {len(non_diff_violations)} violation(s) outside the diff."
+            )
     except Exception as e:
         print(f"Failed to post summary comment: {e}", file=sys.stderr)
 

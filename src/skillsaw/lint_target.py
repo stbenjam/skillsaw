@@ -206,7 +206,7 @@ class LintTarget:
             tokens = self.estimate_tokens()
             token_str = f" ({self._format_tokens(tokens)} tokens)"
         if root_path and self.path == root_path:
-            label = f"{self.path.name}/{token_str}"
+            label = f"{safe_display(self.path.name)}/{token_str}"
         else:
             # A label can carry author text — a Cursor hook event key becomes
             # part of its prompt block's label. `skillsaw tree` prints this

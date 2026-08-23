@@ -508,6 +508,8 @@ def _safe_url(value: Any) -> str:
         candidate = decoded
     else:
         return ""
+    if candidate.startswith("//"):
+        return ""
     if _URL_FORBIDDEN & set(candidate):
         return ""
     scheme, sep, _ = candidate.partition(":")

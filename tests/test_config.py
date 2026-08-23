@@ -5,6 +5,7 @@ Tests for configuration management
 import sys
 from pathlib import Path
 import yaml
+import pytest
 
 
 from skillsaw.config import LinterConfig, find_config
@@ -22,6 +23,14 @@ def test_default_config():
     assert "claude-plugin-json-required" in config.rules
     assert config.rules["claude-plugin-json-required"]["enabled"] == "auto"
     assert config.rules["claude-plugin-json-required"]["severity"] == "error"
+
+
+def test_deeply_nested_config_raises_value_error(tmp_path):
+    config_file = tmp_path / ".skillsaw.yaml"
+    config_file.write_text("rules: " + "[" * 1200 + "0" + "]" * 1200)
+
+    with pytest.raises(ValueError, match="Failed to load config"):
+        LinterConfig.from_file(config_file)
 
 
 def test_default_exclude_patterns():

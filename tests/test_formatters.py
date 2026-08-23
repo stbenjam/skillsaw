@@ -6,7 +6,14 @@ import hashlib
 import json
 from pathlib import Path
 
-from skillsaw.formatters import format_report, get_counts, infer_format, parse_output_spec, FORMATS
+from skillsaw.formatters import (
+    FORMATS,
+    format_report,
+    get_counts,
+    infer_format,
+    parse_output_spec,
+    relative_path,
+)
 from skillsaw.formatters.text import format_text
 from skillsaw.formatters.json_fmt import format_json
 from skillsaw.formatters.sarif import format_sarif
@@ -16,6 +23,7 @@ from skillsaw.rule import AutofixConfidence, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.config import LinterConfig
 from skillsaw.linter import Linter
+from skillsaw.lint_target import LintTarget
 
 # --- Helpers ---
 
@@ -522,6 +530,10 @@ def test_sarif_outside_root_omits_uribaseid(valid_plugin, tmp_path):
     ]
     assert "uriBaseId" not in artifact
     assert "\\" not in artifact["uri"]
+    assert str(tmp_path) not in artifact["uri"]
+    assert artifact["uri"].startswith("outside-repo/")
+    assert "<" not in artifact["uri"]
+    assert ">" not in artifact["uri"]
 
 
 def test_sarif_line_zero_omits_region(valid_plugin):
@@ -702,6 +714,26 @@ def test_text_hyperlinks_link_rule_ids_and_paths(valid_plugin):
     assert "\x1b]8;;file://" in output
     # Synthetic rule ids have no docs page and must not be linked.
     assert "\x1b]8;;https://skillsaw.org/rules/invalid-config/" not in output
+
+
+def test_text_hyperlinks_do_not_leak_outside_repo_paths(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    outside = valid_plugin.parent / "private" / "secret.md"
+    violations = [
+        RuleViolation(
+            rule_id="outside",
+            severity=Severity.WARNING,
+            message="Outside path",
+            file_path=outside,
+        )
+    ]
+
+    output = format_text(violations, context, [], "1.0.0", hyperlinks=True)
+
+    assert "outside-repo/" in output
+    assert str(outside.parent) not in output
+    assert outside.as_uri() not in output
+    assert "\x1b]8;;file://" not in output
 
 
 def test_text_hyperlinks_collapse_rule_docs_footer(valid_plugin):
@@ -1155,6 +1187,42 @@ def test_text_no_marker_when_fixability_unknown(valid_plugin):
     assert "[*]" not in output
     assert "[?]" not in output
     assert "fixable with" not in output
+
+
+def test_text_neutralizes_terminal_controls(valid_plugin):
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="bad\x1b]0;title\x07rule",
+        severity=Severity.ERROR,
+        message="hide\x1b[2Joutput",
+        file_path=Path("evil\x1b]8;;https://example.test\x07.md"),
+    )
+
+    output = format_text([violation], context, [], "0.0.0", color=False)
+
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert "\ufffd" in output
+
+
+def test_tree_neutralizes_controls_in_root_name(tmp_path):
+    root = tmp_path / "repo\x1b]0;title\x07"
+    node = LintTarget(root)
+    assert "\x1b" not in node.print_tree(root_path=root)
+
+
+def test_relative_path_does_not_leak_outside_absolute_path(tmp_path):
+    outside = tmp_path.parent / "private" / "secret.md"
+    rendered = relative_path(outside, tmp_path)
+    assert rendered.startswith("outside-repo/")
+    assert rendered.endswith("-secret.md")
+    assert str(outside.parent) not in rendered
+
+
+def test_relative_path_distinguishes_same_named_outside_files(tmp_path):
+    first = tmp_path.parent / "one" / "secret.md"
+    second = tmp_path.parent / "two" / "secret.md"
+    assert relative_path(first, tmp_path) != relative_path(second, tmp_path)
 
 
 def test_text_fixable_summary_splits_safe_and_suggest(valid_plugin):

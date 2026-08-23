@@ -1,0 +1,12 @@
+.git
+.venv
+*.egg-info
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.tox
+apm_modules
+audit
+tests
+coverage.xml
+htmlcov

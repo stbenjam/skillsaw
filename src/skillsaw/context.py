@@ -259,9 +259,9 @@ class RepositoryContext(RepositoryProvenanceMixin):
     @property
     def lint_tree(self) -> "LintTarget":
         if self._lint_tree is None:
-            from .lint_tree import build_lint_tree
+            from .lint_tree import build_lint_tree_safe
 
-            self._lint_tree = build_lint_tree(self)
+            self._lint_tree = build_lint_tree_safe(self)
         return self._lint_tree
 
     def rebuild_lint_tree(self) -> None:

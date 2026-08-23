@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..context import RepositoryContext
 from ..linter import Linter
+from ..utils import write_bytes_atomic
 from ._config import load_config
 from ._helpers import _RuleProgress, _ansi_colors, color_enabled
 from skillsaw.paths import safe_resolve
@@ -89,7 +90,12 @@ def _run_badge(args):
     config, _config_path = load_config(args, args.path)
 
     try:
-        linter = Linter(context, config)
+        linter = Linter(
+            context,
+            config,
+            no_custom_rules=args.no_custom_rules,
+            no_plugins=args.no_plugins,
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -123,7 +129,15 @@ def _run_badge(args):
     # byte-identical across operating systems. Write bytes directly —
     # text mode without newline="" would CRLF-translate on Windows and
     # every regeneration there would churn the whole file.
-    badge_path.write_bytes((json.dumps(grade.badge_json(), indent=2) + "\n").encode("utf-8"))
+    try:
+        write_bytes_atomic(
+            badge_path,
+            (json.dumps(grade.badge_json(), indent=2) + "\n").encode("utf-8"),
+            root=context.root_path if args.output is None else badge_path.parent,
+        )
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     card_path = None
     if getattr(args, "large", False):
@@ -133,18 +147,24 @@ def _run_badge(args):
         from ..lint_target import SkillNode
 
         card_path = badge_path.parent / _CARD_FILENAME
-        card_path.write_bytes(
-            render_card(
-                grade,
-                repo_name=_repo_display_name(context.root_path),
-                # The deduplicated Claude∪Codex count every formatter
-                # reports; PluginNode covers only Claude-style directories.
-                plugin_count=len(context.distinct_plugin_dirs()),
-                skill_count=len(context.lint_tree.find(SkillNode)),
-                top_rules=Counter(v.rule_id for v in violations).most_common(3),
-                theme=getattr(args, "theme", "dark"),
-            ).encode("utf-8")
-        )
+        try:
+            write_bytes_atomic(
+                card_path,
+                render_card(
+                    grade,
+                    repo_name=_repo_display_name(context.root_path),
+                    # The deduplicated Claude∪Codex count every formatter
+                    # reports; PluginNode covers only Claude-style directories.
+                    plugin_count=len(context.distinct_plugin_dirs()),
+                    skill_count=len(context.lint_tree.find(SkillNode)),
+                    top_rules=Counter(v.rule_id for v in violations).most_common(3),
+                    theme=getattr(args, "theme", "dark"),
+                ).encode("utf-8"),
+                root=context.root_path if args.output is None else badge_path.parent,
+            )
+        except OSError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     c = _ansi_colors(color_enabled(sys.stdout, args.color))
     grade_color = (

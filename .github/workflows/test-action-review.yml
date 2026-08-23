@@ -1,6 +1,6 @@
 name: Test Action Review
 
-on:
+on: # zizmor: ignore[dangerous-triggers] privileged post-test half never checks out PR code
   workflow_run:
     workflows: ["Test Action"]
     types: [completed]

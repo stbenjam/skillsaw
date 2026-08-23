@@ -17,10 +17,14 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       
       - name: Log in to Container registry
         if: github.event_name != 'pull_request'
@@ -44,12 +48,21 @@ jobs:
             type=sha
       
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Attest image provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
       
       - name: Test Docker image
         if: github.event_name == 'pull_request'
@@ -57,4 +70,3 @@ jobs:
           docker build -t test-image .
           docker run test-image --version
           docker run test-image list-rules
-

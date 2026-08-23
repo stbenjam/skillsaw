@@ -9,17 +9,13 @@ concurrency:
   group: skillsaw-agent
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  # Required: claude-code-action exchanges a GitHub OIDC token for its
-  # app token at startup. Without this the action aborts immediately.
-  id-token: write
-
 jobs:
   discover:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     outputs:
       prs: ${{ steps.activity.outputs.prs }}
     steps:
@@ -129,6 +125,14 @@ jobs:
     needs: discover
     if: needs.discover.outputs.prs != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      issues: write
+      # Required: claude-code-action exchanges a GitHub OIDC token for its
+      # app token at startup. Without this the action aborts immediately.
+      id-token: write
     strategy:
       matrix:
         pr: ${{ fromJson(needs.discover.outputs.prs) }}
@@ -136,6 +140,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download PR data
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -143,7 +149,21 @@ jobs:
           name: pr-data
           path: /tmp
 
-      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+      - name: Record Git state before follow-up
+        id: before
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ matrix.pr.number }}
+        run: |
+          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid)
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "checkout_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Let the action manage Git authentication. Do not replace its credential
+      # with GITHUB_TOKEN: those pushes would not trigger the pull_request
+      # workflow verified below. The post-step fails closed if a changed PR
+      # head was not pushed locally or did not trigger unprivileged tests.
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           prompt: |
             Use the skillsaw-pr-followup skill. Follow every step in the skill.
@@ -164,9 +184,56 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
-            --dangerously-skip-permissions
+            --permission-mode auto
             --model ${{ matrix.pr.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.pr.ultracode && '--effort ultracode' || '' }}
+
+      - name: Verify unprivileged tests started for the current PR head
+        env:
+          BEFORE_SHA: ${{ steps.before.outputs.head_sha }}
+          CHECKOUT_SHA: ${{ steps.before.outputs.checkout_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ matrix.pr.number }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Agent left uncommitted changes in the worktree" >&2
+            exit 1
+          fi
+
+          LOCAL_SHA=$(git rev-parse HEAD)
+          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid)
+          if [ "$HEAD_SHA" = "$BEFORE_SHA" ]; then
+            if [ "$LOCAL_SHA" != "$CHECKOUT_SHA" ] && [ "$LOCAL_SHA" != "$BEFORE_SHA" ]; then
+              echo "Agent left local HEAD $LOCAL_SHA without pushing it to PR head $BEFORE_SHA" >&2
+              exit 1
+            fi
+            echo "Agent did not push a new PR head; nothing to verify"
+            exit 0
+          fi
+
+          if [ "$LOCAL_SHA" != "$HEAD_SHA" ]; then
+            echo "Local commit $LOCAL_SHA was not pushed to PR head $HEAD_SHA" >&2
+            exit 1
+          fi
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            RUN_IDS=$(gh run list --repo "${{ github.repository }}" --workflow test.yml \
+              --event pull_request --commit "$HEAD_SHA" --limit 20 \
+              --json databaseId --jq '.[].databaseId')
+            for RUN_ID in $RUN_IDS; do
+              if gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" \
+                | jq -e --argjson pr "$PR_NUMBER" '.pull_requests | any(.number == $pr)' \
+                  >/dev/null; then
+                echo "Tests run $RUN_ID covers PR $PR_NUMBER head $HEAD_SHA"
+                exit 0
+              fi
+            done
+            if [ "$attempt" -lt 12 ]; then
+              sleep 10
+            fi
+          done
+          echo "No unprivileged Tests run started for PR head $HEAD_SHA" >&2
+          exit 1
 
       - name: Upload execution log
         if: always()

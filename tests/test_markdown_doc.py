@@ -160,10 +160,53 @@ class TestLinks:
         ]
         assert [definition.body_line_start for definition in definitions] == [1, 2]
 
+    def test_duplicate_destinations_keep_definition_spans(self):
+        body = (
+            "[one][first] [two][second]\n\n"
+            "[first]: javascript:alert(1)\n"
+            "[second]: javascript:alert(1)\n"
+        )
+        definitions = _doc(body).reference_definitions()
+
+        assert [definition.dest_file_line for definition in definitions] == [3, 4]
+        for definition in definitions:
+            line = body.splitlines()[definition.dest_file_line - 1]
+            assert (
+                line[definition.dest_col_start : definition.dest_col_end] == "javascript:alert(1)"
+            )
+
+    def test_duplicate_destination_spans_are_indexed_once(self, monkeypatch):
+        href = "javascript:alert(1)"
+        body = "".join(f"[ref-{index}]: {href}\n" for index in range(20))
+        doc = _doc(body)
+        spans = doc._ref_def_dest_spans()[href]
+        scans = 0
+
+        class CountingSpans(list):
+            def __iter__(self):
+                nonlocal scans
+                scans += 1
+                return super().__iter__()
+
+        monkeypatch.setattr(
+            doc,
+            "_ref_def_dest_spans",
+            lambda: {href: CountingSpans(spans)},
+        )
+
+        assert len(doc.reference_definitions()) == 20
+        assert scans == 1
+
     def test_reference_definition_in_fence_is_not_parsed(self):
         """Ignore reference-like examples inside fenced code blocks."""
         body = "```markdown\n[//]: # (developer mode)\n```\n"
         assert _doc(body).reference_definitions() == []
+
+    def test_reference_destination_span_is_not_recovered_from_html_comment(self):
+        href = "javascript:alert(1)"
+        body = f"[ref]:\n  {href}\n\n<!--\n[decoy]: {href}\n-->\n"
+
+        assert _doc(body)._ref_def_dest_spans().get(href) is None
 
     def test_autolink(self):
         body = "Go to <https://example.com/x.md> now.\n"
@@ -171,6 +214,9 @@ class TestLinks:
         assert len(links) == 1
         assert links[0].is_autolink
         assert links[0].href == "https://example.com/x.md"
+        assert body[links[0].source_col_start : links[0].source_col_end] == (
+            "<https://example.com/x.md>"
+        )
 
     def test_link_text_concatenated(self):
         body = "A [two *em* words](docs/a.md) link.\n"
@@ -258,6 +304,23 @@ class TestHtmlComments:
     def test_comment_inside_fence_not_reported(self):
         body = "```markdown\n<!-- skillsaw-disable foo -->\n```\n"
         assert _doc(body).html_comments() == []
+
+    @pytest.mark.parametrize("body", ["x <!--> y\n", "x <!---> y\n"])
+    def test_overlapping_comment_delimiters_are_not_comments(self, body):
+        assert _doc(body).html_comments() == []
+
+    def test_many_unclosed_openers_are_ignored(self):
+        body = "\n".join(["<!-- unclosed"] * 20_000)
+        assert _doc(body).html_comments() == []
+
+    def test_comments_are_memoized(self, monkeypatch):
+        doc = _doc("<!-- one -->\n")
+        assert len(doc.html_comments()) == 1
+        monkeypatch.setattr(
+            "skillsaw.markdown_doc._html_comment_spans",
+            lambda _text: (_ for _ in ()).throw(AssertionError("rescanned")),
+        )
+        assert len(doc.html_comments()) == 1
 
 
 class TestFences:

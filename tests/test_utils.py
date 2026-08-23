@@ -3,7 +3,14 @@ Tests for builtin rule utilities (read_text, read_json, frontmatter_key_line, he
 and centralized YAML line number functions).
 """
 
+import os
 from pathlib import Path
+import stat
+
+import pytest
+
+from skillsaw import utils as skillsaw_utils
+from skillsaw.utils import mkdir_parents_anchored, rename_path_anchored, write_bytes_atomic
 
 from skillsaw.rules.builtin.utils import (
     read_text,
@@ -27,6 +34,271 @@ from skillsaw.rules.builtin.utils import (
 def test_extract_section_lf():
     content = "# T\n\n## Build\nrun make\n\n## Other\nx\n"
     assert extract_section(content, "Build") == "run make"
+
+
+def test_atomic_write_preserves_existing_mode(tmp_path):
+    target = tmp_path / "artifact.json"
+    target.write_bytes(b"old")
+    target.chmod(0o640)
+
+    write_bytes_atomic(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_atomic_write_new_file_remains_private_with_restrictive_umask(tmp_path):
+    target = tmp_path / "artifact.json"
+    previous_umask = os.umask(0o027)
+    try:
+        write_bytes_atomic(target, b"new")
+    finally:
+        os.umask(previous_umask)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_atomic_write_new_file_is_not_world_writable_with_permissive_umask(tmp_path):
+    target = tmp_path / "artifact.json"
+    previous_umask = os.umask(0)
+    try:
+        write_bytes_atomic(target, b"new")
+    finally:
+        os.umask(previous_umask)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_atomic_write_rejects_symlinked_parent_outside_root(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    redirected = root / "redirected"
+    redirected.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError, match=r"symlinked directory|escapes root"):
+        write_bytes_atomic(redirected / "artifact.json", b"new", root=root)
+
+    assert not (outside / "artifact.json").exists()
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_moves_a_contained_file(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert not source.exists()
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_rejects_existing_destination(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("destination", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match=r"Rename destination already exists"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "destination"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_rejects_symlink_endpoints(tmp_path):
+    victim = tmp_path / "victim.md"
+    victim.write_text("victim", encoding="utf-8")
+
+    source_link = tmp_path / "source-link.md"
+    source_link.symlink_to(victim)
+    with pytest.raises(OSError, match=r"Refusing to rename symlink"):
+        rename_path_anchored(source_link, tmp_path / "destination.md", root=tmp_path)
+
+    source = tmp_path / "source.md"
+    source.write_text("source", encoding="utf-8")
+    destination_link = tmp_path / "destination-link.md"
+    destination_link.symlink_to(victim)
+    with pytest.raises(OSError, match=r"Refusing to rename over symlink"):
+        rename_path_anchored(source, destination_link, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert victim.read_text(encoding="utf-8") == "victim"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_allows_same_inode_destination(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    os.link(source, destination)
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.samefile(destination)
+    assert source.read_text(encoding="utf-8") == "content"
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_anchored_mkdir_creates_missing_directory_tree(tmp_path):
+    destination = tmp_path / "nested" / "deeper"
+
+    mkdir_parents_anchored(destination, root=tmp_path)
+
+    assert destination.is_dir()
+
+
+def test_anchored_mkdir_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    redirected = tmp_path / "redirected"
+    redirected.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError, match=r"symlinked directory|escapes root"):
+        mkdir_parents_anchored(redirected / "nested", root=tmp_path)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_anchored_mkdir_fallback_creates_missing_tree(tmp_path, monkeypatch):
+    destination = tmp_path / "nested" / "deeper"
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    mkdir_parents_anchored(destination, root=tmp_path)
+
+    assert destination.is_dir()
+
+
+def test_anchored_rename_uses_validated_fallback_on_unsupported_platform(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert not source.exists()
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_anchored_rename_fallback_rejects_symlink_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    victim = tmp_path / "victim.md"
+    source.write_text("content", encoding="utf-8")
+    victim.write_text("victim", encoding="utf-8")
+    destination.symlink_to(victim)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(OSError, match=r"Refusing to rename over symlink|escapes root"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "content"
+    assert victim.read_text(encoding="utf-8") == "victim"
+
+
+def test_anchored_rename_fallback_rejects_symlink_source(tmp_path, monkeypatch):
+    victim = tmp_path / "victim.md"
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    victim.write_text("victim", encoding="utf-8")
+    source.symlink_to(victim)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(OSError, match=r"Refusing to rename symlink"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert victim.read_text(encoding="utf-8") == "victim"
+    assert not destination.exists()
+
+
+def test_anchored_rename_fallback_rejects_existing_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("destination", encoding="utf-8")
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(FileExistsError, match=r"Rename destination already exists"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "destination"
+
+
+def test_anchored_rename_fallback_allows_same_inode_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    os.link(source, destination)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.samefile(destination)
+    assert source.read_text(encoding="utf-8") == "content"
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
+    target = tmp_path / "artifact.json"
+    target.write_bytes(b"old")
+    target.chmod(0o640)
+    monkeypatch.delattr(os, "fchmod", raising=False)
+
+    write_bytes_atomic(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_atomic_write_does_not_close_reused_fd_after_replace_failure(tmp_path, monkeypatch):
+    target = tmp_path / "artifact.json"
+    replacement = tmp_path / "replacement.txt"
+    temporary_fd = None
+    reused_fd = None
+    real_fdopen = os.fdopen
+
+    def track_temporary_fd(fd, *args, **kwargs):
+        nonlocal temporary_fd
+        temporary_fd = fd
+        return real_fdopen(fd, *args, **kwargs)
+
+    def fail_after_reusing_fd(_source, _destination):
+        nonlocal reused_fd
+        assert temporary_fd is not None
+        candidate_fd = os.open(replacement, os.O_WRONLY | os.O_CREAT, 0o600)
+        if candidate_fd != temporary_fd:
+            os.dup2(candidate_fd, temporary_fd)
+            os.close(candidate_fd)
+        reused_fd = temporary_fd
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(os, "fdopen", track_temporary_fd)
+    monkeypatch.setattr(os, "replace", fail_after_reusing_fd)
+
+    with pytest.raises(OSError, match="replace failed"):
+        write_bytes_atomic(target, b"new")
+
+    assert reused_fd is not None
+    try:
+        os.write(reused_fd, b"still open")
+    finally:
+        os.close(reused_fd)
 
 
 def test_extract_section_crlf():
@@ -102,6 +374,20 @@ def test_write_text_preserving_new_file_defaults_to_lf(temp_dir):
     f = temp_dir / "new.md"
     write_text_preserving(f, "hello\nworld\n")
     assert f.read_bytes() == b"hello\nworld\n"
+
+
+def test_write_text_preserving_refuses_symlink_target(temp_dir):
+    from skillsaw.utils import write_text_preserving
+
+    victim = temp_dir / "victim.md"
+    victim.write_text("original\n")
+    target = temp_dir / "target.md"
+    target.symlink_to(victim)
+
+    with pytest.raises(OSError, match="Refusing to write through symlink"):
+        write_text_preserving(target, "changed\n", root=temp_dir)
+
+    assert victim.read_text() == "original\n"
 
 
 def test_write_text_preserving_no_double_bom(temp_dir):
@@ -608,6 +894,16 @@ def test_parse_frontmatter_malformed_yaml_reports_error_line():
     assert fm is None
     assert error_line is not None
     assert error_line == 5  # --- closing line where parser fails
+
+
+def test_parse_frontmatter_recursion_is_reported_as_invalid():
+    nested = "[" * 1200 + "0" + "]" * 1200
+    content = f"---\nextra: {nested}\n---\nbody\n"
+    frontmatter, body, error_line = parse_frontmatter(content)
+
+    assert frontmatter is None
+    assert body == content
+    assert error_line is None
 
 
 def test_parse_frontmatter_invalid_timestamp_is_a_parse_error():

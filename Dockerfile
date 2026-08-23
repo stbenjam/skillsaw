@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.16-slim@sha256:9c900dea9e8fb7e16277c179b555cc72d29a352dbc33cff48ad5a0412fd5bfc7
 
 LABEL org.opencontainers.image.source="https://github.com/stbenjam/skillsaw"
 LABEL org.opencontainers.image.url="https://github.com/stbenjam/skillsaw"
@@ -17,7 +17,12 @@ COPY src/ /app/src/
 RUN pip install --no-cache-dir /app
 
 # Set default working directory for linting
+RUN groupadd --system skillsaw \
+    && useradd --system --gid skillsaw --home-dir /nonexistent --shell /usr/sbin/nologin skillsaw \
+    && mkdir -p /workspace \
+    && chown skillsaw:skillsaw /workspace
 WORKDIR /workspace
+USER skillsaw
 
 # Run linter by default
 ENTRYPOINT ["skillsaw"]

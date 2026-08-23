@@ -360,6 +360,46 @@ class TestApplyFixes:
         assert len(applied) == 1
         assert target.read_text() == "fixed"
 
+    def test_apply_refuses_symlink_target(self, temp_dir, caplog):
+        victim = temp_dir / "victim.txt"
+        victim.write_text("original")
+        target = temp_dir / "target.txt"
+        target.symlink_to(victim)
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.SAFE,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        assert Linter.apply_fixes([fix]) == []
+        assert victim.read_text() == "original"
+        assert "Skipping autofix for symlinked path" in caplog.text
+
+    def test_apply_refuses_symlinked_parent_outside_root(self, tmp_path, caplog):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        target_dir = repo / "redirected"
+        target_dir.symlink_to(outside, target_is_directory=True)
+        target = target_dir / "test.txt"
+        target.write_text("original")
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=target,
+            confidence=AutofixConfidence.SAFE,
+            original_content="original",
+            fixed_content="fixed",
+            description="test fix",
+        )
+
+        assert Linter.apply_fixes([fix], root_path=repo) == []
+        assert target.read_text() == "original"
+        assert "Refusing to write through symlinked directory" in caplog.text
+
     def test_apply_skips_suggest_by_default(self, temp_dir):
         target = temp_dir / "test.txt"
         target.write_text("original")
@@ -778,6 +818,65 @@ class TestCommandRenameFix:
         # Both files should be untouched
         assert src.read_text() == "old content"
         assert dst.read_text() == "existing content"
+
+    def test_apply_rename_rejects_symlinked_destination_parent(self, temp_dir):
+        """A target parent swapped to a symlink cannot move a file outside root."""
+        root = temp_dir / "repo"
+        source_dir = root / "commands"
+        source_dir.mkdir(parents=True)
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        src = source_dir / "BadName.md"
+        src.write_text("content")
+        redirected = root / "redirected"
+        redirected.symlink_to(outside, target_is_directory=True)
+        dst = redirected / "bad-name.md"
+
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="content",
+            fixed_content="content",
+            description="rename",
+            rename_from=src,
+        )
+
+        applied = Linter.apply_fixes(
+            [fix],
+            confidence=AutofixConfidence.SUGGEST,
+            root_path=root,
+        )
+
+        assert applied == []
+        assert src.read_text() == "content"
+        assert not (outside / "bad-name.md").exists()
+
+    def test_apply_rename_creates_missing_destination_parent(self, temp_dir):
+        root = temp_dir / "repo"
+        root.mkdir()
+        src = root / "BadName.md"
+        src.write_text("content")
+        dst = root / "commands" / "nested" / "bad-name.md"
+        fix = AutofixResult(
+            rule_id="test",
+            file_path=dst,
+            confidence=AutofixConfidence.SUGGEST,
+            original_content="content",
+            fixed_content="content",
+            description="rename",
+            rename_from=src,
+        )
+
+        applied = Linter.apply_fixes(
+            [fix],
+            confidence=AutofixConfidence.SUGGEST,
+            root_path=root,
+        )
+
+        assert applied == [fix]
+        assert dst.read_text() == "content"
+        assert not src.exists()
 
     def test_rename_from_defaults_to_none(self):
         """AutofixResult.rename_from defaults to None for non-rename fixes."""

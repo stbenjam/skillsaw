@@ -1,6 +1,6 @@
 name: Skillsaw Review Panel
 
-on:
+on: # zizmor: ignore[dangerous-triggers] maintainer-applied label gates a base-only checkout
   pull_request_target:
     types: [labeled]
 
@@ -29,19 +29,44 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1
+      - name: Prepare read-only PR context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json number,title,body,baseRefName,headRefName,comments > /tmp/skillsaw-panel-pr.json
+          gh pr diff "$PR_NUMBER" --repo "${{ github.repository }}" > /tmp/skillsaw-panel-pr.diff
+
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           prompt: |
             Use the skillsaw-review-panel skill. Follow every step in the skill.
 
             Review PR #${{ github.event.pull_request.number }}.
+            The trusted workflow prepared metadata at /tmp/skillsaw-panel-pr.json
+            and the patch at /tmp/skillsaw-panel-pr.diff. Do not check out the
+            PR branch or execute any code from it. Write the final verdict to
+            /tmp/skillsaw-panel-verdict.md.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
           claude_args: |
-            --allowedTools Agent,Edit,Write,Read,Bash,WebFetch,WebSearch,Skill,Glob,Grep,TaskCreate,TaskUpdate,TaskList,TaskGet
+            --permission-mode auto
             --model ${{ contains(github.event.pull_request.labels.*.name, 'fable-5') && 'claude-fable-5' || 'claude-opus-5' }}
+
+      - name: Post panel verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ ! -s /tmp/skillsaw-panel-verdict.md ]; then
+            echo "Panel did not produce a verdict" >&2
+            exit 1
+          fi
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body-file /tmp/skillsaw-panel-verdict.md
 
       - name: Upload execution log
         if: always()

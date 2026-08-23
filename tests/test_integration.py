@@ -4903,6 +4903,95 @@ class TestNoCustomRulesLint:
         ), "Warning should not appear when --no-custom-rules is used"
 
 
+@pytest.mark.parametrize("command", ["baseline", "badge"])
+def test_no_custom_rules_blocks_import_on_artifact_commands(tmp_path, command):
+    """Artifact-producing commands must expose the same RCE opt-out as lint/fix."""
+    repo = copy_fixture("custom-rule-rename-bypass", tmp_path)
+    sentinel = tmp_path / "sentinel.txt"
+    env = {**os.environ, "SKILLSAW_SENTINEL": str(sentinel)}
+    result = subprocess.run(
+        [sys.executable, "-m", "skillsaw", command, "--no-custom-rules", str(repo)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize(
+    ("command", "artifact"),
+    [("baseline", ".skillsaw-baseline.json"), ("badge", ".skillsaw-badge.json")],
+)
+def test_artifact_commands_refuse_symlink_outputs(tmp_path, command, artifact):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("# Instructions\n\nKeep changes focused.\n")
+    victim = tmp_path / "victim"
+    victim.write_text("ORIGINAL\n")
+    (repo / artifact).symlink_to(victim)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "skillsaw", command, "--no-custom-rules", str(repo)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 1
+    assert "Refusing to write through symlink" in result.stderr
+    assert victim.read_text() == "ORIGINAL\n"
+
+
+def test_recursive_frontmatter_still_emits_json_report(tmp_path):
+    skill = tmp_path / "skills" / "deep"
+    skill.mkdir(parents=True)
+    nested = "[" * 1200 + "0" + "]" * 1200
+    (skill / "SKILL.md").write_text(
+        f"---\nname: deep\ndescription: Deep nesting test.\nextra: {nested}\n---\nBody.\n"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "skillsaw",
+            "lint",
+            "--no-custom-rules",
+            "--format",
+            "json",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    report = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert report["summary"]["errors"] >= 1
+    assert "Traceback" not in result.stderr
+
+
+def test_baseline_accepts_symlinked_repository_path(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("# Instructions\n\nKeep changes focused.\n")
+    repo_link = tmp_path / "repo-link"
+    repo_link.symlink_to(repo, target_is_directory=True)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "skillsaw", "baseline", "--no-custom-rules", str(repo_link)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / ".skillsaw-baseline.json").exists()
+
+
 # ── TTY-aware color and OSC 8 hyperlinks (GH-415) ────────────────
 
 

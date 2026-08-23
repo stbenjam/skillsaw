@@ -4,9 +4,15 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
       actions:
-        patterns: ["*"]        # all action bumps in ONE PR
+        applies-to: version-updates
+        patterns: ["*"]
     commit-message:
       prefix: ci
     open-pull-requests-limit: 5
@@ -15,6 +21,21 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
-      python:
+      security-updates:
+        applies-to: security-updates
         patterns: ["*"]
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: docker

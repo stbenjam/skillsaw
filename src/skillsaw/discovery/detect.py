@@ -13,6 +13,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS
 from skillsaw.formats.promptfoo import is_promptfoo_config
+from skillsaw.paths import safe_resolve
 from skillsaw.utils import read_yaml
 
 WALK_SKIP_DIRS = frozenset(
@@ -202,15 +203,25 @@ def has_apm(root: Path) -> bool:
     return (root / ".apm").is_dir() or (root / "apm.yml").is_file()
 
 
-def has_skill_md_recursive(root: Path, should_skip: Callable[[Path], bool]) -> bool:
+def has_skill_md_recursive(
+    root: Path,
+    should_skip: Callable[[Path], bool],
+    _visited: Optional[Set[Path]] = None,
+) -> bool:
     """Return whether a recursive, guarded walk finds an Agent Skill."""
+    if _visited is None:
+        _visited = set()
+    resolved_root = safe_resolve(root)
+    if resolved_root is None or resolved_root in _visited:
+        return False
+    _visited.add(resolved_root)
     try:
         for item in root.iterdir():
             if should_skip(item):
                 continue
             if (item / "SKILL.md").exists():
                 return True
-            if item.is_dir() and has_skill_md_recursive(item, should_skip):
+            if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited):
                 return True
     except OSError:
         pass

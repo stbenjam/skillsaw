@@ -7,8 +7,9 @@ from typing import List, Optional
 
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
+from ..diagnostics import terminal_safe
 from . import get_counts, relative_path, should_show_info
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import contained_resolve, safe_resolve
 
 
 def format_duration(seconds: float) -> str:
@@ -26,13 +27,17 @@ def _osc8(url: str, text: str) -> str:
     return f"\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"
 
 
-def _file_uri(file_path) -> Optional[str]:
-    """file:// URI for a violation path, or None when one can't be built."""
+def _file_uri(file_path, root_path: Path) -> Optional[str]:
+    """Build a file URI only when the violation path stays inside the repo."""
     try:
+        resolved_root = safe_resolve(root_path)
+        if resolved_root is None:
+            return None
         path = Path(file_path)
         if not path.is_absolute():
-            path = safe_resolve(path) or path
-        return path.as_uri()
+            path = resolved_root / path
+        contained = contained_resolve(path, resolved_root)
+        return contained.as_uri() if contained is not None else None
     except (OSError, ValueError):
         return None
 
@@ -77,20 +82,22 @@ def format_text(
 
     def fmt_violation(v: RuleViolation) -> str:
         icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[v.severity.value]
-        rel = relative_path(v.file_path, context.root_path)
+        rel = terminal_safe(relative_path(v.file_path, context.root_path) or "")
         location = ""
         if rel:
             loc_text = f"{rel}:{v.file_line}" if v.file_line else rel
             if hyperlinks:
-                uri = _file_uri(v.file_path)
+                uri = _file_uri(v.file_path, context.root_path)
                 if uri:
                     loc_text = _osc8(uri, loc_text)
             location = f" [{loc_text}]"
-        rule_ref = v.rule_id
+        safe_rule_id = terminal_safe(v.rule_id)
+        rule_ref = safe_rule_id
         if hyperlinks and v.rule_id in builtin_ids:
-            rule_ref = _osc8(rule_doc_url(v.rule_id), v.rule_id)
+            rule_ref = _osc8(rule_doc_url(v.rule_id), safe_rule_id)
         return (
-            f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: {v.message}"
+            f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: "
+            f"{terminal_safe(v.message)}"
         )
 
     output = []

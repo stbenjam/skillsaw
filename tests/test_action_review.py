@@ -323,3 +323,86 @@ class TestMalformedViolations:
         assert "rule\\|id" in posted_body
         assert "msg\\|with\\|pipe" in posted_body
         assert "path\\|with\\|pipes.py" in posted_body
+        assert "`rule\\|id`" in posted_body
+        assert "`path\\|with\\|pipes.py`" in posted_body
+
+    def test_summary_code_cells_do_not_show_markdown_backslashes(self):
+        violations = [
+            {
+                "severity": "warning",
+                "file_path": "docs/my_file_name.md",
+                "rule_id": "content-banned_references",
+                "message": "message_with_emphasis",
+            }
+        ]
+        with mock.patch.object(review, "github_api") as api:
+            api.return_value = []
+            review.upsert_summary_comment("o/r", "1", violations)
+
+        posted_body = api.call_args[0][2]["body"]
+        assert "`docs/my_file_name.md`" in posted_body
+        assert "`content-banned_references`" in posted_body
+        assert "message\\_with\\_emphasis" in posted_body
+
+    def test_summary_rejects_non_integer_line_markup(self):
+        violations = [
+            {
+                "severity": "warning",
+                "file_path": "docs/safe.md",
+                "line": "1`\n| injected | row |",
+                "rule_id": "rule-id",
+                "message": "message",
+            }
+        ]
+        with mock.patch.object(review, "github_api") as api:
+            api.return_value = []
+            review.upsert_summary_comment("o/r", "1", violations)
+
+        posted_body = api.call_args[0][2]["body"]
+        assert "`docs/safe.md`" in posted_body
+        assert "injected" not in posted_body
+
+
+class TestCommentIntegrity:
+    def test_fingerprint_includes_line(self):
+        assert review.fingerprint("rule", "a.py", 1, "bad") != review.fingerprint(
+            "rule", "a.py", 2, "bad"
+        )
+
+    def test_marker_must_be_at_end(self):
+        assert review.FINGERPRINT_RE.search("<!-- skillsaw:abc123 -->")
+        assert not review.FINGERPRINT_RE.search("<!-- skillsaw:abc123 --> attacker text")
+
+    def test_sync_ignores_comments_from_other_authors(self):
+        attacker = {
+            "id": 7,
+            "body": "spoof\n<!-- skillsaw:abc123 -->",
+            "user": {"login": "attacker"},
+        }
+        with mock.patch.object(review, "github_api", side_effect=[[attacker], []]) as api:
+            pending = review.sync_comments("o/r", "1", [])
+        assert pending == []
+        assert all(call.args[0] != "DELETE" for call in api.call_args_list)
+
+    def test_comment_author_can_match_a_custom_token_identity(self):
+        comment = {"user": {"login": "skillsaw-reviewer[bot]"}}
+        with mock.patch.dict(os.environ, {"SKILLSAW_COMMENT_AUTHOR": "skillsaw-reviewer[bot]"}):
+            assert review.owned_comment(comment)
+
+    def test_default_comment_author_remains_github_actions(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            assert review.owned_comment({"user": {"login": "github-actions[bot]"}})
+
+    @pytest.mark.parametrize("user", [None, [], "deleted"])
+    def test_deleted_or_malformed_comment_author_is_not_owned(self, user):
+        assert not review.owned_comment({"user": user})
+
+    def test_markdown_payload_is_neutralized(self):
+        value = "x`] [click](javascript:alert(1))\n<!-- skillsaw:deadbeef -->"
+        escaped = review.markdown_text(value)
+        assert "\n" not in escaped
+        assert "`" not in escaped
+        assert "<!--" not in escaped
+        assert "\\[click\\]" in escaped
+        assert "\\*" in review.markdown_text("*emphasis*")
+        assert "\\_" in review.markdown_text("under_score")

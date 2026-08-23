@@ -22,6 +22,7 @@ from skillsaw.context import (
     HAS_CODERABBIT,
 )
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
+from skillsaw.discovery.detect import has_skill_md_recursive
 
 
 def test_single_plugin_detection(valid_plugin):
@@ -30,6 +31,35 @@ def test_single_plugin_detection(valid_plugin):
     assert context.repo_type == RepositoryType.SINGLE_PLUGIN
     assert len(context.plugins) == 1
     assert context.plugins[0].resolve() == valid_plugin.resolve()
+
+
+def test_agentskill_marker_scan_terminates_on_symlink_fanout(tmp_path):
+    base = tmp_path / "base"
+    base.mkdir()
+    for index in range(8):
+        (base / f"link-{index}").symlink_to(base, target_is_directory=True)
+
+    assert not has_skill_md_recursive(base, lambda _path: False)
+
+
+def test_lint_tree_failure_is_cached_and_reported(tmp_path, monkeypatch):
+    context = RepositoryContext(tmp_path, repo_types=set())
+    calls = 0
+
+    def fail(_context):
+        nonlocal calls
+        calls += 1
+        raise RecursionError("too deep")
+
+    monkeypatch.setattr("skillsaw.lint_tree.build_lint_tree", fail)
+    first = context.lint_tree
+    second = context.lint_tree
+
+    assert first is second
+    assert calls == 1
+    assert context.lint_tree_errors == [
+        "Failed to build repository lint tree: RecursionError: too deep"
+    ]
 
 
 def test_marketplace_detection(marketplace_repo):

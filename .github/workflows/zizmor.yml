@@ -1,0 +1,41 @@
+name: zizmor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '47 4 * * 3'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: Analyze GitHub Actions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout immutable zizmor policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Pin the policy independently from the pull request being scanned.
+          ref: eecf9836c88b3c73103e94c6b0a8e935508af689
+          path: .trusted-zizmor
+          sparse-checkout: zizmor.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          version: v1.29.0
+          config: .trusted-zizmor/zizmor.yml
+          advanced-security: false
+          annotations: true

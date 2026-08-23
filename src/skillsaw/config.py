@@ -108,7 +108,7 @@ class LinterConfig:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-        except (yaml.YAMLError, IOError, UnicodeDecodeError) as e:
+        except (yaml.YAMLError, IOError, UnicodeDecodeError, RecursionError) as e:
             raise ValueError(f"Failed to load config from {config_path}: {e}") from e
 
         # Only an empty document (None) is an empty config; falsy non-mappings
