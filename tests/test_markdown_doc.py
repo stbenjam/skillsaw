@@ -160,6 +160,20 @@ class TestLinks:
         ]
         assert [definition.body_line_start for definition in definitions] == [1, 2]
 
+    def test_duplicate_destinations_keep_definition_spans(self):
+        body = (
+            "[one][first] [two][second]\n\n"
+            "[first]: javascript:alert(1)\n"
+            "[second]: javascript:alert(1)\n"
+        )
+        definitions = _doc(body).reference_definitions()
+
+        for definition in definitions:
+            line = body.splitlines()[definition.dest_file_line - 1]
+            assert (
+                line[definition.dest_col_start : definition.dest_col_end] == "javascript:alert(1)"
+            )
+
     def test_reference_definition_in_fence_is_not_parsed(self):
         """Ignore reference-like examples inside fenced code blocks."""
         body = "```markdown\n[//]: # (developer mode)\n```\n"

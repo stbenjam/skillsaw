@@ -188,6 +188,9 @@ class MarkdownReferenceDefinition:
     body_line_end: int
     file_line_start: int
     file_line_end: int
+    dest_file_line: Optional[int] = None
+    dest_col_start: Optional[int] = None
+    dest_col_end: Optional[int] = None
 
 
 @dataclass
@@ -988,12 +991,17 @@ class MarkdownDoc:
     def reference_definitions(self) -> List[MarkdownReferenceDefinition]:
         """CommonMark reference definitions, including hidden-comment idioms."""
         result = []
+        destination_spans = self._ref_def_dest_spans()
         definitions = list(self._references.items()) + [
             (data["label"], data) for data in self._duplicate_references
         ]
         definitions.sort(key=lambda item: item[1]["map"][0])
         for label, data in definitions:
             start, end = data["map"]
+            matching_spans = [
+                span for span in destination_spans.get(data["href"], []) if span[0] == start + 1
+            ]
+            destination_span = matching_spans[0] if len(matching_spans) == 1 else None
             result.append(
                 MarkdownReferenceDefinition(
                     label=label,
@@ -1003,6 +1011,11 @@ class MarkdownDoc:
                     body_line_end=end,
                     file_line_start=self.file_line(start + 1),
                     file_line_end=self.file_line(end),
+                    dest_file_line=(
+                        self.file_line(destination_span[0]) if destination_span else None
+                    ),
+                    dest_col_start=destination_span[1] if destination_span else None,
+                    dest_col_end=destination_span[2] if destination_span else None,
                 )
             )
         return result

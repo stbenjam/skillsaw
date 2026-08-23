@@ -67,8 +67,8 @@ runs:
         # from the event-supplied commit SHA instead of trusting the artifact.
         PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EVENT_HEAD_SHA}/pulls")
         EVENT_PR_NUMBER=$(echo "$PR_DATA" \
-          | jq -r --arg sha "$EVENT_HEAD_SHA" \
-            '[.[] | select(.head.sha == $sha)][0].number // empty')
+          | jq -r --arg sha "$EVENT_HEAD_SHA" --argjson pr "$PR_NUMBER" \
+            '[.[] | select(.head.sha == $sha and .number == $pr)][0].number // empty')
         if ! [[ "$EVENT_PR_NUMBER" =~ ^[0-9]+$ ]]; then
           ASSOCIATED_PR_NUMBER=$(echo "$PR_DATA" | jq -r '.[0].number // empty')
           if [[ "$ASSOCIATED_PR_NUMBER" =~ ^[0-9]+$ ]]; then

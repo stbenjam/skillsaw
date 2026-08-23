@@ -47,6 +47,8 @@ def test_review_action_resolves_fork_pr_from_workflow_run_head_sha():
     assert "github.event.workflow_run.pull_requests[0]" not in action
     assert "github.event.workflow_run.head_sha" in action
     assert "commits/${EVENT_HEAD_SHA}/pulls" in action
+    assert '--argjson pr "$PR_NUMBER"' in action
+    assert ".head.sha == $sha and .number == $pr" in action
     assert "Could not resolve a PR" in action
     assert "superseded PR" in action
     assert parsed["inputs"]["comment-author"]["default"] == "github-actions[bot]"
@@ -121,10 +123,14 @@ def test_pr_followup_restricts_bot_comments_and_validates_agent_results():
 
 def test_pr_followup_skill_does_not_fetch_unfiltered_comments():
     skill = _read(".apm/skills/skillsaw-pr-followup/SKILL.md")
+    workflow = _read(".github/workflows/skillsaw-pr-followup.yml")
+    trusted_bots = json.loads(workflow.split("TRUSTED_BOTS=", 1)[1].splitlines()[0].strip("'"))
 
     assert "gh pr view <number> --comments" not in skill
     assert "Use only review comments supplied" in skill
     assert "PR metadata, not comments" in skill
+    for trusted_bot in trusted_bots:
+        assert trusted_bot in skill
 
 
 def test_pr_followup_distinguishes_unpushed_commit_from_no_change(tmp_path, monkeypatch):

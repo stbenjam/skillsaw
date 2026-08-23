@@ -159,9 +159,11 @@ def _safe_markdown_prose(value: object) -> str:
     and surgically replace only unsafe destinations with an inert anchor.
     """
     text = str(value)
+    doc = MarkdownDoc(text)
     edits = []
-    unsafe_autolink_without_span = False
-    for link in MarkdownDoc(text).links():
+    unsafe_reference_hrefs = set()
+    unsafe_link_without_span = False
+    for link in doc.links():
         candidate = link.href.strip()
         for _ in range(5):
             decoded = html.unescape(candidate)
@@ -192,15 +194,45 @@ def _safe_markdown_prose(value: object) -> str:
             # CommonMark autolinks cannot span lines, so this is only a
             # degraded-position fallback. Escape all markup rather than let an
             # unsafe destination through when its exact source span is unknown.
-            unsafe_autolink_without_span = True
+            unsafe_link_without_span = True
         elif (
             link.dest_file_line is not None
             and link.dest_col_start is not None
             and link.dest_col_end is not None
         ):
             edits.append((link.dest_file_line, link.dest_col_start, link.dest_col_end, "#"))
-    if unsafe_autolink_without_span:
-        return html.escape(text)
+        elif link.is_reference:
+            unsafe_reference_hrefs.add(link.href)
+        else:
+            unsafe_link_without_span = True
+
+    unresolved_reference_hrefs = set(unsafe_reference_hrefs)
+    for definition in doc.reference_definitions():
+        if definition.href not in unsafe_reference_hrefs:
+            continue
+        if (
+            definition.dest_file_line is None
+            or definition.dest_col_start is None
+            or definition.dest_col_end is None
+        ):
+            unsafe_link_without_span = True
+            continue
+        edits.append(
+            (
+                definition.dest_file_line,
+                definition.dest_col_start,
+                definition.dest_col_end,
+                "#",
+            )
+        )
+        unresolved_reference_hrefs.discard(definition.href)
+    if unresolved_reference_hrefs:
+        unsafe_link_without_span = True
+    if unsafe_link_without_span:
+        # Without an exact span, preserve the prose as literal text. Escaped
+        # brackets disarm inline and reference links; HTML escaping disarms
+        # autolinks and raw HTML.
+        return html.escape(text).replace("[", r"\[").replace("]", r"\]")
     return splice(text, edits)
 
 

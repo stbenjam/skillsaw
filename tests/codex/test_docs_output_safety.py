@@ -663,6 +663,30 @@ class TestSafeUrlEntityDecoding:
         assert rendered == "[link](#) is bad"
         assert MarkdownDoc(rendered).headings() == []
 
+    def test_duplicate_unsafe_reference_destinations_are_neutralized(self):
+        from skillsaw.docs.markdown_renderer import _safe_markdown_prose
+        from skillsaw.markdown_doc import MarkdownDoc
+
+        description = (
+            "See [one][first] and [two][second].\n\n"
+            "[first]: javascript:alert(1)\n"
+            "[second]: javascript:alert(1)\n"
+        )
+        rendered = _safe_markdown_prose(description)
+
+        assert "javascript:" not in rendered
+        assert {link.href for link in MarkdownDoc(rendered).links()} == {"#"}
+
+    def test_unspanned_unsafe_reference_falls_back_to_literal_text(self):
+        from skillsaw.docs.markdown_renderer import _safe_markdown_prose
+        from skillsaw.markdown_doc import MarkdownDoc
+
+        description = "[one][first]\n\n[first]:\n  javascript:alert(1)\n"
+        rendered = _safe_markdown_prose(description)
+
+        assert rendered.startswith(r"\[one\]\[first\]")
+        assert MarkdownDoc(rendered).links() == []
+
 
 class TestCodeSpanBreakout:
     def test_backticks_in_metadata_cannot_escape_code_spans(self, tmp_path):
