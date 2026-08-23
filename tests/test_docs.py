@@ -1198,7 +1198,31 @@ class TestDocsCLI:
         assert "Refusing to write through symlink" in result.stderr
         assert victim.read_text(encoding="utf-8") == "do not replace"
 
-    def test_docs_single_file_refuses_symlinked_parent(self, valid_plugin, temp_dir):
+    def test_docs_default_output_refuses_symlinked_directory(self, valid_plugin, temp_dir):
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        (temp_dir / "skillsaw-docs").symlink_to(outside, target_is_directory=True)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "skillsaw",
+                "docs",
+                str(valid_plugin),
+                "--format",
+                "markdown",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=temp_dir,
+        )
+
+        assert result.returncode != 0
+        assert "symlinked directory" in result.stderr or "escapes root" in result.stderr
+        assert list(outside.iterdir()) == []
+
+    def test_docs_single_file_resolves_symlinked_parent(self, valid_plugin, temp_dir):
         outside = temp_dir / "outside"
         outside.mkdir()
         (temp_dir / "redirected").symlink_to(outside, target_is_directory=True)
@@ -1220,9 +1244,8 @@ class TestDocsCLI:
             cwd=temp_dir,
         )
 
-        assert result.returncode != 0
-        assert "symlinked directory" in result.stderr or "escapes root" in result.stderr
-        assert not (outside / "docs.md").exists()
+        assert result.returncode == 0, result.stderr
+        assert (outside / "docs.md").exists()
 
     def test_docs_marketplace_single_page(self, marketplace_repo, temp_dir):
         """Marketplace generates a single index.html."""

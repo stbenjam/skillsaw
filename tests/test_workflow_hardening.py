@@ -103,6 +103,8 @@ def test_pr_followup_restricts_bot_comments_and_validates_agent_results():
     assert "was not pushed to PR head" in workflow
     assert "Agent did not push a new PR head; nothing to verify" in workflow
     assert "No unprivileged Tests run started" in workflow
+    assert '--argjson pr "$PR_NUMBER"' in verify_step["run"]
+    assert ".pull_requests | any(.number == $pr)" in verify_step["run"]
     assert "permissions" not in parsed
     assert discover_permissions == {
         "contents": "read",

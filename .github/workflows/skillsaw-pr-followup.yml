@@ -217,13 +217,17 @@ jobs:
           fi
 
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow test.yml \
-              --event pull_request --commit "$HEAD_SHA" --limit 1 \
-              --json databaseId --jq '.[0].databaseId // empty')
-            if [ -n "$RUN_ID" ]; then
-              echo "Tests run $RUN_ID covers PR head $HEAD_SHA"
-              exit 0
-            fi
+            RUN_IDS=$(gh run list --repo "${{ github.repository }}" --workflow test.yml \
+              --event pull_request --commit "$HEAD_SHA" --limit 20 \
+              --json databaseId --jq '.[].databaseId')
+            for RUN_ID in $RUN_IDS; do
+              if gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" \
+                | jq -e --argjson pr "$PR_NUMBER" '.pull_requests | any(.number == $pr)' \
+                  >/dev/null; then
+                echo "Tests run $RUN_ID covers PR $PR_NUMBER head $HEAD_SHA"
+                exit 0
+              fi
+            done
             if [ "$attempt" -lt 12 ]; then
               sleep 10
             fi

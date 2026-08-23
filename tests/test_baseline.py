@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -266,6 +267,34 @@ def test_synthetic_fail_closed_violations_are_not_baselined(tmp_path, rule_id):
         "test",
     )
     assert baseline.violations == []
+
+
+def test_baseline_command_preserves_existing_file_after_tree_failure(tmp_path, monkeypatch):
+    from skillsaw.cli._baseline import _run_baseline
+    from skillsaw.linter import Linter
+
+    (tmp_path / "AGENTS.md").write_text("# Instructions\n\nKeep changes focused.\n")
+    baseline_path = tmp_path / BASELINE_FILENAME
+    original = '{"existing": "baseline"}\n'
+    baseline_path.write_text(original, encoding="utf-8")
+
+    def run_with_tree_failure(self):
+        self.context.lint_tree_errors.append("Failed to build repository lint tree: test")
+        return []
+
+    monkeypatch.setattr(Linter, "run", run_with_tree_failure)
+    args = SimpleNamespace(
+        path=tmp_path,
+        config=None,
+        no_custom_rules=True,
+        no_plugins=True,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        _run_baseline(args)
+
+    assert exc_info.value.code == 1
+    assert baseline_path.read_text(encoding="utf-8") == original
 
 
 class TestFilterBaselinedViolations:

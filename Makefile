@@ -1,6 +1,8 @@
 APM_VERSION := 0.24.0
 VENV := .venv
 VENV_EXTRAS ?= dev,docs
+comma := ,
+VENV_EXTRAS_STAMP := $(VENV)/.skillsaw-extras-$(subst $(comma),-,$(VENV_EXTRAS))
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
@@ -23,42 +25,42 @@ help:
 	@echo "  benchmark-compare - Compare against the local baseline (fails on regression)"
 	@echo "  profile       - Profile a lint run with cProfile and print hotspots"
 
-$(VENV)/bin/activate: pyproject.toml
+$(VENV_EXTRAS_STAMP): pyproject.toml
 	test -d $(VENV) || python3 -m venv $(VENV)
 	$(PIP) install -e '.[$(VENV_EXTRAS)]'
-	touch $(VENV)/bin/activate
+	touch $(VENV_EXTRAS_STAMP)
 
-venv: $(VENV)/bin/activate
+venv: $(VENV_EXTRAS_STAMP)
 
-format: $(VENV)/bin/activate
+format: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/black src/ tests/
 
-lint: $(VENV)/bin/activate
+lint: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/black --check src/ tests/
 
-test: $(VENV)/bin/activate
+test: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/pytest tests/ -v --cov=src/skillsaw --cov-report=xml --cov-report=term
 
 # Generate example config in a temp dir to avoid clobbering .skillsaw.yaml
-generate-example: $(VENV)/bin/activate
+generate-example: $(VENV_EXTRAS_STAMP)
 	rm -f .skillsaw.yaml.example
 	$(eval TMPDIR := $(shell mktemp -d))
 	$(VENV)/bin/skillsaw init $(TMPDIR)
 	mv $(TMPDIR)/.skillsaw.yaml .skillsaw.yaml.example
 	rm -rf $(TMPDIR)
 
-generate-docs: $(VENV)/bin/activate
+generate-docs: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) scripts/generate-docs.py
 
-badge: $(VENV)/bin/activate
+badge: $(VENV_EXTRAS_STAMP)
 	$(VENV)/bin/skillsaw badge --large .
 
-self-lint: $(VENV)/bin/activate badge
+self-lint: $(VENV_EXTRAS_STAMP) badge
 	$(VENV)/bin/skillsaw lint .
 
 update: apm generate-example generate-docs generate-site-content format self-lint
 
-generate-site-content: $(VENV)/bin/activate
+generate-site-content: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) scripts/generate-site-content.py
 
 serve-site: generate-site-content
@@ -70,16 +72,16 @@ build-site: generate-site-content
 SCALE ?= medium
 BENCH_BASELINE ?= .benchmarks/baseline.json
 
-benchmark: $(VENV)/bin/activate
+benchmark: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) benchmarks/bench.py --scale $(SCALE)
 
-benchmark-save: $(VENV)/bin/activate
+benchmark-save: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --save $(BENCH_BASELINE)
 
-benchmark-compare: $(VENV)/bin/activate
+benchmark-compare: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --compare $(BENCH_BASELINE)
 
-profile: $(VENV)/bin/activate
+profile: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) benchmarks/bench.py --scale $(SCALE) --profile
 
 clean:

@@ -733,6 +733,7 @@ def test_text_hyperlinks_do_not_leak_outside_repo_paths(valid_plugin):
     assert "outside-repo/" in output
     assert str(outside.parent) not in output
     assert outside.as_uri() not in output
+    assert "\x1b]8;;file://" not in output
 
 
 def test_text_hyperlinks_collapse_rule_docs_footer(valid_plugin):

@@ -168,6 +168,7 @@ class TestLinks:
         )
         definitions = _doc(body).reference_definitions()
 
+        assert [definition.dest_file_line for definition in definitions] == [3, 4]
         for definition in definitions:
             line = body.splitlines()[definition.dest_file_line - 1]
             assert (

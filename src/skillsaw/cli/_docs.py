@@ -12,11 +12,10 @@ from ._config import load_config
 
 
 def _docs_output_root(output: Path) -> Path:
-    """Choose a no-follow anchor without trusting an output-path component."""
-    lexical_root = Path(output.anchor) if output.is_absolute() else Path.cwd()
-    resolved_root = safe_resolve(lexical_root)
+    """Resolve the output parent so lexical and anchored paths agree."""
+    resolved_root = safe_resolve(output.parent)
     if resolved_root is None:
-        raise OSError(f"Could not resolve documentation output root: {lexical_root}")
+        raise OSError(f"Could not resolve documentation output root: {output.parent}")
     return resolved_root
 
 
@@ -66,16 +65,18 @@ def _run_docs(args):
         if output and output.suffix in (".html", ".md"):
             output.parent.mkdir(parents=True, exist_ok=True)
             output_root = _docs_output_root(output)
+            write_path = output_root / output.name
             combined = "\n".join(pages.values()) if len(pages) > 1 else next(iter(pages.values()))
-            write_bytes_atomic(output, combined.encode("utf-8"), root=output_root)
+            write_bytes_atomic(write_path, combined.encode("utf-8"), root=output_root)
             print(f"Documentation written to {output}")
         else:
             output_dir = output or Path("skillsaw-docs")
             output_dir.mkdir(parents=True, exist_ok=True)
             output_root = _docs_output_root(output_dir)
+            write_dir = output_root / output_dir.name
             for filename, content in pages.items():
                 write_bytes_atomic(
-                    output_dir / filename,
+                    write_dir / filename,
                     content.encode("utf-8"),
                     root=output_root,
                 )

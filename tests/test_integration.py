@@ -4974,6 +4974,24 @@ def test_recursive_frontmatter_still_emits_json_report(tmp_path):
     assert "Traceback" not in result.stderr
 
 
+def test_baseline_accepts_symlinked_repository_path(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("# Instructions\n\nKeep changes focused.\n")
+    repo_link = tmp_path / "repo-link"
+    repo_link.symlink_to(repo, target_is_directory=True)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "skillsaw", "baseline", "--no-custom-rules", str(repo_link)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / ".skillsaw-baseline.json").exists()
+
+
 # ── TTY-aware color and OSC 8 hyperlinks (GH-415) ────────────────
 
 

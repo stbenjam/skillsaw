@@ -75,10 +75,33 @@ def rename_path_anchored(source: Path, destination: Path, *, root: Path) -> None
     Both parent directories stay pinned by descriptors for the rename, closing
     the gap where a repository-controlled directory can be replaced by a
     symlink after a lexical containment check. Existing destinations are only
-    accepted for case-only renames of the same inode.
+    accepted for case-only renames of the same inode. Platforms without
+    descriptor-relative rename support use contained, symlink-rejecting path
+    validation immediately before their native rename operation.
     """
     if not _supports_anchored_atomic_write():
-        raise OSError("Anchored rename is not supported on this platform")
+        source_root, source_relative = _atomic_destination(source, root)
+        destination_root, destination_relative = _atomic_destination(destination, root)
+
+        checked_source = source_root / source_relative
+        checked_destination = destination_root / destination_relative
+        source_stat = checked_source.lstat()
+        if stat.S_ISLNK(source_stat.st_mode):
+            raise OSError(f"Refusing to rename symlink: {source}")
+        try:
+            destination_stat = checked_destination.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISLNK(destination_stat.st_mode):
+                raise OSError(f"Refusing to rename over symlink: {destination}")
+            source_identity = (source_stat.st_dev, source_stat.st_ino)
+            destination_identity = (destination_stat.st_dev, destination_stat.st_ino)
+            if destination_identity != source_identity:
+                raise FileExistsError(f"Rename destination already exists: {destination}")
+
+        checked_source.rename(checked_destination)
+        return
 
     source_fd, source_name = _open_atomic_parent(source, root)
     destination_fd = -1

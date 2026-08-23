@@ -9,6 +9,7 @@ import stat
 
 import pytest
 
+from skillsaw import utils as skillsaw_utils
 from skillsaw.utils import rename_path_anchored, write_bytes_atomic
 
 from skillsaw.rules.builtin.utils import (
@@ -80,17 +81,148 @@ def test_atomic_write_rejects_symlinked_parent_outside_root(tmp_path):
     assert not (outside / "artifact.json").exists()
 
 
-def test_anchored_rename_rejects_unsupported_platform(tmp_path, monkeypatch):
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_moves_a_contained_file(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert not source.exists()
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_rejects_existing_destination(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("destination", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match=r"Rename destination already exists"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "destination"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_rejects_symlink_endpoints(tmp_path):
+    victim = tmp_path / "victim.md"
+    victim.write_text("victim", encoding="utf-8")
+
+    source_link = tmp_path / "source-link.md"
+    source_link.symlink_to(victim)
+    with pytest.raises(OSError, match=r"Refusing to rename symlink"):
+        rename_path_anchored(source_link, tmp_path / "destination.md", root=tmp_path)
+
+    source = tmp_path / "source.md"
+    source.write_text("source", encoding="utf-8")
+    destination_link = tmp_path / "destination-link.md"
+    destination_link.symlink_to(victim)
+    with pytest.raises(OSError, match=r"Refusing to rename over symlink"):
+        rename_path_anchored(source, destination_link, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert victim.read_text(encoding="utf-8") == "victim"
+
+
+@pytest.mark.skipif(
+    not skillsaw_utils._supports_anchored_atomic_write(),
+    reason="descriptor-relative rename is unavailable",
+)
+def test_anchored_rename_allows_same_inode_destination(tmp_path):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    destination.hardlink_to(source)
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.samefile(destination)
+    assert source.read_text(encoding="utf-8") == "content"
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_anchored_rename_uses_validated_fallback_on_unsupported_platform(tmp_path, monkeypatch):
     source = tmp_path / "source.md"
     destination = tmp_path / "destination.md"
     source.write_text("content", encoding="utf-8")
     monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
 
-    with pytest.raises(OSError, match=r"Anchored rename is not supported"):
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert not source.exists()
+    assert destination.read_text(encoding="utf-8") == "content"
+
+
+def test_anchored_rename_fallback_rejects_symlink_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    victim = tmp_path / "victim.md"
+    source.write_text("content", encoding="utf-8")
+    victim.write_text("victim", encoding="utf-8")
+    destination.symlink_to(victim)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(OSError, match=r"Refusing to rename over symlink|escapes root"):
         rename_path_anchored(source, destination, root=tmp_path)
 
     assert source.read_text(encoding="utf-8") == "content"
+    assert victim.read_text(encoding="utf-8") == "victim"
+
+
+def test_anchored_rename_fallback_rejects_symlink_source(tmp_path, monkeypatch):
+    victim = tmp_path / "victim.md"
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    victim.write_text("victim", encoding="utf-8")
+    source.symlink_to(victim)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(OSError, match=r"Refusing to rename symlink"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert victim.read_text(encoding="utf-8") == "victim"
     assert not destination.exists()
+
+
+def test_anchored_rename_fallback_rejects_existing_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("source", encoding="utf-8")
+    destination.write_text("destination", encoding="utf-8")
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    with pytest.raises(FileExistsError, match=r"Rename destination already exists"):
+        rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "destination"
+
+
+def test_anchored_rename_fallback_allows_same_inode_destination(tmp_path, monkeypatch):
+    source = tmp_path / "source.md"
+    destination = tmp_path / "destination.md"
+    source.write_text("content", encoding="utf-8")
+    destination.hardlink_to(source)
+    monkeypatch.setattr("skillsaw.utils._supports_anchored_atomic_write", lambda: False)
+
+    rename_path_anchored(source, destination, root=tmp_path)
+
+    assert source.samefile(destination)
+    assert source.read_text(encoding="utf-8") == "content"
+    assert destination.read_text(encoding="utf-8") == "content"
 
 
 def test_atomic_write_preserves_mode_without_fchmod(tmp_path, monkeypatch):
