@@ -53,6 +53,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
           claude_args: |
+            --permission-mode auto
             --allowedTools Agent,Write,Read,Skill,Glob,Grep,TaskCreate,TaskUpdate,TaskList,TaskGet
             --model ${{ contains(github.event.pull_request.labels.*.name, 'fable-5') && 'claude-fable-5' || 'claude-opus-5' }}
 

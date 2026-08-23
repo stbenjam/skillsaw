@@ -42,7 +42,7 @@ jobs:
           COLLABS=$(gh api "repos/${{ github.repository }}/collaborators" --jq '[.[].login]')
 
           # Trusted bot accounts whose review comments should be processed
-          TRUSTED_BOTS='["codecov[bot]"]'
+          TRUSTED_BOTS='["coderabbitai[bot]", "codecov[bot]", "github-actions[bot]", "devin-ai-integration[bot]", "chatgpt-codex-connector[bot]"]'
 
           # Merge collaborators + trusted bots into a single allow-list
           COLLABS=$(echo "$COLLABS" "$TRUSTED_BOTS" | jq -s 'add | unique')
@@ -181,6 +181,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
           claude_args: |
+            --permission-mode auto
             --allowedTools Read,Edit,Write,Glob,Grep,Skill,TaskCreate,TaskUpdate,TaskList,TaskGet,Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh pr checkout:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh run view:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git branch:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(black:*)
             --model ${{ matrix.pr.fable && 'claude-fable-5' || 'claude-opus-5' }}
             ${{ matrix.pr.ultracode && '--effort ultracode' || '' }}

@@ -1,5 +1,6 @@
 """Regression guards for privileged workflow trust boundaries."""
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -59,15 +60,35 @@ def test_issue_solver_uses_graphql_content_edit_history():
     assert 'select(.event == "edited")' not in workflow
 
 
-def test_pr_followup_excludes_repo_derived_bot_comments_and_broad_pr_commands():
+def test_claude_workflows_use_auto_permission_mode():
+    invocations = []
+    for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        workflow = _yaml(str(path.relative_to(ROOT)))
+        for job in workflow.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if str(step.get("uses", "")).startswith("anthropics/claude-code-action@"):
+                    invocations.append((path, step))
+
+    assert invocations
+    for path, step in invocations:
+        assert "--permission-mode auto" in step.get("with", {}).get("claude_args", ""), path
+
+
+def test_pr_followup_restricts_bot_comments_and_broad_pr_commands():
     workflow = _read(".github/workflows/skillsaw-pr-followup.yml")
     parsed = _yaml(".github/workflows/skillsaw-pr-followup.yml")
     steps = parsed["jobs"]["follow-up"]["steps"]
     record_step = next(step for step in steps if step.get("id") == "before")
     verify_step = next(step for step in steps if step.get("name", "").startswith("Verify "))
 
-    trusted_bots = workflow.split("TRUSTED_BOTS=", 1)[1].splitlines()[0]
-    assert "github-actions[bot]" not in trusted_bots
+    trusted_bots = workflow.split("TRUSTED_BOTS=", 1)[1].splitlines()[0].strip("'")
+    assert set(json.loads(trusted_bots)) == {
+        "coderabbitai[bot]",
+        "codecov[bot]",
+        "github-actions[bot]",
+        "devin-ai-integration[bot]",
+        "chatgpt-codex-connector[bot]",
+    }
     assert "Bash(gh pr:*)" not in workflow
     assert "Bash(gh pr view:*)" in workflow
     assert "Bash(gh pr checks:*)" in workflow
