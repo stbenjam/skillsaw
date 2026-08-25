@@ -825,16 +825,36 @@ _ICON_RE = re.compile(r":([a-z][a-z0-9_+-]*):")
 _NUMERIC_ICON_RE = re.compile(r":material-numeric-(\d+)-circle:")
 
 
+_CODE_SPAN_RE = re.compile(r"`+[^`]+`+")
+
+
 def _strip_inline_noise(line):
-    """Remove mkdocs-material attr lists and icon shortcodes from a prose line."""
-    original = line
-    line = _NUMERIC_ICON_RE.sub(r"\1.", line)
-    line = _ATTR_LIST_RE.sub("", line)
-    line = _ICON_RE.sub("", line)
-    if line != original:
-        # Collapse doubled spaces left where an icon was removed mid-text.
-        line = re.sub(r"(?<=\S) {2,}(?=\S)", " ", line)
-    return line
+    """Remove mkdocs-material attr lists and icon shortcodes from a prose line.
+
+    Inline code spans are preserved verbatim — documentation may legitimately
+    show a literal `:sparkles:` or `{ .class }` inside backticks. (A
+    multi-backtick span quoting backtick-containing content is approximated;
+    none exists in the docs.)
+    """
+
+    def _strip(segment):
+        original = segment
+        segment = _NUMERIC_ICON_RE.sub(r"\1.", segment)
+        segment = _ATTR_LIST_RE.sub("", segment)
+        segment = _ICON_RE.sub("", segment)
+        if segment != original:
+            # Collapse doubled spaces left where an icon was removed mid-text.
+            segment = re.sub(r"(?<=\S) {2,}(?=\S)", " ", segment)
+        return segment
+
+    parts = _CODE_SPAN_RE.split(line)
+    spans = _CODE_SPAN_RE.findall(line)
+    rebuilt = []
+    for i, part in enumerate(parts):
+        rebuilt.append(_strip(part))
+        if i < len(spans):
+            rebuilt.append(spans[i])
+    return "".join(rebuilt)
 
 
 def _plain_markdown(text):
@@ -859,9 +879,12 @@ def _plain_markdown(text):
         fence_match = _FENCE_RE.match(line)
         if fence_match:
             delim = fence_match.group(1)
+            bare = not line[fence_match.end() :].strip()
             if fence is None:
                 fence = (delim[0], len(delim))
-            elif delim[0] == fence[0] and len(delim) >= fence[1]:
+            elif delim[0] == fence[0] and len(delim) >= fence[1] and bare:
+                # Only a bare delimiter closes a fence (CommonMark): a line
+                # like ```bash inside an open fence is content, not a close.
                 fence = None
             out.append(line)
             continue

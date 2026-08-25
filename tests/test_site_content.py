@@ -299,3 +299,24 @@ def test_write_llms_outputs_writes_both_files(tmp_path):
 
     assert (docs_copy / "llms.txt").stat().st_size > 1_000
     assert (docs_copy / "llms-full.txt").stat().st_size > 50_000
+
+
+def test_only_bare_delimiters_close_fences():
+    # CommonMark: a closing fence has no info string. A ```bash line inside
+    # an open fence is content — markers after it must stay untouched.
+    text = (
+        "```markdown\n" "```bash\n" "echo hi\n" "!!! note\n" "    body\n" "```\n" "After prose.\n"
+    )
+    result = site_content._plain_markdown(text)
+    assert "!!! note" in result
+    assert "**Note**" not in result
+
+
+def test_inline_code_spans_preserved_by_noise_strip():
+    # Literal Material tokens documented in inline code survive; the same
+    # tokens in surrounding prose are stripped.
+    line = "Use `:sparkles:` or `{ .step-icon }` markers :sparkles: here.\n"
+    result = site_content._plain_markdown(line)
+    assert "`:sparkles:`" in result
+    assert "`{ .step-icon }`" in result
+    assert result.count(":sparkles:") == 1
