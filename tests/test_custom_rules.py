@@ -810,7 +810,7 @@ from typing import List
 
 class SchemaCustomRule(Rule):
     config_schema = {
-        "opt": {"type": "string", "default": "x", "description": "An option."},
+        "opt": {"type": "path", "default": "x", "description": "An option."},
     }
 
     @property
@@ -872,7 +872,7 @@ def test_custom_rule_without_schema_skips_option_validation(valid_plugin, temp_d
 
 def test_custom_rule_with_schema_opts_into_option_validation(valid_plugin, temp_dir):
     """Declaring a config_schema opts a custom rule into unknown-key warnings;
-    its unmapped 'string' type must not crash or type-warn."""
+    an unmapped type like 'path' must not crash or type-warn."""
     rule_file = temp_dir / "schema_rule.py"
     rule_file.write_text(CUSTOM_RULE_WITH_SCHEMA)
     config = LinterConfig(custom_rules=[str(rule_file)])
@@ -964,3 +964,91 @@ def test_malformed_non_dict_schema_does_not_crash(valid_plugin, temp_dir):
 
     violations = Linter(RepositoryContext(valid_plugin), config).run()
     assert _custom_option_warnings(violations, "malformed-schema-rule") == []
+
+
+CUSTOM_RULE_WITH_STR_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class StrOptionRule(Rule):
+    config_schema = {
+        "budget-file": {"type": "str", "default": "evals/budget.yaml", "description": "Path."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "str-option-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule with a str-typed option"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_str_typed_option_is_validated(valid_plugin, temp_dir):
+    """'str'/'string' schema types are type-checked like the builtin types."""
+    rule_file = temp_dir / "str_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_STR_SCHEMA)
+
+    for value, expected in (
+        (123, "expects str, got int"),
+        (True, "expects str, got bool"),
+        (None, "expects str, got null"),
+    ):
+        config = LinterConfig(custom_rules=[str(rule_file)])
+        config.rules["str-option-rule"] = {"enabled": True, "budget-file": value}
+        violations = Linter(RepositoryContext(valid_plugin), config).run()
+        warnings = _custom_option_warnings(violations, "str-option-rule")
+        assert len(warnings) == 1, value
+        assert expected in warnings[0].message
+
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["str-option-rule"] = {"enabled": True, "budget-file": "budgets/q3.yaml"}
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "str-option-rule") == []
+
+
+CUSTOM_RULE_WITH_NONSTRING_SCHEMA_KEY = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class NonStringKeySchemaRule(Rule):
+    config_schema = {
+        1: {"type": "int", "default": 0, "description": "Bogus key."},
+        "opt": {"type": "int", "default": 0, "description": "Real option."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "nonstring-key-schema-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule whose schema has a non-string key"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_nonstring_schema_key_does_not_crash_suggestions(valid_plugin, temp_dir):
+    """A non-string schema key must not crash sorted() in did-you-mean, and
+    unknown config keys must still warn."""
+    rule_file = temp_dir / "nonstring_key_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_NONSTRING_SCHEMA_KEY)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["nonstring-key-schema-rule"] = {"enabled": True, "oops": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "nonstring-key-schema-rule")
+    assert len(warnings) == 1
+    assert "Unknown option 'oops'" in warnings[0].message

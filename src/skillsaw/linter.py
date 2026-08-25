@@ -47,6 +47,10 @@ _OPTION_TYPE_MAP = {
     "float": (int, float),
     "bool": bool,
     "dict": dict,
+    # Third-party schemas declare string options as "str" (the repo's own
+    # examples do) or "string"; builtins have no string-typed option today.
+    "str": str,
+    "string": str,
 }
 
 # The security/supply-chain surface. Not a suppression gate — every one of
@@ -638,6 +642,10 @@ class Linter:
             # A malformed third-party schema (e.g. a list of option names)
             # must not abort the lint — treat it as undeclared.
             schema = {}
+        else:
+            # Same for non-string schema keys: they can never match a config
+            # key and would crash the sorted() feeding did-you-mean.
+            schema = {k: v for k, v in schema.items() if isinstance(k, str)}
         if getattr(rule, "_source", "builtin") != "builtin" and not schema:
             return []
         allowed = set(schema) | UNIVERSAL_RULE_OPTION_KEYS
