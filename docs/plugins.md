@@ -163,7 +163,7 @@ skillsaw discovers plugins through the `skillsaw.plugins` entry point group:
 name = "skillsaw-acme-rules"
 version = "0.1.0"
 requires-python = ">=3.9"
-dependencies = ["skillsaw>=0.20.0"]
+dependencies = ["skillsaw>=0.19.0"]
 
 [project.entry-points."skillsaw.plugins"]
 acme = "skillsaw_acme_rules"
@@ -254,7 +254,7 @@ validation: unknown option keys or wrong-typed option values under the rule's co
 entry are reported as `invalid-config` warnings, with the schema as the
 source of truth. Declare every option the rule reads and use `self.setting()`
 to resolve overrides against schema defaults; that API requires skillsaw
-0.20.0 or newer. A rule without a `config_schema` skips unknown-option and
+0.19.0 or newer. A rule without a `config_schema` skips unknown-option and
 type validation — its option names are unknowable to the linter — but the
 universal `exclude` key keeps its shape check, since the linter itself reads
 it. For a partial migration, set

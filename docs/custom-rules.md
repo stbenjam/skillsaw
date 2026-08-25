@@ -140,7 +140,7 @@ For the full list of node types, see `skillsaw.lint_target` (structural nodes li
 
 Custom rules can accept user-configurable parameters via `config_schema`:
 
-`Rule.setting()` requires skillsaw 0.20.0 or newer. Each schema entry must be
+`Rule.setting()` requires skillsaw 0.19.0 or newer. Each schema entry must be
 a mapping with `type`, `default`, and `description`; declare every option the
 rule reads, then read it with `self.setting()` so schema defaults and explicit
 `null` values resolve consistently. Call `setting()` once per `check()` rather

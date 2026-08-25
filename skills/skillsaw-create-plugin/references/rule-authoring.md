@@ -67,7 +67,7 @@ class MyFirstRule(Rule):
   `description`; undeclared options warn for the rule's users. During a partial
   migration only, set `strict_options = False` until every option is declared.
   Users configure the rule in `.skillsaw.yaml` under `rules:` by its rule ID,
-  exactly like builtin rules. `self.setting()` requires skillsaw 0.20.0 or
+  exactly like builtin rules. `self.setting()` requires skillsaw 0.19.0 or
   newer.
 - **Declare `repo_types`** when the rule only applies to certain repository
   types — the rule then activates only on matching repositories.

@@ -1367,6 +1367,15 @@ class TestRuleSetting:
         assert isinstance(value, float)
         assert value == 4.0
 
+    def test_int_default_for_float_option_coerces(self):
+        """A float-typed option must read as float configured or not — an
+        int schema default gets the same coercion as an int override."""
+        rule = self._rule({})
+        rule.config_schema = {"budget": {"type": "float", "default": 1}}
+        value = rule.setting("budget")
+        assert isinstance(value, float)
+        assert value == 1.0
+
     def test_mutable_default_returned_as_copy(self):
         from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
         from skillsaw.rules.builtin.agentskills.unreferenced_files import (
@@ -1407,10 +1416,8 @@ class TestRuleSetting:
         with pytest.raises(ValueError, match=r"bad.*content-section-length.*missing 'default'"):
             rule.setting("bad")
 
-    def test_null_override_resolves_to_schema_default(self):
-        """agentskill-unreferenced-files with directory_mention_covers: null
-        behaves as the schema default True after the setting() migration
-        (previously None was falsy and behaved as False)."""
+    def test_null_bool_option_resolves_to_its_true_default(self):
+        """A bool-typed option set to null reads as the schema default, not False."""
         from skillsaw.rules.builtin.agentskills.unreferenced_files import (
             AgentSkillUnreferencedFilesRule,
         )

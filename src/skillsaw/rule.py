@@ -207,7 +207,9 @@ class Rule(ABC):
         value = self.config.get(name)
         if value is None:
             value = entry["default"]
-        elif (
+        # Coercion applies to defaults too: {"type": "float", "default": 1}
+        # must read the same configured or not.
+        if (
             entry.get("type") in ("float", "number")
             and isinstance(value, int)
             and not isinstance(value, bool)

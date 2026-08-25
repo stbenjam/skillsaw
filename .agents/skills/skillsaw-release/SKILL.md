@@ -55,12 +55,12 @@ Update every stale pin by hand — currently `pip install skillsaw==X.Y.Z` in
 `README.md` and `docs/ci.md`, and the pre-commit `rev: vX.Y.Z` in `README.md`
 and `docs/pre-commit.md`. Never touch historical "Since vX.Y.Z" lines in `docs/rules/`.
 
-Also check the documented plugin dependency floor: `grep -rn "skillsaw>=" docs/
-skills/ examples/`. The floor names the first release shipping `Rule.setting()`
-and must not exceed the version you are releasing — if it does, release the
-version the floor names (it is a minor-feature floor), or lower the floor to
-the version being released. A floor above the released version makes every
-scaffolded plugin uninstallable.
+Also verify the documented plugin dependency floor: `grep -rn "skillsaw>=" docs/
+skills/ examples/`. The bump script rewrites `skillsaw>=` floors alongside the
+other pins, and `tests/test_release_metadata.py` asserts the floor never
+exceeds the project version — a floor above the released version makes every
+scaffolded plugin uninstallable, so investigate any grep hit the bump did not
+move.
 
 ## Step 3: Create a version-bump PR
 
