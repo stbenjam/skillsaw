@@ -69,8 +69,10 @@ for pattern, repl in [
     (r'rev: v' + re.escape(current), 'rev: v' + new),
     # Plugin dependency floors track the release so scaffolded plugins
     # never pin a version that does not exist (see test_release_metadata).
+    # Prose like "requires skillsaw X or newer" is deliberately NOT
+    # rewritten: it records the release that introduced an API, which
+    # does not move.
     (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
-    (r'skillsaw ' + re.escape(current) + ' or newer', 'skillsaw ' + new + ' or newer'),
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:

@@ -239,7 +239,10 @@ full config template in your terminal for builtin and installed-plugin rules
 `invalid-config` warning. Close matches get a did-you-mean suggestion; type
 errors name the expected and actual types. Validation is warn-only: the
 configured value still passes through unchanged, except an explicit `null`
-read through `Rule.setting()` resolves to the schema default. An unrecognized
+read through `Rule.setting()` resolves to the schema default. A few rules
+additionally check their own values at startup and reject the run with an
+error naming the option — warn-only describes the schema validation layer,
+not every rule's own checks. An unrecognized
 key still counts as configuring the rule and can enable an opt-in rule, so do
 not leave the warning unresolved.
 
