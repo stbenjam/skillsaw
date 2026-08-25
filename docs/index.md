@@ -88,4 +88,10 @@ dead zones, and structural issues with more than 60 rules, then auto-fixes them.
 <noscript><p>▶️ <strong><a href="https://asciinema.org/a/1259880">Watch the onboarding demo</a></strong> — see an AI agent grade, fix, and configure a repo from scratch.</p></noscript>
 </div>
 
+<p class="hero-subtitle" markdown>
+Reading this with an AI agent? Fetch [llms.txt](https://skillsaw.org/llms.txt)
+for an index of the docs, or [llms-full.txt](https://skillsaw.org/llms-full.txt)
+for everything in one plain-markdown file.
+</p>
+
 </div>

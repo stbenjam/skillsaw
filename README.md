@@ -104,6 +104,7 @@ add local rules or install rule plugins.
 | Publish reusable rule packages | [Rule Plugins](https://skillsaw.org/plugins/) |
 | Review the security model | [Supply Chain Protection](https://skillsaw.org/supply-chain-protection/) |
 | Look up commands and flags | [CLI Reference](https://skillsaw.org/cli/) |
+| Feed the docs to an AI agent | [llms.txt](https://skillsaw.org/llms.txt) index, [llms-full.txt](https://skillsaw.org/llms-full.txt) full docs |
 
 ## Measure the result
 
