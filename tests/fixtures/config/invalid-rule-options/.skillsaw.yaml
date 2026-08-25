@@ -1,0 +1,6 @@
+version: "99.0.0"
+rules:
+  agentskill-description:
+    severty: error
+    max-length: 256
+    frobnicate-mode: 3

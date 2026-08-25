@@ -69,10 +69,7 @@ class PromptfooBudgetRule(Rule):
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
 
-        budget_rel = self.config.get(
-            "budget-file",
-            self.config_schema["budget-file"]["default"],
-        )
+        budget_rel = self.setting("budget-file")
         budget_path = context.root_path / budget_rel
         if not budget_path.exists():
             return violations

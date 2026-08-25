@@ -151,7 +151,7 @@ class NoTodoInInstructionsRule(Rule):
     }
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         pattern = re.compile("|".join(rf"\b{p}\b" for p in patterns))
         # ... rest of check logic
 ```

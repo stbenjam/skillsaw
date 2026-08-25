@@ -39,7 +39,7 @@ class NoTodoInstructionsRule(Rule):
         return Severity.WARNING
 
     def _pattern(self) -> "re.Pattern":
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         return re.compile("|".join(rf"\b{re.escape(p)}\b" for p in patterns))
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:

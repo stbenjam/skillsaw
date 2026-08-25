@@ -332,3 +332,222 @@ def test_fix_reports_progress_per_rule(valid_plugin):
     calls = []
     linter.fix(progress=lambda i, total, rule_id: calls.append((i, total, rule_id)))
     assert len(calls) == len(linter.rules)
+
+
+def _option_warnings(violations, rule_id=None):
+    return [
+        v
+        for v in violations
+        if v.rule_id == "invalid-config"
+        and "option" in v.message.lower()
+        and (rule_id is None or f"'{rule_id}'" in v.message)
+    ]
+
+
+def test_unknown_option_warns_with_suggestion(valid_plugin):
+    """A typo'd option key warns and suggests the nearest valid key."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-description"]["severty"] = "error"
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "Unknown option 'severty'" in warnings[0].message
+    assert "did you mean 'severity'" in warnings[0].message
+    assert warnings[0].severity.value == "warning"
+
+
+def test_wrong_separator_option_suggests_declared_key(valid_plugin):
+    """max-length suggests the schema's max_length (hyphen/underscore mixups)."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-description"]["max-length"] = 100
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "did you mean 'max_length'" in warnings[0].message
+
+
+def test_unknown_option_without_near_match_has_no_suggestion(valid_plugin):
+    """A key with no close match warns without a did-you-mean clause."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-description"]["zzqx-bogus-param"] = 42
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "did you mean" not in warnings[0].message
+    assert "skillsaw explain agentskill-description" in warnings[0].message
+
+
+def test_suggestion_cutoff_matches_at_point_six(valid_plugin):
+    """'length' (ratio 0.75 vs max_length) must still get a suggestion."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-description"]["length"] = 100
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "did you mean 'max_length'" in warnings[0].message
+
+
+def test_option_validation_is_enablement_independent(valid_plugin):
+    """Typos warn even on disabled, auto-inactive, and deprecated rules."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    # Disabled builtin.
+    config.rules["content-weak-language"] = {"enabled": False, "severty": "error"}
+    # Auto rule whose repo types don't match a single-plugin fixture.
+    config.rules["codex-plugin-json-valid"]["requird-fields"] = []
+    # Deprecated rule: absent from default().rules, assign a fresh dict.
+    config.rules["content-critical-position"] = {"enabled": False, "windw": 10}
+
+    violations = Linter(context, config).run()
+    assert len(_option_warnings(violations, "content-weak-language")) == 1
+    assert len(_option_warnings(violations, "codex-plugin-json-valid")) == 1
+    assert len(_option_warnings(violations, "content-critical-position")) == 1
+
+
+def test_non_string_option_keys_warn_without_crashing(valid_plugin):
+    """YAML keys like `on:` parse to bool; they must warn, not crash."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-weak-language"] = {True: "x", 5: "y"}
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "content-weak-language")
+    assert len(warnings) == 2
+    assert all("option keys must be strings" in w.message for w in warnings)
+
+
+def test_option_type_mismatches_warn(valid_plugin):
+    """Wrong-typed values for declared options warn; the lint still runs."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-section-length"] = {"enabled": True, "max-tokens": "five"}
+    config.rules["context-budget"] = {"enabled": True, "limits": "nope"}
+
+    violations = Linter(context, config).run()
+    section = _option_warnings(violations, "content-section-length")
+    assert len(section) == 1
+    assert "expects int, got str" in section[0].message
+    budget = _option_warnings(violations, "context-budget")
+    assert len(budget) == 1
+    assert "expects dict, got str" in budget[0].message
+
+
+def test_bool_rejected_for_int_option(valid_plugin):
+    """bool is a subclass of int but must not satisfy an int option."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-section-length"] = {"enabled": True, "max-tokens": True}
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "content-section-length")
+    assert len(warnings) == 1
+    assert "expects int, got bool" in warnings[0].message
+
+
+def test_null_option_value_warns(valid_plugin):
+    """An explicit null bypasses the rule's default — flag it."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-section-length"] = {"enabled": True, "max-tokens": None}
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "content-section-length")
+    assert len(warnings) == 1
+    assert "expects int, got null" in warnings[0].message
+
+
+def test_int_accepted_for_float_option(valid_plugin):
+    """YAML `4` for a float-typed threshold is fine."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["security-encoded-payload"]["entropy-threshold"] = 4
+
+    violations = Linter(context, config).run()
+    assert _option_warnings(violations, "security-encoded-payload") == []
+
+
+def test_dict_option_inner_keys_not_validated(valid_plugin):
+    """Validation is non-recursive: unknown inner keys of a dict option pass."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["context-budget"] = {"enabled": True, "limits": {"my-category": 5}}
+
+    violations = Linter(context, config).run()
+    assert _option_warnings(violations, "context-budget") == []
+
+
+def test_universal_keys_never_warn(valid_plugin):
+    """enabled/severity/exclude are accepted on every rule."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-weak-language"] = {
+        "enabled": True,
+        "severity": "info",
+        "exclude": ["docs/*"],
+    }
+
+    violations = Linter(context, config).run()
+    assert _option_warnings(violations, "content-weak-language") == []
+
+
+def test_schema_declared_exclude_is_type_checked(valid_plugin):
+    """agentskill-unreferenced-files declares exclude as a list, so a str warns
+    via the schema type check; the universal exclude is list-checked too."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-unreferenced-files"]["exclude"] = "references/*"
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "agentskill-unreferenced-files")
+    assert len(warnings) == 1
+    assert "expects list, got str" in warnings[0].message
+
+    config2 = LinterConfig.default()
+    config2.rules["agentskill-unreferenced-files"]["exclude"] = ["references/*"]
+    violations2 = Linter(RepositoryContext(valid_plugin), config2).run()
+    assert _option_warnings(violations2, "agentskill-unreferenced-files") == []
+
+
+def test_unknown_option_on_empty_schema_builtin_warns(valid_plugin):
+    """Builtins with no config_schema accept only universal keys."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-weak-language"] = {"enabled": True, "extra-words": ["maybe"]}
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "content-weak-language")
+    assert len(warnings) == 1
+    assert "Unknown option 'extra-words'" in warnings[0].message
+
+
+def test_multiple_bad_options_warn_individually(valid_plugin):
+    """One warning per bad key."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["agentskill-description"]["severty"] = "error"
+    config.rules["agentskill-description"]["zzqx-bogus"] = 1
+
+    violations = Linter(context, config).run()
+    assert len(_option_warnings(violations, "agentskill-description")) == 2
+
+
+def test_universal_exclude_must_be_a_list(valid_plugin):
+    """A bare-string exclude iterates per character and its lone `*` would
+    silently exclude every file — warn on it even without a schema entry."""
+    context = RepositoryContext(valid_plugin)
+    config = LinterConfig.default()
+    config.rules["content-weak-language"] = {"enabled": True, "exclude": "docs/*"}
+
+    violations = Linter(context, config).run()
+    warnings = _option_warnings(violations, "content-weak-language")
+    assert len(warnings) == 1
+    assert "Option 'exclude'" in warnings[0].message
+    assert "expects list, got str" in warnings[0].message

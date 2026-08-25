@@ -590,7 +590,7 @@ def test_sarif_invalid_config_has_rule_descriptor(valid_plugin):
     assert "invalid-config" in rule_ids
 
     descriptor = next(r for r in rules if r["id"] == "invalid-config")
-    assert descriptor["shortDescription"]["text"] == "Unknown rule ID in configuration"
+    assert descriptor["shortDescription"]["text"] == "Invalid configuration"
 
     results = data["runs"][0]["results"]
     assert len(results) == 1

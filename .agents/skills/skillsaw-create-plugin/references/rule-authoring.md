@@ -38,7 +38,7 @@ class MyFirstRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         for block in context.lint_tree.find(InstructionBlock):
             content = block.read_body(strip_code_blocks=False)
             if content is None:

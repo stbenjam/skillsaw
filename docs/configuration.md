@@ -222,6 +222,18 @@ Exclude patterns apply to **all** rules, including custom rules loaded via
 `custom-rules`. Any violation whose file path matches an exclude pattern is
 filtered out before results are reported.
 
+## Rule Options
+
+Many rules accept options beyond `enabled` and `severity` — each rule's
+documentation page lists them, and `skillsaw explain <rule-id>` prints the
+full config template in your terminal. Option names come from the rule's
+`config_schema`, so a typo'd or wrong-typed option is reported as an
+`invalid-config` warning with a did-you-mean suggestion instead of being
+silently ignored. The `exclude` key must be a list — a bare string would
+silently exclude every file from the rule. Under `--fail-on warning` or `strict: true`
+these warnings fail the run; `skillsaw baseline` is the accepted way to
+carry known ones during a migration.
+
 ## Per-Rule Excludes
 
 Exclude specific files from a single rule using the `exclude` key in the

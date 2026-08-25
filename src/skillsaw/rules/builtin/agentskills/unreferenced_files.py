@@ -200,10 +200,7 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # Per-run regex cache: needles (paths/filenames) repeat across the
         # markdown sources of a skill and across skills sharing file names.
         self._pattern_cache: Dict[Tuple[str, str], re.Pattern] = {}
-        directory_covers = self.config.get(
-            "directory_mention_covers",
-            self.config_schema["directory_mention_covers"]["default"],
-        )
+        directory_covers = self.setting("directory_mention_covers")
         exclude_patterns = list(self.config.get("exclude", []) or [])
         exclude_variants = [
             variant for pattern in exclude_patterns for variant in context.pattern_variants(pattern)

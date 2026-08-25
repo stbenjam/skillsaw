@@ -125,7 +125,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         root = safe_resolve(context.root_path) or context.root_path
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         violations = []
         for cf in gather_all_content_blocks(context):
             doc = cf.markdown
@@ -151,7 +151,7 @@ class ContentUnlinkedInternalReferenceRule(Rule):
     def fix(
         self, context: RepositoryContext, violations: List[RuleViolation], **kwargs: object
     ) -> List[AutofixResult]:
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         fixes_by_file: Dict[Path, List[tuple]] = defaultdict(list)
         for v in violations:
             if not v.file_path or "autofixable" not in v.message or v.block is None:

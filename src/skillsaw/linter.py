@@ -33,6 +33,22 @@ if TYPE_CHECKING:
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 
+# Config keys every rule accepts regardless of its config_schema. `enabled`
+# is validated at config load, `severity` at rule construction, and `exclude`
+# is read by the linter's per-rule exclude filter.
+UNIVERSAL_RULE_OPTION_KEYS = frozenset({"enabled", "severity", "exclude"})
+
+# config_schema `type` strings and the Python types a user value must have.
+# `float` accepts int (YAML `4` for a threshold), never bool — bool is a
+# subclass of int, so int/float checks reject it explicitly below.
+_OPTION_TYPE_MAP = {
+    "list": list,
+    "int": int,
+    "float": (int, float),
+    "bool": bool,
+    "dict": dict,
+}
+
 # The security/supply-chain surface. Not a suppression gate — every one of
 # these fires on a compiled copy because none is a prose-duplicate rule (see
 # ``_is_prose_duplicate_rule``). Enumerated here so ``test_content_suppression``
@@ -575,6 +591,7 @@ class Linter:
             skip_unknown = bool(installed_plugin_names())
         warnings = list(self._plugin_load_violations)
         warnings.extend(self._deprecation_violations())
+        rule_instances = {rule.rule_id: rule for rule in self.rules}
         for rule_id in self.config.rules:
             if rule_id not in self._known_rule_ids:
                 if skip_unknown:
@@ -591,7 +608,105 @@ class Linter:
                         message=f"Unknown rule '{rule_id}' in config — rule does not exist and will be ignored",
                     )
                 )
+                continue
+            warnings.extend(
+                self._option_violations(rule_id, self.config.rules[rule_id], rule_instances)
+            )
         return warnings
+
+    def _option_violations(
+        self, rule_id: str, overrides: Dict[Any, Any], rule_instances: Dict[str, Rule]
+    ) -> List[RuleViolation]:
+        """Validate one configured rule's option keys against its config_schema.
+
+        Schema resolution is enablement-independent, like the unknown-rule-ID
+        check above: a typo on a disabled or auto-inactive builtin still warns.
+        Plugin/custom rules opt in by declaring a config_schema; without one
+        their option names are unknowable, so they are skipped — including
+        the loaded-but-disabled case, whose id is known but which has neither
+        a live instance nor a registry entry.
+        """
+        import difflib
+
+        from .rules.builtin import BUILTIN_RULE_REGISTRY
+
+        rule = rule_instances.get(rule_id) or BUILTIN_RULE_REGISTRY.get(rule_id)
+        if rule is None:
+            return []
+        schema = getattr(rule, "config_schema", {}) or {}
+        if not isinstance(schema, dict):
+            # A malformed third-party schema (e.g. a list of option names)
+            # must not abort the lint — treat it as undeclared.
+            schema = {}
+        if getattr(rule, "_source", "builtin") != "builtin" and not schema:
+            return []
+        allowed = set(schema) | UNIVERSAL_RULE_OPTION_KEYS
+
+        violations: List[RuleViolation] = []
+        for key, value in overrides.items():
+            if not isinstance(key, str):
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Invalid option key '{key}' for rule '{rule_id}' "
+                        "— option keys must be strings (YAML keys like `on:` or "
+                        "`1:` parse as non-strings)",
+                    )
+                )
+                continue
+            if key not in allowed:
+                close = difflib.get_close_matches(key, sorted(allowed), n=1, cutoff=0.6)
+                if close:
+                    hint = f" (did you mean '{close[0]}'?)"
+                else:
+                    hint = f" — run `skillsaw explain {rule_id}` to see valid options"
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Unknown option '{key}' for rule '{rule_id}' "
+                        f"— it will be ignored{hint}",
+                    )
+                )
+                continue
+            entry = schema.get(key)
+            if not isinstance(entry, dict):
+                # Universal-only key, or a third-party schema entry that isn't
+                # the {type, default, description} shape. The universal
+                # `exclude` still gets a list check: a bare string is
+                # iterated per character, and its lone `*` silently excludes
+                # every file from the rule.
+                if key == "exclude" and value is not None and not isinstance(value, list):
+                    violations.append(
+                        RuleViolation(
+                            rule_id="invalid-config",
+                            severity=Severity.WARNING,
+                            message=f"Option 'exclude' for rule '{rule_id}' "
+                            f"expects list, got {type(value).__name__}",
+                        )
+                    )
+                continue
+            entry_type = entry.get("type")
+            if not isinstance(entry_type, str):
+                # Third-party schemas may use non-string types (e.g. a
+                # JSON-Schema-style list) — unknown shapes are not checked.
+                continue
+            expected = _OPTION_TYPE_MAP.get(entry_type)
+            if expected is None:
+                continue
+            bool_for_number = isinstance(value, bool) and entry_type in ("int", "float")
+            if value is None or bool_for_number or not isinstance(value, expected):
+                actual = "null" if value is None else type(value).__name__
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Option '{key}' for rule '{rule_id}' "
+                        f"expects {entry_type}, got {actual}",
+                    )
+                )
+        return violations
 
     def _deprecation_violations(self) -> List[RuleViolation]:
         """Warnings for deprecated rules the user still runs or configures.

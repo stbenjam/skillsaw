@@ -1317,3 +1317,62 @@ def test_command_sections_partial(temp_dir):
     rule = CommandSectionsRule()
     violations = rule.check(context)
     assert [v.message for v in violations] == ["Missing recommended section '## Implementation'"]
+
+
+class TestRuleSetting:
+    """Rule.setting() resolves config overrides against config_schema defaults."""
+
+    def _rule(self, config=None):
+        from skillsaw.rules.builtin.content.section_length import ContentSectionLengthRule
+
+        return ContentSectionLengthRule(config)
+
+    def test_override_returned(self):
+        rule = self._rule({"max-tokens": 123})
+        assert rule.setting("max-tokens") == 123
+
+    def test_unset_returns_schema_default(self):
+        rule = self._rule({})
+        assert rule.setting("max-tokens") == rule.config_schema["max-tokens"]["default"]
+
+    def test_explicit_null_returns_schema_default(self):
+        rule = self._rule({"max-tokens": None})
+        assert rule.setting("max-tokens") == rule.config_schema["max-tokens"]["default"]
+
+    def test_undeclared_name_raises_keyerror_naming_rule_and_option(self):
+        rule = self._rule({})
+        with pytest.raises(KeyError, match="content-section-length.*no-such-option"):
+            rule.setting("no-such-option")
+
+    def test_int_coerced_for_float_option(self):
+        from skillsaw.rules.builtin.security.encoded_payload import SecurityEncodedPayloadRule
+
+        rule = SecurityEncodedPayloadRule({"entropy-threshold": 4})
+        value = rule.setting("entropy-threshold")
+        assert isinstance(value, float)
+        assert value == 4.0
+
+    def test_bool_not_coerced_for_float_option(self):
+        from skillsaw.rules.builtin.security.encoded_payload import SecurityEncodedPayloadRule
+
+        rule = SecurityEncodedPayloadRule({"entropy-threshold": True})
+        assert rule.setting("entropy-threshold") is True
+
+    def test_mutable_default_returned_as_copy(self):
+        from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
+
+        rule = ContextBudgetRule({})
+        first = rule.setting("limits")
+        first["injected-category"] = {"warn": 1}
+        assert "injected-category" not in rule.setting("limits")
+
+    def test_migrated_null_override_resolves_to_default(self):
+        """agentskill-unreferenced-files with directory_mention_covers: null
+        behaves as the schema default True after the setting() migration
+        (previously None was falsy and behaved as False)."""
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = AgentSkillUnreferencedFilesRule({"directory_mention_covers": None})
+        assert rule.setting("directory_mention_covers") is True

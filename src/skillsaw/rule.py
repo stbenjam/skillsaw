@@ -2,6 +2,7 @@
 Base classes for linting rules
 """
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -174,6 +175,30 @@ class Rule(ABC):
                     f"Invalid severity '{severity_str}' for rule '{self.rule_id}'. "
                     f"Valid values: {valid}"
                 ) from err
+
+    def setting(self, name: str) -> Any:
+        """Resolve a config option: the user's override, else the schema default.
+
+        Only options declared in ``config_schema`` can be read — an undeclared
+        name raises ``KeyError`` so a read/declaration mismatch fails fast in
+        development. An explicit ``null`` in config resolves to the default.
+        Mutable (list/dict) defaults are returned as copies so callers cannot
+        corrupt the shared schema. An int override for a float-typed option is
+        coerced to float; any other user value is returned unchanged.
+        """
+        try:
+            entry = self.config_schema[name]
+        except KeyError:
+            raise KeyError(f"rule '{self.rule_id}' has no config_schema option '{name}'") from None
+        value = self.config.get(name)
+        if value is None:
+            default = entry["default"]
+            if isinstance(default, (list, dict)):
+                return copy.deepcopy(default)
+            return default
+        if entry.get("type") == "float" and isinstance(value, int) and not isinstance(value, bool):
+            return float(value)
+        return value
 
     @property
     @abstractmethod
