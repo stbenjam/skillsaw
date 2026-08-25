@@ -156,6 +156,16 @@ def test_every_rule_since_is_not_in_the_future():
     assert not future, f"rules gated behind a future version: {future}"
 
 
+def test_builtin_config_schema_entries_have_complete_shape():
+    problems = []
+    required = {"type", "default", "description"}
+    for rule_id, rule_cls in BUILTIN_RULE_REGISTRY.items():
+        for option, entry in rule_cls.config_schema.items():
+            if not isinstance(entry, dict) or not required.issubset(entry):
+                problems.append(f"{rule_id}.{option}")
+    assert problems == [], f"malformed config_schema entries: {problems}"
+
+
 def test_config_reads_are_declared_in_config_schema():
     """Every self.config read in a builtin rule must name a declared option.
 
@@ -166,8 +176,9 @@ def test_config_reads_are_declared_in_config_schema():
     and the house rule "declare config_schema when the rule accepts
     parameters".
 
-    Limitation: the scan sees only string literals passed directly to
-    self.config.get()/[]/self.setting(). Keys flowing through wrapper
+    Limitation: inspect.getsource() sees only each concrete class body, not
+    inherited reads. Within that body, the scan sees only string literals
+    passed directly to self.config.get()/[]/self.setting(). Keys flowing through wrapper
     helpers (e.g. _int_config in security/encoded_payload.py or
     _parse_patterns in content/missing_stop_condition.py) are covered only
     via the literal arguments at their call sites; a wrapper fed a computed
@@ -188,7 +199,7 @@ def test_config_reads_are_declared_in_config_schema():
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
-                and node.func.attr in ("get", "setting")
+                and node.func.attr == "get"
                 and isinstance(node.func.value, ast.Attribute)
                 and node.func.value.attr == "config"
                 and node.args

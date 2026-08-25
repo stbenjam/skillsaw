@@ -201,7 +201,11 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # markdown sources of a skill and across skills sharing file names.
         self._pattern_cache: Dict[Tuple[str, str], re.Pattern] = {}
         directory_covers = self.setting("directory_mention_covers")
-        exclude_patterns = list(self.config.get("exclude", []) or [])
+        exclude_patterns = self.setting("exclude")
+        if not isinstance(exclude_patterns, list) or not all(
+            isinstance(pattern, str) for pattern in exclude_patterns
+        ):
+            exclude_patterns = []
         exclude_variants = [
             variant for pattern in exclude_patterns for variant in context.pattern_variants(pattern)
         ]

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
+from skillsaw.utils import commented_key_line, read_yaml_commented
 
 if TYPE_CHECKING:
     from .context import RepositoryContext
@@ -76,6 +77,13 @@ class LinterConfig:
     # Excluded from equality so two configs loaded the same way still compare
     # equal regardless of the advisory messages attached.
     warnings: List[str] = field(default_factory=list, compare=False)
+    # Exact source path for diagnostics that originate in the config. Kept
+    # separate from config_dir, which resolves relative custom-rule paths.
+    config_path: Optional[Path] = field(default=None, compare=False)
+    config_rule_lines: Dict[Any, int] = field(default_factory=dict, compare=False, repr=False)
+    config_option_lines: Dict[Tuple[Any, Any], int] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     # Recognised top-level config keys; anything else triggers a load warning.
     _KNOWN_KEYS = frozenset(
@@ -164,6 +172,27 @@ class LinterConfig:
         # ever sees canonical names. When a config names both the alias
         # and the canonical rule, the canonical entry wins.
         from .rules.builtin import canonical_rule_id
+
+        config_rule_lines: Dict[Any, int] = {}
+        config_option_lines: Dict[Tuple[Any, Any], int] = {}
+        commented_data, _, _ = read_yaml_commented(config_path)
+        commented_rules = commented_data.get("rules") if isinstance(commented_data, dict) else None
+        if isinstance(commented_rules, dict):
+            for raw_rule_id, rule_config in rules.items():
+                canonical = (
+                    canonical_rule_id(raw_rule_id) if isinstance(raw_rule_id, str) else raw_rule_id
+                )
+                if canonical != raw_rule_id and canonical in rules:
+                    continue
+                rule_line = commented_key_line(commented_rules, raw_rule_id)
+                if rule_line is not None:
+                    config_rule_lines[canonical] = rule_line
+                commented_options = commented_rules.get(raw_rule_id)
+                if isinstance(rule_config, dict) and isinstance(commented_options, dict):
+                    for option in rule_config:
+                        option_line = commented_key_line(commented_options, option)
+                        if option_line is not None:
+                            config_option_lines[(canonical, option)] = option_line
 
         normalized: Dict[str, Any] = {}
         for rule_id, rule_config in rules.items():
@@ -285,6 +314,7 @@ class LinterConfig:
                 "Example:\n  plugins:\n    disable: [some-plugin]"
             )
 
+        resolved_config_path = safe_resolve(config_path) or config_path
         return cls(
             version=_DEFAULT_VERSION if raw_version is None else str(raw_version),
             rules=rules,
@@ -295,8 +325,11 @@ class LinterConfig:
             fail_on=fail_on,
             plugins_enabled=plugins_enabled,
             disabled_plugins=disabled_plugins,
-            config_dir=(safe_resolve(config_path) or config_path).parent,
+            config_dir=resolved_config_path.parent,
             warnings=load_warnings,
+            config_path=resolved_config_path,
+            config_rule_lines=config_rule_lines,
+            config_option_lines=config_option_lines,
         )
 
     @classmethod

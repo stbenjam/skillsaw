@@ -884,13 +884,31 @@ def test_custom_rule_with_schema_opts_into_option_validation(valid_plugin, temp_
     assert "Unknown option 'oops'" in warnings[0].message
 
 
-def test_disabled_custom_rule_skips_option_validation(valid_plugin, temp_dir):
-    """A loaded-but-disabled custom rule has no instance and no registry entry;
-    its options are skipped rather than crashing the lint."""
+def test_disabled_custom_rule_still_validates_options(valid_plugin, temp_dir):
+    """Recorded rule classes make validation independent of enablement."""
     rule_file = temp_dir / "schema_rule.py"
     rule_file.write_text(CUSTOM_RULE_WITH_SCHEMA)
     config = LinterConfig(custom_rules=[str(rule_file)])
     config.rules["schema-custom-rule"] = {"enabled": False, "oops": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "schema-custom-rule")
+    assert len(warnings) == 1
+    assert "Unknown option 'oops'" in warnings[0].message
+    assert "skillsaw explain" not in warnings[0].message
+
+
+CUSTOM_RULE_WITH_NONSTRICT_SCHEMA = CUSTOM_RULE_WITH_SCHEMA.replace(
+    "class SchemaCustomRule(Rule):",
+    "class SchemaCustomRule(Rule):\n    strict_options = False",
+)
+
+
+def test_custom_rule_can_allow_additional_options_during_migration(valid_plugin, temp_dir):
+    rule_file = temp_dir / "nonstrict_schema_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_NONSTRICT_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["schema-custom-rule"] = {"enabled": True, "legacy-opt": 1}
 
     violations = Linter(RepositoryContext(valid_plugin), config).run()
     assert _custom_option_warnings(violations, "schema-custom-rule") == []
@@ -1012,6 +1030,43 @@ def test_str_typed_option_is_validated(valid_plugin, temp_dir):
     config.rules["str-option-rule"] = {"enabled": True, "budget-file": "budgets/q3.yaml"}
     violations = Linter(RepositoryContext(valid_plugin), config).run()
     assert _custom_option_warnings(violations, "str-option-rule") == []
+
+
+def test_json_schema_type_aliases_are_validated(valid_plugin, temp_dir):
+    schema = """
+from skillsaw import Rule, Severity
+
+class AliasTypeRule(Rule):
+    config_schema = {
+        "integer-opt": {"type": "integer", "default": 1, "description": "Integer."},
+        "number-opt": {"type": "number", "default": 1.0, "description": "Number."},
+        "boolean-opt": {"type": "boolean", "default": True, "description": "Boolean."},
+        "array-opt": {"type": "array", "default": [], "description": "Array."},
+        "object-opt": {"type": "object", "default": {}, "description": "Object."},
+        "string-opt": {"type": "string", "default": "x", "description": "String."},
+    }
+    rule_id = "alias-type-rule"
+    description = "Alias types"
+    def default_severity(self): return Severity.WARNING
+    def check(self, context): return []
+"""
+    rule_file = temp_dir / "alias_type_rule.py"
+    rule_file.write_text(schema)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["alias-type-rule"] = {
+        "enabled": True,
+        "integer-opt": True,
+        "number-opt": False,
+        "boolean-opt": 1,
+        "array-opt": {},
+        "object-opt": [],
+        "string-opt": 1,
+    }
+
+    warnings = _custom_option_warnings(
+        Linter(RepositoryContext(valid_plugin), config).run(), "alias-type-rule"
+    )
+    assert len(warnings) == 6
 
 
 CUSTOM_RULE_WITH_NONSTRING_SCHEMA_KEY = """

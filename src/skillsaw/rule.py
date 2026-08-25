@@ -114,6 +114,10 @@ class Rule(ABC):
     repo_types = None
     formats = None
     config_schema = {}
+    # Third-party rules with a partially migrated config_schema can set this
+    # to False: declared options are still type-checked, while undeclared
+    # options remain accepted during the migration.
+    strict_options = True
     since = "0.1.0"
     # Former rule IDs this rule was known by. Aliases resolve to the
     # canonical ``rule_id`` everywhere a rule is named: config keys,
@@ -190,6 +194,14 @@ class Rule(ABC):
             entry = self.config_schema[name]
         except KeyError:
             raise KeyError(f"rule '{self.rule_id}' has no config_schema option '{name}'") from None
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"config_schema option '{name}' for rule '{self.rule_id}' must be a mapping"
+            )
+        if "default" not in entry:
+            raise ValueError(
+                f"config_schema option '{name}' for rule '{self.rule_id}' is missing 'default'"
+            )
         value = self.config.get(name)
         if value is None:
             default = entry["default"]

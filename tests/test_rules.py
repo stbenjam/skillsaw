@@ -1360,13 +1360,32 @@ class TestRuleSetting:
 
     def test_mutable_default_returned_as_copy(self):
         from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
 
         rule = ContextBudgetRule({})
         first = rule.setting("limits")
-        first["injected-category"] = {"warn": 1}
-        assert "injected-category" not in rule.setting("limits")
+        category = next(iter(first))
+        first[category]["warn"] = -1
+        assert rule.setting("limits")[category]["warn"] != -1
 
-    def test_migrated_null_override_resolves_to_default(self):
+        list_rule = AgentSkillUnreferencedFilesRule({})
+        patterns = list_rule.setting("exclude")
+        patterns.append("generated/**")
+        assert list_rule.setting("exclude") == []
+
+    def test_malformed_schema_entry_names_rule_option_and_defect(self):
+        rule = self._rule({})
+        rule.config_schema = {"bad": "not-a-mapping"}
+        with pytest.raises(ValueError, match="bad.*content-section-length.*mapping"):
+            rule.setting("bad")
+
+        rule.config_schema = {"bad": {"type": "int"}}
+        with pytest.raises(ValueError, match="bad.*content-section-length.*missing 'default'"):
+            rule.setting("bad")
+
+    def test_null_override_resolves_to_schema_default(self):
         """agentskill-unreferenced-files with directory_mention_covers: null
         behaves as the schema default True after the setting() migration
         (previously None was falsy and behaved as False)."""

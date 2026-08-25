@@ -228,11 +228,18 @@ Many rules accept options beyond `enabled` and `severity` — each rule's
 documentation page lists them, and `skillsaw explain <rule-id>` prints the
 full config template in your terminal. Option names come from the rule's
 `config_schema`, so a typo'd or wrong-typed option is reported as an
-`invalid-config` warning with a did-you-mean suggestion instead of being
-silently ignored. The `exclude` key must be a list — a bare string would
-silently exclude every file from the rule. Under `--fail-on warning` or `strict: true`
-these warnings fail the run; `skillsaw baseline` is the accepted way to
-carry known ones during a migration.
+`invalid-config` warning. Close matches get a did-you-mean suggestion; type
+errors name the expected and actual types. Validation is warn-only: the
+configured value still passes through unchanged, except an explicit `null`
+read through `Rule.setting()` resolves to the schema default. An unrecognized
+key still counts as configuring the rule and can enable an opt-in rule, so do
+not leave the warning unresolved.
+
+The per-rule `exclude` key must be a list of strings. A malformed value is
+ignored by the exclusion filter so it cannot silently disable a rule or crash
+the lint. These warnings count toward the grade and fail the run under
+`--fail-on warning` or `strict: true`; `skillsaw baseline` is the accepted way
+to carry known ones during a migration.
 
 ## Per-Rule Excludes
 

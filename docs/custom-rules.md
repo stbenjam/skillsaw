@@ -140,6 +140,14 @@ For the full list of node types, see `skillsaw.lint_target` (structural nodes li
 
 Custom rules can accept user-configurable parameters via `config_schema`:
 
+`Rule.setting()` requires skillsaw 0.20.0 or newer. Each schema entry must be
+a mapping with `type`, `default`, and `description`; declare every option the
+rule reads, then read it with `self.setting()` so schema defaults and explicit
+`null` values resolve consistently. Call `setting()` once per `check()` rather
+than inside a per-block loop. Supported type names are `list`/`array`,
+`int`/`integer`, `float`/`number`, `bool`/`boolean`, `dict`/`object`, and
+`str`/`string`.
+
 ```python
 class NoTodoInInstructionsRule(Rule):
     config_schema = {
@@ -152,9 +160,15 @@ class NoTodoInInstructionsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         patterns = self.setting("patterns")
-        pattern = re.compile("|".join(rf"\b{p}\b" for p in patterns))
+        pattern = re.compile("|".join(rf"\b{re.escape(p)}\b" for p in patterns))
         # ... rest of check logic
 ```
+
+Declaring a schema enables closed-world option validation: an undeclared key
+is reported to the rule's users as `invalid-config`. During a partial schema
+migration, set `strict_options = False` on the rule class; declared options
+remain type-checked while additional keys are temporarily accepted. Remove
+that escape hatch after every option is declared.
 
 ```yaml
 rules:

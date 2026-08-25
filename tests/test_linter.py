@@ -412,6 +412,21 @@ def test_option_validation_is_enablement_independent(valid_plugin):
     assert len(_option_warnings(violations, "content-critical-position")) == 1
 
 
+def test_typo_on_opt_in_rule_warns_and_still_enables_it(valid_plugin):
+    """An unknown override activates a default-disabled rule as configuration."""
+    config = LinterConfig.default()
+    config.rules["content-missing-stop-condition"] = {"extra-loop-pattrns": []}
+
+    linter = Linter(RepositoryContext(valid_plugin), config)
+    violations = linter.run()
+    warnings = _option_warnings(violations, "content-missing-stop-condition")
+
+    assert "content-missing-stop-condition" in {rule.rule_id for rule in linter.rules}
+    assert len(warnings) == 1
+    assert "may enable an opt-in rule" in warnings[0].message
+    assert "will be ignored" not in warnings[0].message
+
+
 def test_non_string_option_keys_warn_without_crashing(valid_plugin):
     """YAML keys like `on:` parse to bool; they must warn, not crash."""
     context = RepositoryContext(valid_plugin)
@@ -508,7 +523,7 @@ def test_schema_declared_exclude_is_type_checked(valid_plugin):
     violations = Linter(context, config).run()
     warnings = _option_warnings(violations, "agentskill-unreferenced-files")
     assert len(warnings) == 1
-    assert "expects list, got str" in warnings[0].message
+    assert "expects list of strings, got str" in warnings[0].message
 
     config2 = LinterConfig.default()
     config2.rules["agentskill-unreferenced-files"]["exclude"] = ["references/*"]
@@ -536,7 +551,9 @@ def test_multiple_bad_options_warn_individually(valid_plugin):
     config.rules["agentskill-description"]["zzqx-bogus"] = 1
 
     violations = Linter(context, config).run()
-    assert len(_option_warnings(violations, "agentskill-description")) == 2
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 2
+    assert len({warning.fingerprint_discriminator for warning in warnings}) == 2
 
 
 def test_universal_exclude_must_be_a_list(valid_plugin):
@@ -550,4 +567,37 @@ def test_universal_exclude_must_be_a_list(valid_plugin):
     warnings = _option_warnings(violations, "content-weak-language")
     assert len(warnings) == 1
     assert "Option 'exclude'" in warnings[0].message
-    assert "expects list, got str" in warnings[0].message
+    assert "expects list of strings, got str" in warnings[0].message
+
+
+def test_malformed_exclude_cannot_suppress_or_crash_rule(temp_dir):
+    """Bad per-rule excludes warn and fail open so the protected rule runs."""
+    target = temp_dir / "CLAUDE.md"
+    target.write_text("Try to handle errors gracefully if possible.\n")
+
+    for exclude in ("*.md", [123], None):
+        config = LinterConfig.default()
+        config.rules["content-weak-language"] = {
+            "enabled": True,
+            "severity": "warning",
+            "exclude": exclude,
+        }
+        violations = Linter(RepositoryContext(temp_dir), config).run()
+
+        warnings = _option_warnings(violations, "content-weak-language")
+        assert len(warnings) == 1, exclude
+        assert "expects list of strings" in warnings[0].message
+        assert any(v.rule_id == "content-weak-language" for v in violations), exclude
+
+
+def test_config_option_warning_carries_config_path(valid_plugin, temp_dir):
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\nrules:\n  agentskill-description:\n    severty: error\n'
+    )
+    config = LinterConfig.from_file(config_path)
+
+    warnings = _option_warnings(Linter(RepositoryContext(valid_plugin), config).run())
+    assert len(warnings) == 1
+    assert warnings[0].file_path == config_path.resolve()
+    assert warnings[0].file_line == 4
