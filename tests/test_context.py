@@ -838,6 +838,18 @@ def test_apm_dir_with_skills_detected_as_agentskills(temp_dir):
     assert RepositoryType.AGENTSKILLS in context.repo_types
 
 
+def test_lowercase_skill_md_is_not_an_agentskills_entrypoint(temp_dir):
+    """Ecosystem filenames stay case-sensitive on case-insensitive hosts."""
+    (temp_dir / "skill.md").write_text(
+        "---\nname: lowercase\ndescription: Not a portable entrypoint.\n---\n"
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
 def test_apm_dir_does_not_skip_format_detection(temp_dir):
     """.apm/ repos still detect instruction file formats normally"""
     apm_dir = temp_dir / ".apm"

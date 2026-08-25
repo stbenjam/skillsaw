@@ -8,6 +8,7 @@ import from ``skillsaw.context`` — the context imports them.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Dict, Iterable, List
 
@@ -28,6 +29,22 @@ CONVENTIONAL_SKILL_DIRS = (
     ".cline/skills",  # Cline
     ".qwen/skills",  # Qwen Code
 )
+
+
+def exact_name_exists(parent: Path, name: str) -> bool:
+    """Return whether *parent* contains an entry with exactly *name*.
+
+    ``Path.exists()`` follows the host filesystem's case rules. On macOS a
+    lowercase ``skill.md`` therefore satisfies a probe for ``SKILL.md``, even
+    though ecosystem filenames are case-sensitive. Reading directory entries
+    preserves the authored spelling on both case-sensitive and insensitive
+    filesystems.
+    """
+    try:
+        with os.scandir(parent) as entries:
+            return any(entry.name == name for entry in entries)
+    except OSError:
+        return False
 
 
 def merge_plugin_dirs(*plugin_groups: Iterable[Path]) -> List[Path]:

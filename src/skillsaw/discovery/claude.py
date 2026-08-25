@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, agent_plugins as agent_plugins_discovery
+from skillsaw.discovery import (
+    CONVENTIONAL_SKILL_DIRS,
+    agent_plugins as agent_plugins_discovery,
+    exact_name_exists,
+)
 from skillsaw.formats.codex import codex_declared_skill_dirs
 from skillsaw.paths import contained_resolve, safe_exists, safe_is_dir, safe_resolve
 
@@ -270,7 +274,7 @@ def discover_skills(
                     continue
                 if boundary is not None and not resolved.is_relative_to(boundary):
                     continue
-                if (item / "SKILL.md").exists():
+                if exact_name_exists(item, "SKILL.md"):
                     if boundary is not None:
                         entrypoint = safe_resolve(item / "SKILL.md")
                         if entrypoint is None or not entrypoint.is_relative_to(boundary):
@@ -291,7 +295,7 @@ def discover_skills(
             return
 
     if agentskills:
-        if (root / "SKILL.md").exists():
+        if exact_name_exists(root, "SKILL.md"):
             skills.append(root)
             discovered.add(root)
         else:
@@ -311,7 +315,7 @@ def discover_skills(
         for path in (plugin / "skills", *codex_declared_skill_dirs(plugin)):
             if not path.is_dir():
                 continue
-            if (path / "SKILL.md").exists():
+            if exact_name_exists(path, "SKILL.md"):
                 resolved = contained_resolve(path, plugin_root)
                 if (
                     resolved is not None

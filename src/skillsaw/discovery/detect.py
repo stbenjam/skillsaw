@@ -11,7 +11,7 @@ from pathlib import Path
 import os
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
-from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS
+from skillsaw.discovery import CONVENTIONAL_SKILL_DIRS, exact_name_exists
 from skillsaw.formats.promptfoo import is_promptfoo_config
 from skillsaw.paths import safe_resolve
 from skillsaw.utils import read_yaml
@@ -219,7 +219,7 @@ def has_skill_md_recursive(
         for item in root.iterdir():
             if should_skip(item):
                 continue
-            if (item / "SKILL.md").exists():
+            if exact_name_exists(item, "SKILL.md"):
                 return True
             if item.is_dir() and has_skill_md_recursive(item, should_skip, _visited):
                 return True
@@ -230,7 +230,7 @@ def has_skill_md_recursive(
 
 def is_agentskills_repo(root: Path, should_skip: Callable[[Path], bool]) -> bool:
     """Return whether the repository contains an Agent Skill entrypoint."""
-    if (root / "SKILL.md").exists():
+    if exact_name_exists(root, "SKILL.md"):
         return True
     for rel in CONVENTIONAL_SKILL_DIRS:
         path = root / rel
