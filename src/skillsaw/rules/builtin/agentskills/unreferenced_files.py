@@ -108,6 +108,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
+from skillsaw.discovery import exact_name_exists
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
@@ -269,12 +270,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
         try:
             for dirpath, dirnames, filenames in os.walk(skill_path):
                 base = Path(dirpath)
+                # Same nested-skill predicate as discovery: a subdirectory
+                # with a mis-cased skill.md is not a nested skill, so its
+                # files stay in this skill's scan on every filesystem.
                 dirnames[:] = sorted(
                     d
                     for d in dirnames
                     if not d.startswith(".")
                     and not (base / d).is_symlink()
-                    and not (base / d / "SKILL.md").is_file()
+                    and not exact_name_exists(base / d, "SKILL.md")
                 )
                 for name in sorted(filenames):
                     if name.startswith("."):

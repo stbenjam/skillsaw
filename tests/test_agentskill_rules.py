@@ -1720,6 +1720,21 @@ def test_unreferenced_file_flagged(temp_dir):
     assert violations[0].severity == Severity.WARNING
 
 
+def test_miscased_nested_skill_md_does_not_prune_a_subdirectory(temp_dir):
+    """A subdirectory holding lowercase skill.md is not a nested skill —
+    discovery decides that case-sensitively, and pruning must agree on
+    case-insensitive filesystems too, or the files fall out of every scan."""
+    skill = _make_skill(temp_dir, body="Run the tool as described below.")
+    nested = skill / "helpers"
+    nested.mkdir()
+    (nested / "skill.md").write_text("---\nname: helpers\ndescription: x\n---\n")
+    (nested / "orphan.py").write_text("print('never mentioned')\n")
+
+    violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
+    flagged = {str(v.file_path) for v in violations}
+    assert str(nested / "orphan.py") in flagged
+
+
 def test_fenced_code_block_reference(temp_dir):
     skill = _make_skill(temp_dir, body="Run:\n\n```bash\npython scripts/run.py --all\n```")
     (skill / "scripts").mkdir()

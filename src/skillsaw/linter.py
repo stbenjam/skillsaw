@@ -673,8 +673,12 @@ class Linter:
             # gets, so treat the schema as undeclared rather than abort.
             schema = {}
             strict_options = True
-        if rule_id not in self._builtin_rule_ids and not schema:
-            return []
+        # A schema-less plugin/custom rule leaves its option names
+        # unknowable, so unknown-key validation is skipped for it below —
+        # but the universal keys are the linter's own contract, and their
+        # shape checks still run (`_is_rule_excluded` fails open on a
+        # malformed `exclude`, which would otherwise be silent).
+        schema_known = bool(schema) or rule_id in self._builtin_rule_ids
         allowed = set(schema) | UNIVERSAL_RULE_OPTION_KEYS
 
         violations: List[RuleViolation] = []
@@ -696,7 +700,7 @@ class Linter:
                 )
                 continue
             if key not in allowed:
-                if not strict_options:
+                if not schema_known or not strict_options:
                     continue
                 # 0.6 intentionally catches common separator/shortening typos
                 # such as max-length vs max_length and length vs max_length.

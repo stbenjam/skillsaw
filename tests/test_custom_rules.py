@@ -870,6 +870,21 @@ def test_custom_rule_without_schema_skips_option_validation(valid_plugin, temp_d
     assert _custom_option_warnings(violations, "bare-custom-rule") == []
 
 
+def test_schema_less_custom_rule_still_validates_universal_exclude(valid_plugin, temp_dir):
+    """The universal `exclude` key is the linter's contract, not the rule's:
+    its shape check runs even without a schema, because a malformed value
+    fails open in _is_rule_excluded and would otherwise be silently inert."""
+    rule_file = temp_dir / "bare_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITHOUT_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["bare-custom-rule"] = {"enabled": True, "exclude": "*.md"}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "bare-custom-rule")
+    assert len(warnings) == 1
+    assert "expects list of strings" in warnings[0].message
+
+
 def test_custom_rule_with_schema_opts_into_option_validation(valid_plugin, temp_dir):
     """Declaring a config_schema opts a custom rule into unknown-key warnings;
     an unmapped type like 'path' must not crash or type-warn."""
