@@ -825,16 +825,46 @@ _ICON_RE = re.compile(r":([a-z][a-z0-9_+-]*):")
 _NUMERIC_ICON_RE = re.compile(r":material-numeric-(\d+)-circle:")
 
 
-_CODE_SPAN_RE = re.compile(r"`+[^`]+`+")
+_BACKTICK_RUN_RE = re.compile(r"`+")
+
+
+def _split_code_spans(line):
+    """Split a line into (is_span, text) segments, CommonMark span rules.
+
+    A code span opens with a run of N backticks and closes at the next run
+    of exactly N backticks, so ``literal ` inside`` is one span. An
+    unmatched run is plain text.
+    """
+    segments = []
+    pos = 0
+    while pos < len(line):
+        opener = _BACKTICK_RUN_RE.search(line, pos)
+        if opener is None:
+            segments.append((False, line[pos:]))
+            break
+        if opener.start() > pos:
+            segments.append((False, line[pos : opener.start()]))
+        length = opener.end() - opener.start()
+        closer = None
+        for run in _BACKTICK_RUN_RE.finditer(line, opener.end()):
+            if run.end() - run.start() == length:
+                closer = run
+                break
+        if closer is None:
+            segments.append((False, line[opener.start() : opener.end()]))
+            pos = opener.end()
+        else:
+            segments.append((True, line[opener.start() : closer.end()]))
+            pos = closer.end()
+    return segments
 
 
 def _strip_inline_noise(line):
     """Remove mkdocs-material attr lists and icon shortcodes from a prose line.
 
     Inline code spans are preserved verbatim — documentation may legitimately
-    show a literal `:sparkles:` or `{ .class }` inside backticks. (A
-    multi-backtick span quoting backtick-containing content is approximated;
-    none exists in the docs.)
+    show a literal `:sparkles:` or `{ .class }` inside backticks, including
+    multi-backtick spans quoting backtick-containing content.
     """
 
     def _strip(segment):
@@ -847,14 +877,7 @@ def _strip_inline_noise(line):
             segment = re.sub(r"(?<=\S) {2,}(?=\S)", " ", segment)
         return segment
 
-    parts = _CODE_SPAN_RE.split(line)
-    spans = _CODE_SPAN_RE.findall(line)
-    rebuilt = []
-    for i, part in enumerate(parts):
-        rebuilt.append(_strip(part))
-        if i < len(spans):
-            rebuilt.append(spans[i])
-    return "".join(rebuilt)
+    return "".join(text if is_span else _strip(text) for is_span, text in _split_code_spans(line))
 
 
 def _plain_markdown(text):

@@ -320,3 +320,15 @@ def test_inline_code_spans_preserved_by_noise_strip():
     assert "`:sparkles:`" in result
     assert "`{ .step-icon }`" in result
     assert result.count(":sparkles:") == 1
+
+
+def test_multi_backtick_span_with_inner_backtick_preserved():
+    # CommonMark: a span closes at a run of exactly the opener's length, so
+    # ``literal ` and :sparkles:`` is one span — nothing inside is stripped.
+    line = "Use ``literal ` and :sparkles:`` but strip :sparkles: here.\n"
+    result = site_content._plain_markdown(line)
+    assert "``literal ` and :sparkles:``" in result
+    assert result.count(":sparkles:") == 1
+    # An unmatched backtick run stays plain text and its trailing prose is
+    # still stripped.
+    assert site_content._plain_markdown("open `` here :brain: x\n") == "open `` here x\n"
