@@ -27,6 +27,9 @@ _BASELINE_VERSION = "1"
 # "deprecated-rule" mirrors linter.ADVISORY_RULE_IDS (kept literal to avoid
 # a module cycle; pinned by a test): baselining a deprecation notice would
 # permanently hide the removal warning it exists to deliver.
+# "invalid-config" is deliberately absent: docs/configuration.md points
+# migrating repos at `skillsaw baseline` to carry known option warnings
+# (an installed plugin's incomplete schema, say) until they can be fixed.
 _UNBASELINABLE_RULE_IDS = frozenset(
     {
         "repository-path-error",

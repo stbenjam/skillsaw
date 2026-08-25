@@ -671,6 +671,55 @@ def test_inline_directive_still_silences_a_config_warning(temp_dir):
     assert _option_warnings(violations, "agentskill-description") == []
 
 
+def test_blanket_directives_do_not_silence_config_warnings(temp_dir):
+    """Only a disable-next-line naming the rule works for invalid-config: a
+    region disable at the top of the file, or a bare all-rules next-line,
+    is the same blanket the exclude exemption closes."""
+    region = temp_dir / ".skillsaw.yaml"
+    region.write_text(
+        "# skillsaw-disable invalid-config\n"
+        'version: "0.19.0"\n'
+        "rules:\n"
+        "  agentskill-description:\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(region)
+    violations = Linter(RepositoryContext(temp_dir), config).run()
+    assert len(_option_warnings(violations, "agentskill-description")) == 1
+
+    bare = temp_dir / "bare" / ".skillsaw.yaml"
+    bare.parent.mkdir()
+    bare.write_text(
+        'version: "0.19.0"\n'
+        "rules:\n"
+        "  agentskill-description:\n"
+        "    # skillsaw-disable-next-line\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(bare)
+    violations = Linter(RepositoryContext(temp_dir / "bare"), config).run()
+    assert len(_option_warnings(violations, "agentskill-description")) == 1
+
+
+def test_baseline_absorbs_option_warnings(temp_dir):
+    """invalid-config is deliberately baselinable — the documented migration
+    path — and the linter's baseline subtraction absorbs it end to end."""
+    from skillsaw.baseline import build_baseline
+
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\nrules:\n  agentskill-description:\n    severty: error\n'
+    )
+    config = LinterConfig.from_file(config_path)
+
+    first = Linter(RepositoryContext(temp_dir), config).run()
+    assert len(_option_warnings(first, "agentskill-description")) == 1
+
+    baseline = build_baseline(first, temp_dir, "0.19.0")
+    second = Linter(RepositoryContext(temp_dir), config, baseline=baseline).run()
+    assert _option_warnings(second, "agentskill-description") == []
+
+
 def test_fix_filters_config_warnings_like_run(temp_dir):
     """fix() returns config warnings through the same filter pipeline as
     run(): an inline-suppressed warning must not resurface there."""

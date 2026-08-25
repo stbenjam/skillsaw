@@ -195,6 +195,17 @@ class Rule(ABC):
         try:
             entry = self.config_schema[name]
         except KeyError:
+            # Mirrors linter.UNIVERSAL_RULE_OPTION_KEYS (kept literal to
+            # avoid a module cycle; pinned by a test). The universal keys
+            # are reserved: declare one in config_schema to read it here.
+            if name in ("enabled", "severity", "exclude"):
+                raise KeyError(
+                    f"rule '{self.rule_id}' does not declare universal key '{name}' "
+                    "in its config_schema — read 'enabled'/'severity' via "
+                    "self.enabled / self.severity; per-rule 'exclude' is applied "
+                    f"by the linter. Declare '{name}' in config_schema to also "
+                    "read it here."
+                ) from None
             raise KeyError(f"rule '{self.rule_id}' has no config_schema option '{name}'") from None
         if not isinstance(entry, dict):
             raise ValueError(

@@ -148,6 +148,13 @@ than inside a per-block loop. Supported type names are `list`/`array`,
 `int`/`integer`, `float`/`number`, `bool`/`boolean`, `dict`/`object`, and
 `str`/`string`.
 
+The universal keys `enabled`, `severity`, and `exclude` are reserved: read
+`enabled` and `severity` through `self.enabled` / `self.severity`, and leave
+`exclude` to the linter's per-rule filter. `setting()` raises `KeyError` for
+them unless the rule declares the key in its own `config_schema` — then
+`setting()` reads it normally, and the linter's list-of-strings shape check
+for `exclude` still runs first.
+
 ```python
 class NoTodoInInstructionsRule(Rule):
     config_schema = {

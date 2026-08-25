@@ -39,8 +39,11 @@ ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 # excludes select lint targets, and the config's own content must not
 # decide whether the config gets validated — `exclude: ["*.yaml"]` would
 # otherwise silently drop every unknown-rule/unknown-option warning.
-# Inline `# skillsaw-disable` directives inside the config still apply:
-# they are a deliberate, visible edit at the exact line the warning names.
+# Inline suppression stays available, but only in its precise form: a
+# `# skillsaw-disable-next-line` naming the rule ID — a deliberate,
+# visible edit at the exact line the warning names. Region `disable`
+# forms and bare all-rules directives are the same blanket this set
+# exists to close.
 _UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
 
 # Config keys every rule accepts regardless of its config_schema. `enabled`
@@ -900,6 +903,8 @@ class Linter:
         smap = self._get_suppression_map(violation.file_path)
         if smap is None:
             return False
+        if violation.rule_id in _UNEXCLUDABLE_RULE_IDS:
+            return smap.is_explicitly_suppressed(violation.rule_id, file_line)
         return smap.is_suppressed(violation.rule_id, file_line)
 
     def _compiled_copy_paths(self) -> Set[Path]:

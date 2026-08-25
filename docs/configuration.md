@@ -225,7 +225,9 @@ filtered out before results are reported. The one exception is
 exclude patterns (global or per-rule), so an `exclude` entry matching the
 config file cannot silently turn off config validation. To silence a specific
 config warning, put a `# skillsaw-disable-next-line invalid-config` comment
-on the line above the flagged one.
+on the line above the flagged one. Only that precise form works for these
+warnings: a region `# skillsaw-disable`, or a bare `disable-next-line`
+naming no rule, does not apply to them.
 
 ## Rule Options
 

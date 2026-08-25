@@ -1367,6 +1367,25 @@ class TestRuleSetting:
         assert isinstance(value, float)
         assert value == 4.0
 
+    def test_universal_keys_are_not_readable_unless_declared(self):
+        """The universal keys are reserved: setting() names the dedicated
+        accessors, unless the rule declares the key in its own schema."""
+        from skillsaw.linter import UNIVERSAL_RULE_OPTION_KEYS
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = self._rule({})
+        for key in ("enabled", "severity", "exclude"):
+            with pytest.raises(KeyError, match="universal key"):
+                rule.setting(key)
+        # The literal tuple in Rule.setting() must track the linter's set.
+        assert UNIVERSAL_RULE_OPTION_KEYS == {"enabled", "severity", "exclude"}
+
+        # A rule that declares the key reads it normally.
+        declared = AgentSkillUnreferencedFilesRule({})
+        assert declared.setting("exclude") == []
+
     def test_int_default_for_float_option_coerces(self):
         """A float-typed option must read as float configured or not — an
         int schema default gets the same coercion as an int override."""

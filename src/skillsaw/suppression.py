@@ -221,6 +221,9 @@ class SuppressionMap:
     _suppressed_lines: Dict[int, FrozenSet[str]] = field(default_factory=dict)
     # Set of lines where ALL rules are suppressed (empty rule list in disable)
     _fully_suppressed_lines: FrozenSet[int] = field(default_factory=frozenset)
+    # Maps file line number -> rule IDs suppressed by a ``disable-next-line``
+    # directive that NAMED them (region and bare all-rules forms excluded).
+    _explicit_next_line: Dict[int, FrozenSet[str]] = field(default_factory=dict)
 
     def is_suppressed(self, rule_id: str, file_line: int) -> bool:
         """Check if a rule is suppressed at a given file line number."""
@@ -230,6 +233,16 @@ class SuppressionMap:
         if suppressed and rule_id in suppressed:
             return True
         return False
+
+    def is_explicitly_suppressed(self, rule_id: str, file_line: int) -> bool:
+        """Suppressed by a ``disable-next-line`` naming *rule_id* itself.
+
+        The strict check for diagnostics exempt from blanket suppression:
+        region ``disable`` forms and bare all-rules directives do not count,
+        only the precise, visible edit at the flagged line.
+        """
+        explicit = self._explicit_next_line.get(file_line)
+        return bool(explicit and rule_id in explicit)
 
 
 def build_suppression_map(
@@ -287,8 +300,10 @@ def build_suppression_map(
 
     suppressed_lines: Dict[int, Set[str]] = {}
     fully_suppressed_lines: Set[int] = set()
+    explicit_next_line: Dict[int, Set[str]] = {}
 
     next_line_rules: Optional[List[str]] = None
+    next_line_explicit: Set[str] = set()
 
     for line_num_0 in range(total_lines):
         content_line = line_num_0 + 1  # 1-based within the content
@@ -312,6 +327,9 @@ def build_suppression_map(
                     for rid in d.rule_ids:
                         if rid not in next_line_rules:
                             next_line_rules.append(rid)
+                # Track explicitly named IDs separately — a bare directive
+                # widens next_line_rules to all-rules but adds nothing here.
+                next_line_explicit.update(d.rule_ids)
             elif d.kind == "disable":
                 if d.rule_ids:
                     disabled.update(d.rule_ids)
@@ -338,7 +356,10 @@ def build_suppression_map(
                 suppressed_lines.setdefault(file_line, set()).update(next_line_rules)
             else:
                 fully_suppressed_lines.add(file_line)
+            if next_line_explicit:
+                explicit_next_line.setdefault(file_line, set()).update(next_line_explicit)
             next_line_rules = None
+            next_line_explicit = set()
 
         # Apply "disable all" to this line
         if disable_all_active:
@@ -356,6 +377,7 @@ def build_suppression_map(
     return SuppressionMap(
         _suppressed_lines=frozen,
         _fully_suppressed_lines=frozenset(fully_suppressed_lines),
+        _explicit_next_line={line: frozenset(rules) for line, rules in explicit_next_line.items()},
     )
 
 
