@@ -1341,7 +1341,7 @@ class TestRuleSetting:
 
     def test_undeclared_name_raises_keyerror_naming_rule_and_option(self):
         rule = self._rule({})
-        with pytest.raises(KeyError, match="content-section-length.*no-such-option"):
+        with pytest.raises(KeyError, match=r"content-section-length.*no-such-option"):
             rule.setting("no-such-option")
 
     def test_int_coerced_for_float_option(self):
@@ -1378,11 +1378,11 @@ class TestRuleSetting:
     def test_malformed_schema_entry_names_rule_option_and_defect(self):
         rule = self._rule({})
         rule.config_schema = {"bad": "not-a-mapping"}
-        with pytest.raises(ValueError, match="bad.*content-section-length.*mapping"):
+        with pytest.raises(ValueError, match=r"bad.*content-section-length.*mapping"):
             rule.setting("bad")
 
         rule.config_schema = {"bad": {"type": "int"}}
-        with pytest.raises(ValueError, match="bad.*content-section-length.*missing 'default'"):
+        with pytest.raises(ValueError, match=r"bad.*content-section-length.*missing 'default'"):
             rule.setting("bad")
 
     def test_null_override_resolves_to_schema_default(self):

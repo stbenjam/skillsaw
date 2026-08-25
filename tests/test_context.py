@@ -850,6 +850,24 @@ def test_lowercase_skill_md_is_not_an_agentskills_entrypoint(temp_dir):
     assert context.skills == []
 
 
+def test_dangling_skill_md_symlink_is_not_an_agentskills_entrypoint(temp_dir):
+    """A dangling SKILL.md symlink has a directory entry but no target;
+    ``Path.exists()`` semantics ignored it before the scandir probe too."""
+    (temp_dir / "SKILL.md").symlink_to(temp_dir / "missing-target.md")
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
+def test_exact_name_exists_rejects_malformed_path():
+    """An embedded NUL raises ValueError from os.scandir, not OSError."""
+    from skillsaw.discovery import exact_name_exists
+
+    assert exact_name_exists(Path("bad\0path"), "SKILL.md") is False
+
+
 def test_apm_dir_does_not_skip_format_detection(temp_dir):
     """.apm/ repos still detect instruction file formats normally"""
     apm_dir = temp_dir / ".apm"

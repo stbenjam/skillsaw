@@ -601,3 +601,32 @@ def test_config_option_warning_carries_config_path(valid_plugin, temp_dir):
     assert len(warnings) == 1
     assert warnings[0].file_path == config_path.resolve()
     assert warnings[0].file_line == 4
+
+
+def test_config_warnings_survive_global_exclude_of_config_file(temp_dir):
+    """A global exclude matching the config file must not silence
+    invalid-config warnings — they point at the config itself, not at a
+    lint target the exclude was written to skip."""
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\n'
+        "exclude:\n"
+        '  - "**/*.yaml"\n'
+        "rules:\n"
+        "  nonexistent-rule:\n"
+        "    enabled: true\n"
+        "  agentskill-description:\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(config_path)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=config.exclude_patterns)
+    violations = Linter(context, config).run()
+
+    unknown_rule = [
+        v for v in violations if v.rule_id == "invalid-config" and "nonexistent-rule" in v.message
+    ]
+    assert len(unknown_rule) == 1
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "Unknown option 'severty'" in warnings[0].message

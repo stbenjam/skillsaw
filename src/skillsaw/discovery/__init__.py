@@ -42,9 +42,13 @@ def exact_name_exists(parent: Path, name: str) -> bool:
     """
     try:
         with os.scandir(parent) as entries:
-            return any(entry.name == name for entry in entries)
-    except OSError:
+            if all(entry.name != name for entry in entries):
+                return False
+    except (OSError, ValueError):
         return False
+    # A dangling symlink still has a directory entry; keep ``Path.exists()``'s
+    # target-existence semantics so a broken ``SKILL.md`` link is not a skill.
+    return (parent / name).exists()
 
 
 def merge_plugin_dirs(*plugin_groups: Iterable[Path]) -> List[Path]:

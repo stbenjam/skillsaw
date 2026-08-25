@@ -830,6 +830,12 @@ class Linter:
         """Check if a violation's file path matches any exclude pattern."""
         if violation.file_path is None:
             return False
+        if violation.rule_id == "invalid-config":
+            # Config-validation warnings point at the config file itself;
+            # global excludes select lint targets and must not silence
+            # warnings about the config that defines them (a "**/*.yaml"
+            # exclude would otherwise hide unknown-rule/option typos).
+            return False
         return self.context.is_path_excluded(violation.file_path)
 
     def _is_rule_excluded(self, rule_id: str, file_path: Optional[Path]) -> bool:
