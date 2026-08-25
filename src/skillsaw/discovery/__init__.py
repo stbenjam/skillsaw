@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from skillsaw.paths import safe_resolve
+from skillsaw.paths import safe_exists, safe_resolve
 
 # Repository-relative directories that host Agent Skills by convention.
 # The ``SKILL.md`` spec is portable, so every path added here earns the
@@ -32,7 +32,7 @@ CONVENTIONAL_SKILL_DIRS = (
 
 
 def exact_name_exists(parent: Path, name: str) -> bool:
-    """Return whether *parent* contains an entry with exactly *name*.
+    """Return whether *parent* contains a file entry with exactly *name*.
 
     ``Path.exists()`` follows the host filesystem's case rules. On macOS a
     lowercase ``skill.md`` therefore satisfies a probe for ``SKILL.md``, even
@@ -40,15 +40,20 @@ def exact_name_exists(parent: Path, name: str) -> bool:
     preserves the authored spelling on both case-sensitive and insensitive
     filesystems.
     """
+    # O(1) reject before listing the directory: most candidates have no
+    # entry under this name at all, callers feed plain files as *parent*,
+    # and a dangling symlink has an entry but no target. This keeps the
+    # repo-wide discovery walks at one stat per miss, as before the
+    # case-sensitive probe.
+    if not safe_exists(parent / name):
+        return False
     try:
         with os.scandir(parent) as entries:
-            if all(entry.name != name for entry in entries):
-                return False
+            # ``is_file()`` follows symlinks, so a link to a real file
+            # matches while a directory squatting on the name does not.
+            return any(entry.name == name and entry.is_file() for entry in entries)
     except (OSError, ValueError):
         return False
-    # A dangling symlink still has a directory entry; keep ``Path.exists()``'s
-    # target-existence semantics so a broken ``SKILL.md`` link is not a skill.
-    return (parent / name).exists()
 
 
 def merge_plugin_dirs(*plugin_groups: Iterable[Path]) -> List[Path]:

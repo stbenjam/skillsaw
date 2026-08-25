@@ -175,6 +175,10 @@ class LinterConfig:
 
         config_rule_lines: Dict[Any, int] = {}
         config_option_lines: Dict[Tuple[Any, Any], int] = {}
+        # Lines come from a second, ruamel (YAML 1.2) parse while the values
+        # above come from PyYAML (YAML 1.1). The parsers disagree on 1.1-isms:
+        # `on:` is the key True to PyYAML but "on" to ruamel, so such keys
+        # miss the commented map and simply get no line number.
         commented_data, _, _ = read_yaml_commented(config_path)
         commented_rules = commented_data.get("rules") if isinstance(commented_data, dict) else None
         if isinstance(commented_rules, dict):

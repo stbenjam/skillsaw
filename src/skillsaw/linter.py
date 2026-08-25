@@ -34,6 +34,15 @@ if TYPE_CHECKING:
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
 
+# Violations exempt from path-based suppression (global and per-rule
+# excludes). Config-validation warnings point at the config file itself;
+# excludes select lint targets, and the config's own content must not
+# decide whether the config gets validated — `exclude: ["*.yaml"]` would
+# otherwise silently drop every unknown-rule/unknown-option warning.
+# Inline `# skillsaw-disable` directives inside the config still apply:
+# they are a deliberate, visible edit at the exact line the warning names.
+_UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
+
 # Config keys every rule accepts regardless of its config_schema. `enabled`
 # is validated at config load, `severity` at rule construction, and `exclude`
 # is read by the linter's per-rule exclude filter.
@@ -646,19 +655,27 @@ class Linter:
         rule_class = self._known_rule_classes.get(rule_id)
         if rule_class is None:
             return []
-        schema = getattr(rule_class, "config_schema", {}) or {}
-        if not isinstance(schema, dict):
-            # A malformed third-party schema (e.g. a list of option names)
-            # must not abort the lint — treat it as undeclared.
+        try:
+            schema = getattr(rule_class, "config_schema", {}) or {}
+            if not isinstance(schema, dict):
+                # A malformed third-party schema (e.g. a list of option names)
+                # must not abort the lint — treat it as undeclared.
+                schema = {}
+            else:
+                # Same for non-string schema keys: they can never match a config
+                # key and would crash the sorted() feeding did-you-mean.
+                schema = {k: v for k, v in schema.items() if isinstance(k, str)}
+            strict_options = getattr(rule_class, "strict_options", True)
+        except Exception:
+            # Attribute access itself can raise on a third-party class (a
+            # descriptor, a dict subclass whose __bool__/items raises).
+            # Validation runs outside the fault isolation rule execution
+            # gets, so treat the schema as undeclared rather than abort.
             schema = {}
-        else:
-            # Same for non-string schema keys: they can never match a config
-            # key and would crash the sorted() feeding did-you-mean.
-            schema = {k: v for k, v in schema.items() if isinstance(k, str)}
+            strict_options = True
         if rule_id not in self._builtin_rule_ids and not schema:
             return []
         allowed = set(schema) | UNIVERSAL_RULE_OPTION_KEYS
-        strict_options = getattr(rule_class, "strict_options", True)
 
         violations: List[RuleViolation] = []
         for key, value in overrides.items():
@@ -830,17 +847,15 @@ class Linter:
         """Check if a violation's file path matches any exclude pattern."""
         if violation.file_path is None:
             return False
-        if violation.rule_id == "invalid-config":
-            # Config-validation warnings point at the config file itself;
-            # global excludes select lint targets and must not silence
-            # warnings about the config that defines them (a "**/*.yaml"
-            # exclude would otherwise hide unknown-rule/option typos).
+        if violation.rule_id in _UNEXCLUDABLE_RULE_IDS:
             return False
         return self.context.is_path_excluded(violation.file_path)
 
     def _is_rule_excluded(self, rule_id: str, file_path: Optional[Path]) -> bool:
         """Check if a file path matches a rule's per-rule excludes patterns."""
         if file_path is None:
+            return False
+        if rule_id in _UNEXCLUDABLE_RULE_IDS:
             return False
         exclude = self.config.get_rule_config(rule_id).get("exclude")
         if not isinstance(exclude, list) or not exclude:

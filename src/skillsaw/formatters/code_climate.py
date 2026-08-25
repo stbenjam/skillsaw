@@ -34,7 +34,11 @@ def format_code_climate(
         fingerprint_input = f"{v.rule_id}:{rel or ''}:{v.file_line or ''}"
         if v.fingerprint_discriminator:
             fingerprint_input += f":{v.fingerprint_discriminator}"
-        fingerprint = hashlib.sha256(fingerprint_input.encode()).hexdigest()
+        # "surrogatepass" matches baseline.py's fingerprint encoding: the
+        # discriminator can carry raw config keys, and a quoted YAML key
+        # like "\uD800bad" materializes a lone surrogate that a strict
+        # encode would crash on.
+        fingerprint = hashlib.sha256(fingerprint_input.encode("utf-8", "surrogatepass")).hexdigest()
 
         entry = {
             "description": v.message,

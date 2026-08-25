@@ -1358,6 +1358,15 @@ class TestRuleSetting:
         rule = SecurityEncodedPayloadRule({"entropy-threshold": True})
         assert rule.setting("entropy-threshold") is True
 
+    def test_number_alias_coerces_like_float(self):
+        """The docs present "number" and "float" as equivalent spellings, so
+        an int override must coerce identically under both."""
+        rule = self._rule({"budget": 4})
+        rule.config_schema = {"budget": {"type": "number", "default": 0.5}}
+        value = rule.setting("budget")
+        assert isinstance(value, float)
+        assert value == 4.0
+
     def test_mutable_default_returned_as_copy(self):
         from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
         from skillsaw.rules.builtin.agentskills.unreferenced_files import (
@@ -1374,6 +1383,19 @@ class TestRuleSetting:
         patterns = list_rule.setting("exclude")
         patterns.append("generated/**")
         assert list_rule.setting("exclude") == []
+
+    def test_mutable_override_returned_as_copy(self):
+        """Configured values get the same copy protection as defaults —
+        mutating the returned list must not leak into the user's config."""
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = AgentSkillUnreferencedFilesRule({"exclude": ["a/**"]})
+        patterns = rule.setting("exclude")
+        patterns.append("b/**")
+        assert rule.setting("exclude") == ["a/**"]
+        assert rule.config["exclude"] == ["a/**"]
 
     def test_malformed_schema_entry_names_rule_option_and_defect(self):
         rule = self._rule({})

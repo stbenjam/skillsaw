@@ -986,6 +986,24 @@ def test_gitlab_metric_keeps_legacy_fingerprint(valid_plugin):
     assert fingerprint == hashlib.sha256(legacy_input.encode()).hexdigest()
 
 
+def test_gitlab_fingerprint_survives_surrogate_discriminator(valid_plugin):
+    """A quoted YAML key like "\\uD800bad" reaches the discriminator as a
+    lone surrogate; the fingerprint encode must not crash on it."""
+    context = RepositoryContext(valid_plugin)
+    violation = RuleViolation(
+        rule_id="invalid-config",
+        severity=Severity.WARNING,
+        message="Unknown option for rule 'agentskill-description'",
+        file_path=Path(".skillsaw.yaml"),
+        line=3,
+        fingerprint_discriminator="agentskill-description:\ud800bad",
+    )
+
+    output = format_code_climate([violation], context, [], "1.0.0")
+    fingerprint = json.loads(output)[0]["fingerprint"]
+    assert len(fingerprint) == 64
+
+
 def test_gitlab_fingerprint_is_sha256_hex(valid_plugin):
     context = RepositoryContext(valid_plugin)
     violations = _make_violations()

@@ -1,0 +1,7 @@
+version: "99.0.0"
+rules:
+  content-weak-language: &base
+    enabled: true
+    severity: warning
+  content-section-length:
+    <<: *base

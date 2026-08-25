@@ -693,12 +693,18 @@ def commented_key_line(node: Any, key: str) -> Optional[int]:
     """Get the 1-based line number of *key* in a ruamel ``CommentedMap``."""
     if isinstance(node, CommentedMap) and key in node:
         try:
-            return node.lc.key(key)[0] + 1
+            pos = node.lc.key(key)
         except KeyError:
             # A value inherited through a YAML merge key (``<<: *anchor``)
             # is visible to ``in``/``get`` but has no local position —
             # omit the line rather than crash the rule.
             return None
+        if pos is None:
+            # When a map's keys ALL come from a merge, ruamel leaves
+            # ``lc.data`` unset and ``lc.key()`` returns None instead of
+            # raising — same answer: no local position, no line.
+            return None
+        return pos[0] + 1
     return None
 
 

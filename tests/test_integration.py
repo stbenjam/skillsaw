@@ -5770,3 +5770,19 @@ class TestInvalidRuleOptionsConfig:
         r = run_lint(repo, "--fail-on", "warning", config=repo / ".skillsaw.yaml")
         assert len(self._option_warnings(r)) == 3
         assert r["rc"] == 1
+
+
+class TestYamlMergeKeyConfig:
+    """A config built from YAML anchors and merge keys (``<<: *anchor``) must
+    load and lint — merged-in keys have no local line position in ruamel's
+    commented map, and the config-load path has no rule-execution-error
+    fault isolation to absorb a crash."""
+
+    FIXTURE = "config/yaml-merge-keys"
+
+    def test_merge_key_config_lints_without_crashing(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+
+        assert r["rc"] == 0
+        assert all(v["rule_id"] != "invalid-config" for v in violations(r))

@@ -630,3 +630,42 @@ def test_config_warnings_survive_global_exclude_of_config_file(temp_dir):
     warnings = _option_warnings(violations, "agentskill-description")
     assert len(warnings) == 1
     assert "Unknown option 'severty'" in warnings[0].message
+
+
+def test_config_warnings_survive_self_referential_rule_exclude(temp_dir):
+    """rules: {invalid-config: {exclude: ["*"]}} must not suppress the
+    config warnings reported under that synthetic rule ID."""
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\n'
+        "rules:\n"
+        "  invalid-config:\n"
+        '    exclude: ["*"]\n'
+        "  agentskill-description:\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(config_path)
+
+    violations = Linter(RepositoryContext(temp_dir), config).run()
+
+    warnings = _option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "Unknown option 'severty'" in warnings[0].message
+
+
+def test_inline_directive_still_silences_a_config_warning(temp_dir):
+    """The deliberate escape hatch: an inline skillsaw-disable-next-line
+    comment above the flagged config line suppresses that one warning."""
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\n'
+        "rules:\n"
+        "  agentskill-description:\n"
+        "    # skillsaw-disable-next-line invalid-config\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(config_path)
+
+    violations = Linter(RepositoryContext(temp_dir), config).run()
+
+    assert _option_warnings(violations, "agentskill-description") == []

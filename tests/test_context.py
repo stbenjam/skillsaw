@@ -868,6 +868,66 @@ def test_exact_name_exists_rejects_malformed_path():
     assert exact_name_exists(Path("bad\0path"), "SKILL.md") is False
 
 
+def test_exact_name_exists_reads_directory_entries(temp_dir):
+    """The probe matches exactly one shape: a file entry spelled exactly
+    *name* — regardless of the host filesystem's case rules."""
+    from skillsaw.discovery import exact_name_exists
+
+    skill_dir = temp_dir / "real"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("---\nname: real\ndescription: x\n---\n")
+    assert exact_name_exists(skill_dir, "SKILL.md") is True
+
+    miscased = temp_dir / "miscased"
+    miscased.mkdir()
+    (miscased / "skill.md").write_text("---\nname: miscased\ndescription: x\n---\n")
+    assert exact_name_exists(miscased, "SKILL.md") is False
+
+    assert exact_name_exists(temp_dir / "missing", "SKILL.md") is False
+
+    # Discovery walks feed plain files as *parent*; must stay a cheap miss.
+    assert exact_name_exists(skill_dir / "SKILL.md", "SKILL.md") is False
+
+    linked = temp_dir / "linked"
+    linked.mkdir()
+    (linked / "SKILL.md").symlink_to(skill_dir / "SKILL.md")
+    assert exact_name_exists(linked, "SKILL.md") is True
+
+    squatting = temp_dir / "squatting"
+    (squatting / "SKILL.md").mkdir(parents=True)
+    assert exact_name_exists(squatting, "SKILL.md") is False
+
+
+def test_case_insensitive_lookup_does_not_invent_a_skill(temp_dir, monkeypatch):
+    """Emulate a case-folding host (macOS/Windows) on any platform: probes
+    for SKILL.md succeed when only skill.md exists. Discovery must still
+    reject the mis-cased entrypoint — this fails against the old
+    ``Path.exists()`` probe on case-sensitive CI too."""
+    import os as _os
+
+    (temp_dir / "skill.md").write_text(
+        "---\nname: lowercase\ndescription: Not a portable entrypoint.\n---\n"
+    )
+
+    real_exists = Path.exists
+
+    def case_folding_exists(self, **kwargs):
+        if real_exists(self, **kwargs):
+            return True
+        try:
+            with _os.scandir(self.parent) as entries:
+                return any(entry.name.lower() == self.name.lower() for entry in entries)
+        except OSError:
+            return False
+
+    monkeypatch.setattr(Path, "exists", case_folding_exists)
+
+    context = RepositoryContext(temp_dir)
+
+    assert RepositoryType.AGENTSKILLS not in context.repo_types
+    assert context.skills == []
+
+
 def test_apm_dir_does_not_skip_format_detection(temp_dir):
     """.apm/ repos still detect instruction file formats normally"""
     apm_dir = temp_dir / ".apm"

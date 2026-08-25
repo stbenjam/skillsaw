@@ -55,6 +55,13 @@ Update every stale pin by hand — currently `pip install skillsaw==X.Y.Z` in
 `README.md` and `docs/ci.md`, and the pre-commit `rev: vX.Y.Z` in `README.md`
 and `docs/pre-commit.md`. Never touch historical "Since vX.Y.Z" lines in `docs/rules/`.
 
+Also check the documented plugin dependency floor: `grep -rn "skillsaw>=" docs/
+skills/ examples/`. The floor names the first release shipping `Rule.setting()`
+and must not exceed the version you are releasing — if it does, release the
+version the floor names (it is a minor-feature floor), or lower the floor to
+the version being released. A floor above the released version makes every
+scaffolded plugin uninstallable.
+
 ## Step 3: Create a version-bump PR
 
 `main` is branch-protected — a direct push is rejected, so the bump goes

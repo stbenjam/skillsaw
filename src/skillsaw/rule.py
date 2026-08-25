@@ -186,9 +186,11 @@ class Rule(ABC):
         Only options declared in ``config_schema`` can be read — an undeclared
         name raises ``KeyError`` so a read/declaration mismatch fails fast in
         development. An explicit ``null`` in config resolves to the default.
-        Mutable (list/dict) defaults are returned as copies so callers cannot
-        corrupt the shared schema. An int override for a float-typed option is
-        coerced to float; any other user value is returned unchanged.
+        Mutable (list/dict) values — overrides as well as defaults — are
+        returned as copies so callers can neither corrupt the shared schema
+        nor mutate the user's config in place. An int override for a
+        float/number-typed option is coerced to float; any other user value
+        is returned unchanged.
         """
         try:
             entry = self.config_schema[name]
@@ -204,12 +206,15 @@ class Rule(ABC):
             )
         value = self.config.get(name)
         if value is None:
-            default = entry["default"]
-            if isinstance(default, (list, dict)):
-                return copy.deepcopy(default)
-            return default
-        if entry.get("type") == "float" and isinstance(value, int) and not isinstance(value, bool):
+            value = entry["default"]
+        elif (
+            entry.get("type") in ("float", "number")
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
             return float(value)
+        if isinstance(value, (list, dict)):
+            return copy.deepcopy(value)
         return value
 
     @property
