@@ -668,7 +668,14 @@ class Linter:
             else:
                 # Same for non-string schema keys: they can never match a config
                 # key and would crash the sorted() feeding did-you-mean.
-                schema = {k: v for k, v in schema.items() if isinstance(k, str)}
+                # dict(v) detaches entries from third-party dict subclasses,
+                # so no overridden method (get, __getitem__) can raise later,
+                # outside this guard, mid-validation.
+                schema = {
+                    k: dict(v) if isinstance(v, dict) else v
+                    for k, v in schema.items()
+                    if isinstance(k, str)
+                }
             # bool() now: a deferred truth test on a third-party object
             # whose __bool__ raises would escape this guard.
             strict_options = bool(getattr(rule_class, "strict_options", True))

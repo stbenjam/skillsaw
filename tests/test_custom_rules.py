@@ -926,6 +926,48 @@ def test_raising_strict_options_does_not_abort_validation(valid_plugin, temp_dir
     assert _custom_option_warnings(violations, "tricky-strict-rule") == []
 
 
+CUSTOM_RULE_WITH_RAISING_ENTRY_GET = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class _RaisingGet(dict):
+    def get(self, *args, **kwargs):
+        raise RuntimeError("no get for you")
+
+class EntryRule(Rule):
+    config_schema = {"opt": _RaisingGet({"type": "int", "default": 1})}
+
+    @property
+    def rule_id(self) -> str:
+        return "raising-entry-rule"
+
+    @property
+    def description(self) -> str:
+        return "schema entry is a dict subclass with a raising get()"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_raising_schema_entry_get_still_validates(valid_plugin, temp_dir):
+    """Schema entries are detached (dict-copied) inside the guard, so a dict
+    subclass whose get() raises neither aborts the lint nor skips the type
+    check its plain contents describe."""
+    rule_file = temp_dir / "entry_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_RAISING_ENTRY_GET)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["raising-entry-rule"] = {"enabled": True, "opt": "not-an-int"}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "raising-entry-rule")
+    assert len(warnings) == 1
+    assert "expects int, got str" in warnings[0].message
+
+
 CUSTOM_RULE_SHADOWING_BUILTIN = """
 from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
 from typing import List
