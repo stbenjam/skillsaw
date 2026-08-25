@@ -254,8 +254,10 @@ validation: unknown option keys or wrong-typed option values under the rule's co
 entry are reported as `invalid-config` warnings, with the schema as the
 source of truth. Declare every option the rule reads and use `self.setting()`
 to resolve overrides against schema defaults; that API requires skillsaw
-0.20.0 or newer. A rule without a `config_schema` is exempt — its option
-names are unknowable to the linter. For a partial migration, set
+0.20.0 or newer. A rule without a `config_schema` skips unknown-option and
+type validation — its option names are unknowable to the linter — but the
+universal `exclude` key keeps its shape check, since the linter itself reads
+it. For a partial migration, set
 `strict_options = False`; declared options stay type-checked while additional
 keys remain accepted until the schema is complete.
 
