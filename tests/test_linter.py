@@ -669,3 +669,20 @@ def test_inline_directive_still_silences_a_config_warning(temp_dir):
     violations = Linter(RepositoryContext(temp_dir), config).run()
 
     assert _option_warnings(violations, "agentskill-description") == []
+
+
+def test_fix_filters_config_warnings_like_run(temp_dir):
+    """fix() returns config warnings through the same filter pipeline as
+    run(): an inline-suppressed warning must not resurface there."""
+    config_path = temp_dir / ".skillsaw.yaml"
+    config_path.write_text(
+        'version: "0.19.0"\n'
+        "rules:\n"
+        "  agentskill-description:\n"
+        "    # skillsaw-disable-next-line invalid-config\n"
+        "    severty: error\n"
+    )
+    config = LinterConfig.from_file(config_path)
+
+    remaining, _fixes = Linter(RepositoryContext(temp_dir), config).fix()
+    assert _option_warnings(remaining, "agentskill-description") == []

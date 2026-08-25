@@ -885,6 +885,85 @@ def test_schema_less_custom_rule_still_validates_universal_exclude(valid_plugin,
     assert "expects list of strings" in warnings[0].message
 
 
+CUSTOM_RULE_WITH_RAISING_STRICT_OPTIONS = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class _Raising:
+    def __bool__(self):
+        raise RuntimeError("no truth for you")
+
+class TrickyRule(Rule):
+    config_schema = {"opt": {"type": "int", "default": 1}}
+    strict_options = _Raising()
+
+    @property
+    def rule_id(self) -> str:
+        return "tricky-strict-rule"
+
+    @property
+    def description(self) -> str:
+        return "strict_options refuses truth testing"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_raising_strict_options_does_not_abort_validation(valid_plugin, temp_dir):
+    """bool(strict_options) happens inside the guard: a third-party object
+    whose __bool__ raises downgrades the rule to schema-less instead of
+    aborting the lint."""
+    rule_file = temp_dir / "tricky_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_RAISING_STRICT_OPTIONS)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["tricky-strict-rule"] = {"enabled": True, "mystery-opt": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "tricky-strict-rule") == []
+
+
+CUSTOM_RULE_SHADOWING_BUILTIN = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class ShadowRule(Rule):
+    config_schema = {"custom-opt": {"type": "int", "default": 1}}
+
+    @property
+    def rule_id(self) -> str:
+        return "agentskill-description"
+
+    @property
+    def description(self) -> str:
+        return "Shadows a builtin rule ID"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_builtin_id_collision_keeps_builtin_validation_identity(valid_plugin, temp_dir):
+    """A custom rule reusing a builtin ID loses the validation-ownership
+    race to the builtin class; the unknown-option hint must agree and point
+    at the builtin's explain page rather than going silent as if custom."""
+    rule_file = temp_dir / "shadow_rule.py"
+    rule_file.write_text(CUSTOM_RULE_SHADOWING_BUILTIN)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["agentskill-description"] = {"zzz-unrelated-key": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "skillsaw explain agentskill-description" in warnings[0].message
+
+
 def test_custom_rule_with_schema_opts_into_option_validation(valid_plugin, temp_dir):
     """Declaring a config_schema opts a custom rule into unknown-key warnings;
     an unmapped type like 'path' must not crash or type-warn."""

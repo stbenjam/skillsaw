@@ -560,8 +560,12 @@ class Linter:
                         continue
 
                     self._known_rule_ids.add(rule_instance.rule_id)
-                    self._known_rule_classes.setdefault(rule_instance.rule_id, obj)
-                    self._custom_rule_ids.add(rule_instance.rule_id)
+                    # On an ID collision the earlier class (builtin or a
+                    # prior custom file) keeps validation ownership; only
+                    # tag the ID custom when this class actually won, so
+                    # the explain hint agrees with the schema used.
+                    if self._known_rule_classes.setdefault(rule_instance.rule_id, obj) is obj:
+                        self._custom_rule_ids.add(rule_instance.rule_id)
                     if getattr(rule_instance, "deprecated", None) is not None:
                         self._deprecated_known[rule_instance.rule_id] = rule_instance
                     if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
@@ -665,7 +669,9 @@ class Linter:
                 # Same for non-string schema keys: they can never match a config
                 # key and would crash the sorted() feeding did-you-mean.
                 schema = {k: v for k, v in schema.items() if isinstance(k, str)}
-            strict_options = getattr(rule_class, "strict_options", True)
+            # bool() now: a deferred truth test on a third-party object
+            # whose __bool__ raises would escape this guard.
+            strict_options = bool(getattr(rule_class, "strict_options", True))
         except Exception:
             # Attribute access itself can raise on a third-party class (a
             # descriptor, a dict subclass whose __bool__/items raises).
@@ -1102,9 +1108,14 @@ class Linter:
         Returns:
             Tuple of (remaining violations, autofix results)
         """
-        all_violations = self._validate_config()
+        # Config warnings go through the same filter pipeline run() uses
+        # (inline suppression, excludes, baseline) — but `checked` keeps the
+        # raw list so the final accounting pass sees everything, exactly
+        # like the raw per-rule extends below.
+        config_violations = self._validate_config()
+        all_violations = self._filter_violations(config_violations, record_baseline=False)
         all_fixes: List[AutofixResult] = []
-        checked: List[RuleViolation] = list(all_violations)
+        checked: List[RuleViolation] = list(config_violations)
 
         total = len(self.rules)
         for index, rule in enumerate(self.rules, 1):

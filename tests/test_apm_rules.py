@@ -448,6 +448,21 @@ def test_apm_structure_skill_missing_skill_md_warns(temp_dir):
     assert any("missing SKILL.md" in v.message for v in violations)
 
 
+def test_apm_structure_miscased_skill_md_still_warns(temp_dir):
+    """A lowercase skill.md is not an entrypoint; the validator must say so
+    on case-insensitive hosts too, matching discovery's exact-case probe."""
+    repo = temp_dir / "apm-repo"
+    repo.mkdir()
+    skill = repo / ".apm" / "skills" / "miscased-skill"
+    skill.mkdir(parents=True)
+    (skill / "skill.md").write_text("---\nname: miscased-skill\ndescription: x\n---\n")
+    (repo / "apm.yml").write_text("name: test\nversion: 1.0.0\ndescription: Test\n")
+
+    context = RepositoryContext(repo)
+    violations = ApmStructureValidRule().check(context)
+    assert any("missing SKILL.md" in v.message for v in violations)
+
+
 def test_apm_structure_consumer_manifest_passes(temp_dir):
     """A consumer-only apm.yml (dependencies, no .apm/ dir) should not warn"""
     repo = temp_dir / "consumer-repo"
