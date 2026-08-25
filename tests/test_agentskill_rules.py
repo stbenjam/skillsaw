@@ -1720,15 +1720,37 @@ def test_unreferenced_file_flagged(temp_dir):
     assert violations[0].severity == Severity.WARNING
 
 
-def test_miscased_nested_skill_md_does_not_prune_a_subdirectory(temp_dir):
+def test_miscased_nested_skill_md_does_not_prune_a_subdirectory(temp_dir, monkeypatch):
     """A subdirectory holding lowercase skill.md is not a nested skill —
     discovery decides that case-sensitively, and pruning must agree on
-    case-insensitive filesystems too, or the files fall out of every scan."""
+    case-insensitive filesystems too, or the files fall out of every scan.
+    A case-folding host is emulated so case-sensitive CI exercises the
+    divergence: the old ``is_file()`` pruning probe fails this test."""
+    import os as _os
+
     skill = _make_skill(temp_dir, body="Run the tool as described below.")
     nested = skill / "helpers"
     nested.mkdir()
     (nested / "skill.md").write_text("---\nname: helpers\ndescription: x\n---\n")
     (nested / "orphan.py").write_text("print('never mentioned')\n")
+
+    def case_folding(real):
+        def probe(self, **kwargs):
+            if real(self, **kwargs):
+                return True
+            try:
+                with _os.scandir(self.parent) as entries:
+                    return any(
+                        entry.name.lower() == self.name.lower() and entry.is_file()
+                        for entry in entries
+                    )
+            except OSError:
+                return False
+
+        return probe
+
+    monkeypatch.setattr(Path, "is_file", case_folding(Path.is_file))
+    monkeypatch.setattr(Path, "exists", case_folding(Path.exists))
 
     violations = AgentSkillUnreferencedFilesRule().check(RepositoryContext(skill))
     flagged = {str(v.file_path) for v in violations}
