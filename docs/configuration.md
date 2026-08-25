@@ -245,7 +245,10 @@ The per-rule `exclude` key must be a list of strings. A malformed value is
 ignored by the exclusion filter so it cannot silently disable a rule or crash
 the lint. These warnings count toward the grade and fail the run under
 `--fail-on warning` or `strict: true`; `skillsaw baseline` is the accepted way
-to carry known ones during a migration.
+to carry known ones during a migration. `invalid-config` warnings now point
+at the config file and line, which changes their baseline fingerprint — a
+baseline recorded on an older skillsaw resurfaces them once, so re-run
+`skillsaw baseline` after upgrading.
 
 ## Per-Rule Excludes
 
