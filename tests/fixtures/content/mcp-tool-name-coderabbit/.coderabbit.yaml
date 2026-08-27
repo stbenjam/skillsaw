@@ -1,0 +1,20 @@
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  path_instructions:
+    - path: "src/api/**"
+      instructions: |
+        Check for proper error handling and input validation on all
+        endpoints. When a handler changes behaviour described in a Jira
+        ticket, confirm the ticket text still matches by reading it with
+        mcp__plugin_jira_atlassian__getJiraIssue.
+    - path: "tests/**"
+      instructions: >
+        Verify assertions are specific, not just checking that no
+        exception is raised. Each test should follow a clear
+        arrange-act-assert structure.
+chat:
+  auto_reply: true

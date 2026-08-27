@@ -30,6 +30,7 @@ from skillsaw.rules.builtin.content_rules import (
     ContentPlaceholderTextRule,
 )
 from skillsaw.rules.builtin.content import (
+    ContentMcpToolNameRule,
     ContentUnclosedFenceRule,
     ContentRepeatedDirectiveRule,
     ContentEmphasisDensityRule,
@@ -5016,3 +5017,195 @@ class TestContentProgressiveDisclosureRule:
         assert len(violations) == 2
         metrics = [v.metric for v in violations]
         assert metrics[0] != metrics[1], "same-file blocks need distinct metrics"
+
+
+class TestContentMcpToolNameRule:
+    def _check(self, temp_dir):
+        return ContentMcpToolNameRule().check(RepositoryContext(temp_dir))
+
+    def test_rule_metadata(self):
+        rule = ContentMcpToolNameRule()
+        assert rule.rule_id == "content-mcp-tool-name"
+        assert rule.default_severity() == Severity.WARNING
+        assert rule.autofix_confidence == AutofixConfidence.SAFE
+        assert rule.supports_autofix
+
+    def test_detects_name_in_plain_prose(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Find the ticket with mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql\n"
+            "before opening a new one.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql" in violations[0].message
+        assert "'searchJiraIssuesUsingJql'" in violations[0].message
+
+    def test_detects_name_inside_inline_code_span(self, temp_dir):
+        """Code spans are the common case and the standard prose read blanks
+        them — scanning them is the regression this rule exists to hold."""
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nFetch files with `mcp__plugin_github_github__get_file_contents`.\n"
+        )
+        violations = self._check(temp_dir)
+        assert len(violations) == 1
+        assert violations[0].line == 3
+        assert "'get_file_contents'" in violations[0].message
+
+    def test_fenced_code_block_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\n"
+            "Grant the tool in settings:\n\n"
+            "```json\n"
+            '{"permissions": {"allow": ["mcp__plugin_github_github__get_file_contents"]}}\n'
+            "```\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_indented_code_block_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nGrant the tool:\n\n"
+            "    allow: mcp__plugin_github_github__get_file_contents\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_server_without_tool_segment_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nThe mcp__atlassian server backs every ticket lookup.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_empty_tool_segment_not_flagged(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nA truncated identifier like mcp__atlassian__ names no tool.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_short_name_alone_passes(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nFetch files with `get_file_contents` rather than raw HTTP.\n"
+        )
+        assert self._check(temp_dir) == []
+
+    def test_allow_config_exempts_listed_name(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(
+            "# Rules\n\nRun `mcp__internal__report__generate` for the weekly digest.\n"
+        )
+        assert len(self._check(temp_dir)) == 1
+
+        rule = ContentMcpToolNameRule()
+        rule.config = {"allow": ["mcp__internal__report__generate"]}
+        assert rule.check(RepositoryContext(temp_dir)) == []
+
+    def test_diagnostic_only_body_reported_not_fixable(self, temp_dir):
+        """A Cursor prompt hook's body is decoded out of a JSON string
+        literal, so a fix computed against it has no honest span in the
+        file that holds it.  check() must not advertise a fix that fix()
+        always skips."""
+        repo = copy_content_fixture("mcp-tool-name-hook-prompt", temp_dir)
+        violations = ContentMcpToolNameRule().check(RepositoryContext(repo))
+        by_name = {v.file_path.name: v for v in violations}
+        assert set(by_name) == {"hooks.json", "AGENTS.md"}
+        assert by_name["hooks.json"].fixable is False
+        assert by_name["hooks.json"].fix_confidence is None
+        assert by_name["AGENTS.md"].fixable is True
+        assert by_name["AGENTS.md"].fix_confidence == AutofixConfidence.SAFE
+
+    def test_yaml_embedded_body_is_fixable(self, temp_dir):
+        """A YAML-embedded body keeps real file lines, so file_span() can
+        translate its indented columns and the fix is honest."""
+        repo = copy_content_fixture("mcp-tool-name-coderabbit", temp_dir)
+        violations = ContentMcpToolNameRule().check(RepositoryContext(repo))
+        by_name = {v.file_path.name: v for v in violations}
+        assert set(by_name) == {".coderabbit.yaml", "CLAUDE.md"}
+        assert all(v.fixable for v in by_name.values())
+
+    def test_no_files_no_violations(self, temp_dir):
+        assert self._check(temp_dir) == []
+
+
+class TestContentMcpToolNameAutofix:
+    CONTENT = (
+        "# Rules\n\n"
+        "Search with mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql first.\n\n"
+        "Fetch files with `mcp__plugin_github_github__get_file_contents`.\n\n"
+        "The mcp__atlassian server needs no rewrite.\n\n"
+        "```json\n"
+        '{"allow": ["mcp__plugin_github_github__get_file_contents"]}\n'
+        "```\n"
+    )
+
+    def _fix(self, temp_dir):
+        context = RepositoryContext(temp_dir)
+        rule = ContentMcpToolNameRule()
+        return rule.fix(context, rule.check(context))
+
+    def test_fix_strips_prefix_in_text_and_code_span(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(self.CONTENT)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].confidence == AutofixConfidence.SAFE
+        fixed = fixes[0].fixed_content
+        assert "Search with searchJiraIssuesUsingJql first." in fixed
+        assert "Fetch files with `get_file_contents`." in fixed
+        # Untouched: the bare server name and the fenced config example.
+        assert "The mcp__atlassian server needs no rewrite." in fixed
+        assert '{"allow": ["mcp__plugin_github_github__get_file_contents"]}' in fixed
+
+    def test_fix_preserves_line_count(self, temp_dir):
+        (temp_dir / "CLAUDE.md").write_text(self.CONTENT)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content.count("\n") == self.CONTENT.count("\n")
+
+    def test_fix_handles_repeated_name_on_one_line(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        content = (
+            "# Rules\n\n" "Call `mcp__jira__getJiraIssue` then mcp__jira__getJiraIssue again.\n"
+        )
+        (temp_dir / "CLAUDE.md").write_text(content)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+        assert fixes[0].fixed_content == (
+            "# Rules\n\nCall `getJiraIssue` then getJiraIssue again.\n"
+        )
+
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []
+
+    def test_fix_is_idempotent_and_lints_clean(self, temp_dir):
+        from skillsaw.utils import invalidate_read_caches
+
+        (temp_dir / "CLAUDE.md").write_text(self.CONTENT)
+        fixes = self._fix(temp_dir)
+        assert len(fixes) == 1
+
+        (temp_dir / "CLAUDE.md").write_text(fixes[0].fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(temp_dir)) == []
+        assert self._fix(temp_dir) == []
+
+    def test_fix_splices_indented_yaml_embedded_body(self, temp_dir):
+        """The YAML block scalar is indented in the file; file_span() must
+        translate the body-relative column so the splice lands on the tool
+        name and nothing else on the line moves."""
+        from skillsaw.utils import invalidate_read_caches
+
+        repo = copy_content_fixture("mcp-tool-name-coderabbit", temp_dir)
+        fixes = self._fix(repo)
+        by_name = {f.file_path.name: f for f in fixes}
+        assert set(by_name) == {"CLAUDE.md", ".coderabbit.yaml"}
+
+        yaml_fix = by_name[".coderabbit.yaml"]
+        assert "        getJiraIssue." in yaml_fix.fixed_content
+        assert "mcp__" not in yaml_fix.fixed_content
+        assert yaml_fix.fixed_content.count("\n") == yaml_fix.original_content.count("\n")
+
+        for fix in fixes:
+            fix.file_path.write_text(fix.fixed_content)
+        invalidate_read_caches()
+        assert ContentMcpToolNameRule().check(RepositoryContext(repo)) == []
+        assert self._fix(repo) == []

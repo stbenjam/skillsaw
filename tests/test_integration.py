@@ -3104,6 +3104,7 @@ BROKEN_FIXTURES = [
     "content/repeated-directive",
     "content/emphasis-density",
     "content/progressive-disclosure",
+    "content/mcp-tool-name",
     "security/malicious-skill",
     "codex/broken",
     "cursor-rules/broken-frontmatter",
@@ -4393,6 +4394,7 @@ class TestSafeAutofixIdempotency:
         "agentskill-valid": 7,
         "claude-command-frontmatter": 3,
         "content-unlinked-internal-reference": 23,
+        "content-mcp-tool-name": 4,
         "cursor-rules-valid": 3,
     }
 

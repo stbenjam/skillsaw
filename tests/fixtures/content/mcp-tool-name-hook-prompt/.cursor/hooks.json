@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "type": "prompt",
+        "prompt": "Confirm this command does not touch the production ledger. If the change references a Jira ticket, read the ticket with mcp__plugin_jira_atlassian__getJiraIssue before approving."
+      }
+    ]
+  }
+}

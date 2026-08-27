@@ -22,6 +22,7 @@ from .emphasis_density import ContentEmphasisDensityRule
 from .missing_stop_condition import ContentMissingStopConditionRule
 from .inline_tool_examples import ContentInlineToolExamplesRule
 from .progressive_disclosure import ContentProgressiveDisclosureRule
+from .mcp_tool_name import ContentMcpToolNameRule
 
 __all__ = [
     "ContentWeakLanguageRule",
@@ -48,4 +49,5 @@ __all__ = [
     "ContentMissingStopConditionRule",
     "ContentInlineToolExamplesRule",
     "ContentProgressiveDisclosureRule",
+    "ContentMcpToolNameRule",
 ]

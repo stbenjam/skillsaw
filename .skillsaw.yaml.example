@@ -276,6 +276,12 @@ rules:
     # ignore-generated: true
     # similarity-max-sections: 400
 
+  # Detect fully-qualified MCP tool names that should use the short tool name
+  content-mcp-tool-name:
+    enabled: auto
+    severity: warning
+    # allow: []
+
   # Detect open-ended loop instructions (keep monitoring, poll, retry) without a stopping condition
   content-missing-stop-condition:
     enabled: false

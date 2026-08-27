@@ -64,3 +64,30 @@ Paths abutting parentheses must never be flagged or rewritten:
 
 A sentence can end right after a path like ./docs/api.md. The period stays
 outside the link when the path is wrapped.
+
+## MCP Tools
+
+Issue tracking and code review both go through MCP servers. Reference the
+tools by their short names:
+
+- Search for tickets with mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql
+- Read a ticket body with `mcp__plugin_jira_atlassian__getJiraIssue`
+- Fetch file contents with `mcp__plugin_github_github__get_file_contents`
+- Open a pull request with mcp__plugin_github_github__create_pull_request
+
+A bare server name such as mcp__atlassian has no tool segment and stays as
+written.
+
+Configuration examples keep the fully-qualified identifier, so nothing in
+the block below is rewritten:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_jira_atlassian__searchJiraIssuesUsingJql",
+      "mcp__plugin_github_github__get_file_contents"
+    ]
+  }
+}
+```
