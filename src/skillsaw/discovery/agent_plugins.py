@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Set
 
+from skillsaw.discovery import exact_name_exists
 from skillsaw.formats.agent_plugins import is_agent_plugin_schema
 from skillsaw.paths import contained_resolve, safe_is_dir, safe_is_file, safe_resolve
 from skillsaw.utils import read_json, read_text
@@ -132,6 +133,8 @@ def discover_agent_plugin_skills(package_root: Path) -> List[Path]:
     for child in children:
         resolved_child = contained_resolve(child, root)
         if resolved_child is None or not safe_is_dir(resolved_child):
+            continue
+        if not exact_name_exists(child, "SKILL.md"):
             continue
         entrypoint = contained_resolve(child / "SKILL.md", root)
         if entrypoint is None or not safe_is_file(entrypoint):

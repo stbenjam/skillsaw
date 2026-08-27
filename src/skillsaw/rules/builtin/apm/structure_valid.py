@@ -4,6 +4,7 @@ Rule: apm-structure-valid
 
 from typing import List
 
+from skillsaw.discovery import exact_name_exists
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.lint_target import ApmNode
@@ -81,7 +82,10 @@ class ApmStructureValidRule(Rule):
                 for item in skills_dir.iterdir():
                     if not item.is_dir() or item.name.startswith("."):
                         continue
-                    if not (item / "SKILL.md").exists():
+                    # Exact case, like discovery: a mis-cased skill.md is
+                    # not an entrypoint, and this report is the diagnostic
+                    # for it on case-insensitive hosts too.
+                    if not exact_name_exists(item, "SKILL.md"):
                         violations.append(
                             self.violation(
                                 f"Skill directory '{item.name}' is missing SKILL.md",

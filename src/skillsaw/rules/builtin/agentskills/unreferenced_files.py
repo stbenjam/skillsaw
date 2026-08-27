@@ -108,6 +108,7 @@ from skillsaw.markdown_doc import MarkdownDoc
 from skillsaw.blocks import ContentBlock
 from skillsaw.utils import read_text
 
+from skillsaw.discovery import exact_name_exists
 from skillsaw.paths import safe_is_dir, safe_is_file, safe_resolve
 
 from ._helpers import SKILL_REPO_TYPES, contained_skill_file
@@ -200,11 +201,12 @@ class AgentSkillUnreferencedFilesRule(Rule):
         # Per-run regex cache: needles (paths/filenames) repeat across the
         # markdown sources of a skill and across skills sharing file names.
         self._pattern_cache: Dict[Tuple[str, str], re.Pattern] = {}
-        directory_covers = self.config.get(
-            "directory_mention_covers",
-            self.config_schema["directory_mention_covers"]["default"],
-        )
-        exclude_patterns = list(self.config.get("exclude", []) or [])
+        directory_covers = self.setting("directory_mention_covers")
+        exclude_patterns = self.setting("exclude")
+        if not isinstance(exclude_patterns, list) or not all(
+            isinstance(pattern, str) for pattern in exclude_patterns
+        ):
+            exclude_patterns = []
         exclude_variants = [
             variant for pattern in exclude_patterns for variant in context.pattern_variants(pattern)
         ]
@@ -268,12 +270,15 @@ class AgentSkillUnreferencedFilesRule(Rule):
         try:
             for dirpath, dirnames, filenames in os.walk(skill_path):
                 base = Path(dirpath)
+                # Same nested-skill predicate as discovery: a subdirectory
+                # with a mis-cased skill.md is not a nested skill, so its
+                # files stay in this skill's scan on every filesystem.
                 dirnames[:] = sorted(
                     d
                     for d in dirnames
                     if not d.startswith(".")
                     and not (base / d).is_symlink()
-                    and not (base / d / "SKILL.md").is_file()
+                    and not exact_name_exists(base / d, "SKILL.md")
                 )
                 for name in sorted(filenames):
                     if name.startswith("."):

@@ -1781,6 +1781,8 @@ class TestCursorRules:
         # A value of the wrong shape contributes nothing, so the built-in
         # event list still applies and the unknown event is still reported.
         assert any("nosuchevent" in v["message"] for v in found["cursor-hooks-valid"])
+        # The wrong-typed option itself is reported by config validation.
+        assert any("expects list, got int" in v["message"] for v in found.get("invalid-config", []))
 
     def test_a_non_numeric_hook_timeout_is_still_reported_per_field(self, tmp_path):
         """A string timeout is valid JSON, so the field check is what catches it."""
@@ -3906,6 +3908,11 @@ class TestDescriptionRouting:
         )
 
         result = run_lint(repo, config=config)
+        # The quoted string is also reported as a wrong-typed option.
+        assert any(
+            v["rule_id"] == "invalid-config" and "expects bool, got str" in v["message"]
+            for v in violations(result)
+        )
         routing_violations = self._routing_violations(result)
         skill_violations = [v for v in routing_violations if "skills" in Path(v["file_path"]).parts]
         checked_skills = {Path(v["file_path"]).parent.name for v in skill_violations}
@@ -5722,3 +5729,60 @@ class TestCodexRegistrationAutofixCli:
         text = self._catalog(repo).read_text(encoding="utf-8")
         assert '\n  "name": "cat"' in text
         assert '\n    "name": "cat"' not in text
+
+
+class TestInvalidRuleOptionsConfig:
+    """Config option validation end-to-end: typo'd and wrong-typed rule
+    options in .skillsaw.yaml surface as invalid-config warnings."""
+
+    FIXTURE = "config/invalid-rule-options"
+
+    def _option_warnings(self, r):
+        return [
+            v
+            for v in violations(r)
+            if v["rule_id"] == "invalid-config" and "option" in v["message"].lower()
+        ]
+
+    def test_bad_options_warn_with_suggestions(self, tmp_path):
+        """severty and max-length get did-you-mean suggestions; the bogus
+        key warns without one; exit stays 0 under the default fail-on."""
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+
+        warnings = self._option_warnings(r)
+        messages = sorted(w["message"] for w in warnings)
+        assert len(warnings) == 3
+        assert any(
+            "Unknown option 'severty'" in m and "did you mean 'severity'" in m for m in messages
+        )
+        assert any(
+            "Unknown option 'max-length'" in m and "did you mean 'max_length'" in m
+            for m in messages
+        )
+        assert any(
+            "Unknown option 'frobnicate-mode'" in m and "did you mean" not in m for m in messages
+        )
+        assert r["rc"] == 0
+
+    def test_bad_options_gate_exit_under_fail_on_warning(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, "--fail-on", "warning", config=repo / ".skillsaw.yaml")
+        assert len(self._option_warnings(r)) == 3
+        assert r["rc"] == 1
+
+
+class TestYamlMergeKeyConfig:
+    """A config built from YAML anchors and merge keys (``<<: *anchor``) must
+    load and lint — merged-in keys have no local line position in ruamel's
+    commented map, and the config-load path has no rule-execution-error
+    fault isolation to absorb a crash."""
+
+    FIXTURE = "config/yaml-merge-keys"
+
+    def test_merge_key_config_lints_without_crashing(self, tmp_path):
+        repo = copy_fixture(self.FIXTURE, tmp_path)
+        r = run_lint(repo, config=repo / ".skillsaw.yaml")
+
+        assert r["rc"] == 0
+        assert all(v["rule_id"] != "invalid-config" for v in violations(r))

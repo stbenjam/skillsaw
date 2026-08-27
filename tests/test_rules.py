@@ -1317,3 +1317,129 @@ def test_command_sections_partial(temp_dir):
     rule = CommandSectionsRule()
     violations = rule.check(context)
     assert [v.message for v in violations] == ["Missing recommended section '## Implementation'"]
+
+
+class TestRuleSetting:
+    """Rule.setting() resolves config overrides against config_schema defaults."""
+
+    def _rule(self, config=None):
+        from skillsaw.rules.builtin.content.section_length import ContentSectionLengthRule
+
+        return ContentSectionLengthRule(config)
+
+    def test_override_returned(self):
+        rule = self._rule({"max-tokens": 123})
+        assert rule.setting("max-tokens") == 123
+
+    def test_unset_returns_schema_default(self):
+        rule = self._rule({})
+        assert rule.setting("max-tokens") == rule.config_schema["max-tokens"]["default"]
+
+    def test_explicit_null_returns_schema_default(self):
+        rule = self._rule({"max-tokens": None})
+        assert rule.setting("max-tokens") == rule.config_schema["max-tokens"]["default"]
+
+    def test_undeclared_name_raises_keyerror_naming_rule_and_option(self):
+        rule = self._rule({})
+        with pytest.raises(KeyError, match=r"content-section-length.*no-such-option"):
+            rule.setting("no-such-option")
+
+    def test_int_coerced_for_float_option(self):
+        from skillsaw.rules.builtin.security.encoded_payload import SecurityEncodedPayloadRule
+
+        rule = SecurityEncodedPayloadRule({"entropy-threshold": 4})
+        value = rule.setting("entropy-threshold")
+        assert isinstance(value, float)
+        assert value == 4.0
+
+    def test_bool_not_coerced_for_float_option(self):
+        from skillsaw.rules.builtin.security.encoded_payload import SecurityEncodedPayloadRule
+
+        rule = SecurityEncodedPayloadRule({"entropy-threshold": True})
+        assert rule.setting("entropy-threshold") is True
+
+    def test_number_alias_coerces_like_float(self):
+        """The docs present "number" and "float" as equivalent spellings, so
+        an int override must coerce identically under both."""
+        rule = self._rule({"budget": 4})
+        rule.config_schema = {"budget": {"type": "number", "default": 0.5}}
+        value = rule.setting("budget")
+        assert isinstance(value, float)
+        assert value == 4.0
+
+    def test_universal_keys_are_not_readable_unless_declared(self):
+        """The universal keys are reserved: setting() names the dedicated
+        accessors, unless the rule declares the key in its own schema."""
+        from skillsaw.linter import UNIVERSAL_RULE_OPTION_KEYS
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = self._rule({})
+        for key in ("enabled", "severity", "exclude"):
+            with pytest.raises(KeyError, match="universal key"):
+                rule.setting(key)
+        # The literal tuple in Rule.setting() must track the linter's set.
+        assert UNIVERSAL_RULE_OPTION_KEYS == {"enabled", "severity", "exclude"}
+
+        # A rule that declares the key reads it normally.
+        declared = AgentSkillUnreferencedFilesRule({})
+        assert declared.setting("exclude") == []
+
+    def test_int_default_for_float_option_coerces(self):
+        """A float-typed option must read as float configured or not — an
+        int schema default gets the same coercion as an int override."""
+        rule = self._rule({})
+        rule.config_schema = {"budget": {"type": "float", "default": 1}}
+        value = rule.setting("budget")
+        assert isinstance(value, float)
+        assert value == 1.0
+
+    def test_mutable_default_returned_as_copy(self):
+        from skillsaw.rules.builtin.context_budget.budget import ContextBudgetRule
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = ContextBudgetRule({})
+        first = rule.setting("limits")
+        category = next(iter(first))
+        first[category]["warn"] = -1
+        assert rule.setting("limits")[category]["warn"] != -1
+
+        list_rule = AgentSkillUnreferencedFilesRule({})
+        patterns = list_rule.setting("exclude")
+        patterns.append("generated/**")
+        assert list_rule.setting("exclude") == []
+
+    def test_mutable_override_returned_as_copy(self):
+        """Configured values get the same copy protection as defaults —
+        mutating the returned list must not leak into the user's config."""
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = AgentSkillUnreferencedFilesRule({"exclude": ["a/**"]})
+        patterns = rule.setting("exclude")
+        patterns.append("b/**")
+        assert rule.setting("exclude") == ["a/**"]
+        assert rule.config["exclude"] == ["a/**"]
+
+    def test_malformed_schema_entry_names_rule_option_and_defect(self):
+        rule = self._rule({})
+        rule.config_schema = {"bad": "not-a-mapping"}
+        with pytest.raises(ValueError, match=r"bad.*content-section-length.*mapping"):
+            rule.setting("bad")
+
+        rule.config_schema = {"bad": {"type": "int"}}
+        with pytest.raises(ValueError, match=r"bad.*content-section-length.*missing 'default'"):
+            rule.setting("bad")
+
+    def test_null_bool_option_resolves_to_its_true_default(self):
+        """A bool-typed option set to null reads as the schema default, not False."""
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        rule = AgentSkillUnreferencedFilesRule({"directory_mention_covers": None})
+        assert rule.setting("directory_mention_covers") is True

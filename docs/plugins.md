@@ -163,7 +163,7 @@ skillsaw discovers plugins through the `skillsaw.plugins` entry point group:
 name = "skillsaw-acme-rules"
 version = "0.1.0"
 requires-python = ">=3.9"
-dependencies = ["skillsaw>=0.15"]
+dependencies = ["skillsaw>=0.19.0"]
 
 [project.entry-points."skillsaw.plugins"]
 acme = "skillsaw_acme_rules"
@@ -227,7 +227,7 @@ class NoTodoInstructionsRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         for block in context.lint_tree.find(InstructionBlock):
             content = block.read_body(strip_code_blocks=False)
             if content is None:
@@ -248,6 +248,18 @@ Legacy aliases of renamed builtins (for example `plugin-readme`, now
 everywhere a rule is named, so a rule using one could never be
 configured, and advisory IDs never affect the exit code. Prefix rule
 IDs with something distinctive when in doubt (`acme-no-todo`).
+
+Declaring a `config_schema` also opts the rule into config option
+validation: unknown option keys or wrong-typed option values under the rule's config
+entry are reported as `invalid-config` warnings, with the schema as the
+source of truth. Declare every option the rule reads and use `self.setting()`
+to resolve overrides against schema defaults; that API requires skillsaw
+0.19.0 or newer. A rule without a `config_schema` skips unknown-option and
+type validation — its option names are unknowable to the linter — but the
+universal `exclude` key keeps its shape check, since the linter itself reads
+it. For a partial migration, set
+`strict_options = False`; declared options stay type-checked while additional
+keys remain accepted until the schema is complete.
 
 Plugins can also ship **deterministic autofixes** by setting
 `autofix_confidence` and overriding `fix()` — see the

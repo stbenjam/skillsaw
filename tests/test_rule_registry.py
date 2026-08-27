@@ -154,3 +154,79 @@ def test_every_rule_since_is_not_in_the_future():
     current = _parse_version(__version__)
     future = [cls().rule_id for cls in BUILTIN_RULES if _parse_version(cls.since) > current]
     assert not future, f"rules gated behind a future version: {future}"
+
+
+def test_builtin_config_schema_entries_have_complete_shape():
+    problems = []
+    required = {"type", "default", "description"}
+    for rule_id, rule_cls in BUILTIN_RULE_REGISTRY.items():
+        for option, entry in rule_cls.config_schema.items():
+            if not isinstance(entry, dict) or not required.issubset(entry):
+                problems.append(f"{rule_id}.{option}")
+    assert problems == [], f"malformed config_schema entries: {problems}"
+
+
+def test_config_reads_are_declared_in_config_schema():
+    """Every self.config read in a builtin rule must name a declared option.
+
+    Option validation (Linter._option_violations) warns on any config key
+    outside a rule's config_schema plus the universal keys — so a rule that
+    reads an undeclared key would make its own documented option a false
+    "unknown option" warning for users. This pins the zero-drift invariant
+    and the house rule "declare config_schema when the rule accepts
+    parameters".
+
+    Limitation: inspect.getsource() sees only each concrete class body, not
+    inherited reads. Within that body, the scan sees only string literals
+    passed directly to self.config.get()/[]/self.setting(). Keys flowing through wrapper
+    helpers (e.g. _int_config in security/encoded_payload.py or
+    _parse_patterns in content/missing_stop_condition.py) are covered only
+    via the literal arguments at their call sites; a wrapper fed a computed
+    key is invisible to this guard.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from skillsaw.linter import UNIVERSAL_RULE_OPTION_KEYS
+
+    problems = []
+    for rule_id, rule_cls in BUILTIN_RULE_REGISTRY.items():
+        allowed = set(rule_cls.config_schema) | set(UNIVERSAL_RULE_OPTION_KEYS)
+        tree = ast.parse(textwrap.dedent(inspect.getsource(rule_cls)))
+        for node in ast.walk(tree):
+            key = None
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "config"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                key = node.args[0].value
+            elif (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Attribute)
+                and node.value.attr == "config"
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                key = node.slice.value
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "setting"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "self"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                key = node.args[0].value
+            if key is not None and key not in allowed:
+                problems.append(f"{rule_id}: reads undeclared config key '{key}'")
+
+    assert problems == [], "\n".join(problems)

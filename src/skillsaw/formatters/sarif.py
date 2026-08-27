@@ -17,7 +17,7 @@ _SEVERITY_MAP = {
 # Human-readable descriptions for synthetic rule IDs that have no backing
 # Rule instance (e.g. "invalid-config" emitted by Linter._validate_config).
 _SYNTHETIC_DESCRIPTIONS = {
-    "invalid-config": "Unknown rule ID in configuration",
+    "invalid-config": "Invalid configuration",
 }
 
 

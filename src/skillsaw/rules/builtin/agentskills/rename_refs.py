@@ -72,10 +72,7 @@ class AgentSkillRenameRefsRule(Rule):
         # rewrite), so only references to longer names are fixable. There is
         # no class-level autofix_confidence, so the SUGGEST confidence of the
         # produced fixes is declared per violation.
-        min_segments = self.config.get(
-            "autofix-min-segments",
-            self.config_schema["autofix-min-segments"]["default"],
-        )
+        min_segments = self.setting("autofix-min-segments")
 
         def _fix_kwargs(old_name: str) -> dict:
             if len(old_name.split("-")) >= min_segments:
@@ -148,10 +145,7 @@ class AgentSkillRenameRefsRule(Rule):
         if not renames:
             return []
 
-        min_segments = self.config.get(
-            "autofix-min-segments",
-            self.config_schema["autofix-min-segments"]["default"],
-        )
+        min_segments = self.setting("autofix-min-segments")
         rename_map = {
             r["old"]: r["new"] for r in renames if len(r["old"].split("-")) >= min_segments
         }

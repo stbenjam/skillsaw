@@ -4,6 +4,7 @@ Main linter orchestration
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import importlib.util
 import inspect
@@ -12,7 +13,7 @@ import re
 import sys
 import warnings
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 from skillsaw.paths import safe_is_symlink, safe_resolve
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,41 @@ if TYPE_CHECKING:
 # config names now-deprecated rules, so a fatal warning would break every
 # strict-mode CI run on upgrade.
 ADVISORY_RULE_IDS = frozenset({"deprecated-rule"})
+
+# Violations exempt from path-based suppression (global and per-rule
+# excludes). Config-validation warnings point at the config file itself;
+# excludes select lint targets, and the config's own content must not
+# decide whether the config gets validated — `exclude: ["*.yaml"]` would
+# otherwise silently drop every unknown-rule/unknown-option warning.
+# Inline suppression stays available, but only in its precise form: a
+# `# skillsaw-disable-next-line` naming the rule ID — a deliberate,
+# visible edit at the exact line the warning names. Region `disable`
+# forms and bare all-rules directives are the same blanket this set
+# exists to close.
+_UNEXCLUDABLE_RULE_IDS = frozenset({"invalid-config"})
+
+# Config keys every rule accepts regardless of its config_schema. `enabled`
+# is validated at config load, `severity` at rule construction, and `exclude`
+# is read by the linter's per-rule exclude filter.
+UNIVERSAL_RULE_OPTION_KEYS = frozenset({"enabled", "severity", "exclude"})
+
+# config_schema `type` strings and the Python types a user value must have.
+# `float` accepts int (YAML `4` for a threshold), never bool — bool is a
+# subclass of int, so int/float checks reject it explicitly below.
+_OPTION_TYPE_MAP: Dict[str, Any] = {
+    "list": list,
+    "array": list,
+    "int": int,
+    "integer": int,
+    "float": (int, float),
+    "number": (int, float),
+    "bool": bool,
+    "boolean": bool,
+    "dict": dict,
+    "object": dict,
+    "str": str,
+    "string": str,
+}
 
 # The security/supply-chain surface. Not a suppression gate — every one of
 # these fires on a compiled copy because none is a prose-duplicate rule (see
@@ -177,6 +213,9 @@ class Linter:
     def _load_rules(self):
         """Load all enabled rules"""
         self._known_rule_ids: set = set()
+        self._known_rule_classes: Dict[str, type[Rule]] = {}
+        self._builtin_rule_ids: set = set()
+        self._custom_rule_ids: set = set()
         # Deprecated non-builtin rules seen during loading, kept so a config
         # entry that names one still gets its deprecation notice even when
         # the rule itself no longer runs (builtins are covered by the
@@ -199,7 +238,10 @@ class Linter:
 
         for rule_class in BUILTIN_RULES:
             rule_instance = rule_class()
-            self._known_rule_ids.add(rule_instance.rule_id)
+            rid = rule_instance.rule_id
+            self._known_rule_ids.add(rid)
+            self._known_rule_classes[rid] = rule_class
+            self._builtin_rule_ids.add(rid)
             if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
                 continue
             if rule_instance.rule_id in self._skip_rule_ids:
@@ -321,6 +363,7 @@ class Linter:
                     continue
 
                 self._known_rule_ids.add(rid)
+                self._known_rule_classes[rid] = rule_class
                 if getattr(rule_instance, "deprecated", None) is not None:
                     self._deprecated_known[rid] = rule_instance
                 if self._rule_ids and rid not in self._rule_ids:
@@ -520,6 +563,12 @@ class Linter:
                         continue
 
                     self._known_rule_ids.add(rule_instance.rule_id)
+                    # On an ID collision the earlier class (builtin or a
+                    # prior custom file) keeps validation ownership; only
+                    # tag the ID custom when this class actually won, so
+                    # the explain hint agrees with the schema used.
+                    if self._known_rule_classes.setdefault(rule_instance.rule_id, obj) is obj:
+                        self._custom_rule_ids.add(rule_instance.rule_id)
                     if getattr(rule_instance, "deprecated", None) is not None:
                         self._deprecated_known[rule_instance.rule_id] = rule_instance
                     if self._rule_ids and rule_instance.rule_id not in self._rule_ids:
@@ -589,9 +638,167 @@ class Linter:
                         rule_id="invalid-config",
                         severity=Severity.WARNING,
                         message=f"Unknown rule '{rule_id}' in config — rule does not exist and will be ignored",
+                        file_path=self.config.config_path,
+                        line=self.config.config_rule_lines.get(rule_id),
+                        fingerprint_discriminator=f"unknown-rule:{rule_id}",
                     )
                 )
+                continue
+            warnings.extend(self._option_violations(rule_id, self.config.rules[rule_id]))
         return warnings
+
+    def _option_violations(self, rule_id: str, overrides: Dict[Any, Any]) -> List[RuleViolation]:
+        """Validate one configured rule's option keys against its config_schema.
+
+        Schema resolution is enablement-independent, like the unknown-rule-ID
+        check above: a typo on a disabled or auto-inactive builtin still warns.
+        Plugin/custom rules opt in by declaring a config_schema; without one
+        their option names are unknowable, so they are skipped. Rule classes
+        are recorded at load time, so validation does not depend on whether a
+        rule is enabled for this repository.
+        """
+        if not isinstance(overrides, dict):
+            return []
+        rule_class = self._known_rule_classes.get(rule_id)
+        if rule_class is None:
+            return []
+        try:
+            schema = getattr(rule_class, "config_schema", {}) or {}
+            if not isinstance(schema, dict):
+                # A malformed third-party schema (e.g. a list of option names)
+                # must not abort the lint — treat it as undeclared.
+                schema = {}
+            else:
+                # Same for non-string schema keys: they can never match a config
+                # key and would crash the sorted() feeding did-you-mean.
+                # dict(v) detaches entries from third-party dict subclasses,
+                # so no overridden method (get, __getitem__) can raise later,
+                # outside this guard, mid-validation.
+                schema = {
+                    k: dict(v) if isinstance(v, dict) else v
+                    for k, v in schema.items()
+                    if isinstance(k, str)
+                }
+            # bool() now: a deferred truth test on a third-party object
+            # whose __bool__ raises would escape this guard.
+            strict_options = bool(getattr(rule_class, "strict_options", True))
+        except Exception:
+            # Attribute access itself can raise on a third-party class (a
+            # descriptor, a dict subclass whose __bool__/items raises).
+            # Validation runs outside the fault isolation rule execution
+            # gets, so treat the schema as undeclared rather than abort.
+            schema = {}
+            strict_options = True
+        # A schema-less plugin/custom rule leaves its option names
+        # unknowable, so unknown-key validation is skipped for it below —
+        # but the universal keys are the linter's own contract, and their
+        # shape checks still run (`_is_rule_excluded` fails open on a
+        # malformed `exclude`, which would otherwise be silent).
+        schema_known = bool(schema) or rule_id in self._builtin_rule_ids
+        allowed = set(schema) | UNIVERSAL_RULE_OPTION_KEYS
+
+        violations: List[RuleViolation] = []
+        for key, value in overrides.items():
+            discriminator = f"{rule_id}:{key}"
+            line = self.config.config_option_lines.get((rule_id, key))
+            if not isinstance(key, str):
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Invalid option key '{key}' for rule '{rule_id}' "
+                        "— option keys must be strings (YAML keys like `on:` or "
+                        "`1:` parse as non-strings)",
+                        file_path=self.config.config_path,
+                        line=line,
+                        fingerprint_discriminator=discriminator,
+                    )
+                )
+                continue
+            if key not in allowed:
+                if not schema_known or not strict_options:
+                    continue
+                # 0.6 intentionally catches common separator/shortening typos
+                # such as max-length vs max_length and length vs max_length.
+                close = difflib.get_close_matches(key, sorted(allowed), n=1, cutoff=0.6)
+                if close:
+                    hint = f" (did you mean '{close[0]}'?)"
+                elif rule_id in self._custom_rule_ids:
+                    hint = ""
+                else:
+                    hint = f" — run `skillsaw explain {rule_id}` to see valid options"
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Unknown option '{key}' for rule '{rule_id}' "
+                        "— it is not valid for this rule; unrecognized keys still "
+                        f"count as configuration and may enable an opt-in rule{hint}",
+                        file_path=self.config.config_path,
+                        line=line,
+                        fingerprint_discriminator=discriminator,
+                    )
+                )
+                continue
+            if key == "exclude":
+                if not isinstance(value, list):
+                    actual = "null" if value is None else type(value).__name__
+                    violations.append(
+                        RuleViolation(
+                            rule_id="invalid-config",
+                            severity=Severity.WARNING,
+                            message=f"Option 'exclude' for rule '{rule_id}' "
+                            f"expects list of strings, got {actual}",
+                            file_path=self.config.config_path,
+                            line=line,
+                            fingerprint_discriminator=discriminator,
+                        )
+                    )
+                elif not all(isinstance(pattern, str) for pattern in value):
+                    violations.append(
+                        RuleViolation(
+                            rule_id="invalid-config",
+                            severity=Severity.WARNING,
+                            message=f"Option 'exclude' for rule '{rule_id}' "
+                            "expects list of strings",
+                            file_path=self.config.config_path,
+                            line=line,
+                            fingerprint_discriminator=discriminator,
+                        )
+                    )
+                continue
+            entry = schema.get(key)
+            if not isinstance(entry, dict):
+                # Universal-only key, or a malformed third-party schema entry.
+                continue
+            entry_type = entry.get("type")
+            if not isinstance(entry_type, str):
+                # Third-party schemas may use non-string types (e.g. a
+                # JSON-Schema-style list) — unknown shapes are not checked.
+                continue
+            expected = _OPTION_TYPE_MAP.get(entry_type)
+            if expected is None:
+                continue
+            bool_for_number = isinstance(value, bool) and entry_type in (
+                "int",
+                "integer",
+                "float",
+                "number",
+            )
+            if value is None or bool_for_number or not isinstance(value, expected):
+                actual = "null" if value is None else type(value).__name__
+                violations.append(
+                    RuleViolation(
+                        rule_id="invalid-config",
+                        severity=Severity.WARNING,
+                        message=f"Option '{key}' for rule '{rule_id}' "
+                        f"expects {entry_type}, got {actual}",
+                        file_path=self.config.config_path,
+                        line=line,
+                        fingerprint_discriminator=discriminator,
+                    )
+                )
+        return violations
 
     def _deprecation_violations(self) -> List[RuleViolation]:
         """Warnings for deprecated rules the user still runs or configures.
@@ -660,14 +867,20 @@ class Linter:
         """Check if a violation's file path matches any exclude pattern."""
         if violation.file_path is None:
             return False
+        if violation.rule_id in _UNEXCLUDABLE_RULE_IDS:
+            return False
         return self.context.is_path_excluded(violation.file_path)
 
     def _is_rule_excluded(self, rule_id: str, file_path: Optional[Path]) -> bool:
         """Check if a file path matches a rule's per-rule excludes patterns."""
         if file_path is None:
             return False
+        if rule_id in _UNEXCLUDABLE_RULE_IDS:
+            return False
         exclude = self.config.get_rule_config(rule_id).get("exclude")
-        if not exclude:
+        if not isinstance(exclude, list) or not exclude:
+            return False
+        if not all(isinstance(pattern, str) for pattern in exclude):
             return False
         return self.context.matches_patterns(file_path, exclude)
 
@@ -690,6 +903,8 @@ class Linter:
         smap = self._get_suppression_map(violation.file_path)
         if smap is None:
             return False
+        if violation.rule_id in _UNEXCLUDABLE_RULE_IDS:
+            return smap.is_explicitly_suppressed(violation.rule_id, file_line)
         return smap.is_suppressed(violation.rule_id, file_line)
 
     def _compiled_copy_paths(self) -> Set[Path]:
@@ -905,9 +1120,14 @@ class Linter:
         Returns:
             Tuple of (remaining violations, autofix results)
         """
-        all_violations = self._validate_config()
+        # Config warnings go through the same filter pipeline run() uses
+        # (inline suppression, excludes, baseline) — but `checked` keeps the
+        # raw list so the final accounting pass sees everything, exactly
+        # like the raw per-rule extends below.
+        config_violations = self._validate_config()
+        all_violations = self._filter_violations(config_violations, record_baseline=False)
         all_fixes: List[AutofixResult] = []
-        checked: List[RuleViolation] = list(all_violations)
+        checked: List[RuleViolation] = list(config_violations)
 
         total = len(self.rules)
         for index, rule in enumerate(self.rules, 1):

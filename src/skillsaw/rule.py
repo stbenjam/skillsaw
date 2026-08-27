@@ -2,6 +2,7 @@
 Base classes for linting rules
 """
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -113,6 +114,10 @@ class Rule(ABC):
     repo_types = None
     formats = None
     config_schema = {}
+    # Third-party rules with a partially migrated config_schema can set this
+    # to False: declared options are still type-checked, while undeclared
+    # options remain accepted during the migration.
+    strict_options = True
     since = "0.1.0"
     # Former rule IDs this rule was known by. Aliases resolve to the
     # canonical ``rule_id`` everywhere a rule is named: config keys,
@@ -174,6 +179,56 @@ class Rule(ABC):
                     f"Invalid severity '{severity_str}' for rule '{self.rule_id}'. "
                     f"Valid values: {valid}"
                 ) from err
+
+    def setting(self, name: str) -> Any:
+        """Resolve a config option: the user's override, else the schema default.
+
+        Only options declared in ``config_schema`` can be read — an undeclared
+        name raises ``KeyError`` so a read/declaration mismatch fails fast in
+        development. An explicit ``null`` in config resolves to the default.
+        Mutable (list/dict) values — overrides as well as defaults — are
+        returned as copies so callers can neither corrupt the shared schema
+        nor mutate the user's config in place. An int override for a
+        float/number-typed option is coerced to float; any other user value
+        is returned unchanged.
+        """
+        try:
+            entry = self.config_schema[name]
+        except KeyError:
+            # Mirrors linter.UNIVERSAL_RULE_OPTION_KEYS (kept literal to
+            # avoid a module cycle; pinned by a test). The universal keys
+            # are reserved: declare one in config_schema to read it here.
+            if name in ("enabled", "severity", "exclude"):
+                raise KeyError(
+                    f"rule '{self.rule_id}' does not declare universal key '{name}' "
+                    "in its config_schema — read 'enabled'/'severity' via "
+                    "self.enabled / self.severity; per-rule 'exclude' is applied "
+                    f"by the linter. Declare '{name}' in config_schema to also "
+                    "read it here."
+                ) from None
+            raise KeyError(f"rule '{self.rule_id}' has no config_schema option '{name}'") from None
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"config_schema option '{name}' for rule '{self.rule_id}' must be a mapping"
+            )
+        if "default" not in entry:
+            raise ValueError(
+                f"config_schema option '{name}' for rule '{self.rule_id}' is missing 'default'"
+            )
+        value = self.config.get(name)
+        if value is None:
+            value = entry["default"]
+        # Coercion applies to defaults too: {"type": "float", "default": 1}
+        # must read the same configured or not.
+        if (
+            entry.get("type") in ("float", "number")
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            return float(value)
+        if isinstance(value, (list, dict)):
+            return copy.deepcopy(value)
+        return value
 
     @property
     @abstractmethod

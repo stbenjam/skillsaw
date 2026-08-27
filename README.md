@@ -90,7 +90,9 @@ skillsaw works locally, in CI, and inside coding-agent workflows. It provides
 line-level findings, explanations for every rule, deterministic autofixes,
 baselines for gradual adoption, GitHub and GitLab integration, and text, JSON,
 SARIF, HTML, and Code Climate output. Rules are configurable, and projects can
-add local rules or install rule plugins.
+add local rules or install rule plugins. Typo'd or wrong-typed rule options
+in `.skillsaw.yaml` are reported with did-you-mean suggestions instead of
+being silently ignored.
 
 | Goal | Documentation |
 | --- | --- |

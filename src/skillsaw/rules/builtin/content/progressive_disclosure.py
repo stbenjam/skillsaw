@@ -39,6 +39,7 @@ from urllib.parse import unquote
 from skillsaw.rule import Rule, RuleViolation, Severity
 from skillsaw.context import RepositoryContext
 from skillsaw.blocks import ContentBlock
+from skillsaw.discovery import exact_name_exists
 from skillsaw.paths import safe_exists, safe_is_file, safe_resolve
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 from skillsaw.rules.builtin.context_budget.budget import DEFAULT_LIMITS, _estimate_tokens
@@ -453,6 +454,9 @@ class ContentProgressiveDisclosureRule(Rule):
             for dirpath, dirnames, filenames in os.walk(skill_dir):
                 base = Path(dirpath)
                 at_root = base == skill_dir
+                # Same nested-skill predicate as discovery: a subdirectory
+                # with a mis-cased skill.md is not a nested skill, so its
+                # files stay in this inventory on every filesystem.
                 dirnames[:] = sorted(
                     d
                     for d in dirnames
@@ -460,7 +464,7 @@ class ContentProgressiveDisclosureRule(Rule):
                     and d != "testdata"
                     and not (at_root and d in ("evals", "tests"))
                     and not (base / d).is_symlink()
-                    and not (base / d / "SKILL.md").is_file()
+                    and not exact_name_exists(base / d, "SKILL.md")
                 )
                 for name in filenames:
                     if name.startswith("."):

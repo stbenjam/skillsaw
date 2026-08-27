@@ -43,12 +43,7 @@ class PromptfooMetadataRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations: List[RuleViolation] = []
-        required_keys = set(
-            self.config.get(
-                "required-keys",
-                self.config_schema["required-keys"]["default"],
-            )
-        )
+        required_keys = set(self.setting("required-keys"))
 
         for node in context.lint_tree.find(PromptfooConfigNode):
             if node.is_fragment:

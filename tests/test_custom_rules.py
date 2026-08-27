@@ -802,3 +802,444 @@ def test_valid_skip_rule_accepted(valid_plugin):
     context = RepositoryContext(valid_plugin)
     linter = Linter(context, LinterConfig.default(), skip_rule_ids={"content-weak-language"})
     assert "content-weak-language" not in {r.rule_id for r in linter.rules}
+
+
+CUSTOM_RULE_WITH_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class SchemaCustomRule(Rule):
+    config_schema = {
+        "opt": {"type": "path", "default": "x", "description": "An option."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "schema-custom-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule that declares a config_schema"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+CUSTOM_RULE_WITHOUT_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class BareCustomRule(Rule):
+    @property
+    def rule_id(self) -> str:
+        return "bare-custom-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule with no config_schema"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def _custom_option_warnings(violations, rule_id):
+    return [
+        v
+        for v in violations
+        if v.rule_id == "invalid-config"
+        and "option" in v.message.lower()
+        and f"'{rule_id}'" in v.message
+    ]
+
+
+def test_custom_rule_without_schema_skips_option_validation(valid_plugin, temp_dir):
+    """Third-party rules that declare no schema never get option warnings."""
+    rule_file = temp_dir / "bare_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITHOUT_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["bare-custom-rule"] = {"enabled": True, "whatever-key": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "bare-custom-rule") == []
+
+
+def test_schema_less_custom_rule_still_validates_universal_exclude(valid_plugin, temp_dir):
+    """The universal `exclude` key is the linter's contract, not the rule's:
+    its shape check runs even without a schema, because a malformed value
+    fails open in _is_rule_excluded and would otherwise be silently inert."""
+    rule_file = temp_dir / "bare_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITHOUT_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["bare-custom-rule"] = {"enabled": True, "exclude": "*.md"}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "bare-custom-rule")
+    assert len(warnings) == 1
+    assert "expects list of strings" in warnings[0].message
+
+
+CUSTOM_RULE_WITH_RAISING_STRICT_OPTIONS = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class _Raising:
+    def __bool__(self):
+        raise RuntimeError("no truth for you")
+
+class TrickyRule(Rule):
+    config_schema = {"opt": {"type": "int", "default": 1}}
+    strict_options = _Raising()
+
+    @property
+    def rule_id(self) -> str:
+        return "tricky-strict-rule"
+
+    @property
+    def description(self) -> str:
+        return "strict_options refuses truth testing"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_raising_strict_options_does_not_abort_validation(valid_plugin, temp_dir):
+    """bool(strict_options) happens inside the guard: a third-party object
+    whose __bool__ raises downgrades the rule to schema-less instead of
+    aborting the lint."""
+    rule_file = temp_dir / "tricky_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_RAISING_STRICT_OPTIONS)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["tricky-strict-rule"] = {"enabled": True, "mystery-opt": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "tricky-strict-rule") == []
+
+
+CUSTOM_RULE_WITH_RAISING_ENTRY_GET = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class _RaisingGet(dict):
+    def get(self, *args, **kwargs):
+        raise RuntimeError("no get for you")
+
+class EntryRule(Rule):
+    config_schema = {"opt": _RaisingGet({"type": "int", "default": 1})}
+
+    @property
+    def rule_id(self) -> str:
+        return "raising-entry-rule"
+
+    @property
+    def description(self) -> str:
+        return "schema entry is a dict subclass with a raising get()"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_raising_schema_entry_get_still_validates(valid_plugin, temp_dir):
+    """Schema entries are detached (dict-copied) inside the guard, so a dict
+    subclass whose get() raises neither aborts the lint nor skips the type
+    check its plain contents describe."""
+    rule_file = temp_dir / "entry_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_RAISING_ENTRY_GET)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["raising-entry-rule"] = {"enabled": True, "opt": "not-an-int"}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "raising-entry-rule")
+    assert len(warnings) == 1
+    assert "expects int, got str" in warnings[0].message
+
+
+CUSTOM_RULE_SHADOWING_BUILTIN = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class ShadowRule(Rule):
+    config_schema = {"custom-opt": {"type": "int", "default": 1}}
+
+    @property
+    def rule_id(self) -> str:
+        return "agentskill-description"
+
+    @property
+    def description(self) -> str:
+        return "Shadows a builtin rule ID"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_builtin_id_collision_keeps_builtin_validation_identity(valid_plugin, temp_dir):
+    """A custom rule reusing a builtin ID loses the validation-ownership
+    race to the builtin class; the unknown-option hint must agree and point
+    at the builtin's explain page rather than going silent as if custom."""
+    rule_file = temp_dir / "shadow_rule.py"
+    rule_file.write_text(CUSTOM_RULE_SHADOWING_BUILTIN)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["agentskill-description"] = {"zzz-unrelated-key": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "agentskill-description")
+    assert len(warnings) == 1
+    assert "skillsaw explain agentskill-description" in warnings[0].message
+
+
+def test_custom_rule_with_schema_opts_into_option_validation(valid_plugin, temp_dir):
+    """Declaring a config_schema opts a custom rule into unknown-key warnings;
+    an unmapped type like 'path' must not crash or type-warn."""
+    rule_file = temp_dir / "schema_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["schema-custom-rule"] = {"enabled": True, "oops": 1, "opt": 123}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "schema-custom-rule")
+    assert len(warnings) == 1
+    assert "Unknown option 'oops'" in warnings[0].message
+
+
+def test_disabled_custom_rule_still_validates_options(valid_plugin, temp_dir):
+    """Recorded rule classes make validation independent of enablement."""
+    rule_file = temp_dir / "schema_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["schema-custom-rule"] = {"enabled": False, "oops": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "schema-custom-rule")
+    assert len(warnings) == 1
+    assert "Unknown option 'oops'" in warnings[0].message
+    assert "skillsaw explain" not in warnings[0].message
+
+
+CUSTOM_RULE_WITH_NONSTRICT_SCHEMA = CUSTOM_RULE_WITH_SCHEMA.replace(
+    "class SchemaCustomRule(Rule):",
+    "class SchemaCustomRule(Rule):\n    strict_options = False",
+)
+
+
+def test_custom_rule_can_allow_additional_options_during_migration(valid_plugin, temp_dir):
+    rule_file = temp_dir / "nonstrict_schema_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_NONSTRICT_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["schema-custom-rule"] = {"enabled": True, "legacy-opt": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "schema-custom-rule") == []
+
+
+CUSTOM_RULE_WITH_LIST_TYPE_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class ListTypeSchemaRule(Rule):
+    config_schema = {
+        "opt": {"type": ["string"], "default": "x", "description": "JSON-Schema-style type."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "list-type-schema-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule with a non-string schema type"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_unhashable_schema_type_does_not_crash(valid_plugin, temp_dir):
+    """A JSON-Schema-style list `type` must not crash the type check."""
+    rule_file = temp_dir / "list_type_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_LIST_TYPE_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["list-type-schema-rule"] = {"enabled": True, "opt": 123}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "list-type-schema-rule") == []
+
+
+CUSTOM_RULE_WITH_MALFORMED_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class MalformedSchemaRule(Rule):
+    config_schema = ["markers", "levels"]
+
+    @property
+    def rule_id(self) -> str:
+        return "malformed-schema-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule whose config_schema is not a dict"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_malformed_non_dict_schema_does_not_crash(valid_plugin, temp_dir):
+    """A truthy non-dict config_schema is treated as undeclared, not a crash."""
+    rule_file = temp_dir / "malformed_schema_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_MALFORMED_SCHEMA)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["malformed-schema-rule"] = {"enabled": True, "markers": ["x"]}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "malformed-schema-rule") == []
+
+
+CUSTOM_RULE_WITH_STR_SCHEMA = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class StrOptionRule(Rule):
+    config_schema = {
+        "budget-file": {"type": "str", "default": "evals/budget.yaml", "description": "Path."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "str-option-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule with a str-typed option"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_str_typed_option_is_validated(valid_plugin, temp_dir):
+    """'str'/'string' schema types are type-checked like the builtin types."""
+    rule_file = temp_dir / "str_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_STR_SCHEMA)
+
+    for value, expected in (
+        (123, "expects str, got int"),
+        (True, "expects str, got bool"),
+        (None, "expects str, got null"),
+    ):
+        config = LinterConfig(custom_rules=[str(rule_file)])
+        config.rules["str-option-rule"] = {"enabled": True, "budget-file": value}
+        violations = Linter(RepositoryContext(valid_plugin), config).run()
+        warnings = _custom_option_warnings(violations, "str-option-rule")
+        assert len(warnings) == 1, value
+        assert expected in warnings[0].message
+
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["str-option-rule"] = {"enabled": True, "budget-file": "budgets/q3.yaml"}
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    assert _custom_option_warnings(violations, "str-option-rule") == []
+
+
+def test_json_schema_type_aliases_are_validated(valid_plugin, temp_dir):
+    schema = """
+from skillsaw import Rule, Severity
+
+class AliasTypeRule(Rule):
+    config_schema = {
+        "integer-opt": {"type": "integer", "default": 1, "description": "Integer."},
+        "number-opt": {"type": "number", "default": 1.0, "description": "Number."},
+        "boolean-opt": {"type": "boolean", "default": True, "description": "Boolean."},
+        "array-opt": {"type": "array", "default": [], "description": "Array."},
+        "object-opt": {"type": "object", "default": {}, "description": "Object."},
+        "string-opt": {"type": "string", "default": "x", "description": "String."},
+    }
+    rule_id = "alias-type-rule"
+    description = "Alias types"
+    def default_severity(self): return Severity.WARNING
+    def check(self, context): return []
+"""
+    rule_file = temp_dir / "alias_type_rule.py"
+    rule_file.write_text(schema)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["alias-type-rule"] = {
+        "enabled": True,
+        "integer-opt": True,
+        "number-opt": False,
+        "boolean-opt": 1,
+        "array-opt": {},
+        "object-opt": [],
+        "string-opt": 1,
+    }
+
+    warnings = _custom_option_warnings(
+        Linter(RepositoryContext(valid_plugin), config).run(), "alias-type-rule"
+    )
+    assert len(warnings) == 6
+
+
+CUSTOM_RULE_WITH_NONSTRING_SCHEMA_KEY = """
+from skillsaw import Rule, RuleViolation, Severity, RepositoryContext
+from typing import List
+
+class NonStringKeySchemaRule(Rule):
+    config_schema = {
+        1: {"type": "int", "default": 0, "description": "Bogus key."},
+        "opt": {"type": "int", "default": 0, "description": "Real option."},
+    }
+
+    @property
+    def rule_id(self) -> str:
+        return "nonstring-key-schema-rule"
+
+    @property
+    def description(self) -> str:
+        return "A custom rule whose schema has a non-string key"
+
+    def default_severity(self) -> Severity:
+        return Severity.WARNING
+
+    def check(self, context: RepositoryContext) -> List[RuleViolation]:
+        return []
+"""
+
+
+def test_nonstring_schema_key_does_not_crash_suggestions(valid_plugin, temp_dir):
+    """A non-string schema key must not crash sorted() in did-you-mean, and
+    unknown config keys must still warn."""
+    rule_file = temp_dir / "nonstring_key_rule.py"
+    rule_file.write_text(CUSTOM_RULE_WITH_NONSTRING_SCHEMA_KEY)
+    config = LinterConfig(custom_rules=[str(rule_file)])
+    config.rules["nonstring-key-schema-rule"] = {"enabled": True, "oops": 1}
+
+    violations = Linter(RepositoryContext(valid_plugin), config).run()
+    warnings = _custom_option_warnings(violations, "nonstring-key-schema-rule")
+    assert len(warnings) == 1
+    assert "Unknown option 'oops'" in warnings[0].message

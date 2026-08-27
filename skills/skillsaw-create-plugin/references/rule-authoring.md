@@ -38,7 +38,7 @@ class MyFirstRule(Rule):
 
     def check(self, context: RepositoryContext) -> List[RuleViolation]:
         violations = []
-        patterns = self.config.get("patterns", self.config_schema["patterns"]["default"])
+        patterns = self.setting("patterns")
         for block in context.lint_tree.find(InstructionBlock):
             content = block.read_body(strip_code_blocks=False)
             if content is None:
@@ -62,9 +62,13 @@ class MyFirstRule(Rule):
   fabricate one when it is not.
 - **Pass `block=`** to `self.violation()` for content violations — line
   numbers then map to the right file lines even for YAML-embedded bodies.
-- **Expose tunable settings through `config_schema`** and read them from
-  `self.config`. Users configure the rule in `.skillsaw.yaml` under `rules:`
-  by its rule ID, exactly like builtin rules.
+- **Expose every tunable setting through `config_schema`** and read it with
+  `self.setting()`. Each schema entry requires `type`, `default`, and
+  `description`; undeclared options warn for the rule's users. During a partial
+  migration only, set `strict_options = False` until every option is declared.
+  Users configure the rule in `.skillsaw.yaml` under `rules:` by its rule ID,
+  exactly like builtin rules. `self.setting()` requires skillsaw 0.19.0 or
+  newer.
 - **Declare `repo_types`** when the rule only applies to certain repository
   types — the rule then activates only on matching repositories.
 - **Set `default_enabled`** to control activation: the base default `"auto"`

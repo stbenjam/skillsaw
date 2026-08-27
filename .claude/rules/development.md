@@ -79,6 +79,10 @@ from the markdown-it-py AST — read it via `block.markdown` (a
 ## New Linter Rules
 
 - **Make rules configurable when there are tuneable settings.**
+- **Read declared options with `self.setting()`** so overrides, schema
+  defaults, and explicit nulls follow one contract. Declare every literal
+  config key the rule reads; `tests/test_rule_registry.py` enforces this for
+  builtin rule class bodies.
 - **Never break existing rules for users of skillsaw.**
 - **Rules register themselves** — never hand-maintain import lists or config
   dicts. skillsaw auto-discovers any concrete `Rule` subclass under

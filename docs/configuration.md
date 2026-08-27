@@ -220,7 +220,40 @@ your own `exclude` list.
 
 Exclude patterns apply to **all** rules, including custom rules loaded via
 `custom-rules`. Any violation whose file path matches an exclude pattern is
-filtered out before results are reported.
+filtered out before results are reported. The one exception is
+`invalid-config`: warnings about `.skillsaw.yaml` itself are never dropped by
+exclude patterns (global or per-rule), so an `exclude` entry matching the
+config file cannot silently turn off config validation. To silence a specific
+config warning, put a `# skillsaw-disable-next-line invalid-config` comment
+on the line above the flagged one. Only that precise form works for these
+warnings: a region `# skillsaw-disable`, or a bare `disable-next-line`
+naming no rule, does not apply to them.
+
+## Rule Options
+
+Many rules accept options beyond `enabled` and `severity` — each rule's
+documentation page lists them, and `skillsaw explain <rule-id>` prints the
+full config template in your terminal for builtin and installed-plugin rules
+(project-local `custom-rules` files are not loaded by `explain`). Option names come from the rule's
+`config_schema`, so a typo'd or wrong-typed option is reported as an
+`invalid-config` warning. Close matches get a did-you-mean suggestion; type
+errors name the expected and actual types. Validation is warn-only: the
+configured value still passes through unchanged, except an explicit `null`
+read through `Rule.setting()` resolves to the schema default. A few rules
+additionally check their own values at startup and reject the run with an
+error naming the option — warn-only describes the schema validation layer,
+not every rule's own checks. An unrecognized
+key still counts as configuring the rule and can enable an opt-in rule, so do
+not leave the warning unresolved.
+
+The per-rule `exclude` key must be a list of strings. A malformed value is
+ignored by the exclusion filter so it cannot silently disable a rule or crash
+the lint. These warnings count toward the grade and fail the run under
+`--fail-on warning` or `strict: true`; `skillsaw baseline` is the accepted way
+to carry known ones during a migration. `invalid-config` warnings now point
+at the config file and line, which changes their baseline fingerprint — a
+baseline recorded on an older skillsaw resurfaces them once, so re-run
+`skillsaw baseline` after upgrading.
 
 ## Per-Rule Excludes
 

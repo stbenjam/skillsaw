@@ -14,6 +14,11 @@ PINNED_DOCS=(
     "$REPO_ROOT/docs/ci.md"
     "$REPO_ROOT/docs/pre-commit.md"
     "$REPO_ROOT/docs/getting-started.md"
+    "$REPO_ROOT/docs/plugins.md"
+    "$REPO_ROOT/docs/custom-rules.md"
+    "$REPO_ROOT/skills/skillsaw-create-plugin/SKILL.md"
+    "$REPO_ROOT/skills/skillsaw-create-plugin/references/rule-authoring.md"
+    "$REPO_ROOT/examples/plugins/skillsaw-example-plugin/pyproject.toml"
 )
 
 current_version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$PYPROJECT")
@@ -62,6 +67,12 @@ text = original = open(path).read()
 for pattern, repl in [
     (r'skillsaw==' + re.escape(current), 'skillsaw==' + new),
     (r'rev: v' + re.escape(current), 'rev: v' + new),
+    # Plugin dependency floors track the release so scaffolded plugins
+    # never pin a version that does not exist (see test_release_metadata).
+    # Prose like "requires skillsaw X or newer" is deliberately NOT
+    # rewritten: it records the release that introduced an API, which
+    # does not move.
+    (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:
