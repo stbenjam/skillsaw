@@ -69,10 +69,15 @@ for pattern, repl in [
     (r'rev: v' + re.escape(current), 'rev: v' + new),
     # Plugin dependency floors track the release so scaffolded plugins
     # never pin a version that does not exist (see test_release_metadata).
-    # Prose like "requires skillsaw X or newer" is deliberately NOT
+    # Prose like 'requires skillsaw X or newer' is deliberately NOT
     # rewritten: it records the release that introduced an API, which
-    # does not move.
+    # does not move.  Keep double quotes out of this heredoc-free
+    # python3 -c string: they close the shell's quoting and the inner
+    # program is word-split into a SyntaxError.
     (r'skillsaw>=' + re.escape(current), 'skillsaw>=' + new),
+    # The action's documented version input default, which
+    # test_release_metadata pins to the project version.
+    (r'install \| `' + re.escape(current) + r'`', 'install | `' + new + '`'),
 ]:
     text = re.sub(pattern, repl, text)
 if text != original:
