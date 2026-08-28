@@ -6,9 +6,8 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
 import logging
-import os
 
 # Safe to import at module top: discovery and formats.codex pull in nothing
 # from skillsaw.context, so no import cycle while ``context`` is mid-import.
@@ -76,10 +75,13 @@ HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
+HAS_OPENCODE = "HAS_OPENCODE"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
-# is deliberately absent: the instruction-file rules only ever look at
-# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a .clinerules-only repository
-# would auto-enable two rules structurally incapable of finding anything.
+# and HAS_OPENCODE are deliberately absent: the instruction-file rules only
+# ever look at AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a repository whose
+# only marker is ``.clinerules`` or ``opencode.json`` would auto-enable two
+# rules structurally incapable of finding anything. OpenCode does read
+# AGENTS.md — and when one is present HAS_AGENTS_MD enables them for it.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,
@@ -133,6 +135,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
     # APM only writes a directory when its target is listed, so a project
     # with ``targets: [claude]`` and a hand-authored ``.cursor/`` has
     # authored content there, not generated output.
+    # ``.opencode`` is also a native tool's own directory, and the evidence
+    # that decides between the two readings is APM's rather than OpenCode's:
+    # a repository with no ``.apm/`` and no ``apm.yml`` never consults this
+    # table at all. See docs/repo-types.md, "OpenCode and APM".
     APM_COMPILED_DIR_TARGETS = {
         ".claude": "claude",
         ".cursor": "cursor",
@@ -493,19 +499,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
             self._repository_scan().legacy_editor_files,
         )
 
-    _WALK_SKIP_DIRS = frozenset(
-        {
-            ".git",
-            ".hg",
-            ".svn",
-            "node_modules",
-            ".venv",
-            "venv",
-            "__pycache__",
-            ".tox",
-            ".mypy_cache",
-        }
-    )
+    #: Alias for the one definition in discovery. Two copies of "which
+    #: directories does a walk prune" is how a checkout starts being walked
+    #: differently by two callers that both believe they agree.
+    _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
 
     def _detect_apm(self) -> bool:
         """Check if this repository uses the APM (Agent Package Manager) format"""
@@ -588,16 +585,10 @@ class RepositoryContext(RepositoryProvenanceMixin):
             for item in children
         )
 
-    def _walk_files(self, root: Path) -> Iterator[Path]:
-        """Yield all files under *root*, pruning ``_WALK_SKIP_DIRS`` directories."""
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in self._WALK_SKIP_DIRS]
-            for f in filenames:
-                yield Path(dirpath) / f
-
-    def _should_skip_dir(self, item: Path) -> bool:
-        """True if *item* is not a directory worth recursing into."""
-        return not item.is_dir() or item.name.startswith(".") or item.name in self._WALK_SKIP_DIRS
+    #: Both walks live in discovery, which is where filesystem traversal
+    #: belongs; the context keeps the names its callers already use.
+    _walk_files = staticmethod(detect_discovery.walk_files)
+    _should_skip_dir = staticmethod(detect_discovery.should_skip_dir)
 
     def has_marketplace(self) -> bool:
         """Check if repository has a marketplace"""
