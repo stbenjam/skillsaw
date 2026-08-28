@@ -1,0 +1,7 @@
+version: "99.0.0"
+rules:
+  content-broken-external-reference:
+    enabled: true
+    timeout: 0.5
+    total-budget: 5
+    concurrency: 2

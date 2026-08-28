@@ -3146,6 +3146,16 @@ OPT_IN_RULES = {
     "content-inline-tool-examples",
 }
 
+# Rules that cannot fire from a static fixture because firing requires a
+# server to answer. The suite never reaches the real internet, so these
+# are covered in tests/test_external_links.py, which scripts the answers
+# from a local http.server on an ephemeral port — including the proof
+# that a default run makes no requests at all. Add to this set only for a
+# rule whose verdict genuinely depends on a live response.
+NETWORK_RULES = {
+    "content-broken-external-reference",
+}
+
 
 @pytest.mark.integration
 class TestRuleCoverage:
@@ -3169,11 +3179,20 @@ class TestRuleCoverage:
         r = run_lint(repo, config=config)
         fired |= rule_ids(r)
 
-        missing = all_rule_ids - fired
+        missing = all_rule_ids - fired - NETWORK_RULES
         assert not missing, (
             f"Rules without test coverage ({len(missing)}): {sorted(missing)}\n"
             "Add broken fixtures that trigger these rules."
         )
+
+    def test_network_rules_are_covered_by_the_local_server_suite(self):
+        """The NETWORK_RULES exemption must not become a coverage hole."""
+        suite = (Path(__file__).parent / "test_external_links.py").read_text(encoding="utf-8")
+        for rule_id in NETWORK_RULES:
+            assert rule_id in suite, (
+                f"{rule_id} is exempt from the fixture coverage gate but has no "
+                "local-server coverage in tests/test_external_links.py"
+            )
 
     def test_all_clean_fixtures_pass(self, tmp_path):
         """Every clean fixture must exit 0 with no errors or warnings."""
