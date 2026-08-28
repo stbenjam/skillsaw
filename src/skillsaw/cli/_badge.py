@@ -32,12 +32,7 @@ def _git(root_path: Path, *argv):
 
 
 def _repo_display_name(root_path: Path) -> str:
-    """Repository name shown on the report card.
-
-    Prefers the origin remote's repository basename — checkout directory
-    names vary (forks, CI workspaces, worktrees) while the remote does
-    not — and falls back to the directory name.
-    """
+    """Repository name shown on the grade card."""
     remote = _git(root_path, "remote", "get-url", "origin")
     if remote:
         name = remote.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
@@ -141,10 +136,7 @@ def _run_badge(args):
 
     card_path = None
     if getattr(args, "large", False):
-        from collections import Counter
-
         from ..card import render_card
-        from ..lint_target import SkillNode
 
         card_path = badge_path.parent / _CARD_FILENAME
         try:
@@ -153,11 +145,6 @@ def _run_badge(args):
                 render_card(
                     grade,
                     repo_name=_repo_display_name(context.root_path),
-                    # The deduplicated Claude∪Codex count every formatter
-                    # reports; PluginNode covers only Claude-style directories.
-                    plugin_count=len(context.distinct_plugin_dirs()),
-                    skill_count=len(context.lint_tree.find(SkillNode)),
-                    top_rules=Counter(v.rule_id for v in violations).most_common(3),
                     theme=getattr(args, "theme", "dark"),
                 ).encode("utf-8"),
                 root=context.root_path if args.output is None else badge_path.parent,
