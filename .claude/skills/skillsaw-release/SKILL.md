@@ -43,13 +43,19 @@ Verify the script updated `pyproject.toml`, `src/skillsaw/__init__.py`, and
 `action.yml` (the action's default skillsaw version). If you pass no version
 argument, keep it empty — the script increments the patch version automatically.
 
-Then run `make update` to regenerate generated files and catch the pinned
-version references the script does NOT update:
+Then regenerate generated files, refresh the human contributor list from
+GitHub, and check for pinned version references the script does NOT update:
 
 ```bash
 make update
+make update-contributors
 grep -rn "{old_version}" README.md docs/
 ```
+
+The contributor update combines commit contributors and issue filers, removes
+bots and known automation accounts, and writes the generated README table. Run
+it before committing the version-bump PR so every release thanks the current
+community without a scheduled workflow holding repository write permissions.
 
 Update every stale pin by hand — currently `pip install skillsaw==X.Y.Z` in
 `README.md` and `docs/ci.md`, and the pre-commit `rev: vX.Y.Z` in `README.md`

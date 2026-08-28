@@ -129,3 +129,40 @@ project guidelines and [DEVELOPMENT.md](DEVELOPMENT.md) for the local setup.
 Questions and bug reports belong in [GitHub
 Issues](https://github.com/stbenjam/skillsaw/issues). skillsaw is licensed under
 the [Apache License 2.0](LICENSE).
+
+## Thank you to our contributors
+
+skillsaw is better because people contribute code, bug reports, and ideas. Thank
+you!
+
+<!-- contributors:start -->
+<table width="100%">
+  <tr>
+    <th colspan="4" align="left">Contributors</th>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/alSergey"><code>@alSergey</code></a></td>
+    <td width="25%"><a href="https://github.com/amy"><code>@amy</code></a></td>
+    <td width="25%"><a href="https://github.com/btiernay"><code>@btiernay</code></a></td>
+    <td width="25%"><a href="https://github.com/cblecker"><code>@cblecker</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/cgwalters"><code>@cgwalters</code></a></td>
+    <td width="25%"><a href="https://github.com/ehelms"><code>@ehelms</code></a></td>
+    <td width="25%"><a href="https://github.com/EmilienM"><code>@EmilienM</code></a></td>
+    <td width="25%"><a href="https://github.com/jeffreylo"><code>@jeffreylo</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/jfchevrette"><code>@jfchevrette</code></a></td>
+    <td width="25%"><a href="https://github.com/kannon92"><code>@kannon92</code></a></td>
+    <td width="25%"><a href="https://github.com/nyechiel"><code>@nyechiel</code></a></td>
+    <td width="25%"><a href="https://github.com/rajusem"><code>@rajusem</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/skyth3r"><code>@skyth3r</code></a></td>
+    <td width="25%"><a href="https://github.com/tchughesiv"><code>@tchughesiv</code></a></td>
+    <td width="25%"><a href="https://github.com/tyraziel"><code>@tyraziel</code></a></td>
+    <td width="25%"></td>
+  </tr>
+</table>
+<!-- contributors:end -->

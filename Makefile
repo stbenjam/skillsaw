@@ -6,7 +6,7 @@ VENV_EXTRAS_STAMP := $(VENV)/.skillsaw-extras-$(subst $(comma),-,$(VENV_EXTRAS))
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-.PHONY: help venv format lint test clean update apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile badge self-lint
+.PHONY: help venv format lint test clean update update-contributors apm verify-apm generate-example generate-docs generate-site-content serve-site build-site benchmark benchmark-save benchmark-compare profile badge self-lint
 
 help:
 	@echo "Available targets:"
@@ -18,6 +18,7 @@ help:
 	@echo "  generate-example - Regenerate .skillsaw.yaml.example from builtin rules"
 	@echo "  generate-docs - Regenerate README docs sections when present"
 	@echo "  update        - Regenerate all generated files (APM, example config, docs)"
+	@echo "  update-contributors - Refresh the README community contributor table from GitHub"
 	@echo "  apm           - Install APM dependencies"
 	@echo "  verify-apm    - Non-destructively verify agent dirs match APM sources (injection/drift gate)"
 	@echo "  benchmark     - Benchmark linting speed on a synthetic repo (SCALE=medium)"
@@ -59,6 +60,11 @@ self-lint: $(VENV_EXTRAS_STAMP) badge
 	$(VENV)/bin/skillsaw lint .
 
 update: apm generate-example generate-docs generate-site-content format self-lint
+
+REPOSITORY ?= stbenjam/skillsaw
+
+update-contributors: $(VENV_EXTRAS_STAMP)
+	$(PYTHON) scripts/update_contributors.py --repository "$(REPOSITORY)"
 
 generate-site-content: $(VENV_EXTRAS_STAMP)
 	$(PYTHON) scripts/generate-site-content.py
