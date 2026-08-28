@@ -242,6 +242,63 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         help="Directory to create config in (default: current directory)",
     )
 
+    # --- feedback ---
+    feedback_parser = subparsers.add_parser(
+        "feedback",
+        help="Create a local diagnostic bundle for a bug report",
+        description=(
+            "Create a local, reviewable diagnostic bundle for a skillsaw bug report. "
+            "It never uploads data, and includes no repository files unless --include or "
+            "--config names them. Named files are copied verbatim: skillsaw does not scan "
+            "them for secrets, so review the ZIP before sharing it. Two things are refused "
+            "outright: files whose name means credentials (.env, id_rsa, *.pem, ...), and "
+            "files already excluded by .gitignore, .dockerignore, .npmignore, .helmignore "
+            "or .gcloudignore."
+        ),
+    )
+    feedback_parser.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository to diagnose (default: current directory)",
+    )
+    feedback_parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Path to .skillsaw.yaml config file to copy into the bundle verbatim (default: auto-discover only; review it for secrets yourself)",
+    )
+    feedback_parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Bundle ZIP path (default: .skillsaw-feedback/ under the repository)",
+    )
+    feedback_parser.add_argument(
+        "--message",
+        default="",
+        help="Short description of the problem to include in the bundle",
+    )
+    feedback_parser.add_argument(
+        "--include",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Copy a repository-relative UTF-8 text file into the bundle verbatim (repeatable; review it for secrets yourself)",
+    )
+    feedback_parser.add_argument(
+        "--with-extensions",
+        action="store_true",
+        help="Run custom and installed plugin rules in the diagnostic lint run",
+    )
+    feedback_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the bundle result as JSON for agents and automation",
+    )
+
     # --- list-rules ---
     subparsers.add_parser("list-rules", help="List all available builtin and plugin rules")
 
