@@ -41,6 +41,11 @@ _PEM_PRIVATE_KEY = re.compile(
     r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
     re.DOTALL,
 )
+_BLOCK_SCALAR_CREDENTIAL = re.compile(
+    r"(?im)^(\s*[\"']?(?:[A-Za-z_][A-Za-z0-9_.-]*)?"
+    r"(?:api[_-]?key|token|secret|password|passphrase|credential)[A-Za-z0-9_.-]*[\"']?"
+    r"\s*:\s*[>|][^\n]*\n)(?:^[ \t]+.*(?:\n|$))*"
+)
 
 
 def _redact_text(text: str) -> tuple[str, int]:
@@ -52,7 +57,8 @@ def _redact_text(text: str) -> tuple[str, int]:
         redactions += 1
         return "[REDACTED]"
 
-    text, count = _PEM_PRIVATE_KEY.subn(replace_with_marker, text)
+    text, _count = _PEM_PRIVATE_KEY.subn(replace_with_marker, text)
+    text, count = _BLOCK_SCALAR_CREDENTIAL.subn(r"\1[REDACTED]\n", text)
     redactions += count
     for pattern, _description in STRUCTURED_SECRET_PATTERNS:
         text = pattern.sub(replace_with_marker, text)
@@ -209,7 +215,8 @@ def _run_lint_process(command: list[str], root: Path) -> tuple[str, str, int]:
 
 def _replace_local_paths(text: str, root: Path, config_path: Path | None) -> str:
     """Keep machine-specific local paths out of text reports."""
-    text = text.replace(str(root), "<repository>")
+    if root != Path(root.anchor):
+        text = text.replace(str(root), "<repository>")
     if config_path is not None:
         text = text.replace(str(config_path), "<config>")
     return text
@@ -275,15 +282,20 @@ def _run_feedback(args) -> None:
     config_included = args.config is not None
     if config_included:
         assert config_path is not None
-        raw_config = config_path.read_text(encoding="utf-8", errors="replace")
+        try:
+            raw_config = config_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            print(f"Error: Could not read config file: {config_path}", file=sys.stderr)
+            sys.exit(1)
         artifact_texts["skillsaw-config.yaml"], count = _redact_text(raw_config)
         redactions += count
 
     included_names = []
-    for file_path, relative in selected_files:
+    for _file_path, relative in selected_files:
         try:
+            file_path, relative = _included_file(root, str(relative))
             raw_content = file_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError, ValueError):
             print(f"Error: Could not read --include file: {relative}", file=sys.stderr)
             sys.exit(1)
         archive_name = f"included/{relative.as_posix()}"
@@ -321,17 +333,23 @@ def _run_feedback(args) -> None:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
 
+    temporary_path = None
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = output_path.with_name(f".{output_path.name}.{secrets.token_hex(4)}.tmp")
-        with zipfile.ZipFile(temporary_path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
-            for name, data in sorted(artifact_bytes.items()):
-                archive.writestr(f"{bundle_id}/{name}", data)
+        descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as archive_file:
+            with zipfile.ZipFile(archive_file, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for name, data in sorted(artifact_bytes.items()):
+                    archive.writestr(f"{bundle_id}/{name}", data)
         os.link(temporary_path, output_path)
         temporary_path.unlink()
     except (OSError, zipfile.BadZipFile) as error:
         print(f"Error: Could not write diagnostic bundle: {error}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
     bundle_sha256 = _sha256(output_path.read_bytes())
     issue_url = _issue_url(output_path.name, bundle_sha256, message)
