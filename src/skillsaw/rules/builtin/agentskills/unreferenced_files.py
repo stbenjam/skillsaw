@@ -759,9 +759,14 @@ class AgentSkillUnreferencedFilesRule(Rule):
         source-relative needle can be formed anyway.
         """
         try:
-            return resolved_source.parent.relative_to(skill_resolved).as_posix().strip(".")
+            relative = resolved_source.parent.relative_to(skill_resolved).as_posix()
         except ValueError:
             return ""
+        # ``as_posix()`` spells "the skill root itself" as ".". Only that
+        # exact value means the root: stripping dots would rewrite the
+        # legal directory names ``docs.`` and ``.hidden`` into something no
+        # candidate path matches.
+        return "" if relative == "." else relative
 
     @staticmethod
     def _relative_needle(rel: str, source_rel_dir: str) -> Optional[str]:

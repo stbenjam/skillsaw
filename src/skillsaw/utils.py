@@ -315,31 +315,65 @@ def write_bytes_atomic(path: Path, content: bytes, *, root: Optional[Path] = Non
         raise
 
 
-#: Charged for an entry whose payload cannot be measured cheaply — a parsed
-#: YAML or JSON document. Such a value is a few times the size of the text
-#: it came from; undercharging would let the cache hold more than its
-#: budget says, and overcharging spends the budget on estimates instead of
-#: on the file contents that dominate it.
-_UNMEASURED_ENTRY_BYTES = 4 * 1024
+#: Charged per container and per scalar an entry holds, on top of the text
+#: it carries. A parsed document is mostly structure, and a flat estimate
+#: for the whole of one lets a large document sit in the cache charged as
+#: though it were small — which is how a byte budget stops holding.
+_NODE_OVERHEAD_BYTES = 64
+
+#: Cap on nodes walked while sizing one entry. The accounting runs on every
+#: insertion, so it must cost less than what it protects; a document big
+#: enough to reach the cap is big enough to be charged as if it filled the
+#: budget, which keeps it out of the cache entirely.
+_SIZE_WALK_LIMIT = 20_000
 
 
 def _approximate_size(value: Any) -> int:
-    """Roughly how much *value* keeps alive, for cache accounting.
+    """Roughly how many bytes *value* keeps alive, for cache accounting.
 
-    Only the shapes the cached readers return are inspected: a body of
-    text, or a short tuple of ``(data, error[, line])``. Anything else is
-    charged the flat estimate rather than walked — the accounting runs on
-    every insertion, so it has to cost less than what it is protecting.
+    Walks the parsed structure rather than charging a flat estimate for
+    it: the readers return whole documents, and one charged as though it
+    were a scalar is one the byte budget cannot see. The walk is
+    iterative, descends into each container once (aliases and cycles are
+    ordinary in YAML), and gives up at ``_SIZE_WALK_LIMIT`` nodes by
+    charging the whole budget.
     """
-    if isinstance(value, str):
-        return len(value)
-    if isinstance(value, (bytes, bytearray)):
-        return len(value)
-    if isinstance(value, tuple):
-        return sum(_approximate_size(item) for item in value) or 1
-    if value is None:
-        return 1
-    return _UNMEASURED_ENTRY_BYTES
+    total = 0
+    visited: Set[int] = set()
+    alive: List[Any] = []
+    stack: List[Any] = [value]
+    walked = 0
+    while stack:
+        node = stack.pop()
+        walked += 1
+        if walked > _SIZE_WALK_LIMIT:
+            return FileCache.DEFAULT_BUDGET
+        if isinstance(node, str):
+            total += len(node)
+            continue
+        if isinstance(node, (bytes, bytearray)):
+            total += len(node)
+            continue
+        node_id = id(node)
+        if isinstance(node, dict):
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            alive.append(node)
+            total += _NODE_OVERHEAD_BYTES * len(node)
+            stack.extend(node.keys())
+            stack.extend(node.values())
+            continue
+        if isinstance(node, (list, tuple, set, frozenset)):
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            alive.append(node)
+            total += _NODE_OVERHEAD_BYTES * len(node)
+            stack.extend(node)
+            continue
+        total += _NODE_OVERHEAD_BYTES
+    return total or 1
 
 
 class FileCache:
@@ -848,6 +882,15 @@ _SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 _MAX_YAML_DEPTH = 100
 
 
+def _child_containers(node: Any) -> Optional[Any]:
+    """The containers *node* holds, or ``None`` when it is a scalar."""
+    if isinstance(node, dict):
+        return node.values()
+    if isinstance(node, (list, tuple, set)):
+        return node
+    return None
+
+
 def _reject_overly_nested(data: Any) -> None:
     """Raise when *data* nests deeper than ``_MAX_YAML_DEPTH``.
 
@@ -856,29 +899,53 @@ def _reject_overly_nested(data: Any) -> None:
     because every reader already maps it to ``_TOO_DEEP`` — the condition
     is exactly "too deep for the recursive consumers downstream".
 
-    A container is descended into once. YAML anchors make aliases and
-    outright cycles (``metadata: &m {nested: *m}``) ordinary, valid
-    documents that rules already handle, and re-descending would turn a
-    cycle into an unbounded walk. What a consumer actually recurses
-    through is the object graph, whose depth is what this measures.
+    What a consumer recurses through is the object graph, so what is
+    measured is its height. Each container's height is computed once and
+    memoized, which is what makes a shared container — a YAML anchor
+    referenced from several places — count at its true depth wherever it
+    appears. Marking such a container visited and skipping it instead
+    would measure only wherever it was reached first: a document that
+    mentions a deep anchor shallowly before nesting it deeply would be
+    accepted at a fraction of its real depth.
+
+    A container reached while it is still being computed is a cycle
+    (``metadata: &m {nested: *m}`` is an ordinary, valid document the
+    rules already handle), and contributes nothing further rather than
+    looping forever.
     """
-    stack = [(data, 0)]
-    seen: Set[int] = set()
+    heights: Dict[int, int] = {}
+    on_path: Set[int] = set()
+    # Holds a reference to every node under measurement, so no id() is
+    # reused for a different object while it is a key here.
+    alive: List[Any] = []
+    stack: List[Tuple[Any, bool]] = [(data, False)]
     while stack:
-        node, depth = stack.pop()
-        if isinstance(node, dict):
-            children: Any = node.values()
-        elif isinstance(node, (list, tuple, set)):
-            children = node
-        else:
+        node, computed = stack.pop()
+        children = _child_containers(node)
+        if children is None:
             continue
-        if depth >= _MAX_YAML_DEPTH:
-            raise RecursionError(_TOO_DEEP)
         node_id = id(node)
-        if node_id in seen:
+        if not computed:
+            if node_id in heights or node_id in on_path:
+                continue
+            on_path.add(node_id)
+            alive.append(node)
+            stack.append((node, True))
+            stack.extend((child, False) for child in children)
             continue
-        seen.add(node_id)
-        stack.extend((child, depth + 1) for child in children)
+        on_path.discard(node_id)
+        height = 0
+        for child in children:
+            if _child_containers(child) is None:
+                height = max(height, 1)
+                continue
+            # A child still on the path is a cycle back into this subtree;
+            # a child with no recorded height is one, so it counts as a
+            # leaf here rather than as unbounded depth.
+            height = max(height, 1 + heights.get(id(child), 0))
+        if height >= _MAX_YAML_DEPTH:
+            raise RecursionError(_TOO_DEEP)
+        heights[node_id] = height
 
 
 def safe_load_yaml(source: Any) -> Any:

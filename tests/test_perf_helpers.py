@@ -90,6 +90,19 @@ class TestCaseFoldedGate:
         assert self.PATTERN.search(text), "precondition: the regex matches"
         assert patterns_matching_anywhere(text, [(self.PATTERN, "x")]) == [(self.PATTERN, "x")]
 
+    def test_capital_dotted_i_is_normalized(self):
+        """``casefold`` turns U+0130 into "i" plus a combining dot.
+
+        ``re.IGNORECASE`` matches it against a plain "i", so without the
+        rewrite the gate drops a document the pattern does match.
+        """
+        pattern = re.compile(r"\bkilo\b", re.IGNORECASE)
+        text = "one KİLO of it"  # U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE
+
+        assert pattern.search(text), "precondition: the regex matches"
+        assert case_fold("K\u0130LO") == "kilo"
+        assert patterns_matching_anywhere(text, [(pattern, "x")]) == [(pattern, "x")]
+
     def test_dotless_i_is_normalized(self):
         """U+0131 is the one codepoint ``casefold`` alone does not close.
 
@@ -393,3 +406,33 @@ class TestFindCache:
         assert len(context.lint_tree.find(FrontmatterField)) == 2
         context.rebuild_lint_tree()
         assert len(context.lint_tree.find(FrontmatterField)) == 2
+
+
+class TestSourceRelativeDirectory:
+    """The skill-relative directory of a source, used to build the needles
+    a mention is matched against."""
+
+    @staticmethod
+    def _rel(relative_source):
+        from skillsaw.rules.builtin.agentskills.unreferenced_files import (
+            AgentSkillUnreferencedFilesRule,
+        )
+
+        skill = Path("/skill")
+        return AgentSkillUnreferencedFilesRule._source_rel_dir(skill / relative_source, skill)
+
+    def test_a_source_at_the_skill_root_has_no_relative_directory(self):
+        assert self._rel("SKILL.md") == ""
+
+    def test_a_nested_source_keeps_its_directory(self):
+        assert self._rel("references/guide.md") == "references"
+
+    @pytest.mark.parametrize("directory", ["docs.", ".hidden", "a.b"])
+    def test_dots_in_a_directory_name_survive(self, directory):
+        """Only the exact value "." means the skill root.
+
+        Stripping dots would rewrite these legal directory names into
+        something no candidate path matches, and every file beneath them
+        would be reported unreferenced.
+        """
+        assert self._rel(f"{directory}/script.py") == directory

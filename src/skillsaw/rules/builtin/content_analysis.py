@@ -281,19 +281,27 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
 # volume even an ``lru_cache`` hit, which hashes the pattern's source
 # string and builds a key tuple, costs more than the substring test it
 # guards; a dict keyed by the compiled pattern object is one identity
-# hash. Only config-supplied patterns are compiled per run, so the bound
-# is a backstop rather than a working limit.
+# hash.
+#
+# An entry is a few short strings plus a reference to a pattern its owner
+# — a rule class body, or the config the pass is running under — holds
+# anyway. The builtin patterns are module constants and number in the low
+# hundreds; only config-supplied ones are compiled per run, so the cap is
+# a backstop for a long-lived process linting many differently-configured
+# repositories. It drops the oldest half rather than everything: a cap a
+# workload can cross must not be a cliff.
 _LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
-_MAX_CACHED_PATTERNS = 4096
+_MAX_CACHED_PATTERNS = 20_000
 
 
-# ``str.lower`` is not the fold ``re.IGNORECASE`` uses. Checked across the
-# whole of Unicode, exactly one codepoint that ``re.IGNORECASE`` treats as
-# equal to an ASCII letter survives ``str.casefold`` unchanged: U+0131,
-# the dotless i, which matches "I". Normalizing it is what makes the gate
-# sound, and the containment test in front of the replacement costs one
-# scan and almost never fires.
-_DOTLESS_I = "\u0131"
+# ``str.lower`` is not the fold ``re.IGNORECASE`` uses, and ``str.casefold``
+# is not quite it either. Two Turkish dotted-i forms need normalizing on
+# top: U+0131 (dotless i), which casefolds to itself, and U+0130 (capital I
+# with dot above), which casefolds to "i" plus a combining dot.
+# ``re.IGNORECASE`` matches both against "i". With those two rewrites the
+# fold was checked exhaustively over every Unicode codepoint against every
+# ASCII letter: nothing the engine matches is missed.
+_DOTTED_I_FORMS = ("\u0131", "i\u0307")
 
 
 def case_fold(text: str) -> str:
@@ -302,10 +310,18 @@ def case_fold(text: str) -> str:
     ``str.lower`` leaves U+017F (long s) and U+212A (Kelvin sign) alone,
     while the regex engine matches them against "s" and "k" — so a
     lowercase substring gate built on it can reject a document the
-    pattern would have matched.
+    pattern would have matched. The Turkish dotted-i forms need a rewrite
+    ``casefold`` does not do; see ``_DOTTED_I_FORMS``.
+
+    Being *more* permissive than the engine here would be harmless — the
+    real pattern still runs on whatever survives the gate — but being less
+    permissive drops findings, so the fold is checked in that direction.
     """
     folded = text.casefold()
-    return folded.replace(_DOTLESS_I, "i") if _DOTLESS_I in folded else folded
+    for form in _DOTTED_I_FORMS:
+        if form in folded:
+            folded = folded.replace(form, "i")
+    return folded
 
 
 def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
@@ -314,7 +330,8 @@ def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
     if literals is None:
         literals = _required_literals(pattern.pattern, pattern.flags)
         if len(_LITERALS_BY_PATTERN) >= _MAX_CACHED_PATTERNS:
-            _LITERALS_BY_PATTERN.clear()
+            for stale in list(_LITERALS_BY_PATTERN)[: _MAX_CACHED_PATTERNS // 2]:
+                del _LITERALS_BY_PATTERN[stale]
         _LITERALS_BY_PATTERN[pattern] = literals
     return literals
 

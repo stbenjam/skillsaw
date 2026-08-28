@@ -23,7 +23,7 @@ from .formats.codex import (
 from .discovery import detect as detect_discovery
 from .discovery.excludes import pattern_variants as _pattern_variants
 from .discovery.excludes import path_matches_patterns
-from .paths import safe_is_dir, safe_resolve
+from .paths import clear_resolve_cache, safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
 from .repo_type import RepositoryType  # noqa: F401 - re-exported for callers
@@ -152,6 +152,15 @@ class RepositoryContext(RepositoryProvenanceMixin):
             content_paths: Extra content glob patterns (from config) picked up
                 by the lint tree.
         """
+        # A new context is a new pass over a repository, which is exactly
+        # the lifetime the resolution memo claims. Clearing here is what
+        # makes that true for a long-lived library caller: without it a
+        # process that lints, changes directory or retargets a symlink,
+        # and lints again would answer the second pass from the first
+        # one's filesystem. The CLI constructs one context per path and
+        # finishes linting it before building the next, so nothing in a
+        # run loses a memo it still needs.
+        clear_resolve_cache()
         self.root_path = safe_resolve(root_path) or root_path
         self.content_paths: List[str] = list(content_paths) if content_paths else []
         self.exclude_patterns: List[str] = list(exclude_patterns) if exclude_patterns else []

@@ -1010,6 +1010,37 @@ def test_writing_frontmatter_nested_past_the_limit_raises_value_error(tmp_path):
         block.write_frontmatter_text("extra: " + "[" * depth + "0" + "]" * depth)
 
 
+def test_depth_guard_measures_the_real_graph_depth():
+    """A shared anchor counts at its deepest use, not its first.
+
+    Marking a container visited and skipping it would measure only where
+    it was reached first, so a document that mentions a deep anchor
+    shallowly before nesting it deeply would be accepted at a fraction of
+    its real depth.
+    """
+    from skillsaw.utils import _MAX_YAML_DEPTH, safe_load_yaml
+
+    half = _MAX_YAML_DEPTH // 2
+    anchor = "anchor: &x " + "[" * half + "0" + "]" * half + "\n"
+    deep = "deep: " + "[" * _MAX_YAML_DEPTH + "*x" + "]" * _MAX_YAML_DEPTH + "\n"
+    shallow = "shallow: [*x]\n"
+
+    for ordering in (anchor + shallow + deep, anchor + deep + shallow):
+        with pytest.raises(RecursionError):
+            safe_load_yaml(ordering)
+
+
+def test_approximate_size_charges_a_parsed_document_its_structure():
+    """A whole document charged as though it were a scalar is one the
+    byte budget cannot see."""
+    from skillsaw.utils import _approximate_size
+
+    small = _approximate_size(({"name": "x"}, None))
+    large = _approximate_size(({"items": [{"k": "v" * 100} for _ in range(200)]}, None))
+
+    assert large > 100 * small
+
+
 def test_safe_load_yaml_accepts_anchor_cycles():
     """An alias cycle is a valid document, not unbounded nesting."""
     from skillsaw.utils import safe_load_yaml
