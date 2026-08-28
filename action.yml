@@ -33,6 +33,10 @@ inputs:
     description: 'Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)'
     required: false
     default: 'true'
+  no-network:
+    description: 'Skip rules that make outbound network requests, whatever the linted repository enables. Defaults on: the repo being linted must not be able to aim the runner at a network it chose'
+    required: false
+    default: 'true'
 
 outputs:
   exit-code:
@@ -86,6 +90,7 @@ runs:
         SKILLSAW_FAIL_ON: ${{ inputs.fail-on }}
         SKILLSAW_VERBOSE: ${{ inputs.verbose }}
         SKILLSAW_NO_CUSTOM_RULES: ${{ inputs.no-custom-rules }}
+        SKILLSAW_NO_NETWORK_INPUT: ${{ inputs.no-network }}
       run: |
         set +e
         ARGS=""
@@ -103,6 +108,9 @@ runs:
         fi
         if [ "$SKILLSAW_NO_CUSTOM_RULES" = "true" ]; then
           ARGS="$ARGS --no-custom-rules"
+        fi
+        if [ "$SKILLSAW_NO_NETWORK_INPUT" = "true" ]; then
+          ARGS="$ARGS --no-network"
         fi
 
         REPORT_FILE=$(mktemp --suffix=.json)

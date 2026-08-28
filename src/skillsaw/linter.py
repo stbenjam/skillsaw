@@ -151,6 +151,23 @@ class CustomRuleWarning(UserWarning):
         super().__init__(f"Loading custom rule file: {path} — use --no-custom-rules to skip")
 
 
+class NetworkAccessWarning(UserWarning):
+    """Emitted when a rule that makes outbound requests is about to run.
+
+    The linted repository's own config decides whether such a rule is
+    enabled, so the operator has to be able to see that it happened —
+    the same reason ``CustomRuleWarning`` exists for the other
+    repo-config-activated capability.
+    """
+
+    def __init__(self, rule_ids: List[str]):
+        self.rule_ids = rule_ids
+        super().__init__(
+            f"Network access enabled for: {', '.join(rule_ids)} — "
+            "use --no-network to skip"
+        )
+
+
 class Linter:
     """
     Main linter that orchestrates rule checking
@@ -165,6 +182,7 @@ class Linter:
         baseline: Optional["BaselineFile"] = None,
         no_custom_rules: bool = False,
         no_plugins: bool = False,
+        no_network: bool = False,
     ):
         from .rules.builtin import canonical_rule_id
 
@@ -177,6 +195,7 @@ class Linter:
         self._baseline = baseline
         self._no_custom_rules = no_custom_rules
         self._no_plugins = no_plugins
+        self._no_network = no_network
         self._plugin_load_violations: List[RuleViolation] = []
         self._vendor_managed_cache: Dict[Path, bool] = {}
         self._stale_baseline_entries: List["BaselineEntry"] = []
@@ -196,6 +215,7 @@ class Linter:
             self.context.apply_excludes()
         self.rules: List[Rule] = []
         self._load_rules()
+        self._apply_network_gate()
 
         if self._rule_ids:
             unknown = self._rule_ids - self._known_rule_ids
@@ -231,6 +251,26 @@ class Linter:
         if not self._no_custom_rules:
             for custom_rule_path in self.config.custom_rules:
                 self._load_custom_rule(custom_rule_path)
+
+    def _apply_network_gate(self):
+        """Drop network rules under ``--no-network``; otherwise announce them.
+
+        This runs after every loader — builtin, plugin, and custom — so
+        one filter covers all three, and it is deliberately independent
+        of ``--rule``: a linted repository must never be able to decide
+        that skillsaw is allowed on the network, and neither should a
+        flag that only selects *which* rules run.
+        """
+        network_rules = [r for r in self.rules if getattr(r, "requires_network", False)]
+        if not network_rules:
+            return
+        rule_ids = sorted(r.rule_id for r in network_rules)
+        if self._no_network:
+            self.rules = [r for r in self.rules if not getattr(r, "requires_network", False)]
+            for rule_id in rule_ids:
+                logger.info("Rule %-30s skipped (--no-network)", rule_id)
+            return
+        warnings.warn(NetworkAccessWarning(rule_ids), stacklevel=2)
 
     def _load_builtin_rules(self):
         """Load builtin rules from skillsaw.rules.builtin"""

@@ -208,6 +208,20 @@ def color_enabled(stream, color: bool | None = None) -> bool:
         return False
 
 
+def no_network_requested(args) -> bool:
+    """Whether the operator refused network access for this run.
+
+    The flag and the environment variable are both one-way: either turns
+    the gate on, and nothing turns it back off. An operator who exports
+    ``SKILLSAW_NO_NETWORK=1`` for a whole CI job must not have it undone
+    by a command line, or by anything in the linted repository.
+    """
+    if getattr(args, "no_network", False):
+        return True
+    value = os.environ.get("SKILLSAW_NO_NETWORK", "")
+    return value.strip().lower() not in ("", "0", "false", "no")
+
+
 def hyperlinks_enabled(stream, color: bool) -> bool:
     """Whether OSC 8 terminal hyperlinks should be emitted on ``stream``.
 
@@ -248,7 +262,7 @@ def install_warning_display() -> None:
     Skillsaw warning categories get a compact colored line instead; every
     other warning keeps the default rendering.
     """
-    from ..linter import CustomRuleWarning
+    from ..linter import CustomRuleWarning, NetworkAccessWarning
 
     default_showwarning = warnings.showwarning
 
@@ -260,6 +274,15 @@ def install_warning_display() -> None:
                 f"{c['yellow']}⚠ Loading custom rule file:{c['reset']} "
                 f"{c['bold']}{message.path}{c['reset']} "
                 f"{c['dim']}(use --no-custom-rules to skip){c['reset']}",
+                file=out,
+            )
+        elif isinstance(message, NetworkAccessWarning):
+            out = sys.stderr if file is None else file
+            c = _ansi_colors(color_enabled(out))
+            print(
+                f"{c['yellow']}⚠ Network access enabled for:{c['reset']} "
+                f"{c['bold']}{', '.join(message.rule_ids)}{c['reset']} "
+                f"{c['dim']}(use --no-network to skip){c['reset']}",
                 file=out,
             )
         else:

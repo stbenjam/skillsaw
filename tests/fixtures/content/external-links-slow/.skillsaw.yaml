@@ -5,3 +5,4 @@ rules:
     timeout: 0.5
     total-budget: 5
     concurrency: 2
+    allow-private-hosts: true

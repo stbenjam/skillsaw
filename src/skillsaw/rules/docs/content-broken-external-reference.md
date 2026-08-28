@@ -17,8 +17,67 @@ off unless you turn it on (`default_enabled = false`, never `auto`). A
 lint run is hermetic by default: no repository type, no detected format,
 and no `enabled: auto` setting will start making requests on your behalf.
 
+Be aware that for a disabled-by-default rule, **any** setting under its
+config key activates it — a lone `ignore:` or `severity:` is enough. To
+tune it without turning it on, keep an explicit `enabled: false`.
+
 That also makes it a poor fit for a per-PR gate. Enable it in a scheduled
-job instead — see the CI recipe below.
+job instead — see the CI recipe below. Enabling it in `.skillsaw.yaml`
+rather than with `--rule` has a second, stickier consequence: violations
+are warnings, warnings are weighted into the letter grade, so your
+`skillsaw badge` output becomes a function of whether a third-party URL
+404s today.
+
+## The operator's gate
+
+The rule's `enabled` state is decided by the linted repository's
+`.skillsaw.yaml` — which skillsaw's [threat model](https://github.com/stbenjam/skillsaw/blob/main/THREAT_MODEL.md)
+treats as untrusted content. Whether skillsaw may touch the network at
+all is decided by the operator instead:
+
+```console
+$ skillsaw lint . --no-network     # also: SKILLSAW_NO_NETWORK=1
+```
+
+`--no-network` is available on `lint`, `fix`, `baseline`, and `badge`. It
+drops every rule that declares `requires_network`, whatever the
+repository's config or a `--rule` flag asks for, so an air-gapped or
+enterprise CI job can assert "skillsaw made no network calls" from a flag
+rather than by auditing every linted repository's YAML. The shipped
+GitHub Action sets `no-network: 'true'` by default for the same reason.
+
+When the network *does* engage, skillsaw says so on stderr:
+
+```console
+⚠ Network access enabled for: content-broken-external-reference (use --no-network to skip)
+```
+
+## What is sent, and to whom
+
+Enabling this rule discloses, to every third-party host referenced
+anywhere in your context files:
+
+- **your runner's IP address**, and that the repository is being linted —
+  on a schedule, repeatedly;
+- **the full path and query string** of each URL. Only the fragment is
+  dropped. A URL like `https://host/doc?access_token=…`, or a
+  pre-signed link, is transmitted intact. URLs carrying *userinfo*
+  (`https://user:token@host/…`) are skipped entirely — but that promise
+  does not extend to secrets in a query string;
+- **the user agent** `skillsaw/<version> (+https://skillsaw.org)`, which
+  identifies the tool and its version.
+
+Destinations are confined to public hosts. A URL whose host is a loopback,
+private, link-local, reserved, multicast or IPv4-mapped address — or a
+`localhost` name — is refused unless you set `allow-private-hosts: true`.
+The same check re-runs on every redirect hop, so an origin cannot redirect
+the linter onto your internal network. An internal *hostname* that resolves
+to a private address is not caught (that would need a resolver lookup, and
+would still lose to DNS rebinding); use `--no-network` or network egress
+control if that matters.
+
+`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honored, so a restricted-egress
+environment can route or block these requests the usual way.
 
 ## What counts as broken
 

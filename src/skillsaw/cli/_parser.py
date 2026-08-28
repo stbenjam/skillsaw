@@ -27,6 +27,27 @@ def _add_color_flag(subparser) -> None:
     )
 
 
+_NO_NETWORK_HELP = (
+    "Skip every rule that makes outbound network requests, whatever the "
+    "linted repository's .skillsaw.yaml enables (env: SKILLSAW_NO_NETWORK=1)"
+)
+
+
+def _add_no_network_flag(subparser) -> None:
+    """The operator's network gate, on every rule-executing subcommand.
+
+    Shared rather than repeated per subparser: the help text is identical
+    everywhere because the guarantee is, and a gate that is missing from
+    one subcommand is a gate an attacker routes around.
+    """
+    subparser.add_argument(
+        "--no-network",
+        action="store_true",
+        dest="no_network",
+        help=_NO_NETWORK_HELP,
+    )
+
+
 def _build_parser():
     """Build the main argument parser with all subcommands.
 
@@ -148,6 +169,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
+    _add_no_network_flag(lint_parser)
     lint_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -215,6 +237,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
+    _add_no_network_flag(fix_parser)
     fix_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -421,6 +444,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
     )
+    _add_no_network_flag(baseline_parser)
     baseline_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -474,6 +498,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
     )
+    _add_no_network_flag(badge_parser)
     badge_parser.add_argument(
         "--no-plugins",
         action="store_true",

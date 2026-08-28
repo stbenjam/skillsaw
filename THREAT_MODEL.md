@@ -13,9 +13,15 @@ skillsaw reads files from a target repository, parses them (Markdown,
 YAML, JSON), evaluates them against ~70 built-in lint rules, and reports
 violations. It can also automatically fix violations via deterministic
 rewrites. A GitHub Action mode posts lint results as PR review comments.
-skillsaw makes no network calls of its own; non-deterministic fixes are
-delegated to external coding agents (via the `skillsaw-fix` skill),
-which are outside skillsaw's trust boundary.
+Every rule runs offline except one: `content-broken-external-reference`
+(v0.20.0) requests the external `http(s)` URLs found in the linted
+repository's content files to detect dead links. It is disabled by
+default, and the operator can refuse it outright with `--no-network` /
+`SKILLSAW_NO_NETWORK` on every rule-executing subcommand — a gate the
+linted repository cannot override, and which the shipped Action defaults
+on. See T18. Non-deterministic fixes are delegated to external coding
+agents (via the `skillsaw-fix` skill), which are outside skillsaw's trust
+boundary.
 
 **Key assumptions:**
 
@@ -53,6 +59,7 @@ which are outside skillsaw's trust boundary.
 | agent_workflow_input | Issue bodies, PR diffs, and review comments consumed by autonomous maintenance workflows | untrusted collaboration content → privileged coding agent | agent_workflow_tokens, repository_files |
 | marketplace_json_sources | Plugin source paths declared in marketplace.json | untrusted repo content → path resolution | repository_files |
 | codex_plugin_inputs | Codex plugin manifests (`.codex-plugin/plugin.json`), Codex marketplace catalogs (`.agents/plugins/*.json`), `agents/openai.yaml` skill metadata (the first YAML config target), and hooks/MCP payloads declared inline in manifests | untrusted repo content → JSON/YAML parsers, path resolution, rule engine | repository_files, ci_gate_integrity |
+| external_link_targets | `http(s)` URLs written in the linted repository's content files, reaching an outbound HTTP client when `content-broken-external-reference` is enabled | untrusted repo content → urllib request from the runner's network position | developer_workstation, ci_gate_integrity |
 | generated_docs | `skillsaw docs` renders manifest/catalog metadata (names, descriptions, homepage/repository URLs, owner, categories, tags) into published Markdown and HTML pages | untrusted manifest metadata → docs extractor → Markdown/HTML renderers → published pages | published_docs |
 
 ## 4. Threats
@@ -72,6 +79,8 @@ which are outside skillsaw's trust boundary.
 | T15 | Stored XSS / Markdown injection through generated documentation (partially mitigated — see accepted risk on author prose): a third-party plugin in an aggregated catalog carries a crafted `homepage`/`repository` URL (`javascript:` scheme, literal or entity-encoded), a name or metadata value with Markdown/HTML control text, or a value that breaks out of the HTML page's inline-script string context — and the payload activates when the generated pages are published | remote_unauth | generated_docs | published_docs | medium | possible | partially_mitigated | `_safe_url()` decodes HTML character references to a fixed point, then enforces a scheme allow-list and percent-encodes parentheses; `_link_dest()` re-encodes `&` at the Markdown link sink so entity text cannot reassemble a scheme at render time; `_safe_markdown_prose()` neutralizes inline, reference, image, and autolink destinations with unsafe schemes while preserving description prose; `_table_cell()` folds newlines and escapes Markdown link/table delimiters in every metadata scalar the Markdown renderer interpolates; `escAttr`/`escJsAttr` escape HTML/JS sinks, and `_unique_filenames` prevents page-name collisions. **Accepted risk:** `description` fields and command `synopsis`/`body` content render as author prose by design; command bodies pass through verbatim and a synopsis can terminate its fixed code fence, so publishers aggregating third-party catalogs should use a sanitizing pipeline. | `_safe_url` + `_safe_markdown_prose` + `_table_cell` + `escJsAttr` + `_unique_filenames`; hostile-link and hostile-metadata tests |
 | T16 | Predictable generated artifact paths or autofix targets are symlinked to overwrite files outside the repository | remote_unauth | target_repo_files | developer_workstation, repository_files | high | possible | partially_mitigated | Baseline, badge/card, and generated-doc files use symlink-refusing atomic replacement. On platforms with descriptor-relative filesystem operations, autofix writes and renames pin repository parent directories without following symlinks at the write boundary. Other platforms validate containment and reject symlinked parents and endpoints immediately before the native rename, but cannot eliminate path-swap races without equivalent OS primitives. | Symlink-output and autofix regression tests |
 | T17 | Prompt injection or code execution in privileged autonomous maintenance workflows misuses write-scoped tokens | remote_unauth | agent_workflow_input | agent_workflow_tokens, repository_files | critical | possible | partially_mitigated | Privileged maintenance agents have shell/network access and a write-scoped token under automatic permission mode; this is not a tool-isolation boundary. Runbooks instruct agents to trust only enumerated reviewers, avoid executing PR code, source review inputs from GitHub APIs, and verify Git and CI state after execution; edited issue bodies require fresh collaborator approval. Repository rulesets must still require PR review/checks and protect release tags. | Agent workflow definitions and runbooks |
+
+| T18 | SSRF / internal-network probing / beaconing via repo-authored URLs: a `.skillsaw.yaml` enables `content-broken-external-reference` (any non-`enabled` key suffices for a disabled-by-default rule) and a `CLAUDE.md` links `http://169.254.169.254/…` or an intranet host, so the linter issues those requests from the runner's network position. Because only 404/410 produce a violation, each probed URL returns one bit about internal reachability into a report the PR author can read. Enabling also discloses the runner's IP to every third-party host referenced in the repo. | remote_unauth | external_link_targets, skillsaw_yaml_config | developer_workstation, ci_gate_integrity | high | possible | partially_mitigated | The rule is `default_enabled = False` and never `auto`. `--no-network` / `SKILLSAW_NO_NETWORK` on `lint`, `fix`, `baseline`, and `badge` drops every rule declaring `requires_network` regardless of repo config or `--rule`, and the shipped Action defaults `no-network: 'true'`; a visible warning names the rule whenever the network engages. Destinations are confined to public hosts — loopback, private, link-local, reserved, multicast, IPv4-mapped, and `localhost` names are refused unless `allow-private-hosts` is set — and the same admission gate, plus `ignore`, re-runs on every redirect hop, which also stops userinfo being re-sent. Only `http(s)` is ever spoken; bodies are never read; timeout, budget, and concurrency are clamped (see T13's precedent). **Residual:** an internal *hostname* that resolves privately is not caught without a resolver lookup, and DNS rebinding is out of scope — `--no-network` and network egress control are the controls that do not depend on parsing. | `--no-network` gate, private-host confinement, redirect-hop vetting, and local-server tests (v0.20.0) |
 
 Retired threat IDs (T2, T3, T7, T10) covered the built-in LLM fix path
 (`fix --llm`, LLM tool-call dispatch, and `--apply-patch`), which was
@@ -107,6 +116,12 @@ review workflow govern that risk.
 - updated: 2026-07-27 — OpenAI Codex support: `codex_plugin_inputs` entry point added (plugin manifest, marketplace catalog, `agents/openai.yaml`, inline hooks/MCP payloads); T14 (report credential disclosure) added; T11 evidence updated for the memoized discovery probe.
 - updated: 2026-07-27 — `generated_docs` entry point, `published_docs` asset, and T15 (stored XSS / Markdown injection through generated documentation) added; T14 notes the work bound on `safe_display()`.
 - updated: 2026-07-28 — T15 evidence corrected: hook event names, hook matchers, and rule globs reached the Markdown renderer raw, so the accepted risk was wider than `description` prose. All three now fold through `_table_cell()`; the accepted risk is again `description` fields alone.
+- updated: 2026-08-28 — First rule that makes outbound requests
+  (`content-broken-external-reference`): §1 network claim scoped, the
+  `external_link_targets` entry point and T18 (SSRF / internal-network
+  probing / beaconing) added, with the `--no-network` operator gate,
+  public-host confinement, redirect-hop vetting, and option clamping as
+  its controls.
 - updated: 2026-08-23 — Security-audit hardening: custom-rule opt-outs now cover artifact commands; symlink fan-out and output overwrites are blocked; parser and formatter DoS paths fail closed; review comments and privileged agent workflows have narrower trust boundaries; T16 and T17 added.
 
 ## 8. Recommended mitigations

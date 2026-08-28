@@ -28,7 +28,11 @@ night. Read the reference material before changing anything under
   hosted behind a CDN that mishandles HEAD.
 - [Interchange fee tables](http://127.0.0.1:__PORT__/head-410-get-200) — same
   CDN, same quirk.
-- <http://127.0.0.1:__PORT__/rate-limited>
+- ![Settlement SLO](http://127.0.0.1:__PORT__/badge.svg) — current burn rate,
+  rendered from the metrics store.
+
+The acquirer's rate-limit notice is served without a nice landing page, so
+open it directly: <http://127.0.0.1:__PORT__/rate-limited>
 
 ## Running a reconciliation locally
 
@@ -46,8 +50,9 @@ Settlement deploys ride the nightly train. Announce the change in
 `#payments-releases` before 16:00 UTC, then confirm the batch that runs at
 02:00 UTC balanced before you sign off.
 
-Do not copy the example URL from the retired docs:
+The v1 docs still show the retired endpoint. Do not copy it into new
+integrations:
 
 ```markdown
-[Old chargeback API](http://127.0.0.1:__PORT__/definitely-not-requested)
+[Chargeback API](http://127.0.0.1:__PORT__/v1-chargebacks)
 ```

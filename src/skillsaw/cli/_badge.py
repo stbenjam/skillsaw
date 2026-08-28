@@ -9,7 +9,7 @@ from ..context import RepositoryContext
 from ..linter import Linter
 from ..utils import write_bytes_atomic
 from ._config import load_config
-from ._helpers import _RuleProgress, _ansi_colors, color_enabled
+from ._helpers import _RuleProgress, _ansi_colors, color_enabled, no_network_requested
 from skillsaw.paths import safe_resolve
 
 _BADGE_FILENAME = ".skillsaw-badge.json"
@@ -89,6 +89,7 @@ def _run_badge(args):
             context,
             config,
             no_custom_rules=args.no_custom_rules,
+            no_network=no_network_requested(args),
             no_plugins=args.no_plugins,
         )
     except ValueError as e:

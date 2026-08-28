@@ -3187,14 +3187,27 @@ class TestRuleCoverage:
             "Add broken fixtures that trigger these rules."
         )
 
-    def test_network_rules_are_covered_by_the_local_server_suite(self):
-        """The NETWORK_RULES exemption must not become a coverage hole."""
-        suite = (Path(__file__).parent / "test_external_links.py").read_text(encoding="utf-8")
-        for rule_id in NETWORK_RULES:
-            assert rule_id in suite, (
-                f"{rule_id} is exempt from the fixture coverage gate but has no "
-                "local-server coverage in tests/test_external_links.py"
-            )
+    def test_network_rules_actually_fire_against_the_local_server(self, tmp_path):
+        """The NETWORK_RULES exemption must not become a coverage hole.
+
+        Asserting on *observed firing* rather than on the rule id
+        appearing somewhere in the suite's text: a substring match is
+        satisfied by a comment, so a second rule could be exempted with
+        one line and never be tested at all.
+        """
+        from .test_external_links import _LocalServer, _materialize, _run_rule
+
+        server = _LocalServer()
+        try:
+            repo = _materialize("content/external-links", tmp_path, server.port)
+            fired = {v.rule_id for v in _run_rule(repo)}
+        finally:
+            server.close()
+
+        assert NETWORK_RULES <= fired, (
+            f"exempt from the fixture coverage gate but did not fire: "
+            f"{sorted(NETWORK_RULES - fired)}"
+        )
 
     def test_all_clean_fixtures_pass(self, tmp_path):
         """Every clean fixture must exit 0 with no errors or warnings."""

@@ -66,7 +66,19 @@ def main():
                 for rule_class in rule_classes:
                     affected.add(rule_class().rule_id)
 
-    for rule_id in sorted(affected):
+    # Never force-run a network rule here. rule-impact.yml triggers on
+    # pull_request (so a fork reaches it), --rule bypasses `enabled`
+    # entirely, and a changed shared module in a package fans out to
+    # every rule in it — so a one-line edit to content/__init__.py would
+    # otherwise make GitHub runners request every external link in seven
+    # cloned third-party repositories.
+    network_rules = {
+        rule_class().rule_id
+        for rule_class in BUILTIN_RULES
+        if getattr(rule_class, "requires_network", False)
+    }
+
+    for rule_id in sorted(affected - network_rules):
         print(rule_id)
 
 
