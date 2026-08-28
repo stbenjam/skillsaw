@@ -1,4 +1,4 @@
-"""Tests for the .pre-commit-hooks.yaml manifest.
+"""Tests for the shipped and local pre-commit configurations.
 
 Validates the hook definition offline: structure, consistency with the
 console scripts declared in pyproject.toml, and the repo-level invocation
@@ -11,15 +11,26 @@ import re
 from pathlib import Path
 
 import pytest
-import yaml
+
+from skillsaw.utils import read_yaml_commented
 
 REPO_ROOT = Path(__file__).parent.parent
 MANIFEST = REPO_ROOT / ".pre-commit-hooks.yaml"
+CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 
 
 @pytest.fixture(scope="module")
 def hooks():
-    return yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
+    parsed, error, _error_line = read_yaml_commented(MANIFEST)
+    assert error is None
+    return parsed
+
+
+@pytest.fixture(scope="module")
+def config():
+    parsed, error, _error_line = read_yaml_commented(CONFIG)
+    assert error is None
+    return parsed
 
 
 @pytest.fixture(scope="module")
@@ -52,3 +63,14 @@ def test_skillsaw_hook_contract(skillsaw_hook):
     assert re.search(
         rf"^{re.escape(entry_cmd)}\s*=", pyproject, re.MULTILINE
     ), f"entry {entry_cmd!r} is not a [project.scripts] console script"
+
+
+def test_leaktk_hook_is_enabled_at_a_pinned_revision(config):
+    """Keep local secret scanning reproducible and installed by make venv."""
+    repositories = config["repos"]
+    leaktk = next(
+        repo for repo in repositories if repo["repo"] == "https://github.com/leaktk/leaktk.git"
+    )
+
+    assert re.fullmatch(r"[0-9a-f]{40}", leaktk["rev"])
+    assert {hook["id"] for hook in leaktk["hooks"]} == {"leaktk.git.pre-commit"}

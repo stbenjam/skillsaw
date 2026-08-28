@@ -191,7 +191,11 @@ RULE_GROUPS = [
     (
         "Instruction Files",
         "instruction-files",
-        ["instruction-file-valid", "instruction-imports-valid"],
+        [
+            "instruction-file-valid",
+            "instruction-imports-valid",
+            "claude-md-agents-import",
+        ],
         "Validates AI coding assistant instruction files (AGENTS.md, CLAUDE.md, "
         "GEMINI.md, QWEN.md) at the repository root. Checks encoding, non-emptiness, "
         "and that `@import` references resolve to existing files. Enabled automatically when one of those files is present.",

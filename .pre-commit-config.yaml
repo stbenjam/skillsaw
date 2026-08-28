@@ -1,0 +1,7 @@
+# Local contributor hooks. Install once with: .venv/bin/pre-commit install
+repos:
+  - repo: https://github.com/leaktk/leaktk.git
+    # Pin the exact revision so each contributor uses the same scanner source.
+    rev: d46703286f99f3cabe3a592d0eba047477d12a07
+    hooks:
+      - id: leaktk.git.pre-commit

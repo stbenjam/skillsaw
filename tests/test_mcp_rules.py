@@ -650,7 +650,7 @@ def test_valid_headers_on_http_server(temp_dir):
 
 
 def test_editor_mcp_credentials_are_reported_without_echoing_values(temp_dir):
-    cursor_secret = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    cursor_secret = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"  # notsecret
     vscode_secret = "AKIAQRSTUVWXYZABCDEF"
     cursor = temp_dir / ".cursor"
     vscode = temp_dir / ".vscode"
@@ -766,7 +766,7 @@ def test_additional_placeholders_suppress_structured_credential(temp_dir):
 
 
 def test_additional_placeholders_do_not_mask_real_tokens(temp_dir):
-    token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"
+    token = "ghp_aB3cD4eF5gH6iJ7kL8mN9pQ0rS1uV2wX3yZ4"  # notsecret
     mcp_config = {
         "mcpServers": {"local": {"command": "srv", "env": {"API_KEY": f"corp-vault-{token}"}}}
     }
