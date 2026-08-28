@@ -228,6 +228,17 @@ shared node types only. Prefer subclassing a shared block
 (`VsCodeMcpBlock(McpBlock)`) over editing existing rule files, so the
 security rules pick the tool up without a visit.
 
+Three more, from OpenCode (`formats/opencode.py`, `rules/builtin/opencode/`):
+check `APM_COMPILED_DIR_TARGETS` when the tool's directory is also a compile
+target (`.opencode` is — that table resolves it on APM's evidence, no
+provenance machinery); set `jsonc: ClassVar[bool] = True` on a JSONC host's
+block, never on a Claude-family one; put a configuration vocabulary — key
+sets, version alias tables — in `formats/<tool>.py` for rules to read rather
+than restate. And subclassing does not always suffice: when a dialect
+diverges enough that a shared rule's every check misfires, that rule defers
+to the tool's own, as `mcp-valid-json` does for Agent Plugins and OpenCode,
+keeping any dialect-neutral check.
+
 **Adding an ecosystem** (Codex and Agent Plugins are the worked examples):
 put its discovery leg — the
 state-free plugin/manifest walks, catalog enumeration, local-source

@@ -28,10 +28,32 @@ The server map has two spellings, and each host reads exactly one:
 | plugin manifests | `mcpServers` | Yes |
 | `.cursor/mcp.json` | `mcpServers` | Yes |
 | `.vscode/mcp.json` | `servers` | Yes |
+| `opencode.json(c)` | `mcp` | Yes — shape checked elsewhere |
 
 A file using the other host's key is reported as such — the servers are
 present but will not load. VS Code's documented siblings `inputs` and
 `sandbox` are not servers and are left alone.
+
+## Two files this rule does not shape-check
+
+Two hosts have a closed dialect of their own, so their *shape* is validated
+by the rule that knows it, and this rule stands aside to avoid reporting a
+correct file as broken:
+
+- A portable Agent Plugins `mcp.json` →
+  [`agent-plugin-mcp-valid`](agent-plugin-mcp-valid.md).
+- An `opencode.json(c)` → [`opencode-config-valid`](opencode-config-valid.md).
+  OpenCode names its transports for where the server runs (`local`/`remote`)
+  rather than for the wire protocol, spells a local `command` as an argv
+  array, and calls its environment map `environment`.
+
+One check does not stand aside in either case: a `url` carrying user
+information. `url` means the same thing in every dialect, so that finding is
+still reported here — which also means it survives a project pinning a
+`version:` older than the deferring rule's `since`.
+
+Policy rules are unaffected by both deferrals: `mcp-prohibited` and the
+security scanners read the normalized server list, not the raw document.
 
 A standalone `.mcp.json` accepts a **wrapperless** map as well: a file
 whose top level is the server map itself, with no `mcpServers` key, is

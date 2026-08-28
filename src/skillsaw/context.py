@@ -500,7 +500,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         )
 
     #: Alias for the one definition in discovery. Two copies of "which
-    #: directories does a walk prune" is how a checkout starts being walked
+    #: directories does a walk prune" are how a checkout starts being walked
     #: differently by two callers that both believe they agree.
     _WALK_SKIP_DIRS = detect_discovery.WALK_SKIP_DIRS
 
@@ -586,7 +586,7 @@ class RepositoryContext(RepositoryProvenanceMixin):
         )
 
     #: Both walks live in discovery, which is where filesystem traversal
-    #: belongs; the context keeps the names its callers already use.
+    #: belongs; the context keeps the names its callers use.
     _walk_files = staticmethod(detect_discovery.walk_files)
     _should_skip_dir = staticmethod(detect_discovery.should_skip_dir)
 

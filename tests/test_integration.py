@@ -2652,8 +2652,10 @@ class TestOpenCode:
         server in ``servers`` and leave a credential-bearing one flat beside
         it. Both layouts load, so both are read.
         """
+        from skillsaw.utils import strip_jsonc
+
         repo = copy_fixture("opencode/malformed-shapes", tmp_path)
-        config = json.loads((repo / "opencode.json").read_text())
+        config = json.loads(strip_jsonc((repo / "opencode.json").read_text()))
         assert (
             "playwright" in config["mcp"] and "servers" in config["mcp"]
         ), "the fixture must carry a flat server beside the v2 wrapper"

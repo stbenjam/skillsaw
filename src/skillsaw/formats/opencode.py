@@ -153,8 +153,8 @@ MCP_OAUTH_V1_TO_V2: Mapping[str, str] = {
     "redirectUri": "redirect_uri",
 }
 
-#: Pairs whose two spellings do not merely differ but disagree, mapped to the
-#: clause that says so in a diagnostic.
+#: Pairs whose two spellings contradict each other rather than duplicate,
+#: mapped to the clause that says so in a diagnostic.
 INVERTED_SENSE_NOTE: Mapping[str, str] = {
     "enabled": " with the sense inverted",
 }
@@ -210,7 +210,7 @@ def timeout_is_valid(value: Any) -> bool:
 
     v1 takes a number of milliseconds. v2 takes an object splitting the
     budget across :data:`MCP_TIMEOUT_KEYS`, also in milliseconds. Both are
-    accepted; a bool is neither.
+    accepted; a bool is neither, though ``isinstance(True, int)`` holds.
     """
     if isinstance(value, bool):
         return False
@@ -237,8 +237,8 @@ def unknown_keys(data: Mapping[str, Any], known: frozenset) -> Tuple[str, ...]:
 def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple[str, ...]:
     """v1 keys of *data* whose v2 spelling is declared beside them.
 
-    Nothing branches on the answer, because either spelling on its own is
-    valid. Carrying both is the finding: OpenCode 2.0 normalizes the v1 key
+    No caller treats a lone v1 key as wrong — either spelling on its own
+    is valid. Carrying both is the finding: OpenCode 2.0 normalizes the v1 key
     into the v2 one, so the same setting arrives twice and which copy
     survives depends on merge order.
 
