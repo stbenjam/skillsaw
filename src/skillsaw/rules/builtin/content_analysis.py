@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 # Re-exported for backward compatibility — the canonical home is
 # ``skillsaw.blocks``.  Rules and tests import these block types from here.
@@ -568,9 +568,98 @@ class RedundancyDetector:
         return results
 
 
+def literal_alternation(words: Sequence[str]) -> str:
+    """A regex source matching any of *words*, factored into a prefix trie.
+
+    ``re`` tries the branches of an alternation one at a time, so a flat
+    ``always|never|do not|…`` of fifty verbs costs up to fifty attempts at
+    every line of every document in a repository. Factoring shared
+    prefixes turns most of those into a handful of character comparisons.
+
+    The matched language is unchanged. Where one word is a prefix of
+    another the factored form prefers the longer, so a caller that reads
+    ``match.group()`` must not be relying on the flat form's
+    first-alternative order; callers that ask only whether a match exists
+    are unaffected either way.
+    """
+    root: Dict[str, dict] = {}
+    for word in words:
+        node = root
+        for char in word:
+            node = node.setdefault(char, {})
+        node[""] = {}
+
+    def render(node: Dict[str, dict]) -> str:
+        branches = [re.escape(char) + render(node[char]) for char in sorted(k for k in node if k)]
+        if not branches:
+            return ""
+        body = branches[0] if len(branches) == 1 else "(?:%s)" % "|".join(branches)
+        # A terminal here means a shorter word ends at this node, so
+        # everything past it is optional.
+        return body + "?" if "" in node else body
+
+    return render(root)
+
+
 class InstructionBudgetAnalyzer:
+    #: Verbs that open an instruction. Matched at the start of a line,
+    #: past an optional list bullet.
+    IMPERATIVE_VERBS = (
+        "always",
+        "never",
+        "do not",
+        "don't",
+        "ensure",
+        "make sure",
+        "use",
+        "run",
+        "create",
+        "add",
+        "remove",
+        "check",
+        "set",
+        "write",
+        "read",
+        "call",
+        "return",
+        "throw",
+        "avoid",
+        "prefer",
+        "include",
+        "exclude",
+        "follow",
+        "implement",
+        "test",
+        "validate",
+        "verify",
+        "handle",
+        "log",
+        "format",
+        "configure",
+        "install",
+        "update",
+        "delete",
+        "move",
+        "copy",
+        "import",
+        "export",
+        "define",
+        "declare",
+        "initialize",
+        "override",
+        "extend",
+        "wrap",
+        "deploy",
+        "build",
+        "commit",
+        "push",
+        "pull",
+        "merge",
+        "rebase",
+        "review",
+    )
     _IMPERATIVE_RE = re.compile(
-        r"^\s*[-*]?\s*(?:always|never|do not|don't|ensure|make sure|use|run|create|add|remove|check|set|write|read|call|return|throw|avoid|prefer|include|exclude|follow|implement|test|validate|verify|handle|log|format|configure|install|update|delete|move|copy|import|export|define|declare|initialize|override|extend|wrap|deploy|build|commit|push|pull|merge|rebase|review)\b",
+        r"^\s*[-*]?\s*(?:%s)\b" % literal_alternation(IMPERATIVE_VERBS),
         re.IGNORECASE,
     )
     BUDGET = 150

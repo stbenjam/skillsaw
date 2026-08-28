@@ -81,7 +81,12 @@ class LintTarget:
         found = cache.get(target_type)
         if found is None:
             found = [n for n in self.walk() if isinstance(n, target_type)]
-            cache[target_type] = found
+            # Re-fetch rather than reusing ``cache``: walking a subtree can
+            # parse a block's frontmatter for the first time, and building
+            # its children drops the memo on this node and every ancestor
+            # — including the dict this call is holding. Storing into the
+            # detached one leaves the result invisible to the next caller.
+            self.__dict__.setdefault("_find_cache", {})[target_type] = found
         return list(found)
 
     def find_filtered(

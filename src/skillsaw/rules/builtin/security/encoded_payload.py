@@ -214,6 +214,7 @@ class SecurityEncodedPayloadRule(Rule):
         self,
         text: str,
         patterns: Tuple[re.Pattern, ...],
+        union_gate: re.Pattern,
         min_length: int,
         base64_threshold: float,
         hex_threshold: float,
@@ -226,7 +227,16 @@ class SecurityEncodedPayloadRule(Rule):
         and a pure character-class run has none.  The cheap gate is instead a
         compiled whole-text search per alphabet; per-line work only happens
         for alphabets whose gate hits.
+
+        A run over either alphabet is also a run over their union, so one
+        scan with the union class stands in front of the per-alphabet ones
+        as a necessary condition.  Almost every document fails it, and
+        those documents are scanned once rather than once per alphabet.
+        The union is only ever a *gate* — detection stays per-alphabet, for
+        the reason the pattern construction explains.
         """
+        if union_gate.search(text) is None:
+            return
         live = [p for p in patterns if p.search(text) is not None]
         if not live:
             return
@@ -314,6 +324,9 @@ class SecurityEncodedPayloadRule(Rule):
             re.compile(r"[A-Za-z0-9+/]{%d,}={0,2}" % min_length),
             re.compile(r"[A-Za-z0-9_-]{%d,}={0,2}" % min_length),
         )
+        # Necessary condition for either pattern, used only to skip
+        # documents that cannot contain a run at all — see _scan_text.
+        union_gate = re.compile(r"[A-Za-z0-9+/_-]{%d,}" % min_length)
 
         violations = []
         for cf in gather_all_content_blocks(context):
@@ -323,7 +336,13 @@ class SecurityEncodedPayloadRule(Rule):
             if not body:
                 continue
             for line_num, kind, run, entropy in self._scan_text(
-                body, patterns, min_length, base64_threshold, hex_threshold, hex_ascii_ratio
+                body,
+                patterns,
+                union_gate,
+                min_length,
+                base64_threshold,
+                hex_threshold,
+                hex_ascii_ratio,
             ):
                 violations.append(
                     self.violation(
@@ -337,7 +356,13 @@ class SecurityEncodedPayloadRule(Rule):
             if len(text) < min_length:
                 continue
             for _line_num, kind, run, entropy in self._scan_text(
-                text, patterns, min_length, base64_threshold, hex_threshold, hex_ascii_ratio
+                text,
+                patterns,
+                union_gate,
+                min_length,
+                base64_threshold,
+                hex_threshold,
+                hex_ascii_ratio,
             ):
                 violations.append(
                     self.violation(
