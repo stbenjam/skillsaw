@@ -274,6 +274,30 @@ def _required_literal(pattern_src: str, flags: int) -> Optional[str]:
     return literals[0] if literals else None
 
 
+# Required literals per compiled pattern object.
+#
+# The lookup stands in front of a loop that runs once per (pattern,
+# document) pair — millions of times on a large marketplace. At that
+# volume even an ``lru_cache`` hit, which hashes the pattern's source
+# string and builds a key tuple, costs more than the substring test it
+# guards; a dict keyed by the compiled pattern object is one identity
+# hash. Only config-supplied patterns are compiled per run, so the bound
+# is a backstop rather than a working limit.
+_LITERALS_BY_PATTERN: Dict[re.Pattern, Tuple[str, ...]] = {}
+_MAX_CACHED_PATTERNS = 4096
+
+
+def _pattern_literals(pattern: re.Pattern) -> Tuple[str, ...]:
+    """Literals every match of *pattern* must contain (see `_required_literals`)."""
+    literals = _LITERALS_BY_PATTERN.get(pattern)
+    if literals is None:
+        literals = _required_literals(pattern.pattern, pattern.flags)
+        if len(_LITERALS_BY_PATTERN) >= _MAX_CACHED_PATTERNS:
+            _LITERALS_BY_PATTERN.clear()
+        _LITERALS_BY_PATTERN[pattern] = literals
+    return literals
+
+
 def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tuple]:
     """Whole-text prefilter for per-line pattern scans.
 
@@ -292,7 +316,7 @@ def patterns_matching_anywhere(content: str, patterns: List[tuple]) -> List[tupl
     active = []
     for t in patterns:
         pattern = t[0]
-        literals = _required_literals(pattern.pattern, pattern.flags)
+        literals = _pattern_literals(pattern)
         # An explicit loop, not ``any(... for ...)``: this runs once per
         # (pattern, document) pair — millions of times on a large
         # marketplace — and the generator's per-item frame costs more than
