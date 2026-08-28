@@ -17,10 +17,12 @@ This creates a `.venv/` virtualenv and installs skillsaw in editable mode with a
 ## Running tests
 
 ```bash
-make test         # full suite with coverage
+make test           # full suite, parallel, no coverage
+make test-coverage  # what CI's coverage job runs
 ```
 
-Tests run against Python 3.9–3.14 in CI. Locally, your active Python version is used.
+Both targets run in parallel via pytest-xdist (`-n auto`). Tests run
+against Python 3.9–3.14 in CI. Locally, your active Python version is used.
 
 Most of `tests/test_integration.py` drives the CLI out-of-process via
 `subprocess.run([sys.executable, "-m", "skillsaw", ...])`. pytest-cov 7
@@ -29,8 +31,9 @@ dropped automatic subprocess instrumentation, so without help
 exercised. `pyproject.toml` sets `[tool.coverage.run] patch =
 ["subprocess"]` (requires coverage>=7.10) to have coverage.py patch the
 `subprocess` module so child interpreters get instrumented automatically —
-no `COVERAGE_PROCESS_START`/`sitecustomize.py` setup needed. This adds
-roughly 25 seconds to `make test`.
+no `COVERAGE_PROCESS_START`/`sitecustomize.py` setup needed. The
+instrumentation roughly doubles the runtime, which is why coverage is
+confined to `make test-coverage`.
 
 ## Formatting and linting
 

@@ -506,13 +506,16 @@ class TestContentMapLocate:
         def elapsed(n):
             body = "\n".join(f"path src/file_{i}.py" for i in range(n))
             cmap = _ContentMap(body.split("\n"), 0, body)
-            t = time.perf_counter()
+            t = time.process_time()
             for start, _line, _col in cmap.entries:
                 cmap.locate(start)
-            return time.perf_counter() - t
+            return time.process_time() - t
 
-        small = elapsed(2000)
-        large = elapsed(8000)
+        # CPU time, best of three: wall clock flakes when parallel test
+        # workers contend for cores, while a quadratic regression still
+        # blows the ratio by an order of magnitude.
+        small = min(elapsed(2000) for _ in range(3))
+        large = min(elapsed(8000) for _ in range(3))
         # 4x the lines under quadratic scaling would be ~16x the time; require
         # well under that so a reintroduced linear scan fails loudly.
         assert large < (small + 1e-4) * 8

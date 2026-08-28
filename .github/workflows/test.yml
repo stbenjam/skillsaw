@@ -12,6 +12,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes any in-flight run. Pushes to main
+# get a per-commit group so every one runs to completion — a shared group
+# would let GitHub cancel the queued middle run of three rapid pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,7 +26,10 @@ jobs:
       contents: read
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.12", "3.13", "3.14"]
+        # PRs run only the oldest supported version here — src/ has no
+        # version-conditional code paths, and the newest (3.14) is exercised
+        # by the coverage job on every run. Pushes to main run the rest.
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.9"]') || fromJSON('["3.9", "3.10", "3.11", "3.12", "3.13"]') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,10 +45,10 @@ jobs:
         run: make venv VENV_EXTRAS=test
 
       - name: Run compatibility tests without coverage
-        run: .venv/bin/pytest tests/ -v
+        run: .venv/bin/pytest tests/ -v -n auto
 
   coverage:
-    name: test (3.11)
+    name: test (3.14)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -49,16 +59,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Install package and dependencies
         run: make venv VENV_EXTRAS=test
 
       - name: Run tests with coverage
-        run: make test VENV_EXTRAS=test
+        run: make test-coverage VENV_EXTRAS=test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -216,7 +226,7 @@ jobs:
 
       - name: Test openshift-eng/ai-helpers
         run: |
-          git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
+          git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers
 
           # --no-custom-rules: never execute repo-provided Python from
           # third-party clones in CI (THREAT_MODEL.md T1). This also makes
@@ -260,7 +270,7 @@ jobs:
 
       - name: Test auth0/agent-skills
         run: |
-          git clone https://github.com/auth0/agent-skills.git /tmp/agent-skills
+          git clone --depth 1 https://github.com/auth0/agent-skills.git /tmp/agent-skills
 
           skillsaw --format json --no-custom-rules /tmp/agent-skills | python3 -c "
           import sys, json
@@ -277,7 +287,7 @@ jobs:
 
       - name: Test opendatahub-io/agent-eval-harness
         run: |
-          git clone https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
+          git clone --depth 1 https://github.com/opendatahub-io/agent-eval-harness.git /tmp/agent-eval-harness
 
           skillsaw --format json --no-custom-rules /tmp/agent-eval-harness | python3 -c "
           import sys, json
@@ -294,7 +304,7 @@ jobs:
 
       - name: Test kubernetes-sigs/maintainer-tools
         run: |
-          git clone https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
+          git clone --depth 1 https://github.com/kubernetes-sigs/maintainer-tools.git /tmp/maintainer-tools
 
           skillsaw --format json --no-custom-rules /tmp/maintainer-tools | python3 -c "
           import sys, json
@@ -311,7 +321,7 @@ jobs:
 
       - name: Test RedHatProductSecurity/prodsec-skills
         run: |
-          git clone https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
+          git clone --depth 1 https://github.com/RedHatProductSecurity/prodsec-skills.git /tmp/prodsec-skills
 
           skillsaw --format json --no-custom-rules /tmp/prodsec-skills | python3 -c "
           import sys, json
@@ -330,8 +340,10 @@ jobs:
         run: |
           # Pinned: an unrelated upstream commit must not turn main red
           # with a message blaming a rule change. Bump deliberately.
-          git clone --filter=blob:none https://github.com/openai/plugins.git /tmp/openai-plugins
-          git -C /tmp/openai-plugins checkout --quiet 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
+          git init --quiet /tmp/openai-plugins
+          git -C /tmp/openai-plugins remote add origin https://github.com/openai/plugins.git
+          git -C /tmp/openai-plugins fetch --quiet --depth 1 origin 11c74d6ba24d3a6d48f54a194cd00ef3beea18f9
+          git -C /tmp/openai-plugins checkout --quiet FETCH_HEAD
 
           # The flagship Codex catalog (~180 plugins, ~580 skills). The five
           # codex-* rules are clean on it and must stay that way — a finding
@@ -402,8 +414,7 @@ jobs:
 
       - name: Test --output flag with multiple formats
         run: |
-          git clone https://github.com/openshift-eng/ai-helpers.git /tmp/ai-helpers-output 2>/dev/null || true
-
+          # Reuses the /tmp/ai-helpers clone from the earlier step.
           skillsaw --no-custom-rules --output /tmp/report.json --output /tmp/report.sarif --output /tmp/report.html /tmp/ai-helpers
 
           python3 -c "
