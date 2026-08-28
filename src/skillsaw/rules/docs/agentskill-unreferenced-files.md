@@ -100,6 +100,11 @@ is bundled. If the file is intentionally unlisted supporting data,
 either mention its directory (`assets/`) from SKILL.md or add a glob
 to the rule's `exclude` option:
 
+To keep interactive output readable, the text formatter shows three or
+more findings in the same top-level skill directory as one summary row.
+The summary count, baselines, machine-readable formats, and exit status
+still use every individual finding.
+
 ```yaml
 rules:
   agentskill-unreferenced-files:

@@ -2,14 +2,136 @@
 Text output formatter — human-readable terminal output with optional ANSI colors.
 """
 
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from ..rule import AutofixConfidence, Rule, RuleViolation, Severity
 from ..rule_docs import rule_doc_url
 from ..diagnostics import terminal_safe
 from . import get_counts, relative_path, should_show_info
 from skillsaw.paths import contained_resolve, safe_resolve
+
+_COLLAPSE_THRESHOLD = 3
+
+
+@dataclass(frozen=True)
+class _TextDiagnostic:
+    """One human-facing row anchored to a real violation."""
+
+    violation: RuleViolation
+    message: str
+    file_path: Optional[Path]
+    file_line: Optional[int]
+
+    @classmethod
+    def individual(cls, violation: RuleViolation) -> "_TextDiagnostic":
+        return cls(
+            violation=violation,
+            message=violation.message,
+            file_path=violation.file_path,
+            file_line=violation.file_line,
+        )
+
+
+# A strategy receives positions for one rule and returns presentation-only
+# replacements. ``None`` hides a later row whose violations are represented
+# by the diagnostic at the group's first position. The original violation
+# list is never changed and remains authoritative for counts, baselines, exit
+# status, and every structured formatter.
+_TextCollapsePlan = Dict[int, Optional[_TextDiagnostic]]
+_TextCollapseStrategy = Callable[[Sequence[Tuple[int, RuleViolation]], object], _TextCollapsePlan]
+
+
+def _absolute_path(path: Path, root_path: Path) -> Path:
+    return path if path.is_absolute() else root_path / path
+
+
+def _skill_subtree(violation: RuleViolation, context) -> Optional[Tuple[Path, str]]:
+    """Return the first directory below the containing skill, if any."""
+    if violation.file_path is None:
+        return None
+    violation_path = _absolute_path(violation.file_path, context.root_path)
+    matches = []
+    for skill in context.skills:
+        skill_path = _absolute_path(Path(skill), context.root_path)
+        try:
+            relative = violation_path.relative_to(skill_path)
+        except ValueError:
+            continue
+        if len(relative.parts) >= 2:
+            matches.append((len(skill_path.parts), skill_path, relative.parts[0]))
+    if not matches:
+        return None
+    _, skill_path, directory = max(matches, key=lambda match: match[0])
+    return skill_path / directory, f"{directory}/"
+
+
+def _collapse_unreferenced_skill_files(
+    indexed: Sequence[Tuple[int, RuleViolation]], context
+) -> _TextCollapsePlan:
+    """Collapse unreferenced files sharing a skill's top-level subtree."""
+    grouped = defaultdict(list)
+    for position, violation in indexed:
+        subtree = _skill_subtree(violation, context)
+        if subtree is None:
+            continue
+        subtree_path, label = subtree
+        # Keep differently configured severities and presentation metadata
+        # isolated even though a normal run gives this rule one severity.
+        key = (
+            subtree_path,
+            label,
+            violation.severity,
+            violation.source,
+            violation.fixable,
+            violation.fix_confidence,
+        )
+        grouped[key].append((position, violation))
+
+    plan: _TextCollapsePlan = {}
+    for (subtree_path, label, *_), members in grouped.items():
+        if len(members) < _COLLAPSE_THRESHOLD:
+            continue
+        first_position = members[0][0]
+        plan[first_position] = _TextDiagnostic(
+            violation=members[0][1],
+            message=(
+                f"{len(members)} files under '{label}' are never referenced from "
+                "SKILL.md (directly or transitively)"
+            ),
+            file_path=subtree_path,
+            file_line=None,
+        )
+        for position, _ in members[1:]:
+            plan[position] = None
+    return plan
+
+
+_TEXT_COLLAPSE_STRATEGIES: Dict[str, _TextCollapseStrategy] = {
+    "agentskill-unreferenced-files": _collapse_unreferenced_skill_files,
+}
+
+
+def _text_diagnostics(violations: Sequence[RuleViolation], context) -> List[_TextDiagnostic]:
+    """Build presentation rows without changing the underlying findings."""
+    by_rule = defaultdict(list)
+    for position, violation in enumerate(violations):
+        if violation.rule_id in _TEXT_COLLAPSE_STRATEGIES:
+            by_rule[violation.rule_id].append((position, violation))
+
+    plan: _TextCollapsePlan = {}
+    for rule_id, indexed in by_rule.items():
+        plan.update(_TEXT_COLLAPSE_STRATEGIES[rule_id](indexed, context))
+
+    diagnostics = []
+    for position, violation in enumerate(violations):
+        if position not in plan:
+            diagnostics.append(_TextDiagnostic.individual(violation))
+        elif plan[position] is not None:
+            diagnostics.append(plan[position])
+    return diagnostics
 
 
 def format_duration(seconds: float) -> str:
@@ -80,14 +202,15 @@ def format_text(
             return ""
         return " [*]" if v.fix_confidence == AutofixConfidence.SAFE else " [?]"
 
-    def fmt_violation(v: RuleViolation) -> str:
+    def fmt_violation(diagnostic: _TextDiagnostic) -> str:
+        v = diagnostic.violation
         icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[v.severity.value]
-        rel = terminal_safe(relative_path(v.file_path, context.root_path) or "")
+        rel = terminal_safe(relative_path(diagnostic.file_path, context.root_path) or "")
         location = ""
         if rel:
-            loc_text = f"{rel}:{v.file_line}" if v.file_line else rel
+            loc_text = f"{rel}:{diagnostic.file_line}" if diagnostic.file_line else rel
             if hyperlinks:
-                uri = _file_uri(v.file_path, context.root_path)
+                uri = _file_uri(diagnostic.file_path, context.root_path)
                 if uri:
                     loc_text = _osc8(uri, loc_text)
             location = f" [{loc_text}]"
@@ -97,25 +220,25 @@ def format_text(
             rule_ref = _osc8(rule_doc_url(v.rule_id), safe_rule_id)
         return (
             f"{icon} {v.severity.value.upper()} ({rule_ref}){fix_marker(v)}{location}: "
-            f"{terminal_safe(v.message)}"
+            f"{terminal_safe(diagnostic.message)}"
         )
 
     output = []
 
     if errors_list:
         output.append(f"\n{red}{bold}Errors:{reset}")
-        for v in errors_list:
-            output.append(f"  {fmt_violation(v)}")
+        for diagnostic in _text_diagnostics(errors_list, context):
+            output.append(f"  {fmt_violation(diagnostic)}")
 
     if warnings_list:
         output.append(f"\n{yellow}{bold}Warnings:{reset}")
-        for v in warnings_list:
-            output.append(f"  {fmt_violation(v)}")
+        for diagnostic in _text_diagnostics(warnings_list, context):
+            output.append(f"  {fmt_violation(diagnostic)}")
 
     if show_info and info_list:
         output.append(f"\n{blue}{bold}Info:{reset}")
-        for v in info_list:
-            output.append(f"  {fmt_violation(v)}")
+        for diagnostic in _text_diagnostics(info_list, context):
+            output.append(f"  {fmt_violation(diagnostic)}")
 
     shown = errors_list + warnings_list + (info_list if show_info else [])
     documented = sorted({v.rule_id for v in shown if v.rule_id in builtin_ids})

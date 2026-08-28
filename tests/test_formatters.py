@@ -313,6 +313,75 @@ def test_text_non_verbose_hides_info(valid_plugin):
     assert "Info:" not in output
 
 
+def test_text_collapses_unreferenced_skill_subtrees_only(valid_plugin):
+    """Collapse noisy subtrees without merging skills or small/root groups."""
+    context = RepositoryContext(valid_plugin)
+    first_skill = context.root_path / "skills" / "first"
+    second_skill = context.root_path / "skills" / "second"
+    context.skills = [first_skill, second_skill]
+
+    paths = [
+        first_skill / "assets" / "one.png",
+        first_skill / "assets" / "two.png",
+        first_skill / "assets" / "nested" / "three.png",
+        first_skill / "scripts" / "one.py",
+        first_skill / "scripts" / "two.py",
+        first_skill / "orphan.txt",
+        second_skill / "assets" / "one.png",
+        second_skill / "assets" / "two.png",
+        second_skill / "assets" / "three.png",
+    ]
+    violations = [
+        RuleViolation(
+            rule_id="agentskill-unreferenced-files",
+            severity=Severity.WARNING,
+            message=f"'{path.name}' is never referenced from SKILL.md",
+            file_path=path,
+        )
+        for path in paths
+    ]
+    before = [(v.file_path, v.message) for v in violations]
+
+    output = format_text(violations, context, [], "1.0.0")
+
+    assert "[skills/first/assets]: 3 files under 'assets/'" in output
+    assert "[skills/second/assets]: 3 files under 'assets/'" in output
+    assert "skills/first/assets/one.png" not in output
+    assert "skills/second/assets/one.png" not in output
+    # Groups below the threshold and root-level files remain actionable rows.
+    assert "skills/first/scripts/one.py" in output
+    assert "skills/first/scripts/two.py" in output
+    assert "skills/first/orphan.txt" in output
+    assert "Warnings: 9" in output
+    assert len(violations) == 9
+    assert [(v.file_path, v.message) for v in violations] == before
+
+
+def test_structured_reports_keep_collapsed_text_findings_individual(valid_plugin):
+    """Text grouping must not alter structured report cardinality."""
+    context = RepositoryContext(valid_plugin)
+    skill = context.root_path / "skills" / "catalog"
+    context.skills = [skill]
+    paths = [skill / "assets" / f"image-{index}.png" for index in range(3)]
+    violations = [
+        RuleViolation(
+            rule_id="agentskill-unreferenced-files",
+            severity=Severity.WARNING,
+            message=f"'{path.name}' is never referenced from SKILL.md",
+            file_path=path,
+        )
+        for path in paths
+    ]
+
+    assert len(json.loads(format_json(violations, context, [], "1.0.0"))["violations"]) == 3
+    sarif = json.loads(format_sarif(violations, context, [], "1.0.0"))
+    assert len(sarif["runs"][0]["results"]) == 3
+    assert len(json.loads(format_code_climate(violations, context, [], "1.0.0"))) == 3
+    html = format_html(violations, context, [], "1.0.0")
+    assert all(path.name in html for path in paths)
+    assert html.count("<code>agentskill-unreferenced-files</code>") == 3
+
+
 # --- JSON formatter ---
 
 

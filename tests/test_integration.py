@@ -703,6 +703,45 @@ class TestUnreferencedSkillFiles:
         assert r["rc"] == 0
         assert self.RULE not in rule_ids(r)
 
+    def test_text_collapses_subtrees_but_json_keeps_individual_findings(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-collapse", tmp_path)
+
+        raw = run_lint(repo, "--rule", self.RULE, "--strict")
+        raw_findings = by_rule(raw)[self.RULE]
+        assert raw["rc"] == 1
+        assert len(raw_findings) == 9
+        assert len({v["file_path"] for v in raw_findings}) == 9
+        assert summary(raw)["warnings"] == 9
+
+        text = run_lint(repo, "--rule", self.RULE, "--strict", fmt="text", verbose=False)
+        assert text["rc"] == raw["rc"]
+        assert text["stdout"].count("3 files under 'assets/'") == 2
+        assert "[image-catalog/assets]" in text["stdout"]
+        assert "[video-catalog/assets]" in text["stdout"]
+        assert "image-catalog/assets/front.png" not in text["stdout"]
+        assert "video-catalog/assets/front.mp4" not in text["stdout"]
+        assert "image-catalog/scripts/import.py" in text["stdout"]
+        assert "image-catalog/scripts/export.py" in text["stdout"]
+        assert "image-catalog/orphan.txt" in text["stdout"]
+        assert "Warnings: 9" in text["stdout"]
+
+    def test_baseline_still_records_and_suppresses_each_collapsed_finding(self, tmp_path):
+        repo = copy_fixture("agentskills/unreferenced-collapse", tmp_path)
+
+        result = run_cli(["baseline", "--no-custom-rules", str(repo)])
+        assert result.returncode == 0
+        baseline = json.loads((repo / ".skillsaw-baseline.json").read_text())
+        entries = [v for v in baseline["violations"] if v["rule_id"] == self.RULE]
+        assert len(entries) == 9
+        assert len({v["fingerprint"] for v in entries}) == 9
+        assert len({v["file_path"] for v in entries}) == 9
+
+        lint = run_lint(repo, "--rule", self.RULE)
+        assert lint["rc"] == 0
+        assert by_rule(lint).get(self.RULE, []) == []
+        assert summary(lint)["warnings"] == 0
+        assert summary(lint)["baseline_suppressed"] == 9
+
 
 # ── File Path Argument ──────────────────────────────────────────
 
