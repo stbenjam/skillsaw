@@ -14,6 +14,7 @@ from ._helpers import (
     _ansi_colors,
     _resolve_lint_paths,
     color_enabled,
+    allow_private_hosts_requested,
     no_network_requested,
 )
 
@@ -63,6 +64,7 @@ def _run_fix(args):
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
                 no_network=no_network_requested(args),
+                allow_private_hosts=allow_private_hosts_requested(args),
                 no_plugins=args.no_plugins,
             )
         except ValueError as e:
@@ -90,6 +92,7 @@ def _run_fix(args):
                 skip_rule_ids=skip_rule_ids,
                 no_custom_rules=args.no_custom_rules,
                 no_network=no_network_requested(args),
+                allow_private_hosts=allow_private_hosts_requested(args),
                 no_plugins=args.no_plugins,
             )
             rename_applied, rename_suggested = linter.fix_and_apply(confidence)

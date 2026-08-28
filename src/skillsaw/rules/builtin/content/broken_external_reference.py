@@ -17,7 +17,10 @@ here is built around three constraints that follow from that:
   default, and every option is clamped rather than trusted.
 """
 
+import collections
+import contextlib
 import fnmatch
+import functools
 import ipaddress
 import logging
 import math
@@ -27,11 +30,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from http.client import HTTPException
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING, Tuple, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 from skillsaw.rule import Rule, RuleViolation, Severity
@@ -39,7 +41,12 @@ from skillsaw.context import RepositoryContext
 from skillsaw.diagnostics import safe_display
 from skillsaw.rules.builtin.content_analysis import gather_all_content_blocks
 
+if TYPE_CHECKING:
+    from skillsaw.blocks.base import ContentBlock
+
 logger = logging.getLogger(__name__)
+
+_Number = TypeVar("_Number", int, float)
 
 # The only statuses that mean "this link is dead" rather than "the
 # network said something about the runner". Kept as a mapping so the
@@ -56,8 +63,7 @@ _RETRY_WITH_GET = frozenset({405, 501})
 # A HEAD answer is never enough to convict. RFC 9110 says HEAD must
 # return what GET would minus the body, and plenty of servers simply do
 # not: nvlpubs.nist.gov answers 404 to HEAD and serves the PDF on GET,
-# and azure.microsoft.com does the same on some marketing paths. Both
-# showed up as false positives in the first real-repo run of this rule.
+# and azure.microsoft.com does the same on some marketing paths.
 # So a candidate violation is always re-asked with GET, and GET's answer
 # is the one that counts. The extra request is paid only for links that
 # are about to be reported, which is a small minority of any repository.
@@ -77,8 +83,12 @@ _MAX_REDIRECTS = 5
 # of these arrives from a ``.skillsaw.yaml`` that the threat model
 # classifies as untrusted repository content, so "the user asked for it"
 # is not a reason to honour a value that hangs CI or exhausts a runner.
-# A worker's worst case is _MAX_REDIRECTS x timeout, so the clamped
-# timeout is what actually bounds the run.
+# `timeout` is a socket timeout, not a per-request one: urllib re-arms it
+# on every read, applies it to each address getaddrinfo returns, and hands
+# the full value to each redirect hop, so a single worker's worst case is
+# roughly methods x hops x addresses x timeout. `total-budget` is
+# therefore the bound that matters, and _probe_all enforces it by
+# abandoning workers rather than by trusting them to finish.
 _MAX_TIMEOUT = 30.0
 _MAX_TOTAL_BUDGET = 600.0
 _MAX_CONCURRENCY = 32
@@ -111,10 +121,37 @@ _NETWORK_ERRORS = (
 class _Occurrence:
     """One link in one file, pointing at one external URL."""
 
-    block: Any  # ContentBlock; typed loosely to keep this leaf rule import-light
+    block: "ContentBlock"
     body_line: int
     text: str
     href: str
+
+
+class _EmptyBody:
+    """A response whose body reads as empty, without touching the socket.
+
+    ``HTTPRedirectHandler.http_error_302`` calls ``fp.read()`` on the
+    intermediate response before it opens the next hop — a full,
+    uncapped read of a body nothing here wants. An origin that answers a
+    redirect with an endless chunked stream would be read into the
+    worker's memory, bounded only by the per-``recv`` socket timeout.
+
+    Everything except ``read``/``readline`` is forwarded, so ``close()``
+    still closes the real response and an ``HTTPError`` built from this
+    still behaves like one built from the response itself.
+    """
+
+    def __init__(self, response):
+        self._response = response
+
+    def read(self, *_args, **_kwargs) -> bytes:
+        return b""
+
+    def readline(self, *_args, **_kwargs) -> bytes:
+        return b""
+
+    def __getattr__(self, name):
+        return getattr(self._response, name)
 
 
 class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -132,17 +169,36 @@ class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
     A rejected hop ends the chain the way urllib ends a redirect into an
     unsupported scheme: as an ``HTTPError``, which the caller reads as
     inconclusive.
+
+    Two more things the base class does that this one must not: read the
+    intermediate body (see :class:`_EmptyBody`), and hand each hop the
+    *full* timeout again. ``hop_timeout`` returns what is left of the
+    window the caller opened, so a five-hop chain costs one timeout
+    rather than five.
     """
 
     max_redirections = _MAX_REDIRECTS
 
-    def __init__(self, accepts):
+    def __init__(self, accepts, hop_timeout):
         self._accepts = accepts
+        self._hop_timeout = hop_timeout
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not self._accepts(newurl):
             raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+        # The base reads req.timeout for the next hop; give it the
+        # remainder of the caller's window instead of the full value.
+        req.timeout = self._hop_timeout()
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        return super().http_error_302(req, _EmptyBody(fp), code, msg, headers)
+
+    # The base aliases these to *its* http_error_302, so overriding one
+    # method is not enough — 301 and 307 would keep the uncapped read.
+    http_error_301 = http_error_303 = http_error_307 = http_error_302
+    if hasattr(urllib.request.HTTPRedirectHandler, "http_error_308"):
+        http_error_308 = http_error_302
 
 
 class ContentBrokenExternalReferenceRule(Rule):
@@ -169,52 +225,61 @@ class ContentBrokenExternalReferenceRule(Rule):
         "timeout": {
             "type": "float",
             "default": 5.0,
-            "description": f"Per-request timeout in seconds (clamped to {_MAX_TIMEOUT:g})",
+            "description": (
+                f"Socket timeout in seconds for one request (clamped to "
+                f"0.1-{_MAX_TIMEOUT:g}; a value that is not a finite number "
+                "falls back to the default)"
+            ),
         },
         "total-budget": {
             "type": "float",
             "default": 30.0,
             "description": (
                 "Wall-clock seconds for all requests in a run; remaining URLs "
-                f"are left unchecked. 0 disables the cap (clamped to {_MAX_TOTAL_BUDGET:g})"
+                f"are left unchecked (clamped to {_MAX_TOTAL_BUDGET:g}; there "
+                "is no way to disable the cap — 0 and negatives mean the default)"
             ),
         },
         "concurrency": {
             "type": "int",
             "default": 8,
-            "description": f"Maximum simultaneous requests (clamped to {_MAX_CONCURRENCY})",
+            "description": (f"Maximum simultaneous requests (clamped to 1-{_MAX_CONCURRENCY})"),
         },
         "ignore": {
             "type": "list",
             "default": [],
             "description": (
                 "URL patterns never requested — a glob (fnmatch) when it "
-                "contains *, ? or [, otherwise a literal prefix"
-            ),
-        },
-        "allow-private-hosts": {
-            "type": "bool",
-            "default": False,
-            "description": (
-                "Probe URLs whose host is a loopback, private, link-local or "
-                "otherwise non-public IP literal. Off by default so a repo "
-                "cannot aim the linter at its runner's internal network"
+                "contains *, ? or [, otherwise a literal prefix. Matched "
+                "against the requested URL, which has no fragment"
             ),
         },
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        allow_private_hosts: bool = False,
+    ):
         super().__init__(config)
         # Openers are per-thread (see _opener). The holder is created here,
         # before any worker exists, so no two threads race to create it.
         self._local = threading.local()
-        # Admission policy, resolved once from config. The redirect
-        # handler consults it from worker threads, so it must be settled
-        # before any request starts — and settling it in the constructor
-        # means a direct _probe() call is governed by it too, not only a
-        # call that came through check().
+        # Admission policy, resolved once. The redirect handler consults
+        # it from worker threads, so it must be settled before any
+        # request starts — and settling it in the constructor means a
+        # direct _probe() call is governed by it too, not only a call
+        # that came through check().
         self._ignore = [p for p in _as_list(self.setting("ignore"), []) if isinstance(p, str)]
-        self._allow_private = self.setting("allow-private-hosts") is True
+        # Deliberately NOT a config option. Reaching non-public hosts is
+        # the one setting here that is a security boundary rather than a
+        # tuning knob, and `.skillsaw.yaml` is written by the same actor
+        # T18 defends against — a repo that could set it would disable
+        # its own confinement. Only the operator can turn it on, via
+        # --allow-private-hosts / SKILLSAW_ALLOW_PRIVATE_HOSTS, which the
+        # linter passes here.
+        self.allow_private_hosts = bool(allow_private_hosts)
 
     @property
     def rule_id(self) -> str:
@@ -259,7 +324,31 @@ class ContentBrokenExternalReferenceRule(Rule):
         return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
 
     @staticmethod
-    def _is_public_host(netloc: str) -> bool:
+    def _as_ip_literal(host: str) -> Optional[ipaddress._BaseAddress]:
+        """*host* as an IP address if it is a literal in **any** form.
+
+        ``ipaddress`` accepts only dotted-quad and standard IPv6, but the
+        resolver is far more liberal: glibc's ``inet_aton`` also takes a
+        bare 32-bit integer, octal and hex labels, and short-dotted forms.
+        Classifying those as "a name" is how ``http://2852039166/`` — the
+        cloud metadata address written as one decimal — walks straight
+        past a confinement check that thought it had seen a hostname.
+
+        So the liberal parser gets the final say on what is a literal.
+        This still resolves nothing: ``inet_aton`` is pure string
+        arithmetic, no lookup.
+        """
+        try:
+            return ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        try:
+            return ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
+        except (OSError, ValueError):
+            return None
+
+    @classmethod
+    def _is_public_host(cls, netloc: str) -> bool:
         """False when *netloc*'s host is knowably not on the public internet.
 
         Only IP literals and the reserved local names can be settled
@@ -280,9 +369,8 @@ class ContentBrokenExternalReferenceRule(Rule):
             return False
         if host in _LOCAL_HOSTNAMES or host.endswith(".localhost"):
             return False
-        try:
-            address = ipaddress.ip_address(host)
-        except ValueError:
+        address = cls._as_ip_literal(host)
+        if address is None:
             # A name. Not resolvable to a verdict here; see the docstring.
             return True
         mapped = getattr(address, "ipv4_mapped", None)
@@ -318,7 +406,7 @@ class ContentBrokenExternalReferenceRule(Rule):
         url = self._request_url(href)
         if url is None:
             return None
-        if not self._allow_private and not self._is_public_host(urlsplit(url).netloc):
+        if not self.allow_private_hosts and not self._is_public_host(urlsplit(url).netloc):
             return None
         if self._is_ignored(url, self._ignore):
             return None
@@ -360,7 +448,9 @@ class ContentBrokenExternalReferenceRule(Rule):
     # -- network ------------------------------------------------------------
 
     @staticmethod
+    @functools.lru_cache(maxsize=1)
     def _user_agent() -> str:
+        """The self-identifying UA, built once rather than per request."""
         from skillsaw import __version__
 
         return f"skillsaw/{__version__} (+https://skillsaw.org)"
@@ -374,16 +464,37 @@ class ContentBrokenExternalReferenceRule(Rule):
         """
         opener = getattr(self._local, "opener", None)
         if opener is None:
-            opener = urllib.request.build_opener(_BoundedRedirectHandler(self._accepts_hop))
+            opener = urllib.request.build_opener(
+                _BoundedRedirectHandler(self._accepts_hop, self._hop_timeout)
+            )
             opener.addheaders = []
             self._local.opener = opener
         return opener
 
+    def _hop_timeout(self) -> float:
+        """What is left of the window the current request opened.
+
+        Read from thread-local state because the opener, and so the
+        redirect handler, is per worker thread — see :meth:`_opener`.
+        """
+        window_ends = getattr(self._local, "window_ends", None)
+        if window_ends is None:
+            return _MAX_TIMEOUT
+        # Never zero: urllib reads a zero timeout as "non-blocking",
+        # which fails in a way that has nothing to do with the link.
+        return max(0.001, window_ends - time.monotonic())
+
     def _request(self, url: str, method: str, timeout: float) -> Optional[int]:
         """Status code for one request, or None when nothing was learned.
 
-        The response body is never read: the context manager closes the
-        connection as soon as the status line and headers have arrived.
+        No response body is ever read — not the final one, whose context
+        manager closes the connection once the status line and headers
+        have arrived, and not an intermediate redirect's, which
+        :class:`_EmptyBody` keeps urllib from reading.
+
+        ``timeout`` bounds the whole chain, not each hop: it opens a
+        window here, and :meth:`_hop_timeout` hands each redirect what is
+        left of it.
 
         Only network failures are swallowed. A ``TypeError`` or an
         ``AttributeError`` from a bug in this rule propagates, so the
@@ -396,15 +507,14 @@ class ContentBrokenExternalReferenceRule(Rule):
             method=method,
             headers={"User-Agent": self._user_agent(), "Accept": "*/*"},
         )
+        self._local.window_ends = time.monotonic() + timeout
         try:
             with self._opener().open(request, timeout=timeout) as response:
                 return getattr(response, "status", None)
         except urllib.error.HTTPError as exc:
             code = exc.code
-            try:
+            with contextlib.suppress(OSError):
                 exc.close()
-            except OSError:
-                pass
             return code
         except _NETWORK_ERRORS:
             # Timeouts, DNS failures, refused connections, TLS errors,
@@ -446,46 +556,63 @@ class ContentBrokenExternalReferenceRule(Rule):
     ) -> Tuple[Dict[str, Optional[int]], int]:
         """Probe every URL, returning ``(statuses, unchecked_count)``.
 
-        A URL still queued when the budget runs out is never requested,
-        and a request already in flight is bounded by whatever is left of
-        the budget. Collection does not block past the budget either: the
-        pool is shut down without waiting, so one origin that accepts a
-        connection and then dribbles bytes cannot hold the whole lint
-        run. Anything not resolved by then counts as unchecked, which is
-        what the notice reports.
+        Deliberately not a :class:`ThreadPoolExecutor`. Its workers are
+        non-daemon and ``concurrent.futures.thread`` registers an atexit
+        hook that joins every live one, so ``shutdown(wait=False)`` bounds
+        only when this function returns — the *process* still blocks at
+        interpreter exit. urllib's timeout is per socket operation and is
+        re-armed on every read, so an origin that dribbles one byte just
+        under it holds a worker open indefinitely, and the exit code is
+        never delivered.
+
+        Daemon threads make the bound real: the join has its own deadline,
+        and anything still running when it expires is abandoned, counted
+        as unchecked, and cannot keep the interpreter alive.
         """
         workers = max(1, min(concurrency, len(urls)))
-        deadline = time.monotonic() + budget if budget > 0 else None
+        deadline = time.monotonic() + budget
+        pending = collections.deque(urls)
+        results: Dict[str, Tuple[Optional[int], bool]] = {}
+        failures: List[BaseException] = []
+        lock = threading.Lock()
 
-        statuses: Dict[str, Optional[int]] = {}
-        unchecked = 0
-        pool = ThreadPoolExecutor(max_workers=workers)
-        try:
-            futures = {pool.submit(self._probe, url, timeout, deadline): url for url in urls}
-            pending = set(futures)
-            while pending:
-                remaining = None
-                if deadline is not None:
-                    # A worker already past the deadline is finishing a
-                    # request whose own socket timeout bounds it; the
-                    # grace keeps that from being counted as unchecked
-                    # purely because collection raced it.
-                    remaining = max(0.0, deadline - time.monotonic()) + timeout
-                done, pending = wait(pending, timeout=remaining, return_when=FIRST_COMPLETED)
-                if not done:
-                    break  # nothing resolved inside the budget
-                for future in done:
-                    status, checked = future.result()
-                    if checked:
-                        statuses[futures[future]] = status
-                    else:
-                        unchecked += 1
-            unchecked += len(pending)
-        finally:
-            # Never wait: a stuck worker must not extend the run. Its own
-            # socket timeout (clamped, and re-clamped per redirect hop)
-            # guarantees it ends on its own.
-            pool.shutdown(wait=False, cancel_futures=True)
+        def _drain() -> None:
+            while True:
+                with lock:
+                    if not pending or failures:
+                        return
+                    url = pending.popleft()
+                try:
+                    outcome = self._probe(url, timeout, deadline)
+                except BaseException as exc:  # noqa: BLE001 - re-raised below
+                    with lock:
+                        failures.append(exc)
+                    return
+                with lock:
+                    results[url] = outcome
+
+        threads = [
+            threading.Thread(target=_drain, name="skillsaw-link-probe", daemon=True)
+            for _ in range(workers)
+        ]
+        for thread in threads:
+            thread.start()
+        # One grace period for the whole join, not one per thread: a
+        # worker already past the deadline is finishing a request its own
+        # socket timeout bounds, and that should not be counted as
+        # unchecked purely because collection raced it.
+        join_until = deadline + timeout
+        for thread in threads:
+            thread.join(timeout=max(0.0, join_until - time.monotonic()))
+
+        with lock:
+            if failures:
+                # A bug in this rule, not a network condition. Let the
+                # linter turn it into an unbaselinable rule-execution-error
+                # rather than reporting nothing and exiting 0.
+                raise failures[0]
+            statuses = {url: status for url, (status, checked) in results.items() if checked}
+            unchecked = len(urls) - len(statuses)
         return statuses, unchecked
 
     # -- check --------------------------------------------------------------
@@ -501,10 +628,12 @@ class ContentBrokenExternalReferenceRule(Rule):
         # something more permissive than the default.
         timeout = _clamp(_as_float(self.setting("timeout"), 5.0), 0.1, _MAX_TIMEOUT)
         concurrency = _clamp(_as_int(self.setting("concurrency"), 8), 1, _MAX_CONCURRENCY)
+        # The wall-clock cap has no off switch: 0 and negatives both mean
+        # the default. An unbounded budget would be reachable from an
+        # untrusted config, which is T13's hang-CI impact with extra steps,
+        # so there is deliberately no value that disables it.
         budget = _as_float(self.setting("total-budget"), 30.0)
-        if budget < 0:
-            # Only the documented 0 disables the cap. A negative budget is
-            # a mistake, and must not read as "no limit at all".
+        if budget <= 0:
             budget = 30.0
         budget = min(budget, _MAX_TOTAL_BUDGET)
 
@@ -562,7 +691,12 @@ class ContentBrokenExternalReferenceRule(Rule):
         return violations
 
 
-def _clamp(value: float, low: float, high: float) -> float:
+def _clamp(value: _Number, low: _Number, high: _Number) -> _Number:
+    """*value* confined to ``[low, high]``, keeping its type.
+
+    Generic because ``concurrency`` is clamped as an ``int`` and used as
+    a thread count, while ``timeout`` is clamped as a ``float``.
+    """
     return min(max(value, low), high)
 
 
@@ -601,10 +735,11 @@ def _as_int(value: Any, fallback: int) -> int:
 def _as_list(value: Any, fallback: List[Any]) -> List[Any]:
     """A configured list, or *fallback* when it is not one.
 
-    ``ignore: "https://internal.example.com/"`` — a string where a list
-    belongs, and the likeliest YAML mistake here — used to iterate into
-    single characters, so ``url.startswith("h")`` matched every http(s)
-    URL and the rule silently checked nothing while appearing to run.
+    Without this, ``ignore: "https://internal.example.com/"`` — a string
+    where a list belongs, and the likeliest YAML mistake here — would
+    iterate into single characters, so ``url.startswith("h")`` would
+    match every http(s) URL and the rule would silently check nothing
+    while appearing to run.
     """
     if isinstance(value, list):
         return value

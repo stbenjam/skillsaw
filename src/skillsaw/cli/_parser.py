@@ -33,18 +33,30 @@ _NO_NETWORK_HELP = (
 )
 
 
-def _add_no_network_flag(subparser) -> None:
-    """The operator's network gate, on every rule-executing subcommand.
+_ALLOW_PRIVATE_HOSTS_HELP = (
+    "Let network rules probe loopback, private and link-local hosts. Off "
+    "unless the operator asks: the linted repository cannot enable it "
+    "(env: SKILLSAW_ALLOW_PRIVATE_HOSTS=1)"
+)
 
-    Shared rather than repeated per subparser: the help text is identical
-    everywhere because the guarantee is, and a gate that is missing from
-    one subcommand is a gate an attacker routes around.
+
+def _add_network_flags(subparser) -> None:
+    """The operator's network controls, on every rule-executing subcommand.
+
+    Shared rather than repeated per subparser, so a subcommand cannot be
+    added without them.
     """
     subparser.add_argument(
         "--no-network",
         action="store_true",
         dest="no_network",
         help=_NO_NETWORK_HELP,
+    )
+    subparser.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        dest="allow_private_hosts",
+        help=_ALLOW_PRIVATE_HOSTS_HELP,
     )
 
 
@@ -169,7 +181,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
-    _add_no_network_flag(lint_parser)
+    _add_network_flags(lint_parser)
     lint_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -237,7 +249,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for CI on untrusted PRs)",
     )
-    _add_no_network_flag(fix_parser)
+    _add_network_flags(fix_parser)
     fix_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -444,7 +456,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
     )
-    _add_no_network_flag(baseline_parser)
+    _add_network_flags(baseline_parser)
     baseline_parser.add_argument(
         "--no-plugins",
         action="store_true",
@@ -498,7 +510,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
         dest="no_custom_rules",
         help="Skip custom rules defined in .skillsaw.yaml (recommended for untrusted repositories)",
     )
-    _add_no_network_flag(badge_parser)
+    _add_network_flags(badge_parser)
     badge_parser.add_argument(
         "--no-plugins",
         action="store_true",

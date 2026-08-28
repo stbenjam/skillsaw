@@ -18,6 +18,7 @@ from ._helpers import (
     _resolve_lint_paths,
     color_enabled,
     hyperlinks_enabled,
+    allow_private_hosts_requested,
     no_network_requested,
 )
 from skillsaw.paths import safe_resolve
@@ -166,6 +167,7 @@ def _run_lint(args):
                 baseline=baseline,
                 no_custom_rules=args.no_custom_rules,
                 no_network=no_network_requested(args),
+                allow_private_hosts=allow_private_hosts_requested(args),
                 no_plugins=args.no_plugins,
             )
         except ValueError as e:

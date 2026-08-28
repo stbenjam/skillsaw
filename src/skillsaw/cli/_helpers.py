@@ -211,15 +211,21 @@ def color_enabled(stream, color: bool | None = None) -> bool:
 def no_network_requested(args) -> bool:
     """Whether the operator refused network access for this run.
 
-    The flag and the environment variable are both one-way: either turns
-    the gate on, and nothing turns it back off. An operator who exports
-    ``SKILLSAW_NO_NETWORK=1`` for a whole CI job must not have it undone
-    by a command line, or by anything in the linted repository.
+    Only the flag is read here — ``Linter`` reads SKILLSAW_NO_NETWORK
+    itself, so the environment half of the gate holds for every caller
+    rather than only for the subcommands that remember to ask.
     """
-    if getattr(args, "no_network", False):
-        return True
-    value = os.environ.get("SKILLSAW_NO_NETWORK", "")
-    return value.strip().lower() not in ("", "0", "false", "no")
+    return bool(getattr(args, "no_network", False))
+
+
+def allow_private_hosts_requested(args) -> bool:
+    """Whether the operator allowed network rules onto non-public hosts.
+
+    Same split as above: the flag here, the environment variable inside
+    ``Linter``. Never read from ``.skillsaw.yaml`` — the linted
+    repository is the actor this control defends against (T18).
+    """
+    return bool(getattr(args, "allow_private_hosts", False))
 
 
 def hyperlinks_enabled(stream, color: bool) -> bool:

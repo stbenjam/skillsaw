@@ -160,6 +160,13 @@ class Rule(ABC):
     # repo must never be the thing that decides whether skillsaw is
     # allowed on the network.
     requires_network: bool = False
+    # Whether a network rule may reach loopback, private and link-local
+    # hosts. The operator sets it (--allow-private-hosts /
+    # SKILLSAW_ALLOW_PRIVATE_HOSTS, pushed on by the linter); a linted
+    # repository must not be able to, because it is a security boundary
+    # rather than a tuning knob — the actor who would disable it is the
+    # one THREAT_MODEL T18 defends against.
+    allow_private_hosts: bool = False
     autofix_confidence: Optional["AutofixConfidence"] = None
     _source: str = "builtin"
     baseline_mode: Optional[str] = None  # "ceiling" or "floor"
