@@ -8,6 +8,7 @@ from pathlib import Path
 from skillsaw.blocks import (
     BodyContent,
     ClineWorkflowBlock,
+    ContentBlock,
     CopilotAgentBlock,
     CopilotPromptBlock,
     CursorCommandBlock,
@@ -15,6 +16,7 @@ from skillsaw.blocks import (
     CursorRuleBlock,
     InstructionBlock,
     QwenMdBlock,
+    RooModesBlock,
     VsCodeMcpBlock,
 )
 from skillsaw.config import LinterConfig
@@ -618,6 +620,45 @@ def test_a_nested_clinerules_file_is_linted(temp_dir):
 
     assert nested / ".clinerules" in paths
     assert "HAS_CLINE" in context.detected_formats
+
+
+def test_roo_legacy_files_attach_as_instruction_prose(temp_dir):
+    """`.roorules`, `.roo/rules/` and `.roo/rules-<mode>/` are always-on prose."""
+    (temp_dir / ".roorules").write_text("Never force push to main.\n")
+    (temp_dir / ".roo" / "rules").mkdir(parents=True)
+    (temp_dir / ".roo" / "rules" / "01-style.md").write_text("# Style\n\nUse tabs.\n")
+    (temp_dir / ".roo" / "rules" / "notes.txt").write_text("Prefer the shared client.\n")
+    (temp_dir / ".roo" / "rules-architect").mkdir()
+    (temp_dir / ".roo" / "rules-architect" / "design.md").write_text("# Design\n\nWrite it down.\n")
+    # Not a rules directory: Roo reads its MCP servers here, not prose.
+    (temp_dir / ".roo" / "mcp.json").write_text('{"mcpServers": {}}\n')
+
+    context = RepositoryContext(temp_dir)
+    paths = {b.path for b in context.lint_tree.find(InstructionBlock)}
+
+    assert temp_dir / ".roorules" in paths
+    assert temp_dir / ".roo" / "rules" / "01-style.md" in paths
+    assert temp_dir / ".roo" / "rules" / "notes.txt" in paths
+    assert temp_dir / ".roo" / "rules-architect" / "design.md" in paths
+    assert temp_dir / ".roo" / "mcp.json" not in paths
+
+
+def test_roomodes_is_config_not_prose(temp_dir):
+    """`.roomodes` is structured YAML — the content rules must never read it."""
+    (temp_dir / ".roomodes").write_text(
+        "customModes:\n"
+        "  - slug: docs-writer\n"
+        "    name: Docs\n"
+        "    roleDefinition: You maintain the docs.\n"
+        "    groups: [read]\n"
+    )
+
+    context = RepositoryContext(temp_dir)
+
+    modes = context.lint_tree.find(RooModesBlock)
+    assert [b.path for b in modes] == [temp_dir / ".roomodes"]
+    assert not isinstance(modes[0], ContentBlock)
+    assert all(b.path.name != ".roomodes" for b in context.lint_tree.find(InstructionBlock))
 
 
 def test_prompt_identity_is_injective_across_the_separator():

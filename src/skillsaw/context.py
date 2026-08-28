@@ -76,10 +76,10 @@ HAS_AGENTS_MD = "HAS_AGENTS_MD"
 HAS_KIRO = "HAS_KIRO"
 HAS_CLAUDE_MD = "HAS_CLAUDE_MD"
 HAS_CODERABBIT = "HAS_CODERABBIT"
+HAS_ROO = "HAS_ROO"
 # Formats whose repositories may hold one of ``INSTRUCTION_FILES``. HAS_CLINE
-# is deliberately absent: the instruction-file rules only ever look at
-# AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md, so a .clinerules-only repository
-# would auto-enable two rules structurally incapable of finding anything.
+# and HAS_ROO are absent: those rules read only AGENTS.md/CLAUDE.md/GEMINI.md/
+# QWEN.md, so such a repository would auto-enable two rules that find nothing.
 ALL_INSTRUCTION_FORMATS = frozenset(
     {
         HAS_CURSOR,

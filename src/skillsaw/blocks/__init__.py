@@ -15,6 +15,7 @@ single rule module.  Split across submodules by family:
 * :mod:`~skillsaw.blocks.json_config` — ``JsonConfigBlock`` + hooks/MCP/settings
 * :mod:`~skillsaw.blocks.coderabbit` — ``CodeRabbitContentBlock``
 * :mod:`~skillsaw.blocks.promptfoo` — ``PromptfooPromptBlock``
+* :mod:`~skillsaw.blocks.roo` — ``RooModesBlock``
 * :mod:`~skillsaw.blocks.gather` — ``gather_all_content_blocks`` and friends
 
 Everything is re-exported here so ``from skillsaw.blocks import X`` keeps
@@ -81,6 +82,7 @@ from .coderabbit import (
 )
 from .promptfoo import PromptfooPromptBlock
 from .openai import OpenAIMetadataBlock
+from .roo import RooModesBlock
 from .gather import (
     gather_all_content_blocks,
     gather_all_content_files,
@@ -150,6 +152,8 @@ __all__ = [
     "PromptfooPromptBlock",
     # OpenAI metadata
     "OpenAIMetadataBlock",
+    # Roo Code
+    "RooModesBlock",
     # gather
     "gather_all_content_blocks",
     "gather_all_content_files",

@@ -20,6 +20,7 @@ from skillsaw.context import (
     HAS_KIRO,
     HAS_CLAUDE_MD,
     HAS_CODERABBIT,
+    HAS_ROO,
 )
 from skillsaw.rules.builtin.plugins.json_required import PluginJsonRequiredRule
 from skillsaw.discovery.detect import has_skill_md_recursive
@@ -793,6 +794,48 @@ def test_detected_formats_kiro(temp_dir):
     (temp_dir / ".kiro").mkdir()
     context = RepositoryContext(temp_dir)
     assert HAS_KIRO in context.detected_formats
+
+
+def test_detected_formats_roo_legacy_files(temp_dir):
+    """Any one legacy Roo Code artifact at the root sets HAS_ROO"""
+    (temp_dir / ".roorules").write_text("Never force push.\n")
+    assert HAS_ROO in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".roorules").unlink()
+    (temp_dir / ".roomodes").write_text("customModes: []\n")
+    assert HAS_ROO in RepositoryContext(temp_dir).detected_formats
+
+    (temp_dir / ".roomodes").unlink()
+    (temp_dir / ".roo" / "rules").mkdir(parents=True)
+    assert HAS_ROO in RepositoryContext(temp_dir).detected_formats
+
+
+def test_detected_formats_roo_mode_specific_rules_dir(temp_dir):
+    """``.roo/rules-<mode>/`` is evidence on its own — it holds prose too"""
+    (temp_dir / ".roo" / "rules-architect").mkdir(parents=True)
+    assert HAS_ROO in RepositoryContext(temp_dir).detected_formats
+
+
+def test_roo_dir_without_rules_is_not_evidence(temp_dir):
+    """Detection may not claim more than attachment reads.
+
+    ``.roo/mcp.json`` is Roo configuration, but nothing attaches it today,
+    so flipping HAS_ROO for it would enable a format-gated rule over an
+    empty tree — the silent no-op the detection/attachment rule forbids.
+    """
+    (temp_dir / ".roo").mkdir()
+    (temp_dir / ".roo" / "mcp.json").write_text('{"mcpServers": {}}\n')
+    assert HAS_ROO not in RepositoryContext(temp_dir).detected_formats
+
+
+def test_excluded_roo_files_do_not_set_format(temp_dir):
+    """An excluded Roo artifact is not evidence"""
+    (temp_dir / ".roomodes").write_text("customModes: []\n")
+    (temp_dir / ".roo" / "rules").mkdir(parents=True)
+
+    context = RepositoryContext(temp_dir, exclude_patterns=[".roomodes", ".roo/**"])
+
+    assert HAS_ROO not in context.detected_formats
 
 
 def test_detected_formats_claude_md(temp_dir):

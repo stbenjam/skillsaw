@@ -159,6 +159,33 @@ def instruction_formats(
                     return True
         return False
 
+    def roo_marker() -> bool:
+        """Legacy Roo Code configuration at the repository root.
+
+        Root-anchored on purpose: Roo Code resolved ``.roorules``,
+        ``.roo/`` and ``.roomodes`` from the workspace root, not from the
+        nearest enclosing directory the way Cursor and Cline do, so there
+        is no nested copy to walk for. Evidence is kept to what attachment
+        actually reads — ``.roo/`` on its own is not enough, because a
+        ``.roo/`` holding only ``mcp.json`` would flip the label with no
+        Roo block in the tree for any format-gated rule to look at.
+        """
+        if marker(".roomodes") or marker(".roorules"):
+            return True
+        roo = root / ".roo"
+        if is_excluded(roo) or not roo.is_dir():
+            return False
+        try:
+            entries = list(os.scandir(roo))
+        except OSError:
+            return False
+        return any(
+            (entry.name == "rules" or entry.name.startswith("rules-"))
+            and entry.is_dir()
+            and not is_excluded(Path(entry.path))
+            for entry in entries
+        )
+
     def legacy_cursor() -> bool:
         """Any non-excluded `.cursorrules`, at the root or in a subpackage.
 
@@ -191,6 +218,7 @@ def instruction_formats(
         ("HAS_QWEN", marker("QWEN.md")),
         ("HAS_AGENTS_MD", marker("AGENTS.md")),
         ("HAS_KIRO", marker(".kiro", is_dir=True)),
+        ("HAS_ROO", roo_marker()),
         ("HAS_CLAUDE_MD", marker("CLAUDE.md")),
         ("HAS_CODERABBIT", marker(".coderabbit.yaml")),
     )

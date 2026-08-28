@@ -41,6 +41,7 @@ from .blocks import (
     PromptfooPromptBlock,
     QwenMdBlock,
     ReadmeBlock,
+    RooModesBlock,
     SettingsBlock,
     SkillBlock,
     SkillRefBlock,
@@ -570,6 +571,31 @@ def build_lint_tree(context: "RepositoryContext") -> LintTarget:
             _add_block(root, md, InstructionBlock)
 
     _add_block(root, context.root_path / ".windsurfrules", InstructionBlock)
+
+    # --- Legacy Roo Code ---
+    # Roo Code (the VS Code extension) shut down in May 2026, but the files
+    # it read outlive it in checked-in repositories and other tools migrate
+    # them. Root-anchored, unlike Cursor and Cline: Roo resolved all of
+    # these from the workspace root, so there is no nested copy to walk for.
+    _add_block(root, context.root_path / ".roorules", InstructionBlock)
+    roo_dir = context.root_path / ".roo"
+    if safe_is_dir(roo_dir):
+        # ``rules/`` is the shared set; ``rules-<mode>/`` adds to it for one
+        # mode. Both are always-on prose for the mode that loads them, and
+        # Roo walks each recursively, so subdirectories are ordinary rule
+        # files rather than decoration.
+        try:
+            rule_dirs = sorted(roo_dir.glob("rules*"))
+        except OSError:
+            rule_dirs = []
+        for rules_dir in rule_dirs:
+            if rules_dir.name != "rules" and not rules_dir.name.startswith("rules-"):
+                continue
+            for pattern in ("**/*.md", "**/*.txt"):
+                _add_glob(root, rules_dir, pattern, InstructionBlock)
+    roomodes = context.root_path / ".roomodes"
+    if safe_is_file(roomodes) and not _is_excluded(roomodes):
+        root.children.append(RooModesBlock(path=roomodes))
 
     # Same story as `.cursorrules`: the file form of `.clinerules` is read
     # from the workspace directory, so a package that carries its own is
