@@ -10,6 +10,54 @@ from __future__ import annotations
 
 import re
 from typing import Optional, Pattern, Sequence, Tuple
+from urllib.parse import urlsplit
+
+# ``scheme://…@`` ahead of any path/query/fragment — the structural shape of
+# embedded user information.
+_URL_USERINFO_RE = re.compile(r"://[^/?#]*@")
+
+# WHATWG URL parsing — every browser and Node runtime — is lenient about the
+# ``//`` after a special scheme: it accepts any slash run (backslashes too),
+# so a JS client reads ``https:user:pass@example.com/mcp`` as user
+# information for example.com while RFC 3986, and urlsplit with it, see one
+# opaque path. Such spellings are retried in their normalized form.
+_WHATWG_SPECIAL_SCHEME_RE = re.compile(r"^(https?|wss?|ftp|file):", re.IGNORECASE)
+
+
+def url_has_userinfo(url: str) -> bool:
+    """Whether a URL carries user information, even when malformed.
+
+    urlsplit raises ValueError on some malformed URLs; the conservative
+    fallback scans for the userinfo shape so an unparseable URL cannot
+    smuggle embedded credentials past the check. Slashless special-scheme
+    spellings are additionally retried the way a WHATWG client would
+    normalize them.
+
+    Shared by every rule that reads a server URL out of a configuration
+    file, whichever host's dialect that file is written in.
+    """
+
+    def carries(candidate: str) -> bool:
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            return _URL_USERINFO_RE.search(candidate) is not None
+        return parsed.username is not None or parsed.password is not None
+
+    if carries(url):
+        return True
+    match = _WHATWG_SPECIAL_SCHEME_RE.match(url)
+    if not match:
+        return False
+    rest = url[match.end() :]
+    if rest.startswith("//"):
+        # Already in authority form — the first parse was authoritative.
+        return False
+    # The lstrip lives outside the f-string: a backslash in an expression
+    # is a SyntaxError on the 3.9–3.11 interpreters this package supports.
+    stripped = rest.lstrip("/\\")
+    return carries(f"{match.group(0)}//{stripped}".replace("\\", "/"))
+
 
 # Case-insensitive substrings that mark a generic credential value as an
 # obvious placeholder (inspired by gitleaks/detect-secrets allowlists).
@@ -42,10 +90,14 @@ DEFAULT_PLACEHOLDER_MARKERS = (
 )
 
 # Template/variable syntax anywhere in the value marks it as a placeholder:
-# <your-key>, ${API_KEY}, {{ secrets.KEY }}. The angle-bracket form requires
-# word-like placeholder content so incidental <..> punctuation inside a
-# random secret does not suppress it.
-_TEMPLATE_SYNTAX = re.compile(r"<[A-Za-z][A-Za-z0-9 _./-]{2,}>|\$\{[^}]*\}|\{\{[^}]*\}\}")
+# <your-key>, ${API_KEY}, {{ secrets.KEY }}, and OpenCode's {env:API_KEY} /
+# {file:./token}. The angle-bracket form requires word-like placeholder
+# content so incidental <..> punctuation inside a random secret does not
+# suppress it; the env/file forms name their scheme, which no credential
+# does by accident.
+_TEMPLATE_SYNTAX = re.compile(
+    r"<[A-Za-z][A-Za-z0-9 _./-]{2,}>|\$\{[^}]*\}|\{\{[^}]*\}\}|\{(?:env|file):[^}]*\}"
+)
 
 # Bare $VAR env-var interpolation. Matched greedily and confirmed in code:
 # the character after the match must not be a lowercase letter, otherwise a

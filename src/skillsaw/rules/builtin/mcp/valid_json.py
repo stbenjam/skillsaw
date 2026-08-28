@@ -2,13 +2,11 @@
 Rule: mcp-valid-json
 """
 
-import re
 from typing import List, Dict, Any, Tuple
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from skillsaw.blocks import AgentPluginMcpBlock
-from skillsaw.context import RepositoryContext, RepositoryType
+from skillsaw.blocks import AgentPluginMcpBlock, OpenCodeMcpBlock
+from skillsaw.context import HAS_OPENCODE, RepositoryContext, RepositoryType
 from skillsaw.diagnostics import safe_display
 from skillsaw.utils import is_finite_number
 from skillsaw.lint_target import PluginNode
@@ -17,6 +15,7 @@ from skillsaw.rules.builtin.content_analysis import McpBlock
 from skillsaw.rules.builtin.secret_detection import (
     DEFAULT_PLACEHOLDER_MARKERS,
     mapped_secret_description,
+    url_has_userinfo,
 )
 from skillsaw.rules.builtin.utils import read_json
 
@@ -24,50 +23,6 @@ from skillsaw.rules.builtin.utils import read_json
 def _is_usable(value: Any) -> bool:
     """Whether a required connection field names something spawnable."""
     return isinstance(value, str) and bool(value.strip())
-
-
-# ``scheme://…@`` ahead of any path/query/fragment — the structural shape of
-# embedded user information.
-_URL_USERINFO_RE = re.compile(r"://[^/?#]*@")
-
-# WHATWG URL parsing — every browser and Node runtime — is lenient about the
-# ``//`` after a special scheme: it accepts any slash run (backslashes too),
-# so a JS client reads ``https:user:pass@example.com/mcp`` as user
-# information for example.com while RFC 3986, and urlsplit with it, see one
-# opaque path. Such spellings are retried in their normalized form.
-_WHATWG_SPECIAL_SCHEME_RE = re.compile(r"^(https?|wss?|ftp|file):", re.IGNORECASE)
-
-
-def _url_has_userinfo(url: str) -> bool:
-    """Whether a URL carries user information, even when malformed.
-
-    urlsplit raises ValueError on some malformed URLs; the conservative
-    fallback scans for the userinfo shape so an unparseable URL cannot
-    smuggle embedded credentials past the check. Slashless special-scheme
-    spellings are additionally retried the way a WHATWG client would
-    normalize them.
-    """
-
-    def carries(candidate: str) -> bool:
-        try:
-            parsed = urlsplit(candidate)
-        except ValueError:
-            return _URL_USERINFO_RE.search(candidate) is not None
-        return parsed.username is not None or parsed.password is not None
-
-    if carries(url):
-        return True
-    match = _WHATWG_SPECIAL_SCHEME_RE.match(url)
-    if not match:
-        return False
-    rest = url[match.end() :]
-    if rest.startswith("//"):
-        # Already in authority form — the first parse was authoritative.
-        return False
-    # The lstrip lives outside the f-string: a backslash in an expression
-    # is a SyntaxError on the 3.9–3.11 interpreters this package supports.
-    stripped = rest.lstrip("/\\")
-    return carries(f"{match.group(0)}//{stripped}".replace("\\", "/"))
 
 
 #: Fields that appear on one server, never on a map of them.
@@ -162,6 +117,19 @@ class McpValidJsonRule(Rule):
                 isinstance(block, AgentPluginMcpBlock)
                 and RepositoryType.AGENT_PLUGIN in context.repo_types
             ):
+                continue
+            # OpenCode's dialect shares the idea of an MCP server and almost
+            # none of the spelling: transports are named for where the server
+            # runs (``local``/``remote``) rather than for the wire protocol,
+            # a local ``command`` is an argv array, the environment map is
+            # ``environment``, and v2 splits ``timeout`` into an object.
+            # Every check below would report a correctly written OpenCode
+            # config as invalid, so ``opencode-config-valid`` validates the
+            # shape instead. Same conditional deferral as above: it applies
+            # only when that rule can actually run, so a file is never left
+            # validated by nothing. Policy rules are unaffected — they read
+            # ``server_names``, which the block normalizes.
+            if isinstance(block, OpenCodeMcpBlock) and HAS_OPENCODE in context.detected_formats:
                 continue
             if block.parse_error:
                 violations.append(
@@ -440,7 +408,7 @@ class McpValidJsonRule(Rule):
                     )
                 )
             elif isinstance(server_config.get("url"), str):
-                if _url_has_userinfo(server_config["url"]):
+                if url_has_userinfo(server_config["url"]):
                     violations.append(
                         self.violation(
                             f"MCP server '{shown}' 'url' must not contain user information",
