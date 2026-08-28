@@ -579,8 +579,10 @@ class OpenCodeMcpBlock(McpBlock):
     runs (``local``/``remote``) rather than for the wire protocol, a local
     server's ``command`` is an argv array rather than a string, and the
     environment map is spelled ``environment``. ``mcp-valid-json`` therefore
-    stands aside for this block and ``opencode-config-valid`` checks the
-    shape; only the ecosystem-neutral policy rules read it here.
+    stands aside from the shape checks for this block and
+    ``opencode-config-valid`` performs them instead; the policy rules and the
+    one dialect-neutral check (a ``url`` carrying user information) still
+    read this block where they read every other host's.
     """
 
     servers_key: ClassVar[str] = "mcp"
@@ -607,8 +609,9 @@ class OpenCodeMcpBlock(McpBlock):
         approximation: server names are author-controlled, so a config that
         wraps one harmless server in ``servers`` and leaves a
         credential-bearing one flat beside it would hide the second from
-        ``mcp-prohibited`` and from the credential scan, while
-        ``mcp-valid-json`` has already stood aside.
+        ``mcp-prohibited`` and from the credential scan — and from the one
+        check ``mcp-valid-json`` keeps for this block, since that too reads
+        this list.
 
         A name declared in both layouts appears twice. That is deliberate:
         they are two distinct objects that both ship, each can carry its own
