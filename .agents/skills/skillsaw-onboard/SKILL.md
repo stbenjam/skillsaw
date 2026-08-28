@@ -173,12 +173,14 @@ jobs:
       - uses: stbenjam/skillsaw/review@<SKILLSAW_SHA> # v0
 ```
 
+Then offer a weekly external dead-link check on its own schedule, so a slow
+origin never blocks a merge. If yes, create
 <!-- skillsaw-disable-next-line content-unlinked-internal-reference -->
-Then ask if they want a weekly external dead-link check — its own scheduled
-workflow, so a slow origin never blocks a merge. If yes, also create `.github/workflows/link-check.yml` from the
-[recipe](https://skillsaw.org/ci/#scheduled-external-link-checking): the Lint
-workflow with a weekly `schedule` cron plus `workflow_dispatch` for `on:`, and
-these inputs on the skillsaw step:
+`.github/workflows/link-check.yml` from the
+[recipe](https://skillsaw.org/ci/#scheduled-external-link-checking): the same
+job and SHAs, `name: link-check` (not `Lint`, which the review workflow
+triggers on), a weekly `schedule` cron plus `workflow_dispatch`, and these
+inputs:
 
 ```yaml
         with:
@@ -188,9 +190,9 @@ these inputs on the skillsaw step:
           verbose: true
 ```
 
-Both are required: `rule` selects the check, `no-network: false` grants the
-network. Naming the rule alone is an error. Keep `strict: true` — the rule
-reports at `warning`.
+`rule` selects the check, `no-network: false` grants the network (naming the
+rule alone is an error), and `strict: true` matters — it reports at
+`warning`.
 
 ### GitLab CI
 

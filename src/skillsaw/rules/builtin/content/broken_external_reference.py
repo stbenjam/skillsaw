@@ -94,15 +94,15 @@ _MAX_TOTAL_BUDGET = 600.0
 _MAX_CONCURRENCY = 32
 
 # The two operands of `_is_ignored`, bounded for the same reason and in
-# the same style. It compiles a `.skillsaw.yaml` glob through
-# `fnmatch.translate` and matches it against a URL the repository also
-# wrote, so both sides of a catastrophically backtracking match are
-# attacker-chosen. `fnmatch.translate` gained atomic groups only in
-# 3.11 and skillsaw supports 3.9. The SIGALRM budget the banned-
-# references rule uses for T13 cannot stand in: `_is_ignored` is
-# reached from `_accepts_hop` on worker threads, where signals never
-# fire. So the lengths are capped instead — no URL and no ignore
-# pattern written on purpose comes near either bound.
+# the same style: both sides of that match come from an untrusted
+# repository, so both are kept small. This is not a ReDoS mitigation —
+# `fnmatch.translate` has emitted the linear lookahead/backreference
+# emulation since 3.9 (bpo-40480), and 3.11 changed only its spelling —
+# it bounds the size of what the rule handles: the compiled pattern, the
+# subject it matches, and, for the URL, the violation message and the
+# de-duplication key it also becomes. No URL and no ignore pattern
+# written on purpose comes near either bound. Both are documented in the
+# rule page, since exceeding either is silent by design.
 _MAX_URL_LENGTH = 2048
 _MAX_IGNORE_PATTERN_LENGTH = 256
 
@@ -113,6 +113,11 @@ _LOCAL_HOSTNAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localho
 # the confinement's own reasoning rejects a control character rather
 # than depending on a downstream guard to do it — see `_canonical_host`.
 _FORBIDDEN_HOST_CHARS = frozenset(chr(code) for code in range(0x21)) | {"\x7f"}
+
+# What a port may be spelled with. `str.isdigit` is not the test: it is
+# true for the full-width digits nameprep folds to ASCII ones, which is
+# the substitution this rule refuses everywhere else.
+_PORT_DIGITS = frozenset("0123456789")
 
 # Exceptions a probe is allowed to swallow: every way the network can
 # fail to answer. Anything outside this set is a bug in the rule, and a
@@ -146,17 +151,15 @@ class _Occurrence:
 
 
 class _EmptyBody:
-    """A response whose body reads as empty, without touching the socket.
+    """A response whose ``read``/``readline`` return empty, without the socket.
 
     ``HTTPRedirectHandler.http_error_302`` calls ``fp.read()`` on the
-    intermediate response before it opens the next hop — a full,
-    uncapped read of a body nothing here wants. An origin that answers a
-    redirect with an endless chunked stream would be read into the
-    worker's memory, bounded only by the per-``recv`` socket timeout.
-
-    Everything except ``read``/``readline`` is forwarded, so ``close()``
-    still closes the real response and an ``HTTPError`` built from this
-    still behaves like one built from the response itself.
+    intermediate response before opening the next hop — an uncapped read
+    of a body nothing here wants, so an origin answering a redirect with
+    an endless chunked stream would be read into the worker's memory,
+    bounded only by the per-``recv`` socket timeout. Everything else is
+    forwarded, so ``close()`` still closes the real response and an
+    ``HTTPError`` built from this still behaves like one.
     """
 
     def __init__(self, response):
@@ -175,24 +178,21 @@ class _EmptyBody:
 class _BoundedRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Redirect handler with a tighter hop cap and a vetted target.
 
-    Every admission rule that applies to an authored URL applies again
-    to each hop, because the destination past the first hop is chosen by
-    the origin rather than by the repository author. Without that,
-    ``ignore`` — the mechanism the docs tell users to keep skillsaw off
-    their internal network — is bypassable by any origin willing to
-    answer 302, and so is the private-host confinement. urllib would
-    also happily follow a redirect into ``ftp://`` or re-send userinfo
-    credentials on the next hop.
-
-    A rejected hop ends the chain the way urllib ends a redirect into an
-    unsupported scheme: as an ``HTTPError``, which the caller reads as
-    inconclusive.
+    Every admission rule that applies to an authored URL applies again to
+    each hop, because past the first hop the destination is chosen by the
+    origin rather than by the repository author. Without that, ``ignore``
+    — the mechanism the docs tell users to keep skillsaw off their
+    internal network — and the private-host confinement are both
+    bypassable by any origin willing to answer 302, and urllib would
+    happily follow a redirect into ``ftp://`` or re-send userinfo on the
+    next hop. A rejected hop ends the chain the way urllib ends a
+    redirect into an unsupported scheme: an ``HTTPError``, which the
+    caller reads as inconclusive.
 
     Two more things the base class does that this one must not: read the
     intermediate body (see :class:`_EmptyBody`), and hand each hop the
     *full* timeout again. ``hop_timeout`` returns what is left of the
-    window the caller opened, so a five-hop chain costs one timeout
-    rather than five.
+    caller's window, so a five-hop chain costs one timeout, not five.
     """
 
     max_redirections = _MAX_REDIRECTS
@@ -354,28 +354,30 @@ class ContentBrokenExternalReferenceRule(Rule):
         the one connected to: ``169%2E254%2E169%2E254``,
         ``169。254。169。254`` and ``１２７.0.0.1`` all reach a numeric
         address, while a confinement reading them verbatim sees names.
-
-        A host the codec refuses is refused here too. That is safe as
-        well as simple: ``getaddrinfo`` would raise the same
-        ``UnicodeError``, which :data:`_NETWORK_ERRORS` already swallows,
-        so such a host could not be fetched anyway.
+        A host the codec refuses is refused here too, safely:
+        ``getaddrinfo`` would raise the same ``UnicodeError``, which
+        :data:`_NETWORK_ERRORS` swallows, so it could not be fetched.
 
         Two spellings survive the encoding and are refused after it,
         because both would make the classified string differ from the
         requested one:
 
-        * A leftover ``%``. ``Request._parse`` percent-decodes the host
-          it is handed, so a ``%`` that survives *this* decode is
-          decoded a second time by urllib, and ``http.client`` then
-          splits a decoded ``:`` into a port. Double encoding gets there
-          (``%253A``), and so does a single full-width ``％`` (U+FF05),
-          which nameprep's NFKC step folds to ``%``. A DNS name or an IP
-          literal never legitimately carries one post-decode.
+        * A leftover ``%``. ``Request._parse`` decodes the host it is
+          handed, so a ``%`` surviving *this* decode is decoded a second
+          time and ``http.client`` then splits a decoded ``:`` into a
+          port. Double encoding gets there (``%253A``), and so does a
+          single full-width ``％`` (U+FF05) that NFKC folds to ``%``.
+          No DNS name or IP literal legitimately carries one post-decode.
         * A control character. ``str.encode("idna")`` takes a verbatim
           fast path for pure-ASCII labels, checking only their length,
           so ``127.0.0.1%00.evil.com`` arrives intact — a string
           ``inet_aton`` reads as a name and ``getaddrinfo`` truncates at
           the NUL into loopback.
+
+        That same ASCII fast path case-folds nothing, so the lower-casing
+        is done here: DNS and the ``Host`` header are case-insensitive,
+        so one host must not de-duplicate into two requests, and
+        ``ignore`` must not silently miss a capitalized spelling.
         """
         try:
             canonical = unquote(host).encode("idna").decode("ascii")
@@ -385,61 +387,82 @@ class ContentBrokenExternalReferenceRule(Rule):
             return None
         if any(char in _FORBIDDEN_HOST_CHARS for char in canonical):
             return None
-        return canonical
+        return canonical.lower()
+
+    @staticmethod
+    def _is_port(port: str) -> bool:
+        """Whether *port* is empty, or a colon and ASCII digits."""
+        return not port or (port[0] == ":" and _PORT_DIGITS.issuperset(port[1:]))
 
     @classmethod
     def _canonical_netloc(cls, netloc: str) -> Optional[str]:
         """*netloc* with its host canonicalized — see :meth:`_canonical_host`.
 
-        The port and the IPv6 brackets are carried through untouched;
-        only the host is rewritten, so the URL that gets requested,
-        matched against ``ignore`` and reported is the one the
-        confinement classifies.
+        The host is rewritten; the port is validated, since there is
+        nothing to canonicalize about a number. Validated rather than
+        carried through, because the port half is as much of the
+        authority as the host half: ``Request._parse`` decodes
+        ``169.254.169.254:80%40x`` into ``169.254.169.254:80@x``, whose
+        host — to urllib, and to any forward proxy handed the authority
+        verbatim — is not what a confinement reading that tail as a port
+        would classify. Refusing the whole netloc is what makes "the
+        string classified is the string requested" hold by construction.
         """
         if netloc.startswith("["):
             raw, closed, port = netloc[1:].partition("]")
-            if not closed:
+            if not closed or not cls._is_port(port):
                 return None
             host = cls._canonical_host(raw)
             return None if host is None else f"[{host}]{port}"
         head, colon, tail = netloc.rpartition(":")
         raw, port = (head, colon + tail) if colon else (tail, "")
+        if not cls._is_port(port):
+            return None
         host = cls._canonical_host(raw)
         return None if host is None else f"{host}{port}"
 
     @classmethod
-    def _request_url(cls, href: str) -> Optional[str]:
-        """The URL to request for *href*, or None when it is out of scope.
+    def _request_url(cls, href: str) -> Optional[Tuple[str, str]]:
+        """``(url, netloc)`` to request for *href*, or None if out of scope.
 
         Only ``http``/``https`` are probed. A fragment is dropped — it is
         never sent to the server, and keeping it would split one request
         into several. A URL carrying userinfo is dropped entirely rather
         than probed: the request would put the author's credentials on
         the wire, which is not something a linter should do on its own.
+
+        The netloc comes back with the URL because the caller has to
+        classify the *rebuilt* authority, and re-deriving it costs a
+        second parse that can fail: canonicalization percent-decodes the
+        host, so ``example.com%5B`` becomes an authority ``urlsplit``
+        refuses ("Invalid IPv6 URL") although the authored string parsed
+        cleanly. Both parses sit under one guard here, so neither a link
+        in a repository nor a ``Location`` header from a hostile origin
+        can turn an opted-in run into a rule-execution-error.
         """
         try:
             parts = urlsplit(href)
+            if parts.scheme not in ("http", "https") or not parts.netloc:
+                return None
+            netloc = cls._canonical_netloc(parts.netloc)
+            if netloc is None:
+                return None
+            # After canonicalization, not before: percent-decoding is
+            # what turns ``user%40example.com`` into userinfo, and
+            # urllib keeps the whole decoded string as the host it
+            # resolves rather than stripping the part in front of the
+            # ``@``.
+            if "@" in netloc:
+                return None
+            url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+            requested = urlsplit(url).netloc
         except ValueError:
             return None
-        if parts.scheme not in ("http", "https"):
-            return None
-        if not parts.netloc:
-            return None
-        netloc = cls._canonical_netloc(parts.netloc)
-        if netloc is None:
-            return None
-        # After canonicalization, not before: percent-decoding is what
-        # turns ``user%40example.com`` into userinfo, and urllib keeps
-        # the whole decoded string as the host it resolves rather than
-        # stripping the part in front of the ``@``.
-        if "@" in netloc:
-            return None
-        url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
         if len(url) > _MAX_URL_LENGTH:
             # See _MAX_URL_LENGTH: this is one half of the `ignore`
             # glob's worst case, and the repository writes both halves.
             return None
-        return url
+        return url, requested
 
     @staticmethod
     def _as_ip_literal(host: str) -> Optional[ipaddress._BaseAddress]:
@@ -546,10 +569,11 @@ class ContentBrokenExternalReferenceRule(Rule):
         The single admission gate, applied both to authored URLs and to
         every redirect hop — see :class:`_BoundedRedirectHandler`.
         """
-        url = self._request_url(href)
-        if url is None:
+        target = self._request_url(href)
+        if target is None:
             return None
-        if not self.allow_private_hosts and not self._is_public_host(urlsplit(url).netloc):
+        url, netloc = target
+        if not self.allow_private_hosts and not self._is_public_host(netloc):
             return None
         if self._is_ignored(url, self._ignore):
             return None

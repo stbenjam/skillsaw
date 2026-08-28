@@ -104,11 +104,10 @@ from the markdown-it-py AST — read it via `block.markdown` (a
 connection (THREAT_MODEL T18). A second one needs a security review and
 must declare `requires_network = True` — that attribute is the whole
 gate (`--no-network`, the Action, `changed-rules.py`), so never add a
-rule-id list. Read the module docstring in
-`src/skillsaw/rules/builtin/content/broken_external_reference.py` and the
-invariants in `src/skillsaw/rules/docs/content-broken-external-reference.md`
-before writing one: opt-in only, definitive evidence only, hostile
-input throughout, and tests against a local `http.server`.
+rule-id list. Read `broken_external_reference.py`'s module docstring and
+the invariants in its rule doc before writing one: opt-in only,
+definitive evidence only, hostile input throughout, and tests against a
+local `http.server`.
 
 ### Line numbers and the parse tree
 

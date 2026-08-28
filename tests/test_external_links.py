@@ -104,18 +104,25 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
         "/redirect-malformed": (302, "http://[::1/x"),
     }
 
+    # path -> (status to HEAD, status to GET). Every route where the two
+    # methods disagree, which is what the GET retry and the GET
+    # confirmation exist for.
+    SPLIT_ROUTES = {
+        "/head-405": (405, 404),  # refuses HEAD; the retry finds it gone
+        "/head-501": (501, 404),  # the other spelling of that refusal
+        "/head-404-get-200": (404, 200),  # nvlpubs.nist.gov's shape
+        "/head-410-get-200": (410, 200),  # the same, spelled 410
+    }
+
     def _handle(self, method: str):
         path = self.path
         self.server.hits.append((method, path))
         if path in self.ROUTES:
             status, location = self.ROUTES[path]
             self._respond(status, location=location, body=b"body")
-        elif path == "/head-405":
-            # Rejects HEAD outright; the GET retry finds it is gone.
-            self._respond(405 if method == "HEAD" else 404, body=b"")
-        elif path == "/head-501":
-            # The other spelling of "this server will not do HEAD".
-            self._respond(501 if method == "HEAD" else 404, body=b"")
+        elif path in self.SPLIT_ROUTES:
+            to_head, to_get = self.SPLIT_ROUTES[path]
+            self._respond(to_head if method == "HEAD" else to_get, body=b"body")
         elif path.startswith("/hop/"):
             # A chain of DISTINCT hops, so it trips the hop cap rather
             # than urllib's untouched same-URL max_repeats.
@@ -124,12 +131,6 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
                 self._respond(404, body=b"end of chain")
             else:
                 self._respond(302, location=f"/hop/{step - 1}")
-        elif path == "/head-404-get-200":
-            # nvlpubs.nist.gov's shape: 404 to HEAD, serves it on GET.
-            self._respond(404 if method == "HEAD" else 200, body=b"body")
-        elif path == "/head-410-get-200":
-            # The same mis-implementation spelled with 410.
-            self._respond(410 if method == "HEAD" else 200, body=b"body")
         elif path.startswith("/slow"):
             # Never answers within any timeout the tests configure.
             threading.Event().wait(_SLOW_SECONDS)
@@ -288,21 +289,16 @@ def _methods_by_path(server):
 
 
 class TestMetadata:
-    def test_rule_identity(self):
+    def test_rule_identity_and_opt_in_defaults(self):
+        """`default_enabled` is never ``auto``: nothing starts requesting
+        on its own, and there is no mechanical fix for a dead URL."""
         rule = ContentBrokenExternalReferenceRule()
+
         assert rule.rule_id == RULE_ID
         assert rule.default_severity() == Severity.WARNING
         assert rule.since == "0.20.0"
-
-    def test_rule_is_opt_in(self):
-        """Never ``auto``: nothing may start making requests on its own."""
+        assert rule.supports_autofix is False
         assert ContentBrokenExternalReferenceRule.default_enabled is False
-
-    def test_rule_has_no_autofix(self):
-        """There is no mechanical fix for a dead URL."""
-        assert ContentBrokenExternalReferenceRule().supports_autofix is False
-
-    def test_disabled_in_generated_default_config(self):
         assert LinterConfig.default().rules[RULE_ID]["enabled"] is False
 
 
@@ -315,7 +311,10 @@ class TestUrlSelection:
         [
             ("https://example.com/a", "https://example.com/a"),
             ("http://example.com/a?q=1#frag", "http://example.com/a?q=1"),
-            ("HTTPS://Example.com/a", "https://Example.com/a"),
+            # The IDNA codec passes pure-ASCII labels through verbatim, so
+            # the lower-casing DNS and the `Host` header imply is ours to do.
+            ("HTTPS://Example.com/a", "https://example.com/a"),
+            ("https://Internal.Example.COM/wiki", "https://internal.example.com/wiki"),
             # Out of scope: not http(s), no host, or carrying credentials.
             ("mailto:someone@example.com", None),
             ("ftp://example.com/pub", None),
@@ -329,7 +328,9 @@ class TestUrlSelection:
         ],
     )
     def test_request_url(self, href, expected):
-        assert ContentBrokenExternalReferenceRule._request_url(href) == expected
+        target = ContentBrokenExternalReferenceRule._request_url(href)
+
+        assert (target[0] if target else None) == expected
 
     @pytest.mark.parametrize(
         "url,patterns,expected",
@@ -370,16 +371,9 @@ class TestAgainstLocalServer:
             "missing",
             "redirect-missing",
         ]
-
-    def test_bot_walls_and_flakiness_are_not_violations(self, tmp_path, server):
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        violations = _run_rule(repo)
-
-        # Liveness: every "not requested" assertion below passes vacuously
-        # if the run made no requests at all, so pin that it did.
+        # Liveness: the "never flagged" list below passes vacuously if
+        # the run made no requests at all, so pin that it did.
         assert "/ok" in server.paths()
-        assert violations, "the fixture must still produce real findings"
         joined = "\n".join(_messages(violations))
         for never_flagged in (
             "/forbidden",  # 403 bot wall
@@ -406,86 +400,51 @@ class TestAgainstLocalServer:
                 assert "/missing" in claude_md[line - 1]
         assert {name for name, _ in located} == {"CLAUDE.md", "SKILL.md"}
 
-    def test_each_url_is_probed_once(self, tmp_path, server):
-        """Repeated occurrences of one URL cost one probe, not one each."""
+    def test_each_link_costs_one_probe_with_the_documented_methods(self, tmp_path, server):
+        """Every link shape the AST yields, probed once, `GET` only where owed."""
         repo = _materialize("content/external-links", tmp_path, server.port)
 
         _run_rule(repo)
 
+        expected = {
+            # Repeated occurrences cost one probe, not one each: /ok and
+            # /forbidden appear twice across the two files.
+            "/ok": ["HEAD"],
+            "/forbidden": ["HEAD"],
+            # No GET for anything that was never a candidate violation.
+            "/server-error": ["HEAD"],
+            # /missing appears three times and still costs one probe —
+            # HEAD plus the confirming GET, not three of them.
+            "/missing": ["HEAD", "GET"],
+            # A server that refuses HEAD outright gets the same retry.
+            "/head-405": ["HEAD", "GET"],
+            # The link shapes: an autolink `<http://…>`, a reference
+            # link `[text][ref]`, and an image destination. The last one
+            # surprises people — the commonest image in an instruction
+            # file is a CI badge, and enabling this rule requests it.
+            "/rate-limited": ["HEAD"],
+            "/sla": ["HEAD"],
+            "/badge.svg": ["HEAD"],
+        }
         methods = _methods_by_path(server)
-        # /ok and /forbidden each appear twice across the two files.
-        assert methods["/ok"] == ["HEAD"]
-        assert methods["/forbidden"] == ["HEAD"]
-        # /missing appears three times and still costs one probe — which
-        # is HEAD plus the confirming GET, not three of them.
-        assert methods["/missing"] == ["HEAD", "GET"]
 
-    def test_healthy_links_cost_a_single_head(self, tmp_path, server):
-        repo = _materialize("content/external-links", tmp_path, server.port)
+        assert {path: methods.get(path) for path in expected} == expected
 
-        _run_rule(repo)
-
-        methods = _methods_by_path(server)
-        # No GET for anything that was never a candidate violation.
-        assert methods["/ok"] == ["HEAD"]
-        assert methods["/rate-limited"] == ["HEAD"]
-        assert methods["/server-error"] == ["HEAD"]
-
-    def test_head_rejection_falls_back_to_get(self, tmp_path, server):
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        _run_rule(repo)
-
-        assert _methods_by_path(server)["/head-405"] == ["HEAD", "GET"]
-
-    def test_urls_in_code_fences_are_never_requested(self, tmp_path, server):
+    def test_out_of_scope_urls_are_neither_requested_nor_reported(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
 
         violations = _run_rule(repo)
 
-        assert "/ok" in server.paths()  # liveness
-        assert "/v1-chargebacks" not in server.paths()
-        assert "v1-chargebacks" not in "\n".join(_messages(violations))
-
-    def test_autolinks_are_collected(self, tmp_path, server):
-        """``<http://…>`` is a link in the AST and is probed like any other."""
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        _run_rule(repo)
-
-        assert "/rate-limited" in server.paths()
-
-    def test_reference_links_are_collected(self, tmp_path, server):
-        """``[text][ref]`` resolves in the AST, so the definition is probed."""
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        _run_rule(repo)
-
-        assert "/sla" in server.paths()
-
-    def test_template_directories_are_skipped(self, tmp_path, server):
-        """Placeholder targets under templates/ are intentional, not rot."""
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        violations = _run_rule(repo)
-
-        assert "/ok" in server.paths()  # liveness
-        placeholders = [p for p in server.paths() if "your-service" in p]
-        assert placeholders == []
-        assert "your-service" not in "\n".join(_messages(violations))
-
-    def test_image_destinations_are_probed(self, tmp_path, server):
-        """Badge URLs in a CLAUDE.md are images, and images are links.
-
-        Worth pinning because it surprises people: the most common image
-        destination in an instruction file is a CI or coverage badge, and
-        enabling this rule starts requesting them.
-        """
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        _run_rule(repo)
-
-        assert "/badge.svg" in server.paths()
+        assert "/ok" in server.paths(), "liveness: the run must have requested something"
+        for marker, why in (
+            # Inside a fence it is not a link in the AST at all.
+            ("v1-chargebacks", "a URL in a fenced code block"),
+            # Placeholder targets under templates/ are intentional, not
+            # rot — exactly as content-broken-internal-reference has it.
+            ("your-service", "a placeholder under templates/"),
+        ):
+            assert not [path for path in server.paths() if marker in path], why
+            assert marker not in "\n".join(_messages(violations)), why
 
     def test_ignored_urls_are_never_requested(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
@@ -511,27 +470,21 @@ class TestAgainstLocalServer:
         assert _methods_by_path(server)[route] == ["HEAD", "GET"]
         assert status == 404
 
-    def test_a_chain_within_the_hop_cap_is_followed_to_its_404(self, server):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
-
-        status, _checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/4", 5.0, None)
-
-        assert status == 404
-
-    def test_a_chain_past_the_hop_cap_is_abandoned(self, server):
+    @pytest.mark.parametrize("hops,convicted", [(4, True), (9, False)])
+    def test_the_hop_cap_binds_where_urllib_would_keep_going(self, hops, convicted, server):
         """`_MAX_REDIRECTS = 5` must actually bind.
 
-        urllib's default is 10, so without the override this chain would
-        be followed all the way to its 404 and reported. `/redirect-loop`
-        cannot prove this — a self-redirect trips `max_repeats` (4),
-        which the rule leaves untouched.
+        urllib's default is 10, so without the override the nine-hop
+        chain would be followed all the way to its 404 and reported.
+        `/redirect-loop` cannot prove this — a self-redirect trips
+        `max_repeats` (4), which the rule leaves untouched.
         """
         rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
 
-        status, checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/9", 5.0, None)
+        status, checked = rule._probe(f"http://127.0.0.1:{server.port}/hop/{hops}", 5.0, None)
 
         assert checked is True
-        assert status not in (404, 410)
+        assert (status == 404) is convicted
 
     def test_redirect_out_of_http_is_not_followed(self, server):
         """A 302 into ``ftp://`` ends the chain instead of changing protocol."""
@@ -579,34 +532,23 @@ class TestOperatorNetworkGate:
     """
 
     @pytest.mark.parametrize("subcommand", ["lint", "baseline", "badge"])
-    def test_flag_gates_every_rule_executing_subcommand(self, subcommand, tmp_path, server):
+    @pytest.mark.parametrize("gate", ["--no-network", "SKILLSAW_NO_NETWORK"])
+    def test_either_gate_stops_every_rule_executing_subcommand(
+        self, gate, subcommand, tmp_path, server, monkeypatch
+    ):
         """Behaviour, not `--help` text, on each subcommand that can probe.
 
-        The gate is a hand-copied ``no_network=...`` keyword argument at
+        The flag is a hand-copied ``no_network=...`` keyword argument at
         each ``Linter(...)`` call site. Deleting one leaves the flag in
         ``--help``, leaves an argv-only test green, and silently makes
-        the requests the operator refused. The liveness half — that the
-        same argv *does* reach the server without the flag — is what
-        keeps the gated half from passing vacuously. ``fix`` is absent
-        because it never probes at all; see
+        the requests the operator refused. The variable is read by
+        ``Linter`` itself, so no call site can miss that one — but only
+        driving both proves it. The liveness half — that the same argv
+        *does* reach the server ungated — is what keeps the gated half
+        from passing vacuously. ``fix`` is absent because it never
+        probes at all; see
         :meth:`test_fix_never_probes_whatever_the_flags_say`.
         """
-        repo = _materialize("content/external-links", tmp_path, server.port)
-        argv = _rule_executing_argv(subcommand, repo)
-
-        run_cli(argv + ["--allow-private-hosts"])
-        assert server.hits, f"{subcommand} must reach the server without the gate"
-
-        server.reset()
-        run_cli(argv + ["--allow-private-hosts", "--no-network"])
-
-        assert server.hits == [], f"{subcommand} ignored --no-network"
-
-    @pytest.mark.parametrize("subcommand", ["lint", "baseline", "badge"])
-    def test_env_var_gates_every_rule_executing_subcommand(
-        self, subcommand, tmp_path, server, monkeypatch
-    ):
-        """``Linter`` reads the variable itself, so no call site can miss it."""
         repo = _materialize("content/external-links", tmp_path, server.port)
         argv = _rule_executing_argv(subcommand, repo) + ["--allow-private-hosts"]
 
@@ -614,10 +556,13 @@ class TestOperatorNetworkGate:
         assert server.hits, f"{subcommand} must reach the server without the gate"
 
         server.reset()
-        monkeypatch.setenv("SKILLSAW_NO_NETWORK", "1")
+        if gate.startswith("--"):
+            argv = argv + [gate]
+        else:
+            monkeypatch.setenv(gate, "1")
         run_cli(argv)
 
-        assert server.hits == [], f"{subcommand} ignored SKILLSAW_NO_NETWORK"
+        assert server.hits == [], f"{subcommand} ignored {gate}"
 
     def test_fix_never_probes_whatever_the_flags_say(self, tmp_path, server):
         """``fix`` is offline unconditionally, not merely gateable.
@@ -695,80 +640,71 @@ class TestOperatorNetworkGate:
         assert RULE_ID not in {v["rule_id"] for v in result["out"]["violations"]}
         assert "skipped (--no-network)" in result["stderr"]
 
-    def test_naming_only_gated_rules_under_the_gate_is_an_error(self, tmp_path, server):
+    def test_the_gate_emptying_the_rule_set_is_an_error(self, tmp_path, server):
         """``--rule <network rule> --no-network`` must not exit 0 having done nothing.
 
         An org that exports ``SKILLSAW_NO_NETWORK`` job-wide and also
         runs the documented scheduled link-check recipe would otherwise
         get a permanently green job over an empty rule set — the quiet CI
         false pass REVIEW.md's T4/T12 bullet asks reviewers to flag.
-        ``--no-custom-rules`` sets the precedent by failing loudly.
+        ``--no-custom-rules`` sets the precedent by failing loudly. Only
+        an *empty* rule set is the error, not any dropped rule.
         """
         repo = _materialize("content/external-links", tmp_path, server.port)
+        argv = ["--rule", RULE_ID, "--allow-private-hosts", "--no-network"]
 
-        result = run_lint(
-            repo,
-            "--rule",
-            RULE_ID,
-            "--allow-private-hosts",
-            "--no-network",
-            config=repo / ".skillsaw.yaml",
-        )
+        emptied = run_lint(repo, *argv, config=repo / ".skillsaw.yaml")
 
         assert server.hits == []
-        assert result["rc"] != 0
-        assert "skipped every rule named by --rule" in result["stderr"]
-        assert RULE_ID in result["stderr"]
+        assert emptied["rc"] != 0
+        assert "skipped every rule named by --rule" in emptied["stderr"]
+        assert RULE_ID in emptied["stderr"]
 
-    def test_gating_one_of_several_named_rules_still_runs_the_others(self, tmp_path, server):
-        """Only an *empty* rule set is an error, not any dropped rule."""
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        result = run_lint(
+        survivor = run_lint(
             repo,
-            "--rule",
-            RULE_ID,
+            *argv,
             "--rule",
             "content-broken-internal-reference",
-            "--no-network",
             config=repo / ".skillsaw.yaml",
         )
 
         assert server.hits == []
-        assert result["out"] is not None
+        assert survivor["out"] is not None
 
-    def test_env_var_is_honoured(self, tmp_path, server, monkeypatch):
-        repo = _materialize("content/external-links", tmp_path, server.port)
-        monkeypatch.setenv("SKILLSAW_NO_NETWORK", "1")
-
-        run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
-
-        assert server.hits == []
-
-    @pytest.mark.parametrize("value", ["0", " 0 ", "false", "FALSE", "no", "No", "off", ""])
-    def test_env_var_off_values_do_not_gate(self, value, tmp_path, server, monkeypatch):
+    @pytest.mark.parametrize(
+        "value,gates",
+        [
+            ("0", False),
+            (" 0 ", False),
+            ("false", False),
+            ("FALSE", False),
+            ("no", False),
+            ("No", False),
+            ("off", False),
+            ("", False),
+            ("1", True),
+            ("true", True),
+            ("TRUE", True),
+            (" yes ", True),
+            ("on", True),
+            # A typo resolves toward refusing, not toward allowing:
+            # `disabled` reads to a human like "the gate is disabled" and
+            # turns it on instead. Deliberate for a variable that takes
+            # capability away, and the opposite of how
+            # `SKILLSAW_ALLOW_PRIVATE_HOSTS` resolves the same typo.
+            ("maybe", True),
+            ("disabled", True),
+        ],
+    )
+    def test_the_env_var_resolves_every_spelling_toward_the_restriction(
+        self, value, gates, tmp_path, server, monkeypatch
+    ):
         repo = _materialize("content/external-links", tmp_path, server.port)
         monkeypatch.setenv("SKILLSAW_NO_NETWORK", value)
 
         run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
 
-        assert server.hits, f"SKILLSAW_NO_NETWORK={value!r} must not gate"
-
-    @pytest.mark.parametrize("value", ["1", "true", "TRUE", " yes ", "on", "maybe", "disabled"])
-    def test_anything_else_gates(self, value, tmp_path, server, monkeypatch):
-        """The restriction resolves a typo toward refusing, not toward allowing.
-
-        ``SKILLSAW_NO_NETWORK=disabled`` reads to a human like "the gate
-        is disabled" and turns it on instead. That is deliberate for a
-        variable that takes capability away, and it is the opposite of
-        how ``SKILLSAW_ALLOW_PRIVATE_HOSTS`` resolves the same typo.
-        """
-        repo = _materialize("content/external-links", tmp_path, server.port)
-        monkeypatch.setenv("SKILLSAW_NO_NETWORK", value)
-
-        run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
-
-        assert server.hits == [], f"SKILLSAW_NO_NETWORK={value!r} must gate"
+        assert (server.hits == []) is gates, f"SKILLSAW_NO_NETWORK={value!r}"
 
     @pytest.mark.parametrize(
         "value,granted",
@@ -795,7 +731,7 @@ class TestOperatorNetworkGate:
 
         assert bool(server.hits) is granted
 
-    def test_engaging_the_network_is_announced(self, tmp_path, server):
+    def test_the_announcement_fires_exactly_when_the_rule_runs(self, tmp_path, server):
         """A real subprocess: the warnings registry is process-global.
 
         ``warnings.warn`` fires once per (message, category, location)
@@ -808,42 +744,27 @@ class TestOperatorNetworkGate:
         import subprocess
         import sys
 
-        repo = _materialize("content/external-links", tmp_path, server.port)
+        def _stderr_of_lint(repo: Path, *argv: str) -> str:
+            return subprocess.run(
+                [sys.executable, "-m", "skillsaw", "lint", *argv, str(repo)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            ).stderr
 
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "skillsaw",
-                "lint",
-                "-c",
-                str(repo / ".skillsaw.yaml"),
-                str(repo),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
+        enabled = _materialize("content/external-links", tmp_path / "on", server.port)
+        announced = _stderr_of_lint(enabled, "-c", str(enabled / ".skillsaw.yaml"))
+
+        assert "Network access enabled for" in announced
+        assert RULE_ID in announced
+        assert "--no-network" in announced
+        assert "UserWarning" not in announced  # rendered, not the stock formatter
+
+        unconfigured = _materialize(
+            "content/external-links", tmp_path / "off", server.port, keep_config=False
         )
 
-        assert "Network access enabled for" in result.stderr
-        assert RULE_ID in result.stderr
-        assert "--no-network" in result.stderr
-        assert "UserWarning" not in result.stderr  # rendered, not the stock formatter
-
-    def test_no_announcement_when_the_rule_is_not_running(self, tmp_path, server):
-        import subprocess
-        import sys
-
-        repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
-
-        result = subprocess.run(
-            [sys.executable, "-m", "skillsaw", "lint", str(repo)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        assert "Network access enabled" not in result.stderr
+        assert "Network access enabled" not in _stderr_of_lint(unconfigured)
 
     def test_gate_is_declarative_not_a_rule_id_list(self):
         """A future network rule inherits the gate by declaring the attribute."""
@@ -913,6 +834,26 @@ class TestUntrustedConfig:
     than the default, and never to a hang.
     """
 
+    # `check()` reads the settings and hands three numbers to `_probe_all`.
+    _APPLIED_AS = {"timeout": "timeout", "total-budget": "budget", "concurrency": "concurrency"}
+
+    @classmethod
+    def _as_applied(cls, setting, value, monkeypatch):
+        """The value `check()` actually hands `_probe_all` for *setting*."""
+        rule = ContentBrokenExternalReferenceRule({"enabled": True, setting: value})
+        seen = {}
+
+        def _capture(urls, timeout, budget, concurrency):
+            seen.update(timeout=timeout, budget=budget, concurrency=concurrency)
+            return {}, 0
+
+        monkeypatch.setattr(rule, "_probe_all", _capture)
+        monkeypatch.setattr(rule, "_collect", lambda ctx: {"https://example.com/": []})
+
+        rule.check(None)
+
+        return seen[cls._APPLIED_AS[setting]]
+
     @pytest.mark.parametrize(
         "setting,value,expected",
         [
@@ -927,66 +868,20 @@ class TestUntrustedConfig:
             ("timeout", "not-a-number", 5.0),
             ("timeout", None, 5.0),
             ("timeout", True, 5.0),
+            ("total-budget", -1, 30.0),  # negative must not read as "no cap"
+            ("total-budget", float("nan"), 30.0),
+            ("total-budget", float("inf"), 30.0),
+            ("total-budget", 0, 30.0),  # 0 is not "no cap" — it means the default
+            ("total-budget", 10_000, 600.0),
+            ("concurrency", 100_000, 32),
+            ("concurrency", 0, 1),
+            ("concurrency", -4, 1),
+            ("concurrency", float("inf"), 8),
+            ("concurrency", "many", 8),
         ],
     )
-    def test_timeout_is_clamped(self, setting, value, expected, monkeypatch):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, setting: value})
-        seen = {}
-
-        def _capture(urls, timeout, budget, concurrency):
-            seen.update(timeout=timeout, budget=budget, concurrency=concurrency)
-            return {}, 0
-
-        monkeypatch.setattr(rule, "_probe_all", _capture)
-        monkeypatch.setattr(rule, "_collect", lambda ctx: {"https://example.com/": []})
-
-        rule.check(None)
-
-        assert seen["timeout"] == pytest.approx(expected)
-
-    @pytest.mark.parametrize(
-        "value,expected",
-        [
-            (-1, 30.0),  # negative must not read as "no cap"
-            (float("nan"), 30.0),
-            (float("inf"), 30.0),
-            (0, 30.0),  # 0 is not "no cap" — it means the default
-            (10_000, 600.0),
-        ],
-    )
-    def test_budget_is_clamped(self, value, expected, monkeypatch):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "total-budget": value})
-        seen = {}
-
-        def _capture(urls, timeout, budget, concurrency):
-            seen["budget"] = budget
-            return {}, 0
-
-        monkeypatch.setattr(rule, "_probe_all", _capture)
-        monkeypatch.setattr(rule, "_collect", lambda ctx: {"https://example.com/": []})
-
-        rule.check(None)
-
-        assert seen["budget"] == pytest.approx(expected)
-
-    @pytest.mark.parametrize(
-        "value,expected",
-        [(100_000, 32), (0, 1), (-4, 1), (float("inf"), 8), ("many", 8)],
-    )
-    def test_concurrency_is_clamped(self, value, expected, monkeypatch):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True, "concurrency": value})
-        seen = {}
-
-        def _capture(urls, timeout, budget, concurrency):
-            seen["concurrency"] = concurrency
-            return {}, 0
-
-        monkeypatch.setattr(rule, "_probe_all", _capture)
-        monkeypatch.setattr(rule, "_collect", lambda ctx: {"https://example.com/": []})
-
-        rule.check(None)
-
-        assert seen["concurrency"] == expected
+    def test_every_tuning_option_is_clamped(self, setting, value, expected, monkeypatch):
+        assert self._as_applied(setting, value, monkeypatch) == pytest.approx(expected)
 
     def test_a_string_ignore_does_not_silence_every_url(self, tmp_path, server):
         """``ignore: "https://..."`` is the likeliest YAML mistake here.
@@ -1062,6 +957,25 @@ class TestPrivateHostConfinement:
         # string — so the classified host and the resolved one differ.
         "http://user%40example.com/x",
         "http://127.0.0.1%40example.com/x",
+        # Userinfo the decode creates in the *port* half. The port is as
+        # much of the authority as the host is: `Request._parse` decodes
+        # these into `169.254.169.254:80@x`, whose host is not the string
+        # a confinement reading the tail as a port would classify — and
+        # under an `http_proxy` the whole authority goes to a third-party
+        # parser with no `http.client` split to fall back on.
+        "http://169.254.169.254:80%40x/latest/meta-data/",
+        "http://169.254.169.254:%40x/",
+        "http://127.0.0.1:1%408.8.8.8/",
+        "http://example.com:8%300/",
+        # Percent-decoding can also put a bracket into the rebuilt
+        # authority that the authored string never had, and `urlsplit`
+        # refuses those. Refused, not raised: `ValueError` is outside
+        # `_NETWORK_ERRORS`, so a link anywhere in a repository — or one
+        # `Location` header — would otherwise become an unbaselinable
+        # rule-execution-error.
+        "http://example.com%5B/x",
+        "http://example.com%5D/x",
+        "http://%EF%BC%BB127.0.0.1%EF%BC%BD/x",
     ]
 
     @pytest.mark.parametrize("url", _REFUSED)
@@ -1171,6 +1085,37 @@ class TestPrivateHostConfinement:
 
         assert rule._admit(url) is None
 
+    # The port half, which `_canonical_netloc` used to carry through
+    # verbatim. Each row names the authority `Request._parse` decodes it
+    # into, whose host is not the one a confinement reading that tail as
+    # a port would classify.
+    _SMUGGLED_IN_THE_PORT = [
+        ("http://169.254.169.254:80%40x/latest/meta-data/", "169.254.169.254:80@x"),
+        ("http://169.254.169.254:%40x/", "169.254.169.254:@x"),
+        ("http://127.0.0.1:1%408.8.8.8/", "127.0.0.1:1@8.8.8.8"),
+        ("http://example.com:8%300/", "example.com:800"),
+        # The bracketed branch validates its port too, and this is the
+        # only row that binds it: the host half is public, so nothing
+        # else refuses it.
+        ("http://[2606:4700::1]:8%300/x", "[2606:4700::1]:800"),
+    ]
+
+    @pytest.mark.parametrize("url,decoded", _SMUGGLED_IN_THE_PORT)
+    def test_a_port_that_decodes_into_something_else_is_refused(self, url, decoded):
+        """Refused outright, so the operator's opt-in does not skip it.
+
+        `_admit` consults `_is_public_host` only when the operator has
+        *not* opted in, so a port validated there would be unvalidated by
+        anything under `--allow-private-hosts`. Validating it where the
+        authority is rebuilt is what makes the refusal unconditional.
+        """
+        authored = url.split("//", 1)[1].split("/", 1)[0]
+        assert unquote(authored) == decoded, "premise: urllib decodes this authority"
+
+        rule = ContentBrokenExternalReferenceRule({"enabled": True}, allow_private_hosts=True)
+
+        assert rule._admit(url) is None
+
     def test_a_control_character_cannot_hide_a_literal_behind_a_name(self):
         """`getaddrinfo` truncates at a NUL; `inet_aton` refuses it.
 
@@ -1216,8 +1161,10 @@ class TestPrivateHostConfinement:
 
         An operator keeps skillsaw off an internal host by naming it in
         ``ignore``. Matching the string as authored instead would let a
-        percent-encoded spelling of that host through, the same way such
-        a spelling would slip past the public-host confinement.
+        percent-encoded — or merely capitalized — spelling of that host
+        through, the same way such a spelling would slip past the
+        public-host confinement. The IDNA codec case-folds nothing on
+        pure-ASCII labels, so the lower-casing is the rule's own.
         """
         rule = ContentBrokenExternalReferenceRule(
             {"enabled": True, "ignore": ["https://intranet.example.com/"]},
@@ -1225,6 +1172,7 @@ class TestPrivateHostConfinement:
         )
 
         assert rule._admit("https://intranet%2Eexample%2Ecom/wiki") is None
+        assert rule._admit("https://Intranet.Example.COM/wiki") is None
         assert rule._admit("https://other.example.com/wiki") is not None
 
     def test_both_operands_of_an_ignore_glob_are_length_bounded(self):
@@ -1232,12 +1180,11 @@ class TestPrivateHostConfinement:
 
         `_is_ignored` compiles a `.skillsaw.yaml` glob through
         `fnmatch.translate` and matches it against a URL from the same
-        repository, so a pattern like `*a*a*…*b` against a long
-        non-matching subject backtracks catastrophically. Atomic groups
-        landed in `fnmatch.translate` only in 3.11 and skillsaw supports
-        3.9, and the SIGALRM budget the banned-references rule uses
-        cannot stand in here — this runs on worker threads, where
-        signals never fire. So both lengths are capped instead.
+        repository, so both operands are repo-controlled. Not a
+        backtracking mitigation — `fnmatch.translate` has emitted the
+        linear emulation since 3.9 (bpo-40480) — a size one: it bounds
+        the compiled pattern, the subject, and, for the URL, the
+        violation message and the de-duplication key it also becomes.
         """
         long_url = "https://example.com/" + "a" * _MAX_URL_LENGTH
         assert len(long_url) > _MAX_URL_LENGTH
@@ -1311,17 +1258,13 @@ class TestRedirectTargetsAreVetted:
         assert checked is True
         assert status not in (404, 410)
 
-    def test_a_private_hop_is_refused(self):
+    def test_a_hop_faces_the_whole_authored_url_gate(self):
         """A public URL must not be able to walk the linter inside."""
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
         assert rule._accepts_hop("http://169.254.169.254/latest/") is False
-        assert rule._accepts_hop("https://example.com/ok") is True
-
-    def test_a_hop_carrying_userinfo_is_refused(self):
-        rule = ContentBrokenExternalReferenceRule({"enabled": True})
-
         assert rule._accepts_hop("https://user:token@example.com/x") is False
+        assert rule._accepts_hop("https://example.com/ok") is True
 
     def test_a_malformed_location_header_is_inconclusive(self, server):
         """A remote party must not be able to raise out of the probe.
@@ -1372,12 +1315,8 @@ class TestNoBodyIsEverRead:
     def _headers(location: str):
         return email.message_from_string(f"Location: {location}\n", _class=http.client.HTTPMessage)
 
-    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
-    def test_the_hop_body_is_not_read_on_any_redirect_code(self, code):
-        """The base class aliases all of them, so overriding 302 alone is not enough."""
-        reads = []
-        closed = []
-
+    @staticmethod
+    def _recording_body(reads, closed):
         class _Recording:
             def read(self, *args):
                 reads.append(args)
@@ -1386,6 +1325,12 @@ class TestNoBodyIsEverRead:
             def close(self):
                 closed.append(True)
 
+        return _Recording()
+
+    @pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+    def test_the_hop_body_is_not_read_on_any_redirect_code(self, code):
+        """The base class aliases all of them, so overriding 302 alone is not enough."""
+        reads, closed = [], []
         handler, opened = self._handler()
         method = getattr(handler, f"http_error_{code}", None)
         if method is None:  # pragma: no cover - 308 predates 3.11 only
@@ -1393,7 +1338,13 @@ class TestNoBodyIsEverRead:
         request = urllib.request.Request("http://127.0.0.1:1/from")
         request.timeout = 30.0
 
-        method(request, _Recording(), code, "Found", self._headers("http://127.0.0.1:1/to"))
+        method(
+            request,
+            self._recording_body(reads, closed),
+            code,
+            "Found",
+            self._headers("http://127.0.0.1:1/to"),
+        )
 
         assert reads == []
         assert closed == [True]  # still released, just never drained
@@ -1416,16 +1367,7 @@ class TestNoBodyIsEverRead:
         assert opened == [("http://127.0.0.1:1/to", 0.75)]
 
     def test_a_refused_hop_still_reads_nothing(self):
-        reads = []
-
-        class _Recording:
-            def read(self, *args):
-                reads.append(args)
-                return b"x"
-
-            def close(self):
-                pass
-
+        reads, closed = [], []
         handler, _opened = self._handler()
         handler._accepts = lambda url: False
         request = urllib.request.Request("http://127.0.0.1:1/from")
@@ -1433,7 +1375,11 @@ class TestNoBodyIsEverRead:
 
         with pytest.raises(urllib.error.HTTPError):
             handler.http_error_302(
-                request, _Recording(), 302, "Found", self._headers("http://169.254.169.254/x")
+                request,
+                self._recording_body(reads, closed),
+                302,
+                "Found",
+                self._headers("http://169.254.169.254/x"),
             )
 
         assert reads == []
@@ -1449,30 +1395,19 @@ class TestHeadIsNeverEnoughToConvict:
     answer alone would report those live pages as dead.
     """
 
-    def test_head_404_with_get_200_is_not_reported(self, tmp_path, server):
+    def test_get_settles_it_in_both_directions(self, tmp_path, server):
+        """A mis-implemented HEAD is acquitted; a link really gone is not."""
         repo = _materialize("content/external-links", tmp_path, server.port)
 
         violations = _run_rule(repo)
 
-        assert "/head-404-get-200" not in "\n".join(_messages(violations))
-        assert _methods_by_path(server)["/head-404-get-200"] == ["HEAD", "GET"]
-
-    def test_head_410_with_get_200_is_not_reported(self, tmp_path, server):
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        violations = _run_rule(repo)
-
-        assert "/head-410-get-200" not in "\n".join(_messages(violations))
-        assert _methods_by_path(server)["/head-410-get-200"] == ["HEAD", "GET"]
-
-    def test_a_confirmed_404_is_still_reported(self, tmp_path, server):
-        """A link that really is gone is still reported after confirmation."""
-        repo = _materialize("content/external-links", tmp_path, server.port)
-
-        violations = _run_rule(repo)
-
-        assert any("/missing" in m for m in _messages(violations))
-        assert _methods_by_path(server)["/missing"] == ["HEAD", "GET"]
+        reported = "\n".join(_messages(violations))
+        methods = _methods_by_path(server)
+        for acquitted in ("/head-404-get-200", "/head-410-get-200"):
+            assert acquitted not in reported
+            assert methods[acquitted] == ["HEAD", "GET"]
+        assert "/missing" in reported
+        assert methods["/missing"] == ["HEAD", "GET"]
 
     def test_unconfirmable_404_stays_silent(self, monkeypatch):
         """A budget that expires mid-confirmation reports nothing.
@@ -1549,22 +1484,8 @@ class TestInconclusiveOutcomesAreNeverReported:
 class TestBudgetExhaustion:
     """A run that ran out of time says so, once, and never convicts."""
 
-    def test_exhausted_budget_emits_one_info_notice(self, tmp_path, server):
-        repo = _materialize("content/external-links-slow", tmp_path, server.port)
-
-        # One worker, a one-second budget, two URLs that never answer: the
-        # first burns the budget, the second is never requested.
-        violations = _run_rule(repo, {"timeout": 5, "total-budget": 1, "concurrency": 1})
-
-        assert len(violations) == 1
-        notice = violations[0]
-        assert notice.severity == Severity.INFO
-        assert "left unchecked" in notice.message
-        assert "network budget" in notice.message
-        assert len(server.paths()) == 1
-
-    def test_budget_notice_message_is_stable(self, tmp_path, server):
-        """The notice must be baselinable, so no count may reach its message.
+    def test_an_exhausted_budget_emits_one_baselinable_info_notice(self, tmp_path, server):
+        """One notice, and one carrying no count, so it can be baselined.
 
         It has no file, so baseline identity falls through to hashing
         rule_id + message. A count that moves with runner latency would
@@ -1573,12 +1494,21 @@ class TestBudgetExhaustion:
         """
         repo = _materialize("content/external-links-slow", tmp_path, server.port)
 
-        first = _run_rule(repo, {"timeout": 5, "total-budget": 1, "concurrency": 1})
-        second = _run_rule(repo, {"timeout": 5, "total-budget": 0.5, "concurrency": 1})
+        # One worker, a one-second budget, two URLs that never answer: the
+        # first burns the budget, the second is never requested.
+        violations = _run_rule(repo, {"timeout": 5, "total-budget": 1, "concurrency": 1})
+        requested = len(server.paths())
+        shorter = _run_rule(repo, {"timeout": 5, "total-budget": 0.5, "concurrency": 1})
 
-        assert first[0].message == second[0].message
-        assert not any(char.isdigit() for char in first[0].message)
-        assert first[0].fingerprint_discriminator == "network-budget-exhausted"
+        assert requested == 1
+        assert len(violations) == 1
+        notice = violations[0]
+        assert notice.severity == Severity.INFO
+        assert "left unchecked" in notice.message
+        assert "network budget" in notice.message
+        assert notice.fingerprint_discriminator == "network-budget-exhausted"
+        assert not any(char.isdigit() for char in notice.message)
+        assert notice.message == shorter[0].message  # stable across budgets
 
     def test_no_notice_when_nothing_was_skipped(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)
@@ -1685,30 +1615,30 @@ class TestTheRunIsBounded:
         with pytest.raises(TypeError):
             rule._probe_all(["https://example.com/a"], timeout=1.0, budget=5.0, concurrency=1)
 
-    def test_a_network_failure_is_swallowed(self, monkeypatch):
-        """The positive half: an actual network error reports nothing."""
+    @pytest.mark.parametrize(
+        "raised,swallowed",
+        [
+            (socket.timeout("timed out"), True),  # the network failing
+            (AttributeError("typo in the rule"), False),  # a bug in the rule
+        ],
+    )
+    def test_request_swallows_the_network_and_only_the_network(
+        self, raised, swallowed, monkeypatch
+    ):
+        """The same contract one level down, where `_NETWORK_ERRORS` applies."""
         rule = ContentBrokenExternalReferenceRule({"enabled": True})
 
-        class _Failing:
+        class _Opener:
             def open(self, request, timeout=None):
-                raise socket.timeout("timed out")
+                raise raised
 
-        monkeypatch.setattr(rule, "_opener", lambda: _Failing())
+        monkeypatch.setattr(rule, "_opener", lambda: _Opener())
 
-        assert rule._request("https://example.com/a", "HEAD", 1.0) is None
-
-    def test_a_rule_bug_inside_request_propagates(self, monkeypatch):
-        """Same contract one level down, where `_NETWORK_ERRORS` is applied."""
-        rule = ContentBrokenExternalReferenceRule({"enabled": True})
-
-        class _Buggy:
-            def open(self, request, timeout=None):
-                raise AttributeError("typo in the rule")
-
-        monkeypatch.setattr(rule, "_opener", lambda: _Buggy())
-
-        with pytest.raises(AttributeError):
-            rule._request("https://example.com/a", "HEAD", 1.0)
+        if swallowed:
+            assert rule._request("https://example.com/a", "HEAD", 1.0) is None
+        else:
+            with pytest.raises(type(raised)):
+                rule._request("https://example.com/a", "HEAD", 1.0)
 
 
 # ── The hermeticity guarantee ────────────────────────────────────
@@ -1755,60 +1685,41 @@ class TestDefaultRunIsOffline:
         assert [v for v in found if v.rule_id == "rule-execution-error"] == []
         assert server.hits == []
 
-    def test_a_bare_setting_enables_the_rule(self, tmp_path, server):
-        """For a disabled-by-default rule, ANY non-`enabled` key turns it on.
-
-        `config.rule_enabled_reason` returns "configured in config
-        (overrides disabled-by-default)" for a lone `ignore:` or
-        `severity:`. The rule doc states it; nothing pinned it, and it is
-        the single most hermeticity-relevant behaviour in the feature.
-        """
+    @pytest.mark.parametrize(
+        "rule_config,argv,requests",
+        [
+            # ANY non-`enabled` key turns a disabled-by-default rule on:
+            # `config.rule_enabled_reason` answers "configured in config
+            # (overrides disabled-by-default)" for a lone `timeout:` or
+            # `severity:`. The rule doc states it, and it is the single
+            # most hermeticity-relevant behaviour in the feature.
+            ("    timeout: 5\n", ["--allow-private-hosts"], True),
+            # The documented escape hatch: settings without activation.
+            ("    enabled: false\n    timeout: 5\n", [], False),
+            # `--rule` is the documented entry point, and nothing else
+            # pins it: making it a pure filter over already-enabled rules
+            # would break every invocation the docs recommend while the
+            # rest of the suite stayed green.
+            (
+                "    enabled: false\n",
+                ["--rule", RULE_ID, "--allow-private-hosts"],
+                True,
+            ),
+        ],
+    )
+    def test_what_activates_a_disabled_by_default_rule(
+        self, rule_config, argv, requests, tmp_path, server
+    ):
         repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
         (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    timeout: 5\n",
-            encoding="utf-8",
+            'version: "99.0.0"\nrules:\n' f"  {RULE_ID}:\n{rule_config}", encoding="utf-8"
         )
 
-        result = run_lint(repo, "--allow-private-hosts", config=repo / ".skillsaw.yaml")
+        result = run_lint(repo, *argv, config=repo / ".skillsaw.yaml")
 
-        assert server.hits, "a bare setting must be enough to start requesting"
-        assert RULE_ID in {v["rule_id"] for v in result["out"]["violations"]}
-
-    def test_explicit_enabled_false_keeps_it_off_despite_settings(self, tmp_path, server):
-        """The documented escape hatch: settings without activation."""
-        repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
-        (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n'
-            "rules:\n"
-            f"  {RULE_ID}:\n"
-            "    enabled: false\n"
-            "    timeout: 5\n",
-            encoding="utf-8",
-        )
-
-        run_lint(repo, config=repo / ".skillsaw.yaml")
-
-        assert server.hits == []
-
-    def test_rule_flag_enables_the_disabled_rule(self, tmp_path, server):
-        """`--rule` is the documented entry point; nothing else pins it.
-
-        A future change making `--rule` a pure filter over already-enabled
-        rules would break every invocation the docs recommend while every
-        other test stayed green.
-        """
-        repo = _materialize("content/external-links", tmp_path, server.port, keep_config=False)
-        (repo / ".skillsaw.yaml").write_text(
-            'version: "99.0.0"\n' "rules:\n" f"  {RULE_ID}:\n" "    enabled: false\n",
-            encoding="utf-8",
-        )
-
-        result = run_lint(
-            repo, "--rule", RULE_ID, "--allow-private-hosts", config=repo / ".skillsaw.yaml"
-        )
-
-        assert server.hits, "--rule must force-enable a disabled-by-default rule"
-        assert RULE_ID in {v["rule_id"] for v in result["out"]["violations"]}
+        assert bool(server.hits) is requests
+        fired = {v["rule_id"] for v in result["out"]["violations"]}
+        assert (RULE_ID in fired) is requests
 
     def test_enabling_the_rule_is_what_turns_the_network_on(self, tmp_path, server):
         repo = _materialize("content/external-links", tmp_path, server.port)

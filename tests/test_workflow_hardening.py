@@ -351,13 +351,19 @@ def test_scheduled_link_check_recipe_matches_the_onboard_skill():
     # The docs recipe and the workflow the onboard skill offers must not
     # drift: both need `rule` to select the check and `no-network: false` to
     # grant it the network, and either one alone is a job that cannot work.
+    # Both sides are scoped to the section under test: the skill's own
+    # pull-request workflow already carries `strict: true`, so reading the
+    # whole file would satisfy that assertion without the new block.
     recipe = _read("docs/ci.md").split("## Scheduled external link checking", 1)[1]
     recipe = recipe.split("### Refusing network access", 1)[0]
     skill = _read("skills/skillsaw-onboard/SKILL.md")
+    skill = skill.split("weekly external dead-link check", 1)[1].split("### GitLab CI", 1)[0]
 
     for source in (recipe, skill):
         assert "rule: content-broken-external-reference" in source
         assert "no-network: false" in source
         assert "strict: true" in source
         assert "verbose: true" in source
+        # Not `Lint`: lint-review.yml triggers on a workflow by that name.
+        assert "name: link-check" in source
     assert "pipx install skillsaw" not in recipe

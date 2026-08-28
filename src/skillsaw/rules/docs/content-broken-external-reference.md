@@ -1,15 +1,12 @@
 ## Why
 
 A markdown link to a page that no longer exists is a dead reference. An
-agent told to read it cannot tell a dead link from a live one: it follows
-the link, gets an error page, and carries on with whatever it already
-believed instead of the grounding the file promised. A human reader gets
-a 404.
-
-Dead external links accumulate the same way dead internal ones do: a
-vendor reorganizes its documentation, a repository is renamed, a blog
-migrates. Nothing in the referencing file changes, so nothing signals the
-rot.
+agent told to read it cannot tell one from a live link: it follows the
+link, gets an error page, and carries on with whatever it already
+believed instead of the grounding the file promised. Dead external links
+accumulate the way dead internal ones do — a vendor reorganizes its docs,
+a repository is renamed, a blog migrates — and nothing in the referencing
+file changes, so nothing signals the rot.
 
 ## Why this rule is opt-in
 
@@ -17,17 +14,16 @@ It is the only rule in skillsaw that opens a network connection, so it is
 off unless you turn it on (`default_enabled = false`, never `auto`). A
 lint run is hermetic by default: no repository type, no detected format,
 and no `enabled: auto` setting will start making requests on your behalf.
+For a disabled-by-default rule, **any** setting under its config key
+activates it — a lone `ignore:` or `severity:` is enough — so to tune it
+without turning it on, keep an explicit `enabled: false`.
 
-Be aware that for a disabled-by-default rule, **any** setting under its
-config key activates it — a lone `ignore:` or `severity:` is enough. To
-tune it without turning it on, keep an explicit `enabled: false`.
-
-That also makes it a poor fit for a per-PR gate. Enable it in a scheduled
-job instead — see the CI recipe below. Enabling it in `.skillsaw.yaml`
-rather than with `--rule` has a second, stickier consequence: violations
-are warnings, warnings are weighted into the letter grade, so your
-`skillsaw badge` output becomes a function of whether a third-party URL
-404s today.
+A flaky origin makes it a poor fit for a per-PR gate; run it on a
+schedule instead (see the CI recipe below). Enabling it in
+`.skillsaw.yaml` rather than with `--rule` has a second, stickier
+consequence: violations are warnings, warnings are weighted into the
+letter grade, so your `skillsaw badge` output becomes a function of
+whether a third-party URL 404s today.
 
 ## The operator's gate
 
@@ -45,23 +41,16 @@ drops every rule that declares `requires_network`, whatever the
 repository's config or a `--rule` flag asks for, so an air-gapped or
 enterprise CI job can assert "skillsaw made no network calls" from a flag
 rather than by auditing every linted repository's YAML. The shipped
-GitHub Action sets `no-network: 'true'` by default for the same reason,
-and treats anything but the literal `false` as a request to keep the
-network off.
+GitHub Action sets `no-network: 'true'` by default and treats anything
+but the literal `false` as a request to keep the network off. Naming only
+gated rules under the flag is an error, not a run that checks nothing and
+exits 0.
 
-`fix` never runs a network rule at all, flag or no flag. A dead URL has
+`fix` never runs a network rule at all, flag or no flag: a dead URL has
 no mechanical fix, and the autofix loop re-runs every rule's `check()`
-once per pass — so probing there would sweep the whole URL set several
+once per pass, so probing there would sweep the whole URL set several
 times over and discard every answer. Diagnose this rule with
 `skillsaw lint`.
-
-Naming only gated rules under `--no-network` — `skillsaw lint . --rule
-content-broken-external-reference --no-network` — is an error rather than
-a run that checks nothing and exits 0.
-
-The other operator-only control is `--allow-private-hosts`
-(`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`), which lifts the confinement described
-below. Neither control can be set from `.skillsaw.yaml`.
 
 When the network *does* engage, skillsaw says so on stderr:
 
@@ -85,14 +74,17 @@ anywhere in your context files:
   identifies the tool and its version.
 
 Destinations are confined to public hosts. A URL whose host is a loopback,
-private, link-local, reserved, multicast, unspecified or IPv4-mapped
-address — or a `localhost` name — is refused, as is any address
-`ipaddress` does not call global. That last one is not redundant: RFC 6598
-carrier-grade NAT (`100.64.0.0/10`) is excluded from `is_global` and from
-no other predicate, and it is the range Tailscale uses along with several
-managed-Kubernetes pod CIDRs. So are the other spellings of those
-addresses, because the host is classified the way the transport will spell
-it rather than the way the link is written, without performing a lookup:
+private, link-local, reserved, multicast or unspecified address — or a
+`localhost` name — is refused, as is any address `ipaddress` does not call
+global. That last one is not redundant: RFC 6598 carrier-grade NAT
+(`100.64.0.0/10`) is excluded from `is_global` and from no other
+predicate, and it is the range Tailscale uses along with several
+managed-Kubernetes pod CIDRs. An IPv4-mapped IPv6 address is unwrapped to
+its IPv4 form first and classified by that, so `::ffff:127.0.0.1` is
+refused as loopback while `::ffff:8.8.8.8` is allowed like any other
+public address. So are the other spellings of those addresses, because the
+host is classified the way the transport will spell it rather than the way
+the link is written, without performing a lookup:
 
 - the forms a resolver accepts and `ipaddress` does not —
   `http://2852039166/`, `http://0x7f000001/`, `http://0177.0.0.1/`,
@@ -113,7 +105,9 @@ a decoded `:` as a port. So is a host carrying a control character, which
 the IDNA codec's ASCII fast path passes through verbatim and
 `getaddrinfo` truncates at. For the same reason userinfo is rejected
 after canonicalization rather than before: decoding `user%40example.com`
-is what creates it.
+is what creates it, and a port that is not simply digits —
+`169.254.169.254:80%40x` — is refused whole, because that same decode
+turns the tail into userinfo.
 
 The requested URL carries that canonical host, so `ignore` matches what
 actually goes on the wire. The URL in the *report* is the href as
@@ -124,18 +118,14 @@ punycoded on the wire but not in the message. The check re-runs on every
 redirect hop, so an origin cannot redirect the linter onto your internal
 network.
 
-Lifting that confinement is the operator's call, not the repository's:
-`skillsaw lint . --allow-private-hosts`, or
-`SKILLSAW_ALLOW_PRIVATE_HOSTS=1`. There is deliberately no `.skillsaw.yaml`
-key for it. The repository is the actor the confinement exists to contain,
-so a setting it could write would not be a control at all.
-
-An internal *hostname* that resolves to a private address is not caught
-(that would need a resolver lookup, and would still lose to DNS rebinding);
-use `--no-network` or network egress control if that matters.
-
-`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honored, so a restricted-egress
-environment can route or block these requests the usual way.
+Lifting the confinement is the operator's call, not the repository's:
+`skillsaw lint . --allow-private-hosts`, or `SKILLSAW_ALLOW_PRIVATE_HOSTS=1`.
+There is deliberately no `.skillsaw.yaml` key — the repository is the actor
+the confinement exists to contain, so a setting it could write would not be
+a control at all. An internal *hostname* that resolves to a private address
+is not caught (that would need a resolver lookup, and would still lose to
+DNS rebinding); `--no-network` and egress control are what cover it.
+`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` are honored.
 
 ## What counts as broken
 
@@ -158,7 +148,6 @@ Everything else is *not* a violation, deliberately:
   `http`/`https`.
 - A `404`/`410` that a follow-up `GET` does not confirm (see below).
 
-
 ## Invariants for a future network rule
 
 This is the only rule in skillsaw permitted to open a connection
@@ -173,17 +162,16 @@ This is the only rule in skillsaw permitted to open a connection
   only — no new dependency for a request.
 - **Only definitive evidence is a violation.** Everything the network
   can say about itself stays silent.
-- **Every input is hostile**: URLs come from repo content and options
-  from a repo-controlled `.skillsaw.yaml`. Confine destinations to
-  public hosts, re-run admission on every redirect hop, and clamp each
-  option with a named `_MAX_*` constant, as `_MAX_REGEX_TIMEOUT` does
-  for T13.
+- **Every input is hostile**: URLs come from repo content, options from a
+  repo-controlled `.skillsaw.yaml`. Confine destinations to public hosts,
+  re-run admission on every redirect hop, and clamp each option with a
+  named `_MAX_*` constant, as `_MAX_REGEX_TIMEOUT` does for T13.
 - **Tests run against a local `http.server`**, never the internet, with
   the markdown in fixtures. Keep the guard that a default run makes no
   requests, and assert it on a recorded ledger rather than a raised
-  exception — `Linter.run` turns exceptions into violations. Add the
-  rule to `NETWORK_RULES` in `tests/test_integration.py` with the
-  companion test that it fires against the local server.
+  exception — `Linter.run` turns exceptions into violations. Add the rule
+  to `NETWORK_RULES` in `tests/test_integration.py` with the companion
+  test that it fires against the local server.
 
 ## Examples
 
@@ -209,8 +197,6 @@ upgrading the client.
   requested.
 - Bare URLs in prose that are not written as links are **out of scope** —
   they are text, not references.
-- URLs carrying credentials (`https://user:token@host/…`) are skipped
-  entirely rather than requested.
 - Files under a `template/`, `templates/`, or `_template/` directory are
   skipped, exactly as `content-broken-internal-reference` skips them:
   placeholder targets there are intentional.
@@ -238,22 +224,21 @@ Redirects are followed up to five hops. Requests run on a small pool of
 daemon threads and identify themselves as
 `skillsaw/<version> (+https://skillsaw.org)`.
 
-Two limits bound a run: `timeout` and `total-budget`. `timeout` is the
-socket timeout for a single request, so it bounds each read rather than a
-whole request — a redirect chain or a slow header stream can cost several
-multiples of it. `total-budget` is the wall clock for all requests
-together, and it is what actually bounds the run: workers are joined
-against it, and any still running when it expires are abandoned. They are
-daemon threads, so an abandoned one cannot hold the process open at exit
-either. There is no way to switch the budget off; `0` and negatives mean
-the default, and the value is clamped.
+Two limits bound a run. `timeout` is the socket timeout for a single
+request, so it bounds each read rather than a whole request — a slow
+header stream can cost several multiples of it. `total-budget` is the wall
+clock for all requests together, and it is what actually bounds the run:
+workers are joined against it and any still running when it expires are
+abandoned, on daemon threads that cannot hold the process open at exit.
+There is no way to switch the budget off; `0` and negatives mean the
+default, and the value is clamped.
 
 When the budget runs out, the URLs still queued are left unchecked and the
-run emits one info-level notice — one per run, never one per URL. The
-notice says that some URLs went unchecked but not how many: it has no file
-path, so its baseline identity is a hash of its message, and a count that
-moves with runner latency would re-fingerprint it every run. Run with `-v`
-for the count.
+run emits one info-level notice — one per run, never one per URL. It says
+that some URLs went unchecked but not how many: it has no file path, so
+its baseline identity is a hash of its message, and a count that moved
+with runner latency would re-fingerprint it every run. Run with `-v` for
+the count.
 
 ### Deliberately not a general link checker
 
@@ -267,7 +252,7 @@ or [markdown-link-check](https://github.com/tcort/markdown-link-check).
 
 ## How to fix
 
-Open the URL. If the page moved, update the link to its new address. If
+Open the URL. If the page moved, update the link to its new address; if
 the resource is gone for good, remove the reference or replace it with one
 that still resolves — an agent reading the file needs the content, not the
 address it used to live at.
@@ -275,7 +260,7 @@ address it used to live at.
 If the URL is fine and the failure is the checker's (a staging host only
 reachable from your network, a URL built from a template placeholder), add
 it to `ignore`. Entries containing `*`, `?`, or `[` are matched as globs;
-anything else is matched as a literal prefix:
+anything else as a literal prefix:
 
 ```yaml
 rules:
@@ -287,12 +272,15 @@ rules:
 ```
 
 Patterns are matched against the URL that is actually requested, which has
-had its fragment stripped, so write entries without a `#fragment` — one
-that carries a fragment never matches.
+had its fragment stripped and its host percent-decoded, punycoded and
+lowercased, so write entries without a `#fragment` — one that carries a
+fragment never matches — and spell the host the way DNS sees it.
 
-*Any* setting for this rule — `ignore` or `timeout` alone, and even an
-unrecognized key — enables it, because it is disabled by default. To
-configure it without turning it on, keep an explicit `enabled: false`.
+Both operands are size-bounded, because both come from the repository: a
+pattern over 256 characters is skipped (the URLs it would have matched are
+probed rather than ignored) and a URL over 2,048 characters is never
+requested. Neither is reported, and nothing written on purpose comes near
+either bound.
 
 ### CI recipe
 
