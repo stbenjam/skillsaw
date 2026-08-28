@@ -25,11 +25,10 @@ jobs:
       contents: read
     strategy:
       matrix:
-        # PRs cover only the oldest and newest supported versions — src/ has
-        # no version-conditional code paths, so the middle versions exercise
-        # identical code. Pushes to main run the full matrix. 3.11 is covered
-        # by the coverage job on every run.
-        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.9", "3.14"]') || fromJSON('["3.9", "3.10", "3.12", "3.13", "3.14"]') }}
+        # PRs run only the oldest supported version here — src/ has no
+        # version-conditional code paths, and the newest (3.14) is exercised
+        # by the coverage job on every run. Pushes to main run the rest.
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.9"]') || fromJSON('["3.9", "3.10", "3.11", "3.12", "3.13"]') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,7 +47,7 @@ jobs:
         run: .venv/bin/pytest tests/ -v -n auto
 
   coverage:
-    name: test (3.11)
+    name: test (3.14)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,10 +58,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Install package and dependencies
         run: make venv VENV_EXTRAS=test
