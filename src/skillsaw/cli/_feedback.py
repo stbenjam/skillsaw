@@ -128,7 +128,7 @@ def _run_diagnostic_lint(
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", "replace")
         return {
-            "command": ["skillsaw", "lint", "--format", "json", "--verbose", "--no-progress"],
+            "command": ["skillsaw", "lint", "--format", "json"],
             "exit_code": None,
             "stdout": stdout,
             "stderr": stderr,

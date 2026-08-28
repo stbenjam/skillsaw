@@ -1,11 +1,14 @@
 """End-to-end coverage for the local feedback bundle command."""
 
 import hashlib
+import io
 import json
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
+
+from skillsaw.cli import _feedback
 
 
 def _run_feedback(path: Path, *args: str):
@@ -117,3 +120,46 @@ def test_feedback_rejects_source_files_outside_the_repository(tmp_path):
 
     assert result.returncode == 1
     assert "inside the repository" in result.stderr
+
+
+def test_feedback_mirrors_interactive_lint_progress(tmp_path, monkeypatch):
+    class InteractiveStderr:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def isatty(self):
+            return True
+
+    terminal = InteractiveStderr()
+    monkeypatch.setattr(_feedback.sys, "stderr", terminal)
+
+    stdout, stderr, return_code = _feedback._run_lint_process(
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('lint report'); print('linting [1/1]', file=sys.stderr)",
+        ],
+        tmp_path,
+    )
+
+    assert return_code == 0
+    assert stdout == "lint report\n"
+    assert "linting [1/1]" in stderr
+    assert terminal.buffer.getvalue() == stderr.encode()
+
+
+def test_feedback_records_a_timed_out_diagnostic_lint(tmp_path, monkeypatch):
+    def timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("skillsaw lint", 120, output=b"report", stderr=b"progress")
+
+    monkeypatch.setattr(_feedback, "_run_lint_process", timeout)
+
+    result = _feedback._run_diagnostic_lint(tmp_path, None, with_extensions=False)
+
+    assert result == {
+        "command": ["skillsaw", "lint", "--format", "json"],
+        "exit_code": None,
+        "stdout": "report",
+        "stderr": "progress",
+        "timed_out": True,
+    }
