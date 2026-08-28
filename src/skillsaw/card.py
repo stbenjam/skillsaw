@@ -1,8 +1,8 @@
-"""Self-contained SVG report card for ``skillsaw badge --large``.
+"""Self-contained SVG grade card for ``skillsaw badge --large``.
 
-Renders a fixed-size (495x195 viewBox) github-readme-stats style card
-showing the letter grade, weighted violation density, content-token
-count, plugin/skill counts, and the top offending rules.
+Renders a fixed-size (495x195 viewBox) card showing the repository name and
+letter grade. The SVG must not churn when a repository's context size or
+individual rule counts change without changing its grade.
 
 Invariants:
 
@@ -72,9 +72,7 @@ def _char_width(ch: str) -> int:
 
     East-Asian Wide and Fullwidth glyphs (CJK, most emoji) render at
     roughly twice the advance width of an ASCII character in the card's
-    proportional font stack, so they count double toward the layout
-    budget. Everything else — including ambiguous-width characters,
-    which render narrow outside East Asian contexts — counts one.
+    proportional font stack, so they count double toward the layout budget.
     """
     return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
@@ -87,10 +85,7 @@ def _truncate(text: str, max_width: int) -> str:
     """Truncate *text* to an estimated display width, appending "…".
 
     ``max_width`` is a budget in ASCII-character columns (see
-    :func:`_char_width`), not a character count — a checkout directory
-    named in CJK would otherwise keep enough double-width glyphs to run
-    past the card's fixed 495px viewBox. For pure-ASCII input this is
-    identical to a plain character-count limit.
+    :func:`_char_width`), not a character count.
     """
     if _display_width(text) <= max_width:
         return text
@@ -104,13 +99,6 @@ def _truncate(text: str, max_width: int) -> str:
     return text  # pragma: no cover — the early return above always fires
 
 
-def _stat_row(y: int, label: str, value_markup: str) -> str:
-    return (
-        f'    <text x="24" y="{y}"><tspan class="label">{label}</tspan>'
-        f'<tspan x="180" class="value">{value_markup}</tspan></text>'
-    )
-
-
 def render_card(
     grade: Grade,
     repo_name: str,
@@ -119,11 +107,12 @@ def render_card(
     top_rules: Sequence[Tuple[str, int]],
     theme: str = "dark",
 ) -> str:
-    """Render the report card as an SVG string.
+    """Render a grade-focused SVG card.
 
-    ``top_rules`` is a list of ``(rule_id, violation_count)`` pairs,
-    most frequent first (``Counter.most_common(3)``); at most three are
-    shown.
+    The non-grade parameters are retained for source compatibility with
+    callers from versions that displayed repository statistics. The
+    repository name remains visible; the counts and rule list are deliberately
+    ignored so only a grade change alters the SVG during normal operation.
     """
     if theme not in THEMES:
         raise ValueError(f"unknown theme {theme!r} (choose from {', '.join(sorted(THEMES))})")
@@ -159,29 +148,6 @@ def render_card(
             )
         ]
 
-    if top_rules:
-        rules_block = ['    <text x="24" y="139" class="label">Top rules</text>']
-        for i, (rule_id, count) in enumerate(list(top_rules)[:3]):
-            label = escape(f"{i + 1}. {_truncate(rule_id, 40)} ({count})")
-            rules_block.append(
-                f'    <text x="24" y="{154 + 14 * i}" class="rule"'
-                f' data-testid="rule-{i}">{label}</text>'
-            )
-    else:
-        # A violation-free run gets a positive line instead of a "Top
-        # rules" header with nothing to list under it.
-        rules_block = [
-            '    <text x="24" y="139" class="label" data-testid="rule-none">'
-            "No violations — clean run</text>"
-        ]
-
-    plugin_word = "plugin" if plugin_count == 1 else "plugins"
-    skill_word = "skill" if skill_count == 1 else "skills"
-    plugins_value = (
-        f'<tspan data-testid="plugins">{plugin_count}</tspan> {plugin_word}'
-        f' &#183; <tspan data-testid="skills">{skill_count}</tspan> {skill_word}'
-    )
-
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         (
@@ -189,13 +155,10 @@ def render_card(
             f' height="{CARD_HEIGHT}" viewBox="0 0 {CARD_WIDTH} {CARD_HEIGHT}"'
             ' fill="none" role="img" aria-labelledby="card-title">'
         ),
-        f'  <title id="card-title">skillsaw report card for {name}: grade {letter}</title>',
+        f'  <title id="card-title">skillsaw grade for {name}: {letter}</title>',
         "  <style>",
         f"    .title {{ font: 600 16px {_FONTS}; fill: {colors['title']}; }}",
         f"    .subtitle {{ font: 400 11px {_FONTS}; fill: {colors['muted']}; }}",
-        f"    .label {{ font: 600 13px {_FONTS}; fill: {colors['text']}; }}",
-        f"    .value {{ font: 400 13px {_FONTS}; fill: {colors['text']}; }}",
-        f"    .rule {{ font: 400 11.5px {_FONTS}; fill: {colors['muted']}; }}",
         f"    .grade-letter {{ font: 800 44px {_FONTS}; fill: {accent}; }}",
         "  </style>",
         (
@@ -206,21 +169,7 @@ def render_card(
         f'    <path fill-rule="evenodd" fill="{accent}" d="{LOGO_PATH}"/>',
         "  </g>",
         f'  <text x="56" y="30" class="title" data-testid="repo-name">{name}</text>',
-        '  <text x="56" y="46" class="subtitle">skillsaw report card</text>',
-        '  <g data-testid="stats">',
-        _stat_row(
-            76,
-            "Violation density",
-            f'<tspan data-testid="density">{grade.density:.2f}</tspan> per 10k tokens',
-        ),
-        _stat_row(
-            97,
-            "Content tokens",
-            f'~<tspan data-testid="tokens">{grade.content_tokens:,}</tspan>',
-        ),
-        _stat_row(118, "Building blocks", plugins_value),
-        *rules_block,
-        "  </g>",
+        '  <text x="56" y="46" class="subtitle">skillsaw grade</text>',
         '  <g transform="translate(415.5, 97.5)">',
         (
             f'    <circle r="{_RING_RADIUS}" fill="none" stroke="{accent}"'

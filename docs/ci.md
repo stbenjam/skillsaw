@@ -156,10 +156,10 @@ the inline comments it handled, leaving thread resolution to a collaborator.
 
 `skillsaw badge` writes `.skillsaw-badge.json` (a shields.io endpoint
 payload) and prints ready-to-paste README markdown. Add `--large` to also
-render `.skillsaw-card.svg` — a self-contained SVG report card showing
-the letter grade, weighted violation density, content-token count,
-plugin/skill counts, and the top offending rules (`--theme light|dark`,
-default dark):
+render `.skillsaw-card.svg` — a self-contained SVG card showing the repository
+name and letter grade. It omits volatile density, token, building-block, and
+rule counts, so a generated card changes only when the grade changes (`--theme
+light|dark`, default dark):
 
 ![skillsaw's own report card, dark theme (the default)](https://raw.githubusercontent.com/stbenjam/skillsaw/main/.skillsaw-card.svg)
 

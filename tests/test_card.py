@@ -70,18 +70,34 @@ def test_card_is_valid_xml_with_fixed_viewbox():
     assert root.get("height") == str(CARD_HEIGHT)
 
 
-def test_card_shows_grade_and_stats():
+def test_card_shows_grade_without_volatile_stats():
     grade = compute_grade(_violations(warnings=5, info=3), content_tokens=12_345)
     svg = _render(grade=grade)
     fields = _texts_by_testid(svg)
     assert fields["grade-letter"] == grade.letter
-    assert fields["repo-name"] == "example/repo"
-    assert fields["density"] == f"{grade.density:.2f}"
-    assert fields["tokens"] == "12,345"
-    assert fields["plugins"] == "3"
-    assert fields["skills"] == "12"
-    assert fields["rule-0"] == "1. content-vague (5)"
-    assert fields["rule-1"] == "2. skill-frontmatter (3)"
+    assert fields == {"repo-name": "example/repo", "grade-letter": grade.letter}
+    assert "Violation density" not in svg
+    assert "Content tokens" not in svg
+    assert "Top rules" not in svg
+
+
+def test_card_is_unchanged_when_non_grade_inputs_change():
+    grade = compute_grade(_violations(warnings=5), content_tokens=10_000)
+    first = _render(
+        grade=grade,
+        repo_name="first/repo",
+        plugin_count=1,
+        skill_count=2,
+        top_rules=[("content-vague", 5)],
+    )
+    second = _render(
+        grade=grade,
+        repo_name="first/repo",
+        plugin_count=99,
+        skill_count=1_000,
+        top_rules=[("different-rule", 1_000)],
+    )
+    assert first == second
 
 
 def test_card_letter_is_color_graded():
@@ -153,34 +169,25 @@ def test_card_escapes_repo_name():
 
 
 def test_card_truncates_long_names():
-    svg = _render(repo_name="x" * 100, top_rules=[("y" * 100, 1)])
+    svg = _render(repo_name="x" * 100)
     fields = _texts_by_testid(svg)
     assert len(fields["repo-name"]) <= 30
     assert fields["repo-name"].endswith("…")
-    assert len(fields["rule-0"]) < 50
 
 
 def test_card_ascii_truncation_behavior_unchanged():
-    # For pure-ASCII names the width-aware truncation must be identical
-    # to the old 30-character limit.
     assert _texts_by_testid(_render(repo_name="x" * 100))["repo-name"] == "x" * 29 + "…"
     exactly_thirty = "a" * 30
     assert _texts_by_testid(_render(repo_name=exactly_thirty))["repo-name"] == exactly_thirty
 
 
 def test_card_truncates_wide_glyph_names_by_display_width():
-    # Regression: a 31-glyph CJK checkout-directory name (the fallback
-    # when there is no origin remote). CJK glyphs render ~2 ASCII columns
-    # wide at the title's 16px, so the old character-count limit kept
-    # ~480px of text starting at x=56 and overflowed the 495px viewBox.
     from skillsaw.card import _display_width
 
     name = "日本語プロジェクト管理支援用大規模開発環境設定集約リポジトリ超"
-    assert len(name) == 31
     shown = _texts_by_testid(_render(repo_name=name))["repo-name"]
     assert shown.endswith("…")
     assert _display_width(shown) <= 30
-    # 14 double-width glyphs plus a single-column ellipsis = 29 columns.
     assert shown == name[:14] + "…"
 
 
@@ -190,28 +197,6 @@ def test_card_mixed_width_names_share_the_budget():
     shown = _texts_by_testid(_render(repo_name="skill-日本語-" + "z" * 40))["repo-name"]
     assert shown.endswith("…")
     assert _display_width(shown) <= 30
-
-
-def test_card_without_violations_shows_clean_run():
-    svg = _render(grade=compute_grade([], content_tokens=10_000), top_rules=[])
-    fields = _texts_by_testid(svg)
-    assert "rule-0" not in fields
-    # No dangling "Top rules" header over an empty list — a single
-    # positive line takes its place.
-    assert fields["rule-none"] == "No violations — clean run"
-    assert "Top rules" not in svg
-
-
-def test_card_shows_at_most_three_rules():
-    svg = _render(top_rules=[(f"rule-{i}", 9 - i) for i in range(6)])
-    fields = _texts_by_testid(svg)
-    assert "rule-2" in fields
-    assert "rule-3" not in fields
-
-
-def test_card_empty_repo_name_falls_back():
-    fields = _texts_by_testid(_render(repo_name=""))
-    assert fields["repo-name"] == "repository"
 
 
 def test_f_grade_draws_empty_ring_without_stray_dot():
@@ -275,11 +260,8 @@ def test_badge_card_writes_svg(tmp_path):
     assert card_file.exists()
     svg = card_file.read_text(encoding="utf-8")
     fields = _texts_by_testid(svg)
-    # marketplace/clean has 3 plugins and 2 skills.
-    assert fields["plugins"] == "3"
-    assert fields["skills"] == "2"
     assert fields["grade-letter"]
-    assert fields["repo-name"] == repo.name
+    assert fields == {"repo-name": repo.name, "grade-letter": fields["grade-letter"]}
 
     # Dark theme is the default.
     assert THEMES["dark"]["bg"] in svg
@@ -410,7 +392,6 @@ def test_run_badge_in_process_with_remote(tmp_path, capsys):
     assert "raw.githubusercontent.com/acme/mkt/main/.skillsaw-card.svg" in out
     svg = (repo / ".skillsaw-card.svg").read_text(encoding="utf-8")
     assert THEMES["light"]["bg"] in svg
-    # The card shows the remote's repo basename, not the checkout dirname.
     assert _texts_by_testid(svg)["repo-name"] == "mkt"
 
 
@@ -419,7 +400,6 @@ def test_repo_display_name(tmp_path):
 
     repo = tmp_path / "checkout-dir"
     repo.mkdir()
-    # Not a git repo, then a repo without a remote: directory name.
     assert _repo_display_name(repo) == "checkout-dir"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     assert _repo_display_name(repo) == "checkout-dir"
