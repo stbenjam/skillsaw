@@ -183,10 +183,10 @@ class OpenCodeConfigValidRule(Rule):
 
         A file declaring both hands the same setting to the loader twice,
         and one copy is then ignored. Which one is not readable off the
-        file, and the message says which rather than guessing — the answer
-        is per pair, and for the two in :data:`~skillsaw.formats.opencode.
-        V2_WINS_UNDER_V2` the two OpenCode releases disagree with each
-        other, so those get said out loud instead of picking a side.
+        file, so the message names the surviving value where the schema
+        settles it; for the pairs in :data:`~skillsaw.formats.opencode.
+        WINNER_UNSTATED` it says only that one of the two is inert rather
+        than picking a side.
 
         Either key alone is valid; carrying both is the finding.
 
@@ -199,11 +199,8 @@ class OpenCodeConfigValidRule(Rule):
         for v1_key in sorted(oc.both_spellings(data, aliases)):
             v2_key = aliases[v1_key]
             note = oc.INVERTED_SENSE_NOTE.get(v1_key, "")
-            if v1_key in oc.V2_WINS_UNDER_V2:
-                outcome = (
-                    f"which one takes effect depends on the release reading it "
-                    f"(1.x keeps '{v1_key}', 2.0 keeps '{v2_key}')"
-                )
+            if v1_key in oc.WINNER_UNSTATED:
+                outcome = "only one of the two values is in effect"
             else:
                 outcome = f"the '{v1_key}' value is the one that takes effect"
             violations.append(
@@ -456,8 +453,8 @@ class OpenCodeConfigValidRule(Rule):
         # a list- or dict-valued ``type`` from a hand-edited config would
         # raise ``TypeError`` out of ``check()``. The per-rule guard would
         # catch it, but the whole rule's findings for the repository are
-        # replaced by that one crash — so a single typo would silently stop
-        # the credential scan everywhere else in the file.
+        # replaced by that one crash — so a single typo would cost every
+        # other shape and spelling finding in the file.
         if not isinstance(server_type, str) or server_type not in oc.MCP_SERVER_TYPES:
             violations.append(
                 self.violation(

@@ -14,16 +14,15 @@ published JSON Schema at https://opencode.ai/config.json.
 
 **Re-check at each OpenCode 2.0 milestone** (last verified 2026-08-28
 against ``anomalyco/opencode@dev``, the only branch — there is no ``main``).
-Two independent, opposite-direction code paths define the vocabulary, and
-they disagree with each other today:
+Two independent, opposite-direction code paths define the vocabulary:
 
 * ``packages/opencode/src/config/v2-compat.ts`` — what a **1.x** binary uses
   to lower a v2-shaped config *down* into v1. Holds the server structs and
-  ``preferLegacy()``, which retains the legacy value for every key.
+  ``preferLegacy()``.
 * ``packages/core/src/v1/config/migrate.ts`` plus
   ``packages/core/src/config.ts`` — what **2.0** uses to migrate a v1 config
   *up*. Holds ``isV1()`` and the per-key coalescing that
-  :data:`V2_WINS_UNDER_V2` records.
+  :data:`WINNER_UNSTATED` marks as not settled by the schema.
 
 Their MCP timeout structs differ, which is why :data:`MCP_TIMEOUT_KEYS` is a
 union rather than either one.
@@ -176,23 +175,20 @@ INVERTED_SENSE_NOTE: Mapping[str, str] = {
     "enabled": " with the sense inverted",
 }
 
-#: v1 keys whose *v2* spelling wins when a config declares both — and only
-#: under OpenCode 2.0, which is why they are called out separately.
+#: v1 keys whose pair is reported *without* naming which value takes effect.
 #:
-#: The rule is structural rather than arbitrary. ``ConfigV1.Info`` declares
-#: both halves of these two pairs (each marked deprecated), so the v1→v2
-#: migration can coalesce them and does: ``v1/config/migrate.ts`` reads
-#: ``share: info.share ?? (info.autoshare ? "auto" : undefined)`` and
-#: ``references: info.references ?? info.reference``. Every other pair
-#: renames to a name the v1 schema does not know, so the presence of the v1
-#: key makes ``isV1()`` claim the whole document, the v2 key is dropped as an
-#: excess property, and the v1 value stands.
+#: For every other rename the answer is structural: the v1 schema does not
+#: know the v2 name, so the presence of the v1 key makes ``isV1()`` claim the
+#: whole document, the v2 key is dropped as an excess property, and the v1
+#: value stands. These two pairs are different — ``ConfigV1.Info`` declares
+#: both halves (each marked deprecated) — so that reasoning does not apply
+#: and the coalescing is decided in per-key code rather than by the schema.
 #:
-#: A 1.x binary disagrees for exactly these two: ``v2-compat.ts`` lowers a v2
-#: config into v1 shape and its ``preferLegacy()`` retains the legacy value
-#: for every key. So for these pairs the effective value depends on which
-#: release reads the file, which is worth saying out loud in a diagnostic.
-V2_WINS_UNDER_V2: FrozenSet[str] = frozenset({"autoshare", "reference"})
+#: skillsaw does not assert which half survives there. The finding says only
+#: that one of the two values is inert, which holds under every reading, and
+#: either key alone is valid — so "keep one, delete the other" is the fix
+#: whichever one it turns out to be.
+WINNER_UNSTATED: FrozenSet[str] = frozenset({"autoshare", "reference"})
 
 #: Transport values OpenCode accepts, mapped to the connection field each
 #: one requires. OpenCode names a transport for where the server runs rather
@@ -274,10 +270,9 @@ def both_spellings(data: Mapping[str, Any], aliases: Mapping[str, str]) -> Tuple
 
     No caller treats a lone v1 key as wrong — either spelling on its own is
     valid. Carrying both is the finding: one of the two is then ignored, and
-    which one is not something an author can read off the file. It is not
-    key order, and it is not arbitrary either — see
-    :data:`V2_WINS_UNDER_V2` for the two pairs where the answer inverts, and
-    where the two OpenCode releases disagree with each other.
+    which copy that is depends on the pair rather than on key order. For
+    most pairs the v1 key decides; for the pairs in :data:`WINNER_UNSTATED`
+    the diagnostic names no winner, because the fix is the same either way.
 
     Aliases that map several v1 keys onto one v2 key (``agent`` and ``mode``
     both become ``agents``) are handled by the plain membership test — each

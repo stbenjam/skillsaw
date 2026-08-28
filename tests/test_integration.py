@@ -2580,21 +2580,26 @@ class TestOpenCode:
                 {"agent": {}, "agents": {}},
                 "the 'agent' value is the one that takes effect",
             ),
-            # These two invert: the 1.x schema declares both halves, so the
-            # migration coalesces them in favour of the 2.0 name — and a 1.x
-            # binary disagrees, retaining the legacy value.
+            # These two are different: the 1.x schema declares both halves,
+            # so that reasoning does not apply and the finding names no
+            # winner at all — the fix is the same whichever value survives.
             (
                 {"autoshare": True, "share": "manual"},
-                "depends on the release reading it (1.x keeps 'autoshare', 2.0 keeps 'share')",
+                "declares both 'autoshare' and 'share' — they are the 1.x and 2.0 "
+                "spellings of one setting, and only one of the two values is in "
+                "effect; keep one",
             ),
             (
                 {"reference": [], "references": []},
-                "depends on the release reading it "
-                "(1.x keeps 'reference', 2.0 keeps 'references')",
+                "declares both 'reference' and 'references' — they are the 1.x and "
+                "2.0 spellings of one setting, and only one of the two values is in "
+                "effect; keep one",
             ),
         ],
     )
-    def test_the_both_spellings_finding_names_the_right_winner(self, config, expected, tmp_path):
+    def test_the_both_spellings_finding_never_names_a_wrong_winner(
+        self, config, expected, tmp_path
+    ):
         """Telling an author to delete the key that is in effect is worse than silence."""
         repo = self._opencode_repo(tmp_path, "winner", json.dumps(config))
 
@@ -2609,9 +2614,17 @@ class TestOpenCode:
         their descriptions". Asking a menu label for "Use when ..." is the
         same false positive Copilot agents are already exempt from — found
         against a real repository, where every primary agent drew it.
+
+        `{mode,modes}/*.md` is the same case reached by location: OpenCode
+        types every file there `primary` whatever the frontmatter says, so
+        those files carry no `mode` field to read.
         """
         repo = tmp_path / "modes"
         (repo / ".opencode" / "agent").mkdir(parents=True)
+        (repo / ".opencode" / "modes").mkdir(parents=True)
+        (repo / ".opencode" / "modes" / "build.md").write_text(
+            "---\ndescription: Builds and ships the release artifacts\n---\n\nShip it.\n"
+        )
         (repo / "AGENTS.md").write_text("# Agents\n\nRun `make test`.\n")
         (repo / ".opencode" / "agent" / "main.md").write_text(
             "---\ndescription: Drives the build loop and edits files directly\n"
@@ -2628,6 +2641,7 @@ class TestOpenCode:
         }
         assert (".opencode/agent/oracle.md", "trigger") in flagged
         assert (".opencode/agent/main.md", "trigger") not in flagged
+        assert (".opencode/modes/build.md", "trigger") not in flagged
 
     def test_credentials_in_an_mcp_environment_map_are_errors(self, tmp_path):
         """`environment`, not `env` — the map name is the host's, the scan is not.

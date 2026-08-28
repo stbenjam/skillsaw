@@ -31,17 +31,19 @@ schedule.
 
 What it does report is a file that declares *both* spellings of one
 setting. The setting then arrives twice and one copy is ignored — and which
-one is not something you can read off the file.
+copy that is depends on the pair.
 
 It is not key order, and it is not the same answer for every key. For most
 pairs the 1.x key wins: its presence makes OpenCode 2.0 read the whole
 document as a 1.x config, and the 2.0 key is dropped as an unknown
-property. Two pairs invert, because the 1.x schema declares both halves and
-the migration coalesces them — `share` beats `autoshare`, and `references`
-beats `reference`. Those same two are also the pairs where the releases
-disagree: a 1.x binary retains the legacy value for every key, so `autoshare`
-wins there while `share` wins under 2.0. The finding names whichever applies
-rather than telling you to delete a key that is actually in effect.
+property. Two pairs are different — `autoshare`/`share` and
+`reference`/`references` — because the 1.x schema declares both halves, so
+that reasoning does not apply and the coalescing is decided in per-key code
+rather than by the schema. For those the finding names no winner: it says
+only that one of the two values is in effect. Either key alone is valid, so
+keeping one and deleting the other is the fix whichever one survives —
+telling you to delete a key that is actually in effect would be worse than
+saying nothing.
 
 The MCP servers in this file also reach [`mcp-prohibited`](mcp-prohibited.md)
 and the rest of the ecosystem-neutral policy rules, in either the 1.x flat
