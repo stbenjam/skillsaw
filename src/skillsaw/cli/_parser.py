@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..config import _FAIL_ON_LEVELS
-from ..context import RepositoryType
 from ..formatters import EXTENSION_MAP, FORMATS
+from ..repo_type import RepositoryType
+from ..rule import FAIL_ON_LEVELS
 from ._config import _get_version
 
 _COLOR_HELP = (
@@ -129,7 +129,7 @@ For more information, visit: https://github.com/stbenjam/skillsaw
     lint_parser.add_argument(
         "--fail-on",
         dest="fail_on",
-        choices=list(_FAIL_ON_LEVELS),
+        choices=list(FAIL_ON_LEVELS),
         default=None,
         help="Fail on violations at this severity or above (default: error; "
         "--strict is equivalent to --fail-on warning). Overrides the config "

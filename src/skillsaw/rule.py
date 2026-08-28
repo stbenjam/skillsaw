@@ -25,6 +25,15 @@ class Severity(Enum):
     INFO = "info"
 
 
+#: Severity names in threshold order, most severe first.  Reporting a
+#: ``--fail-on`` level means reporting it and everything above it, so the
+#: value is the index to compare.  It lives beside the enum it orders
+#: rather than in the config parser, which is only one of its readers —
+#: and the one the CLI cannot afford to import just to list the choices
+#: for a flag.
+FAIL_ON_LEVELS = {"error": 0, "warning": 1, "info": 2}
+
+
 class AutofixConfidence(Enum):
     SAFE = "safe"
     SUGGEST = "suggest"

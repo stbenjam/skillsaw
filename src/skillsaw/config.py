@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from skillsaw.paths import safe_resolve
+from skillsaw.rule import FAIL_ON_LEVELS
 from skillsaw.utils import commented_key_line, read_yaml_commented, safe_load_yaml
 
 if TYPE_CHECKING:
@@ -28,7 +29,6 @@ _DEFAULT_EXCLUDE_PATTERNS = [
 # Severity threshold ordering for ``fail-on``: a run fails when violations
 # exist at the configured level or above (error < warning < info in terms of
 # how much fails the run).
-_FAIL_ON_LEVELS = {"error": 0, "warning": 1, "info": 2}
 
 
 def _parse_version(v: str) -> Tuple[int, ...]:
@@ -270,7 +270,7 @@ class LinterConfig:
         raw_fail_on = data.get("fail-on")
         if raw_fail_on is None:
             fail_on = "error"
-        elif isinstance(raw_fail_on, str) and raw_fail_on in _FAIL_ON_LEVELS:
+        elif isinstance(raw_fail_on, str) and raw_fail_on in FAIL_ON_LEVELS:
             fail_on = raw_fail_on
             if fail_on == "error" and strict:
                 load_warnings.append(
@@ -279,7 +279,7 @@ class LinterConfig:
                 )
         else:
             raise ValueError(
-                f"'fail-on' must be one of {', '.join(_FAIL_ON_LEVELS)}, got {raw_fail_on!r}"
+                f"'fail-on' must be one of {', '.join(FAIL_ON_LEVELS)}, got {raw_fail_on!r}"
             )
 
         raw_plugins = data.get("plugins")
@@ -381,10 +381,10 @@ class LinterConfig:
         ``strict: true`` counts as ``fail-on: warning``; the strictest setting
         wins, so neither option can loosen the other.
         """
-        candidates = [self.fail_on if self.fail_on in _FAIL_ON_LEVELS else "error"]
+        candidates = [self.fail_on if self.fail_on in FAIL_ON_LEVELS else "error"]
         if self.strict:
             candidates.append("warning")
-        return max(candidates, key=_FAIL_ON_LEVELS.__getitem__)
+        return max(candidates, key=FAIL_ON_LEVELS.__getitem__)
 
     def get_rule_config(self, rule_id: str) -> Dict[str, Any]:
         """

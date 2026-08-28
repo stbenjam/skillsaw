@@ -4,7 +4,6 @@ Repository context detection and management
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Set, Tuple, TYPE_CHECKING
 import logging
@@ -27,27 +26,12 @@ from .discovery.excludes import path_matches_patterns
 from .paths import safe_is_dir, safe_resolve
 from .utils import read_yaml
 from .repository_provenance import PluginProvenance, RepositoryProvenanceMixin
+from .repo_type import RepositoryType  # noqa: F401 - re-exported for callers
 
 if TYPE_CHECKING:
     from .lint_target import LintTarget
 
 logger = logging.getLogger(__name__)
-
-
-class RepositoryType(Enum):
-    """Type of repository"""
-
-    SINGLE_PLUGIN = "single-plugin"  # Single plugin at repo root
-    MARKETPLACE = "marketplace"  # Marketplace with multiple plugins
-    AGENTSKILLS = "agentskills"  # agentskills.io skill repo
-    DOT_CLAUDE = "dot-claude"  # .claude/ directory with commands, skills, hooks, etc.
-    CODERABBIT = "coderabbit"  # Repository with .coderabbit.yaml
-    APM = "apm"  # Repository with .apm/ directory (Agent Package Manager)
-    PROMPTFOO = "promptfoo"  # Repository with promptfoo eval configs
-    CODEX_PLUGIN = "codex-plugin"  # OpenAI Codex plugin (.codex-plugin/plugin.json)
-    CODEX_MARKETPLACE = "codex-marketplace"  # .agents/plugins/marketplace.json
-    AGENT_PLUGIN = "agent-plugin"  # Portable Agent Plugins plugin.json
-    UNKNOWN = "unknown"  # Not a recognized repo type
 
 
 # Repository types whose lint tree can hold Agent Skills. One shared set so a

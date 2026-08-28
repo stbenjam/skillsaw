@@ -7,8 +7,13 @@ import sys
 import warnings
 from pathlib import Path
 
-from ..context import RepositoryContext, RepositoryType, merge_plugin_dirs
+from ..notices import CustomRuleWarning, NetworkAccessWarning
+from ..repo_type import RepositoryType
 from skillsaw.paths import safe_resolve
+
+# ``..context`` is imported inside the two methods that need it. Importing
+# it here would pull discovery, the format packages and both YAML parsers
+# into every invocation, including the ones that end at ``--help``.
 
 # ---------------------------------------------------------------------------
 # Progress indicator
@@ -109,10 +114,14 @@ class _MergedContext:
 
     def distinct_plugin_dirs(self):
         """Same contract as :meth:`RepositoryContext.distinct_plugin_dirs`."""
+        from ..context import merge_plugin_dirs
+
         return merge_plugin_dirs(self.plugins, self.codex_plugins, self.agent_plugins)
 
     @property
     def repo_type(self):
+        from ..context import RepositoryContext
+
         for t in RepositoryContext._TYPE_PRIORITY:
             if t in self.repo_types:
                 return t
@@ -268,8 +277,6 @@ def install_warning_display() -> None:
     Skillsaw warning categories get a compact colored line instead; every
     other warning keeps the default rendering.
     """
-    from ..linter import CustomRuleWarning, NetworkAccessWarning
-
     default_showwarning = warnings.showwarning
 
     def _showwarning(message, category, filename, lineno, file=None, line=None):

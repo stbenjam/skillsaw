@@ -7,9 +7,8 @@ import sys
 import time
 from pathlib import Path
 
-from ..context import RepositoryContext, RepositoryType
 from ..formatters import format_report, get_counts, parse_output_spec
-from ..linter import Linter
+from ..repo_type import RepositoryType
 from ._config import _get_version, load_config
 from ._helpers import (
     _RuleProgress,
@@ -92,6 +91,14 @@ def _run_lint(args):
     if args.fmt == "text":
         print(f"skillsaw {cli_version}")
         print(f"Linting: {', '.join(str(p) for p in paths)}\n")
+
+    # Deferred to here on purpose. Repository discovery, the block
+    # hierarchy, the markdown parser and the rule registry are most of what
+    # a lint has to import, and until this point the run has done nothing a
+    # user could see. Importing them below the banner is the difference
+    # between skillsaw answering immediately and appearing to hang.
+    from ..context import RepositoryContext
+    from ..linter import Linter
 
     override_types = None
     if args.repo_types:
