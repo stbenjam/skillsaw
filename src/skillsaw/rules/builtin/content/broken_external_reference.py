@@ -90,6 +90,12 @@ _LOCAL_HOSTNAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localho
 # fail to answer. Anything outside this set is a bug in the rule, and a
 # bug must surface as a rule-execution-error rather than as a quiet
 # "nothing to report" — see linter.Linter.run's crash contract.
+# OSError already covers URLError, SSLError, timeout, gaierror and the
+# connection errors; they are named for the reader, not for coverage.
+# Deliberately NOT here: bare ValueError, TypeError, AttributeError.
+# http.client.InvalidURL is an HTTPException, so a malformed URL is
+# still caught, but a plain ValueError is far likelier to be a bug in
+# this rule than a network condition.
 _NETWORK_ERRORS = (
     urllib.error.URLError,
     HTTPException,
@@ -98,7 +104,6 @@ _NETWORK_ERRORS = (
     socket.gaierror,
     OSError,
     UnicodeError,  # IDNA encoding of a hostile hostname
-    ValueError,  # urllib's own "unknown url type" / malformed-host guards
 )
 
 
