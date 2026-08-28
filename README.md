@@ -136,14 +136,27 @@ skillsaw is better because of the people who contribute their time and ideas.
 Thank you!
 
 <!-- contributors:start -->
-- [@btiernay](https://github.com/btiernay)
-- [@cblecker](https://github.com/cblecker)
-- [@ehelms](https://github.com/ehelms)
-- [@jeffreylo](https://github.com/jeffreylo)
-- [@nyechiel](https://github.com/nyechiel)
-- [@rajusem](https://github.com/rajusem)
-- [@skyth3r](https://github.com/skyth3r)
-- [@stbenjam](https://github.com/stbenjam)
-- [@tchughesiv](https://github.com/tchughesiv)
-- [@tyraziel](https://github.com/tyraziel)
+<table width="100%">
+  <tr>
+    <th colspan="4" align="left">Contributors</th>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/btiernay"><code>@btiernay</code></a></td>
+    <td width="25%"><a href="https://github.com/cblecker"><code>@cblecker</code></a></td>
+    <td width="25%"><a href="https://github.com/ehelms"><code>@ehelms</code></a></td>
+    <td width="25%"><a href="https://github.com/jeffreylo"><code>@jeffreylo</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/nyechiel"><code>@nyechiel</code></a></td>
+    <td width="25%"><a href="https://github.com/rajusem"><code>@rajusem</code></a></td>
+    <td width="25%"><a href="https://github.com/skyth3r"><code>@skyth3r</code></a></td>
+    <td width="25%"><a href="https://github.com/stbenjam"><code>@stbenjam</code></a></td>
+  </tr>
+  <tr>
+    <td width="25%"><a href="https://github.com/tchughesiv"><code>@tchughesiv</code></a></td>
+    <td width="25%"><a href="https://github.com/tyraziel"><code>@tyraziel</code></a></td>
+    <td width="25%"></td>
+    <td width="25%"></td>
+  </tr>
+</table>
 <!-- contributors:end -->

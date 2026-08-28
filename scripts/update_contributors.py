@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Update README.md with the repository's human GitHub contributors."""
 
 from __future__ import annotations
@@ -14,6 +13,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from skillsaw.markdown_doc import MarkdownDoc
+
 CONTRIBUTORS_START = "<!-- contributors:start -->"
 CONTRIBUTORS_END = "<!-- contributors:end -->"
 DEFAULT_REPOSITORY = "stbenjam/skillsaw"
@@ -24,6 +25,7 @@ LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 # GitHub reports these automation identities as type "User", so the API's
 # type field alone is insufficient to produce a human-only list.
 NON_HUMAN_USERS = frozenset({"claude", "not-stbenjam"})
+TABLE_COLUMNS = 4
 
 
 def human_logins(contributors: Iterable[object]) -> list[str]:
@@ -43,18 +45,53 @@ def human_logins(contributors: Iterable[object]) -> list[str]:
 
 
 def render_contributors(logins: Iterable[str]) -> str:
-    """Render GitHub profile links as a Markdown list."""
-    return "\n".join(f"- [@{login}](https://github.com/{login})" for login in logins)
+    """Render GitHub profile links as a four-column HTML table."""
+    login_list = list(logins)
+    lines = [
+        '<table width="100%">',
+        "  <tr>",
+        '    <th colspan="4" align="left">Contributors</th>',
+        "  </tr>",
+    ]
+    for offset in range(0, len(login_list), TABLE_COLUMNS):
+        row = login_list[offset : offset + TABLE_COLUMNS]
+        lines.append("  <tr>")
+        lines.extend(
+            f'    <td width="25%"><a href="https://github.com/{login}"><code>@{login}</code></a></td>'
+            for login in row
+        )
+        lines.extend('    <td width="25%"></td>' for _ in range(TABLE_COLUMNS - len(row)))
+        lines.append("  </tr>")
+    lines.append("</table>")
+    return "\n".join(lines)
 
 
 def replace_contributors(readme: str, rendered: str) -> str:
     """Replace the single generated contributor block in README content."""
-    if readme.count(CONTRIBUTORS_START) != 1 or readme.count(CONTRIBUTORS_END) != 1:
+    doc = MarkdownDoc(readme)
+    markers = {CONTRIBUTORS_START: [], CONTRIBUTORS_END: []}
+    for comment in doc.html_comments():
+        marker = f"<!--{comment.text}-->"
+        if marker not in markers:
+            continue
+        line = comment.body_line_start
+        if comment.body_line_end != line or doc.line(line).strip() != marker:
+            raise ValueError("contributors markers must each occupy their own line")
+        markers[marker].append(line)
+
+    if any(len(lines) != 1 for lines in markers.values()):
         raise ValueError("README must contain exactly one contributors marker pair")
 
-    before, remainder = readme.split(CONTRIBUTORS_START, 1)
-    _, after = remainder.split(CONTRIBUTORS_END, 1)
-    return f"{before}{CONTRIBUTORS_START}\n" f"{rendered}\n" f"{CONTRIBUTORS_END}{after}"
+    start_line = markers[CONTRIBUTORS_START][0]
+    end_line = markers[CONTRIBUTORS_END][0]
+    if start_line >= end_line:
+        raise ValueError("contributors start marker must precede the end marker")
+
+    lines = readme.splitlines(keepends=True)
+    marker_line = lines[start_line - 1]
+    newline = "\r\n" if marker_line.endswith("\r\n") else "\n"
+    generated = [f"{line}{newline}" for line in rendered.splitlines()]
+    return "".join(lines[:start_line] + generated + lines[end_line - 1 :])
 
 
 def fetch_contributors(repository: str, token: Optional[str] = None) -> list[object]:
@@ -97,6 +134,7 @@ def update_readme(path: Path, contributors: Iterable[object]) -> bool:
 
 
 def main() -> int:
+    """Fetch contributors, update the selected README, and report status."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--repository",

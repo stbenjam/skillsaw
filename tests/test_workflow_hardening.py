@@ -271,6 +271,7 @@ def test_zizmor_workflow_is_pinned_blocking_and_unprivileged():
 
 
 def test_contributor_updater_is_scheduled_pinned_and_least_privilege():
+    """Contributor automation should be pinned, scoped, and default-branch based."""
     workflow = _yaml(".github/workflows/update-contributors.yml")
     job = workflow["jobs"]["update"]
     steps = job["steps"]
@@ -288,13 +289,16 @@ def test_contributor_updater_is_scheduled_pinned_and_least_privilege():
         "pull-requests": "write",
     }
     assert checkout["uses"] == ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+    assert checkout["with"]["ref"] == "${{ github.event.repository.default_branch }}"
     assert checkout["with"]["persist-credentials"] is False
     assert updater["env"] == {
         "GITHUB_TOKEN": "${{ github.token }}",
         "REPOSITORY": "${{ github.repository }}",
     }
+    assert updater["run"] == ('make update-contributors VENV_EXTRAS=test REPOSITORY="$REPOSITORY"')
     assert create_pr["uses"] == (
         "peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1"
     )
     assert create_pr["with"]["token"] == "${{ github.token }}"
+    assert create_pr["with"]["base"] == "${{ github.event.repository.default_branch }}"
     assert create_pr["with"]["branch"] == "automation/update-contributors"
