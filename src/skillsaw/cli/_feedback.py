@@ -4,7 +4,8 @@ The bundle carries skillsaw's own output. Repository files are included
 only when the reporter names them with ``--include`` or ``--config``, and
 reviewing those for secrets is the reporter's job: skillsaw does not scan
 file contents for credentials and does not claim the bundle is sanitized.
-Files an ignore file already excludes cannot be bundled at all."""
+A file whose name means credentials (``.env``, ``id_rsa``, ``*.pem``) or that
+an ignore file already excludes cannot be bundled at all."""
 
 from __future__ import annotations
 
@@ -97,6 +98,48 @@ _IGNORE_FILES = (
 )
 
 
+# Files whose *name* is the declaration: they exist to hold credentials, so a
+# reporter naming one is almost always an accident. This is a fixed list of
+# names, never a scan of contents — when it is wrong the fix is one more entry,
+# not a pattern that has to be re-tuned against everything it already matched.
+_SECRET_FILENAMES = frozenset(
+    {
+        ".env",
+        ".netrc",
+        "_netrc",
+        ".npmrc",
+        ".pypirc",
+        ".pgpass",
+        ".htpasswd",
+        ".git-credentials",
+        "credentials",
+        "credentials.json",
+        "kubeconfig",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "secrets.yaml",
+        "secrets.yml",
+        "terraform.tfvars",
+    }
+)
+_SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".tfvars")
+# ``.env.example`` and friends are written to be shared; ``.env.production`` is not.
+_SHAREABLE_VARIANTS = (".example", ".sample", ".template", ".dist", ".defaults")
+
+
+def _is_secret_filename(name: str) -> bool:
+    """Whether a file's name alone marks it as credential storage."""
+    lowered = name.lower()
+    if lowered.endswith(_SHAREABLE_VARIANTS) or lowered.endswith(".pub"):
+        return False
+    if lowered in _SECRET_FILENAMES or lowered.endswith(_SECRET_SUFFIXES):
+        return True
+    # ``.env.production``, ``.env.local`` — but not a file merely ending in ".env".
+    return lowered.startswith(".env.")
+
+
 def _ignore_patterns(root: Path) -> list[str]:
     """Patterns from the repository's ignore files, comments and negations dropped."""
     patterns: list[str] = []
@@ -133,6 +176,11 @@ def _included_file(root: Path, raw_path: str, patterns: list[str]) -> tuple[Path
         raise ValueError(f"--include must name a file inside the repository: {raw_path}")
     if not safe_is_file(resolved):
         raise ValueError(f"--include must name a file: {raw_path}")
+    if _is_secret_filename(resolved.name):
+        raise ValueError(
+            f"--include refuses {resolved.name}: files with this name hold credentials. "
+            "Put just the part you need to demonstrate the bug in another file"
+        )
     if _is_ignored(resolved, root, patterns):
         raise ValueError(
             f"--include refuses a file an ignore file already excludes: {raw_path}. "
@@ -332,6 +380,8 @@ def _run_feedback(args) -> None:
         selected_files = [
             _included_file(root, raw_path, ignore_patterns) for raw_path in args.include
         ]
+        if config_path is not None and _is_secret_filename(config_path.name):
+            raise ValueError(f"--config refuses {config_path.name}: that name holds credentials")
         if config_path is not None and _is_ignored(config_path, root, ignore_patterns):
             raise ValueError(
                 f"--config refuses a file an ignore file already excludes: {config_path}"

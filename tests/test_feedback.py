@@ -303,14 +303,16 @@ def test_feedback_copies_named_files_verbatim(tmp_path):
 def test_feedback_refuses_files_an_ignore_file_excludes(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / ".gitignore").write_text("# secrets\n.env\nbuild/\n")
-    (repo / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2\n")
+    # Deliberately neutral names: this pins the ignore-file path, not the
+    # credential-filename denylist, which would refuse `.env` on its own.
+    (repo / ".gitignore").write_text("# local\nscratch.md\nbuild/\n")
+    (repo / "scratch.md").write_text("local notes\n")
     (repo / "build").mkdir()
     (repo / "build" / "out.md").write_text("generated\n")
 
-    for target in (".env", "build/out.md"):
+    for index, target in enumerate(("scratch.md", "build/out.md")):
         result = _run_feedback(
-            repo, "--include", target, "--output", str(tmp_path / f"{target[-5:]}.zip")
+            repo, "--include", target, "--output", str(tmp_path / f"{index}.zip")
         )
         assert result.returncode == 1, target
         assert "ignore file already excludes" in result.stderr, target
@@ -511,3 +513,47 @@ def test_feedback_neutralizes_control_bytes_in_the_archived_lint_output(tmp_path
     assert "\x07" not in archived
     assert "\x08" not in archived
     assert "warn" in archived
+
+
+@pytest.mark.parametrize(
+    "name",
+    [".env", ".env.production", "id_rsa", "server.pem", "credentials.json", ".npmrc"],
+)
+def test_feedback_refuses_credential_filenames_without_any_ignore_file(tmp_path, name):
+    """The denylist must not depend on the repo happening to gitignore the file."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / name).write_text("AWS_SECRET_ACCESS_KEY=hunter2\n")
+    output = tmp_path / f"{name.strip('.')}.zip"
+
+    result = _run_feedback(repo, "--include", name, "--output", str(output))
+
+    assert result.returncode == 1
+    assert "hold credentials" in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("name", [".env.example", "id_rsa.pub", "terraform.tfvars.sample"])
+def test_feedback_allows_the_shareable_variants(tmp_path, name):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: demo\ndescription: Demo\n---\n\nWork.\n")
+    (repo / name).write_text("PLACEHOLDER=replace-me\n")
+    output = tmp_path / "report.zip"
+
+    result = _run_feedback(repo, "--include", name, "--output", str(output), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["included_files"] == [name]
+
+
+def test_feedback_refuses_a_credential_named_config(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = repo / "credentials.json"
+    config.write_text("{}\n")
+
+    result = _run_feedback(repo, "--config", str(config), "--output", str(tmp_path / "r.zip"))
+
+    assert result.returncode == 1
+    assert "holds credentials" in result.stderr

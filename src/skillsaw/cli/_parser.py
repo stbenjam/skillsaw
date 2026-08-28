@@ -250,8 +250,10 @@ For more information, visit: https://github.com/stbenjam/skillsaw
             "Create a local, reviewable diagnostic bundle for a skillsaw bug report. "
             "It never uploads data, and includes no repository files unless --include or "
             "--config names them. Named files are copied verbatim: skillsaw does not scan "
-            "them for secrets, so review the ZIP before sharing it. Files already excluded "
-            "by .gitignore (or .dockerignore, .npmignore, .helmignore, .gcloudignore) are refused."
+            "them for secrets, so review the ZIP before sharing it. Two things are refused "
+            "outright: files whose name means credentials (.env, id_rsa, *.pem, ...), and "
+            "files already excluded by .gitignore, .dockerignore, .npmignore, .helmignore "
+            "or .gcloudignore."
         ),
     )
     feedback_parser.add_argument(
