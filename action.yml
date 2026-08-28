@@ -1,8 +1,8 @@
-name: 'skillsaw'
+name: 'Skillsaw Agent Context Linter'
 description: 'Lint agent skills, plugins, and AI coding assistant context'
 branding:
-  icon: 'check-circle'
-  color: 'green'
+  icon: 'settings'
+  color: 'orange'
 
 inputs:
   path:
